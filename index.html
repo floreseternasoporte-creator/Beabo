@@ -2399,10 +2399,10 @@ firebase.auth().onAuthStateChanged(user => {
 </div>
 
 <!-- VISTA DE COMENTARIOS (Estilo Reddit moderno) -->
-<div id="comments-view" class="fixed inset-0 bg-gray-50 text-black overflow-hidden hidden z-50">
+<div id="comments-view" class="fixed inset-0 bg-gray-50 text-black hidden z-50" style="overflow: hidden;">
   <div class="h-full flex flex-col max-w-2xl mx-auto bg-white">
     <!-- Header -->
-    <div class="bg-white border-b border-gray-200 p-4 flex items-center gap-3">
+    <div class="bg-white border-b border-gray-200 p-4 flex items-center gap-3 flex-shrink-0">
       <button onclick="closeCommentsView()" class="text-gray-600 hover:text-[#FE2C55] transition-colors">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
@@ -2413,33 +2413,31 @@ firebase.auth().onAuthStateChanged(user => {
     </div>
     
     <!-- Publicación original -->
-    <div id="original-post" class="bg-white p-4 border-b-8 border-gray-100"></div>
+    <div id="original-post" class="bg-white p-4 border-b-8 border-gray-100 flex-shrink-0"></div>
     
-    <!-- Lista de comentarios -->
-    <div id="comments-list-view" class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50"></div>
+    <!-- Lista de comentarios con scroll -->
+    <div id="comments-list-view" class="flex-1 p-4 space-y-4 bg-gray-50" style="overflow-y: auto; -webkit-overflow-scrolling: touch;"></div>
     
     <!-- Input de comentario fijo abajo -->
-    <div class="bg-white border-t border-gray-200 p-4">
-      <div class="flex gap-3 items-end">
+    <div class="bg-white border-t border-gray-200 p-4 flex-shrink-0">
+      <div class="flex gap-3 items-center">
         <img id="current-user-avatar-comment" src="" class="w-8 h-8 rounded-full flex-shrink-0">
-        <div class="flex-1 relative">
-          <textarea id="comment-input-main" placeholder="¿Qué opinas?" rows="1" class="w-full p-3 pr-12 border border-gray-300 rounded-full resize-none focus:outline-none focus:ring-2 focus:ring-[#FE2C55] focus:border-transparent" style="max-height: 120px;"></textarea>
-          <button onclick="submitComment()" class="absolute right-2 bottom-2 bg-[#FE2C55] text-white p-2 rounded-full hover:bg-red-600 transition-colors">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
-            </svg>
-          </button>
-        </div>
+        <input type="text" id="comment-input-main" placeholder="¿Qué opinas?" class="flex-1 p-3 pr-12 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#FE2C55] focus:border-transparent">
+        <button onclick="submitComment()" class="bg-[#FE2C55] text-white p-3 rounded-full hover:bg-red-600 transition-colors flex-shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+          </svg>
+        </button>
       </div>
     </div>
   </div>
 </div>
 
 <!-- MODAL DE IMAGEN EXPANDIDA -->
-<div id="image-modal" class="fixed inset-0 bg-black hidden z-[60]" onclick="closeImageModal()">
+<div id="image-modal" class="fixed inset-0 bg-black hidden z-[60]">
   <div class="h-full flex flex-col">
     <!-- Botón cerrar arriba -->
-    <div class="p-4 flex justify-end">
+    <div class="p-4 flex justify-end flex-shrink-0">
       <button onclick="closeImageModal()" class="text-white hover:text-gray-300 transition-colors">
         <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -2448,12 +2446,12 @@ firebase.auth().onAuthStateChanged(user => {
     </div>
     
     <!-- Imagen centrada -->
-    <div class="flex-1 flex items-center justify-center p-4">
+    <div class="flex-1 flex items-center justify-center p-4" onclick="closeImageModal()">
       <img id="modal-image" src="" class="max-w-full max-h-full object-contain" onclick="event.stopPropagation()">
     </div>
     
     <!-- Controles abajo -->
-    <div id="modal-controls" class="bg-black bg-opacity-50 p-4"></div>
+    <div id="modal-controls" class="bg-black bg-opacity-70 p-6 flex-shrink-0"></div>
   </div>
 </div>
 
@@ -5701,39 +5699,42 @@ function openPhotoDetail(photo) {
 // Abrir modal de imagen expandida
 function openImageModal(imageUrl, noteId) {
   document.getElementById('modal-image').src = imageUrl;
+  document.getElementById('image-modal').classList.remove('hidden');
   
   firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
     const note = snapshot.val();
+    if (!note) return;
+    
     const upvotes = note.upvotes || 0;
     const downvotes = note.downvotes || 0;
     const score = upvotes - downvotes;
     const commentsCount = note.commentsCount || 0;
     
     document.getElementById('modal-controls').innerHTML = `
-      <div class="flex items-center justify-center gap-4 text-white">
-        <button onclick="votePost('${noteId}', 'up'); event.stopPropagation();" class="p-2 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div class="flex items-center justify-center gap-6 text-white">
+        <button onclick="votePost('${noteId}', 'up'); event.stopPropagation();" class="p-3 hover:bg-white hover:bg-opacity-20 rounded-full transition-colors">
+          <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
           </svg>
         </button>
-        <span class="font-bold text-lg">${score > 0 ? '+' : ''}${score}</span>
-        <button onclick="votePost('${noteId}', 'down'); event.stopPropagation();" class="p-2 hover:bg-white hover:bg-opacity-20 rounded transition-colors">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <span class="font-bold text-2xl">${score > 0 ? '+' : ''}${score}</span>
+        <button onclick="votePost('${noteId}', 'down'); event.stopPropagation();" class="p-3 hover:bg-white hover:bg-opacity-20 rounded-full transition-colors">
+          <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
           </svg>
         </button>
         
-        <button onclick="openCommentsView('${noteId}'); closeImageModal(); event.stopPropagation();" class="flex items-center gap-2 px-4 py-2 hover:bg-white hover:bg-opacity-20 rounded transition-colors ml-4">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="w-px h-12 bg-white bg-opacity-30 mx-2"></div>
+        
+        <button onclick="closeImageModal(); openCommentsView('${noteId}'); event.stopPropagation();" class="flex items-center gap-3 px-6 py-3 hover:bg-white hover:bg-opacity-20 rounded-full transition-colors">
+          <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
           </svg>
-          <span class="font-bold">${commentsCount}</span>
+          <span class="font-bold text-xl">${commentsCount}</span>
         </button>
       </div>
     `;
   });
-  
-  document.getElementById('image-modal').classList.remove('hidden');
 }
 
 // Cerrar modal de imagen
