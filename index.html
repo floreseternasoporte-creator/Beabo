@@ -5983,7 +5983,7 @@ function countReplies(replies) {
 }
 
 // Renderizar comentario moderno
-function renderCommentModern(noteId, commentId, comment, container, level) {
+function renderCommentModern(noteId, commentId, comment, container, level, parentId = null) {
   const marginLeft = level * 16;
   const commentDiv = document.createElement('div');
   commentDiv.className = 'bg-white rounded-xl p-3';
@@ -6026,7 +6026,7 @@ function renderCommentModern(noteId, commentId, comment, container, level) {
             Responder
           </button>
           ${comment.authorId === firebase.auth().currentUser?.uid ? `
-          <button onclick="deleteComment('${noteId}', '${commentPath}', ${level})" class="hover:text-red-500 transition-colors font-medium">
+          <button onclick="deleteComment('${noteId}', '${commentPath}', ${level}, '${parentId || ''}')" class="hover:text-red-500 transition-colors font-medium">
             Eliminar
           </button>
           ` : ''}
@@ -6050,7 +6050,7 @@ function renderCommentModern(noteId, commentId, comment, container, level) {
   if (comment.replies) {
     const repliesContainer = document.getElementById(`replies-${commentPath}`);
     Object.keys(comment.replies).forEach(replyId => {
-      renderCommentModern(noteId, replyId, comment.replies[replyId], repliesContainer, level + 1);
+      renderCommentModern(noteId, replyId, comment.replies[replyId], repliesContainer, level + 1, commentId);
     });
   }
   
@@ -6211,13 +6211,21 @@ function voteComment(noteId, commentId, voteType, level) {
 }
 
 // Eliminar comentario
-function deleteComment(noteId, commentId, level) {
+function deleteComment(noteId, commentId, level, parentId = null) {
   const user = firebase.auth().currentUser;
   if (!user) return;
   
   if (confirm('¿Estás seguro de que quieres eliminar este comentario?')) {
-    firebase.database().ref('postComments/' + noteId + '/' + commentId).remove().then(() => {
-      // Recargar comentarios
+    let commentRef;
+    
+    // Si es una respuesta anidada, buscar en replies del padre
+    if (level > 0 && parentId) {
+      commentRef = firebase.database().ref('postComments/' + noteId + '/' + parentId + '/replies/' + commentId);
+    } else {
+      commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentId);
+    }
+    
+    commentRef.remove().then(() => {
       loadCommentsForPost(noteId);
     });
   }
