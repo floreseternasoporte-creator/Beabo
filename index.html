@@ -5624,6 +5624,51 @@ function openPhotoDetail(photo) {
         const score = upvotes - downvotes;
         const commentsCount = note.commentsCount || 0;
         
+        // Construir HTML de encuesta si existe
+        let pollHTML = '';
+        if (note.poll) {
+          const totalVotes = note.poll.options.reduce((sum, opt) => sum + (opt.votes || 0), 0);
+          pollHTML = `
+            <div class="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h4 class="font-semibold text-gray-900 mb-3">${note.poll.question}</h4>
+              <div class="space-y-2">
+                ${note.poll.options.map((option, index) => {
+                  const percentage = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
+                  const hasVoted = option.voters && option.voters.includes(firebase.auth().currentUser?.uid);
+                  return `
+                    <button onclick="votePoll('${note.id}', ${index})" class="w-full text-left p-3 rounded-lg border border-gray-300 hover:border-[#FE2C55] transition-colors relative overflow-hidden ${hasVoted ? 'bg-red-50 border-[#FE2C55]' : 'bg-white'}">
+                      <div class="absolute inset-0 bg-[#FE2C55] opacity-10" style="width: ${percentage}%"></div>
+                      <div class="relative flex justify-between items-center">
+                        <span class="font-medium text-gray-900">${option.text}</span>
+                        <span class="text-sm font-bold text-gray-600">${percentage}% (${option.votes || 0})</span>
+                      </div>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+              <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''}</p>
+            </div>
+          `;
+        }
+        
+        // Construir HTML de URL si existe
+        let urlHTML = '';
+        if (note.url) {
+          urlHTML = `
+            <a href="${note.url}" target="_blank" rel="noopener noreferrer" class="mt-3 block p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
+              <div class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-[#FE2C55] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                </svg>
+                <span class="text-sm text-[#FE2C55] font-medium truncate">${note.url}</span>
+                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                </svg>
+              </div>
+            </a>
+          `;
+        }
+        
         noteElement.innerHTML = `
           <div class="p-4">
             <div class="flex items-start gap-3 mb-3">
@@ -5633,10 +5678,12 @@ function openPhotoDetail(photo) {
                   <h3 class="font-bold text-base text-black">${note.authorName}</h3>
                   <span class="text-xs text-gray-400">• ${new Date(note.timestamp).toLocaleString()}</span>
                 </div>
-                <p class="text-gray-900 whitespace-pre-wrap">${note.content}</p>
+                ${note.content ? `<p class="text-gray-900 whitespace-pre-wrap">${note.content}</p>` : ''}
               </div>
             </div>
             ${note.imageUrl ? `<img src="${note.imageUrl}" alt="Imagen" onclick="openImageModal('${note.imageUrl}', '${note.id}')" class="w-full rounded-lg cursor-pointer hover:opacity-95 transition-opacity mb-3">` : ''}
+            ${urlHTML}
+            ${pollHTML}
             
             <div class="flex items-center gap-1 pt-2 border-t border-gray-100">
               <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="p-2 hover:bg-gray-100 rounded transition-colors">
@@ -5657,44 +5704,57 @@ function openPhotoDetail(photo) {
                 </svg>
                 <span class="text-sm font-bold text-gray-600">${commentsCount}</span>
               </button>
-              
-              ${note.authorId === firebase.auth().currentUser?.uid ? 
-                `<button onclick="deleteNote('${note.id}')" class="ml-auto p-2 hover:bg-red-50 rounded transition-colors">
-                  <svg class="w-5 h-5 text-gray-500 hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                  </svg>
-                </button>` : 
-                `<button onclick="reportNote('${note.id}')" class="ml-auto p-2 hover:bg-gray-100 rounded transition-colors">
-                  <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/>
-                  </svg>
-                </button>`
-              }
             </div>
           </div>
         `;
-        
-        const user = firebase.auth().currentUser;
-        if (user) {
-          firebase.database().ref('userVotes/' + user.uid + '/' + note.id).once('value').then(voteSnapshot => {
-            const vote = voteSnapshot.val();
-            const upvoteBtn = document.getElementById(`upvote-${note.id}`);
-            const downvoteBtn = document.getElementById(`downvote-${note.id}`);
-            if (vote === 'up' && upvoteBtn) {
-              upvoteBtn.querySelector('svg').classList.remove('text-gray-500');
-              upvoteBtn.querySelector('svg').classList.add('text-[#FE2C55]');
-            } else if (vote === 'down' && downvoteBtn) {
-              downvoteBtn.querySelector('svg').classList.remove('text-gray-500');
-              downvoteBtn.querySelector('svg').classList.add('text-blue-500');
-            }
-          });
-        }
         
         feedContainer.appendChild(noteElement);
       });
     });
   }
 
+  // Función para votar en encuestas
+  function votePoll(noteId, optionIndex) {
+    const user = firebase.auth().currentUser;
+    if (!user) {
+      alert('Debes iniciar sesión para votar');
+      return;
+    }
+    
+    const noteRef = firebase.database().ref('communityNotes/' + noteId);
+    noteRef.once('value').then(snapshot => {
+      const note = snapshot.val();
+      if (!note.poll) return;
+      
+      // Verificar si ya votó
+      let hasVoted = false;
+      let previousVoteIndex = -1;
+      note.poll.options.forEach((option, index) => {
+        if (option.voters && option.voters.includes(user.uid)) {
+          hasVoted = true;
+          previousVoteIndex = index;
+        }
+      });
+      
+      // Si ya votó, remover voto anterior
+      if (hasVoted && previousVoteIndex !== -1) {
+        note.poll.options[previousVoteIndex].votes = (note.poll.options[previousVoteIndex].votes || 1) - 1;
+        note.poll.options[previousVoteIndex].voters = note.poll.options[previousVoteIndex].voters.filter(id => id !== user.uid);
+      }
+      
+      // Agregar nuevo voto
+      if (!note.poll.options[optionIndex].voters) {
+        note.poll.options[optionIndex].voters = [];
+      }
+      if (!note.poll.options[optionIndex].voters.includes(user.uid)) {
+        note.poll.options[optionIndex].votes = (note.poll.options[optionIndex].votes || 0) + 1;
+        note.poll.options[optionIndex].voters.push(user.uid);
+      }
+      
+      // Actualizar en Firebase
+      noteRef.update({ poll: note.poll });
+    });
+  }
 // Abrir modal de imagen expandida
 function openImageModal(imageUrl, noteId) {
   document.getElementById('modal-image').src = imageUrl;
