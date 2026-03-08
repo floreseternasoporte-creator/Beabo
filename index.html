@@ -5388,7 +5388,7 @@ function openPhotoDetail(photo) {
 
   function publishNoteToDatabase(note) {
     // Verifica el contenido de la nota específicamente
-    if (moderarContenidoNota(note.content)) {
+    if (note.content && moderarContenidoNota(note.content)) {
       alert('Tu nota no puede ser publicada porque contiene contenido inapropiado.');
       // Restaurar botón si está en pantalla completa
       const publishBtn = document.querySelector('#note-creation-fullscreen button[onclick="publishNoteFromFullscreen()"]');
@@ -5401,19 +5401,35 @@ function openPhotoDetail(photo) {
     
     firebase.database().ref('communityNotes').push(note).then((ref) => {
       // Verifica una vez más después de publicar (por si acaso)
-      moderarContenidoAutomaticamente(ref.key, note.content);
+      if (note.content) {
+        moderarContenidoAutomaticamente(ref.key, note.content);
+      }
       
-      // Limpiar formularios
-      document.getElementById('note-content').value = '';
-      document.getElementById('note-image').value = '';
-      document.getElementById('image-preview').classList.add('hidden');
+      // Limpiar formularios fullscreen
+      const contentFullscreen = document.getElementById('note-content-fullscreen');
+      const imageFullscreen = document.getElementById('note-image-fullscreen');
+      const previewFullscreen = document.getElementById('image-preview-fullscreen');
+      
+      if (contentFullscreen) contentFullscreen.value = '';
+      if (imageFullscreen) imageFullscreen.value = '';
+      if (previewFullscreen) previewFullscreen.classList.add('hidden');
+      
+      // Limpiar formularios antiguos (por compatibilidad)
+      const contentOld = document.getElementById('note-content');
+      const imageOld = document.getElementById('note-image');
+      const previewOld = document.getElementById('image-preview');
+      
+      if (contentOld) contentOld.value = '';
+      if (imageOld) imageOld.value = '';
+      if (previewOld) previewOld.classList.add('hidden');
       
       // Cerrar pantalla completa si está abierta
       const fullscreenModal = document.getElementById('note-creation-fullscreen');
-      if (!fullscreenModal.classList.contains('hidden')) {
+      if (fullscreenModal && !fullscreenModal.classList.contains('hidden')) {
         closeNoteCreationFullscreen();
         // Abrir comunidad para ver la nota publicada
         document.getElementById('community-view').classList.remove('hidden');
+        loadNotes();
       } else {
         switchCommunityTab('feed');
       }
