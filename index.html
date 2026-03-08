@@ -2343,6 +2343,33 @@ firebase.auth().onAuthStateChanged(user => {
   </div>
 </div>
 
+<!-- NAVEGADOR INTERNO -->
+<div id="internal-browser" class="fixed inset-0 bg-white hidden z-50">
+  <div class="h-full flex flex-col">
+    <!-- Header del navegador -->
+    <div class="bg-white border-b border-gray-200 p-3 flex items-center gap-3">
+      <button onclick="closeBrowser()" class="text-gray-600">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+      <div class="flex-1 bg-gray-100 rounded-full px-4 py-2 flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+        <span id="browser-url" class="text-xs text-gray-600 truncate"></span>
+      </div>
+      <button onclick="refreshBrowser()" class="text-gray-600">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </button>
+    </div>
+    <!-- iframe -->
+    <iframe id="browser-iframe" class="flex-1 w-full" frameborder="0"></iframe>
+  </div>
+</div>
+
 <!-- VISTA DE COMENTARIOS -->
 <div id="comments-view" class="fixed inset-0 bg-white text-black hidden z-50">
   <div class="h-full flex flex-col">
@@ -5624,30 +5651,30 @@ function openPhotoDetail(photo) {
         const score = upvotes - downvotes;
         const commentsCount = note.commentsCount || 0;
         
-        // Construir HTML de encuesta si existe
+        // Construir HTML de encuesta si existe - Estilo Reddit mejorado
         let pollHTML = '';
         if (note.poll) {
           const totalVotes = note.poll.options.reduce((sum, opt) => sum + (opt.votes || 0), 0);
           pollHTML = `
-            <div class="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h4 class="font-semibold text-gray-900 mb-3">${note.poll.question}</h4>
+            <div class="mt-3 p-3 bg-white rounded-lg border border-gray-300">
+              <h4 class="font-medium text-gray-900 mb-3 text-sm">${note.poll.question}</h4>
               <div class="space-y-2">
                 ${note.poll.options.map((option, index) => {
                   const percentage = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
                   const currentUser = firebase.auth().currentUser;
                   const hasVoted = currentUser && option.voters && option.voters.includes(currentUser.uid);
                   return `
-                    <button onclick="votePoll('${note.id}', ${index})" class="w-full text-left p-3 rounded-lg border border-gray-300 hover:border-[#FE2C55] transition-colors relative overflow-hidden ${hasVoted ? 'bg-red-50 border-[#FE2C55]' : 'bg-white'}">
-                      <div class="absolute inset-0 bg-[#FE2C55] opacity-10" style="width: ${percentage}%"></div>
+                    <button onclick="votePoll('${note.id}', ${index})" class="w-full text-left p-2.5 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#FE2C55] bg-red-50' : 'border-gray-300 bg-white hover:border-gray-400'}">
+                      <div class="absolute inset-0 bg-[#FE2C55]" style="width: ${percentage}%; opacity: 0.08"></div>
                       <div class="relative flex justify-between items-center">
-                        <span class="font-medium text-gray-900">${option.text}</span>
-                        <span class="text-sm font-bold text-gray-600">${percentage}% (${option.votes || 0})</span>
+                        <span class="text-sm font-medium text-gray-900">${option.text}</span>
+                        <span class="text-xs font-bold ${hasVoted ? 'text-[#FE2C55]' : 'text-gray-500'}">${percentage}%</span>
                       </div>
                     </button>
                   `;
                 }).join('')}
               </div>
-              <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''}</p>
+              <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''} • Toca para votar</p>
             </div>
           `;
         }
@@ -5656,7 +5683,7 @@ function openPhotoDetail(photo) {
         let urlHTML = '';
         if (note.url) {
           urlHTML = `
-            <a href="${note.url}" target="_blank" rel="noopener noreferrer" class="mt-3 block p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
+            <a onclick="openInternalBrowser('${note.url}'); return false;" href="#" class="mt-3 block p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
               <div class="flex items-center gap-2">
                 <svg class="w-5 h-5 text-[#FE2C55] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
@@ -5786,6 +5813,23 @@ function openPhotoDetail(photo) {
       // Actualizar en Firebase
       noteRef.update({ poll: note.poll });
     });
+  }
+
+  // Funciones del navegador interno
+  function openInternalBrowser(url) {
+    document.getElementById('browser-url').textContent = url;
+    document.getElementById('browser-iframe').src = url;
+    document.getElementById('internal-browser').classList.remove('hidden');
+  }
+
+  function closeBrowser() {
+    document.getElementById('internal-browser').classList.add('hidden');
+    document.getElementById('browser-iframe').src = '';
+  }
+
+  function refreshBrowser() {
+    const iframe = document.getElementById('browser-iframe');
+    iframe.src = iframe.src;
   }
 
 // Cerrar modal de imagen
@@ -5965,6 +6009,48 @@ function openCommentsView(noteId) {
     const downvotes = note.downvotes || 0;
     const score = upvotes - downvotes;
     
+    // Construir HTML de encuesta si existe
+    let pollHTML = '';
+    if (note.poll) {
+      const totalVotes = note.poll.options.reduce((sum, opt) => sum + (opt.votes || 0), 0);
+      pollHTML = `
+        <div class="mt-2 p-3 bg-white rounded-lg border border-gray-300">
+          <h4 class="font-medium text-gray-900 mb-2 text-sm">${note.poll.question}</h4>
+          <div class="space-y-2">
+            ${note.poll.options.map((option, index) => {
+              const percentage = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
+              const hasVoted = user && option.voters && option.voters.includes(user.uid);
+              return `
+                <button onclick="votePoll('${noteId}', ${index})" class="w-full text-left p-2 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#FE2C55] bg-red-50' : 'border-gray-300 bg-white'}">
+                  <div class="absolute inset-0 bg-[#FE2C55]" style="width: ${percentage}%; opacity: 0.08"></div>
+                  <div class="relative flex justify-between items-center">
+                    <span class="text-xs font-medium text-gray-900">${option.text}</span>
+                    <span class="text-xs font-bold ${hasVoted ? 'text-[#FE2C55]' : 'text-gray-500'}">${percentage}%</span>
+                  </div>
+                </button>
+              `;
+            }).join('')}
+          </div>
+          <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''}</p>
+        </div>
+      `;
+    }
+    
+    // Construir HTML de URL si existe
+    let urlHTML = '';
+    if (note.url) {
+      urlHTML = `
+        <a onclick="openInternalBrowser('${note.url}'); return false;" href="#" class="mt-2 block p-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-[#FE2C55] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+            </svg>
+            <span class="text-xs text-[#FE2C55] font-medium truncate">${note.url}</span>
+          </div>
+        </a>
+      `;
+    }
+    
     document.getElementById('original-post').innerHTML = `
       <div class="flex items-start gap-3 mb-2">
         <img src="${note.authorImage}" class="w-8 h-8 rounded-full flex-shrink-0">
@@ -5973,11 +6059,13 @@ function openCommentsView(noteId) {
             <h3 class="font-bold text-sm">${note.authorName}</h3>
             <span class="text-xs text-gray-400">• ${new Date(note.timestamp).toLocaleString()}</span>
           </div>
-          <p class="text-gray-900 text-sm mb-2">${note.content}</p>
+          ${note.content ? `<p class="text-gray-900 text-sm mb-2">${note.content}</p>` : ''}
         </div>
       </div>
       ${note.imageUrl ? `<img src="${note.imageUrl}" onclick="openImageModal('${note.imageUrl}', '${noteId}')" class="w-full rounded cursor-pointer mb-2">` : ''}
-      <div class="flex items-center gap-3 text-xs text-gray-500">
+      ${urlHTML}
+      ${pollHTML}
+      <div class="flex items-center gap-3 text-xs text-gray-500 mt-2">
         <span class="font-bold ${score > 0 ? 'text-[#FE2C55]' : score < 0 ? 'text-blue-500' : 'text-gray-600'}">${score > 0 ? '+' : ''}${score}</span>
       </div>
     `;
