@@ -2268,7 +2268,7 @@ firebase.auth().onAuthStateChanged(user => {
           </svg>
         </button>
         <button onclick="openStickerPicker('note-content-fullscreen')" class="p-2 hover:bg-gray-100 rounded transition" title="Agregar sticker">
-          <span class="text-2xl leading-none">😀</span>
+          <img src="https://i.ibb.co/MysRv7gF/IMG-9686.png" alt="sticker" class="w-6 h-6 object-contain">
         </button>
       </div>
     </div>
@@ -2365,7 +2365,7 @@ firebase.auth().onAuthStateChanged(user => {
       <div class="flex gap-2 items-center">
         <input type="text" id="comment-input-main" placeholder="¿Qué opinas?" class="flex-1 p-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
         <button onclick="openStickerPicker('comment-input-main')" class="border border-gray-200 text-gray-600 p-2 rounded-full flex-shrink-0 hover:text-[#FE2C55]" title="Stickers">
-          <span class="text-xl leading-none">😀</span>
+          <img src="https://i.ibb.co/MysRv7gF/IMG-9686.png" alt="sticker" class="w-5 h-5 object-contain">
         </button>
         <button onclick="submitComment()" class="bg-[#FE2C55] text-white p-2 rounded-full flex-shrink-0">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2375,19 +2375,21 @@ firebase.auth().onAuthStateChanged(user => {
       </div>
     </div>
 
-    <div id="sticker-sheet-overlay" class="hidden absolute inset-0 bg-black/40 opacity-0 transition-opacity duration-300" onclick="closeStickerPicker()"></div>
-    <div id="sticker-sheet" class="hidden absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl border-t border-gray-200 p-3 transform translate-y-full transition-transform duration-300 ease-out" style="height: 50vh;">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="font-bold text-sm">Stickers</h3>
-        <button onclick="closeStickerPicker()" class="text-gray-500">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-      <div id="sticker-grid" class="grid grid-cols-3 gap-3 overflow-y-auto" style="height: calc(50vh - 56px);"></div>
-    </div>
   </div>
+</div>
+
+<!-- STICKER PICKER GLOBAL -->
+<div id="sticker-sheet-overlay" class="hidden fixed inset-0 bg-black/40 opacity-0 transition-opacity duration-300 z-[70]" onclick="closeStickerPicker()"></div>
+<div id="sticker-sheet" class="hidden fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl border-t border-gray-200 p-3 transform translate-y-full transition-transform duration-300 ease-out z-[71]" style="height: 50vh;">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="font-bold text-sm">Stickers</h3>
+    <button onclick="closeStickerPicker()" class="text-gray-500">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+  <div id="sticker-grid" class="grid grid-cols-3 gap-3 overflow-y-auto" style="height: calc(50vh - 56px);"></div>
 </div>
 
 <!-- MODAL DE IMAGEN EXPANDIDA -->
@@ -5997,6 +5999,7 @@ let currentPostId = null;
 let stickerTargetInputId = null;
 const pendingStickers = {};
 const STICKER_PREFIX = '__sticker__:';
+const STICKER_TEXT_SEPARATOR = '__text__:';
 const baseStickerUrls = [
   'https://i.ibb.co/MysRv7gF/IMG-9686.png',
   'https://i.ibb.co/C3rCh7WJ/IMG-9687.png',
@@ -6019,8 +6022,17 @@ function escapeHTML(text) {
 
 function renderContentWithSticker(content, textClass = 'text-sm text-gray-800 mb-2') {
   if (content && content.startsWith(STICKER_PREFIX)) {
-    const stickerUrl = content.slice(STICKER_PREFIX.length);
-    return `<img src="${stickerUrl}" alt="sticker" class="w-24 h-24 object-contain rounded-lg mb-2">`;
+    const payload = content.slice(STICKER_PREFIX.length);
+    const separatorIndex = payload.indexOf(STICKER_TEXT_SEPARATOR);
+    const stickerUrl = separatorIndex >= 0 ? payload.slice(0, separatorIndex) : payload;
+    const stickerText = separatorIndex >= 0 ? payload.slice(separatorIndex + STICKER_TEXT_SEPARATOR.length) : '';
+
+    return `
+      <div class="mb-2">
+        <img src="${stickerUrl}" alt="sticker" class="w-24 h-24 object-contain rounded-lg">
+        ${stickerText ? `<p class="${textClass} mt-2">${escapeHTML(stickerText)}</p>` : ''}
+      </div>
+    `;
   }
   return `<p class="${textClass}">${escapeHTML(content || '')}</p>`;
 }
@@ -6104,6 +6116,10 @@ function resolveCommentContent(inputId) {
 
   const textContent = input.value.trim();
   const stickerUrl = pendingStickers[inputId];
+
+  if (stickerUrl && textContent) {
+    return `${STICKER_PREFIX}${stickerUrl}${STICKER_TEXT_SEPARATOR}${textContent}`;
+  }
 
   if (stickerUrl) return `${STICKER_PREFIX}${stickerUrl}`;
   return textContent;
@@ -6335,7 +6351,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
           <div class="flex gap-2">
             <input type="text" id="reply-input-${commentPath}" placeholder="Escribe una respuesta..." class="flex-1 p-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
             <button onclick="openStickerPicker('reply-input-${commentPath}')" class="border border-gray-200 text-gray-600 p-2 rounded-full flex-shrink-0 hover:text-[#FE2C55]" title="Stickers">
-              <span class="text-lg leading-none">😀</span>
+              <img src="https://i.ibb.co/MysRv7gF/IMG-9686.png" alt="sticker" class="w-5 h-5 object-contain">
             </button>
               <button onclick="addReplyModern('${noteId}', '${commentPath}')" class="bg-[#FE2C55] text-white p-2 rounded-full flex-shrink-0">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
