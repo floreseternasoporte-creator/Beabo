@@ -2184,6 +2184,7 @@ firebase.auth().onAuthStateChanged(user => {
         class="w-full p-4 border-0 resize-none focus:outline-none text-base mb-4"
         rows="6"
       ></textarea>
+      <div id="sticker-preview-note-content-fullscreen" class="hidden mb-4"></div>
 
       <!-- Preview de imagen -->
       <div id="image-preview-fullscreen" class="hidden mb-4 relative">
@@ -2265,6 +2266,9 @@ firebase.auth().onAuthStateChanged(user => {
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
           </svg>
+        </button>
+        <button onclick="openStickerPicker('note-content-fullscreen')" class="p-2 hover:bg-gray-100 rounded transition" title="Agregar sticker">
+          <img src="https://i.ibb.co/MysRv7gF/IMG-9686.png" alt="sticker" class="w-6 h-6 object-contain">
         </button>
       </div>
     </div>
@@ -2357,8 +2361,12 @@ firebase.auth().onAuthStateChanged(user => {
     
     <!-- Input fijo abajo -->
     <div class="bg-white border-t p-3 flex-shrink-0">
+      <div id="sticker-preview-comment-input-main" class="hidden mb-2"></div>
       <div class="flex gap-2 items-center">
         <input type="text" id="comment-input-main" placeholder="¿Qué opinas?" class="flex-1 p-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
+        <button onclick="openStickerPicker('comment-input-main')" class="border border-gray-200 text-gray-600 p-2 rounded-full flex-shrink-0 hover:text-[#FE2C55]" title="Stickers">
+          <img src="https://i.ibb.co/MysRv7gF/IMG-9686.png" alt="sticker" class="w-5 h-5 object-contain">
+        </button>
         <button onclick="submitComment()" class="bg-[#FE2C55] text-white p-2 rounded-full flex-shrink-0">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
@@ -2366,7 +2374,22 @@ firebase.auth().onAuthStateChanged(user => {
         </button>
       </div>
     </div>
+
   </div>
+</div>
+
+<!-- STICKER PICKER GLOBAL -->
+<div id="sticker-sheet-overlay" class="hidden fixed inset-0 bg-black/40 opacity-0 transition-opacity duration-300 z-[70]" onclick="closeStickerPicker()"></div>
+<div id="sticker-sheet" class="hidden fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl border-t border-gray-200 p-3 transform translate-y-full transition-transform duration-300 ease-out z-[71]" style="height: 50vh;">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="font-bold text-sm">Stickers</h3>
+    <button onclick="closeStickerPicker()" class="text-gray-500">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+  <div id="sticker-grid" class="grid grid-cols-3 gap-3 overflow-y-auto" style="height: calc(50vh - 56px);"></div>
 </div>
 
 <!-- MODAL DE IMAGEN EXPANDIDA -->
@@ -5208,6 +5231,7 @@ function openPhotoDetail(photo) {
   function openNoteCreationFullscreen() {
     document.getElementById('note-creation-fullscreen').classList.remove('hidden');
     document.getElementById('note-content-fullscreen').value = '';
+    clearStickerSelection('note-content-fullscreen');
     document.getElementById('char-counter-fullscreen').textContent = '200';
     document.getElementById('image-preview-fullscreen').classList.add('hidden');
     document.getElementById('url-preview-fullscreen').classList.add('hidden');
@@ -5277,6 +5301,7 @@ function openPhotoDetail(photo) {
 
   function closeNoteCreationFullscreen() {
     document.getElementById('note-creation-fullscreen').classList.add('hidden');
+    clearStickerSelection('note-content-fullscreen');
   }
 
   function handleNoteImagePreviewFullscreen(event) {
@@ -5297,7 +5322,7 @@ function openPhotoDetail(photo) {
   }
 
   function publishNoteFromFullscreen() {
-    const content = document.getElementById('note-content-fullscreen').value.trim();
+    const content = resolveCommentContent('note-content-fullscreen');
     const imageFile = document.getElementById('note-image-fullscreen').files[0];
     const url = document.getElementById('note-url-fullscreen').value.trim();
     const pollQuestion = document.getElementById('poll-question-fullscreen').value.trim();
@@ -5556,6 +5581,7 @@ function openPhotoDetail(photo) {
       const previewFullscreen = document.getElementById('image-preview-fullscreen');
       
       if (contentFullscreen) contentFullscreen.value = '';
+      clearStickerSelection('note-content-fullscreen');
       if (imageFullscreen) imageFullscreen.value = '';
       if (previewFullscreen) previewFullscreen.classList.add('hidden');
       
@@ -5676,7 +5702,7 @@ function openPhotoDetail(photo) {
                   <h3 class="font-bold text-base text-black">${note.authorName}</h3>
                   <span class="text-xs text-gray-400">• ${new Date(note.timestamp).toLocaleString()}</span>
                 </div>
-                ${note.content ? `<p class="text-gray-900 whitespace-pre-wrap">${note.content}</p>` : ''}
+                ${note.content ? renderContentWithSticker(note.content, 'text-gray-900 whitespace-pre-wrap') : ''}
               </div>
             </div>
             ${note.imageUrl ? `<img src="${note.imageUrl}" alt="Imagen" onclick="openImageModal('${note.imageUrl}', '${note.id}')" class="w-full rounded-lg cursor-pointer hover:opacity-95 transition-opacity mb-3">` : ''}
@@ -5970,6 +5996,145 @@ function votePost(noteId, voteType) {
 }
 
 let currentPostId = null;
+let stickerTargetInputId = null;
+const pendingStickers = {};
+const STICKER_PREFIX = '__sticker__:';
+const STICKER_TEXT_SEPARATOR = '__text__:';
+const baseStickerUrls = [
+  'https://i.ibb.co/MysRv7gF/IMG-9686.png',
+  'https://i.ibb.co/C3rCh7WJ/IMG-9687.png',
+  'https://i.ibb.co/TxxqVYX1/IMG-9688.png',
+  'https://i.ibb.co/tpwwLLFQ/IMG-9689.png',
+  'https://i.ibb.co/mr8WB298/IMG-9692.png',
+  'https://i.ibb.co/pBjLmr7J/IMG-9691.png',
+  'https://i.ibb.co/wryWpNNc/IMG-9690.png'
+];
+const stickerUrls = [...baseStickerUrls];
+
+function escapeHTML(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function renderContentWithSticker(content, textClass = 'text-sm text-gray-800 mb-2') {
+  if (content && content.startsWith(STICKER_PREFIX)) {
+    const payload = content.slice(STICKER_PREFIX.length);
+    const separatorIndex = payload.indexOf(STICKER_TEXT_SEPARATOR);
+    const stickerUrl = separatorIndex >= 0 ? payload.slice(0, separatorIndex) : payload;
+    const stickerText = separatorIndex >= 0 ? payload.slice(separatorIndex + STICKER_TEXT_SEPARATOR.length) : '';
+
+    return `
+      <div class="mb-2">
+        <img src="${stickerUrl}" alt="sticker" class="w-24 h-24 object-contain rounded-lg">
+        ${stickerText ? `<p class="${textClass} mt-2">${escapeHTML(stickerText)}</p>` : ''}
+      </div>
+    `;
+  }
+  return `<p class="${textClass}">${escapeHTML(content || '')}</p>`;
+}
+
+function renderStickerGrid() {
+  const stickerGrid = document.getElementById('sticker-grid');
+  if (!stickerGrid || stickerGrid.dataset.loaded === 'true') return;
+
+  stickerGrid.innerHTML = stickerUrls.map(url => `
+    <button onclick="selectSticker('${url}')" class="border border-gray-100 rounded-lg p-2 hover:border-[#FE2C55] transition-colors">
+      <img src="${url}" alt="sticker" class="w-full aspect-square object-contain">
+    </button>
+  `).join('');
+
+  stickerGrid.dataset.loaded = 'true';
+}
+
+function openStickerPicker(inputId) {
+  stickerTargetInputId = inputId;
+  renderStickerGrid();
+
+  const overlay = document.getElementById('sticker-sheet-overlay');
+  const sheet = document.getElementById('sticker-sheet');
+
+  overlay.classList.remove('hidden');
+  sheet.classList.remove('hidden');
+
+  requestAnimationFrame(() => {
+    overlay.classList.remove('opacity-0');
+    sheet.classList.remove('translate-y-full');
+  });
+}
+
+function closeStickerPicker() {
+  const overlay = document.getElementById('sticker-sheet-overlay');
+  const sheet = document.getElementById('sticker-sheet');
+
+  overlay.classList.add('opacity-0');
+  sheet.classList.add('translate-y-full');
+
+  setTimeout(() => {
+    overlay.classList.add('hidden');
+    sheet.classList.add('hidden');
+  }, 300);
+
+  stickerTargetInputId = null;
+}
+
+function updateStickerPreview(inputId) {
+  const preview = document.getElementById(`sticker-preview-${inputId}`);
+  if (!preview) return;
+
+  const stickerUrl = pendingStickers[inputId];
+  if (!stickerUrl) {
+    preview.innerHTML = '';
+    preview.classList.add('hidden');
+    return;
+  }
+
+  preview.classList.remove('hidden');
+  preview.innerHTML = `
+    <div class="inline-flex items-center gap-2 bg-gray-100 rounded-xl px-2 py-1">
+      <img src="${stickerUrl}" alt="sticker seleccionado" class="w-14 h-14 object-contain rounded">
+      <button onclick="clearStickerSelection('${inputId}')" class="text-gray-500 hover:text-red-500" title="Quitar sticker">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+  `;
+}
+
+function clearStickerSelection(inputId) {
+  delete pendingStickers[inputId];
+  updateStickerPreview(inputId);
+}
+
+function resolveCommentContent(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return '';
+
+  const textContent = input.value.trim();
+  const stickerUrl = pendingStickers[inputId];
+
+  if (stickerUrl && textContent) {
+    return `${STICKER_PREFIX}${stickerUrl}${STICKER_TEXT_SEPARATOR}${textContent}`;
+  }
+
+  if (stickerUrl) return `${STICKER_PREFIX}${stickerUrl}`;
+  return textContent;
+}
+
+function selectSticker(url) {
+  if (!stickerTargetInputId) return;
+  const targetInput = document.getElementById(stickerTargetInputId);
+  if (!targetInput) return;
+
+  pendingStickers[stickerTargetInputId] = url;
+  updateStickerPreview(stickerTargetInputId);
+  targetInput.focus();
+  closeStickerPicker();
+}
 
 // Abrir vista de comentarios
 function openCommentsView(noteId) {
@@ -6039,7 +6204,7 @@ function openCommentsView(noteId) {
             <h3 class="font-bold text-sm">${note.authorName}</h3>
             <span class="text-xs text-gray-400">• ${new Date(note.timestamp).toLocaleString()}</span>
           </div>
-          ${note.content ? `<p class="text-gray-900 text-sm mb-2">${note.content}</p>` : ''}
+          ${note.content ? renderContentWithSticker(note.content, 'text-gray-900 text-sm mb-2') : ''}
         </div>
       </div>
       ${note.imageUrl ? `<img src="${note.imageUrl}" onclick="openImageModal('${note.imageUrl}', '${noteId}')" class="w-full rounded cursor-pointer mb-2">` : ''}
@@ -6061,6 +6226,8 @@ function openCommentsView(noteId) {
 function closeCommentsView() {
   document.getElementById('comments-view').classList.add('hidden');
   document.getElementById('community-view').classList.remove('hidden');
+  closeStickerPicker();
+  clearStickerSelection('comment-input-main');
   currentPostId = null;
 }
 
@@ -6153,7 +6320,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
           <span class="font-bold text-sm">${comment.authorName}</span>
           <span class="text-xs text-gray-400">${formatTimestamp(comment.timestamp)}</span>
         </div>
-        <p class="text-sm text-gray-800 mb-2">${comment.content}</p>
+        ${renderContentWithSticker(comment.content)}
         <div class="flex items-center gap-4 text-xs text-gray-500">
           <div class="flex items-center gap-2">
             <button onclick="voteComment('${noteId}', '${commentPath}', 'up', ${level}, '${parentId || ''}')" id="comment-upvote-${commentPath}" class="hover:text-[#FE2C55] transition-colors">
@@ -6179,13 +6346,19 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
           </button>
           ` : ''}
         </div>
-        <div id="reply-form-${commentPath}" class="hidden mt-3 flex gap-2">
-          <input type="text" id="reply-input-${commentPath}" placeholder="Escribe una respuesta..." class="flex-1 p-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
-          <button onclick="addReplyModern('${noteId}', '${commentPath}')" class="bg-[#FE2C55] text-white p-2 rounded-full flex-shrink-0">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
-            </svg>
-          </button>
+        <div id="reply-form-${commentPath}" class="hidden mt-3">
+          <div id="sticker-preview-reply-input-${commentPath}" class="hidden mb-2"></div>
+          <div class="flex gap-2">
+            <input type="text" id="reply-input-${commentPath}" placeholder="Escribe una respuesta..." class="flex-1 p-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
+            <button onclick="openStickerPicker('reply-input-${commentPath}')" class="border border-gray-200 text-gray-600 p-2 rounded-full flex-shrink-0 hover:text-[#FE2C55]" title="Stickers">
+              <img src="https://i.ibb.co/MysRv7gF/IMG-9686.png" alt="sticker" class="w-5 h-5 object-contain">
+            </button>
+              <button onclick="addReplyModern('${noteId}', '${commentPath}')" class="bg-[#FE2C55] text-white p-2 rounded-full flex-shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+              </svg>
+            </button>
+          </div>
         </div>
         <div id="replies-${commentPath}" class="mt-3 space-y-3"></div>
       </div>
@@ -6229,7 +6402,7 @@ function submitComment() {
   }
   
   const input = document.getElementById('comment-input-main');
-  const content = input.value.trim();
+  const content = resolveCommentContent('comment-input-main');
   
   if (!content) return;
   
@@ -6250,6 +6423,7 @@ function submitComment() {
       // Actualizar contador en la publicación
       updateCommentsCount(currentPostId);
       input.value = '';
+      clearStickerSelection('comment-input-main');
     });
   });
 }
@@ -6290,8 +6464,9 @@ function addReplyModern(noteId, parentCommentId) {
     return;
   }
   
-  const input = document.getElementById(`reply-input-${parentCommentId}`);
-  const content = input.value.trim();
+  const inputId = `reply-input-${parentCommentId}`;
+  const input = document.getElementById(inputId);
+  const content = resolveCommentContent(inputId);
   
   if (!content) return;
   
@@ -6312,6 +6487,7 @@ function addReplyModern(noteId, parentCommentId) {
       // Actualizar contador total de comentarios
       updateCommentsCount(noteId);
       input.value = '';
+      clearStickerSelection(inputId);
       document.getElementById(`reply-form-${parentCommentId}`).classList.add('hidden');
     });
   });
@@ -8108,7 +8284,7 @@ document.getElementById('category-filter').addEventListener('change', performRea
         notes.forEach(note => {
           notesHTML += `
             <div class="bg-white p-4 rounded-xl border hover:shadow-md transition-shadow">
-              <p class="mb-3">${note.content}</p>
+              ${note.content ? renderContentWithSticker(note.content, 'mb-3') : ''}
               ${note.imageUrl ? `<img src="${note.imageUrl}" alt="Imagen de la nota" class="w-full rounded-lg mb-3 max-h-48 object-cover">` : ''}
               <div class="flex items-center justify-between text-sm text-gray-500">
                 <span>${new Date(note.timestamp).toLocaleDateString()}</span>
