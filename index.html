@@ -2359,12 +2359,30 @@ firebase.auth().onAuthStateChanged(user => {
     <div class="bg-white border-t p-3 flex-shrink-0">
       <div class="flex gap-2 items-center">
         <input type="text" id="comment-input-main" placeholder="¿Qué opinas?" class="flex-1 p-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
+        <button onclick="openStickerPicker('comment-input-main')" class="border border-gray-200 text-gray-600 p-2 rounded-full flex-shrink-0 hover:text-[#FE2C55]" title="Stickers">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 9V5a3 3 0 10-6 0v4m-3 0h14l-1 10H6L5 9z"/>
+          </svg>
+        </button>
         <button onclick="submitComment()" class="bg-[#FE2C55] text-white p-2 rounded-full flex-shrink-0">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
           </svg>
         </button>
       </div>
+    </div>
+
+    <div id="sticker-sheet-overlay" class="hidden absolute inset-0 bg-black/40" onclick="closeStickerPicker()"></div>
+    <div id="sticker-sheet" class="hidden absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl border-t border-gray-200 p-3" style="height: 50vh;">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-sm">Stickers</h3>
+        <button onclick="closeStickerPicker()" class="text-gray-500">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div id="sticker-grid" class="grid grid-cols-3 gap-3 overflow-y-auto" style="height: calc(50vh - 56px);"></div>
     </div>
   </div>
 </div>
@@ -5970,6 +5988,71 @@ function votePost(noteId, voteType) {
 }
 
 let currentPostId = null;
+let stickerTargetInputId = null;
+const STICKER_PREFIX = '__sticker__:';
+const baseStickerUrls = [
+  'https://i.ibb.co/MysRv7gF/IMG-9686.png',
+  'https://i.ibb.co/C3rCh7WJ/IMG-9687.png',
+  'https://i.ibb.co/TxxqVYX1/IMG-9688.png',
+  'https://i.ibb.co/tpwwLLFQ/IMG-9689.png',
+  'https://i.ibb.co/mr8WB298/IMG-9692.png',
+  'https://i.ibb.co/pBjLmr7J/IMG-9691.png',
+  'https://i.ibb.co/wryWpNNc/IMG-9690.png'
+];
+const stickerUrls = Array.from({ length: 42 }, (_, i) => baseStickerUrls[i % baseStickerUrls.length]);
+
+function escapeHTML(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function renderCommentContent(content) {
+  if (content && content.startsWith(STICKER_PREFIX)) {
+    const stickerUrl = content.slice(STICKER_PREFIX.length);
+    return `<img src="${stickerUrl}" alt="sticker" class="w-24 h-24 object-contain rounded-lg">`;
+  }
+  return `<p class="text-sm text-gray-800 mb-2">${escapeHTML(content || '')}</p>`;
+}
+
+function renderStickerGrid() {
+  const stickerGrid = document.getElementById('sticker-grid');
+  if (!stickerGrid || stickerGrid.dataset.loaded === 'true') return;
+
+  stickerGrid.innerHTML = stickerUrls.map(url => `
+    <button onclick="selectSticker('${url}')" class="border border-gray-100 rounded-lg p-2 hover:border-[#FE2C55] transition-colors">
+      <img src="${url}" alt="sticker" class="w-full aspect-square object-contain">
+    </button>
+  `).join('');
+
+  stickerGrid.dataset.loaded = 'true';
+}
+
+function openStickerPicker(inputId) {
+  stickerTargetInputId = inputId;
+  renderStickerGrid();
+  document.getElementById('sticker-sheet-overlay').classList.remove('hidden');
+  document.getElementById('sticker-sheet').classList.remove('hidden');
+}
+
+function closeStickerPicker() {
+  document.getElementById('sticker-sheet-overlay').classList.add('hidden');
+  document.getElementById('sticker-sheet').classList.add('hidden');
+  stickerTargetInputId = null;
+}
+
+function selectSticker(url) {
+  if (!stickerTargetInputId) return;
+  const targetInput = document.getElementById(stickerTargetInputId);
+  if (!targetInput) return;
+
+  targetInput.value = `${STICKER_PREFIX}${url}`;
+  targetInput.focus();
+  closeStickerPicker();
+}
 
 // Abrir vista de comentarios
 function openCommentsView(noteId) {
@@ -6061,6 +6144,7 @@ function openCommentsView(noteId) {
 function closeCommentsView() {
   document.getElementById('comments-view').classList.add('hidden');
   document.getElementById('community-view').classList.remove('hidden');
+  closeStickerPicker();
   currentPostId = null;
 }
 
@@ -6153,7 +6237,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
           <span class="font-bold text-sm">${comment.authorName}</span>
           <span class="text-xs text-gray-400">${formatTimestamp(comment.timestamp)}</span>
         </div>
-        <p class="text-sm text-gray-800 mb-2">${comment.content}</p>
+        ${renderCommentContent(comment.content)}
         <div class="flex items-center gap-4 text-xs text-gray-500">
           <div class="flex items-center gap-2">
             <button onclick="voteComment('${noteId}', '${commentPath}', 'up', ${level}, '${parentId || ''}')" id="comment-upvote-${commentPath}" class="hover:text-[#FE2C55] transition-colors">
@@ -6181,6 +6265,11 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
         </div>
         <div id="reply-form-${commentPath}" class="hidden mt-3 flex gap-2">
           <input type="text" id="reply-input-${commentPath}" placeholder="Escribe una respuesta..." class="flex-1 p-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
+          <button onclick="openStickerPicker('reply-input-${commentPath}')" class="border border-gray-200 text-gray-600 p-2 rounded-full flex-shrink-0 hover:text-[#FE2C55]" title="Stickers">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 9V5a3 3 0 10-6 0v4m-3 0h14l-1 10H6L5 9z"/>
+            </svg>
+          </button>
           <button onclick="addReplyModern('${noteId}', '${commentPath}')" class="bg-[#FE2C55] text-white p-2 rounded-full flex-shrink-0">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
