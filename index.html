@@ -1848,6 +1848,12 @@ setInterval(checkScheduledChapters, 60000);
         </svg>
         <span id="unread-messages-count" class="hidden absolute -top-2 -right-2 bg-[#FE2C55] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">0</span>
       </button>
+      <button onclick="openNotifications()" aria-label="Notificaciones" class="relative w-6 h-6 text-[#161823] hover:text-[#FE2C55] transition">
+        <svg class="w-full h-full" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span id="unread-notifications-count" class="hidden absolute -top-2 -right-2 bg-[#FE2C55] text-white text-xs rounded-full min-w-[1.1rem] h-5 px-1 flex items-center justify-center">0</span>
+      </button>
       <button onclick="openProfile()" aria-label="Perfil" class="relative">
         <img id="header-profile-image" src="https://via.placeholder.com/32" class="w-8 h-8 rounded-full object-cover border-2 border-gray-200 hover:border-[#FE2C55] transition">
       </button>
@@ -7426,6 +7432,47 @@ function saveNote() {
 }
 
   let notificationsListenerRef = null;
+  let notificationsBadgeRef = null;
+
+  function setupNotificationsBadge(userId) {
+    const badge = document.getElementById('unread-notifications-count');
+    if (!badge) return;
+
+    if (notificationsBadgeRef) {
+      notificationsBadgeRef.off('value');
+      notificationsBadgeRef = null;
+    }
+
+    notificationsBadgeRef = firebase.database().ref('notifications/' + userId);
+    notificationsBadgeRef.on('value', snapshot => {
+      let unread = 0;
+      snapshot.forEach(child => {
+        const n = child.val();
+        if (!n || !n.read) unread++;
+      });
+
+      if (unread > 0) {
+        badge.textContent = unread > 99 ? '99+' : String(unread);
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+        badge.textContent = '0';
+      }
+    });
+  }
+
+  function clearNotificationsBadge() {
+    const badge = document.getElementById('unread-notifications-count');
+    if (badge) {
+      badge.classList.add('hidden');
+      badge.textContent = '0';
+    }
+
+    if (notificationsBadgeRef) {
+      notificationsBadgeRef.off('value');
+      notificationsBadgeRef = null;
+    }
+  }
 
   function openNotifications() {
     const currentUser = firebase.auth().currentUser;
@@ -8035,6 +8082,7 @@ function saveNote() {
       
       // INICIALIZAR SISTEMA DE MONEDAS de manera consistente
       updateCoinDisplay(user.uid);
+      setupNotificationsBadge(user.uid);
       
       // CARGAR ESTADÍSTICAS EN TIEMPO REAL
       loadUserStats(user.uid);
@@ -8093,6 +8141,7 @@ function saveNote() {
         }
       });
     } else {
+      clearNotificationsBadge();
       authFormContainer.classList.remove('hidden');
       mainApp.classList.add('hidden');
     }
