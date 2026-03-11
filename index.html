@@ -2190,14 +2190,15 @@ firebase.auth().onAuthStateChanged(user => {
 
       <!-- Preview de imagen -->
       <div id="image-preview-fullscreen" class="hidden mb-4 relative">
-        <div class="relative inline-block">
-          <img id="preview-img-fullscreen" class="max-h-96 rounded-lg border border-gray-300">
-          <button onclick="removeImageFullscreen()" class="absolute top-2 right-2 bg-black bg-opacity-60 text-white rounded-full p-2 hover:bg-opacity-80 transition">
+        <div class="flex items-center justify-between mb-2">
+          <p id="image-preview-counter-fullscreen" class="text-sm font-medium text-gray-600"></p>
+          <button onclick="removeImageFullscreen()" class="bg-black bg-opacity-60 text-white rounded-full p-2 hover:bg-opacity-80 transition" title="Eliminar fotos">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           </button>
         </div>
+        <div id="preview-grid-fullscreen" class="grid grid-cols-2 gap-2 sm:grid-cols-3"></div>
       </div>
 
       <!-- Preview de URL -->
@@ -2254,7 +2255,7 @@ firebase.auth().onAuthStateChanged(user => {
     <div class="bg-white border-t border-gray-200 p-4">
       <div class="flex items-center justify-around">
         <label class="cursor-pointer p-2 hover:bg-gray-100 rounded transition" title="Agregar imagen">
-          <input type="file" id="note-image-fullscreen" accept="image/*" class="hidden" onchange="handleNoteImagePreviewFullscreen(event)">
+          <input type="file" id="note-image-fullscreen" accept="image/*" class="hidden" onchange="handleNoteImagePreviewFullscreen(event)" multiple>
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
           </svg>
@@ -2380,6 +2381,41 @@ firebase.auth().onAuthStateChanged(user => {
     </div>
 
   </div>
+</div>
+
+<!-- REPORTE DE PUBLICACIÓN (PANTALLA COMPLETA) -->
+<div id="post-report-fullscreen" class="fixed inset-0 bg-white text-black overflow-y-auto hidden z-[75]">
+  <div class="max-w-2xl mx-auto min-h-full flex flex-col">
+    <div class="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+      <button onclick="closePostReportFullscreen()" class="text-gray-600 hover:text-black">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+      <h2 class="text-lg font-bold">Reportar esta publicación</h2>
+      <div class="w-6"></div>
+    </div>
+
+    <div class="p-4 space-y-4 flex-1">
+      <p class="text-sm text-gray-600">Elige el motivo principal del reporte. Esto ayuda a nuestro sistema automático y al equipo humano de revisión.</p>
+      <div id="post-report-reasons" class="space-y-2"></div>
+      <textarea id="post-report-description" rows="4" maxlength="240" placeholder="Detalles opcionales para ayudar en la revisión" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]"></textarea>
+      <button id="post-report-submit-btn" onclick="submitPostReport()" class="w-full bg-[#FE2C55] text-white py-3 rounded-xl font-semibold hover:bg-[#ef2950] transition">Enviar reporte</button>
+    </div>
+  </div>
+</div>
+
+<div id="post-report-processing" class="fixed inset-0 bg-white hidden z-[76] flex flex-col items-center justify-center">
+  <div class="w-14 h-14 border-4 border-[#FE2C55]/30 border-t-[#FE2C55] rounded-full animate-spin mb-4"></div>
+  <p class="font-semibold text-gray-800">Analizando reporte...</p>
+  <p class="text-sm text-gray-500 mt-1">Estamos validando automáticamente el motivo seleccionado</p>
+</div>
+
+<div id="post-report-response" class="fixed inset-0 bg-white hidden z-[77] flex flex-col items-center justify-center text-center p-6">
+  <div class="w-16 h-16 rounded-full bg-green-100 text-green-600 flex items-center justify-center mb-4">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+  </div>
+  <h3 class="text-xl font-bold mb-2">Reporte enviado</h3>
+  <p class="text-gray-600 max-w-md">Gracias por mantener la comunidad saludable. Normalmente respondemos en menos de 24 horas y, si es necesario, la revisión la hará un humano.</p>
+  <button onclick="closePostReportResponse()" class="mt-6 bg-[#FE2C55] text-white px-6 py-3 rounded-xl font-semibold">Entendido</button>
 </div>
 
 <!-- STICKER PICKER GLOBAL -->
@@ -4489,7 +4525,7 @@ function openPhotoDetail(photo) {
 </div>
 
 <!-- MODAL DE REPORTE (Estilo TikTok) -->
-<div id="report-modal" class="fixed inset-0 bg-black/50 flex items-end justify-center z-50 opacity-0 pointer-events-none transition-opacity duration-300">
+<div id="live-report-modal" class="fixed inset-0 bg-black/50 flex items-end justify-center z-50 opacity-0 pointer-events-none transition-opacity duration-300">
   <div class="w-full max-w-lg bg-white rounded-t-2xl p-6 transform translate-y-full transition-transform duration-300 ease-out">
     <div class="flex justify-between items-center mb-4">
       <h3 class="text-[#FE2C55] text-xl font-bold">Reportar transmisión</h3>
@@ -5220,6 +5256,8 @@ function openPhotoDetail(photo) {
     clearStickerSelection('note-content-fullscreen');
     document.getElementById('char-counter-fullscreen').textContent = '200';
     document.getElementById('image-preview-fullscreen').classList.add('hidden');
+    document.getElementById('preview-grid-fullscreen').innerHTML = '';
+    document.getElementById('image-preview-counter-fullscreen').textContent = '';
     document.getElementById('url-preview-fullscreen').classList.add('hidden');
     document.getElementById('poll-preview-fullscreen').classList.add('hidden');
     document.getElementById('note-image-fullscreen').value = '';
@@ -5290,26 +5328,85 @@ function openPhotoDetail(photo) {
     clearStickerSelection('note-content-fullscreen');
   }
 
+  function processImageFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      const timeoutId = setTimeout(() => reject(new Error('Tiempo de espera agotado al procesar imagen')), 15000);
+
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          try {
+            const maxSide = 1600;
+            const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(img.width * scale));
+            canvas.height = Math.max(1, Math.round(img.height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.82);
+            clearTimeout(timeoutId);
+            resolve(compressed);
+          } catch (error) {
+            clearTimeout(timeoutId);
+            reject(error);
+          }
+        };
+
+        img.onerror = function() {
+          clearTimeout(timeoutId);
+          reject(new Error('No se pudo cargar la imagen seleccionada'));
+        };
+
+        img.src = e.target.result;
+      };
+
+      reader.onerror = function() {
+        clearTimeout(timeoutId);
+        reject(new Error('No se pudo leer una de las imágenes'));
+      };
+
+      reader.readAsDataURL(file);
+    });
+  }
+
   function handleNoteImagePreviewFullscreen(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      document.getElementById('preview-img-fullscreen').src = e.target.result;
-      document.getElementById('image-preview-fullscreen').classList.remove('hidden');
-    };
-    reader.readAsDataURL(file);
+    const selectedFiles = Array.from(event.target.files || []);
+    const files = selectedFiles.slice(0, 6);
+    if (!files.length) return;
+    if (selectedFiles.length > 6) {
+      alert('Solo puedes subir un máximo de 6 fotos por publicación.');
+    }
+
+    const previewGrid = document.getElementById('preview-grid-fullscreen');
+    const counter = document.getElementById('image-preview-counter-fullscreen');
+    previewGrid.innerHTML = '';
+
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const previewImage = document.createElement('img');
+        previewImage.src = e.target.result;
+        previewImage.className = 'w-full h-28 object-contain bg-black/5 rounded-lg border border-gray-300';
+        previewGrid.appendChild(previewImage);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    counter.textContent = `${files.length} foto${files.length === 1 ? '' : 's'} seleccionada${files.length === 1 ? '' : 's'} (máximo 6)`;
+    document.getElementById('image-preview-fullscreen').classList.remove('hidden');
   }
 
   function removeImageFullscreen() {
     document.getElementById('note-image-fullscreen').value = '';
+    document.getElementById('preview-grid-fullscreen').innerHTML = '';
+    document.getElementById('image-preview-counter-fullscreen').textContent = '';
     document.getElementById('image-preview-fullscreen').classList.add('hidden');
   }
 
   function publishNoteFromFullscreen() {
     const content = resolveCommentContent('note-content-fullscreen');
-    const imageFile = document.getElementById('note-image-fullscreen').files[0];
+    const imageFiles = Array.from(document.getElementById('note-image-fullscreen').files || []).slice(0, 6);
     const url = document.getElementById('note-url-fullscreen').value.trim();
     const pollQuestion = document.getElementById('poll-question-fullscreen').value.trim();
     
@@ -5334,7 +5431,7 @@ function openPhotoDetail(photo) {
       }
     }
     
-    if (!content && !imageFile && !url && !pollQuestion) {
+    if (!content && !imageFiles.length && !url && !pollQuestion) {
       alert('Por favor escribe algo, agrega una imagen, un enlace o crea una encuesta');
       return;
     }
@@ -5376,13 +5473,17 @@ function openPhotoDetail(photo) {
         };
       }
       
-      if (imageFile) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          note.imageUrl = e.target.result;
+      if (imageFiles.length) {
+        Promise.all(imageFiles.map(processImageFile)).then(images => {
+          note.imageUrls = images;
+          note.imageUrl = images[0];
           publishNoteToDatabase(note);
-        };
-        reader.readAsDataURL(imageFile);
+        }).catch((error) => {
+          console.error('Error al procesar imágenes:', error);
+          alert('Error al procesar las imágenes. Inténtalo con fotos más ligeras.');
+          publishBtn.disabled = false;
+          publishBtn.textContent = 'Publicar';
+        });
       } else {
         publishNoteToDatabase(note);
       }
@@ -5570,6 +5671,10 @@ function openPhotoDetail(photo) {
       clearStickerSelection('note-content-fullscreen');
       if (imageFullscreen) imageFullscreen.value = '';
       if (previewFullscreen) previewFullscreen.classList.add('hidden');
+      const previewGridFullscreen = document.getElementById('preview-grid-fullscreen');
+      const previewCounterFullscreen = document.getElementById('image-preview-counter-fullscreen');
+      if (previewGridFullscreen) previewGridFullscreen.innerHTML = '';
+      if (previewCounterFullscreen) previewCounterFullscreen.textContent = '';
       
       // Limpiar formularios antiguos (por compatibilidad)
       const contentOld = document.getElementById('note-content');
@@ -5610,6 +5715,31 @@ function openPhotoDetail(photo) {
     });
   }
 
+
+  function renderNoteImages(note, noteIdForModal) {
+    const images = Array.isArray(note.imageUrls) && note.imageUrls.length ? note.imageUrls : (note.imageUrl ? [note.imageUrl] : []);
+    if (!images.length) return '';
+
+    const renderImageContainer = (img, index, total) => `
+      <div class="w-full flex-shrink-0 snap-center relative">
+        <img src="${img}" alt="Imagen ${index + 1}" onclick="openImageModal('${img}', '${noteIdForModal}')" class="w-full h-auto max-h-[80vh] object-contain rounded-lg cursor-pointer">
+        ${total > 1 ? `<div class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full">${index + 1}/${total}</div>` : ''}
+      </div>
+    `;
+
+    if (images.length === 1) {
+      return `<div class="mb-3">${renderImageContainer(images[0], 0, 1)}</div>`;
+    }
+
+    const slides = images.map((img, index) => renderImageContainer(img, index, images.length)).join('');
+
+    return `
+      <div class="mb-3 overflow-x-auto flex snap-x snap-mandatory gap-2 pb-1">
+        ${slides}
+      </div>
+    `;
+  }
+
   function loadNotes() {
     const feedContainer = document.getElementById('notes-feed');
     
@@ -5623,7 +5753,7 @@ function openPhotoDetail(photo) {
 
       notes.forEach(note => {
         const noteElement = document.createElement('div');
-        noteElement.className = 'bg-white border border-gray-200 rounded-lg mb-2 hover:border-gray-300 transition-colors';
+        noteElement.className = 'bg-white rounded-lg mb-2';
         
         const upvotes = note.upvotes || 0;
         const downvotes = note.downvotes || 0;
@@ -5685,13 +5815,13 @@ function openPhotoDetail(photo) {
               <img src="${note.authorImage}" alt="${note.authorName}" class="w-10 h-10 rounded-full flex-shrink-0">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-2">
-                  <h3 class="font-bold text-base text-black">${note.authorName}</h3>
+                  <h3 class="font-semibold text-sm text-gray-500">${note.authorName}</h3>
                   <span class="text-xs text-gray-400">• ${new Date(note.timestamp).toLocaleString()}</span>
                 </div>
-                ${note.content ? renderContentWithSticker(note.content, 'text-gray-900 whitespace-pre-wrap') : ''}
+                ${note.content ? renderContentWithSticker(note.content, 'text-black text-base whitespace-pre-wrap leading-relaxed') : ''}
               </div>
             </div>
-            ${note.imageUrl ? `<img src="${note.imageUrl}" alt="Imagen" onclick="openImageModal('${note.imageUrl}', '${note.id}')" class="w-full rounded-lg cursor-pointer hover:opacity-95 transition-opacity mb-3">` : ''}
+            ${renderNoteImages(note, note.id)}
             ${urlHTML}
             ${pollHTML}
             
@@ -5723,7 +5853,7 @@ function openPhotoDetail(photo) {
                 </button>` : 
                 `<button onclick="reportNote('${note.id}')" class="ml-auto p-2 hover:bg-gray-100 rounded transition-colors">
                   <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86l-7.38 12.8A2 2 0 004.67 19h14.66a2 2 0 001.73-3l-7.38-12.8a2 2 0 00-3.46 0z"/>
                   </svg>
                 </button>`
               }
@@ -5930,13 +6060,125 @@ function deleteNote(noteId) {
     });
 }
 
+let currentReportNoteId = null;
+const postReportReasons = [
+  { value: 'sexual', label: 'La publicación contiene contenido sexual o desnudez' },
+  { value: 'violence', label: 'Hay violencia, amenazas o acoso' },
+  { value: 'hate', label: 'Incluye odio o discriminación' },
+  { value: 'self_harm', label: 'Promueve autolesión o suicidio' },
+  { value: 'misinformation', label: 'Información engañosa o spam' },
+  { value: 'copyright', label: 'Infracción de derechos de autor' },
+  { value: 'other', label: 'Otro motivo' }
+];
+
+function buildPostReportOptions() {
+  const container = document.getElementById('post-report-reasons');
+  if (!container) return;
+
+  container.innerHTML = postReportReasons.map((reason, idx) => `
+    <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-xl hover:border-[#FE2C55] cursor-pointer transition">
+      <input type="radio" name="post-report-reason" value="${reason.value}" class="mt-1 accent-[#FE2C55]" ${idx === 0 ? 'checked' : ''}>
+      <span class="text-sm text-gray-800">${reason.label}</span>
+    </label>
+  `).join('');
+}
+
 function reportNote(noteId) {
-  const noteRef = firebase.database().ref('communityNotes/' + noteId);
-  noteRef.once('value').then(snapshot => {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para reportar');
+    return;
+  }
+  currentReportNoteId = noteId;
+  buildPostReportOptions();
+  document.getElementById('post-report-description').value = '';
+  document.getElementById('post-report-fullscreen').classList.remove('hidden');
+}
+
+function closePostReportFullscreen() {
+  document.getElementById('post-report-fullscreen').classList.add('hidden');
+  currentReportNoteId = null;
+}
+
+function closePostReportResponse() {
+  document.getElementById('post-report-response').classList.add('hidden');
+}
+
+function submitPostReport() {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para reportar');
+    return;
+  }
+  if (!currentReportNoteId) return;
+
+  const reasonInput = document.querySelector('input[name="post-report-reason"]:checked');
+  const reason = reasonInput ? reasonInput.value : 'other';
+  const reasonLabel = postReportReasons.find(r => r.value === reason)?.label || 'Otro motivo';
+  const description = document.getElementById('post-report-description').value.trim();
+
+  const submitBtn = document.getElementById('post-report-submit-btn');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Enviando...';
+
+  const reasonKeywords = {
+    sexual: 'desnudo xxx sexual pornografía',
+    violence: 'violencia amenaza matar golpear acoso',
+    hate: 'odio racismo homofobia discriminación',
+    self_harm: 'suicidio autolesión cortarse',
+    misinformation: 'spam fraude engaño estafa',
+    copyright: 'copyright derechos autor robo contenido',
+    other: ''
+  };
+
+  firebase.database().ref('communityNotes/' + currentReportNoteId).once('value').then(snapshot => {
     const note = snapshot.val();
-    if (note) {
-      moderarNota(noteId, note.content);
-    }
+    if (!note) throw new Error('Publicación no encontrada');
+
+    const algorithmInput = `${note.content || ''} ${reasonLabel} ${reasonKeywords[reason] || ''} ${description}`;
+    const autoFlag = moderarContenidoNota(algorithmInput);
+    const requiresHuman = ['sexual', 'violence', 'hate', 'self_harm', 'copyright'].includes(reason) || autoFlag;
+
+    const reportPayload = {
+      noteId: currentReportNoteId,
+      reporter: user.uid,
+      reporterName: user.displayName || user.email || 'Usuario',
+      noteAuthorId: note.authorId || '',
+      reason,
+      reasonLabel,
+      description,
+      algorithmInput,
+      autoFlag,
+      requiresHuman,
+      status: requiresHuman ? 'pending_human_review' : 'auto_reviewed',
+      timestamp: Date.now()
+    };
+
+    document.getElementById('post-report-fullscreen').classList.add('hidden');
+    document.getElementById('post-report-processing').classList.remove('hidden');
+
+    return firebase.database().ref('postReports').push(reportPayload).then((ref) => {
+      if (requiresHuman) {
+        return firebase.database().ref('postReportsHumanQueue/' + ref.key).set({
+          ...reportPayload,
+          humanPriority: autoFlag ? 'high' : 'normal'
+        });
+      }
+    });
+  }).then(() => {
+    setTimeout(() => {
+      document.getElementById('post-report-processing').classList.add('hidden');
+      document.getElementById('post-report-response').classList.remove('hidden');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Enviar reporte';
+      currentReportNoteId = null;
+    }, 1300);
+  }).catch(error => {
+    console.error('Error al enviar reporte de publicación:', error);
+    document.getElementById('post-report-processing').classList.add('hidden');
+    alert('No se pudo enviar el reporte. Inténtalo de nuevo.');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Enviar reporte';
   });
 }
 
@@ -6249,13 +6491,13 @@ function openCommentsView(noteId) {
         <img src="${note.authorImage}" class="w-8 h-8 rounded-full flex-shrink-0">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1">
-            <h3 class="font-bold text-sm">${note.authorName}</h3>
+            <h3 class="font-semibold text-xs text-gray-500">${note.authorName}</h3>
             <span class="text-xs text-gray-400">• ${new Date(note.timestamp).toLocaleString()}</span>
           </div>
-          ${note.content ? renderContentWithSticker(note.content, 'text-gray-900 text-sm mb-2') : ''}
+          ${note.content ? renderContentWithSticker(note.content, 'text-black text-base mb-2 leading-relaxed') : ''}
         </div>
       </div>
-      ${note.imageUrl ? `<img src="${note.imageUrl}" onclick="openImageModal('${note.imageUrl}', '${noteId}')" class="w-full rounded cursor-pointer mb-2">` : ''}
+      ${renderNoteImages(note, noteId)}
       ${urlHTML}
       ${pollHTML}
       <div class="flex items-center gap-3 text-xs text-gray-500 mt-2">
@@ -6365,10 +6607,10 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
       <img src="${comment.authorImage}" class="w-8 h-8 rounded-full flex-shrink-0">
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
-          <span class="font-bold text-sm">${comment.authorName}</span>
+          <span class="font-semibold text-xs text-gray-500">${comment.authorName}</span>
           <span class="text-xs text-gray-400">${formatTimestamp(comment.timestamp)}</span>
         </div>
-        ${renderContentWithSticker(comment.content)}
+        ${renderContentWithSticker(comment.content, 'text-sm text-black mb-2 leading-relaxed')}
         <div class="flex items-center gap-4 text-xs text-gray-500">
           <div class="flex items-center gap-2">
             <button onclick="voteComment('${noteId}', '${commentPath}', 'up', ${level}, '${parentId || ''}')" id="comment-upvote-${commentPath}" class="hover:text-[#FE2C55] transition-colors">
@@ -6694,11 +6936,11 @@ function deleteComment(noteId, commentId, level, parentId = null) {
   }
 
   function showReportModal() {
-    document.getElementById('report-modal').classList.remove('translate-y-full');
+    document.getElementById('live-report-modal').classList.remove('translate-y-full');
   }
 
   function closeReportModal() {
-    document.getElementById('report-modal').classList.add('translate-y-full');
+    document.getElementById('live-report-modal').classList.add('translate-y-full');
   }
 
   function submitReport() {
@@ -8356,7 +8598,7 @@ document.getElementById('category-filter').addEventListener('change', performRea
           notesHTML += `
             <div class="bg-white p-4 rounded-xl border hover:shadow-md transition-shadow">
               ${note.content ? renderContentWithSticker(note.content, 'mb-3') : ''}
-              ${note.imageUrl ? `<img src="${note.imageUrl}" alt="Imagen de la nota" class="w-full rounded-lg mb-3 max-h-48 object-cover">` : ''}
+              ${note.imageUrl ? `<img src="${note.imageUrl}" alt="Imagen de la nota" class="w-full h-auto max-h-[70vh] object-contain rounded-lg mb-3">` : ''}
               <div class="flex items-center justify-between text-sm text-gray-500">
                 <span>${new Date(note.timestamp).toLocaleDateString()}</span>
                 <span>❤️ ${note.likes || 0}</span>
