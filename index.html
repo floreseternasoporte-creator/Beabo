@@ -6182,9 +6182,11 @@ function submitPostReport() {
 
     const algorithmInput = `${note.content || ''} ${reasonLabel} ${reasonKeywords[reason] || ''} ${description}`;
     const autoFlag = moderarContenidoNota(algorithmInput);
-    const requiresHuman = ['sexual', 'violence', 'hate', 'self_harm', 'copyright'].includes(reason) || autoFlag;
+    const requiresHuman = ['sexual', 'violence', 'hate', 'self_harm', 'copyright'].includes(reason) || !autoFlag;
+    const reportId = firebase.database().ref().push().key;
 
     const reportPayload = {
+      reportId,
       noteId: currentReportNoteId,
       reporter: user.uid,
       reporterName: user.displayName || user.email || 'Usuario',
@@ -6195,20 +6197,29 @@ function submitPostReport() {
       algorithmInput,
       autoFlag,
       requiresHuman,
-      status: requiresHuman ? 'pending_human_review' : 'auto_reviewed',
+      status: requiresHuman ? 'pending_human_review' : 'auto_resolved',
       timestamp: Date.now()
     };
 
     document.getElementById('post-report-fullscreen').classList.add('hidden');
     document.getElementById('post-report-processing').classList.remove('hidden');
 
-    return firebase.database().ref('postReports').push(reportPayload).then((ref) => {
+    return firebase.database().ref('postReports/' + reportId).set(reportPayload).then(() => {
       if (requiresHuman) {
-        return firebase.database().ref('postReportsHumanQueue/' + ref.key).set({
+        return firebase.database().ref('postReportsHumanQueue/' + reportId).set({
           ...reportPayload,
-          humanPriority: autoFlag ? 'high' : 'normal'
+          humanPriority: autoFlag ? 'high' : 'normal',
+          queuedAt: Date.now()
         });
       }
+      return Promise.resolve();
+    }).then(() => {
+      setTimeout(() => {
+        const statusMessage = requiresHuman
+          ? 'No pudimos tomar una medida automática con certeza. Tu reporte fue enviado al equipo humano y está en revisión.'
+          : 'Tu reporte fue procesado automáticamente y ya aplicamos las medidas correspondientes si fueron necesarias.';
+        addNotification(user.uid, statusMessage, 'moderation');
+      }, 15000);
     });
   }).then(() => {
     setTimeout(() => {
@@ -6237,6 +6248,7 @@ function votePost(noteId, voteType) {
 
   const userVoteRef = firebase.database().ref('userVotes/' + user.uid + '/' + noteId);
   const noteRef = firebase.database().ref('communityNotes/' + noteId);
+  const userName = user.displayName || user.email || 'Alguien';
   
   userVoteRef.once('value').then(snapshot => {
     const currentVote = snapshot.val();
@@ -6258,6 +6270,17 @@ function votePost(noteId, voteType) {
         }
       }
       return note;
+    }).then(result => {
+      const updatedNote = result && result.snapshot ? result.snapshot.val() : null;
+      if (
+        updatedNote &&
+        voteType === 'up' &&
+        currentVote !== 'up' &&
+        updatedNote.authorId &&
+        updatedNote.authorId !== user.uid
+      ) {
+        addNotification(updatedNote.authorId, `${userName} votó positivamente tu publicación.`, 'vote');
+      }
     });
     
     if (currentVote === voteType) {
@@ -7395,6 +7418,9 @@ function saveNote() {
       case 'comment':
         audio.src = 'https://assets.mixkit.co/active_storage/sfx/221/221.wav';
         break;
+      case 'vote':
+        audio.src = 'https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3';
+        break;
       default:
         audio.src = 'https://assets.mixkit.co/active_storage/sfx/206/206.wav';
     }
@@ -7521,12 +7547,16 @@ function saveNote() {
           follow: 'user-plus',
           like: 'heart',
           comment: 'comment',
+          vote: 'arrow-up',
+          message: 'envelope',
+          moderation: 'shield-alt',
+          chapter_published: 'book-open',
           info: 'info-circle'
         };
 
         div.innerHTML = `
           <div class="flex items-center gap-2">
-            <i class="fas fa-${iconMap[notification.type || 'info']} ${notification.type || 'info'}-icon"></i>
+            <i class="fas fa-${iconMap[notification.type || 'info'] || 'info-circle'} ${notification.type || 'info'}-icon"></i>
             <div class="flex-1 min-w-0">
               <div class="notification-message break-words">${notification.message || 'Notificación'}</div>
               <div class="notification-time">${notification.timestamp ? new Date(notification.timestamp).toLocaleString() : ''}</div>
