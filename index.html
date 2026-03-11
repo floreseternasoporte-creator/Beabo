@@ -575,6 +575,57 @@ setInterval(checkScheduledChapters, 60000);
       100% { transform: rotate(360deg) scale(1); }
     }
 
+    /* ESTILOS CARRUSEL INSTAGRAM */
+    .instagram-carousel {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      border-radius: 8px;
+    }
+    .instagram-carousel::-webkit-scrollbar {
+      display: none;
+    }
+    .instagram-carousel-item {
+      flex: 0 0 100%;
+      scroll-snap-align: start;
+      position: relative;
+    }
+    .instagram-carousel-item img {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      object-fit: cover;
+    }
+    .carousel-dots {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .carousel-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #dbdbdb;
+      transition: background-color 0.3s;
+    }
+    .carousel-dot.active {
+      background-color: #FE2C55;
+    }
+    .photo-counter {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+      z-index: 10;
+    }
+
     /* Aplicar marcos al perfil */
     #profile-frame.rainbow { 
       border: 4px solid;
@@ -2188,16 +2239,17 @@ firebase.auth().onAuthStateChanged(user => {
       ></textarea>
       <div id="sticker-preview-note-content-fullscreen" class="hidden mb-4"></div>
 
-      <!-- Preview de imagen -->
+      <!-- Preview de imágenes (Carrusel) -->
       <div id="image-preview-fullscreen" class="hidden mb-4 relative">
-        <div class="relative inline-block">
-          <img id="preview-img-fullscreen" class="max-h-96 rounded-lg border border-gray-300">
-          <button onclick="removeImageFullscreen()" class="absolute top-2 right-2 bg-black bg-opacity-60 text-white rounded-full p-2 hover:bg-opacity-80 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
+        <div id="preview-carousel-fullscreen" class="instagram-carousel">
+          <!-- Las imágenes se insertarán aquí dinámicamente -->
         </div>
+        <div id="preview-dots-fullscreen" class="carousel-dots"></div>
+        <button onclick="removeImageFullscreen()" class="absolute top-2 right-2 bg-black bg-opacity-60 text-white rounded-full p-2 hover:bg-opacity-80 transition z-20">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
       </div>
 
       <!-- Preview de URL -->
@@ -2253,8 +2305,8 @@ firebase.auth().onAuthStateChanged(user => {
     <!-- Barra de herramientas fija abajo -->
     <div class="bg-white border-t border-gray-200 p-4">
       <div class="flex items-center justify-around">
-        <label class="cursor-pointer p-2 hover:bg-gray-100 rounded transition" title="Agregar imagen">
-          <input type="file" id="note-image-fullscreen" accept="image/*" class="hidden" onchange="handleNoteImagePreviewFullscreen(event)">
+        <label class="cursor-pointer p-2 hover:bg-gray-100 rounded transition" title="Agregar imágenes (máx. 6)">
+          <input type="file" id="note-image-fullscreen" accept="image/*" multiple class="hidden" onchange="handleNoteImagePreviewFullscreen(event)">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
           </svg>
@@ -5291,25 +5343,58 @@ function openPhotoDetail(photo) {
   }
 
   function handleNoteImagePreviewFullscreen(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+    const files = Array.from(event.target.files).slice(0, 6);
+    if (files.length === 0) return;
     
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      document.getElementById('preview-img-fullscreen').src = e.target.result;
-      document.getElementById('image-preview-fullscreen').classList.remove('hidden');
-    };
-    reader.readAsDataURL(file);
+    const previewContainer = document.getElementById('preview-carousel-fullscreen');
+    const dotsContainer = document.getElementById('preview-dots-fullscreen');
+    previewContainer.innerHTML = '';
+    dotsContainer.innerHTML = '';
+    
+    let loadedCount = 0;
+    files.forEach((file, index) => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const item = document.createElement('div');
+        item.className = 'instagram-carousel-item';
+        item.innerHTML = `<img src="${e.target.result}" class="rounded-lg border border-gray-300">`;
+        previewContainer.appendChild(item);
+        
+        const dot = document.createElement('div');
+        dot.className = `carousel-dot ${index === 0 ? 'active' : ''}`;
+        dotsContainer.appendChild(dot);
+        
+        loadedCount++;
+        if (loadedCount === files.length) {
+          document.getElementById('image-preview-fullscreen').classList.remove('hidden');
+          setupCarouselScroll('preview-carousel-fullscreen', 'preview-dots-fullscreen');
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function setupCarouselScroll(carouselId, dotsId) {
+    const carousel = document.getElementById(carouselId);
+    const dots = document.getElementById(dotsId).children;
+    carousel.addEventListener('scroll', () => {
+      const index = Math.round(carousel.scrollLeft / carousel.offsetWidth);
+      Array.from(dots).forEach((dot, i) => {
+        dot.classList.toggle('active', i === index);
+      });
+    });
   }
 
   function removeImageFullscreen() {
     document.getElementById('note-image-fullscreen').value = '';
     document.getElementById('image-preview-fullscreen').classList.add('hidden');
+    document.getElementById('preview-carousel-fullscreen').innerHTML = '';
+    document.getElementById('preview-dots-fullscreen').innerHTML = '';
   }
 
   function publishNoteFromFullscreen() {
     const content = resolveCommentContent('note-content-fullscreen');
-    const imageFile = document.getElementById('note-image-fullscreen').files[0];
+    const imageFiles = Array.from(document.getElementById('note-image-fullscreen').files).slice(0, 6);
     const url = document.getElementById('note-url-fullscreen').value.trim();
     const pollQuestion = document.getElementById('poll-question-fullscreen').value.trim();
     
@@ -5376,13 +5461,23 @@ function openPhotoDetail(photo) {
         };
       }
       
-      if (imageFile) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          note.imageUrl = e.target.result;
-          publishNoteToDatabase(note);
-        };
-        reader.readAsDataURL(imageFile);
+      if (imageFiles.length > 0) {
+        const imageUrls = [];
+        let processed = 0;
+        imageFiles.forEach((file, index) => {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            imageUrls[index] = e.target.result;
+            processed++;
+            if (processed === imageFiles.length) {
+              note.imageUrls = imageUrls;
+              // Mantener imageUrl para compatibilidad con versiones anteriores (primera imagen)
+              note.imageUrl = imageUrls[0];
+              publishNoteToDatabase(note);
+            }
+          };
+          reader.readAsDataURL(file);
+        });
       } else {
         publishNoteToDatabase(note);
       }
@@ -5691,7 +5786,44 @@ function openPhotoDetail(photo) {
                 ${note.content ? renderContentWithSticker(note.content, 'text-gray-900 whitespace-pre-wrap') : ''}
               </div>
             </div>
-            ${note.imageUrl ? `<img src="${note.imageUrl}" alt="Imagen" onclick="openImageModal('${note.imageUrl}', '${note.id}')" class="w-full rounded-lg cursor-pointer hover:opacity-95 transition-opacity mb-3">` : ''}
+            ${(() => {
+              if (note.imageUrls && note.imageUrls.length > 1) {
+                const carouselId = `carousel-${note.id}`;
+                const dotsId = `dots-${note.id}`;
+                return `
+                  <div class="relative mb-3">
+                    <div class="photo-counter">1/${note.imageUrls.length}</div>
+                    <div id="${carouselId}" class="instagram-carousel">
+                      ${note.imageUrls.map(url => `
+                        <div class="instagram-carousel-item">
+                          <img src="${url}" alt="Imagen" onclick="openImageModal('${url}', '${note.id}')" class="cursor-pointer hover:opacity-95 transition-opacity">
+                        </div>
+                      `).join('')}
+                    </div>
+                    <div id="${dotsId}" class="carousel-dots">
+                      ${note.imageUrls.map((_, i) => `<div class="carousel-dot ${i === 0 ? 'active' : ''}"></div>`).join('')}
+                    </div>
+                  </div>
+                  <script>
+                    (function() {
+                      const carousel = document.getElementById('${carouselId}');
+                      const dots = document.getElementById('${dotsId}').children;
+                      const counter = carousel.parentElement.querySelector('.photo-counter');
+                      carousel.addEventListener('scroll', () => {
+                        const index = Math.round(carousel.scrollLeft / carousel.offsetWidth);
+                        Array.from(dots).forEach((dot, i) => {
+                          dot.classList.toggle('active', i === index);
+                        });
+                        counter.textContent = (index + 1) + '/' + ${note.imageUrls.length};
+                      });
+                    })();
+                  </script>
+                `;
+              } else if (note.imageUrl) {
+                return `<img src="${note.imageUrl}" alt="Imagen" onclick="openImageModal('${note.imageUrl}', '${note.id}')" class="w-full rounded-lg cursor-pointer hover:opacity-95 transition-opacity mb-3">`;
+              }
+              return '';
+            })()}
             ${urlHTML}
             ${pollHTML}
             
@@ -6255,7 +6387,44 @@ function openCommentsView(noteId) {
           ${note.content ? renderContentWithSticker(note.content, 'text-gray-900 text-sm mb-2') : ''}
         </div>
       </div>
-      ${note.imageUrl ? `<img src="${note.imageUrl}" onclick="openImageModal('${note.imageUrl}', '${noteId}')" class="w-full rounded cursor-pointer mb-2">` : ''}
+      ${(() => {
+        if (note.imageUrls && note.imageUrls.length > 1) {
+          const carouselId = `carousel-comment-${noteId}`;
+          const dotsId = `dots-comment-${noteId}`;
+          return `
+            <div class="relative mb-2">
+              <div class="photo-counter">1/${note.imageUrls.length}</div>
+              <div id="${carouselId}" class="instagram-carousel">
+                ${note.imageUrls.map(url => `
+                  <div class="instagram-carousel-item">
+                    <img src="${url}" alt="Imagen" onclick="openImageModal('${url}', '${noteId}')" class="cursor-pointer hover:opacity-95 transition-opacity">
+                  </div>
+                `).join('')}
+              </div>
+              <div id="${dotsId}" class="carousel-dots">
+                ${note.imageUrls.map((_, i) => `<div class="carousel-dot ${i === 0 ? 'active' : ''}"></div>`).join('')}
+              </div>
+            </div>
+            <script>
+              (function() {
+                const carousel = document.getElementById('${carouselId}');
+                const dots = document.getElementById('${dotsId}').children;
+                const counter = carousel.parentElement.querySelector('.photo-counter');
+                carousel.addEventListener('scroll', () => {
+                  const index = Math.round(carousel.scrollLeft / carousel.offsetWidth);
+                  Array.from(dots).forEach((dot, i) => {
+                    dot.classList.toggle('active', i === index);
+                  });
+                  counter.textContent = (index + 1) + '/' + ${note.imageUrls.length};
+                });
+              })();
+            </script>
+          `;
+        } else if (note.imageUrl) {
+          return `<img src="${note.imageUrl}" onclick="openImageModal('${note.imageUrl}', '${noteId}')" class="w-full rounded cursor-pointer mb-2">`;
+        }
+        return '';
+      })()}
       ${urlHTML}
       ${pollHTML}
       <div class="flex items-center gap-3 text-xs text-gray-500 mt-2">
