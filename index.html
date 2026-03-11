@@ -1224,8 +1224,8 @@ setInterval(checkScheduledChapters, 60000);
 </head>
 
 <!-- MODAL DE NOTIFICACIONES -->
-<div id="notifications-modal" class="fixed inset-0 z-50 hidden">
-  <div class="w-full h-full p-6 overflow-y-auto">
+<div id="notifications-modal" class="fixed inset-0 z-[80] hidden bg-white/95 backdrop-blur-sm">
+  <div class="w-full h-full p-6 overflow-y-auto" style="-webkit-overflow-scrolling: touch;">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-2xl font-bold">Bandeja de Entrada</h2>
       <button onclick="closeNotifications()" class="text-gray-500 text-2xl">&times;</button>
@@ -6075,12 +6075,51 @@ function buildPostReportOptions() {
   const container = document.getElementById('post-report-reasons');
   if (!container) return;
 
+  const iconMap = {
+    sexual: 'fa-person-dress-burst',
+    violence: 'fa-triangle-exclamation',
+    hate: 'fa-ban',
+    self_harm: 'fa-heart-crack',
+    misinformation: 'fa-bullhorn',
+    copyright: 'fa-copyright',
+    other: 'fa-ellipsis'
+  };
+
   container.innerHTML = postReportReasons.map((reason, idx) => `
-    <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-xl hover:border-[#FE2C55] cursor-pointer transition">
-      <input type="radio" name="post-report-reason" value="${reason.value}" class="mt-1 accent-[#FE2C55]" ${idx === 0 ? 'checked' : ''}>
-      <span class="text-sm text-gray-800">${reason.label}</span>
+    <label class="post-report-option group flex items-start gap-3 p-3 border border-gray-200 rounded-2xl bg-white hover:border-[#FE2C55] hover:bg-[#fff5f7] cursor-pointer transition-all">
+      <input type="radio" name="post-report-reason" value="${reason.value}" class="sr-only" ${idx === 0 ? 'checked' : ''}>
+      <span class="w-9 h-9 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center group-hover:bg-[#ffe4ea] group-hover:text-[#FE2C55] transition-colors">
+        <i class="fas ${iconMap[reason.value] || 'fa-flag'}"></i>
+      </span>
+      <span class="text-sm text-gray-800 leading-relaxed">${reason.label}</span>
+      <span class="ml-auto mt-1 w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center">
+        <span class="w-2.5 h-2.5 rounded-full bg-[#FE2C55] opacity-0"></span>
+      </span>
     </label>
   `).join('');
+
+  refreshPostReportSelectionUI();
+  container.querySelectorAll('input[name="post-report-reason"]').forEach(input => {
+    input.addEventListener('change', refreshPostReportSelectionUI);
+  });
+}
+
+function refreshPostReportSelectionUI() {
+  document.querySelectorAll('#post-report-reasons .post-report-option').forEach(option => {
+    const input = option.querySelector('input[name="post-report-reason"]');
+    const dot = option.querySelector('span > span');
+    if (!input) return;
+
+    if (input.checked) {
+      option.classList.add('border-[#FE2C55]', 'bg-[#fff5f7]', 'shadow-sm');
+      option.classList.remove('border-gray-200', 'bg-white');
+      if (dot) dot.classList.remove('opacity-0');
+    } else {
+      option.classList.remove('border-[#FE2C55]', 'bg-[#fff5f7]', 'shadow-sm');
+      option.classList.add('border-gray-200', 'bg-white');
+      if (dot) dot.classList.add('opacity-0');
+    }
+  });
 }
 
 function reportNote(noteId) {
@@ -7386,63 +7425,88 @@ function saveNote() {
     }
 }
 
+  let notificationsListenerRef = null;
+
   function openNotifications() {
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen();
-    }
     const currentUser = firebase.auth().currentUser;
-    if (!currentUser) return;
-    
-    // Request notification permission if not granted
-    if (Notification.permission !== "granted") {
-      Notification.requestPermission();
+    if (!currentUser) {
+      alert('Debes iniciar sesión para ver notificaciones');
+      return;
     }
-    
-    document.getElementById('notifications-modal').classList.remove('hidden');
-    const notificationsRef = firebase.database().ref('notifications/' + currentUser.uid);
-    notificationsRef.on('value', snapshot => {
-      const notificationsList = document.getElementById('notifications-list');
+
+    // iPhone/Safari: evitar dependencias que no existan (Notification / fullscreen)
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== "granted") {
+      Notification.requestPermission().catch(() => {});
+    }
+
+    const modal = document.getElementById('notifications-modal');
+    const notificationsList = document.getElementById('notifications-list');
+    if (!modal || !notificationsList) return;
+
+    modal.classList.remove('hidden');
+
+    // Evitar listeners duplicados al abrir/cerrar repetidas veces
+    if (notificationsListenerRef) {
+      notificationsListenerRef.off('value');
+      notificationsListenerRef = null;
+    }
+
+    notificationsListenerRef = firebase.database().ref('notifications/' + currentUser.uid);
+    notificationsListenerRef.on('value', snapshot => {
       notificationsList.innerHTML = "";
+
+      if (!snapshot.exists()) {
+        notificationsList.innerHTML = '<p class="text-gray-500 text-sm">No tienes notificaciones por ahora.</p>';
+        return;
+      }
+
+      const items = [];
       snapshot.forEach(child => {
-        const notification = child.val();
+        items.push({ id: child.key, ...child.val() });
+      });
+      items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      items.forEach(notification => {
         const div = document.createElement('div');
         div.className = `notification-item ${notification.type || 'info'}`;
-        
-        // Icon based on notification type
+
         const iconMap = {
           follow: 'user-plus',
           like: 'heart',
           comment: 'comment',
           info: 'info-circle'
         };
-        
+
         div.innerHTML = `
           <div class="flex items-center gap-2">
-            <i class="fas fa-${iconMap[notification.type || 'info']} ${notification.type}-icon"></i>
-            <div class="flex-1">
-              <div class="notification-message">${notification.message}</div>
-              <div class="notification-time">${new Date(notification.timestamp).toLocaleString()}</div>
+            <i class="fas fa-${iconMap[notification.type || 'info']} ${notification.type || 'info'}-icon"></i>
+            <div class="flex-1 min-w-0">
+              <div class="notification-message break-words">${notification.message || 'Notificación'}</div>
+              <div class="notification-time">${notification.timestamp ? new Date(notification.timestamp).toLocaleString() : ''}</div>
             </div>
             ${!notification.read ? '<span class="unread-dot"></span>' : ''}
           </div>
         `;
-        
-        // Mark as read when clicked
+
         div.onclick = () => {
           if (!notification.read) {
-            firebase.database().ref('notifications/' + currentUser.uid + '/' + child.key).update({
-              read: true
-            });
+            firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).update({ read: true });
           }
         };
-        
+
         notificationsList.appendChild(div);
       });
     });
   }
 
   function closeNotifications() {
-    document.getElementById('notifications-modal').classList.add('hidden');
+    const modal = document.getElementById('notifications-modal');
+    if (modal) modal.classList.add('hidden');
+
+    if (notificationsListenerRef) {
+      notificationsListenerRef.off('value');
+      notificationsListenerRef = null;
+    }
   }
   /*********************** SISTEMA DE MONETIZACIÓN **************************/
   let coinAnimationQueue = [];
