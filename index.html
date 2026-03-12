@@ -87,11 +87,8 @@ body {
 
 
 /* Ocultar cualquier atajo visible de creación de historias y publicaciones programadas */
-button[onclick="openStoryCreation()"],
-div[onclick="openStoryCreation()"],
 #story-creation-view,
 #chapter-creation-modal,
-#calendar-modal,
 #community-view {
   display: none !important;
 }
@@ -331,34 +328,9 @@ div[onclick="openStoryCreation()"],
   }
   100% {
 
-function saveScheduledChapter(chapterId, publishDate) {
-  return; // Función desactivada: ya no hay publicaciones de historias programadas.
-  firebase.database().ref('scheduledChapters/' + chapterId).set({
-    publishDate: publishDate,
-    status: 'pending'
-  });
-}
 
-function checkScheduledChapters() {
-  return; // Función desactivada: ya no hay capítulos programados.
-  const now = new Date().getTime();
-  firebase.database().ref('scheduledChapters').once('value', snapshot => {
-    snapshot.forEach(child => {
-      const scheduled = child.val();
-      if (scheduled.status === 'pending' && new Date(scheduled.publishDate).getTime() <= now) {
-        // Publicar el capítulo
-        firebase.database().ref('stories/' + currentEditingStory.id + '/chapters/' + child.key).update({
-          status: 'published'
-        });
-        // Actualizar estado del capítulo programado
-        child.ref.update({ status: 'published' });
-      }
-    });
-  });
-}
 
 // Verificar capítulos programados cada minuto
-setInterval(checkScheduledChapters, 60000);
 
     box-shadow: 0 0 0 0 rgba(254, 44, 85, 0);
   }
@@ -1855,14 +1827,6 @@ setInterval(checkScheduledChapters, 60000);
           <line x1="21" y1="21" x2="16.65" y2="16.65" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
-      <button onclick="openCalendar()" aria-label="Calendario" class="hidden relative w-6 h-6 text-[#161823] hover:text-[#FE2C55] transition">
-        <svg class="w-full h-full" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-          <line x1="16" y1="2" x2="16" y2="6" />
-          <line x1="8" y1="2" x2="8" y2="6" />
-          <line x1="3" y1="10" x2="21" y2="10" />
-        </svg>
-      </button>
       <button onclick="openLiveStreamModal()" aria-label="Transmitir en vivo" class="relative w-6 h-6 text-[#161823] hover:text-[#FE2C55] transition">
         <svg class="w-full h-full" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path d="M23 7l-7 5 7 5V7z"/>
@@ -1961,7 +1925,7 @@ function loadFollowingStories() {
             <img src="${userData.profileImage || 'https://via.placeholder.com/150'}" 
                  alt="${userData.username}" 
                  class="w-full h-full object-cover"
-                 onclick="openLatestStory('${followedUserId}', '${latestStoryId}')">
+                 onclick="openAuthorProfile('${followedUserId}')">
           `;
           
           storyDiv.appendChild(imageContainer);
@@ -1978,15 +1942,6 @@ function loadFollowingStories() {
   });
 }
 
-function openLatestStory(authorId, storyId) {
-  alert('Las historias fueron eliminadas. Usa la sección de Comunidad.');
-  return;
-  if (storyId) {
-    openStoryDetail({id: storyId});
-  } else {
-    openAuthorProfile(authorId);
-  }
-}
 
 // 页面加载和用户状态变化时调用loadFollowingStories
 document.addEventListener('DOMContentLoaded', loadFollowingStories);
@@ -5556,10 +5511,6 @@ function openPhotoDetail(photo) {
   }
 
   // 社区功能
-  function openCommunity() {
-    // Comunidad ahora vive en Inicio
-    openHome();
-  }
 
   function switchCommunityTab(tab) {
     const feedTab = document.getElementById('feed-tab');
@@ -9386,14 +9337,6 @@ document.getElementById('category-filter').addEventListener('change', performRea
     }
   });
 
-  function openStoryCreation() {
-    alert('La creación de historias fue eliminada. Ahora solo puedes crear publicaciones en Comunidad.');
-    return;
-    document.getElementById('story-creation-view').classList.remove('hidden');
-    document.getElementById('story-details-view').classList.add('hidden');
-    document.getElementById('story-edit-view').classList.add('hidden');
-  }
-
   function closeStoryCreation() {
     document.getElementById('story-creation-view').classList.add('hidden');
   }
@@ -9485,40 +9428,20 @@ document.getElementById('category-filter').addEventListener('change', performRea
         chapterNumber,
         content,
         createdAt: Date.now(),
-        status: scheduledDate ? 'scheduled' : 'published'
+        status: 'published'
       };
 
       const chapterRef = firebase.database().ref('stories/' + currentEditingStory.id + '/chapters').push();
       newChapter.id = chapterRef.key;
-      
-      if (scheduledDate) {
-        // Guardar en capítulos programados
-        firebase.database().ref('scheduledChapters/' + chapterRef.key).set({
-          storyId: currentEditingStory.id,
-          publishDate: new Date(scheduledDate).getTime(),
-          status: 'pending'
+
+      chapterRef.set(newChapter)
+        .then(() => {
+          closeChapterCreationModal();
+          alert(translations[currentLanguage].chapterAdded);
+        })
+        .catch(error => {
+          console.error("Error al agregar capítulo:", error);
         });
-        
-        // Guardar el capítulo con estado programado
-        chapterRef.set(newChapter)
-          .then(() => {
-            closeChapterCreationModal();
-            alert("Capítulo programado para publicación el " + new Date(scheduledDate).toLocaleDateString());
-          })
-          .catch(error => {
-            console.error("Error al programar capítulo:", error);
-          });
-      } else {
-        // Publicación inmediata
-        chapterRef.set(newChapter)
-          .then(() => {
-            closeChapterCreationModal();
-            alert(translations[currentLanguage].chapterAdded);
-          })
-          .catch(error => {
-            console.error("Error al agregar capítulo:", error);
-          });
-      }
     }
   });
 
@@ -11682,23 +11605,6 @@ document.getElementById('category-filter').addEventListener('change', performRea
   </div>
 </div>
 
-<!-- MODAL DE CALENDARIO -->
-<div id="calendar-modal" class="fixed inset-0 z-50 hidden bg-white">
-  <div class="p-4">
-    <!-- Botón Volver -->
-    <button onclick="closeCalendar()" class="text-[#FE2C55] mb-4 flex items-center">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <polyline points="15 18 9 12 15 6" />
-      </svg>
-      <span>Volver</span>
-    </button>
-
-    <h2 class="text-2xl font-bold mb-4"></h2>
-    <div id="scheduled-content" class="space-y-4">
-      <!-- Aquí se mostrarán los capítulos programados -->
-    </div>
-  </div>
-</div>
 
 <script>
 function openDisneyModal() {
@@ -11713,170 +11619,6 @@ function closeDisneyModal() {
   document.body.style.overflow = 'auto';
 }
 
-function openCalendar() {
-  alert('La sección de próximas publicaciones fue eliminada.');
-  return;
-  const modal = document.getElementById('calendar-modal');
-  modal.classList.remove('hidden');
-  
-  // Cargar capítulos programados
-  firebase.database().ref('scheduledChapters').once('value').then(snapshot => {
-    const container = document.getElementById('scheduled-content');
-    container.innerHTML = '';
-    
-    snapshot.forEach(child => {
-      const scheduled = child.val();
-      const storyId = scheduled.storyId;
-      const releaseDate = new Date(scheduled.publishDate);
-      const now = new Date();
-      const daysUntil = Math.ceil((releaseDate - now) / (1000 * 60 * 60 * 24));
-      const isAvailable = now >= releaseDate;
-      
-      // Obtener información de la historia
-      firebase.database().ref('stories/' + storyId).once('value').then(storySnap => {
-        const story = storySnap.val();
-        const isNew = (now - new Date(story.createdAt)) < 7 * 24 * 60 * 60 * 1000; // 7 días
-        
-        const div = document.createElement('div');
-        div.className = 'bg-gray-100 p-4 rounded-lg';
-        div.innerHTML = `
-          <div class="flex items-center space-x-4">
-            <img src="${story.coverImage || '/api/placeholder/100/150'}" alt="${story.title}" class="w-20 h-30 object-cover rounded">
-            <div class="flex-1">
-              <div class="flex items-center">
-                <h3 class="font-bold">${story.title}</h3>
-                ${isNew ? '<span class="ml-2 bg-[#FE2C55] text-white px-2 py-1 rounded text-xs">ESTRENO</span>' : ''}
-              </div>
-              <p class="text-gray-600">Capítulo ${scheduled.chapterNumber}</p>
-              ${isAvailable ? 
-                `<button onclick="openChapterReadModal('${storyId}', '${child.key}')" 
-                  class="bg-[#58CC02] text-white px-3 py-1 rounded-full text-sm">
-                  Leer ahora
-                </button>` : 
-                `<p class="text-gray-600">Se publicará en ${daysUntil} días</p>
-                 <p class="text-gray-600">Fecha: ${releaseDate.toLocaleDateString()}</p>`
-              }
-            </div>
-            ${isNew ? `
-  <div class="flex flex-wrap items-center gap-2">
-    <span class="bg-[#FE2C55] text-white px-2 py-1 rounded text-xs">ESTRENO</span>
-    <button 
-      onclick="toggleNotification(event, '${storyId}', '${child.key}', '${story.title}', ${scheduled.publishDate})"
-      class="notification-bell-btn inline-flex items-center px-2 py-1 text-gray-600 hover:text-[#FE2C55] transition-colors"
-    >
-      <i class="fas fa-bell notification-bell text-sm"></i>
-      <span class="ml-1 text-xs">Avisarme</span>
-    </button>
-  </div>
-` : ''}
-          </div>
-        `;
-        
-        container.appendChild(div);
-
-        // Add animation styles
-        const style = document.createElement('style');
-        style.textContent = `
-          .notification-bell {
-            transform-origin: top;
-          }
-          
-          .notification-bell.active {
-            color: #FE2C55;
-            animation: bellRing 1s ease-in-out;
-          }
-          
-          @keyframes bellRing {
-            0%, 100% { transform: rotate(0); }
-            20%, 60% { transform: rotate(25deg); }
-            40%, 80% { transform: rotate(-25deg); }
-          }
-        `;
-        document.head.appendChild(style);
-        
-        // Programar notificación
-        const user = firebase.auth().currentUser;
-        if (user) {
-          const notificationTime = new Date(scheduled.publishDate);
-          const currentTime = new Date();
-          
-          if (notificationTime > currentTime) {
-            const timeUntilNotification = notificationTime.getTime() - currentTime.getTime();
-            
-            setTimeout(() => {
-              addNotification(user.uid, `¡Tu capítulo programado de "${story.title}" ha sido publicado!`, 'chapter_published');
-              
-              // Solo actualizar cuando llegue la fecha de publicación
-              if (new Date() >= notificationTime) {
-                firebase.database().ref('stories/' + storyId + '/chapters/' + child.key).update({
-                  status: 'published'
-                });
-              }
-              
-              // Eliminar de capítulos programados
-              firebase.database().ref('scheduledChapters/' + child.key).remove();
-            }, timeUntilNotification);
-          }
-        }
-      });
-    });
-  });
-}
-
-function closeCalendar() {
-  document.getElementById('calendar-modal').classList.add('hidden');
-}
-
-function toggleNotification(event, storyId, chapterId, storyTitle, publishDate) {
-  event.stopPropagation();
-  const user = firebase.auth().currentUser;
-  if (!user) return;
-
-  const bell = event.currentTarget.querySelector('.notification-bell');
-  bell.classList.add('active');
-  
-  // Toggle notification in database
-  const notificationRef = firebase.database().ref(`userNotifications/${user.uid}/${chapterId}`);
-  
-  notificationRef.once('value').then(snapshot => {
-    if (snapshot.exists()) {
-      // Remove notification
-      notificationRef.remove();
-      bell.style.color = '#666';
-      alert('Notificación cancelada');
-    } else {
-      // Add notification
-      notificationRef.set({
-        storyId,
-        storyTitle,
-        publishDate,
-        status: 'pending'
-      });
-      bell.style.color = '#FE2C55';
-      alert('¡Te avisaremos cuando se publique el capítulo!');
-
-      // Schedule notification
-      const notificationTime = new Date(publishDate);
-      const currentTime = new Date();
-      
-      if (notificationTime > currentTime) {
-        const timeUntilNotification = notificationTime.getTime() - currentTime.getTime();
-        
-        setTimeout(() => {
-          addNotification(
-            user.uid, 
-            `¡El nuevo capítulo de "${storyTitle}" ya está disponible!`,
-            'chapter_release'
-          );
-        }, timeUntilNotification);
-      }
-    }
-  });
-
-  setTimeout(() => {
-    bell.classList.remove('active');
-  }, 1000);
-}
 
 function openBeabooStudio() {
   const user = firebase.auth().currentUser;
