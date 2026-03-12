@@ -92,6 +92,87 @@ body {
   display: none !important;
 }
 
+
+
+/* Audio estilo WeChat */
+.audio-record-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  border: 1px solid #e5e7eb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  transition: all .2s ease;
+}
+.audio-record-btn.is-recording {
+  background: #ffe4ea;
+  border-color: #FE2C55;
+  box-shadow: 0 0 0 6px rgba(254,44,85,.12);
+}
+.audio-record-btn .record-waves {
+  position: absolute;
+  inset: -8px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.audio-record-btn.is-recording .record-waves { display: flex; }
+.audio-record-btn .record-waves span {
+  width: 3px;
+  height: 10px;
+  background: #FE2C55;
+  border-radius: 9999px;
+  animation: recordWave 1s ease-in-out infinite;
+}
+.audio-record-btn .record-waves span:nth-child(2) { animation-delay: .12s; }
+.audio-record-btn .record-waves span:nth-child(3) { animation-delay: .24s; }
+.audio-record-btn .record-waves span:nth-child(4) { animation-delay: .36s; }
+@keyframes recordWave {
+  0%,100% { transform: scaleY(.6); opacity: .45; }
+  50% { transform: scaleY(1.5); opacity: 1; }
+}
+#audio-recording-hint.recording {
+  color: #FE2C55;
+  font-weight: 600;
+  animation: pulseRec 1s ease-in-out infinite;
+}
+@keyframes pulseRec { 0%,100% {opacity:.6;} 50% {opacity:1;} }
+
+.custom-audio-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #f3c2cf;
+  border-radius: 9999px;
+  background: linear-gradient(180deg,#fff,#fff7f9);
+}
+.custom-audio-play-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  background: #FE2C55;
+  color: #fff;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.custom-audio-progress {
+  flex: 1;
+  accent-color: #FE2C55;
+}
+.custom-audio-time {
+  font-size: 12px;
+  color: #6b7280;
+  min-width: 76px;
+  text-align: right;
+}
+
 /* Línea divisoria */
 .section-divider {
   border-bottom: 2px solid #FE2C55;
@@ -2253,7 +2334,7 @@ firebase.auth().onAuthStateChanged(user => {
             </svg>
           </button>
         </div>
-        <audio id="note-audio-player-fullscreen" controls class="w-full"></audio>
+        <div id="note-audio-custom-preview"></div>
         <p id="note-audio-meta-fullscreen" class="text-xs text-gray-500 mt-2"></p>
       </div>
 
@@ -2284,10 +2365,11 @@ firebase.auth().onAuthStateChanged(user => {
                 onpointerup="stopNoteVoiceRecording()" 
                 onpointerleave="stopNoteVoiceRecording()" 
                 onpointercancel="stopNoteVoiceRecording()"
-                class="p-2 hover:bg-gray-100 rounded transition"
+                class="audio-record-btn"
                 title="Mantén presionado para grabar audio">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 1v11m0 0a3 3 0 003-3V7a3 3 0 10-6 0v2a3 3 0 003 3zm0 0v4m-4 0h8"/>
+          <span class="record-waves" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3a3 3 0 00-3 3v5a3 3 0 006 0V6a3 3 0 00-3-3zm0 13v4m-5-4a5 5 0 0010 0"/>
           </svg>
         </button>
         <button onclick="openStickerPicker('note-content-fullscreen')" class="p-2 hover:bg-gray-100 rounded transition" title="Agregar sticker">
@@ -2295,6 +2377,7 @@ firebase.auth().onAuthStateChanged(user => {
           <img src="https://i.ibb.co/rGMpvhnm/IMG-9702.png" alt="sticker" class="w-6 h-6 object-contain">
         </button>
       </div>
+      <p id="audio-recording-hint" class="text-center text-xs text-gray-500 mt-3">Mantén presionado el micrófono para grabar</p>
     </div>
   </div>
 </div>
@@ -5339,10 +5422,10 @@ function openPhotoDetail(photo) {
     noteAudioDataUrl = '';
     noteAudioDuration = 0;
     const preview = document.getElementById('audio-preview-fullscreen');
-    const player = document.getElementById('note-audio-player-fullscreen');
     const meta = document.getElementById('note-audio-meta-fullscreen');
-    if (player) player.src = '';
+    const customPreview = document.getElementById('note-audio-custom-preview');
     if (meta) meta.textContent = '';
+    if (customPreview) customPreview.innerHTML = '';
     if (preview) preview.classList.add('hidden');
   }
 
@@ -5372,10 +5455,14 @@ function openPhotoDetail(photo) {
           noteAudioDataUrl = ev.target.result;
           noteAudioDuration = Math.max(1, Math.round(durationMs / 1000));
           const preview = document.getElementById('audio-preview-fullscreen');
-          const player = document.getElementById('note-audio-player-fullscreen');
-          const meta = document.getElementById('note-audio-meta-fullscreen');
-          if (player) player.src = noteAudioDataUrl;
+                const meta = document.getElementById('note-audio-meta-fullscreen');
+    const customPreview = document.getElementById('note-audio-custom-preview');
           if (meta) meta.textContent = `Duración: ${noteAudioDuration}s`;
+          const customPreview = document.getElementById('note-audio-custom-preview');
+          if (customPreview) {
+            customPreview.innerHTML = renderCustomAudioPlayer(noteAudioDataUrl, noteAudioDuration, 'preview-audio');
+            initCustomAudioPlayers(customPreview);
+          }
           if (preview) preview.classList.remove('hidden');
         };
         reader.readAsDataURL(blob);
@@ -5384,7 +5471,9 @@ function openPhotoDetail(photo) {
       noteAudioStartedAt = Date.now();
       noteAudioRecording = true;
       const btn = document.getElementById('audio-record-btn-fullscreen');
-      if (btn) btn.classList.add('bg-red-100');
+      if (btn) btn.classList.add('is-recording');
+      const hint = document.getElementById('audio-recording-hint');
+      if (hint) { hint.textContent = 'Grabando... suelta para finalizar'; hint.classList.add('recording'); }
     } catch (error) {
       console.error('No se pudo iniciar la grabación de audio:', error);
       alert('No se pudo acceder al micrófono. Revisa los permisos.');
@@ -5395,7 +5484,9 @@ function openPhotoDetail(photo) {
     if (!noteAudioRecording) return;
     noteAudioRecording = false;
     const btn = document.getElementById('audio-record-btn-fullscreen');
-    if (btn) btn.classList.remove('bg-red-100');
+    if (btn) btn.classList.remove('is-recording');
+    const hint = document.getElementById('audio-recording-hint');
+    if (hint) { hint.textContent = 'Mantén presionado el micrófono para grabar'; hint.classList.remove('recording'); }
     if (noteAudioRecorder && noteAudioRecorder.state !== 'inactive') {
       noteAudioRecorder.stop();
     }
@@ -5845,14 +5936,83 @@ function openPhotoDetail(photo) {
   }
 
 
+  function formatAudioTime(seconds) {
+    const s = Math.max(0, Math.floor(seconds || 0));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, '0')}`;
+  }
+
+  let currentCustomAudio = null;
+
+  function renderCustomAudioPlayer(audioUrl, durationSeconds, idPrefix) {
+    return `
+      <div class="custom-audio-player" data-audio-player="${idPrefix}">
+        <audio preload="metadata" src="${audioUrl}"></audio>
+        <button type="button" class="custom-audio-play-btn" onclick="toggleCustomAudio(this)">▶</button>
+        <input type="range" class="custom-audio-progress" min="0" max="100" value="0" oninput="seekCustomAudio(this)">
+        <span class="custom-audio-time">0:00 / ${formatAudioTime(durationSeconds)}</span>
+      </div>
+    `;
+  }
+
+  function initCustomAudioPlayers(rootElement) {
+    const root = rootElement || document;
+    root.querySelectorAll('.custom-audio-player').forEach(player => {
+      if (player.dataset.bound === '1') return;
+      player.dataset.bound = '1';
+      const audio = player.querySelector('audio');
+      const progress = player.querySelector('.custom-audio-progress');
+      const time = player.querySelector('.custom-audio-time');
+      audio.addEventListener('loadedmetadata', () => {
+        const total = audio.duration || 0;
+        time.textContent = `${formatAudioTime(0)} / ${formatAudioTime(total)}`;
+      });
+      audio.addEventListener('timeupdate', () => {
+        const total = audio.duration || 0;
+        const current = audio.currentTime || 0;
+        if (total > 0) progress.value = String((current / total) * 100);
+        time.textContent = `${formatAudioTime(current)} / ${formatAudioTime(total)}`;
+      });
+      audio.addEventListener('ended', () => {
+        const btn = player.querySelector('.custom-audio-play-btn');
+        btn.textContent = '▶';
+      });
+    });
+  }
+
+  function toggleCustomAudio(btn) {
+    const player = btn.closest('.custom-audio-player');
+    const audio = player.querySelector('audio');
+    if (currentCustomAudio && currentCustomAudio !== audio) {
+      currentCustomAudio.pause();
+      const prevBtn = currentCustomAudio.closest('.custom-audio-player')?.querySelector('.custom-audio-play-btn');
+      if (prevBtn) prevBtn.textContent = '▶';
+    }
+    if (audio.paused) {
+      audio.play().catch(() => {});
+      btn.textContent = '⏸';
+      currentCustomAudio = audio;
+    } else {
+      audio.pause();
+      btn.textContent = '▶';
+    }
+  }
+
+  function seekCustomAudio(rangeInput) {
+    const player = rangeInput.closest('.custom-audio-player');
+    const audio = player.querySelector('audio');
+    const total = audio.duration || 0;
+    if (total <= 0) return;
+    audio.currentTime = (Number(rangeInput.value) / 100) * total;
+  }
+
   function renderNoteAudio(note) {
     if (!note.audioUrl) return '';
+    const playerId = `note-audio-${note.id || Math.random().toString(36).slice(2)}`;
     return `
-      <div class="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-        <audio controls preload="metadata" class="w-full">
-          <source src="${note.audioUrl}" type="audio/webm">
-        </audio>
-        <p class="text-xs text-gray-500 mt-2">Mensaje de voz${note.audioDuration ? ` • ${note.audioDuration}s` : ''}</p>
+      <div class="mb-3">
+        ${renderCustomAudioPlayer(note.audioUrl, note.audioDuration || 0, playerId)}
       </div>
     `;
   }
@@ -5979,6 +6139,8 @@ function openPhotoDetail(photo) {
           </div>
         `;
         
+        initCustomAudioPlayers(noteElement);
+
         if (currentUser) {
           firebase.database().ref('userVotes/' + currentUser.uid + '/' + note.id).once('value').then(voteSnapshot => {
             const vote = voteSnapshot.val();
@@ -6685,6 +6847,7 @@ function openCommentsView(noteId) {
         <span class="font-bold ${score > 0 ? 'text-[#FE2C55]' : score < 0 ? 'text-blue-500' : 'text-gray-600'}">${score > 0 ? '+' : ''}${score}</span>
       </div>
     `;
+    initCustomAudioPlayers(document.getElementById('original-post'));
   });
   
   loadCommentsInView(noteId);
