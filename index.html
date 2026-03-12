@@ -1869,6 +1869,14 @@ body {
       <button id="backToOptionsFromEmail" type="button" class="w-full mt-3 text-sm text-gray-600 hover:text-[#FE2C55] transition">Volver</button>
     </div>
 
+    <div id="username-step" class="w-full max-w-lg mx-auto hidden mt-6">
+      <p class="text-center text-lg text-gray-700 mb-6">Ingresa tu nombre de usuario</p>
+      <input id="usernameInput" type="text" placeholder="Nombre de usuario" class="w-full p-4 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-[#FE2C55] transition" autocomplete="username" required>
+      <p id="usernameLookupStatus" class="mt-3 text-sm text-center text-gray-500"></p>
+      <button id="goToPasswordFromUsernameStep" type="button" class="w-full mt-4 bg-[#FE2C55] text-white p-4 font-bold rounded-full transform hover:scale-105 transition">Continuar</button>
+      <button id="backToOptionsFromUsername" type="button" class="w-full mt-3 text-sm text-gray-600 hover:text-[#FE2C55] transition">Volver</button>
+    </div>
+
     <div id="password-step" class="w-full max-w-lg mx-auto hidden mt-6">
       <p id="selectedEmailLabel" class="text-center text-sm text-gray-500 mb-2"></p>
       <p class="text-center text-lg text-gray-700 mb-4">Ingresa tu contraseña</p>
@@ -1879,7 +1887,7 @@ body {
       <div class="mt-6 text-center space-y-4">
         <button id="forgotPasswordBtn" type="button" class="block w-full text-sm text-gray-600 hover:text-[#FE2C55] transition">¿Has olvidado tu contraseña?</button>
         <button id="toggleAuth" type="button" class="block w-full text-sm font-medium text-[#FE2C55] hover:text-[#25F4EE] transition">¿No tienes cuenta? Regístrate</button>
-        <button id="backToEmailStep" type="button" class="block w-full text-sm text-gray-600 hover:text-[#FE2C55] transition">Cambiar correo</button>
+        <button id="backToCredentialStep" type="button" class="block w-full text-sm text-gray-600 hover:text-[#FE2C55] transition">Cambiar correo o usuario</button>
         <div id="authError" class="mt-4 text-red-500 hidden"></div>
       </div>
     </div>
@@ -7501,6 +7509,8 @@ function saveNote() {
   const authForm = document.getElementById('authForm');
   const emailInput = document.getElementById('emailInput');
   const passwordInput = document.getElementById('passwordInput');
+  const usernameInput = document.getElementById('usernameInput');
+  const usernameLookupStatus = document.getElementById('usernameLookupStatus');
   const submitButton = document.getElementById('submitButton');
   const toggleAuth = document.getElementById('toggleAuth');
   const authError = document.getElementById('authError');
@@ -7508,8 +7518,10 @@ function saveNote() {
   const continueWithUsername = document.getElementById('continueWithUsername');
   const continueWithPhone = document.getElementById('continueWithPhone');
   const goToPasswordStep = document.getElementById('goToPasswordStep');
+  const goToPasswordFromUsernameStep = document.getElementById('goToPasswordFromUsernameStep');
   const backToOptionsFromEmail = document.getElementById('backToOptionsFromEmail');
-  const backToEmailStep = document.getElementById('backToEmailStep');
+  const backToOptionsFromUsername = document.getElementById('backToOptionsFromUsername');
+  const backToCredentialStep = document.getElementById('backToCredentialStep');
   const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
   const sendRecoveryButton = document.getElementById('sendRecoveryButton');
   const backToPasswordFromRecovery = document.getElementById('backToPasswordFromRecovery');
@@ -7517,12 +7529,17 @@ function saveNote() {
   const selectedEmailLabel = document.getElementById('selectedEmailLabel');
   const authOptions = document.getElementById('auth-options');
   const emailStep = document.getElementById('email-step');
+  const usernameStep = document.getElementById('username-step');
   const passwordStep = document.getElementById('password-step');
   const recoveryStep = document.getElementById('recovery-step');
   const authFormContainer = document.getElementById('auth-form');
   const mainApp = document.getElementById('main-app');
   let isLogin = true;
   let pendingEmail = '';
+  let authMethod = 'email';
+  let pendingUsername = '';
+  let pendingUserEmail = '';
+  let usernameLookupTimeout = null;
   let storyTypeSelected = "";
   let currentEditingStory = null;
   let currentChapters = [];
@@ -8268,18 +8285,90 @@ function saveNote() {
   function showAuthSection(section) {
     authOptions.classList.add('hidden');
     emailStep.classList.add('hidden');
+    usernameStep.classList.add('hidden');
     passwordStep.classList.add('hidden');
     recoveryStep.classList.add('hidden');
     section.classList.remove('hidden');
     authError.classList.add('hidden');
   }
 
+  function resetUsernameLookupStatus() {
+    pendingUsername = '';
+    pendingUserEmail = '';
+    usernameLookupStatus.textContent = '';
+    usernameLookupStatus.className = 'mt-3 text-sm text-center text-gray-500';
+  }
+
+  function setUsernameLookupMessage(message, type = 'neutral') {
+    const colors = {
+      neutral: 'text-gray-500',
+      success: 'text-green-600',
+      error: 'text-red-500'
+    };
+    usernameLookupStatus.textContent = message;
+    usernameLookupStatus.className = `mt-3 text-sm text-center ${colors[type] || colors.neutral}`;
+  }
+
+  function lookupUserByUsername(username) {
+    const trimmedUsername = username.trim();
+    if (!trimmedUsername) {
+      resetUsernameLookupStatus();
+      return Promise.resolve(null);
+    }
+
+    setUsernameLookupMessage('Buscando usuario en tiempo real...');
+
+    return firebase.database().ref('users').orderByChild('username').equalTo(trimmedUsername).limitToFirst(1).once('value')
+      .then(snapshot => {
+        if (!snapshot.exists()) {
+          pendingUsername = '';
+          pendingUserEmail = '';
+          setUsernameLookupMessage('No encontramos ese nombre de usuario.', 'error');
+          return null;
+        }
+
+        let matchedUser = null;
+        snapshot.forEach(child => {
+          matchedUser = child.val();
+        });
+
+        const email = matchedUser && matchedUser.email ? matchedUser.email.trim() : '';
+        if (!email) {
+          pendingUsername = '';
+          pendingUserEmail = '';
+          setUsernameLookupMessage('Este usuario no tiene un correo asociado para iniciar sesión.', 'error');
+          return null;
+        }
+
+        pendingUsername = trimmedUsername;
+        pendingUserEmail = email;
+        setUsernameLookupMessage(`Usuario encontrado: ${trimmedUsername}`, 'success');
+        return {
+          username: trimmedUsername,
+          email
+        };
+      })
+      .catch(error => {
+        console.error('Error buscando usuario por nombre:', error);
+        pendingUsername = '';
+        pendingUserEmail = '';
+        setUsernameLookupMessage('Error al buscar el usuario. Intenta nuevamente.', 'error');
+        return null;
+      });
+  }
+
   continueWithEmail.addEventListener('click', () => {
+    authMethod = 'email';
+    pendingEmail = '';
     showAuthSection(emailStep);
   });
 
   continueWithUsername.addEventListener('click', () => {
-    alert('Inicio con nombre de usuario disponible próximamente.');
+    authMethod = 'username';
+    pendingEmail = '';
+    resetUsernameLookupStatus();
+    showAuthSection(usernameStep);
+    usernameInput.focus();
   });
 
   continueWithPhone.addEventListener('click', () => {
@@ -8288,6 +8377,31 @@ function saveNote() {
 
   backToOptionsFromEmail.addEventListener('click', () => {
     showAuthSection(authOptions);
+  });
+
+  backToOptionsFromUsername.addEventListener('click', () => {
+    resetUsernameLookupStatus();
+    showAuthSection(authOptions);
+  });
+
+  usernameInput.addEventListener('input', () => {
+    const username = usernameInput.value.trim();
+    pendingUsername = '';
+    pendingUserEmail = '';
+
+    if (usernameLookupTimeout) {
+      clearTimeout(usernameLookupTimeout);
+    }
+
+    if (!username) {
+      resetUsernameLookupStatus();
+      return;
+    }
+
+    setUsernameLookupMessage('Escribe para buscar usuario...');
+    usernameLookupTimeout = setTimeout(() => {
+      lookupUserByUsername(username);
+    }, 300);
   });
 
   goToPasswordStep.addEventListener('click', () => {
@@ -8299,16 +8413,43 @@ function saveNote() {
       return;
     }
     pendingEmail = email;
+    authMethod = 'email';
     selectedEmailLabel.textContent = `Correo: ${pendingEmail}`;
     showAuthSection(passwordStep);
   });
 
-  backToEmailStep.addEventListener('click', () => {
+  goToPasswordFromUsernameStep.addEventListener('click', () => {
+    const username = usernameInput.value.trim();
+    if (!username) {
+      setUsernameLookupMessage('Por favor ingresa tu nombre de usuario.', 'error');
+      return;
+    }
+
+    lookupUserByUsername(username).then(result => {
+      if (!result) {
+        return;
+      }
+
+      authMethod = 'username';
+      pendingEmail = result.email;
+      selectedEmailLabel.textContent = `Usuario: ${result.username}`;
+      showAuthSection(passwordStep);
+    });
+  });
+
+  backToCredentialStep.addEventListener('click', () => {
+    if (authMethod === 'username') {
+      showAuthSection(usernameStep);
+      usernameInput.focus();
+      return;
+    }
+
     showAuthSection(emailStep);
   });
 
   forgotPasswordBtn.addEventListener('click', () => {
-    recoveryEmailInput.value = pendingEmail || emailInput.value.trim();
+    const recoveryEmail = pendingEmail || pendingUserEmail || emailInput.value.trim();
+    recoveryEmailInput.value = recoveryEmail;
     showAuthSection(recoveryStep);
   });
 
@@ -8332,8 +8473,10 @@ function saveNote() {
     const email = pendingEmail || emailInput.value.trim();
     const password = passwordInput.value;
     if (!email) {
-      showAuthSection(emailStep);
-      authError.textContent = 'Por favor ingresa tu correo electrónico.';
+      showAuthSection(authMethod === 'username' ? usernameStep : emailStep);
+      authError.textContent = authMethod === 'username'
+        ? 'Primero valida tu nombre de usuario.'
+        : 'Por favor ingresa tu correo electrónico.';
       authError.classList.remove('hidden');
       return;
     }
