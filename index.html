@@ -300,6 +300,34 @@ body {
   }
 }
 
+
+.location-loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #FE2C55;
+  animation: locationDotPulse 0.9s ease-in-out infinite;
+}
+
+.location-loading-dot:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.location-loading-dot:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes locationDotPulse {
+  0%, 80%, 100% {
+    transform: scale(0.7);
+    opacity: 0.45;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 /* ESTILOS DE BÚSQUEDA TIPO GOOGLE */
 #search-view .google-search-input,
 #search-view .google-category-select {
@@ -2335,8 +2363,18 @@ firebase.auth().onAuthStateChanged(user => {
 
     <div id="location-search-section" class="mt-4 hidden">
       <div class="relative">
-        <input id="location-search-input" type="text" placeholder="Buscar ubicación" class="w-full p-3 pr-10 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" oninput="handleLocationSearch()">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input id="location-search-input" type="text" placeholder="Buscar ubicación" class="w-full h-12 pl-4 pr-12 bg-[#121212] text-white border border-[#2a2a2a] rounded-full placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FE2C55] focus:border-[#FE2C55]" onkeydown="handleLocationSearchKeydown(event)">
+        <button type="button" onclick="triggerLocationSearch()" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#FE2C55] text-white flex items-center justify-center hover:bg-[#ef2950] transition" aria-label="Buscar ubicación">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        </button>
+      </div>
+      <div id="location-search-loading" class="hidden mt-4 text-center">
+        <img src="https://i.ibb.co/LVRqRKF/IMG-9765.png" alt="Cargando ubicaciones" class="mx-auto w-36 h-36 object-contain">
+        <div class="flex justify-center items-center gap-2 mt-2">
+          <span class="location-loading-dot"></span>
+          <span class="location-loading-dot"></span>
+          <span class="location-loading-dot"></span>
+        </div>
       </div>
       <div id="location-results" class="mt-3 space-y-2"></div>
     </div>
@@ -5568,37 +5606,40 @@ function openPhotoDetail(photo) {
       .filter(name => !q || name.toLowerCase().includes(q.toLowerCase()))
       .map(name => ({ name, lat: noteLocationState.currentLat, lng: noteLocationState.currentLng }));
 
+    const loading = document.getElementById('location-search-loading');
+    const results = document.getElementById('location-results');
+    if (loading) loading.classList.remove('hidden');
+    if (results) results.classList.add('hidden');
+
     try {
       const apiItems = await fetchPhotonSuggestions(q);
       const merged = [...apiItems, ...fallbackItems].filter((item, idx, arr) => idx === arr.findIndex(x => x.name === item.name));
       renderLocationResultsList(merged);
     } catch (_) {
       renderLocationResultsList(fallbackItems);
+    } finally {
+      setTimeout(() => {
+        if (loading) loading.classList.add('hidden');
+        if (results) results.classList.remove('hidden');
+      }, 3000);
     }
-
-    const url = `https://photon.komoot.io/api/?${params.toString()}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Photon error');
-    const data = await res.json();
-    const features = Array.isArray(data.features) ? data.features : [];
-
-    return features.map((f) => {
-      const props = f.properties || {};
-      const coords = Array.isArray(f.geometry?.coordinates) ? f.geometry.coordinates : [];
-      const lng = typeof coords[0] === 'number' ? coords[0] : null;
-      const lat = typeof coords[1] === 'number' ? coords[1] : null;
-      const labelParts = [props.name, props.city, props.state, props.country].filter(Boolean);
-      const name = labelParts.join(', ') || props.name || 'Ubicación';
-      return { name, lat, lng };
-    }).filter(item => item.name);
   }
 
-  function handleLocationSearch() {
+  function triggerLocationSearch() {
     const query = document.getElementById('location-search-input')?.value || '';
-    if (locationSearchDebounce) clearTimeout(locationSearchDebounce);
-    locationSearchDebounce = setTimeout(() => {
-      loadLocationSuggestions(query);
-    }, 220);
+    if (locationSearchDebounce) {
+      clearTimeout(locationSearchDebounce);
+      locationSearchDebounce = null;
+    }
+    loadLocationSuggestions(query);
+  }
+
+  function handleLocationSearchKeydown(event) {
+    if (!event) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      triggerLocationSearch();
+    }
   }
 
   function prepareLocationSheet() {
@@ -5606,6 +5647,10 @@ function openPhotoDetail(photo) {
     const searchSection = document.getElementById('location-search-section');
     const input = document.getElementById('location-search-input');
     if (input) input.value = '';
+    const loading = document.getElementById('location-search-loading');
+    const results = document.getElementById('location-results');
+    if (loading) loading.classList.add('hidden');
+    if (results) results.classList.remove('hidden');
 
     const showSearch = noteLocationState.permission === 'granted';
     if (card) card.classList.toggle('hidden', showSearch);
@@ -5628,76 +5673,6 @@ function openPhotoDetail(photo) {
         }
       }).catch(() => {});
     }
-
-    if (navigator.permissions && navigator.permissions.query) {
-      navigator.permissions.query({ name: 'geolocation' }).then((status) => {
-        noteLocationState.permission = status.state;
-        saveLocationStateToStorage();
-        const granted = status.state === 'granted';
-        if (card) card.classList.toggle('hidden', granted);
-        if (searchSection) searchSection.classList.toggle('hidden', !granted);
-        if (granted) {
-          requestLocationPermissionAndContinue(true);
-        }
-      }).catch(() => {});
-    }
-
-    navigator.geolocation.getCurrentPosition((pos) => {
-      noteLocationState.permission = 'granted';
-      noteLocationState.currentLat = pos.coords.latitude;
-      noteLocationState.currentLng = pos.coords.longitude;
-      const card = document.getElementById('location-permission-card');
-      const searchSection = document.getElementById('location-search-section');
-      if (card) card.classList.add('hidden');
-      if (searchSection) searchSection.classList.remove('hidden');
-      renderLocationResults('');
-    }, () => {
-      alert('No pudimos acceder a tu ubicación. Puedes intentarlo de nuevo.');
-    }, { enableHighAccuracy: true, timeout: 10000 });
-  }
-
-  function selectLocation(name) {
-    noteLocationState.name = name;
-    noteLocationState.lat = noteLocationState.currentLat;
-    noteLocationState.lng = noteLocationState.currentLng;
-    updateLocationPreview();
-    closeLocationSheet();
-  }
-
-  function requestLocationPermissionAndContinue(silent = false) {
-    if (!navigator.geolocation) {
-      if (!silent) alert('Este dispositivo no permite obtener ubicación.');
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition((pos) => {
-      noteLocationState.permission = 'granted';
-      noteLocationState.currentLat = pos.coords.latitude;
-      noteLocationState.currentLng = pos.coords.longitude;
-      saveLocationStateToStorage();
-
-      const card = document.getElementById('location-permission-card');
-      const searchSection = document.getElementById('location-search-section');
-      if (card) card.classList.add('hidden');
-      if (searchSection) searchSection.classList.remove('hidden');
-
-      loadLocationSuggestions('');
-    }, () => {
-      noteLocationState.permission = 'denied';
-      saveLocationStateToStorage();
-      if (!silent) alert('No pudimos acceder a tu ubicación. Puedes intentarlo de nuevo.');
-    }, { enableHighAccuracy: true, timeout: 10000 });
-  }
-
-  function selectLocation(name, latRaw, lngRaw) {
-    noteLocationState.name = name || '';
-    const lat = Number(latRaw);
-    const lng = Number(lngRaw);
-    noteLocationState.lat = Number.isFinite(lat) ? lat : noteLocationState.currentLat;
-    noteLocationState.lng = Number.isFinite(lng) ? lng : noteLocationState.currentLng;
-    saveLocationStateToStorage();
-    updateLocationPreview();
-    closeLocationSheet();
   }
 
   function requestLocationPermissionAndContinue(silent = false) {
