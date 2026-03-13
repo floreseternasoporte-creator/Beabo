@@ -6200,41 +6200,51 @@ function openPhotoDetail(photo) {
 
   function loadNotes() {
     const feedContainer = document.getElementById('notes-feed');
+    if (!feedContainer) return;
 
     firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50).on('value', snapshot => {
       feedContainer.innerHTML = '';
 
       const notes = [];
       snapshot.forEach(child => {
-        notes.unshift({...child.val(), id: child.key});
+        const rawNote = child.val() || {};
+        notes.unshift({ ...rawNote, id: child.key });
       });
 
+      if (!notes.length) {
+        feedContainer.innerHTML = '<div class="bg-white border border-gray-200 rounded-xl p-6 text-center text-sm text-gray-500">Aún no hay publicaciones. Sé la primera persona en publicar.</div>';
+        return;
+      }
+
       notes.forEach(note => {
-        const noteElement = document.createElement('div');
-        noteElement.className = 'bg-white rounded-lg mb-2';
+        try {
+          const noteElement = document.createElement('div');
+          noteElement.className = 'bg-white rounded-lg mb-2';
 
-        const upvotes = note.upvotes || 0;
-        const downvotes = note.downvotes || 0;
-        const score = upvotes - downvotes;
-        const commentsCount = note.commentsCount || 0;
+          const upvotes = Number(note.upvotes || 0);
+          const downvotes = Number(note.downvotes || 0);
+          const score = upvotes - downvotes;
+          const commentsCount = Number(note.commentsCount || 0);
 
-        // Construir HTML de encuesta si existe - Estilo Reddit mejorado
-        let pollHTML = '';
-        if (note.poll) {
-          const totalVotes = note.poll.options.reduce((sum, opt) => sum + (opt.votes || 0), 0);
-          pollHTML = `
+          // Construir HTML de encuesta si existe - Estilo Reddit mejorado
+          let pollHTML = '';
+          const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
+          if (note.poll && pollOptions.length) {
+            const totalVotes = pollOptions.reduce((sum, opt) => sum + Number(opt?.votes || 0), 0);
+            pollHTML = `
             <div class="mt-3 p-3 bg-white rounded-lg border border-gray-300">
               <h4 class="font-medium text-gray-900 mb-3 text-sm">${note.poll.question}</h4>
               <div class="space-y-2">
-                ${note.poll.options.map((option, index) => {
-                  const percentage = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
+                ${pollOptions.map((option, index) => {
+                  const votes = Number(option?.votes || 0);
+                  const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
                   const currentUser = firebase.auth().currentUser;
-                  const hasVoted = currentUser && option.voters && option.voters.includes(currentUser.uid);
+                  const hasVoted = currentUser && Array.isArray(option?.voters) && option.voters.includes(currentUser.uid);
                   return `
                     <button onclick="votePoll('${note.id}', ${index})" class="w-full text-left p-2.5 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#FE2C55] bg-red-50' : 'border-gray-300 bg-white hover:border-gray-400'}">
                       <div class="absolute inset-0 bg-[#FE2C55]" style="width: ${percentage}%; opacity: 0.08"></div>
                       <div class="relative flex justify-between items-center">
-                        <span class="text-sm font-medium text-gray-900">${option.text}</span>
+                        <span class="text-sm font-medium text-gray-900">${option?.text || 'Opción'}</span>
                         <span class="text-xs font-bold ${hasVoted ? 'text-[#FE2C55]' : 'text-gray-500'}">${percentage}%</span>
                       </div>
                     </button>
@@ -6244,7 +6254,7 @@ function openPhotoDetail(photo) {
               <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''} • Toca para votar</p>
             </div>
           `;
-        }
+          }
 
         // Construir HTML de URL si existe
         let urlHTML = '';
@@ -6264,16 +6274,19 @@ function openPhotoDetail(photo) {
           `;
         }
 
-        const currentUser = firebase.auth().currentUser;
-        const isOwner = currentUser && note.authorId === currentUser.uid;
+          const currentUser = firebase.auth().currentUser;
+          const isOwner = currentUser && note.authorId === currentUser.uid;
+          const safeTimestamp = Number(note.timestamp) || Date.now();
+          const safeAuthorName = note.authorName || 'Usuario';
+          const safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
 
         noteElement.innerHTML = `
           <div class="p-4">
             <div class="flex items-start gap-3 mb-3">
-              <img src="${note.authorImage}" alt="${note.authorName}" class="w-10 h-10 rounded-full flex-shrink-0">
+              <img src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-10 h-10 rounded-full flex-shrink-0">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-2">
-                  <h3 class="font-semibold text-sm text-gray-500">${note.authorName}</h3>
+                  <h3 class="font-semibold text-sm text-gray-500">${safeAuthorName}</h3>
                 </div>
                 ${renderNoteAnchoredMeta(note)}
                 ${note.content ? renderContentWithSticker(note.content, 'text-black text-base whitespace-pre-wrap leading-relaxed') : ''}
@@ -6316,7 +6329,7 @@ function openPhotoDetail(photo) {
                 </button>`
               }
             </div>
-            <p class="text-xs text-gray-400 mt-2">${new Date(note.timestamp).toLocaleString()}</p>
+            <p class="text-xs text-gray-400 mt-2">${new Date(safeTimestamp).toLocaleString()}</p>
           </div>
         `;
 
@@ -6335,7 +6348,10 @@ function openPhotoDetail(photo) {
           });
         }
 
-        feedContainer.appendChild(noteElement);
+          feedContainer.appendChild(noteElement);
+        } catch (renderError) {
+          console.error('Error renderizando publicación:', note?.id, renderError);
+        }
       });
     });
   }
@@ -11624,6 +11640,20 @@ document.getElementById('category-filter').addEventListener('change', performRea
     }
   }
 
+  function openChatFromNewMessage(userId) {
+    const targetUserId = (userId || '').trim();
+    if (!targetUserId) return;
+
+    closeNewMessage();
+    document.getElementById('main-app').classList.add('hidden');
+    document.getElementById('chat-view').classList.remove('hidden');
+
+    requestAnimationFrame(() => {
+      showIndividualChatView();
+      openChat(targetUserId);
+    });
+  }
+
   function closeNewMessage() {
     const modal = document.getElementById('new-message-modal');
     modal.classList.add('hidden');
@@ -11656,9 +11686,7 @@ document.getElementById('category-filter').addEventListener('change', performRea
         item.type = 'button';
         item.className = 'w-full p-3 hover:bg-gray-50 text-left flex items-center gap-3';
         item.onclick = () => {
-          openMessages();
-          closeNewMessage();
-          setTimeout(() => openChat(child.key), 0);
+          openChatFromNewMessage(child.key);
         };
         item.innerHTML = `
           <img src="${userData.profileImage || 'https://via.placeholder.com/40'}" alt="${userData.username || 'Usuario'}" class="w-10 h-10 rounded-full object-cover">
