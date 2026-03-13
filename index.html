@@ -5575,6 +5575,22 @@ function openPhotoDetail(photo) {
     } catch (_) {
       renderLocationResultsList(fallbackItems);
     }
+
+    const url = `https://photon.komoot.io/api/?${params.toString()}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Photon error');
+    const data = await res.json();
+    const features = Array.isArray(data.features) ? data.features : [];
+
+    return features.map((f) => {
+      const props = f.properties || {};
+      const coords = Array.isArray(f.geometry?.coordinates) ? f.geometry.coordinates : [];
+      const lng = typeof coords[0] === 'number' ? coords[0] : null;
+      const lat = typeof coords[1] === 'number' ? coords[1] : null;
+      const labelParts = [props.name, props.city, props.state, props.country].filter(Boolean);
+      const name = labelParts.join(', ') || props.name || 'Ubicación';
+      return { name, lat, lng };
+    }).filter(item => item.name);
   }
 
   function handleLocationSearch() {
@@ -5612,6 +5628,76 @@ function openPhotoDetail(photo) {
         }
       }).catch(() => {});
     }
+
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then((status) => {
+        noteLocationState.permission = status.state;
+        saveLocationStateToStorage();
+        const granted = status.state === 'granted';
+        if (card) card.classList.toggle('hidden', granted);
+        if (searchSection) searchSection.classList.toggle('hidden', !granted);
+        if (granted) {
+          requestLocationPermissionAndContinue(true);
+        }
+      }).catch(() => {});
+    }
+
+    navigator.geolocation.getCurrentPosition((pos) => {
+      noteLocationState.permission = 'granted';
+      noteLocationState.currentLat = pos.coords.latitude;
+      noteLocationState.currentLng = pos.coords.longitude;
+      const card = document.getElementById('location-permission-card');
+      const searchSection = document.getElementById('location-search-section');
+      if (card) card.classList.add('hidden');
+      if (searchSection) searchSection.classList.remove('hidden');
+      renderLocationResults('');
+    }, () => {
+      alert('No pudimos acceder a tu ubicación. Puedes intentarlo de nuevo.');
+    }, { enableHighAccuracy: true, timeout: 10000 });
+  }
+
+  function selectLocation(name) {
+    noteLocationState.name = name;
+    noteLocationState.lat = noteLocationState.currentLat;
+    noteLocationState.lng = noteLocationState.currentLng;
+    updateLocationPreview();
+    closeLocationSheet();
+  }
+
+  function requestLocationPermissionAndContinue(silent = false) {
+    if (!navigator.geolocation) {
+      if (!silent) alert('Este dispositivo no permite obtener ubicación.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition((pos) => {
+      noteLocationState.permission = 'granted';
+      noteLocationState.currentLat = pos.coords.latitude;
+      noteLocationState.currentLng = pos.coords.longitude;
+      saveLocationStateToStorage();
+
+      const card = document.getElementById('location-permission-card');
+      const searchSection = document.getElementById('location-search-section');
+      if (card) card.classList.add('hidden');
+      if (searchSection) searchSection.classList.remove('hidden');
+
+      loadLocationSuggestions('');
+    }, () => {
+      noteLocationState.permission = 'denied';
+      saveLocationStateToStorage();
+      if (!silent) alert('No pudimos acceder a tu ubicación. Puedes intentarlo de nuevo.');
+    }, { enableHighAccuracy: true, timeout: 10000 });
+  }
+
+  function selectLocation(name, latRaw, lngRaw) {
+    noteLocationState.name = name || '';
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    noteLocationState.lat = Number.isFinite(lat) ? lat : noteLocationState.currentLat;
+    noteLocationState.lng = Number.isFinite(lng) ? lng : noteLocationState.currentLng;
+    saveLocationStateToStorage();
+    updateLocationPreview();
+    closeLocationSheet();
   }
 
   function requestLocationPermissionAndContinue(silent = false) {
