@@ -5575,6 +5575,20 @@ function openPhotoDetail(photo) {
     } catch (_) {
       renderLocationResultsList(fallbackItems);
     }
+
+    container.innerHTML = filtered.map(name => `
+      <button data-location-name="${name.replace(/"/g, '&quot;')}" onclick="selectLocation(this.dataset.locationName)" class="w-full text-left p-3 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition">
+        <div class="flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span class="text-sm font-medium text-gray-800">${name}</span>
+        </div>
+      </button>
+    `).join('');
+  }
+
+  function handleLocationSearch() {
+    const query = document.getElementById('location-search-input')?.value || '';
+    renderLocationResults(query);
   }
 
   function handleLocationSearch() {
@@ -5612,6 +5626,27 @@ function openPhotoDetail(photo) {
         }
       }).catch(() => {});
     }
+
+    navigator.geolocation.getCurrentPosition((pos) => {
+      noteLocationState.permission = 'granted';
+      noteLocationState.currentLat = pos.coords.latitude;
+      noteLocationState.currentLng = pos.coords.longitude;
+      const card = document.getElementById('location-permission-card');
+      const searchSection = document.getElementById('location-search-section');
+      if (card) card.classList.add('hidden');
+      if (searchSection) searchSection.classList.remove('hidden');
+      renderLocationResults('');
+    }, () => {
+      alert('No pudimos acceder a tu ubicación. Puedes intentarlo de nuevo.');
+    }, { enableHighAccuracy: true, timeout: 10000 });
+  }
+
+  function selectLocation(name) {
+    noteLocationState.name = name;
+    noteLocationState.lat = noteLocationState.currentLat;
+    noteLocationState.lng = noteLocationState.currentLng;
+    updateLocationPreview();
+    closeLocationSheet();
   }
 
   function requestLocationPermissionAndContinue(silent = false) {
