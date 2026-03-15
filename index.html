@@ -1951,11 +1951,21 @@ function loadFollowingStories() {
 
 // 页面加载和用户状态变化时调用loadFollowingStories
 document.addEventListener('DOMContentLoaded', loadFollowingStories);
-firebase.auth().onAuthStateChanged(user => {
-  if (user) {
-    loadFollowingStories();
-  }
-});
+function bindFollowingStoriesAuthListener() {
+  if (!window.firebase || !firebase.apps || !firebase.apps.length) return false;
+
+  firebase.auth().onAuthStateChanged(user => {
+    if (user) {
+      loadFollowingStories();
+    }
+  });
+
+  return true;
+}
+
+if (!bindFollowingStoriesAuthListener()) {
+  document.addEventListener('firebase-ready', bindFollowingStoriesAuthListener, { once: true });
+}
 </script>
 
 <style>
@@ -7659,6 +7669,7 @@ function saveNote() {
     measurementId: "G-XEQ1J354HM"
   };
   firebase.initializeApp(firebaseConfig);
+  document.dispatchEvent(new Event('firebase-ready'));
   // Todos los usuarios están autorizados para transmitir en vivo
   const authorizedEmails = [];
   /*********************** FUNCIONES ADICIONALES **************************/
@@ -11507,6 +11518,16 @@ document.getElementById('category-filter').addEventListener('change', performRea
     firebase.database().ref('messages/' + conversationId + '/' + messageId).remove();
   }
 
+  function incrementConversationUnreadCount(ownerUserId, otherUserId) {
+    if (!ownerUserId || !otherUserId) return Promise.resolve();
+
+    const unreadRef = firebase.database().ref('conversations/' + ownerUserId + '/' + otherUserId + '/unreadCount');
+    return unreadRef.transaction(currentValue => {
+      const baseValue = Number.isFinite(currentValue) ? currentValue : 0;
+      return baseValue + 1;
+    });
+  }
+
   function sendMessage() {
     const messageInput = document.getElementById('message-input');
     const messageText = messageInput.value.trim();
@@ -11532,24 +11553,25 @@ document.getElementById('category-filter').addEventListener('change', performRea
     firebase.database().ref('typing/' + conversationId + '/' + user.uid).remove();
     clearTimeout(typingTimeout);
 
+    const previewText = stickerMessage && !messageText ? '✨ Sticker' : messageText;
     const conversationUpdate = {
-      lastMessage: stickerMessage && !messageText ? '✨ Sticker' : messageText,
+      lastMessage: previewText,
       lastMessageTime: Date.now(),
       lastMessageType: 'text'
     };
 
     firebase.database().ref('messages/' + conversationId).push(messageData).then(() => {
       return Promise.all([
-        firebase.database().ref('conversations/' + user.uid + '/' + currentChatUserId).update(conversationUpdate),
-        firebase.database().ref('conversations/' + currentChatUserId + '/' + user.uid).update({
+        firebase.database().ref('conversations/' + user.uid + '/' + currentChatUserId).update({
           ...conversationUpdate,
-          unreadCount: firebase.database.ServerValue.increment(1)
-        })
+          unreadCount: 0
+        }),
+        firebase.database().ref('conversations/' + currentChatUserId + '/' + user.uid).update(conversationUpdate),
+        incrementConversationUnreadCount(currentChatUserId, user.uid)
       ]);
     }).then(() => {
       firebase.database().ref('users/' + user.uid).once('value', senderSnap => {
         const senderData = senderSnap.val() || {};
-        const previewText = stickerMessage && !messageText ? '✨ Sticker' : messageText;
         addNotification(currentChatUserId, `${senderData.username || 'Alguien'} te ha enviado un mensaje: ${previewText}`, 'message');
       });
 
@@ -11809,11 +11831,12 @@ document.getElementById('category-filter').addEventListener('change', performRea
         };
 
         return Promise.all([
-          firebase.database().ref('conversations/' + user.uid + '/' + currentChatUserId).update(conversationUpdate),
-          firebase.database().ref('conversations/' + currentChatUserId + '/' + user.uid).update({
+          firebase.database().ref('conversations/' + user.uid + '/' + currentChatUserId).update({
             ...conversationUpdate,
-            unreadCount: firebase.database.ServerValue.increment(1)
-          })
+            unreadCount: 0
+          }),
+          firebase.database().ref('conversations/' + currentChatUserId + '/' + user.uid).update(conversationUpdate),
+          incrementConversationUnreadCount(currentChatUserId, user.uid)
         ]);
       }).catch(error => {
         console.error('Error enviando archivo:', error);
@@ -12515,7 +12538,7 @@ function closeBeabooStudio() {
   }
 </script>
 <script>
-  const translations = {
+  const translationsV2 = {
     es: {
       appName: "Drex",
       tagline: "Tu portal de historias inolvidables",
