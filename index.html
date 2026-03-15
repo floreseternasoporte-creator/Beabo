@@ -4544,7 +4544,7 @@ function loadPhotos() {
   const photosContainer = photosFeed.querySelector('.grid');
   photosContainer.innerHTML = '';
 
-  firebase.database().ref('communityNotes').orderByChild('timestamp').once('value').then(snapshot => {
+  firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(100).once('value').then(snapshot => {
     const photos = [];
     snapshot.forEach(child => {
       const note = child.val();
@@ -6380,28 +6380,32 @@ function openPhotoDetail(photo) {
     if (!feedContainer) return;
 
     const user = firebase.auth().currentUser;
-    const userVotesPromise = user
-      ? firebase.database().ref('userVotes/' + user.uid).once('value').then(snap => snap.val() || {})
-      : Promise.resolve({});
+    let userVotes = {};
+    
+    // Cargar votos del usuario en segundo plano sin bloquear la renderizacion
+    if (user) {
+      firebase.database().ref('userVotes/' + user.uid).once('value').then(snap => {
+        userVotes = snap.val() || {};
+      }).catch(err => console.error('Error cargando votos:', err));
+    }
 
     firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50).on('value', snapshot => {
-      userVotesPromise.then(userVotes => {
-        feedContainer.innerHTML = '';
+      feedContainer.innerHTML = '';
 
-        const notes = [];
-        snapshot.forEach(child => {
-          const rawNote = child.val() || {};
-          notes.unshift({ ...rawNote, id: child.key });
-        });
+      const notes = [];
+      snapshot.forEach(child => {
+        const rawNote = child.val() || {};
+        notes.unshift({ ...rawNote, id: child.key });
+      });
 
-        if (!notes.length) {
-          feedContainer.innerHTML = '<div class="bg-white border border-gray-200 rounded-xl p-6 text-center text-sm text-gray-500">Aún no hay publicaciones. Sé la primera persona en publicar.</div>';
-          return;
-        }
+      if (!notes.length) {
+        feedContainer.innerHTML = '<div class="bg-white border border-gray-200 rounded-xl p-6 text-center text-sm text-gray-500">Aún no hay publicaciones. Sé la primera persona en publicar.</div>';
+        return;
+      }
 
-        const feedFragment = document.createDocumentFragment();
+      const feedFragment = document.createDocumentFragment();
 
-        notes.forEach(note => {
+      notes.forEach(note => {
           try {
             const noteElement = document.createElement('div');
             noteElement.className = 'bg-white rounded-lg mb-2';
@@ -6444,6 +6448,18 @@ function openPhotoDetail(photo) {
             const safeTimestamp = Number(note.timestamp) || Date.now();
             const safeAuthorName = note.authorName || 'Usuario';
             const safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
+            
+            // Generar HTML para URLs compartidas si existen
+            let urlHTML = '';
+            if (note.url) {
+              urlHTML = `
+                <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <a href="${note.url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 font-semibold text-sm hover:underline break-all">
+                    ${note.url}
+                  </a>
+                </div>
+              `;
+            }
 
             noteElement.innerHTML = `
               <div class="p-4">
@@ -6499,16 +6515,13 @@ function openPhotoDetail(photo) {
               </div>
             `;
 
-            feedFragment.appendChild(noteElement);
-          } catch (renderError) {
-            console.error('Error renderizando publicación:', note?.id, renderError);
-          }
-        });
-
-        feedContainer.appendChild(feedFragment);
-      }).catch(error => {
-        console.error('Error cargando votos del usuario:', error);
+        feedFragment.appendChild(noteElement);
+        } catch (renderError) {
+          console.error('Error renderizando publicación:', note?.id, renderError);
+        }
       });
+
+      feedContainer.appendChild(feedFragment);
     });
   }
 
