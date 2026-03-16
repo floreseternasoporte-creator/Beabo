@@ -185,20 +185,44 @@ body {
   }
 
   .notification-delete-action .trash-icon {
-    font-size: 1.5rem;
     position: relative;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
   }
 
-  .notification-delete-action .trash-icon::before {
-    content: '';
+  .notification-delete-action .trash-lid {
     position: absolute;
-    width: 20px;
+    top: 2px;
+    left: 3px;
+    width: 16px;
     height: 3px;
-    background-color: white;
-    top: -8px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-radius: 2px;
+    background-color: #fff;
+    border-radius: 3px;
+    transform-origin: left center;
+  }
+
+  .notification-delete-action .trash-handle {
+    position: absolute;
+    top: -1px;
+    left: 8px;
+    width: 6px;
+    height: 3px;
+    border: 2px solid #fff;
+    border-bottom: 0;
+    border-radius: 6px 6px 0 0;
+    box-sizing: border-box;
+  }
+
+  .notification-delete-action .trash-body {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #fff;
+    border-top-width: 3px;
+    border-radius: 2px 2px 4px 4px;
+    box-sizing: border-box;
   }
 
   @keyframes trashLidOpen {
@@ -207,7 +231,7 @@ body {
     100% { transform: rotateZ(0deg); }
   }
 
-  .notification-delete-action.animating .trash-icon::before {
+  .notification-delete-action.animating .trash-lid {
     animation: trashLidOpen 0.6s ease-in-out;
   }
 
@@ -6943,14 +6967,21 @@ function openPostOptionsSheet(noteId) {
   if (!overlay || !sheet) return;
 
   const user = firebase.auth().currentUser;
+  if (deleteBtn) deleteBtn.classList.add('hidden');
+
   if (user) {
     firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
       const note = snapshot.val();
-      if (note && note.authorId === user.uid) {
-        if (deleteBtn) deleteBtn.classList.remove('hidden');
-      } else {
-        if (deleteBtn) deleteBtn.classList.add('hidden');
+      const isOwner = !!note && (note.authorId === user.uid || note.userId === user.uid);
+      if (deleteBtn) {
+        if (isOwner) {
+          deleteBtn.classList.remove('hidden');
+        } else {
+          deleteBtn.classList.add('hidden');
+        }
       }
+    }).catch(() => {
+      if (deleteBtn) deleteBtn.classList.add('hidden');
     });
   }
 
@@ -8427,7 +8458,13 @@ function saveNote() {
 
         const deleteAction = document.createElement('div');
         deleteAction.className = 'notification-delete-action';
-        deleteAction.innerHTML = '<i class="fas fa-trash-alt trash-icon"></i>';
+        deleteAction.innerHTML = `
+          <span class="trash-icon" aria-hidden="true">
+            <span class="trash-handle"></span>
+            <span class="trash-lid"></span>
+            <span class="trash-body"></span>
+          </span>
+        `;
 
         const div = document.createElement('div');
         div.className = `notification-item ${notification.type || 'info'}`;
@@ -8454,10 +8491,25 @@ function saveNote() {
           </div>
         `;
 
-        // Swipe logic
+        // Swipe logic (eliminar al deslizar a la izquierda)
         let startX = 0;
         let currentX = 0;
         let isSwiping = false;
+        let isDeleting = false;
+
+        const triggerNotificationDelete = () => {
+          if (isDeleting) return;
+          isDeleting = true;
+          div.style.pointerEvents = 'none';
+          deleteAction.style.pointerEvents = 'none';
+          deleteAction.classList.add('animating');
+          setTimeout(() => {
+            div.classList.add('deleting');
+            setTimeout(() => {
+              firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).remove();
+            }, 400);
+          }, 600);
+        };
 
         div.addEventListener('touchstart', (e) => {
           startX = e.touches[0].clientX;
@@ -8466,20 +8518,23 @@ function saveNote() {
         });
 
         div.addEventListener('touchmove', (e) => {
-          if (!isSwiping) return;
+          if (!isSwiping || isDeleting) return;
           currentX = e.touches[0].clientX - startX;
-          if (currentX < 0 && currentX > -100) {
-            div.style.transform = `translateX(${currentX}px)`;
-            deleteAction.style.opacity = Math.abs(currentX) / 80;
+          if (currentX < 0) {
+            const limitedX = Math.max(currentX, -100);
+            div.style.transform = `translateX(${limitedX}px)`;
+            deleteAction.style.opacity = Math.min(Math.abs(limitedX) / 80, 1);
           }
         });
 
         div.addEventListener('touchend', () => {
           isSwiping = false;
+          if (isDeleting) return;
           div.style.transition = 'transform 0.3s ease';
           if (currentX < -50) {
             div.style.transform = 'translateX(-80px)';
             deleteAction.style.opacity = '1';
+            triggerNotificationDelete();
           } else {
             div.style.transform = 'translateX(0)';
             deleteAction.style.opacity = '0';
@@ -8495,21 +8550,24 @@ function saveNote() {
         });
 
         window.addEventListener('mousemove', (e) => {
-          if (!isSwiping) return;
+          if (!isSwiping || isDeleting) return;
           currentX = e.clientX - startX;
-          if (currentX < 0 && currentX > -100) {
-            div.style.transform = `translateX(${currentX}px)`;
-            deleteAction.style.opacity = Math.abs(currentX) / 80;
+          if (currentX < 0) {
+            const limitedX = Math.max(currentX, -100);
+            div.style.transform = `translateX(${limitedX}px)`;
+            deleteAction.style.opacity = Math.min(Math.abs(limitedX) / 80, 1);
           }
         });
 
         window.addEventListener('mouseup', () => {
           if (!isSwiping) return;
           isSwiping = false;
+          if (isDeleting) return;
           div.style.transition = 'transform 0.3s ease';
           if (currentX < -50) {
             div.style.transform = 'translateX(-80px)';
             deleteAction.style.opacity = '1';
+            triggerNotificationDelete();
           } else {
             div.style.transform = 'translateX(0)';
             deleteAction.style.opacity = '0';
@@ -8519,13 +8577,7 @@ function saveNote() {
 
         deleteAction.onclick = (e) => {
           e.stopPropagation();
-          deleteAction.classList.add('animating');
-          setTimeout(() => {
-            div.classList.add('deleting');
-            setTimeout(() => {
-              firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).remove();
-            }, 400);
-          }, 600);
+          triggerNotificationDelete();
         };
 
         div.onclick = () => {
