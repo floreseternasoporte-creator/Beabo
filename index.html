@@ -2351,12 +2351,12 @@ firebase.auth().onAuthStateChanged(user => {
     </div>
 
     <!-- Contenido -->
-    <div class="flex-1 overflow-y-auto px-4">
-      <div class="flex gap-3">
+    <div class="flex-1 overflow-y-auto px-0 sm:px-4">
+      <div class="flex gap-3 p-4 sm:p-0">
         <div class="flex-shrink-0">
           <img id="note-author-image-fullscreen" src="https://via.placeholder.com/150" class="w-10 h-10 rounded-full object-cover">
         </div>
-        <div class="flex-1">
+        <div class="flex-1 max-w-2xl">
           <textarea
             id="note-content-fullscreen"
             placeholder="¿Qué está pasando?"
@@ -2388,31 +2388,37 @@ firebase.auth().onAuthStateChanged(user => {
           </div>
 
           <!-- Preview de encuesta -->
-          <div id="poll-preview-fullscreen" class="hidden mb-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl">
+          <div id="poll-preview-fullscreen" class="hidden mb-4 -mx-4 sm:mx-0 p-4 bg-gradient-to-br from-[#FE2C55]/5 to-[#FE2C55]/10 border-t-2 border-b-2 sm:border-2 border-[#FE2C55]/30 sm:rounded-2xl">
             <div class="flex items-start justify-between mb-3">
-              <span class="text-sm font-medium text-gray-700">Encuesta</span>
-              <button onclick="removePollFullscreen()" class="text-gray-500 hover:text-gray-700">
+              <span class="text-sm font-bold text-[#FE2C55]">Encuesta</span>
+              <button onclick="removePollFullscreen()" class="text-[#FE2C55] hover:text-red-600 transition">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                 </svg>
               </button>
             </div>
-            <input
-              type="text"
-              id="poll-question-fullscreen"
-              placeholder="Escribe tu pregunta"
-              class="w-full p-2 mb-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]"
-            >
+            <div class="mb-3">
+              <input
+                type="text"
+                id="poll-question-fullscreen"
+                placeholder="¿Cuál es tu pregunta?"
+                maxlength="30"
+                class="w-full p-3 mb-1 border-2 border-[#FE2C55]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55] focus:border-transparent text-base"
+              >
+              <div class="text-xs text-gray-500 text-right"><span id="poll-question-count">0</span>/30</div>
+            </div>
             <div id="poll-options-container" class="space-y-2 mb-3">
               <div class="flex items-center space-x-2">
-                <input type="text" placeholder="Opción 1" class="flex-1 p-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="1">
+                <input type="text" placeholder="Opción 1" maxlength="20" class="flex-1 p-2 border border-[#FE2C55]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="1" data-char-counter="option-1-count">
+                <span class="text-xs text-gray-500 whitespace-nowrap"><span id="option-1-count">0</span>/20</span>
               </div>
               <div class="flex items-center space-x-2">
-                <input type="text" placeholder="Opción 2" class="flex-1 p-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="2">
+                <input type="text" placeholder="Opción 2" maxlength="20" class="flex-1 p-2 border border-[#FE2C55]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="2" data-char-counter="option-2-count">
+                <span class="text-xs text-gray-500 whitespace-nowrap"><span id="option-2-count">0</span>/20</span>
               </div>
             </div>
-            <button onclick="addPollOption()" class="text-sm text-[#FE2C55] hover:text-red-600 font-medium">
-              + Agregar opción
+            <button onclick="addPollOption()" id="add-poll-option-btn" class="text-sm text-[#FE2C55] hover:text-red-600 font-medium transition">
+              + Agregar opción (máx. 3)
             </button>
           </div>
 
@@ -5561,21 +5567,44 @@ function openPhotoDetail(photo) {
   function togglePollInput() {
     const pollPreview = document.getElementById('poll-preview-fullscreen');
     pollPreview.classList.toggle('hidden');
+    
+    if (!pollPreview.classList.contains('hidden')) {
+      const questionInput = document.getElementById('poll-question-fullscreen');
+      const optionInputs = document.querySelectorAll('#poll-options-container input');
+      
+      questionInput.addEventListener('input', updateCharacterCount);
+      optionInputs.forEach(input => {
+        input.addEventListener('input', updateCharacterCount);
+      });
+      
+      updateAddPollButtonState();
+    }
   }
 
   function removePollFullscreen() {
     document.getElementById('poll-preview-fullscreen').classList.add('hidden');
     document.getElementById('poll-question-fullscreen').value = '';
-    // Resetear opciones
+    document.getElementById('poll-question-count').textContent = '0';
+    pollOptionCount = 2;
+    
     const container = document.getElementById('poll-options-container');
     container.innerHTML = `
       <div class="flex items-center space-x-2">
-        <input type="text" placeholder="Opción 1" class="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="1">
+        <input type="text" placeholder="Opción 1" maxlength="20" class="flex-1 p-2 border border-[#FE2C55]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="1" data-char-counter="option-1-count">
+        <span class="text-xs text-gray-500 whitespace-nowrap"><span id="option-1-count">0</span>/20</span>
       </div>
       <div class="flex items-center space-x-2">
-        <input type="text" placeholder="Opción 2" class="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="2">
+        <input type="text" placeholder="Opción 2" maxlength="20" class="flex-1 p-2 border border-[#FE2C55]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="2" data-char-counter="option-2-count">
+        <span class="text-xs text-gray-500 whitespace-nowrap"><span id="option-2-count">0</span>/20</span>
       </div>
     `;
+    
+    const inputs = container.querySelectorAll('input');
+    inputs.forEach(input => {
+      input.addEventListener('input', updateCharacterCount);
+    });
+    
+    updateAddPollButtonState();
   }
 
   const noteDisclosures = {
@@ -5930,20 +5959,62 @@ function openPhotoDetail(photo) {
   loadLocationStateFromStorage();
 
   let pollOptionCount = 2;
+  const MAX_POLL_OPTIONS = 3;
+  
   function addPollOption() {
-    pollOptionCount++;
     const container = document.getElementById('poll-options-container');
+    const currentOptions = container.querySelectorAll('div').length;
+    
+    if (currentOptions >= MAX_POLL_OPTIONS) {
+      alert('El máximo de opciones es 3');
+      return;
+    }
+    
+    pollOptionCount++;
     const newOption = document.createElement('div');
     newOption.className = 'flex items-center space-x-2';
+    const counterId = `option-${pollOptionCount}-count`;
     newOption.innerHTML = `
-      <input type="text" placeholder="Opción ${pollOptionCount}" class="flex-1 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="${pollOptionCount}">
-      <button onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700">
+      <input type="text" placeholder="Opción ${pollOptionCount}" maxlength="20" class="flex-1 p-2 border border-[#FE2C55]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55]" data-option="${pollOptionCount}" data-char-counter="${counterId}">
+      <span class="text-xs text-gray-500 whitespace-nowrap"><span id="${counterId}">0</span>/20</span>
+      <button onclick="this.parentElement.remove(); updateAddPollButtonState()" class="text-red-500 hover:text-red-700 transition">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
     `;
     container.appendChild(newOption);
+    
+    const newInput = newOption.querySelector('input');
+    newInput.addEventListener('input', updateCharacterCount);
+    
+    updateAddPollButtonState();
+  }
+  
+  function updateAddPollButtonState() {
+    const container = document.getElementById('poll-options-container');
+    const currentOptions = container.querySelectorAll('div').length;
+    const addBtn = document.getElementById('add-poll-option-btn');
+    
+    if (currentOptions >= MAX_POLL_OPTIONS) {
+      addBtn.disabled = true;
+      addBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    } else {
+      addBtn.disabled = false;
+      addBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+  }
+  
+  function updateCharacterCount(event) {
+    const input = event.target;
+    const counterId = input.getAttribute('data-char-counter');
+    const questionCountId = input.id === 'poll-question-fullscreen' ? 'poll-question-count' : null;
+    
+    if (questionCountId) {
+      document.getElementById(questionCountId).textContent = input.value.length;
+    } else if (counterId) {
+      document.getElementById(counterId).textContent = input.value.length;
+    }
   }
 
   function closeNoteCreationFullscreen() {
