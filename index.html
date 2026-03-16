@@ -169,7 +169,7 @@ body {
   .notification-delete-action {
     position: absolute;
     top: 0;
-    left: 0;
+    right: 0;
     height: 100%;
     width: 80px;
     background-color: #FE2C55;
@@ -178,27 +178,45 @@ body {
     justify-content: center;
     color: white;
     z-index: 1;
-    border-radius: 8px 0 0 8px;
+    border-radius: 0 8px 8px 0;
     opacity: 0;
     transition: opacity 0.2s ease;
+    cursor: pointer;
   }
 
-  .notification-delete-action i {
-    font-size: 1.2rem;
-    animation: iconPop 0.3s ease;
+  .notification-delete-action .trash-icon {
+    font-size: 1.5rem;
+    position: relative;
   }
 
-  @keyframes iconPop {
-    0% { transform: scale(0.5); opacity: 0; }
-    100% { transform: scale(1); opacity: 1; }
+  .notification-delete-action .trash-icon::before {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 3px;
+    background-color: white;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-radius: 2px;
+  }
+
+  @keyframes trashLidOpen {
+    0% { transform: rotateZ(0deg); }
+    50% { transform: rotateZ(-45deg); }
+    100% { transform: rotateZ(0deg); }
+  }
+
+  .notification-delete-action.animating .trash-icon::before {
+    animation: trashLidOpen 0.6s ease-in-out;
   }
 
   .notification-item.swiped {
-    transform: translateX(80px);
+    transform: translateX(-80px);
   }
 
   .notification-item.deleting {
-    transform: translateX(100%);
+    transform: translateX(-100%);
     opacity: 0;
     transition: all 0.4s ease;
   }
@@ -2723,11 +2741,19 @@ firebase.auth().onAuthStateChanged(user => {
       </div>
     </button>
 
-    <button onclick="openContentPreferencesView()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 text-left">
+    <button onclick="openContentPreferencesView()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 text-left mb-2">
       <i class="fas fa-sliders text-[#FE2C55]"></i>
       <div>
         <p class="font-semibold text-sm text-gray-900">Preferencias de contenido</p>
         <p class="text-xs text-gray-500">Configura lo que quieres ver en Drex</p>
+      </div>
+    </button>
+
+    <button id="delete-post-btn" onclick="deletePostFromOptions()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-red-200 hover:bg-red-50 text-left hidden">
+      <i class="fas fa-trash-alt text-red-500"></i>
+      <div>
+        <p class="font-semibold text-sm text-red-600">Eliminar publicacion</p>
+        <p class="text-xs text-red-500">Esta accion no se puede deshacer</p>
       </div>
     </button>
   </div>
@@ -6913,7 +6939,20 @@ function openPostOptionsSheet(noteId) {
   currentPostOptionsNoteId = noteId;
   const overlay = document.getElementById('post-options-overlay');
   const sheet = document.getElementById('post-options-sheet');
+  const deleteBtn = document.getElementById('delete-post-btn');
   if (!overlay || !sheet) return;
+
+  const user = firebase.auth().currentUser;
+  if (user) {
+    firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
+      const note = snapshot.val();
+      if (note && note.authorId === user.uid) {
+        if (deleteBtn) deleteBtn.classList.remove('hidden');
+      } else {
+        if (deleteBtn) deleteBtn.classList.add('hidden');
+      }
+    });
+  }
 
   overlay.classList.remove('hidden');
   sheet.classList.remove('hidden');
@@ -6969,6 +7008,24 @@ function openSensitiveContentView() {
   const view = document.getElementById('sensitive-content-view');
   if (parentView) parentView.classList.add('hidden');
   if (view) view.classList.remove('hidden');
+}
+
+function deletePostFromOptions() {
+  if (!currentPostOptionsNoteId) return;
+  
+  const confirmed = confirm('¿Estás seguro de que deseas eliminar esta publicación? Esta acción no se puede deshacer.');
+  if (!confirmed) return;
+  
+  const noteId = currentPostOptionsNoteId;
+  closePostOptionsSheet();
+  
+  firebase.database().ref('communityNotes/' + noteId).remove().then(() => {
+    alert('Publicación eliminada exitosamente.');
+    loadNotes();
+  }).catch(error => {
+    console.error('Error al eliminar publicación:', error);
+    alert('Hubo un error al eliminar la publicación. Intenta de nuevo.');
+  });
 }
 
 function closeSensitiveContentView() {
@@ -8370,7 +8427,7 @@ function saveNote() {
 
         const deleteAction = document.createElement('div');
         deleteAction.className = 'notification-delete-action';
-        deleteAction.innerHTML = '<i class="fas fa-trash-alt"></i>';
+        deleteAction.innerHTML = '<i class="fas fa-trash-alt trash-icon"></i>';
 
         const div = document.createElement('div');
         div.className = `notification-item ${notification.type || 'info'}`;
@@ -8411,17 +8468,17 @@ function saveNote() {
         div.addEventListener('touchmove', (e) => {
           if (!isSwiping) return;
           currentX = e.touches[0].clientX - startX;
-          if (currentX > 0 && currentX < 100) {
+          if (currentX < 0 && currentX > -100) {
             div.style.transform = `translateX(${currentX}px)`;
-            deleteAction.style.opacity = currentX / 80;
+            deleteAction.style.opacity = Math.abs(currentX) / 80;
           }
         });
 
         div.addEventListener('touchend', () => {
           isSwiping = false;
           div.style.transition = 'transform 0.3s ease';
-          if (currentX > 50) {
-            div.style.transform = 'translateX(80px)';
+          if (currentX < -50) {
+            div.style.transform = 'translateX(-80px)';
             deleteAction.style.opacity = '1';
           } else {
             div.style.transform = 'translateX(0)';
@@ -8440,9 +8497,9 @@ function saveNote() {
         window.addEventListener('mousemove', (e) => {
           if (!isSwiping) return;
           currentX = e.clientX - startX;
-          if (currentX > 0 && currentX < 100) {
+          if (currentX < 0 && currentX > -100) {
             div.style.transform = `translateX(${currentX}px)`;
-            deleteAction.style.opacity = currentX / 80;
+            deleteAction.style.opacity = Math.abs(currentX) / 80;
           }
         });
 
@@ -8450,8 +8507,8 @@ function saveNote() {
           if (!isSwiping) return;
           isSwiping = false;
           div.style.transition = 'transform 0.3s ease';
-          if (currentX > 50) {
-            div.style.transform = 'translateX(80px)';
+          if (currentX < -50) {
+            div.style.transform = 'translateX(-80px)';
             deleteAction.style.opacity = '1';
           } else {
             div.style.transform = 'translateX(0)';
@@ -8462,14 +8519,17 @@ function saveNote() {
 
         deleteAction.onclick = (e) => {
           e.stopPropagation();
-          div.classList.add('deleting');
+          deleteAction.classList.add('animating');
           setTimeout(() => {
-            firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).remove();
-          }, 400);
+            div.classList.add('deleting');
+            setTimeout(() => {
+              firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).remove();
+            }, 400);
+          }, 600);
         };
 
         div.onclick = () => {
-          if (div.style.transform === 'translateX(80px)') {
+          if (div.style.transform === 'translateX(-80px)') {
             div.style.transform = 'translateX(0)';
             deleteAction.style.opacity = '0';
             return;
@@ -8479,8 +8539,8 @@ function saveNote() {
           }
         };
 
-        container.appendChild(deleteAction);
         container.appendChild(div);
+        container.appendChild(deleteAction);
         notificationsList.appendChild(container);
       });
     });
