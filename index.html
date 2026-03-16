@@ -2749,6 +2749,22 @@ firebase.auth().onAuthStateChanged(user => {
       </div>
     </button>
 
+    <button id="copy-post-text-btn" onclick="copyPostTextFromOptions()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 text-left mb-2">
+      <i class="fas fa-copy text-[#FE2C55]"></i>
+      <div>
+        <p class="font-semibold text-sm text-gray-900">Copiar texto</p>
+        <p class="text-xs text-gray-500">Copia el texto de esta publicación</p>
+      </div>
+    </button>
+
+    <button id="block-account-btn" onclick="openBlockAccountConfirmFromOptions()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-red-200 hover:bg-red-50 text-left mb-2">
+      <i class="fas fa-user-slash text-red-500"></i>
+      <div>
+        <p class="font-semibold text-sm text-red-600">Bloquear cuenta</p>
+        <p class="text-xs text-red-500">No verás más contenido de esta cuenta</p>
+      </div>
+    </button>
+
     <button id="delete-post-btn" onclick="deletePostFromOptions()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-red-200 hover:bg-red-50 text-left hidden">
       <i class="fas fa-trash-alt text-red-500"></i>
       <div>
@@ -2756,6 +2772,28 @@ firebase.auth().onAuthStateChanged(user => {
         <p class="text-xs text-red-500">Esta accion no se puede deshacer</p>
       </div>
     </button>
+  </div>
+</div>
+
+<div id="block-account-confirm-modal" class="fixed inset-0 bg-black/50 hidden z-[90] items-center justify-center p-4">
+  <div class="w-full max-w-md bg-white rounded-2xl p-5">
+    <h3 class="text-lg font-bold text-gray-900 mb-2">Bloquear cuenta</h3>
+    <p class="text-sm text-gray-600 mb-5">Si bloqueas esta cuenta, dejarás de ver su contenido, sus publicaciones y todo lo relacionado con ella.</p>
+    <div class="flex gap-3">
+      <button onclick="closeBlockAccountConfirmModal()" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold">No quiero</button>
+      <button onclick="confirmBlockAccountFromOptions()" class="flex-1 py-2.5 rounded-xl bg-[#FE2C55] text-white font-semibold">Sí acepto</button>
+    </div>
+  </div>
+</div>
+
+<div id="block-account-success-modal" class="fixed inset-0 bg-black/50 hidden z-[91] items-center justify-center p-4">
+  <div class="w-full max-w-md bg-white rounded-2xl p-5 text-center">
+    <div class="w-12 h-12 rounded-full bg-green-100 text-green-600 mx-auto flex items-center justify-center mb-3">
+      <i class="fas fa-check"></i>
+    </div>
+    <h3 class="text-lg font-bold text-gray-900 mb-2">Cuenta bloqueada</h3>
+    <p class="text-sm text-gray-600 mb-5">Esta cuenta ha sido bloqueada exitosamente. No se te mostrará más el contenido relacionado de ella.</p>
+    <button onclick="closeBlockAccountSuccessModal()" class="w-full py-2.5 rounded-xl bg-[#FE2C55] text-white font-semibold">Entendido</button>
   </div>
 </div>
 
@@ -6393,6 +6431,8 @@ function openPhotoDetail(photo) {
     const hiddenPosts = getHiddenPosts();
     if (hiddenPosts.includes(noteId)) return true;
     if (!getAdultContentPreference() && isAdultContentNote(note)) return true;
+    const authorId = note?.authorId || note?.userId || '';
+    if (isAccountBlockedForCurrentUser(authorId)) return true;
     return false;
   }
 
@@ -6696,28 +6736,51 @@ function deleteNote(noteId) {
 
 let currentReportNoteId = null;
 let currentPostOptionsNoteId = null;
+let currentPostOptionsNoteData = null;
+let blockedAccountsSet = new Set();
+let blockedAccountsRef = null;
+
+
+function setupBlockedAccountsListener(userId) {
+  if (!userId) return;
+  if (blockedAccountsRef) blockedAccountsRef.off();
+  blockedAccountsRef = firebase.database().ref('blocks/' + userId);
+  blockedAccountsRef.on('value', snapshot => {
+    const data = snapshot.val() || {};
+    blockedAccountsSet = new Set(Object.keys(data));
+    loadNotes();
+  });
+}
+
+function isAccountBlockedForCurrentUser(accountId) {
+  if (!accountId) return false;
+  return blockedAccountsSet.has(accountId);
+}
 
 function openPostOptionsSheet(noteId) {
   currentPostOptionsNoteId = noteId;
   const overlay = document.getElementById('post-options-overlay');
   const sheet = document.getElementById('post-options-sheet');
   const deleteBtn = document.getElementById('delete-post-btn');
+  const copyBtn = document.getElementById('copy-post-text-btn');
+  const blockBtn = document.getElementById('block-account-btn');
   if (!overlay || !sheet) return;
 
   const user = firebase.auth().currentUser;
   if (deleteBtn) deleteBtn.classList.add('hidden');
+  currentPostOptionsNoteData = null;
 
   if (user) {
     firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
-      const note = snapshot.val();
+      const note = snapshot.val() || {};
+      currentPostOptionsNoteData = note;
       const isOwner = !!note && (note.authorId === user.uid || note.userId === user.uid);
-      if (deleteBtn) {
-        if (isOwner) {
-          deleteBtn.classList.remove('hidden');
-        } else {
-          deleteBtn.classList.add('hidden');
-        }
-      }
+      if (deleteBtn) deleteBtn.classList.toggle('hidden', !isOwner);
+      const hasText = !!(note.content && String(note.content).trim());
+      if (copyBtn) copyBtn.classList.toggle('hidden', !hasText);
+      const targetAuthorId = note.authorId || note.userId || '';
+      const canBlock = !!targetAuthorId && targetAuthorId !== user.uid;
+      if (blockBtn) blockBtn.classList.toggle('hidden', !canBlock);
     }).catch(() => {
       if (deleteBtn) deleteBtn.classList.add('hidden');
     });
@@ -6737,6 +6800,7 @@ function closePostOptionsSheet() {
   }
   if (overlay) overlay.classList.add('hidden');
   currentPostOptionsNoteId = null;
+  currentPostOptionsNoteData = null;
 }
 
 function hidePostForUser() {
@@ -6748,6 +6812,91 @@ function hidePostForUser() {
   }
   closePostOptionsSheet();
   loadNotes();
+}
+
+
+function copyPostTextFromOptions() {
+  const text = (currentPostOptionsNoteData && currentPostOptionsNoteData.content) ? String(currentPostOptionsNoteData.content).trim() : '';
+  if (!text) {
+    alert('Esta publicación no tiene texto para copiar.');
+    return;
+  }
+
+  const onSuccess = () => {
+    closePostOptionsSheet();
+    alert('Texto copiado exitosamente.');
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+      const temp = document.createElement('textarea');
+      temp.value = text;
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand('copy');
+      temp.remove();
+      onSuccess();
+    });
+    return;
+  }
+
+  const temp = document.createElement('textarea');
+  temp.value = text;
+  document.body.appendChild(temp);
+  temp.select();
+  document.execCommand('copy');
+  temp.remove();
+  onSuccess();
+}
+
+function openBlockAccountConfirmFromOptions() {
+  const modal = document.getElementById('block-account-confirm-modal');
+  if (!modal) return;
+  closePostOptionsSheet();
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+function closeBlockAccountConfirmModal() {
+  const modal = document.getElementById('block-account-confirm-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+}
+
+function confirmBlockAccountFromOptions() {
+  const user = firebase.auth().currentUser;
+  const targetAuthorId = currentPostOptionsNoteData?.authorId || currentPostOptionsNoteData?.userId || '';
+  if (!user || !targetAuthorId || user.uid === targetAuthorId) {
+    closeBlockAccountConfirmModal();
+    return;
+  }
+
+  const updates = {};
+  updates['blocks/' + user.uid + '/' + targetAuthorId] = { blockedAt: Date.now(), by: user.uid, mutual: true };
+  updates['blocks/' + targetAuthorId + '/' + user.uid] = { blockedAt: Date.now(), by: user.uid, mutual: true };
+
+  firebase.database().ref().update(updates).then(() => {
+    blockedAccountsSet.add(targetAuthorId);
+    closeBlockAccountConfirmModal();
+    const ok = document.getElementById('block-account-success-modal');
+    if (ok) {
+      ok.classList.remove('hidden');
+      ok.classList.add('flex');
+    }
+    loadNotes();
+    performRealTimeSearch();
+  }).catch(error => {
+    console.error('Error bloqueando cuenta:', error);
+    alert('No se pudo bloquear la cuenta. Intenta de nuevo.');
+  });
+}
+
+function closeBlockAccountSuccessModal() {
+  const modal = document.getElementById('block-account-success-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
 }
 
 function openReportFromPostOptions() {
@@ -8904,6 +9053,7 @@ function saveNote() {
 
       // CARGAR ESTADÍSTICAS EN TIEMPO REAL
       loadUserStats(user.uid);
+      setupBlockedAccountsListener(user.uid);
 
       firebase.database().ref('users/' + user.uid).once('value').then(snapshot => {
         const data = snapshot.val();
@@ -9152,6 +9302,8 @@ function saveNote() {
     snapshot.forEach(child => {
       const note = child.val() || {};
       const content = (note.content || '').toLowerCase();
+      const authorId = note.authorId || note.userId || '';
+      if (isAccountBlockedForCurrentUser(authorId)) return;
       if (!query || content.includes(query) || (note.authorName || '').toLowerCase().includes(query)) {
         posts.push({ ...note, id: child.key });
       }
@@ -9165,6 +9317,7 @@ function saveNote() {
     snapshot.forEach(child => {
       const userData = child.val() || {};
       const username = (userData.username || '').toLowerCase();
+      if (isAccountBlockedForCurrentUser(child.key)) return;
       if (!query || username.includes(query)) {
         accounts.push({ ...userData, uid: child.key });
       }
