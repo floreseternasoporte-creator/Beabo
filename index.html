@@ -9376,6 +9376,25 @@ function saveNote() {
   function openProfile() {
     mainApp.classList.add('hidden');
     document.getElementById('profile-view').classList.remove('hidden');
+    // Forzar carga de datos del usuario para asegurar vinculación de foto y botones
+    const user = firebase.auth().currentUser;
+    if (user) {
+      firebase.database().ref('users/' + user.uid).once('value').then(snapshot => {
+        const data = snapshot.val();
+        if (data) {
+          if (data.profileImage) {
+            document.getElementById('profile-image').src = data.profileImage;
+            const headerImg = document.getElementById('header-profile-image');
+            if (headerImg) headerImg.src = data.profileImage;
+          }
+          document.getElementById('profile-username').textContent = '@' + (data.username || 'usuario');
+          document.getElementById('profile-followers').textContent = formatNumber(data.followersCount || 0);
+          document.getElementById('profile-following').textContent = formatNumber(data.followingCount || 0);
+          document.getElementById('profile-likes').textContent = formatNumber(data.ratedCount || 0);
+        }
+      });
+      loadUserPostsGrid(user.uid);
+    }
   }
 
   function openHome() {
@@ -9945,30 +9964,28 @@ function renderAccountsList(accounts) {
   }
   /*********************** PERFIL DEL AUTOR **************************/
   function openAuthorProfile(authorId) {
-    // Check if current user is the profile owner
     const currentUser = firebase.auth().currentUser;
+    
+    if (currentUser && currentUser.uid === authorId) {
+      openProfile();
+      return;
+    }
+
     const addNoteBtn = document.getElementById('add-note-btn');
     const profileNote = document.getElementById('profile-note');
     const messageButton = document.getElementById('message-author-button');
     const followButton = document.getElementById('follow-button');
     const followButtonText = document.getElementById('follow-button-text');
+    const optionsButton = document.getElementById('options-button');
 
-    if (currentUser && currentUser.uid === authorId) {
-      // SI ES MI PERFIL, REDIRIGIR A MI VISTA DE PERFIL PROPIO
-      closeAuthorProfile();
-      openProfile();
-      return;
-    } else {
-      const optionsButton = document.getElementById('options-button');
-      if (optionsButton) optionsButton.style.display = 'block';
-      addNoteBtn.classList.add('hidden');
-      // ASEGURAR QUE DIGA "SEGUIR" EN PERFIL DE OTROS
-      if (followButtonText) followButtonText.textContent = 'Seguir';
-      if (followButton) {
-        followButton.onclick = followAuthor;
-        followButton.classList.add('bg-[#FE2C55]');
-        followButton.classList.remove('bg-gray-200', 'text-black');
-      }
+    if (optionsButton) optionsButton.style.display = 'block';
+    if (addNoteBtn) addNoteBtn.classList.add('hidden');
+    
+    if (followButtonText) followButtonText.textContent = 'Seguir';
+    if (followButton) {
+      followButton.onclick = followAuthor;
+      followButton.classList.add('bg-[#FE2C55]');
+      followButton.classList.remove('bg-gray-200', 'text-black');
     }
     
     // ELIMINAR BOTÓN DE MENSAJE Y OTROS RESIDUALES
