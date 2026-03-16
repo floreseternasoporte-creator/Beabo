@@ -106,6 +106,24 @@ body {
   text-shadow: 0 0 10px rgba(254,44,85,0.5);
 }
 
+.vote-star {
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.vote-star.active {
+  color: #FE2C55;
+}
+
+.vote-star.pop {
+  animation: starPop 0.35s ease;
+}
+
+@keyframes starPop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35) rotate(-8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
 /* Margen para la lista de capítulos */
 #detail-chapters {
   margin-top: 10px;
@@ -2533,6 +2551,10 @@ firebase.auth().onAuthStateChanged(user => {
 
     <!-- Input fijo abajo -->
     <div class="bg-white border-t p-3 flex-shrink-0">
+      <div id="reply-context-bar" class="hidden mb-2 text-xs text-[#FE2C55] font-semibold bg-[#fff1f4] border border-[#FE2C55]/30 rounded-full px-3 py-1 items-center justify-between">
+        <span id="reply-context-text"></span>
+        <button onclick="clearReplyTarget()" class="text-[#d91c47] hover:text-[#b8153b]">Cancelar</button>
+      </div>
       <div id="sticker-preview-comment-input-main" class="hidden mb-2"></div>
       <div class="flex gap-2 items-center">
         <input type="text" id="comment-input-main" placeholder="¿Qué opinas?" class="flex-1 p-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
@@ -6479,17 +6501,12 @@ function openPhotoDetail(photo) {
                 ${pollHTML}
 
                 <div class="flex items-center gap-4 pt-2 border-t border-gray-100">
-                  <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="flex items-center gap-1 hover:text-[#FE2C55] transition-colors ${userVote === 'up' ? 'text-[#FE2C55]' : ''}">
+                  <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="vote-star flex items-center gap-1 hover:text-[#FE2C55] transition-colors ${userVote === 'up' ? 'active text-[#FE2C55]' : ''}" aria-label="Votar publicación">
                     <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 4l-8 8h5v8h6v-8h5z"/>
+                      <path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.13 6.56L12 17.53 6.11 20.62l1.13-6.56L2.48 9.42l6.58-.96L12 2.5z"/>
                     </svg>
                   </button>
                   <span id="score-${note.id}" class="text-sm font-bold ${score > 0 ? 'text-[#FE2C55]' : 'text-gray-600'}">${score > 0 ? '+' : ''}${score}</span>
-                  <button onclick="votePost('${note.id}', 'down')" id="downvote-${note.id}" class="flex items-center gap-1 hover:text-blue-500 transition-colors ${userVote === 'down' ? 'text-blue-500' : ''}">
-                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 20l8-8h-5V4H9v8H4z"/>
-                    </svg>
-                  </button>
 
                   <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1 hover:text-[#FE2C55] transition-colors ml-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6864,16 +6881,10 @@ function votePost(noteId, voteType) {
       if (note) {
         if (currentVote === 'up') {
           note.upvotes = (note.upvotes || 1) - 1;
-        } else if (currentVote === 'down') {
-          note.downvotes = (note.downvotes || 1) - 1;
         }
 
-        if (currentVote !== voteType) {
-          if (voteType === 'up') {
-            note.upvotes = (note.upvotes || 0) + 1;
-          } else {
-            note.downvotes = (note.downvotes || 0) + 1;
-          }
+        if (currentVote !== 'up') {
+          note.upvotes = (note.upvotes || 0) + 1;
         }
       }
       return note;
@@ -6890,15 +6901,22 @@ function votePost(noteId, voteType) {
       }
     });
 
-    if (currentVote === voteType) {
+    if (currentVote === 'up') {
       userVoteRef.remove();
     } else {
-      userVoteRef.set(voteType);
+      userVoteRef.set('up');
+    }
+
+    const voteBtn = document.getElementById(`upvote-${noteId}`);
+    if (voteBtn) {
+      voteBtn.classList.remove('pop');
+      requestAnimationFrame(() => voteBtn.classList.add('pop'));
     }
   });
 }
 
 let currentPostId = null;
+let replyTarget = null;
 let stickerTargetInputId = null;
 const pendingStickers = {};
 const STICKER_PREFIX = '__sticker__:';
@@ -7124,6 +7142,7 @@ function closeCommentsView() {
   document.getElementById('main-app').classList.remove('hidden');
   closeStickerPicker();
   clearStickerSelection('comment-input-main');
+  clearReplyTarget();
   currentPostId = null;
 }
 
@@ -7191,6 +7210,10 @@ function countReplies(replies) {
 }
 
 // Renderizar comentario moderno
+function escapeSingleQuote(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 function renderCommentModern(noteId, commentId, comment, container, level, parentId = null) {
   const marginLeft = level * 16;
   const commentDiv = document.createElement('div');
@@ -7219,19 +7242,14 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
         ${renderContentWithSticker(comment.content, 'text-sm text-black mb-2 leading-relaxed')}
         <div class="flex items-center gap-4 text-xs text-gray-500">
           <div class="flex items-center gap-2">
-            <button onclick="voteComment('${noteId}', '${commentPath}', 'up', ${level}, '${parentId || ''}')" id="comment-upvote-${commentPath}" class="hover:text-[#FE2C55] transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+            <button onclick="voteComment('${noteId}', '${commentPath}', 'up', ${level}, '${parentId || ''}')" id="comment-upvote-${commentPath}" class="vote-star hover:text-[#FE2C55] transition-colors" aria-label="Votar comentario">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.13 6.56L12 17.53 6.11 20.62l1.13-6.56L2.48 9.42l6.58-.96L12 2.5z"/>
               </svg>
             </button>
             <span id="comment-score-${commentPath}" class="font-semibold ${score > 0 ? 'text-[#FE2C55]' : 'text-gray-600'}">${score > 0 ? '+' : ''}${score}</span>
-            <button onclick="voteComment('${noteId}', '${commentPath}', 'down', ${level}, '${parentId || ''}')" id="comment-downvote-${commentPath}" class="hover:text-blue-500 transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-              </svg>
-            </button>
           </div>
-          <button onclick="toggleReplyFormModern('${commentPath}')" class="hover:text-[#FE2C55] transition-colors">
+          <button onclick="setReplyTarget('${commentPath}', '${escapeSingleQuote(comment.authorName || 'Usuario')}')" class="hover:text-[#FE2C55] transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
             </svg>
@@ -7241,20 +7259,6 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
             Eliminar
           </button>
           ` : ''}
-        </div>
-        <div id="reply-form-${commentPath}" class="hidden mt-3">
-          <div id="sticker-preview-reply-input-${commentPath}" class="hidden mb-2"></div>
-          <div class="flex gap-2">
-            <input type="text" id="reply-input-${commentPath}" placeholder="Escribe una respuesta..." class="flex-1 p-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
-            <button onclick="openStickerPicker('reply-input-${commentPath}')" class="border border-gray-200 text-gray-600 p-2 rounded-full flex-shrink-0 hover:text-[#FE2C55]" title="Stickers">
-              <img src="https://i.ibb.co/rGMpvhnm/IMG-9702.png" alt="sticker" class="w-5 h-5 object-contain">
-            </button>
-              <button onclick="addReplyModern('${noteId}', '${commentPath}')" class="bg-[#FE2C55] text-white p-2 rounded-full flex-shrink-0">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
-              </svg>
-            </button>
-          </div>
         </div>
         <div id="replies-${commentPath}" class="mt-3 space-y-3"></div>
       </div>
@@ -7278,10 +7282,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
       const vote = voteSnapshot.val();
       if (vote === 'up') {
         const btn = document.getElementById(`comment-upvote-${commentPath}`);
-        if (btn) btn.querySelector('svg').classList.add('text-[#FE2C55]');
-      } else if (vote === 'down') {
-        const btn = document.getElementById(`comment-downvote-${commentPath}`);
-        if (btn) btn.querySelector('svg').classList.add('text-blue-500');
+        if (btn) btn.classList.add('active');
       }
     });
   }
@@ -7305,7 +7306,7 @@ function submitComment() {
   firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
     const userData = userSnap.val();
 
-    const comment = {
+    const payload = {
       content: content,
       authorId: user.uid,
       authorName: userData.username || 'Usuario',
@@ -7315,8 +7316,17 @@ function submitComment() {
       downvotes: 0
     };
 
-    firebase.database().ref('postComments/' + currentPostId).push(comment).then(() => {
-      // Actualizar contador en la publicación
+    if (replyTarget && replyTarget.commentId) {
+      firebase.database().ref('postComments/' + currentPostId + '/' + replyTarget.commentId + '/replies').push(payload).then(() => {
+        updateCommentsCount(currentPostId);
+        input.value = '';
+        clearStickerSelection('comment-input-main');
+        clearReplyTarget();
+      });
+      return;
+    }
+
+    firebase.database().ref('postComments/' + currentPostId).push(payload).then(() => {
       updateCommentsCount(currentPostId);
       input.value = '';
       clearStickerSelection('comment-input-main');
@@ -7343,50 +7353,31 @@ function updateCommentsCount(noteId) {
   });
 }
 
-// Mostrar formulario de respuesta
-function toggleReplyFormModern(commentId) {
-  const form = document.getElementById(`reply-form-${commentId}`);
-  form.classList.toggle('hidden');
-  if (!form.classList.contains('hidden')) {
-    document.getElementById(`reply-input-${commentId}`).focus();
+function setReplyTarget(commentId, authorName) {
+  replyTarget = { commentId, authorName: authorName || 'Usuario' };
+  const bar = document.getElementById('reply-context-bar');
+  const text = document.getElementById('reply-context-text');
+  const input = document.getElementById('comment-input-main');
+  if (bar && text) {
+    text.textContent = `Respondiendo a @${replyTarget.authorName}`;
+    bar.classList.remove('hidden');
+    bar.classList.add('flex');
+  }
+  if (input) {
+    input.placeholder = 'Escribe tu respuesta';
+    input.focus();
   }
 }
 
-// Agregar respuesta
-function addReplyModern(noteId, parentCommentId) {
-  const user = firebase.auth().currentUser;
-  if (!user) {
-    alert('Debes iniciar sesión para responder');
-    return;
+function clearReplyTarget() {
+  replyTarget = null;
+  const bar = document.getElementById('reply-context-bar');
+  const input = document.getElementById('comment-input-main');
+  if (bar) {
+    bar.classList.add('hidden');
+    bar.classList.remove('flex');
   }
-
-  const inputId = `reply-input-${parentCommentId}`;
-  const input = document.getElementById(inputId);
-  const content = resolveCommentContent(inputId);
-
-  if (!content) return;
-
-  firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
-    const userData = userSnap.val();
-
-    const reply = {
-      content: content,
-      authorId: user.uid,
-      authorName: userData.username || 'Usuario',
-      authorImage: userData.profileImage || 'https://via.placeholder.com/150',
-      timestamp: Date.now(),
-      upvotes: 0,
-      downvotes: 0
-    };
-
-    firebase.database().ref('postComments/' + noteId + '/' + parentCommentId + '/replies').push(reply).then(() => {
-      // Actualizar contador total de comentarios
-      updateCommentsCount(noteId);
-      input.value = '';
-      clearStickerSelection(inputId);
-      document.getElementById(`reply-form-${parentCommentId}`).classList.add('hidden');
-    });
-  });
+  if (input) input.placeholder = '¿Qué opinas?';
 }
 
 // Votar comentario (funciona para comentarios y respuestas)
@@ -7413,25 +7404,25 @@ function voteComment(noteId, commentId, voteType, level, parentId = null) {
       if (comment) {
         if (currentVote === 'up') {
           comment.upvotes = (comment.upvotes || 1) - 1;
-        } else if (currentVote === 'down') {
-          comment.downvotes = (comment.downvotes || 1) - 1;
         }
 
-        if (currentVote !== voteType) {
-          if (voteType === 'up') {
-            comment.upvotes = (comment.upvotes || 0) + 1;
-          } else {
-            comment.downvotes = (comment.downvotes || 0) + 1;
-          }
+        if (currentVote !== 'up') {
+          comment.upvotes = (comment.upvotes || 0) + 1;
         }
       }
       return comment;
     });
 
-    if (currentVote === voteType) {
+    if (currentVote === 'up') {
       userVoteRef.remove();
     } else {
-      userVoteRef.set(voteType);
+      userVoteRef.set('up');
+    }
+
+    const voteBtn = document.getElementById(`comment-upvote-${commentId}`);
+    if (voteBtn) {
+      voteBtn.classList.remove('pop');
+      requestAnimationFrame(() => voteBtn.classList.add('pop'));
     }
   });
 }
