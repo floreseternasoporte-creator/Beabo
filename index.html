@@ -139,11 +139,69 @@ body {
   color: #000;
 }
 
-.notification-time {
-  font-size: 0.8em;
-  color: #FE2C55;
-  margin-top: 4px;
-}
+  .notification-time {
+    font-size: 0.8em;
+    color: #FE2C55;
+    margin-top: 4px;
+  }
+
+  /* Swipe to delete styles */
+  .notification-swipe-container {
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    touch-action: pan-y;
+  }
+
+  .notification-item {
+    position: relative;
+    padding: 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #f9f9f9;
+    color: #000;
+    z-index: 2;
+    transition: transform 0.3s ease;
+    margin-bottom: 0; /* Handled by container */
+  }
+
+  .notification-delete-action {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 80px;
+    background-color: #FE2C55;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    z-index: 1;
+    border-radius: 8px 0 0 8px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .notification-delete-action i {
+    font-size: 1.2rem;
+    animation: iconPop 0.3s ease;
+  }
+
+  @keyframes iconPop {
+    0% { transform: scale(0.5); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .notification-item.swiped {
+    transform: translateX(80px);
+  }
+
+  .notification-item.deleting {
+    transform: translateX(100%);
+    opacity: 0;
+    transition: all 0.4s ease;
+  }
 
 /* Etiqueta de fundador */
 .founder-tag {
@@ -7107,9 +7165,11 @@ function votePost(noteId, voteType) {
 
   const userVoteRef = firebase.database().ref('userVotes/' + user.uid + '/' + noteId);
   const noteRef = firebase.database().ref('communityNotes/' + noteId);
-  const userName = user.displayName || user.email || 'Alguien';
+  firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
+    const userData = userSnap.val();
+    const userName = (userData && userData.username) ? userData.username : (user.displayName || user.email || 'Alguien');
 
-  userVoteRef.once('value').then(snapshot => {
+    userVoteRef.once('value').then(snapshot => {
     const currentVote = snapshot.val();
 
     noteRef.transaction(note => {
@@ -7147,6 +7207,7 @@ function votePost(noteId, voteType) {
       voteBtn.classList.remove('pop');
       requestAnimationFrame(() => voteBtn.classList.add('pop'));
     }
+    });
   });
 }
 
@@ -8304,6 +8365,13 @@ function saveNote() {
       items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
       items.forEach(notification => {
+        const container = document.createElement('div');
+        container.className = 'notification-swipe-container';
+
+        const deleteAction = document.createElement('div');
+        deleteAction.className = 'notification-delete-action';
+        deleteAction.innerHTML = '<i class="fas fa-trash-alt"></i>';
+
         const div = document.createElement('div');
         div.className = `notification-item ${notification.type || 'info'}`;
 
@@ -8329,13 +8397,91 @@ function saveNote() {
           </div>
         `;
 
+        // Swipe logic
+        let startX = 0;
+        let currentX = 0;
+        let isSwiping = false;
+
+        div.addEventListener('touchstart', (e) => {
+          startX = e.touches[0].clientX;
+          isSwiping = true;
+          div.style.transition = 'none';
+        });
+
+        div.addEventListener('touchmove', (e) => {
+          if (!isSwiping) return;
+          currentX = e.touches[0].clientX - startX;
+          if (currentX > 0 && currentX < 100) {
+            div.style.transform = `translateX(${currentX}px)`;
+            deleteAction.style.opacity = currentX / 80;
+          }
+        });
+
+        div.addEventListener('touchend', () => {
+          isSwiping = false;
+          div.style.transition = 'transform 0.3s ease';
+          if (currentX > 50) {
+            div.style.transform = 'translateX(80px)';
+            deleteAction.style.opacity = '1';
+          } else {
+            div.style.transform = 'translateX(0)';
+            deleteAction.style.opacity = '0';
+          }
+          currentX = 0;
+        });
+
+        // Mouse events for desktop testing
+        div.addEventListener('mousedown', (e) => {
+          startX = e.clientX;
+          isSwiping = true;
+          div.style.transition = 'none';
+        });
+
+        window.addEventListener('mousemove', (e) => {
+          if (!isSwiping) return;
+          currentX = e.clientX - startX;
+          if (currentX > 0 && currentX < 100) {
+            div.style.transform = `translateX(${currentX}px)`;
+            deleteAction.style.opacity = currentX / 80;
+          }
+        });
+
+        window.addEventListener('mouseup', () => {
+          if (!isSwiping) return;
+          isSwiping = false;
+          div.style.transition = 'transform 0.3s ease';
+          if (currentX > 50) {
+            div.style.transform = 'translateX(80px)';
+            deleteAction.style.opacity = '1';
+          } else {
+            div.style.transform = 'translateX(0)';
+            deleteAction.style.opacity = '0';
+          }
+          currentX = 0;
+        });
+
+        deleteAction.onclick = (e) => {
+          e.stopPropagation();
+          div.classList.add('deleting');
+          setTimeout(() => {
+            firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).remove();
+          }, 400);
+        };
+
         div.onclick = () => {
+          if (div.style.transform === 'translateX(80px)') {
+            div.style.transform = 'translateX(0)';
+            deleteAction.style.opacity = '0';
+            return;
+          }
           if (!notification.read) {
             firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).update({ read: true });
           }
         };
 
-        notificationsList.appendChild(div);
+        container.appendChild(deleteAction);
+        container.appendChild(div);
+        notificationsList.appendChild(container);
       });
     });
   }
