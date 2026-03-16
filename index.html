@@ -185,20 +185,21 @@ body {
   }
 
   .notification-delete-action .trash-icon {
-    font-size: 1.5rem;
-    position: relative;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .notification-delete-action .trash-icon::before {
-    content: '';
-    position: absolute;
-    width: 20px;
-    height: 3px;
-    background-color: white;
-    top: -8px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-radius: 2px;
+  .notification-delete-action .trash-icon-svg {
+    width: 26px;
+    height: 26px;
+    overflow: visible;
+  }
+
+  .notification-delete-action .trash-lid-part {
+    transform-origin: 9px 8px;
   }
 
   @keyframes trashLidOpen {
@@ -207,7 +208,7 @@ body {
     100% { transform: rotateZ(0deg); }
   }
 
-  .notification-delete-action.animating .trash-icon::before {
+  .notification-delete-action.animating .trash-lid-part {
     animation: trashLidOpen 0.6s ease-in-out;
   }
 
@@ -6761,7 +6762,7 @@ function openPhotoDetail(photo) {
                       <path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.13 6.56L12 17.53 6.11 20.62l1.13-6.56L2.48 9.42l6.58-.96L12 2.5z"/>
                     </svg>
                   </button>
-                  <span id="score-${note.id}" class="text-sm font-bold ${score > 0 ? 'text-[#FE2C55]' : 'text-gray-600'}">${score > 0 ? '+' : ''}${score}</span>
+                  <span id="score-${note.id}" class="text-sm font-bold ${score > 0 ? 'text-[#FE2C55]' : 'text-gray-600'}">${formatVoteScore(score)}</span>
 
                   <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1 hover:text-[#FE2C55] transition-colors ml-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6943,14 +6944,21 @@ function openPostOptionsSheet(noteId) {
   if (!overlay || !sheet) return;
 
   const user = firebase.auth().currentUser;
+  if (deleteBtn) deleteBtn.classList.add('hidden');
+
   if (user) {
     firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
       const note = snapshot.val();
-      if (note && note.authorId === user.uid) {
-        if (deleteBtn) deleteBtn.classList.remove('hidden');
-      } else {
-        if (deleteBtn) deleteBtn.classList.add('hidden');
+      const isOwner = !!note && (note.authorId === user.uid || note.userId === user.uid);
+      if (deleteBtn) {
+        if (isOwner) {
+          deleteBtn.classList.remove('hidden');
+        } else {
+          deleteBtn.classList.add('hidden');
+        }
       }
+    }).catch(() => {
+      if (deleteBtn) deleteBtn.classList.add('hidden');
     });
   }
 
@@ -7477,7 +7485,7 @@ function openCommentsView(noteId) {
       ${renderNoteImages(note, noteId)}
       ${pollHTML}
       <div class="flex items-center gap-3 text-xs text-gray-500 mt-2">
-        <span class="font-bold ${score > 0 ? 'text-[#FE2C55]' : score < 0 ? 'text-blue-500' : 'text-gray-600'}">${score > 0 ? '+' : ''}${score}</span>
+        <span class="font-bold ${score > 0 ? 'text-[#FE2C55]' : score < 0 ? 'text-blue-500' : 'text-gray-600'}">${formatVoteScore(score)}</span>
       </div>
       <p class="text-xs text-gray-400 mt-2">${new Date(note.timestamp).toLocaleString()}</p>
     `;
@@ -7600,7 +7608,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
                 <path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.13 6.56L12 17.53 6.11 20.62l1.13-6.56L2.48 9.42l6.58-.96L12 2.5z"/>
               </svg>
             </button>
-            <span id="comment-score-${commentPath}" class="font-semibold ${score > 0 ? 'text-[#FE2C55]' : 'text-gray-600'}">${score > 0 ? '+' : ''}${score}</span>
+            <span id="comment-score-${commentPath}" class="font-semibold ${score > 0 ? 'text-[#FE2C55]' : 'text-gray-600'}">${formatVoteScore(score)}</span>
           </div>
           <button onclick="setReplyTarget('${commentPath}', '${escapeSingleQuote(comment.authorName || 'Usuario')}')" class="hover:text-[#FE2C55] transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -8427,7 +8435,19 @@ function saveNote() {
 
         const deleteAction = document.createElement('div');
         deleteAction.className = 'notification-delete-action';
-        deleteAction.innerHTML = '<i class="fas fa-trash-alt trash-icon"></i>';
+        deleteAction.innerHTML = `
+          <span class="trash-icon" aria-hidden="true">
+            <svg class="trash-icon-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g class="trash-lid-part">
+                <path d="M8 6.5H16" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+                <path d="M10 5.2C10 4.54 10.54 4 11.2 4H12.8C13.46 4 14 4.54 14 5.2V6.5H10V5.2Z" fill="white"/>
+              </g>
+              <rect x="7" y="8" width="10" height="11" rx="2" stroke="white" stroke-width="2.2"/>
+              <path d="M10.3 10.8V16.4" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M13.7 10.8V16.4" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+        `;
 
         const div = document.createElement('div');
         div.className = `notification-item ${notification.type || 'info'}`;
@@ -8454,10 +8474,25 @@ function saveNote() {
           </div>
         `;
 
-        // Swipe logic
+        // Swipe logic (eliminar al deslizar a la izquierda)
         let startX = 0;
         let currentX = 0;
         let isSwiping = false;
+        let isDeleting = false;
+
+        const triggerNotificationDelete = () => {
+          if (isDeleting) return;
+          isDeleting = true;
+          div.style.pointerEvents = 'none';
+          deleteAction.style.pointerEvents = 'none';
+          deleteAction.classList.add('animating');
+          setTimeout(() => {
+            div.classList.add('deleting');
+            setTimeout(() => {
+              firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).remove();
+            }, 400);
+          }, 600);
+        };
 
         div.addEventListener('touchstart', (e) => {
           startX = e.touches[0].clientX;
@@ -8466,20 +8501,23 @@ function saveNote() {
         });
 
         div.addEventListener('touchmove', (e) => {
-          if (!isSwiping) return;
+          if (!isSwiping || isDeleting) return;
           currentX = e.touches[0].clientX - startX;
-          if (currentX < 0 && currentX > -100) {
-            div.style.transform = `translateX(${currentX}px)`;
-            deleteAction.style.opacity = Math.abs(currentX) / 80;
+          if (currentX < 0) {
+            const limitedX = Math.max(currentX, -100);
+            div.style.transform = `translateX(${limitedX}px)`;
+            deleteAction.style.opacity = Math.min(Math.abs(limitedX) / 80, 1);
           }
         });
 
         div.addEventListener('touchend', () => {
           isSwiping = false;
+          if (isDeleting) return;
           div.style.transition = 'transform 0.3s ease';
           if (currentX < -50) {
             div.style.transform = 'translateX(-80px)';
             deleteAction.style.opacity = '1';
+            triggerNotificationDelete();
           } else {
             div.style.transform = 'translateX(0)';
             deleteAction.style.opacity = '0';
@@ -8495,21 +8533,24 @@ function saveNote() {
         });
 
         window.addEventListener('mousemove', (e) => {
-          if (!isSwiping) return;
+          if (!isSwiping || isDeleting) return;
           currentX = e.clientX - startX;
-          if (currentX < 0 && currentX > -100) {
-            div.style.transform = `translateX(${currentX}px)`;
-            deleteAction.style.opacity = Math.abs(currentX) / 80;
+          if (currentX < 0) {
+            const limitedX = Math.max(currentX, -100);
+            div.style.transform = `translateX(${limitedX}px)`;
+            deleteAction.style.opacity = Math.min(Math.abs(limitedX) / 80, 1);
           }
         });
 
         window.addEventListener('mouseup', () => {
           if (!isSwiping) return;
           isSwiping = false;
+          if (isDeleting) return;
           div.style.transition = 'transform 0.3s ease';
           if (currentX < -50) {
             div.style.transform = 'translateX(-80px)';
             deleteAction.style.opacity = '1';
+            triggerNotificationDelete();
           } else {
             div.style.transform = 'translateX(0)';
             deleteAction.style.opacity = '0';
@@ -8519,13 +8560,7 @@ function saveNote() {
 
         deleteAction.onclick = (e) => {
           e.stopPropagation();
-          deleteAction.classList.add('animating');
-          setTimeout(() => {
-            div.classList.add('deleting');
-            setTimeout(() => {
-              firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).remove();
-            }, 400);
-          }, 600);
+          triggerNotificationDelete();
         };
 
         div.onclick = () => {
@@ -8618,6 +8653,14 @@ function saveNote() {
       return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
     }
     return num.toString();
+  }
+
+  function formatVoteScore(score) {
+    const numericScore = Number(score || 0);
+    if (numericScore === 0) return '0';
+    const absValue = Math.abs(numericScore);
+    const compact = formatNumber(absValue);
+    return numericScore > 0 ? `+${compact}` : `-${compact}`;
   }
 
   function updateCoinDisplay(userId) {
