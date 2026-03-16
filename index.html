@@ -106,6 +106,24 @@ body {
   text-shadow: 0 0 10px rgba(254,44,85,0.5);
 }
 
+.vote-star {
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.vote-star.active {
+  color: #FE2C55;
+}
+
+.vote-star.pop {
+  animation: starPop 0.35s ease;
+}
+
+@keyframes starPop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35) rotate(-8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
 /* Margen para la lista de capítulos */
 #detail-chapters {
   margin-top: 10px;
@@ -839,6 +857,39 @@ body {
       pointer-events: none;
     }
 
+
+
+    /* Menú de opciones de publicación (estilo hoja inferior) */
+    #post-options-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      z-index: 88;
+    }
+
+    #post-options-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 52vh;
+      background: #fff;
+      border-top-left-radius: 24px;
+      border-top-right-radius: 24px;
+      z-index: 89;
+      transform: translateY(100%);
+      transition: transform 0.25s ease;
+      box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    #post-options-sheet.open {
+      transform: translateY(0);
+    }
+
+    #content-preferences-view,
+    #sensitive-content-view {
+      z-index: 90;
+    }
     /* Modales para reportar historia y bloqueo */
     #report-story-modal {
       position: fixed;
@@ -2533,6 +2584,10 @@ firebase.auth().onAuthStateChanged(user => {
 
     <!-- Input fijo abajo -->
     <div class="bg-white border-t p-3 flex-shrink-0">
+      <div id="reply-context-bar" class="hidden mb-2 text-xs text-[#FE2C55] font-semibold bg-[#fff1f4] border border-[#FE2C55]/30 rounded-full px-3 py-1 items-center justify-between">
+        <span id="reply-context-text"></span>
+        <button onclick="clearReplyTarget()" class="text-[#d91c47] hover:text-[#b8153b]">Cancelar</button>
+      </div>
       <div id="sticker-preview-comment-input-main" class="hidden mb-2"></div>
       <div class="flex gap-2 items-center">
         <input type="text" id="comment-input-main" placeholder="¿Qué opinas?" class="flex-1 p-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
@@ -2587,6 +2642,74 @@ firebase.auth().onAuthStateChanged(user => {
 </div>
 
 <!-- STICKER PICKER GLOBAL -->
+<div id="post-options-overlay" class="hidden" onclick="closePostOptionsSheet()"></div>
+<div id="post-options-sheet" class="hidden">
+  <div class="h-full flex flex-col p-5">
+    <div class="w-12 h-1.5 rounded-full bg-gray-300 mx-auto mb-4"></div>
+    <h3 class="text-lg font-bold text-[#161823] mb-1">Opciones de publicación</h3>
+    <p class="text-sm text-gray-500 mb-4">Administra esta publicación en tu feed.</p>
+
+    <button onclick="hidePostForUser()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 text-left mb-2">
+      <i class="fas fa-eye-slash text-[#FE2C55]"></i>
+      <div>
+        <p class="font-semibold text-sm text-gray-900">Ocultar publicación</p>
+        <p class="text-xs text-gray-500">No volverás a verla en tu feed</p>
+      </div>
+    </button>
+
+    <button onclick="openReportFromPostOptions()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 text-left mb-2">
+      <i class="fas fa-flag text-[#FE2C55]"></i>
+      <div>
+        <p class="font-semibold text-sm text-gray-900">Reportar publicación</p>
+        <p class="text-xs text-gray-500">Llévame al formulario de reporte</p>
+      </div>
+    </button>
+
+    <button onclick="openContentPreferencesView()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 text-left">
+      <i class="fas fa-sliders text-[#FE2C55]"></i>
+      <div>
+        <p class="font-semibold text-sm text-gray-900">Preferencias de contenido</p>
+        <p class="text-xs text-gray-500">Configura lo que quieres ver en Drex</p>
+      </div>
+    </button>
+  </div>
+</div>
+
+<div id="content-preferences-view" class="fixed inset-0 bg-white hidden">
+  <div class="h-full flex flex-col">
+    <div class="p-4 border-b border-gray-200 flex items-center gap-3">
+      <button onclick="closeContentPreferencesView()" class="text-gray-600"><i class="fas fa-arrow-left"></i></button>
+      <h3 class="font-bold text-lg">Preferencias de contenido</h3>
+    </div>
+    <div class="p-4">
+      <p class="text-sm text-gray-600 mb-4">Administra el contenido que estás viendo en Drex.</p>
+      <button onclick="openSensitiveContentView()" class="w-full p-4 rounded-2xl border border-gray-200 text-left hover:bg-gray-50">
+        <p class="font-semibold text-gray-900">Contenido delicado</p>
+        <p class="text-xs text-gray-500 mt-1">Controla si deseas ver publicaciones para mayores de 18 años (+18).</p>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="sensitive-content-view" class="fixed inset-0 bg-white hidden">
+  <div class="h-full flex flex-col">
+    <div class="p-4 border-b border-gray-200 flex items-center gap-3">
+      <button onclick="closeSensitiveContentView()" class="text-gray-600"><i class="fas fa-arrow-left"></i></button>
+      <h3 class="font-bold text-lg">Contenido delicado</h3>
+    </div>
+    <div class="p-4">
+      <div class="p-4 rounded-2xl border border-gray-200 bg-white">
+        <p class="font-semibold text-gray-900">Mostrar contenido +18</p>
+        <p class="text-xs text-gray-500 mt-1 mb-3">Si lo desactivas, ocultaremos publicaciones detectadas como contenido para mayores de edad.</p>
+        <label class="inline-flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" id="adult-content-toggle" onchange="toggleAdultContentPreference(this.checked)" class="w-5 h-5 accent-[#FE2C55]">
+          <span id="adult-content-toggle-label" class="text-sm font-medium text-gray-800">Activado</span>
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="sticker-sheet-overlay" class="fixed inset-0 bg-black/40 hidden z-[60]" onclick="closeStickerPicker()"></div>
 <div id="sticker-sheet" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl hidden z-[61] flex flex-col transition-transform duration-300 translate-y-full" style="height: 70vh;">
   <div class="p-4 border-b border-gray-100 flex items-center gap-4">
@@ -6375,6 +6498,61 @@ function openPhotoDetail(photo) {
     `;
   }
 
+  function getHiddenPosts() {
+    try {
+      const raw = localStorage.getItem('drex_hidden_posts');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.error('No se pudieron leer publicaciones ocultas:', error);
+      return [];
+    }
+  }
+
+  function setHiddenPosts(hiddenPostIds) {
+    localStorage.setItem('drex_hidden_posts', JSON.stringify(hiddenPostIds));
+  }
+
+  function getAdultContentPreference() {
+    const raw = localStorage.getItem('drex_allow_adult_content');
+    return raw === null ? true : raw === 'true';
+  }
+
+  function updateAdultContentToggleUI() {
+    const toggle = document.getElementById('adult-content-toggle');
+    const label = document.getElementById('adult-content-toggle-label');
+    const enabled = getAdultContentPreference();
+    if (toggle) toggle.checked = enabled;
+    if (label) label.textContent = enabled ? 'Activado' : 'Desactivado';
+  }
+
+  function normalizeForMatch(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '');
+  }
+
+  function isAdultContentNote(note) {
+    if (!note) return false;
+    if (note.isAdultContent || note.contentRating === '18+' || (note.disclosures && note.disclosures.adultContent)) return true;
+
+    const joined = normalizeForMatch([note.content, note.url, note.title, note.poll && note.poll.question].filter(Boolean).join(' '));
+    const adultPatterns = [
+      /\b(18\+|solo adultos|adultos|nsfw|desnudo|desnuda|erotico|erotica|sexual|sexo|porn|xxx)\b/,
+      /\bcontenido\s+delicado\b/
+    ];
+
+    return adultPatterns.some(pattern => pattern.test(joined));
+  }
+
+  function shouldHideNoteForCurrentUser(noteId, note) {
+    const hiddenPosts = getHiddenPosts();
+    if (hiddenPosts.includes(noteId)) return true;
+    if (!getAdultContentPreference() && isAdultContentNote(note)) return true;
+    return false;
+  }
+
   function loadNotes() {
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
@@ -6389,12 +6567,15 @@ function openPhotoDetail(photo) {
       }).catch(err => console.error('Error cargando votos:', err));
     }
 
-    firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50).on('value', snapshot => {
+    const notesRef = firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
+    notesRef.off();
+    notesRef.on('value', snapshot => {
       feedContainer.innerHTML = '';
 
       const notes = [];
       snapshot.forEach(child => {
         const rawNote = child.val() || {};
+        if (shouldHideNoteForCurrentUser(child.key, rawNote)) return;
         notes.unshift({ ...rawNote, id: child.key });
       });
 
@@ -6444,7 +6625,6 @@ function openPhotoDetail(photo) {
             `;
             }
 
-            const isOwner = user && note.authorId === user.uid;
             const safeTimestamp = Number(note.timestamp) || Date.now();
             const safeAuthorName = note.authorName || 'Usuario';
             const safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
@@ -6462,8 +6642,15 @@ function openPhotoDetail(photo) {
             }
 
             noteElement.innerHTML = `
-              <div class="p-4">
-                <div class="flex items-start gap-3 mb-3">
+              <div class="p-4 relative">
+                <button onclick="openPostOptionsSheet('${note.id}')" class="absolute top-3 right-3 z-10 p-2 rounded-full bg-white/90 hover:bg-gray-100 text-gray-600 border border-gray-200" aria-label="Opciones de publicación">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <circle cx="12" cy="5" r="1.8" />
+                    <circle cx="12" cy="12" r="1.8" />
+                    <circle cx="12" cy="19" r="1.8" />
+                  </svg>
+                </button>
+                <div class="flex items-start gap-3 mb-3 pr-12">
                   <img src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-10 h-10 rounded-full flex-shrink-0">
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-2">
@@ -6479,17 +6666,12 @@ function openPhotoDetail(photo) {
                 ${pollHTML}
 
                 <div class="flex items-center gap-4 pt-2 border-t border-gray-100">
-                  <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="flex items-center gap-1 hover:text-[#FE2C55] transition-colors ${userVote === 'up' ? 'text-[#FE2C55]' : ''}">
+                  <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="vote-star flex items-center gap-1 hover:text-[#FE2C55] transition-colors ${userVote === 'up' ? 'active text-[#FE2C55]' : ''}" aria-label="Votar publicación">
                     <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 4l-8 8h5v8h6v-8h5z"/>
+                      <path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.13 6.56L12 17.53 6.11 20.62l1.13-6.56L2.48 9.42l6.58-.96L12 2.5z"/>
                     </svg>
                   </button>
                   <span id="score-${note.id}" class="text-sm font-bold ${score > 0 ? 'text-[#FE2C55]' : 'text-gray-600'}">${score > 0 ? '+' : ''}${score}</span>
-                  <button onclick="votePost('${note.id}', 'down')" id="downvote-${note.id}" class="flex items-center gap-1 hover:text-blue-500 transition-colors ${userVote === 'down' ? 'text-blue-500' : ''}">
-                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 20l8-8h-5V4H9v8H4z"/>
-                    </svg>
-                  </button>
 
                   <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1 hover:text-[#FE2C55] transition-colors ml-2">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6497,19 +6679,6 @@ function openPhotoDetail(photo) {
                     </svg>
                     <span class="text-sm font-bold">${commentsCount}</span>
                   </button>
-
-                  ${isOwner ?
-                    `<button onclick="deleteNote('${note.id}')" class="ml-auto p-2 hover:bg-red-50 rounded transition-colors">
-                      <svg class="w-5 h-5 text-gray-500 hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                      </svg>
-                    </button>` :
-                    `<button onclick="reportNote('${note.id}')" class="ml-auto p-2 hover:bg-gray-100 rounded transition-colors">
-                      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86l-7.38 12.8A2 2 0 004.67 19h14.66a2 2 0 001.73-3l-7.38-12.8a2 2 0 00-3.46 0z"/>
-                      </svg>
-                    </button>`
-                  }
                 </div>
                 <p class="text-xs text-gray-400 mt-2">${new Date(safeTimestamp).toLocaleString()}</p>
               </div>
@@ -6674,6 +6843,77 @@ function deleteNote(noteId) {
 }
 
 let currentReportNoteId = null;
+let currentPostOptionsNoteId = null;
+
+function openPostOptionsSheet(noteId) {
+  currentPostOptionsNoteId = noteId;
+  const overlay = document.getElementById('post-options-overlay');
+  const sheet = document.getElementById('post-options-sheet');
+  if (!overlay || !sheet) return;
+
+  overlay.classList.remove('hidden');
+  sheet.classList.remove('hidden');
+  requestAnimationFrame(() => sheet.classList.add('open'));
+}
+
+function closePostOptionsSheet() {
+  const overlay = document.getElementById('post-options-overlay');
+  const sheet = document.getElementById('post-options-sheet');
+  if (sheet) {
+    sheet.classList.remove('open');
+    setTimeout(() => sheet.classList.add('hidden'), 220);
+  }
+  if (overlay) overlay.classList.add('hidden');
+  currentPostOptionsNoteId = null;
+}
+
+function hidePostForUser() {
+  if (!currentPostOptionsNoteId) return;
+  const hiddenPosts = getHiddenPosts();
+  if (!hiddenPosts.includes(currentPostOptionsNoteId)) {
+    hiddenPosts.push(currentPostOptionsNoteId);
+    setHiddenPosts(hiddenPosts);
+  }
+  closePostOptionsSheet();
+  loadNotes();
+}
+
+function openReportFromPostOptions() {
+  if (!currentPostOptionsNoteId) return;
+  const noteId = currentPostOptionsNoteId;
+  closePostOptionsSheet();
+  reportNote(noteId);
+}
+
+function openContentPreferencesView() {
+  closePostOptionsSheet();
+  updateAdultContentToggleUI();
+  const view = document.getElementById('content-preferences-view');
+  if (view) view.classList.remove('hidden');
+}
+
+function closeContentPreferencesView() {
+  const view = document.getElementById('content-preferences-view');
+  if (view) view.classList.add('hidden');
+}
+
+function openSensitiveContentView() {
+  updateAdultContentToggleUI();
+  const view = document.getElementById('sensitive-content-view');
+  if (view) view.classList.remove('hidden');
+}
+
+function closeSensitiveContentView() {
+  const view = document.getElementById('sensitive-content-view');
+  if (view) view.classList.add('hidden');
+}
+
+function toggleAdultContentPreference(enabled) {
+  localStorage.setItem('drex_allow_adult_content', enabled ? 'true' : 'false');
+  updateAdultContentToggleUI();
+  loadNotes();
+}
+
 const postReportReasons = [
   { value: 'sexual', label: 'La publicación contiene contenido sexual o desnudez' },
   { value: 'violence', label: 'Hay violencia, amenazas o acoso' },
@@ -6864,16 +7104,10 @@ function votePost(noteId, voteType) {
       if (note) {
         if (currentVote === 'up') {
           note.upvotes = (note.upvotes || 1) - 1;
-        } else if (currentVote === 'down') {
-          note.downvotes = (note.downvotes || 1) - 1;
         }
 
-        if (currentVote !== voteType) {
-          if (voteType === 'up') {
-            note.upvotes = (note.upvotes || 0) + 1;
-          } else {
-            note.downvotes = (note.downvotes || 0) + 1;
-          }
+        if (currentVote !== 'up') {
+          note.upvotes = (note.upvotes || 0) + 1;
         }
       }
       return note;
@@ -6890,15 +7124,22 @@ function votePost(noteId, voteType) {
       }
     });
 
-    if (currentVote === voteType) {
+    if (currentVote === 'up') {
       userVoteRef.remove();
     } else {
-      userVoteRef.set(voteType);
+      userVoteRef.set('up');
+    }
+
+    const voteBtn = document.getElementById(`upvote-${noteId}`);
+    if (voteBtn) {
+      voteBtn.classList.remove('pop');
+      requestAnimationFrame(() => voteBtn.classList.add('pop'));
     }
   });
 }
 
 let currentPostId = null;
+let replyTarget = null;
 let stickerTargetInputId = null;
 const pendingStickers = {};
 const STICKER_PREFIX = '__sticker__:';
@@ -7124,6 +7365,7 @@ function closeCommentsView() {
   document.getElementById('main-app').classList.remove('hidden');
   closeStickerPicker();
   clearStickerSelection('comment-input-main');
+  clearReplyTarget();
   currentPostId = null;
 }
 
@@ -7191,6 +7433,10 @@ function countReplies(replies) {
 }
 
 // Renderizar comentario moderno
+function escapeSingleQuote(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 function renderCommentModern(noteId, commentId, comment, container, level, parentId = null) {
   const marginLeft = level * 16;
   const commentDiv = document.createElement('div');
@@ -7219,19 +7465,14 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
         ${renderContentWithSticker(comment.content, 'text-sm text-black mb-2 leading-relaxed')}
         <div class="flex items-center gap-4 text-xs text-gray-500">
           <div class="flex items-center gap-2">
-            <button onclick="voteComment('${noteId}', '${commentPath}', 'up', ${level}, '${parentId || ''}')" id="comment-upvote-${commentPath}" class="hover:text-[#FE2C55] transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+            <button onclick="voteComment('${noteId}', '${commentPath}', 'up', ${level}, '${parentId || ''}')" id="comment-upvote-${commentPath}" class="vote-star hover:text-[#FE2C55] transition-colors" aria-label="Votar comentario">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.13 6.56L12 17.53 6.11 20.62l1.13-6.56L2.48 9.42l6.58-.96L12 2.5z"/>
               </svg>
             </button>
             <span id="comment-score-${commentPath}" class="font-semibold ${score > 0 ? 'text-[#FE2C55]' : 'text-gray-600'}">${score > 0 ? '+' : ''}${score}</span>
-            <button onclick="voteComment('${noteId}', '${commentPath}', 'down', ${level}, '${parentId || ''}')" id="comment-downvote-${commentPath}" class="hover:text-blue-500 transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-              </svg>
-            </button>
           </div>
-          <button onclick="toggleReplyFormModern('${commentPath}')" class="hover:text-[#FE2C55] transition-colors">
+          <button onclick="setReplyTarget('${commentPath}', '${escapeSingleQuote(comment.authorName || 'Usuario')}')" class="hover:text-[#FE2C55] transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
             </svg>
@@ -7241,20 +7482,6 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
             Eliminar
           </button>
           ` : ''}
-        </div>
-        <div id="reply-form-${commentPath}" class="hidden mt-3">
-          <div id="sticker-preview-reply-input-${commentPath}" class="hidden mb-2"></div>
-          <div class="flex gap-2">
-            <input type="text" id="reply-input-${commentPath}" placeholder="Escribe una respuesta..." class="flex-1 p-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#FE2C55]">
-            <button onclick="openStickerPicker('reply-input-${commentPath}')" class="border border-gray-200 text-gray-600 p-2 rounded-full flex-shrink-0 hover:text-[#FE2C55]" title="Stickers">
-              <img src="https://i.ibb.co/rGMpvhnm/IMG-9702.png" alt="sticker" class="w-5 h-5 object-contain">
-            </button>
-              <button onclick="addReplyModern('${noteId}', '${commentPath}')" class="bg-[#FE2C55] text-white p-2 rounded-full flex-shrink-0">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
-              </svg>
-            </button>
-          </div>
         </div>
         <div id="replies-${commentPath}" class="mt-3 space-y-3"></div>
       </div>
@@ -7278,10 +7505,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
       const vote = voteSnapshot.val();
       if (vote === 'up') {
         const btn = document.getElementById(`comment-upvote-${commentPath}`);
-        if (btn) btn.querySelector('svg').classList.add('text-[#FE2C55]');
-      } else if (vote === 'down') {
-        const btn = document.getElementById(`comment-downvote-${commentPath}`);
-        if (btn) btn.querySelector('svg').classList.add('text-blue-500');
+        if (btn) btn.classList.add('active');
       }
     });
   }
@@ -7305,7 +7529,7 @@ function submitComment() {
   firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
     const userData = userSnap.val();
 
-    const comment = {
+    const payload = {
       content: content,
       authorId: user.uid,
       authorName: userData.username || 'Usuario',
@@ -7315,8 +7539,17 @@ function submitComment() {
       downvotes: 0
     };
 
-    firebase.database().ref('postComments/' + currentPostId).push(comment).then(() => {
-      // Actualizar contador en la publicación
+    if (replyTarget && replyTarget.commentId) {
+      firebase.database().ref('postComments/' + currentPostId + '/' + replyTarget.commentId + '/replies').push(payload).then(() => {
+        updateCommentsCount(currentPostId);
+        input.value = '';
+        clearStickerSelection('comment-input-main');
+        clearReplyTarget();
+      });
+      return;
+    }
+
+    firebase.database().ref('postComments/' + currentPostId).push(payload).then(() => {
       updateCommentsCount(currentPostId);
       input.value = '';
       clearStickerSelection('comment-input-main');
@@ -7343,50 +7576,31 @@ function updateCommentsCount(noteId) {
   });
 }
 
-// Mostrar formulario de respuesta
-function toggleReplyFormModern(commentId) {
-  const form = document.getElementById(`reply-form-${commentId}`);
-  form.classList.toggle('hidden');
-  if (!form.classList.contains('hidden')) {
-    document.getElementById(`reply-input-${commentId}`).focus();
+function setReplyTarget(commentId, authorName) {
+  replyTarget = { commentId, authorName: authorName || 'Usuario' };
+  const bar = document.getElementById('reply-context-bar');
+  const text = document.getElementById('reply-context-text');
+  const input = document.getElementById('comment-input-main');
+  if (bar && text) {
+    text.textContent = `Respondiendo a @${replyTarget.authorName}`;
+    bar.classList.remove('hidden');
+    bar.classList.add('flex');
+  }
+  if (input) {
+    input.placeholder = 'Escribe tu respuesta';
+    input.focus();
   }
 }
 
-// Agregar respuesta
-function addReplyModern(noteId, parentCommentId) {
-  const user = firebase.auth().currentUser;
-  if (!user) {
-    alert('Debes iniciar sesión para responder');
-    return;
+function clearReplyTarget() {
+  replyTarget = null;
+  const bar = document.getElementById('reply-context-bar');
+  const input = document.getElementById('comment-input-main');
+  if (bar) {
+    bar.classList.add('hidden');
+    bar.classList.remove('flex');
   }
-
-  const inputId = `reply-input-${parentCommentId}`;
-  const input = document.getElementById(inputId);
-  const content = resolveCommentContent(inputId);
-
-  if (!content) return;
-
-  firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
-    const userData = userSnap.val();
-
-    const reply = {
-      content: content,
-      authorId: user.uid,
-      authorName: userData.username || 'Usuario',
-      authorImage: userData.profileImage || 'https://via.placeholder.com/150',
-      timestamp: Date.now(),
-      upvotes: 0,
-      downvotes: 0
-    };
-
-    firebase.database().ref('postComments/' + noteId + '/' + parentCommentId + '/replies').push(reply).then(() => {
-      // Actualizar contador total de comentarios
-      updateCommentsCount(noteId);
-      input.value = '';
-      clearStickerSelection(inputId);
-      document.getElementById(`reply-form-${parentCommentId}`).classList.add('hidden');
-    });
-  });
+  if (input) input.placeholder = '¿Qué opinas?';
 }
 
 // Votar comentario (funciona para comentarios y respuestas)
@@ -7413,25 +7627,25 @@ function voteComment(noteId, commentId, voteType, level, parentId = null) {
       if (comment) {
         if (currentVote === 'up') {
           comment.upvotes = (comment.upvotes || 1) - 1;
-        } else if (currentVote === 'down') {
-          comment.downvotes = (comment.downvotes || 1) - 1;
         }
 
-        if (currentVote !== voteType) {
-          if (voteType === 'up') {
-            comment.upvotes = (comment.upvotes || 0) + 1;
-          } else {
-            comment.downvotes = (comment.downvotes || 0) + 1;
-          }
+        if (currentVote !== 'up') {
+          comment.upvotes = (comment.upvotes || 0) + 1;
         }
       }
       return comment;
     });
 
-    if (currentVote === voteType) {
+    if (currentVote === 'up') {
       userVoteRef.remove();
     } else {
-      userVoteRef.set(voteType);
+      userVoteRef.set('up');
+    }
+
+    const voteBtn = document.getElementById(`comment-upvote-${commentId}`);
+    if (voteBtn) {
+      voteBtn.classList.remove('pop');
+      requestAnimationFrame(() => voteBtn.classList.add('pop'));
     }
   });
 }
