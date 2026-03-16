@@ -857,6 +857,39 @@ body {
       pointer-events: none;
     }
 
+
+
+    /* Menú de opciones de publicación (estilo hoja inferior) */
+    #post-options-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      z-index: 88;
+    }
+
+    #post-options-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 52vh;
+      background: #fff;
+      border-top-left-radius: 24px;
+      border-top-right-radius: 24px;
+      z-index: 89;
+      transform: translateY(100%);
+      transition: transform 0.25s ease;
+      box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    #post-options-sheet.open {
+      transform: translateY(0);
+    }
+
+    #content-preferences-view,
+    #sensitive-content-view {
+      z-index: 90;
+    }
     /* Modales para reportar historia y bloqueo */
     #report-story-modal {
       position: fixed;
@@ -2609,6 +2642,74 @@ firebase.auth().onAuthStateChanged(user => {
 </div>
 
 <!-- STICKER PICKER GLOBAL -->
+<div id="post-options-overlay" class="hidden" onclick="closePostOptionsSheet()"></div>
+<div id="post-options-sheet" class="hidden">
+  <div class="h-full flex flex-col p-5">
+    <div class="w-12 h-1.5 rounded-full bg-gray-300 mx-auto mb-4"></div>
+    <h3 class="text-lg font-bold text-[#161823] mb-1">Opciones de publicación</h3>
+    <p class="text-sm text-gray-500 mb-4">Administra esta publicación en tu feed.</p>
+
+    <button onclick="hidePostForUser()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 text-left mb-2">
+      <i class="fas fa-eye-slash text-[#FE2C55]"></i>
+      <div>
+        <p class="font-semibold text-sm text-gray-900">Ocultar publicación</p>
+        <p class="text-xs text-gray-500">No volverás a verla en tu feed</p>
+      </div>
+    </button>
+
+    <button onclick="openReportFromPostOptions()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 text-left mb-2">
+      <i class="fas fa-flag text-[#FE2C55]"></i>
+      <div>
+        <p class="font-semibold text-sm text-gray-900">Reportar publicación</p>
+        <p class="text-xs text-gray-500">Llévame al formulario de reporte</p>
+      </div>
+    </button>
+
+    <button onclick="openContentPreferencesView()" class="w-full flex items-center gap-3 p-3 rounded-2xl border border-gray-200 hover:bg-gray-50 text-left">
+      <i class="fas fa-sliders text-[#FE2C55]"></i>
+      <div>
+        <p class="font-semibold text-sm text-gray-900">Preferencias de contenido</p>
+        <p class="text-xs text-gray-500">Configura lo que quieres ver en Drex</p>
+      </div>
+    </button>
+  </div>
+</div>
+
+<div id="content-preferences-view" class="fixed inset-0 bg-white hidden">
+  <div class="h-full flex flex-col">
+    <div class="p-4 border-b border-gray-200 flex items-center gap-3">
+      <button onclick="closeContentPreferencesView()" class="text-gray-600"><i class="fas fa-arrow-left"></i></button>
+      <h3 class="font-bold text-lg">Preferencias de contenido</h3>
+    </div>
+    <div class="p-4">
+      <p class="text-sm text-gray-600 mb-4">Administra el contenido que estás viendo en Drex.</p>
+      <button onclick="openSensitiveContentView()" class="w-full p-4 rounded-2xl border border-gray-200 text-left hover:bg-gray-50">
+        <p class="font-semibold text-gray-900">Contenido delicado</p>
+        <p class="text-xs text-gray-500 mt-1">Controla si deseas ver publicaciones para mayores de 18 años (+18).</p>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="sensitive-content-view" class="fixed inset-0 bg-white hidden">
+  <div class="h-full flex flex-col">
+    <div class="p-4 border-b border-gray-200 flex items-center gap-3">
+      <button onclick="closeSensitiveContentView()" class="text-gray-600"><i class="fas fa-arrow-left"></i></button>
+      <h3 class="font-bold text-lg">Contenido delicado</h3>
+    </div>
+    <div class="p-4">
+      <div class="p-4 rounded-2xl border border-gray-200 bg-white">
+        <p class="font-semibold text-gray-900">Mostrar contenido +18</p>
+        <p class="text-xs text-gray-500 mt-1 mb-3">Si lo desactivas, ocultaremos publicaciones detectadas como contenido para mayores de edad.</p>
+        <label class="inline-flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" id="adult-content-toggle" onchange="toggleAdultContentPreference(this.checked)" class="w-5 h-5 accent-[#FE2C55]">
+          <span id="adult-content-toggle-label" class="text-sm font-medium text-gray-800">Activado</span>
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="sticker-sheet-overlay" class="fixed inset-0 bg-black/40 hidden z-[60]" onclick="closeStickerPicker()"></div>
 <div id="sticker-sheet" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl hidden z-[61] flex flex-col transition-transform duration-300 translate-y-full" style="height: 70vh;">
   <div class="p-4 border-b border-gray-100 flex items-center gap-4">
@@ -6397,6 +6498,61 @@ function openPhotoDetail(photo) {
     `;
   }
 
+  function getHiddenPosts() {
+    try {
+      const raw = localStorage.getItem('drex_hidden_posts');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.error('No se pudieron leer publicaciones ocultas:', error);
+      return [];
+    }
+  }
+
+  function setHiddenPosts(hiddenPostIds) {
+    localStorage.setItem('drex_hidden_posts', JSON.stringify(hiddenPostIds));
+  }
+
+  function getAdultContentPreference() {
+    const raw = localStorage.getItem('drex_allow_adult_content');
+    return raw === null ? true : raw === 'true';
+  }
+
+  function updateAdultContentToggleUI() {
+    const toggle = document.getElementById('adult-content-toggle');
+    const label = document.getElementById('adult-content-toggle-label');
+    const enabled = getAdultContentPreference();
+    if (toggle) toggle.checked = enabled;
+    if (label) label.textContent = enabled ? 'Activado' : 'Desactivado';
+  }
+
+  function normalizeForMatch(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '');
+  }
+
+  function isAdultContentNote(note) {
+    if (!note) return false;
+    if (note.isAdultContent || note.contentRating === '18+' || (note.disclosures && note.disclosures.adultContent)) return true;
+
+    const joined = normalizeForMatch([note.content, note.url, note.title, note.poll && note.poll.question].filter(Boolean).join(' '));
+    const adultPatterns = [
+      /\b(18\+|solo adultos|adultos|nsfw|desnudo|desnuda|erotico|erotica|sexual|sexo|porn|xxx)\b/,
+      /\bcontenido\s+delicado\b/
+    ];
+
+    return adultPatterns.some(pattern => pattern.test(joined));
+  }
+
+  function shouldHideNoteForCurrentUser(noteId, note) {
+    const hiddenPosts = getHiddenPosts();
+    if (hiddenPosts.includes(noteId)) return true;
+    if (!getAdultContentPreference() && isAdultContentNote(note)) return true;
+    return false;
+  }
+
   function loadNotes() {
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
@@ -6411,12 +6567,15 @@ function openPhotoDetail(photo) {
       }).catch(err => console.error('Error cargando votos:', err));
     }
 
-    firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50).on('value', snapshot => {
+    const notesRef = firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
+    notesRef.off();
+    notesRef.on('value', snapshot => {
       feedContainer.innerHTML = '';
 
       const notes = [];
       snapshot.forEach(child => {
         const rawNote = child.val() || {};
+        if (shouldHideNoteForCurrentUser(child.key, rawNote)) return;
         notes.unshift({ ...rawNote, id: child.key });
       });
 
@@ -6466,7 +6625,6 @@ function openPhotoDetail(photo) {
             `;
             }
 
-            const isOwner = user && note.authorId === user.uid;
             const safeTimestamp = Number(note.timestamp) || Date.now();
             const safeAuthorName = note.authorName || 'Usuario';
             const safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
@@ -6490,6 +6648,9 @@ function openPhotoDetail(photo) {
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-2">
                       <h3 class="font-semibold text-sm text-gray-500">${safeAuthorName}</h3>
+                      <button onclick="openPostOptionsSheet('${note.id}')" class="ml-auto p-1.5 rounded-full hover:bg-gray-100 text-gray-500" aria-label="Opciones de publicación">
+                        <i class="fas fa-ellipsis"></i>
+                      </button>
                     </div>
                     ${renderNoteAnchoredMeta(note)}
                     ${note.content ? renderContentWithSticker(note.content, 'text-black text-base whitespace-pre-wrap leading-relaxed') : ''}
@@ -6514,19 +6675,6 @@ function openPhotoDetail(photo) {
                     </svg>
                     <span class="text-sm font-bold">${commentsCount}</span>
                   </button>
-
-                  ${isOwner ?
-                    `<button onclick="deleteNote('${note.id}')" class="ml-auto p-2 hover:bg-red-50 rounded transition-colors">
-                      <svg class="w-5 h-5 text-gray-500 hover:text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                      </svg>
-                    </button>` :
-                    `<button onclick="reportNote('${note.id}')" class="ml-auto p-2 hover:bg-gray-100 rounded transition-colors">
-                      <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86l-7.38 12.8A2 2 0 004.67 19h14.66a2 2 0 001.73-3l-7.38-12.8a2 2 0 00-3.46 0z"/>
-                      </svg>
-                    </button>`
-                  }
                 </div>
                 <p class="text-xs text-gray-400 mt-2">${new Date(safeTimestamp).toLocaleString()}</p>
               </div>
@@ -6691,6 +6839,77 @@ function deleteNote(noteId) {
 }
 
 let currentReportNoteId = null;
+let currentPostOptionsNoteId = null;
+
+function openPostOptionsSheet(noteId) {
+  currentPostOptionsNoteId = noteId;
+  const overlay = document.getElementById('post-options-overlay');
+  const sheet = document.getElementById('post-options-sheet');
+  if (!overlay || !sheet) return;
+
+  overlay.classList.remove('hidden');
+  sheet.classList.remove('hidden');
+  requestAnimationFrame(() => sheet.classList.add('open'));
+}
+
+function closePostOptionsSheet() {
+  const overlay = document.getElementById('post-options-overlay');
+  const sheet = document.getElementById('post-options-sheet');
+  if (sheet) {
+    sheet.classList.remove('open');
+    setTimeout(() => sheet.classList.add('hidden'), 220);
+  }
+  if (overlay) overlay.classList.add('hidden');
+  currentPostOptionsNoteId = null;
+}
+
+function hidePostForUser() {
+  if (!currentPostOptionsNoteId) return;
+  const hiddenPosts = getHiddenPosts();
+  if (!hiddenPosts.includes(currentPostOptionsNoteId)) {
+    hiddenPosts.push(currentPostOptionsNoteId);
+    setHiddenPosts(hiddenPosts);
+  }
+  closePostOptionsSheet();
+  loadNotes();
+}
+
+function openReportFromPostOptions() {
+  if (!currentPostOptionsNoteId) return;
+  const noteId = currentPostOptionsNoteId;
+  closePostOptionsSheet();
+  reportNote(noteId);
+}
+
+function openContentPreferencesView() {
+  closePostOptionsSheet();
+  updateAdultContentToggleUI();
+  const view = document.getElementById('content-preferences-view');
+  if (view) view.classList.remove('hidden');
+}
+
+function closeContentPreferencesView() {
+  const view = document.getElementById('content-preferences-view');
+  if (view) view.classList.add('hidden');
+}
+
+function openSensitiveContentView() {
+  updateAdultContentToggleUI();
+  const view = document.getElementById('sensitive-content-view');
+  if (view) view.classList.remove('hidden');
+}
+
+function closeSensitiveContentView() {
+  const view = document.getElementById('sensitive-content-view');
+  if (view) view.classList.add('hidden');
+}
+
+function toggleAdultContentPreference(enabled) {
+  localStorage.setItem('drex_allow_adult_content', enabled ? 'true' : 'false');
+  updateAdultContentToggleUI();
+  loadNotes();
+}
+
 const postReportReasons = [
   { value: 'sexual', label: 'La publicación contiene contenido sexual o desnudez' },
   { value: 'violence', label: 'Hay violencia, amenazas o acoso' },
