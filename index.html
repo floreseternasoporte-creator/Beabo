@@ -52,6 +52,9 @@ console.log('%cEste sitio está protegido contra inspección de código.', 'font
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Font Awesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-pap6t+K2bD6xIxQqkQ3sM8e+RXw7C3DyrgXV++o2aL/88+/9kS/l+SmpD8zZR1oN40Nq3QfT7HigDYfFW1zZAQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <!-- Leaflet Maps (Gratis y Open Source) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -335,6 +338,67 @@ body {
 .comment-action-item svg {
   width: 20px;
   height: 20px;
+}
+
+/* ===== VISTA DE UBICACIÓN Y MAPA ===== */
+#location-detail-view {
+  z-index: 100;
+}
+
+#location-map {
+  height: 300px;
+  width: 100%;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border: 1px solid #e8e1dc;
+}
+
+/* ===== EMOJI GUIÑANDO EL OJO (CSS PURO) ===== */
+.wink-emoji {
+  width: 80px;
+  height: 80px;
+  background: #FFD600;
+  border-radius: 50%;
+  position: relative;
+  margin: 20px auto;
+  box-shadow: inset -4px -4px 8px rgba(0,0,0,0.1);
+}
+
+.wink-emoji .eye {
+  width: 12px;
+  height: 12px;
+  background: #2f1a14;
+  border-radius: 50%;
+  position: absolute;
+  top: 25px;
+}
+
+.wink-emoji .eye.left {
+  left: 20px;
+}
+
+.wink-emoji .eye.right {
+  right: 20px;
+  height: 4px;
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 3px solid #2f1a14;
+  animation: winkAnim 2s infinite;
+}
+
+.wink-emoji .mouth {
+  width: 40px;
+  height: 20px;
+  border-bottom: 4px solid #2f1a14;
+  border-radius: 0 0 40px 40px;
+  position: absolute;
+  bottom: 15px;
+  left: 20px;
+}
+
+@keyframes winkAnim {
+  0%, 10%, 20%, 100% { height: 4px; border-radius: 0; border-bottom: 3px solid #2f1a14; top: 25px; }
+  15% { height: 12px; border-radius: 50%; background: #2f1a14; border: none; top: 25px; }
 }
 
 /* Margen para la lista de capítulos */
@@ -2890,6 +2954,54 @@ firebase.auth().onAuthStateChanged(user => {
 <div id="comment-actions-overlay"></div>
 <div id="comment-actions-sheet">
   <div id="comment-actions-content"></div>
+</div>
+
+<!-- VISTA DE DETALLE DE UBICACIÓN (PANTALLA COMPLETA) -->
+<div id="location-detail-view" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] hidden z-[100]">
+  <div class="h-full flex flex-col">
+    <!-- Header -->
+    <div class="bg-[#f5f4f2] border-b border-[#e8e1dc] p-3 flex items-center gap-3 flex-shrink-0">
+      <button onclick="closeLocationDetail()" class="text-gray-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+      </button>
+      <h2 id="location-title" class="text-lg font-bold flex-1 truncate">Ubicación</h2>
+    </div>
+
+    <!-- Contenido -->
+    <div class="flex-1 p-4 overflow-y-auto">
+      <div id="location-map" class="mb-6"></div>
+      
+      <div class="bg-white rounded-2xl p-4 border border-[#e8e1dc] shadow-sm mb-6">
+        <h3 class="font-bold text-[#2f1a14] mb-2">Información del lugar</h3>
+        <p id="location-description" class="text-sm text-[#7a6962] leading-relaxed">
+          Esta ubicación fue compartida en una publicación de la comunidad. Puedes ver el mapa arriba para orientarte.
+        </p>
+      </div>
+
+      <button onclick="reportLocation()" class="w-full py-3 px-4 bg-white border border-red-200 text-red-500 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-red-50 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        Reportar ubicación incorrecta
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DE AGRADECIMIENTO (EMOJI CSS) -->
+<div id="thanks-modal" class="fixed inset-0 bg-black/60 flex items-center justify-center hidden z-[110] p-6">
+  <div class="bg-white rounded-3xl p-8 w-full max-w-xs text-center shadow-2xl transform transition-all">
+    <div class="wink-emoji">
+      <div class="eye left"></div>
+      <div class="eye right"></div>
+      <div class="mouth"></div>
+    </div>
+    <h3 class="text-xl font-bold text-[#2f1a14] mt-4 mb-2">¡Gracias por tu feedback!</h3>
+    <p class="text-[#7a6962] text-sm mb-6">Tu reporte nos ayuda a mantener la comunidad segura y precisa.</p>
+    <button onclick="closeThanksModal()" class="w-full py-3 bg-[#3a241d] text-white rounded-2xl font-bold">Entendido</button>
+  </div>
 </div>
 
 <!-- REPORTE DE PUBLICACIÓN (PANTALLA COMPLETA) -->
@@ -6660,7 +6772,10 @@ const KLIPY_GIFS = [
     const chips = [];
 
     if (note.location && note.location.name) {
-      chips.push(`<span class="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 text-[11px] font-semibold"><svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>${note.location.name}</span>`);
+      const lat = note.location.lat || 0;
+      const lng = note.location.lng || 0;
+      const name = escapeSingleQuote(note.location.name);
+      chips.push(`<button onclick="openLocationDetail('${name}', ${lat}, ${lng})" class="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 text-[11px] font-semibold hover:bg-blue-100 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>${note.location.name}</button>`);
     }
 
     if (note.disclosures?.paidPartnership) {
@@ -13284,3 +13399,41 @@ function renderAccountsList(accounts) {
 #notifications-modal .bg-white, #profile-view .bg-white, #author-profile-modal .bg-white { background:#f5f4f2 !important; }
 #notifications-modal .border-b, #profile-view .border-b, #author-profile-modal .border-b { border-color:#e8e1dc !important; }
 </style>
+
+  // LÓGICA DE UBICACIÓN Y MAPAS
+  let locationMap = null;
+  let locationMarker = null;
+
+  function openLocationDetail(name, lat, lng) {
+    document.getElementById('location-title').textContent = name;
+    document.getElementById('location-detail-view').classList.remove('hidden');
+    
+    // Inicializar o actualizar mapa
+    setTimeout(() => {
+      if (!locationMap) {
+        locationMap = L.map('location-map').setView([lat, lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(locationMap);
+        locationMarker = L.marker([lat, lng]).addTo(locationMap);
+      } else {
+        locationMap.setView([lat, lng], 15);
+        locationMarker.setLatLng([lat, lng]);
+        locationMap.invalidateSize();
+      }
+    }, 300);
+  }
+
+  function closeLocationDetail() {
+    document.getElementById('location-detail-view').classList.add('hidden');
+  }
+
+  function reportLocation() {
+    // Mostrar modal de agradecimiento con emoji CSS
+    document.getElementById('thanks-modal').classList.remove('hidden');
+  }
+
+  function closeThanksModal() {
+    document.getElementById('thanks-modal').classList.add('hidden');
+    closeLocationDetail();
+  }
