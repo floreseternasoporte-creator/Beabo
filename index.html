@@ -7629,7 +7629,7 @@ const KLIPY_GIFS = [
     publishButton.disabled = true;
     publishButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Publicando...';
 
-    firebase.database().ref('users/' + user.uid).once('value').then(snapshot => {
+    db1.ref('users/' + user.uid).once('value').then(snapshot => {
       const userData = snapshot.val() || {};
       const note = {
         content: content,
@@ -7642,43 +7642,41 @@ const KLIPY_GIFS = [
         commentsCount: 0
       };
 
-      if (imageInput.files.length > 0) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          note.imageUrl = e.target.result;
-          firebase.database().ref('communityNotes').push(note).then(() => {
-            document.getElementById('note-content').value = '';
-            imageInput.value = '';
-            document.getElementById('image-preview').classList.add('hidden');
-            switchCommunityTab('feed');
-            publishButton.disabled = false;
-            publishButton.innerHTML = 'Publicar';
-            alert('¡Publicación creada exitosamente!');
-          }).catch(error => {
-            console.error('Error al publicar:', error);
-            alert('Error al publicar. Inténtalo de nuevo.');
-            publishButton.disabled = false;
-            publishButton.innerHTML = 'Publicar';
-          });
-        };
-        reader.readAsDataURL(imageInput.files[0]);
-      } else {
-        firebase.database().ref('communityNotes').push(note).then(() => {
+      const saveToDatabases = (noteData) => {
+        const p1 = db1.ref('communityNotes').push(noteData);
+        const p2 = db2.ref('communityNotes').push(noteData);
+        
+        return Promise.all([p1, p2]).then(() => {
           document.getElementById('note-content').value = '';
+          if (imageInput) imageInput.value = '';
+          const preview = document.getElementById('image-preview');
+          if (preview) preview.classList.add('hidden');
+          
           switchCommunityTab('feed');
           publishButton.disabled = false;
           publishButton.innerHTML = 'Publicar';
-
-          // Ganar monedas por publicar en comunidad
+          
+          // Ganar monedas por publicar en comunidad (solo en db1 para evitar duplicidad de saldo)
           earnCoinsForCommunityNote(user.uid);
-
-          alert('¡Publicación creada exitosamente!');
+          
+          alert('¡Publicación creada exitosamente en ambas bases de datos!');
         }).catch(error => {
-          console.error('Error al publicar:', error);
+          console.error('Error al publicar en una o ambas bases de datos:', error);
           alert('Error al publicar. Inténtalo de nuevo.');
           publishButton.disabled = false;
           publishButton.innerHTML = 'Publicar';
         });
+      };
+
+      if (imageInput && imageInput.files.length > 0) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          note.imageUrl = e.target.result;
+          saveToDatabases(note);
+        };
+        reader.readAsDataURL(imageInput.files[0]);
+      } else {
+        saveToDatabases(note);
       }
     });
   }
@@ -7696,10 +7694,14 @@ const KLIPY_GIFS = [
       return;
     }
 
-    firebase.database().ref('communityNotes').push(note).then((ref) => {
-      // Verifica una vez más después de publicar (por si acaso)
+    // Publicar en ambas bases de datos
+    const p1 = db1.ref('communityNotes').push(note);
+    const p2 = db2.ref('communityNotes').push(note);
+
+    Promise.all([p1, p2]).then(([ref1, ref2]) => {
+      // Verifica una vez más después de publicar (en db1)
       if (note.content) {
-        moderarContenidoAutomaticamente(ref.key, note.content);
+        moderarContenidoAutomaticamente(ref1.key, note.content);
       }
 
       try {
@@ -9535,7 +9537,8 @@ function saveNote() {
 <!-- JAVASCRIPT -->
 <script>
   /*********************** CONFIGURACIÓN DE FIREBASE **************************/
-  const firebaseConfig = {
+  // Configuración de la Base de Datos 1 (Principal)
+  const firebaseConfig1 = {
     apiKey: "AIzaSyC9v2qp6zGtmvsFiOknlmTHnN6zZY1RLcI",
     authDomain: "ggggg-f2508.firebaseapp.com",
     databaseURL: "https://ggggg-f2508-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -9545,7 +9548,32 @@ function saveNote() {
     appId: "1:120837533638:web:dab060eedf39a6d19f4cc7",
     measurementId: "G-T6F45PFWRP"
   };
-  firebase.initializeApp(firebaseConfig);
+
+  // Configuración de la Base de Datos 2 (Secundaria)
+  const firebaseConfig2 = {
+    apiKey: "AIzaSyCFQ_geG0HIv2EZ-bfKc97TJNtf2sdqPzc",
+    authDomain: "clack-koder.firebaseapp.com",
+    databaseURL: "https://clack-koder-default-rtdb.firebaseio.com",
+    projectId: "clack-koder",
+    storageBucket: "clack-koder.firebasestorage.app",
+    messagingSenderId: "478151254938",
+    appId: "1:478151254938:web:95ab7e5e3f0ba1fc2b9023",
+    measurementId: "G-LV2YB1BLLW"
+  };
+
+  // Inicializar ambas instancias
+  const app1 = firebase.initializeApp(firebaseConfig1);
+  const app2 = firebase.initializeApp(firebaseConfig2, "secondary");
+
+  // Definir accesos globales para facilitar el uso en el código
+  const db1 = app1.database();
+  const db2 = app2.database();
+  const auth1 = app1.auth();
+  const auth2 = app2.auth();
+
+  // Para mantener compatibilidad con el código existente que usa 'firebase.database()'
+  // por defecto usaremos la instancia principal (app1).
+  // Si necesitas enviar datos a la segunda, usa 'db2'.
   // Todos los usuarios están autorizados para transmitir en vivo
   const authorizedEmails = [];
   /*********************** FUNCIONES ADICIONALES **************************/
