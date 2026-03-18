@@ -305,6 +305,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  z-index: 1;
 }
 
 #location-detail-map .leaflet-control-container {
@@ -333,6 +334,10 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.location-header-actions {
+  z-index: 6;
+}
+
 .location-detail-sheet {
   background: linear-gradient(180deg, rgba(35, 38, 47, 0.98) 0%, rgba(26, 28, 35, 0.99) 100%);
   color: white;
@@ -342,6 +347,8 @@ body {
   max-height: 58vh;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 6;
 }
 
 .location-detail-tab {
@@ -410,6 +417,77 @@ body {
 @keyframes userLocationPulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(34, 149, 255, 0.42); }
   70% { box-shadow: 0 0 0 18px rgba(34, 149, 255, 0); }
+}
+
+#location-more-sheet-overlay,
+#location-more-sheet {
+  transition: opacity 0.2s ease;
+}
+
+.location-more-sheet-panel {
+  background: linear-gradient(180deg, rgba(29, 33, 43, 0.98), rgba(17, 20, 28, 0.99));
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.5);
+}
+
+.location-more-action {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border-radius: 0.95rem;
+  color: white;
+  font-weight: 700;
+  text-align: left;
+  transition: background 0.18s ease;
+}
+
+.location-more-action:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.satellite-launch-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 35%, #49dcff, #1f6fff 60%, #2a2f70 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#satellite-detail-view {
+  background: radial-gradient(circle at 20% 10%, #1f2945 0%, #0b0f17 48%, #05070d 100%);
+}
+
+#satellite-map {
+  width: 100%;
+  height: 44vh;
+  border-radius: 1.4rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.satellite-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 1.1rem;
+  backdrop-filter: blur(12px);
+}
+
+.satellite-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: #5dff9a;
+  box-shadow: 0 0 0 0 rgba(93, 255, 154, 0.7);
+  animation: satellitePulse 1.65s ease-out infinite;
+}
+
+@keyframes satellitePulse {
+  0% { box-shadow: 0 0 0 0 rgba(93, 255, 154, 0.7); }
+  100% { box-shadow: 0 0 0 16px rgba(93, 255, 154, 0); }
 }
 
 .wink-emoji {
@@ -3098,7 +3176,7 @@ firebase.auth().onAuthStateChanged(user => {
     <div id="location-detail-map-empty" class="hidden absolute inset-0 flex items-center justify-center text-center px-8 text-sm text-white/80 bg-[#101318]"></div>
     <div class="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-black/50 to-transparent pointer-events-none z-[2]"></div>
 
-    <div class="absolute top-5 left-4 right-4 z-[3] flex items-center justify-between">
+    <div class="absolute top-5 left-4 right-4 location-header-actions flex items-center justify-between">
       <button onclick="closeLocationDetailView()" class="location-map-icon-button" aria-label="Volver">
         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7"/>
@@ -3130,12 +3208,6 @@ firebase.auth().onAuthStateChanged(user => {
               <button id="location-more-btn" type="button" onclick="toggleLocationMoreMenu()" class="w-12 h-12 rounded-full bg-white/6 hover:bg-white/10 text-white inline-flex items-center justify-center transition" aria-label="Más opciones">
                 <i class="fas fa-ellipsis-h text-xl"></i>
               </button>
-
-              <div id="location-more-menu" class="hidden absolute top-14 right-0 min-w-[220px] rounded-2xl border border-white/10 bg-[#23262f] shadow-2xl p-2">
-                <button id="location-report-action" onclick="submitLocationFeedback()" class="w-full text-left px-4 py-3 rounded-xl text-sm font-semibold text-white hover:bg-white/6 transition">
-                  Reportar ubicación
-                </button>
-              </div>
             </div>
           </div>
 
@@ -3163,6 +3235,78 @@ firebase.auth().onAuthStateChanged(user => {
             <p class="text-sm mt-1">Cuando alguien publique aquí, aparecerá en esta sección.</p>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="location-more-sheet-overlay" class="fixed inset-0 bg-black/55 hidden z-[78]" onclick="closeLocationMoreMenu()"></div>
+<div id="location-more-sheet" class="fixed inset-x-0 bottom-0 hidden z-[79]">
+  <div class="location-more-sheet-panel rounded-t-[1.6rem] px-4 pt-3 pb-6 max-w-2xl mx-auto">
+    <div class="w-14 h-1.5 rounded-full bg-white/35 mx-auto mb-4"></div>
+    <div class="space-y-2">
+      <button id="location-report-action" onclick="submitLocationFeedback()" class="location-more-action">
+        <span class="w-10 h-10 rounded-full bg-[#ff4a6b]/20 text-[#ff8aa2] inline-flex items-center justify-center">
+          <i class="fas fa-flag"></i>
+        </span>
+        <span>Reportar ubicación</span>
+      </button>
+      <button onclick="openSatelliteDetailView()" class="location-more-action">
+        <span class="satellite-launch-icon text-white">
+          <i class="fas fa-satellite text-sm"></i>
+        </span>
+        <span>Abrir vista satélite</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="satellite-detail-view" class="fixed inset-0 hidden z-[80] text-white overflow-y-auto">
+  <div class="max-w-2xl mx-auto min-h-full px-4 pt-5 pb-10">
+    <div class="flex items-center justify-between mb-5">
+      <button onclick="closeSatelliteDetailView()" class="location-map-icon-button" aria-label="Volver satélite">
+        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7"/>
+        </svg>
+      </button>
+      <div class="text-right">
+        <p class="text-xs uppercase tracking-[0.24em] text-white/65">Centro satelital</p>
+        <p class="text-sm font-bold text-[#7fd5ff]">Visión en tiempo real</p>
+      </div>
+    </div>
+
+    <div class="satellite-card p-4 mb-4">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h3 class="text-xl font-black leading-tight">Modo satélite futurista</h3>
+          <p id="satellite-location-name" class="text-sm text-white/70 mt-1">Ubicación</p>
+        </div>
+        <div class="flex items-center gap-2 text-xs font-bold text-[#8fffb6]">
+          <span class="satellite-dot"></span>
+          <span id="satellite-live-status">EN VIVO</span>
+        </div>
+      </div>
+      <p id="satellite-updated-at" class="text-xs text-white/55 mt-3">Actualizando datos...</p>
+    </div>
+
+    <div id="satellite-map"></div>
+
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <div class="satellite-card p-3">
+        <p class="text-[11px] uppercase tracking-[0.12em] text-white/55">Tu latitud</p>
+        <p id="satellite-user-lat" class="text-sm font-bold mt-1">--</p>
+      </div>
+      <div class="satellite-card p-3">
+        <p class="text-[11px] uppercase tracking-[0.12em] text-white/55">Tu longitud</p>
+        <p id="satellite-user-lng" class="text-sm font-bold mt-1">--</p>
+      </div>
+      <div class="satellite-card p-3">
+        <p class="text-[11px] uppercase tracking-[0.12em] text-white/55">Objetivo latitud</p>
+        <p id="satellite-target-lat" class="text-sm font-bold mt-1">--</p>
+      </div>
+      <div class="satellite-card p-3">
+        <p class="text-[11px] uppercase tracking-[0.12em] text-white/55">Objetivo longitud</p>
+        <p id="satellite-target-lng" class="text-sm font-bold mt-1">--</p>
       </div>
     </div>
   </div>
@@ -6216,6 +6360,11 @@ const KLIPY_GIFS = [
   let locationDetailUserMarker = null;
   let locationDetailWatchId = null;
   let locationDetailPostsTab = 'featured';
+  let satelliteDetailMap = null;
+  let satelliteTileLayer = null;
+  let satelliteTargetMarker = null;
+  let satelliteUserMarker = null;
+  let satelliteUpdateTimer = null;
 
   function formatLocationCoordinate(value) {
     return Number.isFinite(Number(value)) ? Number(value).toFixed(5) : 'No disponible';
@@ -6244,11 +6393,13 @@ const KLIPY_GIFS = [
   }
 
   function closeLocationMoreMenu() {
-    document.getElementById('location-more-menu')?.classList.add('hidden');
+    document.getElementById('location-more-sheet')?.classList.add('hidden');
+    document.getElementById('location-more-sheet-overlay')?.classList.add('hidden');
   }
 
   function toggleLocationMoreMenu() {
-    document.getElementById('location-more-menu')?.classList.toggle('hidden');
+    document.getElementById('location-more-sheet')?.classList.toggle('hidden');
+    document.getElementById('location-more-sheet-overlay')?.classList.toggle('hidden');
   }
 
   function destroyLocationRealtimeWatch() {
@@ -6335,6 +6486,7 @@ const KLIPY_GIFS = [
       noteLocationState.currentLng = lng;
       saveLocationStateToStorage();
       updateLocationDetailUserMarker(lat, lng);
+      updateSatelliteUserPosition(lat, lng);
       setLocationDetailStatus('Ubicación en tiempo real conectada');
     };
 
@@ -6403,6 +6555,108 @@ const KLIPY_GIFS = [
       locationDetailMap.invalidateSize();
       syncLocationDetailViewport(true);
     }, 80);
+  }
+
+  function formatRealtimeTimestamp() {
+    return new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function updateSatelliteTelemetry() {
+    const updated = document.getElementById('satellite-updated-at');
+    if (updated) {
+      updated.textContent = `Última sincronización: ${formatRealtimeTimestamp()} (tiempo real)`;
+    }
+  }
+
+  function updateSatelliteUserPosition(lat, lng) {
+    const safeLat = Number.isFinite(lat) ? Number(lat) : null;
+    const safeLng = Number.isFinite(lng) ? Number(lng) : null;
+    document.getElementById('satellite-user-lat').textContent = formatLocationCoordinate(safeLat);
+    document.getElementById('satellite-user-lng').textContent = formatLocationCoordinate(safeLng);
+
+    if (!window.L || !satelliteDetailMap || !Number.isFinite(safeLat) || !Number.isFinite(safeLng)) return;
+    const coords = [safeLat, safeLng];
+    if (!satelliteUserMarker) {
+      satelliteUserMarker = L.marker(coords, {
+        icon: createLocationMarkerIcon('location-user-icon', 24)
+      }).addTo(satelliteDetailMap);
+    } else {
+      satelliteUserMarker.setLatLng(coords);
+    }
+  }
+
+  function ensureSatelliteDetailMap() {
+    const container = document.getElementById('satellite-map');
+    if (!container || !window.L || !activeLocationDetail) return;
+
+    if (!satelliteDetailMap) {
+      satelliteDetailMap = L.map(container, {
+        zoomControl: false,
+        attributionControl: false,
+        preferCanvas: true
+      });
+    }
+
+    if (!satelliteTileLayer) {
+      satelliteTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 18
+      }).addTo(satelliteDetailMap);
+    }
+
+    const hasTarget = Number.isFinite(activeLocationDetail.lat) && Number.isFinite(activeLocationDetail.lng);
+    if (hasTarget) {
+      const target = [activeLocationDetail.lat, activeLocationDetail.lng];
+      if (!satelliteTargetMarker) {
+        satelliteTargetMarker = L.marker(target, {
+          icon: createLocationMarkerIcon('location-pin-icon', 30)
+        }).addTo(satelliteDetailMap);
+      } else {
+        satelliteTargetMarker.setLatLng(target);
+      }
+    }
+
+    const userKnown = Number.isFinite(noteLocationState.currentLat) && Number.isFinite(noteLocationState.currentLng);
+    if (userKnown) {
+      updateSatelliteUserPosition(noteLocationState.currentLat, noteLocationState.currentLng);
+    }
+
+    setTimeout(() => {
+      satelliteDetailMap.invalidateSize();
+      if (satelliteTargetMarker && satelliteUserMarker) {
+        satelliteDetailMap.fitBounds(L.latLngBounds([satelliteTargetMarker.getLatLng(), satelliteUserMarker.getLatLng()]), {
+          padding: [45, 45],
+          maxZoom: 15
+        });
+      } else if (satelliteTargetMarker) {
+        satelliteDetailMap.setView(satelliteTargetMarker.getLatLng(), 15);
+      } else if (satelliteUserMarker) {
+        satelliteDetailMap.setView(satelliteUserMarker.getLatLng(), 14);
+      } else {
+        satelliteDetailMap.setView([20, -70], 4);
+      }
+    }, 80);
+  }
+
+  function openSatelliteDetailView() {
+    if (!activeLocationDetail) return;
+    closeLocationMoreMenu();
+    document.getElementById('satellite-detail-view')?.classList.remove('hidden');
+    document.getElementById('satellite-location-name').textContent = activeLocationDetail.name || 'Ubicación';
+    document.getElementById('satellite-target-lat').textContent = formatLocationCoordinate(activeLocationDetail.lat);
+    document.getElementById('satellite-target-lng').textContent = formatLocationCoordinate(activeLocationDetail.lng);
+    updateSatelliteTelemetry();
+    if (satelliteUpdateTimer) clearInterval(satelliteUpdateTimer);
+    satelliteUpdateTimer = setInterval(updateSatelliteTelemetry, 1000);
+    ensureSatelliteDetailMap();
+    startLocationRealtimeWatch(true);
+  }
+
+  function closeSatelliteDetailView() {
+    document.getElementById('satellite-detail-view')?.classList.add('hidden');
+    if (satelliteUpdateTimer) {
+      clearInterval(satelliteUpdateTimer);
+      satelliteUpdateTimer = null;
+    }
   }
 
   function buildLocationPostCard(note) {
@@ -6557,6 +6811,7 @@ const KLIPY_GIFS = [
 
   function closeLocationDetailView() {
     document.getElementById('location-detail-view').classList.add('hidden');
+    closeSatelliteDetailView();
     closeLocationMoreMenu();
     destroyLocationRealtimeWatch();
   }
