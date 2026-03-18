@@ -52,6 +52,9 @@ console.log('%cEste sitio está protegido contra inspección de código.', 'font
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Font Awesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-pap6t+K2bD6xIxQqkQ3sM8e+RXw7C3DyrgXV++o2aL/88+/9kS/l+SmpD8zZR1oN40Nq3QfT7HigDYfFW1zZAQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <!-- Leaflet para mapa gratis con OpenStreetMap -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -257,6 +260,133 @@ body {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+
+/* ===== DETALLE DE UBICACIÓN ===== */
+.location-chip-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  background: #f1ece9;
+  color: #5f4b44;
+  border: 1px solid #e0d5cf;
+  padding: 0.28rem 0.68rem;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.location-chip-button:hover {
+  background: #ede5e0;
+  border-color: #d3c3bb;
+  box-shadow: none;
+}
+
+.location-chip-button:active,
+.location-chip-button:focus,
+.location-chip-button:focus-visible {
+  outline: none;
+  box-shadow: none;
+  background: #e7ddd7;
+}
+
+#location-detail-map {
+  height: 320px;
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+#location-detail-map .leaflet-control-zoom a {
+  color: #2f1a14;
+}
+
+.location-pin-icon,
+.location-user-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  position: relative;
+  box-shadow: 0 0 0 6px rgba(58, 36, 29, 0.12);
+}
+
+.location-pin-icon {
+  background: linear-gradient(135deg, #fe2c55, #ff7a59);
+}
+
+.location-user-icon {
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  animation: userLocationPulse 1.8s ease-in-out infinite;
+}
+
+.location-pin-icon::after,
+.location-user-icon::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  background: white;
+  border-radius: 9999px;
+}
+
+@keyframes userLocationPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.35); }
+  70% { box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); }
+}
+
+.wink-emoji {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff7b2, #ffd54a 58%, #f7ae13 100%);
+  position: relative;
+  box-shadow: 0 18px 40px rgba(247, 174, 19, 0.3);
+  animation: emojiFloat 2.6s ease-in-out infinite;
+}
+
+.wink-emoji::before,
+.wink-emoji::after {
+  content: '';
+  position: absolute;
+  top: 34px;
+  width: 14px;
+  height: 14px;
+  background: #4b2b16;
+  border-radius: 50%;
+}
+
+.wink-emoji::before {
+  left: 28px;
+  animation: winkLeftEye 2s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.wink-emoji::after {
+  right: 28px;
+}
+
+.wink-emoji-mouth {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  width: 44px;
+  height: 24px;
+  border-bottom: 6px solid #4b2b16;
+  border-radius: 0 0 32px 32px;
+  transform: translateX(-50%);
+}
+
+@keyframes winkLeftEye {
+  0%, 35%, 100% { transform: scaleY(1); border-radius: 50%; }
+  45%, 60% { transform: scaleY(0.14); border-radius: 9999px; }
+}
+
+@keyframes emojiFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-6px) rotate(-2deg); }
 }
 
 /* ===== BOTTOM SHEET DE OPCIONES DE COMENTARIO ===== */
@@ -2883,6 +3013,87 @@ firebase.auth().onAuthStateChanged(user => {
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- DETALLE DE UBICACIÓN -->
+<div id="location-detail-view" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] hidden z-[74]">
+  <div class="h-full flex flex-col">
+    <div class="bg-[#f5f4f2] border-b border-[#e8e1dc] p-4 flex items-center gap-3 flex-shrink-0">
+      <button onclick="closeLocationDetailView()" class="text-gray-600">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+      </button>
+      <div class="min-w-0 flex-1">
+        <p class="text-xs uppercase tracking-[0.22em] text-[#8d7d75]">Ubicación del post</p>
+        <h2 id="location-detail-title" class="text-lg font-bold truncate">Ubicación</h2>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+      <section class="bg-white border border-[#e8e1dc] rounded-[28px] p-4 shadow-sm">
+        <div class="flex items-start justify-between gap-3 mb-4">
+          <div class="min-w-0">
+            <p class="text-sm text-[#8d7d75] mb-1">Nombre de la ubicación</p>
+            <h3 id="location-detail-name" class="text-2xl font-bold text-[#2f1a14] leading-tight"></h3>
+          </div>
+          <div class="w-12 h-12 rounded-2xl bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+        </div>
+
+        <div class="relative mb-4">
+          <div id="location-detail-map" class=""></div>
+          <div id="location-detail-map-empty" class="hidden absolute inset-0 rounded-[24px] bg-[#f8f6f4] border border-[#ece4df] flex items-center justify-center text-center px-6 text-sm text-[#7a6962]"></div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="rounded-2xl bg-[#f8f6f4] border border-[#ece4df] p-3">
+            <p class="text-xs uppercase tracking-wide text-[#8d7d75] mb-1">Latitud</p>
+            <p id="location-detail-lat" class="font-bold text-[#2f1a14]">—</p>
+          </div>
+          <div class="rounded-2xl bg-[#f8f6f4] border border-[#ece4df] p-3">
+            <p class="text-xs uppercase tracking-wide text-[#8d7d75] mb-1">Longitud</p>
+            <p id="location-detail-lng" class="font-bold text-[#2f1a14]">—</p>
+          </div>
+          <div class="rounded-2xl bg-[#f8f6f4] border border-[#ece4df] p-3">
+            <p class="text-xs uppercase tracking-wide text-[#8d7d75] mb-1">Estado</p>
+            <p id="location-detail-status" class="font-bold text-[#2f1a14]">Listo</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white border border-[#e8e1dc] rounded-[28px] p-4 shadow-sm">
+        <div class="flex items-start gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-[#eef6ff] text-[#2563eb] flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-satellite-dish"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-[#2f1a14]">Mapa en tiempo real</h3>
+            <p class="text-sm text-[#7a6962] mt-1">Mostramos el punto del post y, si das permiso, también tu posición actual usando un mapa gratis de OpenStreetMap.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white border border-[#e8e1dc] rounded-[28px] p-4 shadow-sm">
+        <div class="flex items-center justify-between gap-4 mb-3">
+          <div>
+            <h3 class="font-bold text-[#2f1a14]">Reportar ubicación</h3>
+            <p class="text-sm text-[#7a6962]">Si la ubicación está mal, duplicada o confunde, avísanos y guardaremos tu feedback.</p>
+          </div>
+          <button id="location-report-btn" onclick="submitLocationFeedback()" class="bg-[#3a241d] text-white px-4 py-2.5 rounded-2xl font-semibold hover:bg-[#2f1a14] transition whitespace-nowrap">Reportar ubicación</button>
+        </div>
+
+        <div id="location-feedback-response" class="hidden rounded-[24px] border border-[#f8d86a] bg-[#fff8dc] px-5 py-6 text-center">
+          <div class="wink-emoji mx-auto mb-4">
+            <div class="wink-emoji-mouth"></div>
+          </div>
+          <h4 class="text-xl font-bold text-[#5f4b44]">Gracias por tu feedback</h4>
+          <p class="text-sm text-[#7a6962] mt-2">Tu reporte de ubicación ya fue recibido. Revisaremos este punto para mejorar la experiencia de la comunidad.</p>
+        </div>
+      </section>
+    </div>
   </div>
 </div>
 
@@ -5927,6 +6138,200 @@ const KLIPY_GIFS = [
   ];
 
   let locationSearchDebounce = null;
+  let activeLocationDetail = null;
+  let locationDetailMap = null;
+  let locationDetailPostMarker = null;
+  let locationDetailUserMarker = null;
+  let locationDetailWatchId = null;
+
+  function formatLocationCoordinate(value) {
+    return Number.isFinite(Number(value)) ? Number(value).toFixed(5) : 'No disponible';
+  }
+
+  function setLocationDetailStatus(message) {
+    const status = document.getElementById('location-detail-status');
+    if (status) status.textContent = message || 'Listo';
+  }
+
+  function destroyLocationRealtimeWatch() {
+    if (locationDetailWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(locationDetailWatchId);
+    }
+    locationDetailWatchId = null;
+  }
+
+  function createLocationMarkerIcon(className) {
+    if (!window.L) return null;
+    return L.divIcon({
+      className: 'bg-transparent border-0',
+      html: `<div class="${className}"></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9]
+    });
+  }
+
+  function updateLocationDetailUserMarker(lat, lng) {
+    if (!window.L || !locationDetailMap || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const nextCoords = [lat, lng];
+    if (!locationDetailUserMarker) {
+      locationDetailUserMarker = L.marker(nextCoords, {
+        icon: createLocationMarkerIcon('location-user-icon')
+      }).addTo(locationDetailMap).bindPopup('Tu ubicación actual');
+    } else {
+      locationDetailUserMarker.setLatLng(nextCoords);
+    }
+  }
+
+  function startLocationRealtimeWatch() {
+    destroyLocationRealtimeWatch();
+    if (!navigator.geolocation) {
+      setLocationDetailStatus('Tu dispositivo no soporta geolocalización');
+      return;
+    }
+
+    locationDetailWatchId = navigator.geolocation.watchPosition((position) => {
+      const lat = Number(position.coords.latitude);
+      const lng = Number(position.coords.longitude);
+      noteLocationState.currentLat = lat;
+      noteLocationState.currentLng = lng;
+      saveLocationStateToStorage();
+      updateLocationDetailUserMarker(lat, lng);
+      setLocationDetailStatus('Actualizando tu posición en tiempo real');
+    }, () => {
+      setLocationDetailStatus('Mostrando solo la ubicación del post');
+    }, {
+      enableHighAccuracy: true,
+      maximumAge: 10000,
+      timeout: 15000
+    });
+  }
+
+  function ensureLocationDetailMap(lat, lng, name) {
+    const mapContainer = document.getElementById('location-detail-map');
+    const emptyState = document.getElementById('location-detail-map-empty');
+    if (!mapContainer) return;
+
+    if (!window.L || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      if (emptyState) {
+        emptyState.textContent = 'No pudimos cargar el mapa, pero la ubicación sigue disponible.';
+        emptyState.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (emptyState) emptyState.classList.add('hidden');
+
+    if (!locationDetailMap) {
+      locationDetailMap = L.map(mapContainer, {
+        zoomControl: true,
+        attributionControl: true
+      });
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(locationDetailMap);
+    }
+
+    const center = [lat, lng];
+    locationDetailMap.setView(center, 15);
+
+    if (!locationDetailPostMarker) {
+      locationDetailPostMarker = L.marker(center, {
+        icon: createLocationMarkerIcon('location-pin-icon')
+      }).addTo(locationDetailMap);
+    } else {
+      locationDetailPostMarker.setLatLng(center);
+    }
+
+    locationDetailPostMarker.bindPopup(name || 'Ubicación del post');
+
+    setTimeout(() => locationDetailMap.invalidateSize(), 120);
+  }
+
+  function openLocationDetailView(name, latRaw, lngRaw, noteId = '') {
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    const safeName = name || 'Ubicación';
+    activeLocationDetail = {
+      name: safeName,
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null,
+      noteId: noteId || ''
+    };
+
+    document.getElementById('location-detail-title').textContent = safeName;
+    document.getElementById('location-detail-name').textContent = safeName;
+    document.getElementById('location-detail-lat').textContent = formatLocationCoordinate(activeLocationDetail.lat);
+    document.getElementById('location-detail-lng').textContent = formatLocationCoordinate(activeLocationDetail.lng);
+    document.getElementById('location-feedback-response')?.classList.add('hidden');
+    const reportBtn = document.getElementById('location-report-btn');
+    if (reportBtn) {
+      reportBtn.disabled = false;
+      reportBtn.textContent = 'Reportar ubicación';
+    }
+
+    if (Number.isFinite(activeLocationDetail.lat) && Number.isFinite(activeLocationDetail.lng)) {
+      setLocationDetailStatus('Mapa listo');
+      ensureLocationDetailMap(activeLocationDetail.lat, activeLocationDetail.lng, safeName);
+      startLocationRealtimeWatch();
+    } else {
+      destroyLocationRealtimeWatch();
+      setLocationDetailStatus('Sin coordenadas precisas');
+      const emptyState = document.getElementById('location-detail-map-empty');
+      if (emptyState) {
+        emptyState.textContent = 'Esta ubicación no tiene coordenadas exactas todavía.';
+        emptyState.classList.remove('hidden');
+      }
+    }
+
+    document.getElementById('location-detail-view').classList.remove('hidden');
+  }
+
+  function openLocationDetailFromChip(button) {
+    if (!button) return;
+    openLocationDetailView(
+      button.dataset.locationName || 'Ubicación',
+      button.dataset.locationLat ?? null,
+      button.dataset.locationLng ?? null,
+      button.dataset.noteId || ''
+    );
+  }
+
+  function closeLocationDetailView() {
+    document.getElementById('location-detail-view').classList.add('hidden');
+    destroyLocationRealtimeWatch();
+  }
+
+  function submitLocationFeedback() {
+    if (!activeLocationDetail) return;
+
+    const reportBtn = document.getElementById('location-report-btn');
+    const response = document.getElementById('location-feedback-response');
+    const user = firebase.auth().currentUser;
+    const reportPayload = {
+      locationName: activeLocationDetail.name,
+      lat: activeLocationDetail.lat,
+      lng: activeLocationDetail.lng,
+      noteId: activeLocationDetail.noteId || '',
+      reporterId: user?.uid || null,
+      reporterName: user?.displayName || user?.email || 'Invitado',
+      createdAt: Date.now()
+    };
+
+    if (reportBtn) {
+      reportBtn.disabled = true;
+      reportBtn.textContent = 'Enviando...';
+    }
+
+    firebase.database().ref('locationFeedback').push(reportPayload).catch((error) => {
+      console.error('No se pudo guardar el feedback de ubicación:', error);
+    }).finally(() => {
+      if (response) response.classList.remove('hidden');
+      if (reportBtn) reportBtn.textContent = 'Enviado';
+      setLocationDetailStatus('Feedback recibido');
+    });
+  }
 
   function saveLocationStateToStorage() {
     const payload = {
@@ -6660,7 +7065,24 @@ const KLIPY_GIFS = [
     const chips = [];
 
     if (note.location && note.location.name) {
-      chips.push(`<span class="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 text-[11px] font-semibold"><svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>${note.location.name}</span>`);
+      const safeName = escapeHtml(note.location.name);
+      const safeLat = Number.isFinite(Number(note.location.lat)) ? Number(note.location.lat) : '';
+      const safeLng = Number.isFinite(Number(note.location.lng)) ? Number(note.location.lng) : '';
+      const safeNoteId = escapeHtml(note.id || '');
+      chips.push(`
+        <button
+          type="button"
+          class="location-chip-button"
+          data-location-name="${safeName}"
+          data-location-lat="${safeLat}"
+          data-location-lng="${safeLng}"
+          data-note-id="${safeNoteId}"
+          onclick="openLocationDetailFromChip(this)"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span>${safeName}</span>
+        </button>
+      `);
     }
 
     if (note.disclosures?.paidPartnership) {
@@ -7666,7 +8088,7 @@ function openCommentsView(noteId) {
   }
 
   firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
-    const note = snapshot.val();
+    const note = { ...(snapshot.val() || {}), id: noteId };
     const upvotes = note.upvotes || 0;
     const downvotes = note.downvotes || 0;
     const score = upvotes - downvotes;
