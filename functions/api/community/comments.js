@@ -3,12 +3,12 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const pathParts = url.pathname.split('/').filter(Boolean);
 
-  // /api/community/posts/:postId/... => postId index 3
+  // /api/community/comments/:postId/... => postId index 3
   const postId = decodeURIComponent(pathParts[3] || '');
-  const tail = pathParts.slice(4); // [comments, :commentId?, votes?]
+  const tail = pathParts.slice(4); // [:commentId?, votes?]
 
-  if (!postId || tail[0] !== 'comments') {
-    return json({ error: 'Ruta inválida' }, 400);
+  if (!postId) {
+    return json({ error: 'Post ID es obligatorio' }, 400);
   }
 
   if (!env.COMMUNITY_DB) {
@@ -20,13 +20,13 @@ export async function onRequest(context) {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
-    if (request.method === 'GET' && tail.length === 1) {
+    if (request.method === 'GET' && tail.length === 0) {
       const viewerId = (url.searchParams.get('viewerId') || '').trim();
       const rows = await getCommentsRows(env.COMMUNITY_DB, postId, viewerId);
       return json({ comments: rowsToTree(rows, viewerId) }, 200);
     }
 
-    if (request.method === 'POST' && tail.length === 1) {
+    if (request.method === 'POST' && tail.length === 0) {
       const body = await safeJson(request);
       const payload = sanitizeCreatePayload(body);
       if (!payload.authorId) return json({ error: 'authorId es obligatorio' }, 400);
@@ -65,8 +65,8 @@ export async function onRequest(context) {
       return json({ id: commentId }, 201);
     }
 
-    if (request.method === 'POST' && tail.length === 3 && tail[2] === 'votes') {
-      const commentId = decodeURIComponent(tail[1] || '');
+    if (request.method === 'POST' && tail.length === 2 && tail[1] === 'votes') {
+      const commentId = decodeURIComponent(tail[0] || '');
       const body = await safeJson(request);
       const userId = String(body.userId || '').trim();
       const voteType = String(body.voteType || 'up').trim();
@@ -102,8 +102,8 @@ export async function onRequest(context) {
       return json({ score: Number(scoreRow?.score || 0), userVoted }, 200);
     }
 
-    if (request.method === 'DELETE' && tail.length === 2) {
-      const commentId = decodeURIComponent(tail[1] || '');
+    if (request.method === 'DELETE' && tail.length === 1) {
+      const commentId = decodeURIComponent(tail[0] || '');
       const body = await safeJson(request);
       const userId = String(body.userId || '').trim();
 
