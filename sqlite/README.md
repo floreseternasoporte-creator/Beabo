@@ -16,6 +16,21 @@ python3 sqlite/api_server.py
 
 Servidor por defecto: `http://localhost:8787/api/community`
 
+## Cloudflare Pages + D1 (producción)
+
+Este repo ahora incluye función de Cloudflare Pages en:
+
+- `functions/api/community/posts/[[path]].js`
+
+Para que funcione en Cloudflare:
+
+1. Crea una base D1 (SQLite administrado por Cloudflare).
+2. Ejecuta el schema de `sqlite/schema.sql` sobre la base D1.
+3. En tu proyecto Pages, agrega binding D1 con nombre **`COMMUNITY_DB`**.
+4. Publica/redeploy.
+
+Si falta el binding, la API responde error 500 con mensaje claro.
+
 ## Endpoints esperados por `index.html`
 
 - `GET /api/community/posts/:postId/comments`
@@ -23,9 +38,10 @@ Servidor por defecto: `http://localhost:8787/api/community`
 - `POST /api/community/posts/:postId/comments`
   - Body: `{ content, authorId, authorName, authorImage, gifUrl?, parentCommentId? }`
 - `POST /api/community/posts/:postId/comments/:commentId/votes`
-  - Body: `{ voteType: "up" }`
+  - Body: `{ voteType: "up", userId }`
   - Respuesta: `{ score: number, userVoted: boolean }`
 - `DELETE /api/community/posts/:postId/comments/:commentId`
+  - Body: `{ userId }`
 
 ## Nota de integración
 
