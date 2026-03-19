@@ -9,6 +9,29 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS community_posts (
+  id TEXT PRIMARY KEY,
+  author_id TEXT NOT NULL,
+  author_name TEXT NOT NULL,
+  author_image TEXT,
+  content TEXT,
+  gif_url TEXT,
+  image_url TEXT,
+  image_urls_json TEXT,
+  poll_json TEXT,
+  disclosures_json TEXT,
+  location_name TEXT,
+  location_lat REAL,
+  location_lng REAL,
+  upvotes INTEGER NOT NULL DEFAULT 0,
+  downvotes INTEGER NOT NULL DEFAULT 0,
+  comments_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at TEXT,
+  FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- post_id referencia el id de la nota/publicación de communityNotes
 CREATE TABLE IF NOT EXISTS comments (
   id TEXT PRIMARY KEY,
@@ -40,6 +63,9 @@ CREATE TABLE IF NOT EXISTS comment_votes (
 
 CREATE INDEX IF NOT EXISTS idx_comments_post_root_created
   ON comments(post_id, parent_comment_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_posts_created
+  ON community_posts(created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_comments_parent_created
   ON comments(parent_comment_id, created_at ASC);

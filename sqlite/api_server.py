@@ -77,6 +77,46 @@ def rows_to_tree(rows, viewer_id=''):
     sort_nodes(roots)
     return roots
 
+def row_to_post(row):
+    image_urls = parse_json_array(row['image_urls_json'])
+    return {
+        'id': row['id'],
+        'authorId': row['author_id'],
+        'authorName': row['author_name'] or 'Usuario',
+        'authorImage': row['author_image'] or 'https://via.placeholder.com/150',
+        'content': row['content'] or '',
+        'gifUrl': row['gif_url'],
+        'imageUrl': row['image_url'] or (image_urls[0] if image_urls else None),
+        'imageUrls': image_urls,
+        'poll': parse_json_object(row['poll_json']),
+        'disclosures': parse_json_object(row['disclosures_json']) or {'paidPartnership': False, 'aiGenerated': False},
+        'location': (
+            {
+                'name': row['location_name'],
+                'lat': float(row['location_lat']) if row['location_lat'] is not None else None,
+                'lng': float(row['location_lng']) if row['location_lng'] is not None else None,
+            } if row['location_name'] else None
+        ),
+        'upvotes': int(row['upvotes'] or 0),
+        'downvotes': int(row['downvotes'] or 0),
+        'commentsCount': int(row['comments_count'] or 0),
+        'timestamp': iso_to_ms(row['created_at']),
+    }
+
+def parse_json_array(raw):
+    try:
+        value = json.loads(raw or '[]')
+        return value if isinstance(value, list) else []
+    except Exception:
+        return []
+
+def parse_json_object(raw):
+    try:
+        value = json.loads(raw or 'null')
+        return value if isinstance(value, dict) else None
+    except Exception:
+        return None
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = 'SQLiteCommentsAPI/1.0'
@@ -88,7 +128,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
         self.end_headers()
         self.wfile.write(body)
 
@@ -96,7 +136,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
         self.end_headers()
 
     def do_OPTIONS(self):
@@ -116,6 +156,59 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip('/')
         qs = parse_qs(parsed.query)
+
+        if path == '/api/community/posts':
+            raw_limit = qs.get('limit', ['50'])[0] or '50'
+            try:
+                parsed_limit = int(raw_limit)
+            except Exception:
+                parsed_limit = 50
+            limit = max(1, min(100, parsed_limit))
+            conn = db_conn()
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM community_posts
+                    WHERE deleted_at IS NULL
+                    ORDER BY datetime(created_at) DESC
+                    LIMIT ?
+                    """,
+                    (limit,)
+                ).fetchall()
+                return self._send(200, {'posts': [row_to_post(row) for row in rows]})
+            finally:
+                conn.close()
+
+        if path == '/api/community/posts/health':
+            conn = db_conn()
+            try:
+                table = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'community_posts'"
+                ).fetchone()
+                return self._send(200, {
+                    'ok': True,
+                    'databaseBinding': 'local-sqlite',
+                    'communityPostsTable': bool(table and table['name'] == 'community_posts')
+                })
+            finally:
+                conn.close()
+
+        if path.startswith('/api/community/posts/') and '/comments' not in path:
+            parts = path.split('/')
+            if len(parts) == 5:
+                post_id = parts[4]
+                conn = db_conn()
+                try:
+                    row = conn.execute(
+                        'SELECT * FROM community_posts WHERE id = ? AND deleted_at IS NULL',
+                        (post_id,)
+                    ).fetchone()
+                    if not row:
+                        return self._send(404, {'error': 'Post no encontrado'})
+                    return self._send(200, {'post': row_to_post(row)})
+                finally:
+                    conn.close()
 
         if path.startswith('/api/community/posts/') and path.endswith('/comments'):
             # /api/community/posts/:postId/comments
@@ -161,6 +254,69 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip('/')
         body = self._json_body()
+
+        if path == '/api/community/posts':
+            author_id = (body.get('authorId') or '').strip()
+            author_name = (body.get('authorName') or 'Usuario').strip() or 'Usuario'
+            author_image = (body.get('authorImage') or '').strip()
+            content = (body.get('content') or '').strip()
+            gif_url = (body.get('gifUrl') or '').strip() or None
+            image_urls = [str(item).strip() for item in (body.get('imageUrls') or []) if str(item).strip()][:3]
+            poll = body.get('poll') if isinstance(body.get('poll'), dict) else None
+            disclosures = body.get('disclosures') if isinstance(body.get('disclosures'), dict) else {'paidPartnership': False, 'aiGenerated': False}
+            location = body.get('location') if isinstance(body.get('location'), dict) else None
+
+            if not author_id:
+                return self._send(400, {'error': 'authorId es obligatorio'})
+            if not content and not gif_url and not image_urls and not poll:
+                return self._send(400, {'error': 'El post está vacío'})
+
+            conn = db_conn()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO users (id, username, profile_image, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                      username = excluded.username,
+                      profile_image = excluded.profile_image,
+                      updated_at = excluded.updated_at
+                    """,
+                    (author_id, author_name, author_image, now_iso()),
+                )
+                post_id = str(uuid.uuid4())
+                created_at = now_iso()
+                conn.execute(
+                    """
+                    INSERT INTO community_posts (
+                      id, author_id, author_name, author_image, content, gif_url,
+                      image_url, image_urls_json, poll_json, disclosures_json,
+                      location_name, location_lat, location_lng,
+                      upvotes, downvotes, comments_count, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)
+                    """,
+                    (
+                        post_id,
+                        author_id,
+                        author_name,
+                        author_image,
+                        content,
+                        gif_url,
+                        image_urls[0] if image_urls else None,
+                        json.dumps(image_urls, ensure_ascii=False),
+                        json.dumps(poll, ensure_ascii=False) if poll else None,
+                        json.dumps(disclosures, ensure_ascii=False),
+                        (location or {}).get('name'),
+                        (location or {}).get('lat'),
+                        (location or {}).get('lng'),
+                        created_at,
+                        created_at,
+                    ),
+                )
+                conn.commit()
+                return self._send(201, {'id': post_id})
+            finally:
+                conn.close()
 
         # POST /api/community/posts/:postId/comments
         if path.startswith('/api/community/posts/') and path.endswith('/comments'):
@@ -267,6 +423,37 @@ class Handler(BaseHTTPRequestHandler):
                 score_row = conn.execute('SELECT score FROM comments WHERE id = ?', (comment_id,)).fetchone()
                 conn.commit()
                 return self._send(200, {'score': int(score_row['score'] or 0), 'userVoted': user_voted})
+            finally:
+                conn.close()
+
+        self._send(404, {'error': 'Not found'})
+
+    def do_PATCH(self):
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip('/')
+        body = self._json_body()
+
+        if path.startswith('/api/community/posts/') and path.endswith('/comments-count'):
+            parts = path.split('/')
+            if len(parts) < 6:
+                return self._send(400, {'error': 'Ruta inválida'})
+            post_id = parts[4]
+            comments_count = max(0, int(body.get('commentsCount') or 0))
+
+            conn = db_conn()
+            try:
+                row = conn.execute(
+                    'SELECT id FROM community_posts WHERE id = ? AND deleted_at IS NULL',
+                    (post_id,),
+                ).fetchone()
+                if not row:
+                    return self._send(404, {'error': 'Post no encontrado'})
+                conn.execute(
+                    'UPDATE community_posts SET comments_count = ?, updated_at = ? WHERE id = ?',
+                    (comments_count, now_iso(), post_id),
+                )
+                conn.commit()
+                return self._send(200, {'ok': True})
             finally:
                 conn.close()
 
