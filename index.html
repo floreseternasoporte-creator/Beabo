@@ -8589,7 +8589,7 @@ function deleteComment(noteId, commentPath) {
   });
 }
 
-const COMMUNITY_SQLITE_API_BASE = window.COMMUNITY_SQLITE_API_BASE || '/api/community';
+const COMMUNITY_SQLITE_API_BASE = window.COMMUNITY_SQLITE_API_BASE || (location.protocol === 'file:' ? 'http://localhost:8787/api/community' : '/api/community');
 const communityCommentsApi = {
   async request(path, options = {}) {
     const response = await fetch(`${COMMUNITY_SQLITE_API_BASE}${path}`, {
@@ -8607,7 +8607,9 @@ const communityCommentsApi = {
     return response.json();
   },
   async getComments(noteId) {
-    const data = await this.request(`/posts/${encodeURIComponent(noteId)}/comments`);
+    const viewerId = firebase.auth().currentUser?.uid || '';
+    const query = viewerId ? `?viewerId=${encodeURIComponent(viewerId)}` : '';
+    const data = await this.request(`/posts/${encodeURIComponent(noteId)}/comments${query}`);
     return Array.isArray(data?.comments) ? data.comments : [];
   },
   async createComment(noteId, payload) {
@@ -8617,14 +8619,17 @@ const communityCommentsApi = {
     });
   },
   async toggleVote(noteId, commentId, voteType) {
+    const userId = firebase.auth().currentUser?.uid || '';
     return this.request(`/posts/${encodeURIComponent(noteId)}/comments/${encodeURIComponent(commentId)}/votes`, {
       method: 'POST',
-      body: JSON.stringify({ voteType })
+      body: JSON.stringify({ voteType, userId })
     });
   },
   async deleteComment(noteId, commentId) {
+    const userId = firebase.auth().currentUser?.uid || '';
     return this.request(`/posts/${encodeURIComponent(noteId)}/comments/${encodeURIComponent(commentId)}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      body: JSON.stringify({ userId })
     });
   }
 };

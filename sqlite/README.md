@@ -8,6 +8,14 @@ La sección de comentarios ahora se consume desde una API de SQLite en lugar de 
 sqlite3 community.db < sqlite/schema.sql
 ```
 
+## Levantar API SQLite local (sin dependencias externas)
+
+```bash
+python3 sqlite/api_server.py
+```
+
+Servidor por defecto: `http://localhost:8787/api/community`
+
 ## Endpoints esperados por `index.html`
 
 - `GET /api/community/posts/:postId/comments`
@@ -21,5 +29,8 @@ sqlite3 community.db < sqlite/schema.sql
 
 ## Nota de integración
 
-- El frontend usa `window.COMMUNITY_SQLITE_API_BASE` (por defecto `/api/community`).
+- El frontend usa `window.COMMUNITY_SQLITE_API_BASE`.
+- Por defecto usa:
+  - `http://localhost:8787/api/community` si abres `index.html` como archivo local (`file://`).
+  - `/api/community` si estás sirviendo la web desde un backend.
 - Firebase se mantiene para autenticación/perfil y otros módulos, pero comentarios/respuestas/votos ya apuntan al backend SQLite.
