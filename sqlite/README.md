@@ -70,6 +70,10 @@ Si falta el binding, la API responde error 500 con mensaje claro.
      ```bash
      wrangler d1 execute <DB_NAME> --file=sqlite/schema.sql --remote
      ```
+   - Ejemplo real (si tu DB se llama `community_db`):
+     ```bash
+     wrangler d1 execute community_db --file=sqlite/schema.sql --remote
+     ```
    - Opción Dashboard: pestaña SQL y pegar `sqlite/schema.sql`.
 3. **Binding en Pages**:
    - Pages Project → **Settings** → **Functions** → **D1 bindings**.
