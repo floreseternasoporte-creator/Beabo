@@ -6930,10 +6930,11 @@ const KLIPY_GIFS = [
   function loadCreatorStats() {
     const user = firebase.auth().currentUser;
     if (!user) return;
-
-    // Cargar estadísticas de notas
-    firebase.database().ref('communityNotes').orderByChild('authorId').equalTo(user.uid).once('value').then(snapshot => {
-      document.getElementById('creator-notes-count').textContent = snapshot.numChildren();
+    communityPostsApi.listPosts(100).then((posts) => {
+      const count = posts.filter((post) => post.authorId === user.uid).length;
+      document.getElementById('creator-notes-count').textContent = count;
+    }).catch((error) => {
+      console.error('Error cargando estadísticas desde SQLite API:', error);
     });
   }
 
@@ -7071,14 +7072,9 @@ const KLIPY_GIFS = [
       return;
     }
 
-    // Publicar en ambas bases de datos
-    const p1 = db1.ref('communityNotes').push(note);
-    const p2 = db2.ref('communityNotes').push(note);
-
-    Promise.all([p1, p2]).then(([ref1, ref2]) => {
-      // Verifica una vez más después de publicar (en db1)
-      if (note.content) {
-        moderarContenidoAutomaticamente(ref1.key, note.content);
+    communityPostsApi.createPost(note).then(({ id }) => {
+      if (note.content && id) {
+        moderarContenidoAutomaticamente(id, note.content);
       }
 
       try {
@@ -7261,28 +7257,13 @@ const KLIPY_GIFS = [
     if (!feedContainer) return;
 
     const user = firebase.auth().currentUser;
-    let userVotes = {};
-
-    // Cargar votos del usuario en segundo plano sin bloquear la renderizacion
-    if (user) {
-      firebase.database().ref('userVotes/' + user.uid).once('value').then(snap => {
-        userVotes = snap.val() || {};
-      }).catch(err => console.error('Error cargando votos:', err));
-    }
 
     feedContainer.innerHTML = `<div class="py-3 text-center">${getFadingCircleLoaderMarkup()}</div>`;
 
-    const notesRef = firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
-    notesRef.off();
-    notesRef.on('value', snapshot => {
+    communityPostsApi.listPosts(50).then((posts) => {
       feedContainer.innerHTML = '';
 
-      const notes = [];
-      snapshot.forEach(child => {
-        const rawNote = child.val() || {};
-        if (shouldHideNoteForCurrentUser(child.key, rawNote)) return;
-        notes.unshift({ ...rawNote, id: child.key });
-      });
+      const notes = posts.filter((post) => !shouldHideNoteForCurrentUser(post.id, post));
 
       if (!notes.length) {
         feedContainer.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-3xl p-6 text-center text-sm text-[#8d7d75] shadow-sm">Aún no hay posts. Sé la primera persona en publicar.</div>';
@@ -7301,7 +7282,7 @@ const KLIPY_GIFS = [
             const downvotes = Number(note.downvotes || 0);
             const score = upvotes - downvotes;
             const commentsCount = Number(note.commentsCount || 0);
-            const userVote = userVotes[note.id] || null;
+            const userVote = null;
 
             let pollHTML = '';
             const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
@@ -7414,6 +7395,9 @@ const KLIPY_GIFS = [
       });
 
       feedContainer.appendChild(feedFragment);
+    }).catch((error) => {
+      console.error('Error cargando posts desde SQLite API:', error);
+      feedContainer.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-3xl p-6 text-center text-sm text-red-500 shadow-sm">No se pudieron cargar los posts desde SQLite API.</div>';
     });
   }
 
@@ -8187,8 +8171,7 @@ function openCommentsView(noteId) {
     });
   }
 
-  firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
-    const note = { ...(snapshot.val() || {}), id: noteId };
+  communityPostsApi.getPost(noteId).then((note) => {
     const upvotes = note.upvotes || 0;
     const downvotes = note.downvotes || 0;
     const score = upvotes - downvotes;
@@ -8241,6 +8224,9 @@ function openCommentsView(noteId) {
       </div>
       <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(note.timestamp)}</p>
     `;
+  }).catch((error) => {
+    console.error('No se pudo cargar el post desde SQLite API:', error);
+    document.getElementById('original-post').innerHTML = '<p class="text-sm text-red-500">No se pudo cargar esta publicación.</p>';
   });
 
   loadCommentsInView(noteId);
@@ -8459,9 +8445,7 @@ function updateCommentsCount(noteId) {
       totalCount++;
       if (Array.isArray(comment.replies)) totalCount += countReplies(comment.replies);
     });
-    return firebase.database().ref('communityNotes/' + noteId).update({
-      commentsCount: totalCount
-    });
+    return communityPostsApi.updateCommentsCount(noteId, totalCount);
   });
 }
 
@@ -8631,6 +8615,44 @@ const communityCommentsApi = {
     return this.request(`/comments/${encodeURIComponent(noteId)}/${encodeURIComponent(commentId)}`, {
       method: 'DELETE',
       body: JSON.stringify({ userId })
+    });
+  }
+};
+
+const communityPostsApi = {
+  async request(path, options = {}) {
+    const response = await fetch(`${COMMUNITY_SQLITE_API_BASE}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      },
+      ...options
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`SQLite API ${response.status}: ${body}`);
+    }
+    if (response.status === 204) return null;
+    return response.json();
+  },
+  async listPosts(limit = 50) {
+    const data = await this.request(`/posts?limit=${encodeURIComponent(limit)}`);
+    return Array.isArray(data?.posts) ? data.posts : [];
+  },
+  async getPost(postId) {
+    const data = await this.request(`/posts/${encodeURIComponent(postId)}`);
+    return data?.post || null;
+  },
+  async createPost(payload) {
+    return this.request('/posts', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+  async updateCommentsCount(postId, commentsCount) {
+    return this.request(`/posts/${encodeURIComponent(postId)}/comments-count`, {
+      method: 'PATCH',
+      body: JSON.stringify({ commentsCount })
     });
   }
 };
