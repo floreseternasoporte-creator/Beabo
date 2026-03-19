@@ -1,9 +1,12 @@
+const AWS_SERVICE = 's3';
+const COMMENTS_OBJECT_KEY = 'community/comments.json';
+
 export async function onRequest(context) {
   const { request, env } = context;
+  const awsConfig = getAwsConfig(env);
   const url = new URL(request.url);
   const pathParts = url.pathname.split('/').filter(Boolean);
 
-  // /api/community/comments/:postId/... => postId index 3
   const postId = decodeURIComponent(pathParts[3] || '');
   const tail = pathParts.slice(4); // [:commentId?, votes?]
 
@@ -11,8 +14,11 @@ export async function onRequest(context) {
     return json({ error: 'Post ID es obligatorio' }, 400);
   }
 
-  if (!env.COMMUNITY_DB) {
-    return json({ error: 'Falta binding D1 COMMUNITY_DB en Cloudflare Pages' }, 500);
+  if (!isConfigured(awsConfig)) {
+    return json({
+      error: 'Configuración AWS incompleta',
+      detail: 'Define AWS_BUCKET, AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY como variables de entorno en Cloudflare.',
+    }, 500);
   }
 
   try {
@@ -22,8 +28,8 @@ export async function onRequest(context) {
 
     if (request.method === 'GET' && tail.length === 0) {
       const viewerId = (url.searchParams.get('viewerId') || '').trim();
-      const rows = await getCommentsRows(env.COMMUNITY_DB, postId, viewerId);
-      return json({ comments: rowsToTree(rows, viewerId) }, 200);
+      const storage = await loadCommentsStorage(awsConfig);
+      return json({ comments: storageToTree(storage, postId, viewerId) }, 200);
     }
 
     if (request.method === 'POST' && tail.length === 0) {
@@ -32,91 +38,85 @@ export async function onRequest(context) {
       if (!payload.authorId) return json({ error: 'authorId es obligatorio' }, 400);
       if (!payload.content && !payload.gifUrl) return json({ error: 'Debe enviar contenido o gifUrl' }, 400);
 
-      const commentId = crypto.randomUUID();
       const now = new Date().toISOString();
+      const storage = await loadCommentsStorage(awsConfig);
+      const commentId = crypto.randomUUID();
 
-      await env.COMMUNITY_DB.prepare(
-        `INSERT INTO users (id, username, profile_image, updated_at)
-         VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(id) DO UPDATE SET
-           username = excluded.username,
-           profile_image = excluded.profile_image,
-           updated_at = excluded.updated_at`
-      ).bind(payload.authorId, payload.authorName, payload.authorImage, now).run();
+      storage.comments.push({
+        id: commentId,
+        post_id: postId,
+        parent_comment_id: payload.parentCommentId,
+        author_id: payload.authorId,
+        author_name: payload.authorName,
+        author_image: payload.authorImage,
+        content: payload.content,
+        gif_url: payload.gifUrl,
+        score: 0,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+      });
 
-      await env.COMMUNITY_DB.prepare(
-        `INSERT INTO comments (
-          id, post_id, parent_comment_id, author_id, author_name, author_image,
-          content, gif_url, score, created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10)`
-      ).bind(
-        commentId,
-        postId,
-        payload.parentCommentId,
-        payload.authorId,
-        payload.authorName,
-        payload.authorImage,
-        payload.content,
-        payload.gifUrl,
-        now,
-        now
-      ).run();
-
+      await saveCommentsStorage(awsConfig, storage);
       return json({ id: commentId }, 201);
     }
 
     if (request.method === 'POST' && tail.length === 2 && tail[1] === 'votes') {
-      const commentId = decodeURIComponent(tail[0] || '');
+      const commentId = decodeURIComponent(tail[0] || '').trim();
       const body = await safeJson(request);
       const userId = String(body.userId || '').trim();
       const voteType = String(body.voteType || 'up').trim();
 
       if (!userId) return json({ error: 'userId es obligatorio' }, 400);
+      if (!commentId) return json({ error: 'commentId es obligatorio' }, 400);
       if (voteType !== 'up') return json({ error: 'voteType no soportado' }, 400);
 
-      const exists = await env.COMMUNITY_DB.prepare(
-        'SELECT id FROM comments WHERE id = ?1 AND post_id = ?2 AND deleted_at IS NULL'
-      ).bind(commentId, postId).first();
+      const storage = await loadCommentsStorage(awsConfig);
+      const comment = storage.comments.find((item) => item.id === commentId && item.post_id === postId && !item.deleted_at);
 
-      if (!exists) return json({ error: 'Comentario no encontrado' }, 404);
+      if (!comment) return json({ error: 'Comentario no encontrado' }, 404);
 
-      const foundVote = await env.COMMUNITY_DB.prepare(
-        'SELECT id FROM comment_votes WHERE comment_id = ?1 AND user_id = ?2 AND vote_type = ?3'
-      ).bind(commentId, userId, 'up').first();
+      const existingVoteIndex = storage.votes.findIndex(
+        (vote) => vote.comment_id === commentId && vote.user_id === userId && vote.vote_type === 'up'
+      );
 
-      const now = new Date().toISOString();
       let userVoted = false;
-
-      if (foundVote) {
-        await env.COMMUNITY_DB.prepare('DELETE FROM comment_votes WHERE id = ?1').bind(foundVote.id).run();
-        await env.COMMUNITY_DB.prepare('UPDATE comments SET score = MAX(0, score - 1), updated_at = ?1 WHERE id = ?2').bind(now, commentId).run();
+      if (existingVoteIndex >= 0) {
+        storage.votes.splice(existingVoteIndex, 1);
+        comment.score = Math.max(0, Number(comment.score || 0) - 1);
       } else {
-        await env.COMMUNITY_DB.prepare(
-          'INSERT INTO comment_votes (comment_id, user_id, vote_type, created_at) VALUES (?1, ?2, ?3, ?4)'
-        ).bind(commentId, userId, 'up', now).run();
-        await env.COMMUNITY_DB.prepare('UPDATE comments SET score = score + 1, updated_at = ?1 WHERE id = ?2').bind(now, commentId).run();
+        storage.votes.push({
+          id: crypto.randomUUID(),
+          comment_id: commentId,
+          user_id: userId,
+          vote_type: 'up',
+          created_at: new Date().toISOString(),
+        });
+        comment.score = Number(comment.score || 0) + 1;
         userVoted = true;
       }
 
-      const scoreRow = await env.COMMUNITY_DB.prepare('SELECT score FROM comments WHERE id = ?1').bind(commentId).first();
-      return json({ score: Number(scoreRow?.score || 0), userVoted }, 200);
+      comment.updated_at = new Date().toISOString();
+      await saveCommentsStorage(awsConfig, storage);
+      return json({ score: Number(comment.score || 0), userVoted }, 200);
     }
 
     if (request.method === 'DELETE' && tail.length === 1) {
-      const commentId = decodeURIComponent(tail[0] || '');
+      const commentId = decodeURIComponent(tail[0] || '').trim();
       const body = await safeJson(request);
       const userId = String(body.userId || '').trim();
 
       if (!userId) return json({ error: 'userId es obligatorio' }, 400);
 
-      const row = await env.COMMUNITY_DB.prepare(
-        'SELECT author_id FROM comments WHERE id = ?1 AND post_id = ?2 AND deleted_at IS NULL'
-      ).bind(commentId, postId).first();
+      const storage = await loadCommentsStorage(awsConfig);
+      const comment = storage.comments.find((item) => item.id === commentId && item.post_id === postId && !item.deleted_at);
 
-      if (!row) return json({ error: 'Comentario no encontrado' }, 404);
-      if (row.author_id !== userId) return json({ error: 'No autorizado' }, 403);
+      if (!comment) return json({ error: 'Comentario no encontrado' }, 404);
+      if (comment.author_id !== userId) return json({ error: 'No autorizado' }, 403);
 
-      await env.COMMUNITY_DB.prepare('DELETE FROM comments WHERE id = ?1').bind(commentId).run();
+      comment.deleted_at = new Date().toISOString();
+      comment.updated_at = comment.deleted_at;
+      await saveCommentsStorage(awsConfig, storage);
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
@@ -124,6 +124,19 @@ export async function onRequest(context) {
   } catch (err) {
     return json({ error: 'Error interno', detail: String(err?.message || err) }, 500);
   }
+}
+
+function getAwsConfig(env = {}) {
+  return {
+    region: String(env.AWS_REGION || 'us-east-2').trim(),
+    bucket: String(env.AWS_BUCKET || '').trim(),
+    accessKeyId: String(env.AWS_ACCESS_KEY_ID || '').trim(),
+    secretAccessKey: String(env.AWS_SECRET_ACCESS_KEY || '').trim(),
+  };
+}
+
+function isConfigured(config) {
+  return config.bucket && config.accessKeyId && config.secretAccessKey;
 }
 
 function sanitizeCreatePayload(body = {}) {
@@ -137,35 +150,19 @@ function sanitizeCreatePayload(body = {}) {
   };
 }
 
-async function getCommentsRows(db, postId, viewerId) {
-  if (viewerId) {
-    const { results } = await db.prepare(
-      `SELECT c.*,
-              EXISTS(
-                SELECT 1 FROM comment_votes cv
-                WHERE cv.comment_id = c.id AND cv.user_id = ?1 AND cv.vote_type = 'up'
-              ) AS viewer_voted
-       FROM comments c
-       WHERE c.post_id = ?2 AND c.deleted_at IS NULL
-       ORDER BY datetime(c.created_at) ASC`
-    ).bind(viewerId, postId).all();
-    return results || [];
-  }
+function storageToTree(storage, postId, viewerId) {
+  const rows = storage.comments
+    .filter((comment) => comment.post_id === postId && !comment.deleted_at)
+    .sort((a, b) => Date.parse(a.created_at || '') - Date.parse(b.created_at || ''));
 
-  const { results } = await db.prepare(
-    `SELECT c.*, 0 AS viewer_voted
-     FROM comments c
-     WHERE c.post_id = ?1 AND c.deleted_at IS NULL
-     ORDER BY datetime(c.created_at) ASC`
-  ).bind(postId).all();
-  return results || [];
-}
-
-function rowsToTree(rows, viewerId) {
   const map = new Map();
   const roots = [];
 
   for (const row of rows) {
+    const userVoted = viewerId
+      ? storage.votes.some((vote) => vote.comment_id === row.id && vote.user_id === viewerId && vote.vote_type === 'up')
+      : false;
+
     map.set(row.id, {
       id: row.id,
       authorId: row.author_id,
@@ -175,7 +172,7 @@ function rowsToTree(rows, viewerId) {
       gifUrl: row.gif_url || null,
       timestamp: Date.parse(row.created_at || '') || Date.now(),
       score: Number(row.score || 0),
-      userVoted: viewerId ? Boolean(row.viewer_voted) : false,
+      userVoted,
       replies: [],
       parentCommentId: row.parent_comment_id || null,
     });
@@ -193,8 +190,157 @@ function rowsToTree(rows, viewerId) {
     nodes.sort((a, b) => a.timestamp - b.timestamp);
     for (const node of nodes) sortTree(node.replies);
   };
+
   sortTree(roots);
   return roots;
+}
+
+async function loadCommentsStorage(awsConfig) {
+  const object = await s3GetObject(awsConfig, COMMENTS_OBJECT_KEY);
+  if (!object) return { comments: [], votes: [] };
+
+  try {
+    const parsed = JSON.parse(object);
+    return {
+      comments: Array.isArray(parsed?.comments) ? parsed.comments : [],
+      votes: Array.isArray(parsed?.votes) ? parsed.votes : [],
+    };
+  } catch {
+    return { comments: [], votes: [] };
+  }
+}
+
+async function saveCommentsStorage(awsConfig, storage) {
+  const normalized = {
+    comments: Array.isArray(storage?.comments) ? storage.comments : [],
+    votes: Array.isArray(storage?.votes) ? storage.votes : [],
+  };
+
+  await s3PutObject(awsConfig, COMMENTS_OBJECT_KEY, JSON.stringify(normalized));
+}
+
+async function s3GetObject(awsConfig, key) {
+  const path = `/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+  const { headers, url } = await buildSignedRequest(awsConfig, { method: 'GET', path, payload: '' });
+  const response = await fetch(url, { method: 'GET', headers });
+
+  if (response.status === 404 || response.status === 403) return null;
+  if (!response.ok) {
+    const txt = await response.text();
+    throw new Error(`S3 GET error (${response.status}): ${txt.slice(0, 300)}`);
+  }
+  return response.text();
+}
+
+async function s3PutObject(awsConfig, key, bodyText) {
+  const path = `/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+  const { headers, url } = await buildSignedRequest(awsConfig, {
+    method: 'PUT',
+    path,
+    payload: bodyText,
+    extraHeaders: {
+      'content-type': 'application/json; charset=utf-8',
+    },
+  });
+
+  const response = await fetch(url, { method: 'PUT', headers, body: bodyText });
+  if (!response.ok) {
+    const txt = await response.text();
+    throw new Error(`S3 PUT error (${response.status}): ${txt.slice(0, 300)}`);
+  }
+}
+
+async function buildSignedRequest(awsConfig, { method, path, payload, extraHeaders = {} }) {
+  const host = `${awsConfig.bucket}.s3.${awsConfig.region}.amazonaws.com`;
+  const url = `https://${host}${path}`;
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+
+  const payloadHash = await sha256Hex(payload || '');
+  const headersLower = {
+    host,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+    ...toLowerCaseKeys(extraHeaders),
+  };
+
+  const sortedHeaderKeys = Object.keys(headersLower).sort();
+  const canonicalHeaders = sortedHeaderKeys.map((k) => `${k}:${String(headersLower[k]).trim()}\n`).join('');
+  const signedHeaders = sortedHeaderKeys.join(';');
+
+  const canonicalRequest = [
+    method,
+    path,
+    '',
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join('\n');
+
+  const credentialScope = `${dateStamp}/${awsConfig.region}/${AWS_SERVICE}/aws4_request`;
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    await sha256Hex(canonicalRequest),
+  ].join('\n');
+
+  const signingKey = await getSignatureKey(awsConfig.secretAccessKey, dateStamp, awsConfig.region, AWS_SERVICE);
+  const signature = await hmacHex(signingKey, stringToSign);
+
+  const authorization =
+    `AWS4-HMAC-SHA256 Credential=${awsConfig.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  return {
+    url,
+    headers: {
+      ...headersLower,
+      Authorization: authorization,
+    },
+  };
+}
+
+function toAmzDate(date) {
+  const iso = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  return `${iso.slice(0, 8)}T${iso.slice(8, 14)}Z`;
+}
+
+function toLowerCaseKeys(input) {
+  const out = {};
+  for (const [key, value] of Object.entries(input || {})) {
+    out[String(key).toLowerCase()] = value;
+  }
+  return out;
+}
+
+async function sha256Hex(input) {
+  const data = new TextEncoder().encode(input);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(hashBuffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hmac(key, data) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    typeof key === 'string' ? new TextEncoder().encode(key) : key,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  return new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(data)));
+}
+
+async function hmacHex(key, data) {
+  const sig = await hmac(key, data);
+  return [...sig].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function getSignatureKey(secretKey, dateStamp, regionName, serviceName) {
+  const kDate = await hmac(`AWS4${secretKey}`, dateStamp);
+  const kRegion = await hmac(kDate, regionName);
+  const kService = await hmac(kRegion, serviceName);
+  return hmac(kService, 'aws4_request');
 }
 
 async function safeJson(request) {
