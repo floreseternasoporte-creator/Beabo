@@ -158,7 +158,12 @@ class Handler(BaseHTTPRequestHandler):
         qs = parse_qs(parsed.query)
 
         if path == '/api/community/posts':
-            limit = max(1, min(100, int((qs.get('limit', ['50'])[0] or '50'))))
+            raw_limit = qs.get('limit', ['50'])[0] or '50'
+            try:
+                parsed_limit = int(raw_limit)
+            except Exception:
+                parsed_limit = 50
+            limit = max(1, min(100, parsed_limit))
             conn = db_conn()
             try:
                 rows = conn.execute(
@@ -172,6 +177,20 @@ class Handler(BaseHTTPRequestHandler):
                     (limit,)
                 ).fetchall()
                 return self._send(200, {'posts': [row_to_post(row) for row in rows]})
+            finally:
+                conn.close()
+
+        if path == '/api/community/posts/health':
+            conn = db_conn()
+            try:
+                table = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'community_posts'"
+                ).fetchone()
+                return self._send(200, {
+                    'ok': True,
+                    'databaseBinding': 'local-sqlite',
+                    'communityPostsTable': bool(table and table['name'] == 'community_posts')
+                })
             finally:
                 conn.close()
 

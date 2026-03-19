@@ -35,6 +35,8 @@ Si falta el binding, la API responde error 500 con mensaje claro.
 
 - `GET /api/community/posts?limit=50`
   - Respuesta: `{ "posts": [ ... ] }`
+- `GET /api/community/posts/health`
+  - Respuesta: `{ ok, databaseBinding, communityPostsTable }`
 - `GET /api/community/posts/:postId`
   - Respuesta: `{ "post": { ... } }`
 - `POST /api/community/posts`
@@ -83,4 +85,14 @@ Si falta el binding, la API responde error 500 con mensaje claro.
    - Re-deploy del proyecto Pages.
 5. **Verificación rápida**:
    - `GET https://<tu-dominio>/api/community/posts?limit=1` debe responder `200`.
+   - `GET https://<tu-dominio>/api/community/posts/health` debe mostrar `communityPostsTable: true`.
    - Crea un post desde la UI con ubicación y valida que aparezca.
+
+## Si ves “No se pudieron cargar los posts desde SQLite API”
+
+1. Abre `/api/community/posts/health`.
+2. Si `communityPostsTable` es `false`, ejecuta de nuevo:
+   ```bash
+   wrangler d1 execute community_db --file=sqlite/schema.sql --remote
+   ```
+3. Si sale error de binding, revisa que el nombre sea exactamente `COMMUNITY_DB` en Pages.

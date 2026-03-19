@@ -11,8 +11,21 @@ export async function onRequest(context) {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
+    if (request.method === 'GET' && tail.length === 1 && tail[0] === 'health') {
+      const tableCheck = await env.COMMUNITY_DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'community_posts'"
+      ).first();
+      return json({
+        ok: true,
+        databaseBinding: 'COMMUNITY_DB',
+        communityPostsTable: Boolean(tableCheck?.name),
+      }, 200);
+    }
+
     if (request.method === 'GET' && tail.length === 0) {
-      const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit') || 50)));
+      const requestedLimit = Number(url.searchParams.get('limit') || 50);
+      const safeLimit = Number.isFinite(requestedLimit) ? requestedLimit : 50;
+      const limit = Math.max(1, Math.min(100, safeLimit));
       const { results } = await env.COMMUNITY_DB.prepare(
         `SELECT * FROM community_posts
          WHERE deleted_at IS NULL
