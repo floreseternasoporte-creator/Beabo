@@ -1,24 +1,25 @@
-# SQLite (base inicial)
+# SQLite para comentarios (activo en frontend)
 
-Se agregó una base de esquema para migrar la parte de comunidad a SQLite:
+La sección de comentarios ahora se consume desde una API de SQLite en lugar de leer/escribir en `postComments` de Firebase Realtime Database.
 
-- Comentarios
-- Respuestas
-- Reacciones de fuego
-
-## Cómo usarlo
-
-1. Crea la base:
+## Crear base local
 
 ```bash
 sqlite3 community.db < sqlite/schema.sql
 ```
 
-2. Conecta tu backend (Node/Express, Bun, etc.) a `community.db` y expone endpoints para:
+## Endpoints esperados por `index.html`
 
-- `GET /posts/:postId/comments`
-- `POST /posts/:postId/comments`
-- `POST /comments/:commentId/replies`
-- `POST /comments/:commentId/votes`
+- `GET /api/community/posts/:postId/comments`
+  - Respuesta: `{ "comments": [ ...arbol de comentarios... ] }`
+- `POST /api/community/posts/:postId/comments`
+  - Body: `{ content, authorId, authorName, authorImage, gifUrl?, parentCommentId? }`
+- `POST /api/community/posts/:postId/comments/:commentId/votes`
+  - Body: `{ voteType: "up" }`
+  - Respuesta: `{ score: number, userVoted: boolean }`
+- `DELETE /api/community/posts/:postId/comments/:commentId`
 
-> Nota: `index.html` actual usa Firebase Realtime Database. Este esquema es la base para una migración gradual sin romper la app actual.
+## Nota de integración
+
+- El frontend usa `window.COMMUNITY_SQLITE_API_BASE` (por defecto `/api/community`).
+- Firebase se mantiene para autenticación/perfil y otros módulos, pero comentarios/respuestas/votos ya apuntan al backend SQLite.
