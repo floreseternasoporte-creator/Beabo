@@ -1,12 +1,9 @@
-const AWS_REGION = 'us-east-1';
 const AWS_SERVICE = 's3';
-const AWS_BUCKET = 'REEMPLAZAR_CON_TU_BUCKET';
-const AWS_ACCESS_KEY_ID = 'REEMPLAZAR_CON_TU_ACCESS_KEY';
-const AWS_SECRET_ACCESS_KEY = 'REEMPLAZAR_CON_TU_SECRET_KEY';
 const POSTS_OBJECT_KEY = 'community/posts.json';
 
 export async function onRequest(context) {
-  const { request } = context;
+  const { request, env } = context;
+  const awsConfig = getAwsConfig(env);
   const url = new URL(request.url);
   const parts = url.pathname.split('/').filter(Boolean);
   const tail = parts.slice(4); // /api/community/posts/:id/...
@@ -16,19 +13,20 @@ export async function onRequest(context) {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
-    if (!isConfigured()) {
+    if (!isConfigured(awsConfig)) {
       return json({
-        error: 'Configuración AWS incompleta en código',
-        detail: 'Define AWS_BUCKET, AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY en functions/api/community/posts/[[path]].js',
+        error: 'Configuración AWS incompleta',
+        detail: 'Define AWS_BUCKET, AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY como variables de entorno en Cloudflare.',
       }, 500);
     }
 
     if (request.method === 'GET' && tail.length === 1 && tail[0] === 'health') {
-      const storage = await loadPostsStorage();
+      const storage = await loadPostsStorage(awsConfig);
       return json({
         ok: true,
         provider: 'amazon-s3',
-        bucket: AWS_BUCKET,
+        bucket: awsConfig.bucket,
+        region: awsConfig.region,
         objectKey: POSTS_OBJECT_KEY,
         postsCount: storage.posts.length,
       }, 200);
@@ -38,7 +36,7 @@ export async function onRequest(context) {
       const requestedLimit = Number(url.searchParams.get('limit') || 50);
       const safeLimit = Number.isFinite(requestedLimit) ? requestedLimit : 50;
       const limit = Math.max(1, Math.min(100, safeLimit));
-      const storage = await loadPostsStorage();
+      const storage = await loadPostsStorage(awsConfig);
       const visiblePosts = storage.posts
         .filter((post) => !post.deleted_at)
         .sort((a, b) => Number(b.created_at_ms || 0) - Number(a.created_at_ms || 0))
@@ -51,7 +49,7 @@ export async function onRequest(context) {
       const id = decodeURIComponent(tail[0] || '').trim();
       if (!id) return json({ error: 'Post ID es obligatorio' }, 400);
 
-      const storage = await loadPostsStorage();
+      const storage = await loadPostsStorage(awsConfig);
       const row = storage.posts.find((post) => post.id === id && !post.deleted_at);
       if (!row) return json({ error: 'Post no encontrado' }, 404);
       return json({ post: storageToApiPost(row) }, 200);
@@ -68,7 +66,7 @@ export async function onRequest(context) {
       const nowMs = Date.now();
       const id = crypto.randomUUID();
 
-      const storage = await loadPostsStorage();
+      const storage = await loadPostsStorage(awsConfig);
       storage.posts.push({
         id,
         author_id: body.authorId,
@@ -92,7 +90,7 @@ export async function onRequest(context) {
         deleted_at: null,
       });
 
-      await savePostsStorage(storage);
+      await savePostsStorage(awsConfig, storage);
       return json({ id }, 201);
     }
 
@@ -103,13 +101,13 @@ export async function onRequest(context) {
       const body = await safeJson(request);
       const commentsCount = Math.max(0, Number(body.commentsCount || 0));
 
-      const storage = await loadPostsStorage();
+      const storage = await loadPostsStorage(awsConfig);
       const post = storage.posts.find((item) => item.id === id && !item.deleted_at);
       if (!post) return json({ error: 'Post no encontrado' }, 404);
 
       post.comments_count = commentsCount;
       post.updated_at = new Date().toISOString();
-      await savePostsStorage(storage);
+      await savePostsStorage(awsConfig, storage);
 
       return json({ ok: true }, 200);
     }
@@ -120,15 +118,17 @@ export async function onRequest(context) {
   }
 }
 
-function isConfigured() {
-  return (
-    AWS_BUCKET &&
-    AWS_ACCESS_KEY_ID &&
-    AWS_SECRET_ACCESS_KEY &&
-    !AWS_BUCKET.startsWith('REEMPLAZAR_') &&
-    !AWS_ACCESS_KEY_ID.startsWith('REEMPLAZAR_') &&
-    !AWS_SECRET_ACCESS_KEY.startsWith('REEMPLAZAR_')
-  );
+function getAwsConfig(env = {}) {
+  return {
+    region: String(env.AWS_REGION || 'us-east-2').trim(),
+    bucket: String(env.AWS_BUCKET || '').trim(),
+    accessKeyId: String(env.AWS_ACCESS_KEY_ID || '').trim(),
+    secretAccessKey: String(env.AWS_SECRET_ACCESS_KEY || '').trim(),
+  };
+}
+
+function isConfigured(config) {
+  return config.bucket && config.accessKeyId && config.secretAccessKey;
 }
 
 function storageToApiPost(row) {
@@ -201,8 +201,8 @@ async function safeJson(request) {
   }
 }
 
-async function loadPostsStorage() {
-  const object = await s3GetObject(POSTS_OBJECT_KEY);
+async function loadPostsStorage(awsConfig) {
+  const object = await s3GetObject(awsConfig, POSTS_OBJECT_KEY);
   if (!object) return { posts: [] };
 
   try {
@@ -216,16 +216,16 @@ async function loadPostsStorage() {
   }
 }
 
-async function savePostsStorage(storage) {
+async function savePostsStorage(awsConfig, storage) {
   const normalized = {
     posts: Array.isArray(storage?.posts) ? storage.posts : [],
   };
-  await s3PutObject(POSTS_OBJECT_KEY, JSON.stringify(normalized));
+  await s3PutObject(awsConfig, POSTS_OBJECT_KEY, JSON.stringify(normalized));
 }
 
-async function s3GetObject(key) {
+async function s3GetObject(awsConfig, key) {
   const path = `/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
-  const { headers, url } = await buildSignedRequest({ method: 'GET', path, payload: '' });
+  const { headers, url } = await buildSignedRequest(awsConfig, { method: 'GET', path, payload: '' });
   const response = await fetch(url, { method: 'GET', headers });
 
   if (response.status === 404 || response.status === 403) return null;
@@ -236,9 +236,9 @@ async function s3GetObject(key) {
   return response.text();
 }
 
-async function s3PutObject(key, bodyText) {
+async function s3PutObject(awsConfig, key, bodyText) {
   const path = `/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
-  const { headers, url } = await buildSignedRequest({
+  const { headers, url } = await buildSignedRequest(awsConfig, {
     method: 'PUT',
     path,
     payload: bodyText,
@@ -254,8 +254,8 @@ async function s3PutObject(key, bodyText) {
   }
 }
 
-async function buildSignedRequest({ method, path, payload, extraHeaders = {} }) {
-  const host = `${AWS_BUCKET}.s3.${AWS_REGION}.amazonaws.com`;
+async function buildSignedRequest(awsConfig, { method, path, payload, extraHeaders = {} }) {
+  const host = `${awsConfig.bucket}.s3.${awsConfig.region}.amazonaws.com`;
   const url = `https://${host}${path}`;
   const now = new Date();
   const amzDate = toAmzDate(now);
@@ -282,7 +282,7 @@ async function buildSignedRequest({ method, path, payload, extraHeaders = {} }) 
     payloadHash,
   ].join('\n');
 
-  const credentialScope = `${dateStamp}/${AWS_REGION}/${AWS_SERVICE}/aws4_request`;
+  const credentialScope = `${dateStamp}/${awsConfig.region}/${AWS_SERVICE}/aws4_request`;
   const stringToSign = [
     'AWS4-HMAC-SHA256',
     amzDate,
@@ -290,11 +290,11 @@ async function buildSignedRequest({ method, path, payload, extraHeaders = {} }) 
     await sha256Hex(canonicalRequest),
   ].join('\n');
 
-  const signingKey = await getSignatureKey(AWS_SECRET_ACCESS_KEY, dateStamp, AWS_REGION, AWS_SERVICE);
+  const signingKey = await getSignatureKey(awsConfig.secretAccessKey, dateStamp, awsConfig.region, AWS_SERVICE);
   const signature = await hmacHex(signingKey, stringToSign);
 
   const authorization =
-    `AWS4-HMAC-SHA256 Credential=${AWS_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    `AWS4-HMAC-SHA256 Credential=${awsConfig.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
   return {
     url,
