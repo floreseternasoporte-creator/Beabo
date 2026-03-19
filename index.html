@@ -3300,7 +3300,7 @@ firebase.auth().onAuthStateChanged(user => {
 
       <div class="mt-6 -mx-4 px-4 overflow-x-auto">
         <div class="inline-flex gap-2 pb-1">
-          <button onclick="setBaroPrompt('tiendas para ahorrar con las compras navideñas')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap">🛍️ tiendas para ahorrar con las compras navideñas</button>
+          <button onclick="setBaroPrompt('ideas para organizar gastos del mes')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap">💡 ideas para organizar gastos del mes</button>
           <button onclick="setBaroPrompt('marcas de moda a buen precio')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap">👗 marcas de moda a buen precio</button>
           <button onclick="setBaroPrompt('recomendaciones de juegos para móvil')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap">🎮 recomendaciones de juegos</button>
           <button onclick="setBaroPrompt('¿Cómo financiar o rentar un auto?')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap">🚗 ¿Cómo financiar o rentar un auto?</button>
@@ -3713,8 +3713,7 @@ function handleProfileImageUploadDesktop(event) {
           <p class="font-bold text-[#FE2C55]">Series</p>
           <p id="edit-stories-count" class="text-[#FE2C55] font-bold text-lg">0</p>
         </div>
-        <div class="hidden"><p id="edit-coins">0</p></div>
-      </div>
+              </div>
       <button onclick="saveProfileEdits()" class="mt-6 w-full bg-[#FE2C55] text-white p-3 rounded-lg">Guardar Cambios</button>
       <button onclick="signOutUser()" class="mt-4 w-full bg-[#f9f9f9] text-black p-3 rounded-lg border border-[#FE2C55]">Cerrar Sesión</button>
 
@@ -3978,8 +3977,7 @@ function handleProfileImageUploadDesktop(event) {
                 <p class="text-2xl font-bold text-[#FE2C55]" id="edit-stories-count-desktop">0</p>
                 <p class="text-sm text-gray-600">Posts</p>
               </div>
-              <div class="hidden"><p id="edit-coins-desktop">0</p></div>
-            </div>
+                          </div>
           </div>
 
           <!-- Botones adicionales -->
@@ -6972,8 +6970,6 @@ const KLIPY_GIFS = [
           publishButton.disabled = false;
           publishButton.innerHTML = 'Publicar';
           
-          // Ganar monedas por publicar en comunidad (solo en db1 para evitar duplicidad de saldo)
-          earnCoinsForCommunityNote(user.uid);
           
           alert('¡Publicación creada exitosamente en ambas bases de datos!');
         }).catch(error => {
@@ -7059,12 +7055,6 @@ const KLIPY_GIFS = [
         }
       } catch (uiError) {
         console.error('La publicación se guardó, pero hubo un error de interfaz:', uiError);
-      }
-
-      // Ganar monedas por publicar
-      const user = firebase.auth().currentUser;
-      if (user) {
-        earnCoinsForCommunityNote(user.uid);
       }
 
       alert('¡Publicación creada exitosamente!');
@@ -9288,19 +9278,7 @@ function saveNote() {
       notificationsListenerRef = null;
     }
   }
-  /*********************** SISTEMA DE MONETIZACIÓN **************************/
-  let coinAnimationQueue = [];
-  let lastUsernameChange = 0;
-  const USERNAME_CHANGE_COOLDOWN = 7 * 24 * 60 * 60 * 1000; // 7 días en milisegundos
-
-  function addCoins() {
-    return Promise.resolve();
-  }
-
-  function showCoinAnimation() {
-    return;
-  }
-
+  /*********************** UTILIDADES DE FORMATO **************************/
   function formatNumber(num) {
     if (num >= 1000000000) {
       return (num / 1000000000).toFixed(1).replace(/\.0$/, '') + 'B';
@@ -9320,90 +9298,6 @@ function saveNote() {
     const absValue = Math.abs(numericScore);
     const compact = formatNumber(absValue);
     return numericScore > 0 ? `${compact}` : `-${compact}`;
-  }
-
-  function updateCoinDisplay(userId) {
-    firebase.database().ref('users/' + userId).on('value', snapshot => {
-      const userData = snapshot.val() || {};
-
-      const followersElement = document.getElementById('profile-followers');
-      if (followersElement) followersElement.textContent = formatNumber(userData.followersCount || 0);
-
-      const followingElement = document.getElementById('profile-following');
-      if (followingElement) followingElement.textContent = formatNumber(userData.followingCount || 0);
-
-      const editFollowersElement = document.getElementById('edit-followers');
-      if (editFollowersElement) editFollowersElement.textContent = formatNumber(userData.followersCount || 0);
-
-      const editFollowingElement = document.getElementById('edit-following');
-      if (editFollowingElement) editFollowingElement.textContent = formatNumber(userData.followingCount || 0);
-    });
-  }
-
-  function updateTopBarCoins() {
-    return;
-  }
-
-  function addCoinHistory() {
-    return;
-  }
-
-  // Funciones específicas para ganar monedas
-  function earnCoinsForReading(userId, chapterId) {
-    const readKey = `read_${chapterId}`;
-    firebase.database().ref('userCoinActions/' + userId + '/' + readKey).once('value').then(snapshot => {
-      if (!snapshot.exists()) {
-        // Primera vez leyendo este capítulo
-        firebase.database().ref('userCoinActions/' + userId + '/' + readKey).set(true);
-        addCoins(userId, 8, 'Leer capítulo');
-      }
-    });
-  }
-
-  function earnCoinsForFollowing(userId, followedUserId) {
-    addCoins(userId, 5, 'Seguir usuario');
-  }
-
-  function earnCoinsForViewing(userId, targetType, targetId) {
-    const viewKey = `view_${targetType}_${targetId}_${new Date().toDateString()}`;
-    firebase.database().ref('userCoinActions/' + userId + '/' + viewKey).once('value').then(snapshot => {
-      if (!snapshot.exists()) {
-        // Primera vista del día
-        firebase.database().ref('userCoinActions/' + userId + '/' + viewKey).set(true);
-        addCoins(userId, 2, `Ver ${targetType}`);
-      }
-    });
-  }
-
-  function earnCoinsForCommunityNote(userId) {
-    addCoins(userId, 10, 'Publicar nota en comunidad');
-  }
-
-  function earnCoinsForLikingNote(userId, noteId) {
-    const likeKey = `like_${noteId}`;
-    firebase.database().ref('userCoinActions/' + userId + '/' + likeKey).once('value').then(snapshot => {
-      if (!snapshot.exists()) {
-        firebase.database().ref('userCoinActions/' + userId + '/' + likeKey).set(true);
-        addCoins(userId, 5, 'Dar like a nota');
-      }
-    });
-  }
-
-  // Sistema de tienda de efectos
-  function openEffectsStore() {
-    return;
-  }
-
-  function buyEffect() {
-    return;
-  }
-
-  function openUsernameChange() {
-    return;
-  }
-
-  function changeUsername() {
-    return;
   }
 
   /*********************** AUTENTICACIÓN **************************/
@@ -9528,7 +9422,6 @@ function saveNote() {
       }
 
       // INICIALIZAR SISTEMA DE MONEDAS de manera consistente
-      updateCoinDisplay(user.uid);
       setupNotificationsBadge(user.uid);
 
       // CARGAR ESTADÍSTICAS EN TIEMPO REAL
@@ -9549,8 +9442,7 @@ function saveNote() {
         loadFeaturedAuthors();
 
         // INICIALIZAR SISTEMA DE MONEDAS
-        updateCoinDisplay(user.uid);
-
+  
         if (data) {
           let displayName = data.username || "Usuario";
           if (data.founder) {
@@ -10892,7 +10784,6 @@ function renderPlacesList(places) {
       document.getElementById('edit-followers').textContent = formatNumber(data.followersCount || 0);
       document.getElementById('edit-following').textContent = formatNumber(data.followingCount || 0);
       document.getElementById('edit-profile-image-mobile').src = data.profileImage || "https://via.placeholder.com/150";
-      document.getElementById('edit-coins').textContent = data.coins || 0;
 
       // Campos desktop
       const usernameDesktop = document.getElementById('edit-username-desktop');
@@ -10908,7 +10799,6 @@ function renderPlacesList(places) {
       const followersDesktop = document.getElementById('edit-followers-desktop');
       const followingDesktop = document.getElementById('edit-following-desktop');
       const storiesDesktop = document.getElementById('edit-stories-count-desktop');
-      const coinsDesktop = document.getElementById('edit-coins-desktop');
 
       if (usernameDesktop) usernameDesktop.value = data.username || "";
       if (emailDesktop) emailDesktop.value = user.email || "";
@@ -10922,7 +10812,6 @@ function renderPlacesList(places) {
       if (profileImageDesktop) profileImageDesktop.src = data.profileImage || "https://via.placeholder.com/200";
       if (followersDesktop) followersDesktop.textContent = formatNumber(data.followersCount || 0);
       if (followingDesktop) followingDesktop.textContent = formatNumber(data.followingCount || 0);
-      if (coinsDesktop) coinsDesktop.textContent = data.coins || 0;
 
       // Cargar campos de redes sociales en desktop
       const instagramDesktop = document.getElementById('edit-instagram-desktop');
@@ -11138,10 +11027,6 @@ function renderPlacesList(places) {
     const extraProfileIcon = document.getElementById('extra-profile-icon');
     if (extraProfileIcon) extraProfileIcon.remove();
 
-    // GANAR MONEDAS POR VER PERFIL
-    if (currentUser) {
-      earnCoinsForViewing(currentUser.uid, 'perfil', authorId);
-    }
 
     // Check for existing note
     firebase.database().ref('profileNotes/' + authorId).once('value').then(snapshot => {
@@ -11444,8 +11329,6 @@ function renderPlacesList(places) {
               addNotification(userId, `${followerName} te ha seguido`);
             });
 
-            // GANAR MONEDAS POR SEGUIR USUARIO
-            earnCoinsForFollowing(currentUser.uid, userId);
 
             alert(translations[currentLanguage].nowFollowing);
           });
@@ -12755,7 +12638,6 @@ function renderPlacesList(places) {
   });
 </script>
 
-<!-- (El modal de compra de monedas ha sido removido) -->
 
 <!-- Aquí se agregan las funciones para reportar perfil -->
 <script>
