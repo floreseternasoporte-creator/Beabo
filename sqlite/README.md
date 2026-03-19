@@ -1,98 +1,28 @@
-# SQLite para comentarios (activo en frontend)
+# Estado actual de backend comunitario
 
-La sección de publicaciones + comentarios ahora se consume desde una API de SQLite en lugar de leer/escribir en `communityNotes` / `postComments` de Firebase Realtime Database.
+## Posts (migrado a Amazon S3)
 
-## Crear base local
-
-```bash
-sqlite3 community.db < sqlite/schema.sql
-```
-
-## Levantar API SQLite local (sin dependencias externas)
-
-```bash
-python3 sqlite/api_server.py
-```
-
-Servidor por defecto: `http://localhost:8787/api/community`
-
-## Cloudflare Pages + D1 (producción)
-
-Este repo ahora incluye función de Cloudflare Pages en:
+La API de publicaciones ahora usa Amazon S3 (AWS) desde la función:
 
 - `functions/api/community/posts/[[path]].js`
 
-Para que funcione en Cloudflare:
+Configuración actual (temporal):
 
-1. Crea una base D1 (SQLite administrado por Cloudflare).
-2. Ejecuta el schema de `sqlite/schema.sql` sobre la base D1.
-3. En tu proyecto Pages, agrega binding D1 con nombre **`COMMUNITY_DB`**.
-4. Publica/redeploy.
+- Las credenciales y bucket están **hardcodeadas** en el archivo de la función (constantes `AWS_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+- El objeto usado en S3 es `community/posts.json`.
+- Endpoints de posts:
+  - `GET /api/community/posts?limit=50`
+  - `GET /api/community/posts/health`
+  - `GET /api/community/posts/:postId`
+  - `POST /api/community/posts`
+  - `PATCH /api/community/posts/:postId/comments-count`
 
-Si falta el binding, la API responde error 500 con mensaje claro.
+> Pendiente: reemplazar los valores `REEMPLAZAR_*` con las credenciales reales que compartas.
 
-## Endpoints esperados por `index.html`
+## Comentarios (aún en SQLite/D1)
 
-- `GET /api/community/posts?limit=50`
-  - Respuesta: `{ "posts": [ ... ] }`
-- `GET /api/community/posts/health`
-  - Respuesta: `{ ok, databaseBinding, communityPostsTable }`
-- `GET /api/community/posts/:postId`
-  - Respuesta: `{ "post": { ... } }`
-- `POST /api/community/posts`
-  - Body: `{ content, authorId, authorName, authorImage, gifUrl?, imageUrls?, poll?, disclosures?, location? }`
-  - `location` se guarda en SQLite (`location_name`, `location_lat`, `location_lng`).
-- `PATCH /api/community/posts/:postId/comments-count`
-  - Body: `{ commentsCount }`
-- `GET /api/community/posts/:postId/comments`
-  - Respuesta: `{ "comments": [ ...arbol de comentarios... ] }`
-- `POST /api/community/posts/:postId/comments`
-  - Body: `{ content, authorId, authorName, authorImage, gifUrl?, parentCommentId? }`
-- `POST /api/community/posts/:postId/comments/:commentId/votes`
-  - Body: `{ voteType: "up", userId }`
-  - Respuesta: `{ score: number, userVoted: boolean }`
-- `DELETE /api/community/posts/:postId/comments/:commentId`
-  - Body: `{ userId }`
+La API de comentarios sigue en SQLite/D1 por ahora en:
 
-## Nota de integración
+- `functions/api/community/comments.js`
 
-- El frontend usa `window.COMMUNITY_SQLITE_API_BASE`.
-- Por defecto usa:
-  - `http://localhost:8787/api/community` si abres `index.html` como archivo local (`file://`).
-  - `/api/community` si estás sirviendo la web desde un backend.
-- Firebase se mantiene para autenticación/perfil y otros módulos, pero publicaciones/comentarios/respuestas/votos de comentarios ya apuntan al backend SQLite.
-
-## Configuración Cloudflare Pages + D1 (paso a paso)
-
-1. **Crear base D1**:
-   - Cloudflare Dashboard → **Workers & Pages** → **D1 SQL Database** → **Create**.
-   - Guarda el nombre y `database_id`.
-2. **Aplicar schema**:
-   - Opción CLI:
-     ```bash
-     wrangler d1 execute <DB_NAME> --file=sqlite/schema.sql --remote
-     ```
-   - Ejemplo real (si tu DB se llama `community_db`):
-     ```bash
-     wrangler d1 execute community_db --file=sqlite/schema.sql --remote
-     ```
-   - Opción Dashboard: pestaña SQL y pegar `sqlite/schema.sql`.
-3. **Binding en Pages**:
-   - Pages Project → **Settings** → **Functions** → **D1 bindings**.
-   - Variable/binding name: `COMMUNITY_DB`.
-   - Selecciona la base creada.
-4. **Publicar**:
-   - Re-deploy del proyecto Pages.
-5. **Verificación rápida**:
-   - `GET https://<tu-dominio>/api/community/posts?limit=1` debe responder `200`.
-   - `GET https://<tu-dominio>/api/community/posts/health` debe mostrar `communityPostsTable: true`.
-   - Crea un post desde la UI con ubicación y valida que aparezca.
-
-## Si ves “No se pudieron cargar los posts desde SQLite API”
-
-1. Abre `/api/community/posts/health`.
-2. Si `communityPostsTable` es `false`, ejecuta de nuevo:
-   ```bash
-   wrangler d1 execute community_db --file=sqlite/schema.sql --remote
-   ```
-3. Si sale error de binding, revisa que el nombre sea exactamente `COMMUNITY_DB` en Pages.
+Se migrará después a AWS en el siguiente paso.
