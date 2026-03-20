@@ -60,6 +60,7 @@ console.log('%cEste sitio está protegido contra inspección de código.', 'font
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
   <style>
     /* ESTILOS BASE ADAPTADOS */
 body {
@@ -4873,16 +4874,16 @@ function loadPhotos() {
   const photosContainer = photosFeed.querySelector('.grid');
   photosContainer.innerHTML = '';
 
-  firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(100).once('value').then(snapshot => {
+  getAllCommunityPosts({ limit: 100 }).then(posts => {
     const photos = [];
-    snapshot.forEach(child => {
-      const note = child.val();
-      if (note.imageUrl) {
-        photos.push(note);
-      }
+    posts.forEach(note => {
+      const images = [];
+      if (Array.isArray(note.imageUrls)) images.push(...note.imageUrls.filter(Boolean));
+      if (note.imageUrl) images.push(note.imageUrl);
+      images.forEach(url => photos.push({ ...note, imageUrl: url }));
     });
 
-    photos.reverse().forEach(photo => {
+    photos.forEach(photo => {
       const photoCard = document.createElement('div');
       photoCard.className = 'relative aspect-square cursor-pointer';
       photoCard.innerHTML = `
@@ -4899,6 +4900,8 @@ function loadPhotos() {
       };
       photosContainer.appendChild(photoCard);
     });
+  }).catch(error => {
+    console.error('No se pudieron cargar las fotos:', error);
   });
 }
 
@@ -5454,7 +5457,8 @@ function openPhotoDetail(photo) {
   // Función para cargar estadísticas del perfil en tiempo real
   function loadUserStats(userId) {
     // Contador de publicaciones
-    firebase.database().ref('communityNotes').orderByChild('authorId').equalTo(userId).on('value', postsSnapshot => {
+    getAllCommunityPosts({ authorId: userId }).then(posts => {
+      const postsSnapshot = createSnapshotFromPosts(posts);
       const postsCount = postsSnapshot.numChildren();
 
       const profilePostsTitle = document.getElementById('profile-posts-title');
@@ -5472,6 +5476,8 @@ function openPhotoDetail(photo) {
       if (sidebarTotalViews) sidebarTotalViews.textContent = postsCount;
 
       loadUserPostsGrid(postsSnapshot);
+    }).catch(error => {
+      console.error('No se pudieron cargar los posts del usuario:', error);
     });
 
     firebase.database().ref('users/' + userId + '/followersCount').on('value', snapshot => {
@@ -6342,10 +6348,9 @@ const KLIPY_GIFS = [
 
     if (!activeLocationDetail?.name) return;
 
-    firebase.database().ref('communityNotes').limitToLast(300).once('value').then(snapshot => {
+    getAllCommunityPosts({ limit: 300 }).then(posts => {
       const matches = [];
-      snapshot.forEach(child => {
-        const note = { ...(child.val() || {}), id: child.key };
+      posts.forEach(note => {
         if (!note.location?.name) return;
         if (!locationsLookRelated(note.location.name, activeLocationDetail.name)) return;
         matches.push(note);
@@ -6931,9 +6936,10 @@ const KLIPY_GIFS = [
     const user = firebase.auth().currentUser;
     if (!user) return;
 
-    // Cargar estadísticas de notas
-    firebase.database().ref('communityNotes').orderByChild('authorId').equalTo(user.uid).once('value').then(snapshot => {
-      document.getElementById('creator-notes-count').textContent = snapshot.numChildren();
+    getAllCommunityPosts({ authorId: user.uid }).then(posts => {
+      document.getElementById('creator-notes-count').textContent = posts.length;
+    }).catch(error => {
+      console.error('No se pudieron cargar las estadísticas del creador:', error);
     });
   }
 
@@ -7022,23 +7028,21 @@ const KLIPY_GIFS = [
       };
 
       const saveToDatabases = (noteData) => {
-        const p1 = db1.ref('communityNotes').push(noteData);
-        const p2 = db2.ref('communityNotes').push(noteData);
-        
-        return Promise.all([p1, p2]).then(() => {
+        return saveCommunityPost(noteData).then(() => {
           document.getElementById('note-content').value = '';
           if (imageInput) imageInput.value = '';
           const preview = document.getElementById('image-preview');
           if (preview) preview.classList.add('hidden');
           
           switchCommunityTab('feed');
+          refreshCommunityViews();
           publishButton.disabled = false;
           publishButton.innerHTML = 'Publicar';
           
           
-          alert('¡Publicación creada exitosamente en ambas bases de datos!');
+          alert('¡Publicación creada exitosamente en Amazon S3!');
         }).catch(error => {
-          console.error('Error al publicar en una o ambas bases de datos:', error);
+          console.error('Error al publicar en Amazon S3:', error);
           alert('Error al publicar. Inténtalo de nuevo.');
           publishButton.disabled = false;
           publishButton.innerHTML = 'Publicar';
@@ -7059,10 +7063,8 @@ const KLIPY_GIFS = [
   }
 
   function publishNoteToDatabase(note) {
-    // Verifica el contenido de la nota específicamente
     if (note.content && moderarContenidoNota(note.content)) {
       alert('Tu nota no puede ser publicada porque contiene contenido inapropiado.');
-      // Restaurar botón
       const publishBtn = document.getElementById('publish-btn-fullscreen');
       if (publishBtn) {
         publishBtn.disabled = false;
@@ -7071,18 +7073,12 @@ const KLIPY_GIFS = [
       return;
     }
 
-    // Publicar en ambas bases de datos
-    const p1 = db1.ref('communityNotes').push(note);
-    const p2 = db2.ref('communityNotes').push(note);
-
-    Promise.all([p1, p2]).then(([ref1, ref2]) => {
-      // Verifica una vez más después de publicar (en db1)
-      if (note.content) {
-        moderarContenidoAutomaticamente(ref1.key, note.content);
+    saveCommunityPost(note).then(savedNote => {
+      if (savedNote.content) {
+        moderarContenidoAutomaticamente(savedNote.id, savedNote.content);
       }
 
       try {
-        // Limpiar formularios fullscreen
         const contentFullscreen = document.getElementById('note-content-fullscreen');
         const imageFullscreen = document.getElementById('note-image-fullscreen');
         const previewFullscreen = document.getElementById('image-preview-fullscreen');
@@ -7097,8 +7093,9 @@ const KLIPY_GIFS = [
         if (previewCounterFullscreen) previewCounterFullscreen.textContent = '';
         clearDisclosures();
         clearLocationSelection();
+        removePollFullscreen();
+        selectedGif = null;
 
-        // Limpiar formularios antiguos (por compatibilidad)
         const contentOld = document.getElementById('note-content');
         const imageOld = document.getElementById('note-image');
         const previewOld = document.getElementById('image-preview');
@@ -7107,11 +7104,9 @@ const KLIPY_GIFS = [
         if (imageOld) imageOld.value = '';
         if (previewOld) previewOld.classList.add('hidden');
 
-        // Cerrar pantalla completa si está abierta
         const fullscreenModal = document.getElementById('note-creation-fullscreen');
         if (fullscreenModal && !fullscreenModal.classList.contains('hidden')) {
           closeNoteCreationFullscreen();
-          // Abrir comunidad para ver la nota publicada
           const mainAppEl = document.getElementById('main-app');
           if (mainAppEl) mainAppEl.classList.remove('hidden');
           loadNotes();
@@ -7122,11 +7117,16 @@ const KLIPY_GIFS = [
         console.error('La publicación se guardó, pero hubo un error de interfaz:', uiError);
       }
 
-      alert('¡Publicación creada exitosamente!');
+      const publishBtn = document.getElementById('publish-btn-fullscreen');
+      if (publishBtn) {
+        publishBtn.disabled = false;
+        publishBtn.innerHTML = 'Publicar';
+      }
+      refreshCommunityViews();
+      alert('¡Publicación creada exitosamente en Amazon S3!');
     }).catch(error => {
-      console.error('Error al publicar:', error);
-      alert('Error al publicar. Inténtalo de nuevo.');
-      // Restaurar botón
+      console.error('Error al publicar en Amazon S3:', error);
+      alert('Error al publicar. Revisa la configuración de AWS e inténtalo de nuevo.');
       const publishBtn = document.getElementById('publish-btn-fullscreen');
       if (publishBtn) {
         publishBtn.disabled = false;
@@ -7261,53 +7261,36 @@ const KLIPY_GIFS = [
     if (!feedContainer) return;
 
     const user = firebase.auth().currentUser;
-    let userVotes = {};
-
-    // Cargar votos del usuario en segundo plano sin bloquear la renderizacion
-    if (user) {
-      firebase.database().ref('userVotes/' + user.uid).once('value').then(snap => {
-        userVotes = snap.val() || {};
-      }).catch(err => console.error('Error cargando votos:', err));
-    }
-
     feedContainer.innerHTML = `<div class="py-3 text-center">${getFadingCircleLoaderMarkup()}</div>`;
 
-    const notesRef = firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
-    notesRef.off();
-    notesRef.on('value', snapshot => {
+    getAllCommunityPosts({ limit: 50 }).then(notes => {
       feedContainer.innerHTML = '';
+      const visibleNotes = notes.filter(note => !shouldHideNoteForCurrentUser(note.id, note));
 
-      const notes = [];
-      snapshot.forEach(child => {
-        const rawNote = child.val() || {};
-        if (shouldHideNoteForCurrentUser(child.key, rawNote)) return;
-        notes.unshift({ ...rawNote, id: child.key });
-      });
-
-      if (!notes.length) {
+      if (!visibleNotes.length) {
         feedContainer.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-3xl p-6 text-center text-sm text-[#8d7d75] shadow-sm">Aún no hay posts. Sé la primera persona en publicar.</div>';
         return;
       }
 
       const feedFragment = document.createDocumentFragment();
 
-      notes.forEach(note => {
-          try {
-            const noteElement = document.createElement('div');
-            noteElement.id = `post-${note.id}`;
-            noteElement.className = 'bg-white border-b border-[#e8e1dc] rounded-none mb-0';
+      visibleNotes.forEach(note => {
+        try {
+          const noteElement = document.createElement('div');
+          noteElement.id = `post-${note.id}`;
+          noteElement.className = 'bg-white border-b border-[#e8e1dc] rounded-none mb-0';
 
-            const upvotes = Number(note.upvotes || 0);
-            const downvotes = Number(note.downvotes || 0);
-            const score = upvotes - downvotes;
-            const commentsCount = Number(note.commentsCount || 0);
-            const userVote = userVotes[note.id] || null;
+          const upvotes = Number(note.upvotes || 0);
+          const downvotes = Number(note.downvotes || 0);
+          const score = upvotes - downvotes;
+          const commentsCount = Number(note.commentsCount || 0);
+          const userVote = user && Array.isArray(note.upvoters) && note.upvoters.includes(user.uid) ? 'up' : null;
 
-            let pollHTML = '';
-            const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
-            if (note.poll && pollOptions.length) {
-              const totalVotes = pollOptions.reduce((sum, opt) => sum + Number(opt?.votes || 0), 0);
-              pollHTML = `
+          let pollHTML = '';
+          const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
+          if (note.poll && pollOptions.length) {
+            const totalVotes = pollOptions.reduce((sum, opt) => sum + Number(opt?.votes || 0), 0);
+            pollHTML = `
               <div class="mt-3 p-3 bg-white rounded-lg border border-gray-300">
                 <h4 class="font-medium text-gray-900 mb-3 text-sm">${note.poll.question}</h4>
                 <div class="space-y-2">
@@ -7329,91 +7312,92 @@ const KLIPY_GIFS = [
                 <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''} • Toca para votar</p>
               </div>
             `;
+          }
+
+          const safeTimestamp = Number(note.timestamp) || Date.now();
+          const safeAuthorId = note.authorId || '';
+          const safeAuthorName = note.authorName || 'Usuario';
+          let safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
+
+          if (user && safeAuthorId === user.uid) {
+            const headerProfileImage = document.getElementById('header-profile-image');
+            if (headerProfileImage && headerProfileImage.src && !headerProfileImage.src.includes('placeholder')) {
+              safeAuthorImage = headerProfileImage.src;
             }
+          }
 
-            const safeTimestamp = Number(note.timestamp) || Date.now();
-            const safeAuthorId = note.authorId || '';
-            const safeAuthorName = note.authorName || 'Usuario';
-            let safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
-
-            // Si el autor es el usuario actual, usar su foto de perfil vinculada
-            if (user && safeAuthorId === user.uid) {
-              const headerProfileImage = document.getElementById('header-profile-image');
-              if (headerProfileImage && headerProfileImage.src && !headerProfileImage.src.includes('placeholder')) {
-                safeAuthorImage = headerProfileImage.src;
-              }
-            }
-
-            // Generar HTML para URLs compartidas si existen
-            let urlHTML = '';
-            if (note.url) {
-              urlHTML = `
-                <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <a href="${note.url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 font-semibold text-sm hover:underline break-all">
-                    ${note.url}
-                  </a>
-                </div>
-              `;
-            }
-
-            noteElement.innerHTML = `
-              <div class="p-5 relative">
-                <button onclick="openPostOptionsSheet('${note.id}')" class="absolute top-4 right-4 z-10 p-1 text-[#8d7d75] hover:text-[#5f4b44]" aria-label="Opciones de publicación">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <circle cx="6" cy="12" r="1.8" />
-                    <circle cx="12" cy="12" r="1.8" />
-                    <circle cx="18" cy="12" r="1.8" />
-                  </svg>
-                </button>
-                <div class="flex items-start gap-3 mb-3 pr-12">
-                  <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
-                    <img src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-full h-full object-cover">
-                  </button>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-2">
-                      <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}</button>
-                      <button onclick="openPostOptionsSheet('${note.id}')" class="ml-auto p-1.5 rounded-full hover:bg-[#f1ece9] text-[#8d7d75]" aria-label="Opciones de publicación">
-                        <i class="fas fa-ellipsis"></i>
-                      </button>
-                    </div>
-                    ${renderNoteAnchoredMeta(note)}
-                    ${note.content ? renderContentWithSticker(note.content, 'text-[#2f1a14] text-base whitespace-pre-wrap leading-relaxed') : ''}
-                  </div>
-                </div>
-                ${renderNoteImages(note, note.id)}
-                ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#e8e1dc]"><img src="${note.gifUrl}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
-                ${urlHTML}
-                ${pollHTML}
-
-                <div class="flex items-center pt-3 border-t border-[#efe9e5]">
-                  <div class="flex items-center gap-3 text-[#7a6962]">
-                    <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="vote-star flex items-center gap-1 ${userVote === 'up' ? 'active' : ''}" aria-label="Votar publicación">
-                      <span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span>
-                      <svg class="fire-icon" fill="currentColor" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M16 2c0 0-1.5 3.5-3.5 5.5C10 10 7 11.5 7 16c0 5 4 9 9 9s9-4 9-9c0-3.5-2-6-4-8-0.5 2-1.5 3.5-3 4.5 0-3.5-1-7.5-2-10.5z"/>
-                        <path d="M16 18c0 0-0.7 1.5-1.5 2.2C13.5 21.2 13 22 13 23c0 1.7 1.3 3 3 3s3-1.3 3-3c0-1.5-1-2.5-2-3.5-0.2 0.8-0.5 1.5-1 2z" opacity="0.7"/>
-                      </svg>
-                    </button>
-                    <span id="score-${note.id}" class="text-sm font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
-                    <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1.5 hover:text-[#5f4b44] transition-colors text-[#7a6962]">
-                      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/>
-                      </svg>
-                      <span class="text-sm font-bold">${commentsCount}</span>
-                    </button>
-                  </div>
-                </div>
-                <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(safeTimestamp)}</p>
+          let urlHTML = '';
+          if (note.url) {
+            urlHTML = `
+              <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <a href="${note.url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 font-semibold text-sm hover:underline break-all">
+                  ${note.url}
+                </a>
               </div>
             `;
+          }
 
-        feedFragment.appendChild(noteElement);
+          noteElement.innerHTML = `
+            <div class="p-5 relative">
+              <button onclick="openPostOptionsSheet('${note.id}')" class="absolute top-4 right-4 z-10 p-1 text-[#8d7d75] hover:text-[#5f4b44]" aria-label="Opciones de publicación">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <circle cx="6" cy="12" r="1.8" />
+                  <circle cx="12" cy="12" r="1.8" />
+                  <circle cx="18" cy="12" r="1.8" />
+                </svg>
+              </button>
+              <div class="flex items-start gap-3 mb-3 pr-12">
+                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
+                  <img src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-full h-full object-cover">
+                </button>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-2">
+                    <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}</button>
+                    <button onclick="openPostOptionsSheet('${note.id}')" class="ml-auto p-1.5 rounded-full hover:bg-[#f1ece9] text-[#8d7d75]" aria-label="Opciones de publicación">
+                      <i class="fas fa-ellipsis"></i>
+                    </button>
+                  </div>
+                  ${renderNoteAnchoredMeta(note)}
+                  ${note.content ? renderContentWithSticker(note.content, 'text-[#2f1a14] text-base whitespace-pre-wrap leading-relaxed') : ''}
+                </div>
+              </div>
+              ${renderNoteImages(note, note.id)}
+              ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#e8e1dc]"><img src="${note.gifUrl}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+              ${urlHTML}
+              ${pollHTML}
+
+              <div class="flex items-center pt-3 border-t border-[#efe9e5]">
+                <div class="flex items-center gap-3 text-[#7a6962]">
+                  <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="vote-star flex items-center gap-1 ${userVote === 'up' ? 'active' : ''}" aria-label="Votar publicación">
+                    <span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span>
+                    <svg class="fire-icon" fill="currentColor" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M16 2c0 0-1.5 3.5-3.5 5.5C10 10 7 11.5 7 16c0 5 4 9 9 9s9-4 9-9c0-3.5-2-6-4-8-0.5 2-1.5 3.5-3 4.5 0-3.5-1-7.5-2-10.5z"/>
+                      <path d="M16 18c0 0-0.7 1.5-1.5 2.2C13.5 21.2 13 22 13 23c0 1.7 1.3 3 3 3s3-1.3 3-3c0-1.5-1-2.5-2-3.5-0.2 0.8-0.5 1.5-1 2z" opacity="0.7"/>
+                    </svg>
+                  </button>
+                  <span id="score-${note.id}" class="text-sm font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
+                  <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1.5 hover:text-[#5f4b44] transition-colors text-[#7a6962]">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/>
+                    </svg>
+                    <span class="text-sm font-bold">${commentsCount}</span>
+                  </button>
+                </div>
+              </div>
+              <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(safeTimestamp)}</p>
+            </div>
+          `;
+
+          feedFragment.appendChild(noteElement);
         } catch (renderError) {
           console.error('Error renderizando publicación:', note?.id, renderError);
         }
       });
 
       feedContainer.appendChild(feedFragment);
+    }).catch(error => {
+      console.error('No se pudieron cargar las publicaciones:', error);
+      feedContainer.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-3xl p-6 text-center text-sm text-[#8d7d75] shadow-sm">No se pudieron cargar los posts desde Amazon S3.</div>';
     });
   }
 
@@ -7425,38 +7409,35 @@ const KLIPY_GIFS = [
       return;
     }
 
-    const noteRef = firebase.database().ref('communityNotes/' + noteId);
-    noteRef.once('value').then(snapshot => {
-      const note = snapshot.val();
-      if (!note.poll) return;
+    updateCommunityPost(noteId, note => {
+      if (!note?.poll || !Array.isArray(note.poll.options)) return note;
 
-      // Verificar si ya votó
-      let hasVoted = false;
       let previousVoteIndex = -1;
       note.poll.options.forEach((option, index) => {
-        if (option.voters && option.voters.includes(user.uid)) {
-          hasVoted = true;
-          previousVoteIndex = index;
-        }
+        option.voters = Array.isArray(option.voters) ? option.voters : [];
+        if (option.voters.includes(user.uid)) previousVoteIndex = index;
       });
 
-      // Si ya votó, remover voto anterior
-      if (hasVoted && previousVoteIndex !== -1) {
-        note.poll.options[previousVoteIndex].votes = (note.poll.options[previousVoteIndex].votes || 1) - 1;
-        note.poll.options[previousVoteIndex].voters = note.poll.options[previousVoteIndex].voters.filter(id => id !== user.uid);
+      if (previousVoteIndex !== -1) {
+        const prev = note.poll.options[previousVoteIndex];
+        prev.votes = Math.max(0, Number(prev.votes || 0) - 1);
+        prev.voters = prev.voters.filter(id => id !== user.uid);
       }
 
-      // Agregar nuevo voto
-      if (!note.poll.options[optionIndex].voters) {
-        note.poll.options[optionIndex].voters = [];
-      }
-      if (!note.poll.options[optionIndex].voters.includes(user.uid)) {
-        note.poll.options[optionIndex].votes = (note.poll.options[optionIndex].votes || 0) + 1;
-        note.poll.options[optionIndex].voters.push(user.uid);
+      const next = note.poll.options[optionIndex];
+      if (!next) return note;
+      next.voters = Array.isArray(next.voters) ? next.voters : [];
+      if (!next.voters.includes(user.uid)) {
+        next.votes = Number(next.votes || 0) + 1;
+        next.voters.push(user.uid);
       }
 
-      // Actualizar en Firebase
-      noteRef.update({ poll: note.poll });
+      return note;
+    }).then(() => {
+      loadNotes();
+      if (currentPostId === noteId) openCommentsView(noteId);
+    }).catch(error => {
+      console.error('No se pudo registrar el voto de la encuesta:', error);
     });
   }
 // Cerrar modal de imagen
@@ -7502,7 +7483,7 @@ function closeImageModal() {
 
 function moderarContenidoAutomaticamente(noteId, content) {
   if (contienePalabrasOfensivas(content)) {
-    firebase.database().ref('communityNotes/' + noteId).remove()
+    deleteCommunityPost(noteId)
       .then(() => {
         console.log('Nota eliminada por contener lenguaje ofensivo');
         alert('Tu nota ha sido eliminada por contener lenguaje inapropiado.');
@@ -7540,10 +7521,10 @@ function moderarNota(noteId, content) {
     document.body.removeChild(loadingDiv);
 
     if (contienePalabrasOfensivas(content)) {
-      firebase.database().ref('communityNotes/' + noteId).remove();
+      deleteCommunityPost(noteId);
       alert('La nota ha sido eliminada por contener lenguaje ofensivo.');
     } else if (contieneContenidoInapropiado(content)) {
-      firebase.database().ref('communityNotes/' + noteId).update({
+      updateCommunityPost(noteId, {
         blocked: true,
         blockReason: 'Contenido inapropiado detectado'
       });
@@ -7555,8 +7536,9 @@ function moderarNota(noteId, content) {
 function deleteNote(noteId) {
   if (!confirm('¿Estás seguro de que quieres eliminar esta publicación?')) return;
 
-  firebase.database().ref('communityNotes/' + noteId).remove()
+  deleteCommunityPost(noteId)
     .then(() => {
+      refreshCommunityViews();
       alert('Publicación eliminada exitosamente');
     })
     .catch(error => {
@@ -7602,8 +7584,8 @@ function openPostOptionsSheet(noteId) {
   currentPostOptionsNoteData = null;
 
   if (user) {
-    firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
-      const note = snapshot.val() || {};
+    getCommunityPostById(noteId).then(note => {
+      note = note || {};
       currentPostOptionsNoteData = note;
       const isOwner = !!note && (note.authorId === user.uid || note.userId === user.uid);
       if (deleteBtn) deleteBtn.classList.toggle('hidden', !isOwner);
@@ -7768,9 +7750,9 @@ function deletePostFromOptions() {
   const noteId = currentPostOptionsNoteId;
   closePostOptionsSheet();
 
-  firebase.database().ref('communityNotes/' + noteId).remove().then(() => {
+  deleteCommunityPost(noteId).then(() => {
     alert('Publicación eliminada exitosamente.');
-    loadNotes();
+    refreshCommunityViews();
   }).catch(error => {
     console.error('Error al eliminar publicación:', error);
     alert('Hubo un error al eliminar la publicación. Intenta de nuevo.');
@@ -7899,8 +7881,7 @@ function submitPostReport() {
     other: ''
   };
 
-  firebase.database().ref('communityNotes/' + currentReportNoteId).once('value').then(snapshot => {
-    const note = snapshot.val();
+  getCommunityPostById(currentReportNoteId).then(note => {
     if (!note) throw new Error('Publicación no encontrada');
 
     const algorithmInput = `${note.content || ''} ${reasonLabel} ${reasonKeywords[reason] || ''} ${description}`;
@@ -7969,54 +7950,46 @@ function votePost(noteId, voteType) {
     return;
   }
 
-  const userVoteRef = firebase.database().ref('userVotes/' + user.uid + '/' + noteId);
-  const noteRef = firebase.database().ref('communityNotes/' + noteId);
   firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
     const userData = userSnap.val();
     const userName = (userData && userData.username) ? userData.username : (user.displayName || user.email || 'Alguien');
 
-    userVoteRef.once('value').then(snapshot => {
-    const currentVote = snapshot.val();
-
-    noteRef.transaction(note => {
-      if (note) {
-        if (currentVote === 'up') {
-          note.upvotes = (note.upvotes || 1) - 1;
-        }
-
-        if (currentVote !== 'up') {
-          note.upvotes = (note.upvotes || 0) + 1;
-        }
+    updateCommunityPost(noteId, note => {
+      if (!note) return note;
+      note.upvoters = Array.isArray(note.upvoters) ? note.upvoters : [];
+      const hasUpvote = note.upvoters.includes(user.uid);
+      if (hasUpvote) {
+        note.upvoters = note.upvoters.filter(id => id !== user.uid);
+        note.upvotes = Math.max(0, Number(note.upvotes || 0) - 1);
+      } else {
+        note.upvoters.push(user.uid);
+        note.upvotes = Number(note.upvotes || 0) + 1;
       }
       return note;
-    }).then(result => {
-      const updatedNote = result && result.snapshot ? result.snapshot.val() : null;
+    }).then(updatedNote => {
       if (
         updatedNote &&
         voteType === 'up' &&
-        currentVote !== 'up' &&
         updatedNote.authorId &&
-        updatedNote.authorId !== user.uid
+        updatedNote.authorId !== user.uid &&
+        Array.isArray(updatedNote.upvoters) &&
+        updatedNote.upvoters.includes(user.uid)
       ) {
         addNotification(updatedNote.authorId, `${userName} votó positivamente tu publicación.`, 'vote');
       }
-    });
 
-    if (currentVote === 'up') {
-      userVoteRef.remove();
-    } else {
-      userVoteRef.set('up');
-    }
+      const voteBtn = document.getElementById(`upvote-${noteId}`);
+      if (voteBtn) {
+        voteBtn.classList.remove('pop');
+        void voteBtn.offsetWidth; // forzar reflow para reiniciar animación
+        requestAnimationFrame(() => {
+          voteBtn.classList.add('pop');
+          setTimeout(() => voteBtn.classList.remove('pop'), 550);
+        });
+      }
 
-    const voteBtn = document.getElementById(`upvote-${noteId}`);
-    if (voteBtn) {
-      voteBtn.classList.remove('pop');
-      void voteBtn.offsetWidth; // forzar reflow para reiniciar animación
-      requestAnimationFrame(() => {
-        voteBtn.classList.add('pop');
-        setTimeout(() => voteBtn.classList.remove('pop'), 550);
-      });
-    }
+      loadNotes();
+      if (currentPostId === noteId) openCommentsView(noteId);
     });
   });
 }
@@ -8187,15 +8160,15 @@ function openCommentsView(noteId) {
     });
   }
 
-  firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
-    const note = { ...(snapshot.val() || {}), id: noteId };
+  getCommunityPostById(noteId).then(note => {
+    if (!note) return;
     const upvotes = note.upvotes || 0;
     const downvotes = note.downvotes || 0;
     const score = upvotes - downvotes;
 
     // Construir HTML de encuesta si existe
     let pollHTML = '';
-    if (note.poll) {
+    if (note.poll && Array.isArray(note.poll.options)) {
       const totalVotes = note.poll.options.reduce((sum, opt) => sum + (opt.votes || 0), 0);
       pollHTML = `
         <div class="mt-2 p-3 bg-white rounded-lg border border-gray-300">
@@ -8203,7 +8176,7 @@ function openCommentsView(noteId) {
           <div class="space-y-2">
             ${note.poll.options.map((option, index) => {
               const percentage = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
-              const hasVoted = user && option.voters && option.voters.includes(user.uid);
+              const hasVoted = user && Array.isArray(option.voters) && option.voters.includes(user.uid);
               return `
                 <button onclick="votePoll('${noteId}', ${index})" class="w-full text-left p-2 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#FE2C55] bg-red-50' : 'border-gray-300 bg-white'}">
                   <div class="absolute inset-0 bg-[#FE2C55]" style="width: ${percentage}%; opacity: 0.08"></div>
@@ -8269,13 +8242,11 @@ function loadCommentsInView(noteId) {
     '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>';
   commentsList.innerHTML = skeletonHTML;
 
-  firebase.database().ref('postComments/' + noteId).on('value', snapshot => {
+  getCommunityComments(noteId).then(comments => {
     commentsList.innerHTML = '';
     let totalCount = 0;
 
-    snapshot.forEach(child => {
-      const comment = child.val();
-      const commentId = child.key;
+    Object.entries(comments || {}).forEach(([commentId, comment]) => {
       totalCount++; // Contar comentario principal
 
       // Contar respuestas recursivamente
@@ -8287,6 +8258,9 @@ function loadCommentsInView(noteId) {
     });
 
     document.getElementById('comments-count-header').textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
+  }).catch(error => {
+    console.error('No se pudieron cargar los comentarios:', error);
+    commentsList.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 text-sm text-[#8d7d75]">No se pudieron cargar los comentarios desde Amazon S3.</div>';
   });
 }
 
@@ -8421,15 +8395,9 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
 
   // Verificar voto del usuario
   const user = firebase.auth().currentUser;
-  if (user) {
-    const safeVoteKey = commentPath.replace(/\//g, '__');
-    firebase.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey).once('value').then(voteSnapshot => {
-      const vote = voteSnapshot.val();
-      if (vote === 'up') {
-        const btn = document.getElementById(`comment-upvote-${commentPath}`);
-        if (btn) btn.classList.add('active');
-      }
-    });
+  if (user && Array.isArray(comment.upvoters) && comment.upvoters.includes(user.uid)) {
+    const btn = document.getElementById(`comment-upvote-${commentPath}`);
+    if (btn) btn.classList.add('active');
   }
 }
 
@@ -8449,52 +8417,58 @@ function submitComment() {
   if (!content && !selectedCommentGif) return;
 
   firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
-    const userData = userSnap.val();
+    const userData = userSnap.val() || {};
 
     const payload = {
+      id: generateCommunityId('comment'),
       content: content,
       authorId: user.uid,
       authorName: userData.username || 'Usuario',
       authorImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
       timestamp: Date.now(),
       upvotes: 0,
-      downvotes: 0
+      downvotes: 0,
+      upvoters: []
     };
 
     if (selectedCommentGif) payload.gifUrl = selectedCommentGif;
 
-    if (replyTarget && replyTarget.commentId) {
-      firebase.database().ref('postComments/' + currentPostId + '/' + replyTarget.commentId + '/replies').push(payload).then(() => {
-        updateCommentsCount(currentPostId);
-        input.value = '';
-        removeCommentGif();
-        clearReplyTarget();
-      });
-      return;
-    }
-
-    firebase.database().ref('postComments/' + currentPostId).push(payload).then(() => {
-      updateCommentsCount(currentPostId);
+    getCommunityComments(currentPostId).then(comments => {
+      if (replyTarget && replyTarget.commentId) {
+        const parentComment = getCommentNodeByPath(comments, replyTarget.commentId);
+        if (!parentComment) throw new Error('No se encontró el comentario padre');
+        parentComment.replies = parentComment.replies || {};
+        parentComment.replies[payload.id] = payload;
+      } else {
+        comments[payload.id] = payload;
+      }
+      return saveCommunityComments(currentPostId, comments);
+    }).then(() => updateCommentsCount(currentPostId)).then(() => {
       input.value = '';
       removeCommentGif();
+      clearReplyTarget();
+      loadCommentsInView(currentPostId);
+      loadNotes();
     });
+  }).catch(error => {
+    console.error('No se pudo guardar el comentario:', error);
+    alert('No se pudo guardar el comentario en Amazon S3.');
   });
 }
 
 // Actualizar contador de comentarios (incluyendo respuestas)
 function updateCommentsCount(noteId) {
-  firebase.database().ref('postComments/' + noteId).once('value').then(snapshot => {
+  return getCommunityComments(noteId).then(comments => {
     let totalCount = 0;
 
-    snapshot.forEach(child => {
+    Object.values(comments || {}).forEach(comment => {
       totalCount++; // Comentario principal
-      const comment = child.val();
       if (comment.replies) {
         totalCount += countReplies(comment.replies);
       }
     });
 
-    firebase.database().ref('communityNotes/' + noteId).update({
+    return updateCommunityPost(noteId, {
       commentsCount: totalCount
     });
   });
@@ -8535,31 +8509,20 @@ function voteComment(noteId, commentPath, voteType = "up") {
     return;
   }
 
-  const safeVoteKey = commentPath.replace(/\//g, '__');
-  const userVoteRef = firebase.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey);
-  const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
-
-  userVoteRef.once('value').then(snapshot => {
-    const currentVote = snapshot.val();
-
-    commentRef.transaction(comment => {
-      if (comment) {
-        if (currentVote === 'up') {
-          comment.upvotes = (comment.upvotes || 1) - 1;
-        }
-
-        if (currentVote !== 'up') {
-          comment.upvotes = (comment.upvotes || 0) + 1;
-        }
-      }
-      return comment;
-    });
-
-    if (currentVote === 'up') {
-      userVoteRef.remove();
+  getCommunityComments(noteId).then(comments => {
+    const comment = getCommentNodeByPath(comments, commentPath);
+    if (!comment) throw new Error('Comentario no encontrado');
+    comment.upvoters = Array.isArray(comment.upvoters) ? comment.upvoters : [];
+    const hasUpvote = comment.upvoters.includes(user.uid);
+    if (hasUpvote) {
+      comment.upvoters = comment.upvoters.filter(id => id !== user.uid);
+      comment.upvotes = Math.max(0, Number(comment.upvotes || 0) - 1);
     } else {
-      userVoteRef.set('up');
+      comment.upvoters.push(user.uid);
+      comment.upvotes = Number(comment.upvotes || 0) + 1;
     }
+    return saveCommunityComments(noteId, comments);
+  }).then(() => {
 
     const voteBtn = document.getElementById(`comment-upvote-${commentPath}`);
     if (voteBtn) {
@@ -8570,6 +8533,9 @@ function voteComment(noteId, commentPath, voteType = "up") {
         setTimeout(() => voteBtn.classList.remove('pop'), 550);
       });
     }
+    loadCommentsInView(noteId);
+  }).catch(error => {
+    console.error('No se pudo votar el comentario:', error);
   });
 }
 
@@ -8629,10 +8595,15 @@ function deleteComment(noteId, commentPath) {
   const user = firebase.auth().currentUser;
   if (!user) return;
 
-  const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
-  commentRef.remove().then(() => {
+  getCommunityComments(noteId).then(comments => {
+    const deleted = deleteCommentNodeByPath(comments, commentPath);
+    if (!deleted) throw new Error('Comentario no encontrado');
+    return saveCommunityComments(noteId, comments);
+  }).then(() => updateCommentsCount(noteId)).then(() => {
     closeCommentActionsSheet();
     loadCommentsInView(noteId);
+  }).catch(error => {
+    console.error('No se pudo eliminar el comentario:', error);
   });
 }
 
@@ -8947,6 +8918,264 @@ function saveNote() {
   // Si necesitas enviar datos a la segunda, usa 'db2'.
   // Todos los usuarios están autorizados para transmitir en vivo
   const authorizedEmails = [];
+  const AWS_COMMUNITY_DEFAULT_CONFIG = {
+    region: 'us-east-2',
+    bucketName: '',
+    identityPoolId: '',
+    postsPrefix: 'community/posts/',
+    commentsPrefix: 'community/comments/'
+  };
+  window.AWS_COMMUNITY_CONFIG = Object.assign({}, AWS_COMMUNITY_DEFAULT_CONFIG, window.AWS_COMMUNITY_CONFIG || {});
+
+  let awsCommunityS3 = null;
+  let awsCommunityReadyPromise = null;
+
+  function getAwsCommunityConfig() {
+    return Object.assign({}, AWS_COMMUNITY_DEFAULT_CONFIG, window.AWS_COMMUNITY_CONFIG || {});
+  }
+
+  function isAwsCommunityConfigured() {
+    const config = getAwsCommunityConfig();
+    return !!(config.bucketName && config.identityPoolId && config.region);
+  }
+
+  function ensureAwsCommunityReady() {
+    if (awsCommunityReadyPromise) return awsCommunityReadyPromise;
+
+    awsCommunityReadyPromise = new Promise((resolve, reject) => {
+      const config = getAwsCommunityConfig();
+      if (!isAwsCommunityConfigured()) {
+        reject(new Error('AWS Community no está configurado. Define bucketName e identityPoolId en window.AWS_COMMUNITY_CONFIG.'));
+        return;
+      }
+
+      AWS.config.update({ region: config.region });
+      AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+        IdentityPoolId: config.identityPoolId
+      });
+      awsCommunityS3 = new AWS.S3({
+        apiVersion: '2006-03-01',
+        params: { Bucket: config.bucketName }
+      });
+
+      AWS.config.credentials.get(error => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(awsCommunityS3);
+      });
+    }).catch(error => {
+      awsCommunityReadyPromise = null;
+      throw error;
+    });
+
+    return awsCommunityReadyPromise;
+  }
+
+  function generateCommunityId(prefix = 'item') {
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  async function listS3Keys(prefix) {
+    const config = getAwsCommunityConfig();
+    const s3 = await ensureAwsCommunityReady();
+    const keys = [];
+    let continuationToken;
+
+    do {
+      const response = await s3.listObjectsV2({
+        Bucket: config.bucketName,
+        Prefix: prefix,
+        ContinuationToken: continuationToken
+      }).promise();
+      (response.Contents || []).forEach(item => {
+        if (item?.Key && item.Key.endsWith('.json')) keys.push(item.Key);
+      });
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : null;
+    } while (continuationToken);
+
+    return keys;
+  }
+
+  async function readS3Json(key, fallback = null) {
+    const config = getAwsCommunityConfig();
+    const s3 = await ensureAwsCommunityReady();
+    try {
+      const response = await s3.getObject({ Bucket: config.bucketName, Key: key }).promise();
+      const body = response?.Body ? response.Body.toString('utf-8') : '';
+      return body ? JSON.parse(body) : fallback;
+    } catch (error) {
+      const code = error?.code || error?.name;
+      if (code === 'NoSuchKey' || code === 'NotFound') return fallback;
+      throw error;
+    }
+  }
+
+  async function writeS3Json(key, data) {
+    const config = getAwsCommunityConfig();
+    const s3 = await ensureAwsCommunityReady();
+    await s3.putObject({
+      Bucket: config.bucketName,
+      Key: key,
+      Body: JSON.stringify(data, null, 2),
+      ContentType: 'application/json'
+    }).promise();
+    return data;
+  }
+
+  async function deleteS3Key(key) {
+    const config = getAwsCommunityConfig();
+    const s3 = await ensureAwsCommunityReady();
+    await s3.deleteObject({ Bucket: config.bucketName, Key: key }).promise();
+  }
+
+  async function getAllCommunityPosts(options = {}) {
+    const config = getAwsCommunityConfig();
+    const keys = await listS3Keys(config.postsPrefix);
+    let posts = (await Promise.all(keys.map(key => readS3Json(key, null)))).filter(Boolean).map(post => ({ ...post }));
+
+    if (options.authorId) {
+      posts = posts.filter(post => (post.authorId || post.userId || '') === options.authorId);
+    }
+
+    posts.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+    if (options.limit) posts = posts.slice(0, options.limit);
+    return posts;
+  }
+
+  async function getCommunityPostById(postId) {
+    if (!postId) return null;
+    const config = getAwsCommunityConfig();
+    return readS3Json(`${config.postsPrefix}${postId}.json`, null);
+  }
+
+  async function saveCommunityPost(post) {
+    const config = getAwsCommunityConfig();
+    const id = post.id || generateCommunityId('post');
+    const payload = { ...post, id };
+    await writeS3Json(`${config.postsPrefix}${id}.json`, payload);
+    return payload;
+  }
+
+  async function updateCommunityPost(postId, updater) {
+    const current = await getCommunityPostById(postId);
+    if (!current) return null;
+    const next = typeof updater === 'function' ? updater({ ...current }) : { ...current, ...(updater || {}) };
+    if (!next) return null;
+    return saveCommunityPost({ ...next, id: postId });
+  }
+
+  async function deleteCommunityPost(postId) {
+    if (!postId) return;
+    const config = getAwsCommunityConfig();
+    await Promise.all([
+      deleteS3Key(`${config.postsPrefix}${postId}.json`),
+      deleteS3Key(`${config.commentsPrefix}${postId}.json`).catch(() => null)
+    ]);
+  }
+
+  async function getCommunityComments(postId) {
+    if (!postId) return {};
+    const config = getAwsCommunityConfig();
+    return (await readS3Json(`${config.commentsPrefix}${postId}.json`, {})) || {};
+  }
+
+  async function saveCommunityComments(postId, comments) {
+    const config = getAwsCommunityConfig();
+    await writeS3Json(`${config.commentsPrefix}${postId}.json`, comments || {});
+    return comments || {};
+  }
+
+  async function getAllCommunityComments() {
+    const config = getAwsCommunityConfig();
+    const keys = await listS3Keys(config.commentsPrefix);
+    const pairs = await Promise.all(keys.map(async key => {
+      const postId = key.slice(config.commentsPrefix.length).replace(/\.json$/, '');
+      const comments = await readS3Json(key, {});
+      return [postId, comments || {}];
+    }));
+    return Object.fromEntries(pairs);
+  }
+
+  function createSnapshotFromEntries(entries) {
+    const safeEntries = Array.isArray(entries) ? entries : [];
+    return {
+      exists() {
+        return safeEntries.length > 0;
+      },
+      numChildren() {
+        return safeEntries.length;
+      },
+      val() {
+        return Object.fromEntries(safeEntries);
+      },
+      forEach(callback) {
+        safeEntries.forEach(([key, value]) => {
+          callback({
+            key,
+            val() {
+              return value;
+            }
+          });
+        });
+      }
+    };
+  }
+
+  function createSnapshotFromObject(objectValue) {
+    return createSnapshotFromEntries(Object.entries(objectValue || {}));
+  }
+
+  function createSnapshotFromPosts(posts) {
+    return createSnapshotFromEntries((posts || []).map(post => [post.id, post]));
+  }
+
+  function getCommentNodeByPath(commentsRoot, commentPath) {
+    const parts = String(commentPath || '').split('/').filter(Boolean);
+    if (!parts.length) return null;
+    let currentMap = commentsRoot;
+    let currentNode = null;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (part === 'replies') continue;
+      currentNode = currentMap ? currentMap[part] : null;
+      if (!currentNode) return null;
+      if (i < parts.length - 1) {
+        currentNode.replies = currentNode.replies || {};
+        currentMap = currentNode.replies;
+      }
+    }
+
+    return currentNode;
+  }
+
+  function deleteCommentNodeByPath(commentsRoot, commentPath) {
+    const parts = String(commentPath || '').split('/').filter(Boolean);
+    if (!parts.length) return false;
+    let currentMap = commentsRoot;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (part === 'replies') continue;
+      const node = currentMap ? currentMap[part] : null;
+      if (!node) return false;
+      node.replies = node.replies || {};
+      currentMap = node.replies;
+    }
+
+    const targetKey = parts[parts.length - 1];
+    if (!currentMap || !currentMap[targetKey]) return false;
+    delete currentMap[targetKey];
+    return true;
+  }
+
+  function refreshCommunityViews() {
+    if (typeof loadNotes === 'function') loadNotes();
+    if (typeof loadPhotos === 'function') loadPhotos();
+    if (typeof performRealTimeSearch === 'function') performRealTimeSearch();
+  }
   /*********************** FUNCIONES ADICIONALES **************************/
   function contienePalabrasOfensivas(texto) {
     // Lista de 20 palabras ofensivas en español (ejemplo; ajústala según tus necesidades)
@@ -10641,9 +10870,11 @@ function runBaroSearch(isFollowup = false) {
 
   const tokens = tokenizeBaroQuery(query);
   Promise.all([
-    firebase.database().ref('communityNotes').limitToLast(250).once('value'),
-    firebase.database().ref('postComments').once('value')
-  ]).then(([postsSnap, commentsSnap]) => {
+    getAllCommunityPosts({ limit: 250 }),
+    getAllCommunityComments()
+  ]).then(([posts, comments]) => {
+    const postsSnap = createSnapshotFromPosts(posts);
+    const commentsSnap = createSnapshotFromObject(comments);
     baroLastSources = buildBaroSources(postsSnap, commentsSnap, query, tokens);
     renderBaroSourcesPill(baroLastSources);
 
@@ -10740,24 +10971,23 @@ function performRealTimeSearch() {
 
   const currentNonce = ++searchRequestNonce;
 
-  const postsPromise = firebase.database().ref('communityNotes').once('value').then(snapshot => {
+  const postsPromise = getAllCommunityPosts().then(collection => {
     if (currentNonce !== searchRequestNonce) return { posts: [], photos: [], places: [] };
     const posts = [];
     const photos = [];
     const placesMap = new Map();
-    snapshot.forEach(child => {
-      const note = child.val() || {};
+    collection.forEach(note => {
       const content = (note.content || '').toLowerCase();
       const authorId = note.authorId || note.userId || '';
       if (isAccountBlockedForCurrentUser(authorId)) return;
 
       const matches = !query || content.includes(query) || (note.authorName || '').toLowerCase().includes(query);
-      if (matches) posts.push({ ...note, id: child.key });
+      if (matches) posts.push({ ...note, id: note.id });
 
       const imgs = [];
       if (Array.isArray(note.imageUrls)) imgs.push(...note.imageUrls.filter(Boolean));
       if (note.imageUrl) imgs.push(note.imageUrl);
-      if (imgs.length && matches) imgs.forEach(url => photos.push({ postId: child.key, url, authorName: note.authorName || 'Usuario' }));
+      if (imgs.length && matches) imgs.forEach(url => photos.push({ postId: note.id, url, authorName: note.authorName || 'Usuario' }));
 
       const locName = `${note.location?.name || ''}`.trim();
       const locNameLower = locName.toLowerCase();
@@ -10770,7 +11000,7 @@ function performRealTimeSearch() {
             name: locName,
             lat: Number.isFinite(locLat) ? locLat : null,
             lng: Number.isFinite(locLng) ? locLng : null,
-            noteId: child.key
+            noteId: note.id
           });
         }
       }
@@ -11011,8 +11241,8 @@ function renderPlacesList(places) {
       if (webtoonDesktop) webtoonDesktop.value = data.webtoon || "";
       if (inkspiredDesktop) inkspiredDesktop.value = data.inkspired || "";
 
-      firebase.database().ref('communityNotes').orderByChild('authorId').equalTo(user.uid).once('value').then(snapshot => {
-        const totalPosts = snapshot.numChildren();
+      getAllCommunityPosts({ authorId: user.uid }).then(posts => {
+        const totalPosts = posts.length;
         const editStoriesCount = document.getElementById('edit-stories-count');
         if (editStoriesCount) editStoriesCount.textContent = totalPosts;
         if (storiesDesktop) storiesDesktop.textContent = totalPosts;
@@ -11044,15 +11274,10 @@ function renderPlacesList(places) {
 
     const notesContainer = document.getElementById('notes-tab-content');
 
-    firebase.database().ref('communityNotes').orderByChild('authorId').equalTo(user.uid).once('value').then(snapshot => {
+    getAllCommunityPosts({ authorId: user.uid }).then(notes => {
       let notesHTML = '<h2 class="text-2xl font-bold mb-6">Mis Notas</h2>';
 
-      if (snapshot.exists()) {
-        const notes = [];
-        snapshot.forEach(child => {
-          notes.push({...child.val(), id: child.key});
-        });
-
+      if (notes.length) {
         notes.sort((a, b) => b.timestamp - a.timestamp);
 
         notesHTML += '<div class="grid grid-cols-1 gap-4">';
@@ -11313,15 +11538,14 @@ function renderPlacesList(places) {
     if (authorPostsContainer) {
       authorPostsContainer.innerHTML = '<div class="text-center py-8 text-gray-500"><div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-[#FE2C55] rounded-full"></div></div>';
 
-      firebase.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value', snapshot => {
+      getAllCommunityPosts({ authorId }).then(posts => {
         authorPostsContainer.innerHTML = "";
-        if (!snapshot.exists()) {
+        if (!posts.length) {
           authorPostsContainer.innerHTML = '<p class="text-center py-8 text-gray-500 italic">Este usuario aún no tiene posts.</p>';
           return;
         }
 
-        snapshot.forEach(child => {
-          const post = { ...(child.val() || {}), id: child.key };
+        posts.forEach(post => {
           const card = document.createElement('div');
           card.className = 'bg-[#1e2c4a] rounded-xl border border-[#283a5e] p-4 hover:bg-[#25365a] transition-all cursor-pointer w-full text-left';
           card.onclick = () => { closeAuthorProfile(); setTimeout(() => openCommentsView(post.id), 250); };
@@ -11341,6 +11565,9 @@ function renderPlacesList(places) {
 
           authorPostsContainer.appendChild(card);
         });
+      }).catch(error => {
+        console.error('No se pudieron cargar los posts del autor:', error);
+        authorPostsContainer.innerHTML = '<p class="text-center py-8 text-gray-500 italic">No se pudieron cargar los posts.</p>';
       });
     }
 
