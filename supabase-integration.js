@@ -536,6 +536,12 @@ function clearPollOptions() {
 }
 
 // Exportar funciones globales para usar en onclick
+// Alias internos para evitar que funciones legacy de index.html sobreescriban la integración nueva.
+window.__publishNoteSupabase = publishNoteFromForm;
+window.__publishNoteFromFullscreenSupabase = publishNoteFromFullscreen;
+window.__loadNotesSupabase = loadNotes;
+window.__loadMoreNotesSupabase = loadMoreNotes;
+
 window.publishNote = publishNoteFromForm;
 window.publishNoteFromFullscreen = publishNoteFromFullscreen;
 window.loadNotes = loadNotes;

@@ -112,9 +112,12 @@ loadPostsByLocation(location, limit, offset)
 
 ## 📦 Storage
 
-Las imágenes se guardan en buckets de Supabase Storage:
-- `posts-images` - Imágenes de posts y comentarios
-- Estructurados por: `{userId}/{timestamp}-{random}.{extension}`
+Las imágenes ahora se suben en URL pública de AWS S3 cuando hay credenciales configuradas.
+Si no hay variables de AWS disponibles, el sistema hace fallback automático a Supabase Storage.
+
+- Carpeta S3 para posts/comentarios: `posts/{userId}/{uuid}.{extension}`
+- Carpeta S3 para avatares: `avatars/{userId}/{uuid}.{extension}`
+- Fallback Supabase bucket: `posts-images` y `user-avatars`
 
 ## ⚙️ Configuración Necesaria
 
@@ -123,6 +126,12 @@ Las imágenes se guardan en buckets de Supabase Storage:
 ```
 VITE_SUPABASE_URL=https://yvtmakdvntkegbjcloyb.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Opcional: AWS S3 (recomendado para imágenes, evita base64)
+VITE_AWS_REGION=us-east-2
+VITE_AWS_S3_BUCKET=tu-bucket
+VITE_AWS_ACCESS_KEY_ID=...
+VITE_AWS_SECRET_ACCESS_KEY=...
 ```
 
 ### 2. Crear Buckets en Supabase
