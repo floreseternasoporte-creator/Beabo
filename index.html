@@ -60,6 +60,8 @@ console.log('%cEste sitio está protegido contra inspección de código.', 'font
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <!-- AWS Amplify (para comentarios en DynamoDB vía API REST) -->
+  <script src="https://unpkg.com/aws-amplify@5.3.27/dist/aws-amplify.min.js"></script>
   <style>
     /* ESTILOS BASE ADAPTADOS */
 body {
@@ -8175,20 +8177,48 @@ function selectSticker(url) {
   closeStickerPicker();
 }
 
+async function fetchCommentsFromDynamo(noteId) {
+  const response = await commentsApiRequest('GET', `/posts/${encodeURIComponent(noteId)}/comments`);
+  return Array.isArray(response?.items) ? response.items : [];
+}
+
+async function fetchUserCommentVotesFromDynamo(noteId, userId) {
+  if (!userId) return {};
+  const response = await commentsApiRequest(
+    'GET',
+    `/posts/${encodeURIComponent(noteId)}/comment-votes`,
+    null,
+    { userId }
+  );
+  return response?.votes || {};
+}
+
+function renderCommentsTree(noteId, commentsData, userVotesMap = {}) {
+  const commentsList = document.getElementById('comments-list-view');
+  commentsList.innerHTML = '';
+  let totalCount = 0;
+
+  commentsData.forEach(commentNode => {
+    totalCount++;
+    if (commentNode.replies) totalCount += countReplies(commentNode.replies);
+    renderCommentModern(noteId, commentNode.id, commentNode, commentsList, 0, null, "", userVotesMap);
+  });
+
+  document.getElementById('comments-count-header').textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
+}
+
 // Abrir vista de comentarios
 function openCommentsView(noteId) {
   currentPostId = noteId;
   const user = firebase.auth().currentUser;
 
   if (user) {
-    firebase.database().ref('users/' + user.uid).once('value').then(snap => {
-      const userData = snap.val();
-      document.getElementById('current-user-avatar-comment').src = userData.profileImage || 'https://via.placeholder.com/150';
-    });
+    document.getElementById('current-user-avatar-comment').src = user.photoURL || 'https://via.placeholder.com/150';
   }
 
-  firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
-    const note = { ...(snapshot.val() || {}), id: noteId };
+  commentsApiRequest('GET', `/posts/${encodeURIComponent(noteId)}`)
+  .then(response => {
+    const note = { ...(response?.item || {}), id: noteId };
     const upvotes = note.upvotes || 0;
     const downvotes = note.downvotes || 0;
     const score = upvotes - downvotes;
@@ -8241,6 +8271,10 @@ function openCommentsView(noteId) {
       </div>
       <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(note.timestamp)}</p>
     `;
+  }).catch(() => {
+    document.getElementById('original-post').innerHTML = `
+      <div class="text-xs text-[#8d7d75]">Publicación #${noteId}</div>
+    `;
   });
 
   loadCommentsInView(noteId);
@@ -8253,6 +8287,10 @@ function openCommentsView(noteId) {
 function closeCommentsView() {
   document.getElementById('comments-view').classList.add('hidden');
   document.getElementById('main-app').classList.remove('hidden');
+  if (commentsPollingInterval) {
+    clearInterval(commentsPollingInterval);
+    commentsPollingInterval = null;
+  }
   closeStickerPicker();
   removeCommentGif();
   clearReplyTarget();
@@ -8269,25 +8307,26 @@ function loadCommentsInView(noteId) {
     '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>';
   commentsList.innerHTML = skeletonHTML;
 
-  firebase.database().ref('postComments/' + noteId).on('value', snapshot => {
-    commentsList.innerHTML = '';
-    let totalCount = 0;
+  if (commentsPollingInterval) {
+    clearInterval(commentsPollingInterval);
+    commentsPollingInterval = null;
+  }
+  const user = firebase.auth().currentUser;
+  const refresh = async () => {
+    try {
+      const [commentsData, userVotesMap] = await Promise.all([
+        fetchCommentsFromDynamo(noteId),
+        fetchUserCommentVotesFromDynamo(noteId, user?.uid)
+      ]);
+      renderCommentsTree(noteId, commentsData, userVotesMap);
+    } catch (error) {
+      console.error('Error cargando comentarios desde DynamoDB:', error);
+      commentsList.innerHTML = '<p class="text-xs text-red-500">No se pudieron cargar los comentarios.</p>';
+    }
+  };
 
-    snapshot.forEach(child => {
-      const comment = child.val();
-      const commentId = child.key;
-      totalCount++; // Contar comentario principal
-
-      // Contar respuestas recursivamente
-      if (comment.replies) {
-        totalCount += countReplies(comment.replies);
-      }
-
-      renderCommentModern(noteId, commentId, comment, commentsList, 0);
-    });
-
-    document.getElementById('comments-count-header').textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
-  });
+  refresh();
+  commentsPollingInterval = setInterval(refresh, 10000);
 }
 
 // Función para formatear timestamp de comentarios
@@ -8349,7 +8388,7 @@ function escapeSingleQuote(value) {
   return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-function renderCommentModern(noteId, commentId, comment, container, level, parentId = null, parentPath = "") {
+function renderCommentModern(noteId, commentId, comment, container, level, parentId = null, parentPath = "", userVotesMap = {}) {
   const marginLeft = level * 16;
   const commentDiv = document.createElement('div');
   commentDiv.className = 'bg-white border border-[#e8e1dc] rounded-2xl p-3';
@@ -8415,21 +8454,15 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   if (comment.replies) {
     const repliesContainer = document.getElementById(`replies-${commentPath}`);
     Object.keys(comment.replies).forEach(replyId => {
-      renderCommentModern(noteId, replyId, comment.replies[replyId], repliesContainer, level + 1, commentId, commentPath);
+      renderCommentModern(noteId, replyId, comment.replies[replyId], repliesContainer, level + 1, commentId, commentPath, userVotesMap);
     });
   }
 
   // Verificar voto del usuario
-  const user = firebase.auth().currentUser;
-  if (user) {
-    const safeVoteKey = commentPath.replace(/\//g, '__');
-    firebase.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey).once('value').then(voteSnapshot => {
-      const vote = voteSnapshot.val();
-      if (vote === 'up') {
-        const btn = document.getElementById(`comment-upvote-${commentPath}`);
-        if (btn) btn.classList.add('active');
-      }
-    });
+  const vote = userVotesMap[commentPath];
+  if (vote === 'up') {
+    const btn = document.getElementById(`comment-upvote-${commentPath}`);
+    if (btn) btn.classList.add('active');
   }
 }
 
@@ -8448,14 +8481,12 @@ function submitComment() {
 
   if (!content && !selectedCommentGif) return;
 
-  firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
-    const userData = userSnap.val();
-
+  Promise.resolve().then(async () => {
     const payload = {
       content: content,
       authorId: user.uid,
-      authorName: userData.username || 'Usuario',
-      authorImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
+      authorName: user.displayName || (user.email ? user.email.split('@')[0] : 'Usuario'),
+      authorImage: user.photoURL || 'https://via.placeholder.com/150',
       timestamp: Date.now(),
       upvotes: 0,
       downvotes: 0
@@ -8463,41 +8494,33 @@ function submitComment() {
 
     if (selectedCommentGif) payload.gifUrl = selectedCommentGif;
 
-    if (replyTarget && replyTarget.commentId) {
-      firebase.database().ref('postComments/' + currentPostId + '/' + replyTarget.commentId + '/replies').push(payload).then(() => {
-        updateCommentsCount(currentPostId);
-        input.value = '';
-        removeCommentGif();
-        clearReplyTarget();
+    try {
+      await commentsApiRequest('POST', `/posts/${encodeURIComponent(currentPostId)}/comments`, {
+        ...payload,
+        parentPath: replyTarget?.commentId || null
       });
-      return;
-    }
-
-    firebase.database().ref('postComments/' + currentPostId).push(payload).then(() => {
       updateCommentsCount(currentPostId);
       input.value = '';
       removeCommentGif();
-    });
+      if (replyTarget) clearReplyTarget();
+      loadCommentsInView(currentPostId);
+    } catch (error) {
+      console.error('Error creando comentario en DynamoDB:', error);
+      alert('No se pudo enviar el comentario. Inténtalo de nuevo.');
+    }
   });
 }
 
 // Actualizar contador de comentarios (incluyendo respuestas)
 function updateCommentsCount(noteId) {
-  firebase.database().ref('postComments/' + noteId).once('value').then(snapshot => {
-    let totalCount = 0;
-
-    snapshot.forEach(child => {
-      totalCount++; // Comentario principal
-      const comment = child.val();
-      if (comment.replies) {
-        totalCount += countReplies(comment.replies);
-      }
+  commentsApiRequest('GET', `/posts/${encodeURIComponent(noteId)}/comments/count`)
+    .then(response => {
+      const totalCount = Number(response?.totalCount || 0);
+      document.getElementById('comments-count-header').textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
+    })
+    .catch(error => {
+      console.error('Error actualizando contador de comentarios en DynamoDB:', error);
     });
-
-    firebase.database().ref('communityNotes/' + noteId).update({
-      commentsCount: totalCount
-    });
-  });
 }
 
 function setReplyTarget(commentId, authorName) {
@@ -8535,41 +8558,24 @@ function voteComment(noteId, commentPath, voteType = "up") {
     return;
   }
 
-  const safeVoteKey = commentPath.replace(/\//g, '__');
-  const userVoteRef = firebase.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey);
-  const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
-
-  userVoteRef.once('value').then(snapshot => {
-    const currentVote = snapshot.val();
-
-    commentRef.transaction(comment => {
-      if (comment) {
-        if (currentVote === 'up') {
-          comment.upvotes = (comment.upvotes || 1) - 1;
-        }
-
-        if (currentVote !== 'up') {
-          comment.upvotes = (comment.upvotes || 0) + 1;
-        }
-      }
-      return comment;
-    });
-
-    if (currentVote === 'up') {
-      userVoteRef.remove();
-    } else {
-      userVoteRef.set('up');
-    }
-
+  commentsApiRequest('POST', `/posts/${encodeURIComponent(noteId)}/comments/vote`, {
+    commentPath,
+    voteType,
+    userId: user.uid
+  }).then(() => {
+    loadCommentsInView(noteId);
     const voteBtn = document.getElementById(`comment-upvote-${commentPath}`);
     if (voteBtn) {
       voteBtn.classList.remove('pop');
-      void voteBtn.offsetWidth; // forzar reflow para reiniciar animación
+      void voteBtn.offsetWidth;
       requestAnimationFrame(() => {
         voteBtn.classList.add('pop');
         setTimeout(() => voteBtn.classList.remove('pop'), 550);
       });
     }
+  }).catch(error => {
+    console.error('Error votando comentario en DynamoDB:', error);
+    alert('No se pudo registrar tu voto.');
   });
 }
 
@@ -8629,11 +8635,16 @@ function deleteComment(noteId, commentPath) {
   const user = firebase.auth().currentUser;
   if (!user) return;
 
-  const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
-  commentRef.remove().then(() => {
-    closeCommentActionsSheet();
-    loadCommentsInView(noteId);
-  });
+  commentsApiRequest('DELETE', `/posts/${encodeURIComponent(noteId)}/comments/${encodeURIComponent(commentPath)}`)
+    .then(() => {
+      updateCommentsCount(noteId);
+      closeCommentActionsSheet();
+      loadCommentsInView(noteId);
+    })
+    .catch(error => {
+      console.error('Error eliminando comentario en DynamoDB:', error);
+      alert('No se pudo eliminar el comentario.');
+    });
 }
 
   // VARIABLES GLOBALES
@@ -8907,6 +8918,70 @@ function saveNote() {
 
 <!-- JAVASCRIPT -->
 <script>
+  /*********************** CONFIGURACIÓN DE COMENTARIOS EN DYNAMODB **************************/
+  // Configura estos valores con la salida de Amplify (amplify_outputs.json) o tu entorno AWS.
+  // Guía paso a paso: GUIA_AMPLIFY_DYNAMODB_COMENTARIOS.md
+  // Si enabled = false, el sistema sigue usando Firebase Realtime Database para comentarios.
+  const commentsBackendConfig = {
+    enabled: true,
+    region: 'us-east-2',
+    restApiName: 'drexCommentsApi',
+    endpoint: 'https://mxykkw9b48.execute-api.us-east-2.amazonaws.com',
+    // Opcional: usa API Key en API Gateway si no manejas auth federada todavía.
+    apiKey: ''
+  };
+
+  let commentsPollingInterval = null;
+
+  function initCommentsBackend() {
+    if (!commentsBackendConfig.enabled) {
+      console.warn('[Comentarios] Backend DynamoDB desactivado.');
+      return;
+    }
+    if (!window.aws_amplify || !window.aws_amplify.Amplify || !window.aws_amplify.API) {
+      throw new Error('[Comentarios] Amplify no está disponible.');
+    }
+    if (!commentsBackendConfig.endpoint || !commentsBackendConfig.restApiName) {
+      throw new Error('[Comentarios] Faltan endpoint/restApiName.');
+    }
+
+    const { Amplify } = window.aws_amplify;
+    Amplify.configure({
+      API: {
+        REST: {
+          [commentsBackendConfig.restApiName]: {
+            endpoint: commentsBackendConfig.endpoint,
+            region: commentsBackendConfig.region
+          }
+        }
+      }
+    });
+    console.log('[Comentarios] Backend DynamoDB inicializado.');
+  }
+
+  async function commentsApiRequest(method, path, body = null, queryParams = null) {
+    const { API } = window.aws_amplify || {};
+    if (!API || !commentsBackendConfig.restApiName) {
+      throw new Error('Amplify API no está inicializada');
+    }
+
+    const options = {};
+    if (commentsBackendConfig.apiKey) {
+      options.headers = { 'x-api-key': commentsBackendConfig.apiKey };
+    }
+    if (queryParams) {
+      options.queryStringParameters = queryParams;
+    }
+    if (body) {
+      options.body = body;
+    }
+
+    if (method === 'GET') return API.get(commentsBackendConfig.restApiName, path, options);
+    if (method === 'POST') return API.post(commentsBackendConfig.restApiName, path, options);
+    if (method === 'DELETE') return API.del(commentsBackendConfig.restApiName, path, options);
+    throw new Error('Método no soportado en commentsApiRequest');
+  }
+
   /*********************** CONFIGURACIÓN DE FIREBASE **************************/
   // Configuración de la Base de Datos 1 (Principal)
   const firebaseConfig1 = {
@@ -8947,6 +9022,7 @@ function saveNote() {
   // Si necesitas enviar datos a la segunda, usa 'db2'.
   // Todos los usuarios están autorizados para transmitir en vivo
   const authorizedEmails = [];
+  initCommentsBackend();
   /*********************** FUNCIONES ADICIONALES **************************/
   function contienePalabrasOfensivas(texto) {
     // Lista de 20 palabras ofensivas en español (ejemplo; ajústala según tus necesidades)
