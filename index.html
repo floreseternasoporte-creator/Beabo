@@ -51,8 +51,31 @@
   <!-- Supabase Client -->
   <script type="module">
     import { initializeSupabaseIntegration } from './supabase-integration.js';
-    document.addEventListener('DOMContentLoaded', () => {
+    import { supabase } from './supabase-client.js';
+
+    const mapSupabaseUserToLegacyUser = (sessionUser) => {
+      if (!sessionUser) return null;
+      return {
+        uid: sessionUser.id,
+        email: sessionUser.email || '',
+        displayName: sessionUser.user_metadata?.full_name || sessionUser.user_metadata?.name || '',
+        photoURL: sessionUser.user_metadata?.avatar_url || '',
+        providerData: [{ photoURL: sessionUser.user_metadata?.avatar_url || '' }]
+      };
+    };
+
+    const syncCompatUser = async () => {
+      const { data } = await supabase.auth.getSession();
+      window.__authUserCompat = mapSupabaseUserToLegacyUser(data?.session?.user || null);
+    };
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      await syncCompatUser();
       initializeSupabaseIntegration();
+    });
+
+    supabase.auth.onAuthStateChange((_event, session) => {
+      window.__authUserCompat = mapSupabaseUserToLegacyUser(session?.user || null);
     });
   </script>
   <style>
@@ -1673,6 +1696,44 @@ body {
     function esDispositivoMovil() {
       return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
+
+    function getCurrentUserCompat() {
+      return window.__authUserCompat || null;
+    }
+
+    // Shim temporal para compatibilidad con llamadas legacy mientras termina la migración.
+    if (!window.firebase) {
+      const emptySnapshot = {
+        val: () => null,
+        forEach: () => {}
+      };
+      const compatRef = () => ({
+        ref: () => compatRef(),
+        child: () => compatRef(),
+        orderByChild: () => compatRef(),
+        equalTo: () => compatRef(),
+        limitToLast: () => compatRef(),
+        once: async () => emptySnapshot,
+        on: (_event, callback) => { if (typeof callback === 'function') callback(emptySnapshot); },
+        off: () => {},
+        push: () => ({ key: `compat-${Date.now()}` }),
+        set: async () => {},
+        update: async () => {},
+        remove: async () => {},
+        transaction: async (fn) => (typeof fn === 'function' ? fn(null) : null)
+      });
+      window.firebase = {
+        auth: () => ({
+          currentUser: getCurrentUserCompat(),
+          onAuthStateChanged: (callback) => {
+            if (typeof callback === 'function') callback(getCurrentUserCompat());
+          }
+        }),
+        database: () => ({
+          ref: () => compatRef()
+        })
+      };
+    }
     /*********************** MODO OFFLINE ***********************/
     window.addEventListener('offline', function() {
       document.body.innerHTML = `
@@ -2056,7 +2117,7 @@ body {
 
 <script>
 function loadFollowingStories() {
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   if (!user) return;
 
   /* MIGRATED TO SUPABASE */ firebase.database().ref('following/' + user.uid)./* MIGRATED TO SUPABASE - READ */ once('value').then(followingSnap => {
@@ -3603,7 +3664,7 @@ function handleProfileImageUploadDesktop(event) {
     document.getElementById('profile-image').src = e.target.result;
 
     // Guardar en Firebase
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (user) {
       /* MIGRATED TO SUPABASE */ firebase.database().ref('users/' + user.uid)./* MIGRATED TO SUPABASE */ update({
         profileImage: e.target.result
@@ -4067,7 +4128,7 @@ function closeNoteModal() {
 
 function saveNote() {
   const noteText = document.getElementById('note-input').value.trim();
-  const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const currentUser = getCurrentUserCompat();
 
   if (!noteText || !currentUser) return;
 
@@ -5719,7 +5780,7 @@ const KLIPY_GIFS = [
     loadLocationStateFromStorage();
 
     // Cargar imagen de perfil actual
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (user) {
       /* MIGRATED TO SUPABASE */ firebase.database().ref('users/' + user.uid)./* MIGRATED TO SUPABASE - READ */ once('value').then(snap => {
         const userData = snap.val();
@@ -6413,7 +6474,7 @@ const KLIPY_GIFS = [
 
     const reportAction = document.getElementById('location-report-action');
     const response = document.getElementById('location-feedback-response');
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     const reportPayload = {
       locationName: activeLocationDetail.name,
       lat: activeLocationDetail.lat,
@@ -6854,7 +6915,7 @@ const KLIPY_GIFS = [
       return;
     }
 
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) {
       alert('Debes iniciar sesión para publicar');
       return;
@@ -6926,7 +6987,7 @@ const KLIPY_GIFS = [
   }
 
   function loadCreatorStats() {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) return;
 
     // Cargar estadísticas de notas
@@ -6998,7 +7059,7 @@ const KLIPY_GIFS = [
       return;
     }
 
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) {
       alert('Debes iniciar sesión para publicar');
       return;
@@ -7264,7 +7325,7 @@ const KLIPY_GIFS = [
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
 
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     let userVotes = {};
 
     // Cargar votos del usuario en segundo plano sin bloquear la renderizacion
@@ -7423,7 +7484,7 @@ const KLIPY_GIFS = [
 
   // Función para votar en encuestas
   function votePoll(noteId, optionIndex) {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) {
       alert('Debes iniciar sesión para votar');
       return;
@@ -7601,7 +7662,7 @@ function openPostOptionsSheet(noteId) {
   const blockBtn = document.getElementById('block-account-btn');
   if (!overlay || !sheet) return;
 
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   if (deleteBtn) deleteBtn.classList.add('hidden');
   currentPostOptionsNoteData = null;
 
@@ -7700,7 +7761,7 @@ function closeBlockAccountConfirmModal() {
 }
 
 function confirmBlockAccountFromOptions() {
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   const targetAuthorId = currentPostOptionsNoteData?.authorId || currentPostOptionsNoteData?.userId || '';
   if (!user || !targetAuthorId || user.uid === targetAuthorId) {
     closeBlockAccountConfirmModal();
@@ -7856,7 +7917,7 @@ function refreshPostReportSelectionUI() {
 }
 
 function reportNote(noteId) {
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   if (!user) {
     alert('Debes iniciar sesión para reportar');
     return;
@@ -7877,7 +7938,7 @@ function closePostReportResponse() {
 }
 
 function submitPostReport() {
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   if (!user) {
     alert('Debes iniciar sesión para reportar');
     return;
@@ -7967,7 +8028,7 @@ function submitPostReport() {
 
 // Sistema de votos estilo Reddit (funcionalidad)
 function votePost(noteId, voteType) {
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   if (!user) {
     alert('Debes iniciar sesión para votar');
     return;
@@ -8182,7 +8243,7 @@ function selectSticker(url) {
 // Abrir vista de comentarios
 function openCommentsView(noteId) {
   currentPostId = noteId;
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
 
   if (user) {
     /* MIGRATED TO SUPABASE */ firebase.database().ref('users/' + user.uid)./* MIGRATED TO SUPABASE - READ */ once('value').then(snap => {
@@ -8407,7 +8468,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   }
 
   // Verificar voto del usuario
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   if (user) {
     const safeVoteKey = commentPath.replace(/\//g, '__');
     /* MIGRATED TO SUPABASE */ firebase.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey)./* MIGRATED TO SUPABASE - READ */ once('value').then(voteSnapshot => {
@@ -8424,7 +8485,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
 function submitComment() {
   if (!currentPostId) return;
 
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   if (!user) {
     alert('Debes iniciar sesión para comentar');
     return;
@@ -8516,7 +8577,7 @@ function clearReplyTarget() {
 
 // Votar comentario (funciona para comentarios y respuestas)
 function voteComment(noteId, commentPath, voteType = "up") {
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   if (!user) {
     alert('Debes iniciar sesión para votar');
     return;
@@ -8613,7 +8674,7 @@ function deleteCommentConfirm(noteId, commentPath) {
 
 // Eliminar comentario
 function deleteComment(noteId, commentPath) {
-  const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const user = getCurrentUserCompat();
   if (!user) return;
 
   const commentRef = /* MIGRATED TO SUPABASE */ firebase.database().ref('postComments/' + noteId + '/' + commentPath);
@@ -8811,7 +8872,7 @@ function closeNoteModal() {
 
 function saveNote() {
   const noteText = document.getElementById('note-input').value.trim();
-  const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+  const currentUser = getCurrentUserCompat();
 
   if (!noteText || !currentUser) return;
 
@@ -9201,7 +9262,7 @@ function saveNote() {
   }
 
   function openNotifications() {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     if (!currentUser) {
       alert('Debes iniciar sesión para ver notificaciones');
       return;
@@ -9578,7 +9639,7 @@ function saveNote() {
     e.preventDefault();
     const subject = document.getElementById('support-subject').value;
     const message = document.getElementById('support-message').value;
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) return;
     const supportData = {
       userId: user.uid,
@@ -9676,7 +9737,7 @@ function saveNote() {
   }
 
   function openProfileConfig() {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (user) {
       /* MIGRATED TO SUPABASE */ firebase.database().ref('users/' + user.uid)./* MIGRATED TO SUPABASE - READ */ once('value').then(snapshot => {
         const data = snapshot.val() || {};
@@ -9784,7 +9845,7 @@ function saveNote() {
   }
 
   function saveProfileField(partialUpdates, validateUsername = false) {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) return Promise.resolve(false);
     return /* MIGRATED TO SUPABASE */ firebase.database().ref('users/' + user.uid)./* MIGRATED TO SUPABASE - READ */ once('value').then(snapshot => {
       const userData = snapshot.val() || {};
@@ -9838,7 +9899,7 @@ function saveNote() {
   }
 
   function saveNewProfilePhoto() {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) return;
 
     const fileInput = document.getElementById('new-profile-image-input');
@@ -9933,14 +9994,14 @@ function saveNote() {
   }
 
   function getCurrentUserVerificationFlag() {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     const key = user?.uid || 'guest';
     const state = getGamesVerifyState();
     return Boolean(state[key]);
   }
 
   function markCurrentUserVerified() {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     const key = user?.uid || 'guest';
     const state = getGamesVerifyState();
     state[key] = true;
@@ -9956,7 +10017,7 @@ function saveNote() {
     const slider = document.getElementById('games-verify-slider');
     if (slider) slider.value = 0;
 
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     const profileSrc = user?.photoURL || user?.providerData?.[0]?.photoURL || 'https://via.placeholder.com/90';
     document.getElementById('games-profile-photo').src = profileSrc;
     document.getElementById('games-profile-name').textContent = user?.displayName || user?.email?.split('@')[0] || 'Creador';
@@ -10850,7 +10911,7 @@ function renderPlacesList(places) {
     reader.onload = (e) => {
       // El resultado ya trae el prefijo 'data:image/jpeg;base64,...' o 'data:image/png;base64,...'
       const base64String = e.target.result;
-      const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+      const user = getCurrentUserCompat();
       if (!user) return;
       // Guardamos la imagen en base64 en la Realtime Database
       /* MIGRATED TO SUPABASE */ firebase.database().ref('users/' + user.uid)./* MIGRATED TO SUPABASE */ update({
@@ -10876,7 +10937,7 @@ function renderPlacesList(places) {
 
   function saveBio() {
     const bio = document.getElementById('profile-bio').value;
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     /* MIGRATED TO SUPABASE */ firebase.database().ref('users/' + user.uid)./* MIGRATED TO SUPABASE */ update({
         bio
       })
@@ -10903,7 +10964,7 @@ function renderPlacesList(places) {
   }
   /*********************** MODAL DE EDICIÓN DE PERFIL **************************/
   function openProfileEdit() {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) return;
     /* MIGRATED TO SUPABASE */ firebase.database().ref('users/' + user.uid)./* MIGRATED TO SUPABASE - READ */ once('value').then(snapshot => {
       const data = snapshot.val() || {};
@@ -10990,7 +11051,7 @@ function renderPlacesList(places) {
   }
 
   function loadUserNotes() {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) return;
 
     const notesContainer = document.getElementById('notes-tab-content');
@@ -11033,7 +11094,7 @@ function renderPlacesList(places) {
   }
 
   function saveProfileEdits() {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) return;
 
     // Detectar si estamos en móvil o desktop
@@ -11130,7 +11191,7 @@ function renderPlacesList(places) {
   function handleEditProfileImageUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) return;
     const storageRef = firebase.storage().ref();
     const imageRef = storageRef.child('profileImages/' + user.uid + '/' + file.name);
@@ -11148,7 +11209,7 @@ function renderPlacesList(places) {
   }
   /*********************** PERFIL DEL AUTOR **************************/
   function openAuthorProfile(authorId) {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     // Si intentan abrir su propio perfil desde tarjetas/autores,
     // redirigir al perfil personal donde vive la edición.
     if (currentUser && currentUser.uid === authorId) {
@@ -11321,7 +11382,7 @@ function renderPlacesList(places) {
   }
   /*********************** FUNCIONES PARA SEGUIR **************************/
   function updateFollowIcon() {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     if (!currentUser || !currentViewedAuthorId) return;
     const followRef = /* MIGRATED TO SUPABASE */ firebase.database().ref('followers/' + currentViewedAuthorId + '/' + currentUser.uid);
     followRef./* MIGRATED TO SUPABASE - READ */ once('value').then(snapshot => {
@@ -11333,7 +11394,7 @@ function renderPlacesList(places) {
   }
 
   function followAuthor() {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     if (!currentUser || !currentViewedAuthorId) return;
     if (currentUser.uid === currentViewedAuthorId) {
       alert(translations[currentLanguage].followSelfError);
@@ -11390,7 +11451,7 @@ function renderPlacesList(places) {
 
 
   function blockAuthor() {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     if (!currentUser || !currentViewedAuthorId) return;
 
     const blockRef = /* MIGRATED TO SUPABASE */ firebase.database().ref('blocks/' + currentUser.uid + '/' + currentViewedAuthorId);
@@ -11422,7 +11483,7 @@ function renderPlacesList(places) {
   }
 
   function blockAuthor() {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     if (!currentUser || !currentViewedAuthorId) return;
 
     const blockRef = /* MIGRATED TO SUPABASE */ firebase.database().ref('blocks/' + currentUser.uid + '/' + currentViewedAuthorId);
@@ -11454,7 +11515,7 @@ function renderPlacesList(places) {
   }
 
   function followUser(userId) {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     if (!currentUser) return;
     if (currentUser.uid === userId) {
       alert(translations[currentLanguage].followSelfError);
@@ -11484,7 +11545,7 @@ function renderPlacesList(places) {
   }
 
   function openFollowingModal() {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     if (!currentViewedAuthorId) return;
     if (currentUser.uid !== currentViewedAuthorId) {
       alert("La lista de usuarios que sigue este autor es privada.");
@@ -11520,7 +11581,7 @@ function renderPlacesList(places) {
   /*********************** REPORTES **************************/
   document.getElementById('report-form').addEventListener('submit', function(e) {
     e.preventDefault();
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user || !currentViewedAuthorId) return;
     if (user.uid === currentViewedAuthorId) {
       alert("No puedes reportarte a ti mismo.");
@@ -11604,7 +11665,7 @@ function renderPlacesList(places) {
     const language = document.getElementById('story-language').value;
     const rating = document.getElementById('story-rating').value;
     const coverInput = document.getElementById('story-cover');
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) {
       alert(translations[currentLanguage].userNotAuthenticated);
       document.getElementById('story-upload-spinner').style.display = "none";
@@ -11735,7 +11796,7 @@ function renderPlacesList(places) {
       return;
     }
 
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) {
       alert(translations[currentLanguage].userNotAuthenticated);
       return;
@@ -12115,7 +12176,7 @@ function renderPlacesList(places) {
   }
 
   function openLiveStreamModal() {
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) {
       alert("Debes estar autenticado para transmitir en vivo.");
       return;
@@ -12385,7 +12446,7 @@ function renderPlacesList(places) {
   }
 
   function sendGift(giftType) {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     if (!currentUser || currentUser.uid === liveBroadcasterId) {
       alert("No puedes enviar regalos a ti mismo.");
       return;
@@ -12497,7 +12558,7 @@ function renderPlacesList(places) {
       alert("No se ha seleccionado una historia.");
       return;
     }
-    const user = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const user = getCurrentUserCompat();
     if (!user) {
       alert("Debes estar autenticado para reportar.");
       return;
@@ -12904,7 +12965,7 @@ function renderPlacesList(places) {
   }
 
   function blockAuthor() {
-    const currentUser = null /* MIGRATED TO SUPABASE: was firebase.auth().currentUser */;
+    const currentUser = getCurrentUserCompat();
     if (!currentUser || !currentViewedAuthorId) return;
 
     const blockRef = /* MIGRATED TO SUPABASE */ firebase.database().ref('blocks/' + currentUser.uid + '/' + currentViewedAuthorId);
