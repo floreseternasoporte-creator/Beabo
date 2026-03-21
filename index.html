@@ -11154,39 +11154,71 @@ function renderPlacesList(places) {
     });
   }
   /*********************** PERFIL DEL AUTOR **************************/
+  function setAuthorProfileVisibility(isVisible) {
+    const authorProfileModal = document.getElementById('author-profile-modal');
+    if (!authorProfileModal) return;
+    authorProfileModal.classList.toggle('hidden', !isVisible);
+    authorProfileModal.style.display = isVisible ? 'block' : 'none';
+    document.body.classList.toggle('author-profile-open', isVisible);
+    if (isVisible) {
+      authorProfileModal.scrollTop = 0;
+    }
+  }
+
   function openAuthorProfile(authorId) {
     const currentUser = firebase.auth().currentUser;
+    if (!authorId) return;
     // Si intentan abrir su propio perfil desde tarjetas/autores,
     // redirigir al perfil personal donde vive la edición.
     if (currentUser && currentUser.uid === authorId) {
+      closeAuthorProfile();
       openProfile();
       return;
     }
+
+    currentViewedAuthorId = authorId;
+    setAuthorProfileVisibility(true);
 
     const addNoteBtn = document.getElementById('add-note-btn');
     const profileNote = document.getElementById('profile-note');
     const followButton = document.getElementById('follow-button');
     const followButtonText = document.getElementById('follow-button-text');
+    const authorNameNode = document.getElementById('author-profile-name');
+    const authorBioNode = document.getElementById('author-bio');
+    const authorImageNode = document.getElementById('author-profile-image');
+    const authorFollowersNode = document.getElementById('author-followers');
+    const authorFollowingNode = document.getElementById('author-following');
+    const authorPostsNode = document.getElementById('author-posts-count');
+    const socialLinksNode = document.getElementById('author-social-links');
 
     addNoteBtn.classList.add('hidden');
-    // En perfil de autor, el botón principal siempre es de seguir.
+    profileNote.classList.add('hidden');
+    if (authorNameNode) authorNameNode.textContent = 'Cargando perfil...';
+    if (authorBioNode) authorBioNode.textContent = 'Estamos preparando la información del autor.';
+    if (authorImageNode) {
+      authorImageNode.src = 'https://via.placeholder.com/150';
+      authorImageNode.classList.remove('live-border');
+    }
+    if (authorFollowersNode) authorFollowersNode.textContent = '...';
+    if (authorFollowingNode) authorFollowingNode.textContent = '...';
+    if (authorPostsNode) authorPostsNode.textContent = '...';
+    if (socialLinksNode) socialLinksNode.innerHTML = '';
+
     if (followButtonText) followButtonText.textContent = 'Seguir';
     if (followButton) {
       followButton.onclick = followAuthor;
-      followButton.classList.add('bg-[#FE2C55]');
-      followButton.classList.remove('bg-[#e8e1dc]', 'text-black');
+      followButton.classList.add('bg-[#3a241d]');
+      followButton.classList.remove('bg-[#8d7d75]', 'bg-[#FE2C55]', 'bg-[#e8e1dc]', 'text-black');
     }
 
-    // Limpiar residuales de acciones extra en perfil
     const extraProfileIcon = document.getElementById('extra-profile-icon');
     if (extraProfileIcon) extraProfileIcon.remove();
 
-
-    // Check for existing note
     firebase.database().ref('profileNotes/' + authorId).once('value').then(snapshot => {
+      if (currentViewedAuthorId !== authorId) return;
       const noteData = snapshot.val();
       if (noteData && noteData.text && noteData.timestamp) {
-        const expirationTime = noteData.timestamp + (12 * 60 * 60 * 1000); // 12 hours
+        const expirationTime = noteData.timestamp + (12 * 60 * 60 * 1000);
         if (Date.now() < expirationTime) {
           profileNote.classList.remove('hidden');
           document.getElementById('note-text').textContent = noteData.text;
@@ -11194,15 +11226,18 @@ function renderPlacesList(places) {
           document.getElementById('note-time').textContent = `Expira en ${timeLeft} horas`;
         } else {
           profileNote.classList.add('hidden');
-          snapshot.ref.remove(); // Remove expired note
+          snapshot.ref.remove();
         }
       } else {
         profileNote.classList.add('hidden');
       }
     });
+
     firebase.database().ref('users/' + authorId).once('value').then(snapshot => {
+      if (currentViewedAuthorId !== authorId) return;
       const authorData = snapshot.val();
       if (!authorData || (authorData.blocked && authorData.blockedUntil && Date.now() < authorData.blockedUntil)) {
+        setAuthorProfileVisibility(false);
         document.getElementById('blocked-error-modal').style.display = "flex";
         return;
       }
@@ -11211,55 +11246,52 @@ function renderPlacesList(places) {
         authorNameHTML += ' <span class="founder-tag">Fundador</span>';
       }
       authorNameHTML += getVerificationIcon(authorData.email || "");
-      document.getElementById('author-profile-name').innerHTML = authorNameHTML;
-      document.getElementById('author-profile-image').src = authorData.profileImage || 'https://via.placeholder.com/150';
-      document.getElementById('author-followers').textContent = formatNumber(authorData.followersCount || 0);
-      document.getElementById('author-following').textContent = formatNumber(authorData.followingCount || 0);
-      document.getElementById('author-bio').textContent = authorData.bio || authorData.info || 'Este usuario aún no ha agregado información.';
+      authorNameNode.innerHTML = authorNameHTML;
+      authorImageNode.src = authorData.profileImage || 'https://via.placeholder.com/150';
+      authorFollowersNode.textContent = formatNumber(authorData.followersCount || 0);
+      authorFollowingNode.textContent = formatNumber(authorData.followingCount || 0);
+      authorBioNode.textContent = authorData.bio || authorData.info || 'Este usuario aún no ha agregado información.';
 
-
-      // También actualizar la imagen del autor en búsquedas si existe
       setTimeout(() => {
         const searchResults = document.querySelectorAll(`[data-author-id="${authorId}"]`);
         searchResults.forEach(element => {
           loadUserFrame(authorId, element.id + '-frame');
         });
       }, 500);
+
       let socialLinksHTML = "";
       if (authorData.website) {
         socialLinksHTML += `<a href="${authorData.website}" target="_blank" class="w-10 h-10 rounded-full bg-[#f0ebe7] text-[#5f4b44] flex items-center justify-center"><i class="fa-solid fa-globe text-lg"></i></a>`;
       }
-      document.getElementById('author-social-links').innerHTML = socialLinksHTML;
-      firebase.database().ref(`liveStreams/${authorId}/isLive`).once('value').then(snapshot => {
-        if (snapshot.exists() && snapshot.val()) {
+      socialLinksNode.innerHTML = socialLinksHTML;
+
+      firebase.database().ref(`liveStreams/${authorId}/isLive`).once('value').then(liveSnapshot => {
+        if (currentViewedAuthorId !== authorId) return;
+        if (liveSnapshot.exists() && liveSnapshot.val()) {
           let liveLabel = document.getElementById('live-label');
           if (!liveLabel) {
             liveLabel = document.createElement('span');
             liveLabel.id = "live-label";
-            // Cambiamos el texto a "DIRECTO" y el fondo a verde
             liveLabel.textContent = "DIRECTO";
             liveLabel.className = "absolute top-0 left-0 bg-green-600 text-white px-2 py-1 rounded text-xs";
             const container = document.getElementById('author-profile-img-container');
             container.style.position = "relative";
             container.appendChild(liveLabel);
           }
-          // Agregamos una clase para un borde pulsante de color verde (estilo Duolingo)
-          document.getElementById('author-profile-image').classList.add('live-border');
+          authorImageNode.classList.add('live-border');
         } else {
           let liveLabel = document.getElementById('live-label');
-          if (liveLabel) {
-            liveLabel.remove();
-          }
-          document.getElementById('author-profile-image').classList.remove('live-border');
+          if (liveLabel) liveLabel.remove();
+          authorImageNode.classList.remove('live-border');
         }
       });
+
       firebase.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value').then(postsSnap => {
-        const postsCountNode = document.getElementById('author-posts-count');
-        if (postsCountNode) postsCountNode.textContent = formatNumber(postsSnap.numChildren() || 0);
+        if (currentViewedAuthorId !== authorId) return;
+        if (authorPostsNode) authorPostsNode.textContent = formatNumber(postsSnap.numChildren() || 0);
       });
     });
-    currentViewedAuthorId = authorId;
-    document.getElementById('author-profile-modal').style.display = "block";
+
     updateFollowIcon();
 
     document.getElementById('author-profile-image').onclick = function() {
@@ -11272,11 +11304,10 @@ function renderPlacesList(places) {
   }
 
   function closeAuthorProfile() {
-    document.getElementById('author-profile-modal').style.display = "none";
-    const mainAppElement = document.getElementById('main-app');
-    if (mainAppElement) {
-      mainAppElement.classList.remove('hidden');
-    }
+    closeFollowersModal();
+    closeFollowingModal();
+    closeAuthorPostsRestrictedView();
+    setAuthorProfileVisibility(false);
   }
 
   function closeBlockedErrorModal() {
@@ -11461,8 +11492,7 @@ function renderPlacesList(places) {
   function openAuthorFromRelationList(userId) {
     closeFollowersModal();
     closeFollowingModal();
-    closeAuthorProfile();
-    setTimeout(() => openAuthorProfile(userId), 120);
+    openAuthorProfile(userId);
   }
 
   function openFollowersModal() {
@@ -12944,6 +12974,10 @@ function renderPlacesList(places) {
 #main-app .w-6.h-6, #main-app button { color:#5f4b44; }
 #notifications-modal .bg-white, #profile-view .bg-white, #author-profile-modal .bg-white { background:#f5f4f2 !important; }
 #notifications-modal .border-b, #profile-view .border-b, #author-profile-modal .border-b { border-color:#e8e1dc !important; }
+body.author-profile-open #main-app > .bg-white.border-b,
+body.author-profile-open #bottom-nav {
+  display: none !important;
+}
 
 /* Unificar auth con el estilo de la plataforma */
 #auth-form {
