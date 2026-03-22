@@ -1957,9 +1957,12 @@ body {
 
       <div id="recovery-step" class="w-full hidden mt-auto mb-12">
         <p class="text-center text-lg text-white font-medium mb-6">Recuperar contraseña</p>
-        <input id="recoveryEmailInput" type="email" placeholder="Correo electrónico" class="w-full p-4 bg-white/10 border border-white/20 rounded-full text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition">
-        <button id="sendRecoveryButton" type="button" class="w-full mt-4 bg-white text-black p-4 font-bold rounded-full hover:bg-gray-200 transition">Enviar recuperación</button>
-        <button id="backToPasswordFromRecovery" type="button" class="w-full mt-4 text-sm text-gray-400 hover:text-white transition">Volver</button>
+        <div class="space-y-4">
+          <input id="recoveryEmailInput" type="email" placeholder="Correo electrónico" class="w-full p-4 bg-white/10 border border-white/20 rounded-full text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition">
+          <button id="sendRecoveryButton" type="button" class="w-full bg-white text-black p-4 font-bold rounded-full hover:bg-gray-200 transition disabled:opacity-50">Enviar recuperación</button>
+          <div id="authErrorRecovery" class="text-red-400 text-center text-sm hidden"></div>
+          <button id="backToPasswordFromRecovery" type="button" class="w-full text-sm text-gray-400 hover:text-white transition">Volver</button>
+        </div>
       </div>
 
       <p id="auth-legal" class="text-center text-[10px] text-gray-400 mt-auto pt-6 leading-relaxed">
@@ -9654,17 +9657,42 @@ function saveNote() {
   /*********************** OLVIDÉ MI CONTRASEÑA **************************/
   function resetPassword() {
     const email = (recoveryEmailInput.value || pendingEmail || emailInput.value).trim();
+    const errorDisplay = document.getElementById('authErrorRecovery') || authError;
+    
     if (!email) {
-      alert("Por favor, ingresa tu correo electrónico para restablecer la contraseña.");
+      errorDisplay.textContent = "Por favor, ingresa tu correo electrónico.";
+      errorDisplay.classList.remove('hidden');
       return;
     }
+    
+    sendRecoveryButton.disabled = true;
+    sendRecoveryButton.textContent = "Enviando...";
+    errorDisplay.classList.add('hidden');
+
     firebase.auth().sendPasswordResetEmail(email)
       .then(() => {
-        alert("Se ha enviado un correo para restablecer tu contraseña.");
+        alert("¡Éxito! Se ha enviado un correo a " + email + " para restablecer tu contraseña. Revisa tu bandeja de entrada y carpeta de spam.");
+        sendRecoveryButton.disabled = false;
+        sendRecoveryButton.textContent = "Enviar recuperación";
         showAuthSection(passwordStep);
       })
       .catch(error => {
-        alert("Error al enviar el correo: " + error.message);
+        sendRecoveryButton.disabled = false;
+        sendRecoveryButton.textContent = "Enviar recuperación";
+        let errorMessage = "Error: ";
+        switch (error.code) {
+          case 'auth/user-not-found':
+            errorMessage = "No hay ningún usuario registrado con este correo.";
+            break;
+          case 'auth/invalid-email':
+            errorMessage = "El formato del correo no es válido.";
+            break;
+          default:
+            errorMessage += error.message;
+        }
+        errorDisplay.textContent = errorMessage;
+        errorDisplay.classList.remove('hidden');
+        console.error("Error en resetPassword:", error);
       });
   }
   /*********************** SOPORTE **************************/
