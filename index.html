@@ -4867,6 +4867,54 @@ function openPhotoDetail(photo) {
         </div>
         <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
       </button>
+
+      <button onclick="openThemeConfig()" class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#e8e1dc] shadow-sm active:scale-95 transition-all">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-[#f0ebe7] rounded-xl flex items-center justify-center text-[#5f4b44]">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" /></svg>
+          </div>
+          <div class="text-left">
+            <p class="font-bold text-[#2f1a14]">Modo oscuro</p>
+            <p id="theme-mode-preview" class="text-sm text-[#8a7a71]">Modo claro activado</p>
+          </div>
+        </div>
+        <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="theme-config-view" class="fixed inset-0 bg-[#f5f4f2] z-[120] hidden flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-[#e8e1dc] bg-white">
+      <button onclick="closeThemeConfig()" class="text-[#5f4b44] p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[#2f1a14] absolute left-1/2 -translate-x-1/2">Modo oscuro</h2>
+      <div class="w-9"></div>
+    </div>
+    <div class="flex-1 overflow-y-auto p-6 space-y-5">
+      <div class="bg-white border border-[#e8e1dc] rounded-3xl p-5 shadow-sm">
+        <p class="text-sm text-[#6f5c54] leading-relaxed">Nota: aquí puedes elegir cómo quieres ver la plataforma. Si activas el modo oscuro, Drex ajustará fondos, tarjetas y textos para que todo se vea más cómodo y legible.</p>
+      </div>
+
+      <button type="button" data-theme-option="light" onclick="selectThemeOption('light')" class="theme-option-btn w-full bg-white border border-[#e8e1dc] rounded-3xl p-5 text-left shadow-sm transition-all">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="font-bold text-[#2f1a14] text-lg">Modo claro</p>
+            <p class="text-sm text-[#8a7a71] mt-1">Mantiene la página tal como está ahora.</p>
+          </div>
+          <span class="theme-option-check text-[#2f1a14] text-xl font-bold">✓</span>
+        </div>
+      </button>
+
+      <button type="button" data-theme-option="dark" onclick="selectThemeOption('dark')" class="theme-option-btn w-full bg-white border border-[#e8e1dc] rounded-3xl p-5 text-left shadow-sm transition-all">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="font-bold text-[#2f1a14] text-lg">Modo oscuro</p>
+            <p class="text-sm text-[#8a7a71] mt-1">Convierte la interfaz completa a un estilo oscuro, con contraste para que las letras se lean bien.</p>
+          </div>
+          <span class="theme-option-check text-[#2f1a14] text-xl font-bold">✓</span>
+        </div>
+      </button>
     </div>
   </div>
 
@@ -9819,11 +9867,64 @@ function saveNote() {
       'email-config-view',
       'password-config-view',
       'birthday-config-view',
+      'theme-config-view',
       'update-photo-view'
     ].forEach(id => {
       document.getElementById(id)?.classList.add('hidden');
     });
   }
+
+  const THEME_STORAGE_KEY = 'drex_theme';
+
+  function getSavedThemePreference() {
+    return localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+  }
+
+  function updateThemePreview(theme) {
+    const preview = document.getElementById('theme-mode-preview');
+    if (preview) {
+      preview.textContent = theme === 'dark' ? 'Modo oscuro activado' : 'Modo claro activado';
+    }
+  }
+
+  function updateThemeOptionButtons(theme) {
+    document.querySelectorAll('[data-theme-option]').forEach(button => {
+      const isSelected = button.getAttribute('data-theme-option') === theme;
+      button.classList.toggle('selected', isSelected);
+      button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+    });
+    updateThemePreview(theme);
+  }
+
+  function applyTheme(theme, persist = true) {
+    const safeTheme = theme === 'dark' ? 'dark' : 'light';
+    document.body.classList.toggle('theme-dark', safeTheme === 'dark');
+    document.body.classList.toggle('theme-light', safeTheme !== 'dark');
+    document.documentElement.style.colorScheme = safeTheme;
+    if (persist) {
+      localStorage.setItem(THEME_STORAGE_KEY, safeTheme);
+    }
+    updateThemeOptionButtons(safeTheme);
+  }
+
+  function initThemePreference() {
+    applyTheme(getSavedThemePreference(), false);
+  }
+
+  function openThemeConfig() {
+    updateThemeOptionButtons(getSavedThemePreference());
+    document.getElementById('theme-config-view').classList.remove('hidden');
+  }
+
+  function closeThemeConfig() {
+    document.getElementById('theme-config-view').classList.add('hidden');
+  }
+
+  function selectThemeOption(theme) {
+    applyTheme(theme);
+  }
+
+  document.addEventListener('DOMContentLoaded', initThemePreference);
 
   function openAccountConfig() {
     const user = firebase.auth().currentUser;
@@ -13924,14 +14025,321 @@ function renderPlacesList(places) {
 </body>
 
 <style>
-/* Rediseño global rápido */
-#main-app > .bg-white.border-b, #bottom-nav, #notifications-modal > div:first-child, #profile-view, #settings-fullscreen { background: #f5f4f2 !important; }
-#author-profile-modal { background: #ffffff !important; }
-#bottom-nav { border-top-color:#e8e1dc !important; }
-#main-app .w-6.h-6, #main-app button { color:#5f4b44; }
-#notifications-modal .bg-white, #profile-view .bg-white { background:#f5f4f2 !important; }
-#author-profile-modal .bg-white { background:#ffffff !important; }
-#notifications-modal .border-b, #profile-view .border-b, #author-profile-modal .border-b { border-color:#e8e1dc !important; }
+:root {
+  --brand-accent: #5f4b44;
+  --brand-accent-strong: #2f1a14;
+  --brand-accent-soft: #f0ebe7;
+  --brand-accent-contrast: #ffffff;
+  --theme-bg: #f5f4f2;
+  --theme-surface: #ffffff;
+  --theme-surface-muted: #f0ebe7;
+  --theme-surface-subtle: #e8e1dc;
+  --theme-border: #e8e1dc;
+  --theme-text: #2f1a14;
+  --theme-muted: #8a7a71;
+  --theme-icon: #5f4b44;
+}
+
+body.theme-dark {
+  --brand-accent: #8fa2c7;
+  --brand-accent-strong: #dbe5f6;
+  --brand-accent-soft: #22304b;
+  --brand-accent-contrast: #0f1728;
+  --theme-bg: #111827;
+  --theme-surface: #172033;
+  --theme-surface-muted: #1c2940;
+  --theme-surface-subtle: #24324c;
+  --theme-border: #334155;
+  --theme-text: #f4efe9;
+  --theme-muted: #b6c0d1;
+  --theme-icon: #dbe5f6;
+  background: var(--theme-bg) !important;
+  color: var(--theme-text) !important;
+}
+
+body,
+#main-app,
+#scrollable-content,
+#profile-view,
+#settings-view,
+#account-config-view,
+#profile-config-view,
+#username-config-view,
+#info-config-view,
+#location-config-view,
+#pronouns-config-view,
+#email-config-view,
+#password-config-view,
+#birthday-config-view,
+#theme-config-view,
+#update-photo-view,
+#deactivate-delete-account-view,
+#deactivate-confirmation-view,
+#delete-reason-view,
+#delete-confirmation-view,
+#groups-view,
+#create-community-view,
+#community-wiki-view,
+#community-detail-view,
+#community-manage-view,
+#delete-community-confirm-view,
+#community-view,
+#note-creation-fullscreen,
+#comments-view,
+#location-detail-view,
+#satellite-detail-view,
+#post-report-fullscreen,
+#post-report-processing,
+#post-report-response,
+#search-view,
+#baro-view,
+#baro-sources-sheet,
+#notifications-modal,
+#followers-modal,
+#following-modal,
+#author-posts-restricted-view,
+#user-groups-view,
+#gif-picker-sheet,
+#sticker-sheet,
+#location-sheet {
+  background: var(--theme-bg) !important;
+  color: var(--theme-text) !important;
+}
+
+#main-app > .bg-white.border-b,
+#bottom-nav,
+#notifications-modal > div:first-child,
+#profile-view,
+#settings-fullscreen,
+#baro-followup-bar,
+#community-info-sheet,
+#comment-actions-sheet,
+#post-options-sheet,
+#location-more-sheet,
+#author-profile-modal {
+  background: var(--theme-surface) !important;
+}
+
+.bg-white,
+.bg-gray-100,
+.bg-gray-200 {
+  background: var(--theme-surface) !important;
+  color: var(--theme-text) !important;
+}
+
+.bg-\[\#f5f4f2\] {
+  background: var(--theme-bg) !important;
+  color: var(--theme-text) !important;
+}
+
+.bg-\[\#f0ebe7\],
+.bg-\[\#e8e1dc\],
+.bg-\[\#fff3f1\],
+.bg-\[\#dce1e5\],
+.bg-\[\#f6f6f6\],
+.comment-skeleton {
+  background: var(--theme-surface-muted) !important;
+  color: var(--theme-text) !important;
+}
+
+body.theme-dark .bg-\[\#f5f4f2\],
+body.theme-dark .bg-\[\#f0ebe7\],
+body.theme-dark .bg-\[\#e8e1dc\],
+body.theme-dark .bg-\[\#dce1e5\],
+body.theme-dark .bg-\[\#f6f6f6\],
+body.theme-dark .comment-skeleton,
+body.theme-dark #baro-followup-bar,
+body.theme-dark #community-info-sheet,
+body.theme-dark #comment-actions-sheet,
+body.theme-dark #post-options-sheet,
+body.theme-dark #location-more-sheet,
+body.theme-dark #author-profile-modal {
+  background: var(--theme-surface-muted) !important;
+}
+
+.text-\[\#FE2C55\],
+.text-\[\#ef2950\],
+.text-\[\#d91c47\] {
+  color: var(--brand-accent) !important;
+}
+
+.text-\[\#2f1a14\],
+.text-\[\#1e252b\],
+.text-\[\#1f252c\],
+.text-\[\#151d23\],
+.text-\[\#11181f\],
+.text-\[\#2a3238\],
+.text-black,
+.text-gray-700,
+.text-gray-800,
+.text-gray-900 {
+  color: var(--theme-text) !important;
+}
+
+.text-\[\#8a7a71\],
+.text-\[\#6f5c54\],
+.text-\[\#b2a7a1\],
+.text-\[\#5f4b44\],
+.text-\[\#5f6c76\],
+.text-\[\#4f5e6a\],
+.text-\[\#6c7780\],
+.text-\[\#7c8790\],
+.text-\[\#7f8991\],
+.text-\[\#8b949b\],
+.text-\[\#9aa1a9\],
+.text-\[\#65727c\],
+.text-\[\#52606b\],
+.text-gray-300,
+.text-gray-400,
+.text-gray-500,
+.text-gray-600 {
+  color: var(--theme-muted) !important;
+}
+
+.border,
+.border-b,
+.border-t,
+.border-gray-200,
+.border-gray-300,
+.border-\[\#e8e1dc\],
+.border-\[\#d9cec8\],
+.border-\[\#dcdcdc\] {
+  border-color: var(--theme-border) !important;
+}
+
+input,
+textarea,
+select {
+  border-color: var(--theme-border) !important;
+}
+
+body.theme-dark input,
+body.theme-dark textarea,
+body.theme-dark select {
+  background: var(--theme-surface-muted) !important;
+  color: var(--theme-text) !important;
+  border-color: var(--theme-border) !important;
+}
+
+body.theme-dark input.bg-transparent,
+body.theme-dark textarea.bg-transparent,
+body.theme-dark select.bg-transparent {
+  background: transparent !important;
+}
+
+input::placeholder,
+textarea::placeholder,
+body.theme-dark input::placeholder,
+body.theme-dark textarea::placeholder {
+  color: var(--theme-muted) !important;
+}
+
+.bg-\[\#FE2C55\],
+.hover\:bg-\[\#ef2950\]:hover {
+  background: var(--brand-accent) !important;
+  color: var(--brand-accent-contrast) !important;
+}
+
+.border-\[\#FE2C55\],
+.hover\:border-\[\#FE2C55\]:hover {
+  border-color: var(--brand-accent) !important;
+}
+
+.focus\:ring-\[\#FE2C55\]:focus,
+.focus\:border-transparent:focus,
+.accent-\[\#FE2C55\] {
+  --tw-ring-color: rgba(95, 75, 68, 0.22) !important;
+  accent-color: var(--brand-accent) !important;
+}
+
+body.theme-dark .focus\:ring-\[\#FE2C55\]:focus,
+body.theme-dark .accent-\[\#FE2C55\] {
+  --tw-ring-color: rgba(143, 162, 199, 0.28) !important;
+  accent-color: var(--brand-accent) !important;
+}
+
+.from-\[\#FE2C55\] {
+  --tw-gradient-from: var(--brand-accent) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(95 75 68 / 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+.via-\[\#ff4757\] {
+  --tw-gradient-stops: var(--tw-gradient-from), var(--brand-accent) var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+}
+
+.to-\[\#FE2C55\],
+.to-\[\#ff6b7a\],
+.to-\[\#f97f97\] {
+  --tw-gradient-to: var(--brand-accent-strong) var(--tw-gradient-to-position) !important;
+}
+
+.section-divider {
+  border-bottom-color: var(--brand-accent) !important;
+}
+
+.star.selected {
+  color: var(--brand-accent) !important;
+  text-shadow: 0 0 10px rgba(95, 75, 68, 0.25) !important;
+}
+
+body.theme-dark .star.selected {
+  text-shadow: 0 0 10px rgba(143, 162, 199, 0.28) !important;
+}
+
+.vote-star.active .fire-icon,
+.vote-star.active .fire-icon-sm {
+  color: var(--brand-accent) !important;
+}
+
+.theme-option-btn {
+  border-color: var(--theme-border) !important;
+  background: var(--theme-surface) !important;
+}
+
+.theme-option-btn .theme-option-check {
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.2s ease;
+  color: var(--brand-accent);
+}
+
+.theme-option-btn.selected {
+  border-color: var(--brand-accent) !important;
+  background: var(--brand-accent-soft) !important;
+  box-shadow: 0 0 0 2px rgba(95, 75, 68, 0.12);
+}
+
+body.theme-dark .theme-option-btn.selected {
+  box-shadow: 0 0 0 2px rgba(143, 162, 199, 0.18);
+}
+
+.theme-option-btn.selected .theme-option-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.shadow-sm,
+.shadow-lg,
+.shadow-xl {
+  box-shadow: 0 10px 30px rgba(47, 26, 20, 0.08) !important;
+}
+
+body.theme-dark .shadow-sm,
+body.theme-dark .shadow-lg,
+body.theme-dark .shadow-xl {
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32) !important;
+}
+
+#bottom-nav {
+  border-top-color: var(--theme-border) !important;
+}
+
+#baro-result strong,
+#baro-sources-list strong {
+  color: var(--theme-text) !important;
+}
+
 body.author-profile-open #main-app > .bg-white.border-b,
 body.author-profile-open #bottom-nav {
   display: none !important;
