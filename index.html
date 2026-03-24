@@ -65,6 +65,8 @@ console.log('%cEste sitio está protegido contra inspección de código.', 'font
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <!-- Firebase Cloud Messaging para notificaciones Push -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js"></script>
   <style>
     /* ESTILOS BASE ADAPTADOS */
 body {
@@ -94,9 +96,11 @@ body {
   display: inline-flex;
   width: 15px;
   height: 15px;
-  margin-left: 3px;
+  margin-left: 2px;
   vertical-align: middle;
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+  position: relative;
+  top: -1px;
 }
 
 /* Ocultar título "Capítulos" y tagline en la pantalla de inicio */
@@ -2185,21 +2189,30 @@ firebase.auth().onAuthStateChanged(user => {
 
   <!-- NAVEGACIÓN INFERIOR REDISEÑADA -->
   <div id="bottom-nav" class="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white transition-transform duration-300 z-[100]">
-    <div class="flex justify-around items-center h-16 px-4">
-      <button onclick="openHome()" class="p-2 text-gray-500 hover:text-black transition-all duration-300 active:scale-90" aria-label="Inicio">
+    <!-- Indicador de posición activa deslizante -->
+    <div id="nav-active-indicator" class="absolute top-0 h-[3px] bg-[#2f1a14] rounded-full" style="width:33.33%;left:0;transition:left 0.38s cubic-bezier(0.34,1.56,0.64,1),width 0.38s cubic-bezier(0.34,1.56,0.64,1);"></div>
+    <div id="bottom-nav-track" class="flex justify-around items-center h-16 px-4 overflow-hidden select-none">
+      <!-- Botón Inicio -->
+      <button id="nav-btn-0" data-nav-index="0" onclick="openHome()" class="nav-btn p-2 flex flex-col items-center justify-center gap-0.5 text-[#2f1a14] transition-all duration-300 active:scale-90 relative" aria-label="Inicio">
         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
         </svg>
+        <span class="text-[9px] font-semibold">Inicio</span>
       </button>
-      <button onclick="openGroupsView()" class="p-2 text-gray-500 hover:text-black transition-all duration-300 active:scale-90" aria-label="Grupos">
+      <!-- Botón Grupos -->
+      <button id="nav-btn-1" data-nav-index="1" onclick="openGroupsView()" class="nav-btn p-2 flex flex-col items-center justify-center gap-0.5 text-gray-400 transition-all duration-300 active:scale-90 relative" aria-label="Grupos">
         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5V18a4 4 0 00-5-3.87M17 20H7m10 0v-2c0-.65-.11-1.27-.31-1.85M7 20H2V18a4 4 0 015-3.87M7 20v-2c0-.65.11-1.27.31-1.85m0 0a5 5 0 019.38 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
         </svg>
+        <span class="text-[9px] font-semibold">Grupos</span>
       </button>
-      <button onclick="openNoteCreationFullscreen()" class="p-2 text-gray-500 hover:text-black transition-all duration-300 active:scale-90" aria-label="Crear">
-        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
+      <!-- Botón Crear -->
+      <button id="nav-btn-2" data-nav-index="2" onclick="openNoteCreationFullscreen()" class="nav-btn p-2 flex flex-col items-center justify-center gap-0.5 text-gray-400 transition-all duration-300 active:scale-90 relative" aria-label="Crear">
+        <div class="w-10 h-10 rounded-full bg-[#2f1a14] flex items-center justify-center shadow-md">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+          </svg>
+        </div>
       </button>
     </div>
   </div>
@@ -2207,6 +2220,93 @@ firebase.auth().onAuthStateChanged(user => {
   <style>
     .transition { transition: all 0.2s ease-in-out; }
     #bottom-nav.hide { transform: translateY(100%); }
+
+    /* ===== BARRA INFERIOR: ANIMACIÓN DESLIZANTE INFINITA ===== */
+    #bottom-nav { user-select: none; -webkit-user-select: none; }
+
+    .nav-btn {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+      min-width: 60px;
+      position: relative;
+      overflow: visible;
+    }
+
+    .nav-btn svg {
+      transition: stroke 0.25s ease, transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    }
+
+    .nav-btn span {
+      transition: color 0.25s ease, opacity 0.25s ease;
+      opacity: 0.5;
+      color: #7a6962;
+    }
+
+    .nav-btn.nav-active svg {
+      stroke: #2f1a14;
+      transform: scale(1.15) translateY(-2px);
+    }
+
+    .nav-btn.nav-active span {
+      color: #2f1a14;
+      opacity: 1;
+    }
+
+    /* Punto indicador bajo el ícono activo */
+    .nav-btn.nav-active::after {
+      content: '';
+      position: absolute;
+      bottom: 2px;
+      left: 50%;
+      transform: translateX(-50%) scale(1);
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #2f1a14;
+      animation: navDotAppear 0.3s cubic-bezier(0.34,1.56,0.64,1) forwards;
+    }
+
+    @keyframes navDotAppear {
+      from { transform: translateX(-50%) scale(0); opacity: 0; }
+      to   { transform: translateX(-50%) scale(1); opacity: 1; }
+    }
+
+    /* Animación de entrada del ícono activo */
+    @keyframes navIconBounce {
+      0%   { transform: scale(0.8) translateY(4px); opacity: 0.5; }
+      60%  { transform: scale(1.2) translateY(-3px); opacity: 1; }
+      100% { transform: scale(1.15) translateY(-2px); opacity: 1; }
+    }
+
+    .nav-btn.nav-active svg {
+      animation: navIconBounce 0.35s cubic-bezier(0.34,1.56,0.64,1) forwards;
+    }
+
+    /* Efecto ripple circular al presionar */
+    .nav-btn .nav-ripple-circle {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: rgba(47,26,20,0.1);
+      transform: scale(0);
+      opacity: 1;
+      pointer-events: none;
+      animation: navRippleAnim 0.5s ease-out forwards;
+    }
+
+    @keyframes navRippleAnim {
+      to { transform: scale(2.5); opacity: 0; }
+    }
+
+    /* Modo arrastre */
+    #bottom-nav-track.dragging {
+      cursor: grabbing;
+    }
+
+    #bottom-nav-track.dragging .nav-btn {
+      transition: transform 0.08s linear !important;
+    }
   </style>
 
   <script>
@@ -2228,8 +2328,201 @@ firebase.auth().onAuthStateChanged(user => {
       }
       lastScrollTop = scrollTop;
     });
+
+    /* ===== LÓGICA DESLIZANTE INFINITA DE BARRA INFERIOR ===== */
+    (function initNavSwipe() {
+      const track = document.getElementById('bottom-nav-track');
+      const indicator = document.getElementById('nav-active-indicator');
+      const navBtns = Array.from(document.querySelectorAll('.nav-btn'));
+      const NAV_COUNT = navBtns.length;
+      let currentNavIndex = 0;
+      let dragStartX = 0;
+      let dragStartTime = 0;
+      let longPressTimer = null;
+      let longPressActive = false;
+      const LONG_PRESS_DELAY = 320;
+      const SWIPE_THRESHOLD = 28;
+
+      // Acciones de cada tab
+      const navActions = [
+        () => { try { openHome(); } catch(e){} },
+        () => { try { openGroupsView(); } catch(e){} },
+        () => { try { openNoteCreationFullscreen(); } catch(e){} }
+      ];
+
+      function addRipple(btn) {
+        const old = btn.querySelector('.nav-ripple-circle');
+        if (old) old.remove();
+        const circle = document.createElement('span');
+        circle.className = 'nav-ripple-circle';
+        btn.appendChild(circle);
+        setTimeout(() => circle.remove(), 520);
+      }
+
+      function setActiveNav(index, animate = true) {
+        index = ((index % NAV_COUNT) + NAV_COUNT) % NAV_COUNT;
+        currentNavIndex = index;
+
+        navBtns.forEach((btn, i) => {
+          btn.classList.remove('nav-active');
+        });
+
+        const activeBtn = navBtns[index];
+        activeBtn.classList.add('nav-active');
+        if (animate) addRipple(activeBtn);
+
+        // Mover indicador superior con animación fluida
+        if (indicator) {
+          const btnWidth = 100 / NAV_COUNT;
+          indicator.style.width = btnWidth + '%';
+          indicator.style.left = (index * btnWidth) + '%';
+        }
+
+        // Micro-animación en los demás botones
+        if (animate) {
+          navBtns.forEach((btn, i) => {
+            if (i !== index) {
+              btn.style.transform = 'scale(0.9)';
+              btn.style.transition = 'transform 0.15s ease';
+              setTimeout(() => {
+                btn.style.transform = '';
+                btn.style.transition = '';
+              }, 200);
+            }
+          });
+        }
+      }
+
+      // Inicializar con el primer botón activo
+      setActiveNav(0, false);
+
+      // ---- TOUCH EVENTS ----
+      track.addEventListener('touchstart', (e) => {
+        dragStartX = e.touches[0].clientX;
+        dragStartTime = Date.now();
+        longPressActive = false;
+
+        longPressTimer = setTimeout(() => {
+          longPressActive = true;
+          track.classList.add('dragging');
+          if (navigator.vibrate) navigator.vibrate([20, 10, 20]);
+          // Efecto visual de "activación"
+          track.style.transform = 'scaleY(1.04)';
+          track.style.transition = 'transform 0.18s cubic-bezier(0.34,1.56,0.64,1)';
+          setTimeout(() => {
+            track.style.transform = '';
+          }, 200);
+        }, LONG_PRESS_DELAY);
+      }, { passive: true });
+
+      track.addEventListener('touchmove', (e) => {
+        if (!longPressActive) {
+          if (Math.abs(e.touches[0].clientX - dragStartX) > 10) {
+            clearTimeout(longPressTimer);
+          }
+          return;
+        }
+
+        const currentX = e.touches[0].clientX;
+        const deltaX = currentX - dragStartX;
+        const btnW = track.offsetWidth / NAV_COUNT;
+
+        // Mover visualmente los botones
+        navBtns.forEach((btn) => {
+          const scale = 1 - Math.min(Math.abs(deltaX) / (btnW * 3), 0.08);
+          btn.style.transform = `translateX(${deltaX * 0.25}px) scale(${scale})`;
+          btn.style.transition = 'transform 0.06s linear';
+        });
+
+        // Cambiar tab cuando supera el umbral
+        if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
+          const direction = deltaX < 0 ? 1 : -1;
+          const newIndex = ((currentNavIndex + direction) % NAV_COUNT + NAV_COUNT) % NAV_COUNT;
+          if (newIndex !== currentNavIndex) {
+            dragStartX = currentX;
+            setActiveNav(newIndex);
+            if (navigator.vibrate) navigator.vibrate(12);
+          }
+        }
+      }, { passive: true });
+
+      track.addEventListener('touchend', (e) => {
+        clearTimeout(longPressTimer);
+        track.classList.remove('dragging');
+
+        // Spring back animation
+        navBtns.forEach(btn => {
+          btn.style.transform = '';
+          btn.style.transition = 'transform 0.4s cubic-bezier(0.34,1.56,0.64,1)';
+          setTimeout(() => { btn.style.transition = ''; }, 450);
+        });
+        track.style.transition = 'transform 0.3s cubic-bezier(0.34,1.56,0.64,1)';
+        track.style.transform = '';
+        setTimeout(() => { track.style.transition = ''; }, 350);
+
+        longPressActive = false;
+      }, { passive: true });
+
+      // ---- MOUSE EVENTS (desktop) ----
+      let mouseDown = false;
+      track.addEventListener('mousedown', (e) => {
+        dragStartX = e.clientX;
+        dragStartTime = Date.now();
+        longPressActive = false;
+        mouseDown = true;
+
+        longPressTimer = setTimeout(() => {
+          longPressActive = true;
+          track.classList.add('dragging');
+          track.style.transform = 'scaleY(1.04)';
+          track.style.transition = 'transform 0.18s cubic-bezier(0.34,1.56,0.64,1)';
+          setTimeout(() => { track.style.transform = ''; }, 200);
+        }, LONG_PRESS_DELAY);
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!mouseDown || !longPressActive) return;
+        const deltaX = e.clientX - dragStartX;
+        const btnW = track.offsetWidth / NAV_COUNT;
+        const scale = 1 - Math.min(Math.abs(deltaX) / (btnW * 3), 0.08);
+
+        navBtns.forEach(btn => {
+          btn.style.transform = `translateX(${deltaX * 0.25}px) scale(${scale})`;
+          btn.style.transition = 'transform 0.06s linear';
+        });
+
+        if (Math.abs(deltaX) > SWIPE_THRESHOLD) {
+          const direction = deltaX < 0 ? 1 : -1;
+          const newIndex = ((currentNavIndex + direction) % NAV_COUNT + NAV_COUNT) % NAV_COUNT;
+          if (newIndex !== currentNavIndex) {
+            dragStartX = e.clientX;
+            setActiveNav(newIndex);
+          }
+        }
+      });
+
+      document.addEventListener('mouseup', () => {
+        clearTimeout(longPressTimer);
+        mouseDown = false;
+        if (!longPressActive) return;
+        track.classList.remove('dragging');
+        navBtns.forEach(btn => {
+          btn.style.transform = '';
+          btn.style.transition = 'transform 0.4s cubic-bezier(0.34,1.56,0.64,1)';
+          setTimeout(() => { btn.style.transition = ''; }, 450);
+        });
+        track.style.transition = 'transform 0.3s cubic-bezier(0.34,1.56,0.64,1)';
+        track.style.transform = '';
+        setTimeout(() => { track.style.transition = ''; }, 350);
+        longPressActive = false;
+      });
+
+      // API pública para cambiar el tab activo desde otras partes del código
+      window.setActiveNavTab = function(index) { setActiveNav(index, true); };
+    })();
   </script>
 </div>
+
 
 <!-- VISTA GRUPOS -->
 <div id="groups-view" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] overflow-y-auto hidden z-50">
@@ -4937,6 +5230,20 @@ function openPhotoDetail(photo) {
         <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
       </button>
 
+      <!-- Botón Traducciones -->
+      <button onclick="openTranslationsConfig()" class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#e8e1dc] shadow-sm active:scale-95 transition-all">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-[#f0ebe7] rounded-xl flex items-center justify-center text-[#5f4b44]">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" /></svg>
+          </div>
+          <div class="text-left">
+            <p class="font-bold text-[#2f1a14]">Traducciones</p>
+            <p id="translations-lang-preview" class="text-sm text-[#8a7a71]">Español (predeterminado)</p>
+          </div>
+        </div>
+        <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+      </button>
+
       <button onclick="signOutUser()" class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#e8e1dc] shadow-sm active:scale-95 transition-all">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 bg-[#f0ebe7] rounded-xl flex items-center justify-center text-[#5f4b44]">
@@ -5464,7 +5771,7 @@ function openPhotoDetail(photo) {
     </div>
   </div>
 
-  <div id="birthday-config-view" class="fixed inset-0 bg-[#f5f4f2] z-[130] hidden flex flex-col">
+  <div id="birthday-config-view" class="fixed inset-0 bg-[#f5f4f2] z-[135] flex flex-col" style="display:none;">
     <div class="flex items-center justify-between p-4 border-b border-[#e8e1dc] bg-white">
       <button onclick="closeBirthdayConfigView()" class="text-[#5f4b44] p-1">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -5523,6 +5830,53 @@ function openPhotoDetail(photo) {
         <input id="settings-account-birthday" type="hidden" class="w-full p-3 rounded-xl border border-[#d9cec8] bg-white text-[#2f1a14]">
         
         <p class="text-xs text-[#8a7a71] mt-4">Puedes usarla para completar la información de tu cuenta y tu perfil.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECCIÓN DE TRADUCCIONES -->
+  <div id="translations-config-view" class="fixed inset-0 bg-[#f5f4f2] z-[135] flex flex-col" style="display:none;">
+    <div class="flex items-center justify-between p-4 border-b border-[#e8e1dc] bg-white">
+      <button onclick="closeTranslationsConfig()" class="text-[#5f4b44] p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[#2f1a14] absolute left-1/2 -translate-x-1/2">Traducciones</h2>
+      <button onclick="saveTranslationsConfig()" class="text-[#2f1a14] font-bold text-lg">Guardar</button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+      <!-- Descripción -->
+      <div class="bg-white border border-[#e8e1dc] rounded-3xl p-4 shadow-sm">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-10 h-10 bg-[#f0ebe7] rounded-xl flex items-center justify-center text-[#5f4b44]">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" /></svg>
+          </div>
+          <div>
+            <p class="font-bold text-[#2f1a14]">Idioma de la plataforma</p>
+            <p class="text-xs text-[#8a7a71]">Las publicaciones en otros idiomas se traducirán automáticamente</p>
+          </div>
+        </div>
+        <p class="text-sm text-[#7a6962] leading-relaxed">Selecciona tu idioma preferido. Los posts, comentarios y respuestas escritos en otros idiomas serán detectados y traducidos automáticamente usando Google Translate.</p>
+      </div>
+
+      <!-- Toggle de traducción automática -->
+      <div class="bg-white border border-[#e8e1dc] rounded-3xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="font-bold text-[#2f1a14]">Traducción automática</p>
+            <p class="text-sm text-[#8a7a71]">Traducir publicaciones en otros idiomas</p>
+          </div>
+          <button id="auto-translate-toggle" onclick="toggleAutoTranslate()" class="relative w-12 h-6 rounded-full transition-colors duration-300 bg-[#2f1a14] focus:outline-none">
+            <span id="auto-translate-thumb" class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-300 translate-x-6"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Selección de idioma -->
+      <div class="bg-white border border-[#e8e1dc] rounded-3xl p-4 shadow-sm">
+        <p class="font-bold text-[#2f1a14] mb-3">Seleccionar idioma</p>
+        <div id="language-list" class="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+          <!-- Los idiomas se generan dinámicamente -->
+        </div>
       </div>
     </div>
   </div>
@@ -9258,6 +9612,104 @@ function saveNote() {
   // Si necesitas enviar datos a la segunda, usa 'db2'.
   // Todos los usuarios están autorizados para transmitir en vivo
   const authorizedEmails = [];
+
+  /******* FIREBASE CLOUD MESSAGING - NOTIFICACIONES PUSH *******/
+  // VAPID Key pública para FCM Web Push
+  // IMPORTANTE: Debes generar tu propia VAPID key en Firebase Console:
+  // Proyecto > Configuración > Cloud Messaging > Certificados push web
+  const FCM_VAPID_KEY = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDkBWseIkuokgq4tfFrpJfyndFO7skGLMikJ3Sj8';
+
+  let fcmMessaging = null;
+  let fcmToken = null;
+
+  // Inicializar Firebase Messaging
+  async function initFCM() {
+    try {
+      if (!('serviceWorker' in navigator)) {
+        console.log('FCM: Service Workers no soportados');
+        return;
+      }
+
+      // Registrar Service Worker
+      const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      console.log('FCM: Service Worker registrado');
+
+      // Inicializar Messaging con app1
+      fcmMessaging = firebase.messaging(app1);
+
+      // Solicitar permiso de notificaciones
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        console.log('FCM: Permiso de notificaciones denegado');
+        return;
+      }
+
+      // Obtener token FCM
+      fcmToken = await fcmMessaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: swReg });
+      if (fcmToken) {
+        console.log('FCM Token obtenido:', fcmToken.substring(0, 20) + '...');
+        // Guardar token en Firebase para este usuario
+        const user = firebase.auth().currentUser;
+        if (user) {
+          await firebase.database().ref('users/' + user.uid + '/fcmTokens/' + btoa(fcmToken).substring(0, 20)).set({
+            token: fcmToken,
+            platform: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'web',
+            updatedAt: Date.now()
+          });
+        }
+      }
+
+      // Manejar mensajes en primer plano (app abierta)
+      fcmMessaging.onMessage((payload) => {
+        console.log('FCM: Mensaje en primer plano:', payload);
+        const title = payload.notification?.title || 'Beabo';
+        const body = payload.notification?.body || 'Nueva notificación';
+
+        // Mostrar notificación nativa si está permitido
+        if (Notification.permission === 'granted') {
+          const notif = new Notification(title, {
+            body: body,
+            icon: '/ashhhh.ico',
+            badge: '/ashhhh.ico',
+            vibrate: [200, 100, 200],
+            tag: 'beabo-fg-' + Date.now()
+          });
+          notif.onclick = () => { window.focus(); notif.close(); };
+        }
+
+        // Vibrar en móvil
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      });
+
+      console.log('FCM: Sistema de Push inicializado correctamente');
+    } catch (err) {
+      console.warn('FCM: Error al inicializar:', err.message);
+    }
+  }
+
+  // Función para enviar notificación Push a un usuario específico via FCM
+  // (Esto se hace desde el backend/Firebase Functions; aquí guardamos el token)
+  async function saveFCMTokenForUser(userId) {
+    if (!fcmToken || !userId) return;
+    try {
+      await firebase.database().ref('users/' + userId + '/fcmTokens/' + btoa(fcmToken).substring(0, 20)).set({
+        token: fcmToken,
+        platform: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'web',
+        updatedAt: Date.now()
+      });
+    } catch (e) {
+      console.warn('FCM: Error guardando token:', e);
+    }
+  }
+
+  // Inicializar FCM cuando el usuario esté autenticado
+  firebase.auth().onAuthStateChanged((user) => {
+    if (user) {
+      // Pequeño delay para no bloquear la carga inicial
+      setTimeout(() => initFCM().catch(console.warn), 2000);
+    }
+  });
+  /******* FIN FIREBASE CLOUD MESSAGING *******/
   /*********************** FUNCIONES ADICIONALES **************************/
   function contienePalabrasOfensivas(texto) {
     // Lista de 20 palabras ofensivas en español (ejemplo; ajústala según tus necesidades)
@@ -10914,12 +11366,21 @@ function saveNote() {
   }
 
   function openBirthdayConfigView() {
-    document.getElementById('birthday-config-view').classList.remove('hidden');
+    const view = document.getElementById('birthday-config-view');
+    if (view) {
+      view.classList.remove('hidden');
+      view.style.display = 'flex';
+      view.style.zIndex = '135';
+    }
     initBirthdayDisplay();
   }
 
   function closeBirthdayConfigView() {
-    document.getElementById('birthday-config-view').classList.add('hidden');
+    const view = document.getElementById('birthday-config-view');
+    if (view) {
+      view.classList.add('hidden');
+      view.style.display = 'none';
+    }
   }
 
   // Variables para el editor de cumpleaños
@@ -15399,3 +15860,515 @@ body.theme-dark #theme-config-view button {
   color: #9ca3af !important;
 }
 </style>
+
+<!-- ============================================================ -->
+<!-- SISTEMA DE TRADUCCIONES - GOOGLE TRANSLATE API GRATUITA     -->
+<!-- ============================================================ -->
+<script>
+(function() {
+  'use strict';
+
+  // ===== CONFIGURACIÓN =====
+  // Usar la API gratuita de Google Translate (sin key, vía endpoint público)
+  // Para mayor cuota, puedes agregar tu API key de Google Cloud aquí:
+  const GOOGLE_TRANSLATE_API_KEY = ''; // Opcional: tu API key de Google Cloud
+
+  // Idioma destino por defecto (español)
+  const DEFAULT_LANG = 'es';
+
+  // Cache de traducciones para no repetir llamadas
+  const translationCache = new Map();
+
+  // Estado del sistema
+  let autoTranslateEnabled = true;
+  let userPreferredLang = DEFAULT_LANG;
+
+  // ===== LISTA DE IDIOMAS DEL MUNDO =====
+  const WORLD_LANGUAGES = [
+    { code: 'es', name: 'Español', flag: '🇪🇸' },
+    { code: 'en', name: 'English (Inglés)', flag: '🇺🇸' },
+    { code: 'pt', name: 'Português (Portugués)', flag: '🇧🇷' },
+    { code: 'fr', name: 'Français (Francés)', flag: '🇫🇷' },
+    { code: 'de', name: 'Deutsch (Alemán)', flag: '🇩🇪' },
+    { code: 'it', name: 'Italiano', flag: '🇮🇹' },
+    { code: 'ru', name: 'Русский (Ruso)', flag: '🇷🇺' },
+    { code: 'zh', name: '中文 (Chino)', flag: '🇨🇳' },
+    { code: 'ja', name: '日本語 (Japonés)', flag: '🇯🇵' },
+    { code: 'ko', name: '한국어 (Coreano)', flag: '🇰🇷' },
+    { code: 'ar', name: 'العربية (Árabe)', flag: '🇸🇦' },
+    { code: 'hi', name: 'हिन्दी (Hindi)', flag: '🇮🇳' },
+    { code: 'tr', name: 'Türkçe (Turco)', flag: '🇹🇷' },
+    { code: 'nl', name: 'Nederlands (Holandés)', flag: '🇳🇱' },
+    { code: 'pl', name: 'Polski (Polaco)', flag: '🇵🇱' },
+    { code: 'sv', name: 'Svenska (Sueco)', flag: '🇸🇪' },
+    { code: 'da', name: 'Dansk (Danés)', flag: '🇩🇰' },
+    { code: 'fi', name: 'Suomi (Finlandés)', flag: '🇫🇮' },
+    { code: 'no', name: 'Norsk (Noruego)', flag: '🇳🇴' },
+    { code: 'cs', name: 'Čeština (Checo)', flag: '🇨🇿' },
+    { code: 'hu', name: 'Magyar (Húngaro)', flag: '🇭🇺' },
+    { code: 'ro', name: 'Română (Rumano)', flag: '🇷🇴' },
+    { code: 'uk', name: 'Українська (Ucraniano)', flag: '🇺🇦' },
+    { code: 'el', name: 'Ελληνικά (Griego)', flag: '🇬🇷' },
+    { code: 'he', name: 'עברית (Hebreo)', flag: '🇮🇱' },
+    { code: 'th', name: 'ไทย (Tailandés)', flag: '🇹🇭' },
+    { code: 'vi', name: 'Tiếng Việt (Vietnamita)', flag: '🇻🇳' },
+    { code: 'id', name: 'Bahasa Indonesia (Indonesio)', flag: '🇮🇩' },
+    { code: 'ms', name: 'Bahasa Melayu (Malayo)', flag: '🇲🇾' },
+    { code: 'fa', name: 'فارسی (Persa)', flag: '🇮🇷' },
+    { code: 'bn', name: 'বাংলা (Bengalí)', flag: '🇧🇩' },
+    { code: 'sw', name: 'Kiswahili (Swahili)', flag: '🇰🇪' },
+    { code: 'ca', name: 'Català (Catalán)', flag: '🏴' },
+    { code: 'hr', name: 'Hrvatski (Croata)', flag: '🇭🇷' },
+    { code: 'sk', name: 'Slovenčina (Eslovaco)', flag: '🇸🇰' },
+    { code: 'bg', name: 'Български (Búlgaro)', flag: '🇧🇬' },
+    { code: 'lt', name: 'Lietuvių (Lituano)', flag: '🇱🇹' },
+    { code: 'lv', name: 'Latviešu (Letón)', flag: '🇱🇻' },
+    { code: 'et', name: 'Eesti (Estonio)', flag: '🇪🇪' },
+    { code: 'sl', name: 'Slovenščina (Esloveno)', flag: '🇸🇮' },
+    { code: 'sr', name: 'Српски (Serbio)', flag: '🇷🇸' },
+    { code: 'af', name: 'Afrikaans', flag: '🇿🇦' },
+    { code: 'sq', name: 'Shqip (Albanés)', flag: '🇦🇱' },
+    { code: 'hy', name: 'Հայերեն (Armenio)', flag: '🇦🇲' },
+    { code: 'ka', name: 'ქართული (Georgiano)', flag: '🇬🇪' },
+    { code: 'az', name: 'Azərbaycan (Azerbaiyano)', flag: '🇦🇿' },
+    { code: 'kk', name: 'Қазақ (Kazajo)', flag: '🇰🇿' },
+    { code: 'uz', name: 'Oʻzbek (Uzbeko)', flag: '🇺🇿' },
+    { code: 'mn', name: 'Монгол (Mongol)', flag: '🇲🇳' },
+    { code: 'ur', name: 'اردو (Urdu)', flag: '🇵🇰' },
+    { code: 'ta', name: 'தமிழ் (Tamil)', flag: '🇮🇳' },
+    { code: 'te', name: 'తెలుగు (Telugu)', flag: '🇮🇳' },
+    { code: 'ml', name: 'മലയാളം (Malayalam)', flag: '🇮🇳' },
+    { code: 'gu', name: 'ગુજરાતી (Gujarati)', flag: '🇮🇳' },
+    { code: 'mr', name: 'मराठी (Marathi)', flag: '🇮🇳' },
+    { code: 'ne', name: 'नेपाली (Nepalés)', flag: '🇳🇵' },
+    { code: 'si', name: 'සිංහල (Cingalés)', flag: '🇱🇰' },
+    { code: 'my', name: 'မြန်မာ (Birmano)', flag: '🇲🇲' },
+    { code: 'km', name: 'ខ្មែរ (Jemer)', flag: '🇰🇭' },
+    { code: 'lo', name: 'ລາວ (Laosiano)', flag: '🇱🇦' },
+    { code: 'am', name: 'አማርኛ (Amhárico)', flag: '🇪🇹' },
+    { code: 'ha', name: 'Hausa', flag: '🇳🇬' },
+    { code: 'yo', name: 'Yorùbá', flag: '🇳🇬' },
+    { code: 'ig', name: 'Igbo', flag: '🇳🇬' },
+    { code: 'zu', name: 'IsiZulu (Zulú)', flag: '🇿🇦' },
+    { code: 'xh', name: 'IsiXhosa (Xhosa)', flag: '🇿🇦' },
+    { code: 'so', name: 'Soomaali (Somalí)', flag: '🇸🇴' },
+    { code: 'tl', name: 'Filipino (Tagalo)', flag: '🇵🇭' },
+    { code: 'jw', name: 'Basa Jawa (Javanés)', flag: '🇮🇩' },
+    { code: 'su', name: 'Basa Sunda (Sundanés)', flag: '🇮🇩' },
+    { code: 'ceb', name: 'Cebuano', flag: '🇵🇭' },
+    { code: 'gl', name: 'Galego (Gallego)', flag: '🏴' },
+    { code: 'eu', name: 'Euskara (Euskera)', flag: '🏴' },
+    { code: 'cy', name: 'Cymraeg (Galés)', flag: '🏴󠁧󠁢󠁷󠁬󠁳󠁿' },
+    { code: 'ga', name: 'Gaeilge (Irlandés)', flag: '🇮🇪' },
+    { code: 'mt', name: 'Malti (Maltés)', flag: '🇲🇹' },
+    { code: 'is', name: 'Íslenska (Islandés)', flag: '🇮🇸' },
+    { code: 'lb', name: 'Lëtzebuergesch (Luxemburgués)', flag: '🇱🇺' },
+    { code: 'mk', name: 'Македонски (Macedonio)', flag: '🇲🇰' },
+    { code: 'bs', name: 'Bosanski (Bosnio)', flag: '🇧🇦' },
+    { code: 'be', name: 'Беларуская (Bielorruso)', flag: '🇧🇾' },
+    { code: 'ky', name: 'Кыргыз (Kirguís)', flag: '🇰🇬' },
+    { code: 'tg', name: 'Тоҷикӣ (Tayiko)', flag: '🇹🇯' },
+    { code: 'tk', name: 'Türkmen (Turcomano)', flag: '🇹🇲' },
+    { code: 'ps', name: 'پښتو (Pastún)', flag: '🇦🇫' },
+    { code: 'sd', name: 'سنڌي (Sindhi)', flag: '🇵🇰' },
+    { code: 'ht', name: 'Kreyòl Ayisyen (Haitiano)', flag: '🇭🇹' },
+    { code: 'la', name: 'Latina (Latín)', flag: '🏛️' },
+    { code: 'eo', name: 'Esperanto', flag: '🌍' },
+  ];
+
+  // ===== CARGAR CONFIGURACIÓN GUARDADA =====
+  function loadTranslationSettings() {
+    try {
+      const saved = localStorage.getItem('beabo_translation_settings');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        autoTranslateEnabled = settings.autoTranslate !== false;
+        userPreferredLang = settings.lang || DEFAULT_LANG;
+      }
+    } catch (e) {}
+    updateTranslationUI();
+  }
+
+  function saveTranslationSettings() {
+    try {
+      localStorage.setItem('beabo_translation_settings', JSON.stringify({
+        autoTranslate: autoTranslateEnabled,
+        lang: userPreferredLang
+      }));
+    } catch (e) {}
+  }
+
+  function updateTranslationUI() {
+    // Actualizar preview en configuración
+    const preview = document.getElementById('translations-lang-preview');
+    if (preview) {
+      const lang = WORLD_LANGUAGES.find(l => l.code === userPreferredLang);
+      preview.textContent = lang ? `${lang.flag} ${lang.name}` : 'Español (predeterminado)';
+    }
+
+    // Actualizar toggle
+    const toggle = document.getElementById('auto-translate-toggle');
+    const thumb = document.getElementById('auto-translate-thumb');
+    if (toggle && thumb) {
+      if (autoTranslateEnabled) {
+        toggle.classList.remove('bg-gray-300');
+        toggle.classList.add('bg-[#2f1a14]');
+        thumb.classList.add('translate-x-6');
+        thumb.classList.remove('translate-x-0');
+      } else {
+        toggle.classList.add('bg-gray-300');
+        toggle.classList.remove('bg-[#2f1a14]');
+        thumb.classList.remove('translate-x-6');
+        thumb.classList.add('translate-x-0');
+      }
+    }
+  }
+
+  // ===== DETECCIÓN DE IDIOMA =====
+  // Detectar idioma usando la API gratuita de Google
+  async function detectLanguage(text) {
+    if (!text || text.trim().length < 5) return DEFAULT_LANG;
+
+    // Cache de detección
+    const cacheKey = 'detect_' + text.substring(0, 50);
+    if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
+
+    try {
+      // Usar la API de detección de idioma de Google (gratuita sin key para uso básico)
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${DEFAULT_LANG}&dt=t&q=${encodeURIComponent(text.substring(0, 200))}`;
+      const response = await fetch(url);
+      if (!response.ok) return DEFAULT_LANG;
+      const data = await response.json();
+      // La respuesta incluye el idioma detectado en data[2]
+      const detectedLang = data[2] || DEFAULT_LANG;
+      translationCache.set(cacheKey, detectedLang);
+      return detectedLang;
+    } catch (e) {
+      return DEFAULT_LANG;
+    }
+  }
+
+  // ===== TRADUCCIÓN DE TEXTO =====
+  async function translateText(text, sourceLang, targetLang) {
+    if (!text || !text.trim()) return text;
+    if (sourceLang === targetLang) return null; // No necesita traducción
+
+    const cacheKey = `${sourceLang}_${targetLang}_${text.substring(0, 100)}`;
+    if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
+
+    try {
+      // API gratuita de Google Translate (sin key)
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+
+      // Extraer el texto traducido
+      let translated = '';
+      if (data && data[0]) {
+        data[0].forEach(segment => {
+          if (segment && segment[0]) translated += segment[0];
+        });
+      }
+
+      if (translated && translated.trim()) {
+        translationCache.set(cacheKey, translated);
+        return translated;
+      }
+      return null;
+    } catch (e) {
+      console.warn('Traducción fallida:', e.message);
+      return null;
+    }
+  }
+
+  // ===== PROCESAR ELEMENTO DE TEXTO PARA TRADUCCIÓN =====
+  async function processTextForTranslation(element, originalText) {
+    if (!autoTranslateEnabled || !originalText || originalText.trim().length < 10) return;
+    if (element.dataset.translationProcessed) return;
+    element.dataset.translationProcessed = 'true';
+
+    try {
+      const detectedLang = await detectLanguage(originalText);
+
+      // Si el idioma detectado es igual al preferido, no traducir
+      if (detectedLang === userPreferredLang || detectedLang === 'es') return;
+
+      const translated = await translateText(originalText, detectedLang, userPreferredLang);
+      if (!translated || translated === originalText) return;
+
+      const sourceLangInfo = WORLD_LANGUAGES.find(l => l.code === detectedLang);
+      const sourceLangName = sourceLangInfo ? sourceLangInfo.name.split(' ')[0] : detectedLang.toUpperCase();
+
+      // Agregar el texto traducido con etiqueta
+      const translationWrapper = document.createElement('div');
+      translationWrapper.className = 'translation-wrapper';
+      translationWrapper.innerHTML = `
+        <div class="translation-badge">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>
+          Traducido del ${sourceLangName}
+        </div>
+        <div class="translation-text">${escapeHTML ? escapeHTML(translated) : translated.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+      `;
+
+      element.parentNode.insertBefore(translationWrapper, element.nextSibling);
+    } catch (e) {
+      console.warn('Error procesando traducción:', e);
+    }
+  }
+
+  // ===== OBSERVADOR DE NUEVOS POSTS =====
+  // Observar el DOM para detectar nuevos posts y traducirlos
+  let translationObserver = null;
+
+  function startTranslationObserver() {
+    if (translationObserver) translationObserver.disconnect();
+
+    const targets = [
+      document.getElementById('notes-feed'),
+      document.getElementById('home-community-feed'),
+      document.getElementById('comments-list'),
+      document.getElementById('groups-list'),
+    ].filter(Boolean);
+
+    if (!targets.length) return;
+
+    translationObserver = new MutationObserver((mutations) => {
+      if (!autoTranslateEnabled) return;
+      mutations.forEach(mutation => {
+        mutation.addedNodes.forEach(node => {
+          if (node.nodeType === 1) {
+            processNodeForTranslation(node);
+          }
+        });
+      });
+    });
+
+    targets.forEach(target => {
+      translationObserver.observe(target, { childList: true, subtree: true });
+    });
+  }
+
+  function processNodeForTranslation(node) {
+    if (!autoTranslateEnabled) return;
+
+    // Buscar elementos de texto de posts
+    const textSelectors = [
+      'p.text-\\[\\#2f1a14\\]',
+      '.note-content-text',
+      '[class*="whitespace-pre-wrap"]',
+      '[class*="leading-relaxed"]',
+    ];
+
+    // Buscar párrafos con contenido de posts
+    const paragraphs = node.querySelectorAll ? node.querySelectorAll('p, .post-text') : [];
+    paragraphs.forEach(p => {
+      const text = p.textContent?.trim();
+      if (text && text.length > 10 && !p.dataset.translationProcessed) {
+        // Pequeño delay para no bloquear el render
+        setTimeout(() => processTextForTranslation(p, text), 300);
+      }
+    });
+  }
+
+  // ===== FUNCIÓN PARA TRADUCIR POSTS EXISTENTES =====
+  window.translateExistingPosts = function() {
+    if (!autoTranslateEnabled) return;
+
+    const feedContainers = [
+      document.getElementById('notes-feed'),
+      document.getElementById('home-community-feed'),
+      document.getElementById('comments-list'),
+    ].filter(Boolean);
+
+    feedContainers.forEach(container => {
+      const paragraphs = container.querySelectorAll('p:not([data-translation-processed])');
+      paragraphs.forEach((p, index) => {
+        const text = p.textContent?.trim();
+        if (text && text.length > 15) {
+          setTimeout(() => processTextForTranslation(p, text), index * 100);
+        }
+      });
+    });
+  };
+
+  // ===== FUNCIONES DE LA VISTA DE CONFIGURACIÓN =====
+  window.openTranslationsConfig = function() {
+    const view = document.getElementById('translations-config-view');
+    if (view) {
+      view.style.display = 'flex';
+      view.style.zIndex = '135';
+    }
+    renderLanguageList();
+    updateTranslationUI();
+  };
+
+  window.closeTranslationsConfig = function() {
+    const view = document.getElementById('translations-config-view');
+    if (view) view.style.display = 'none';
+  };
+
+  window.saveTranslationsConfig = function() {
+    saveTranslationSettings();
+    closeTranslationsConfig();
+
+    // Mostrar confirmación
+    const preview = document.getElementById('translations-lang-preview');
+    const lang = WORLD_LANGUAGES.find(l => l.code === userPreferredLang);
+    if (preview && lang) {
+      preview.textContent = `${lang.flag} ${lang.name}`;
+    }
+
+    // Feedback visual
+    const btn = document.querySelector('[onclick="saveTranslationsConfig()"]');
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Guardado';
+      btn.style.color = '#16a34a';
+      setTimeout(() => {
+        btn.textContent = orig;
+        btn.style.color = '';
+        closeTranslationsConfig();
+      }, 1200);
+    }
+
+    // Re-iniciar el observador con el nuevo idioma
+    translationCache.clear();
+    startTranslationObserver();
+  };
+
+  window.toggleAutoTranslate = function() {
+    autoTranslateEnabled = !autoTranslateEnabled;
+    updateTranslationUI();
+    saveTranslationSettings();
+
+    if (autoTranslateEnabled) {
+      startTranslationObserver();
+    } else {
+      if (translationObserver) translationObserver.disconnect();
+      // Ocultar traducciones existentes
+      document.querySelectorAll('.translation-wrapper').forEach(el => {
+        el.style.display = 'none';
+      });
+    }
+  };
+
+  window.selectLanguage = function(code) {
+    userPreferredLang = code;
+    translationCache.clear();
+
+    // Actualizar selección visual
+    document.querySelectorAll('.lang-option-btn').forEach(btn => {
+      const isSelected = btn.dataset.langCode === code;
+      btn.classList.toggle('lang-selected', isSelected);
+      const check = btn.querySelector('.lang-check');
+      if (check) check.style.display = isSelected ? 'flex' : 'none';
+    });
+
+    updateTranslationUI();
+  };
+
+  function renderLanguageList() {
+    const list = document.getElementById('language-list');
+    if (!list) return;
+
+    list.innerHTML = WORLD_LANGUAGES.map(lang => `
+      <button
+        class="lang-option-btn w-full flex items-center justify-between p-3 rounded-2xl border transition-all duration-200 ${lang.code === userPreferredLang ? 'lang-selected border-[#2f1a14] bg-[#f0ebe7]' : 'border-[#e8e1dc] bg-white hover:bg-[#f8f6f4]'}"
+        data-lang-code="${lang.code}"
+        onclick="selectLanguage('${lang.code}')"
+      >
+        <div class="flex items-center gap-3">
+          <span class="text-xl">${lang.flag}</span>
+          <span class="text-sm font-medium text-[#2f1a14]">${lang.name}</span>
+        </div>
+        <div class="lang-check w-5 h-5 rounded-full bg-[#2f1a14] flex items-center justify-center" style="display:${lang.code === userPreferredLang ? 'flex' : 'none'}">
+          <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+        </div>
+      </button>
+    `).join('');
+  }
+
+  // ===== ESTILOS DE TRADUCCIÓN =====
+  const style = document.createElement('style');
+  style.textContent = `
+    .translation-wrapper {
+      margin-top: 6px;
+      animation: translationFadeIn 0.4s ease forwards;
+    }
+
+    @keyframes translationFadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .translation-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: linear-gradient(135deg, #f0ebe7, #e8e1dc);
+      color: #5f4b44;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      margin-bottom: 4px;
+      border: 1px solid #d9cec8;
+    }
+
+    .translation-badge svg {
+      width: 10px;
+      height: 10px;
+      flex-shrink: 0;
+    }
+
+    .translation-text {
+      font-size: 0.875rem;
+      color: #5f4b44;
+      line-height: 1.5;
+      padding: 6px 10px;
+      background: #f8f6f4;
+      border-left: 2px solid #d9cec8;
+      border-radius: 0 8px 8px 0;
+      font-style: italic;
+    }
+
+    .lang-option-btn.lang-selected {
+      border-color: #2f1a14 !important;
+      background: #f0ebe7 !important;
+    }
+
+    .lang-option-btn {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // ===== INICIALIZACIÓN =====
+  function init() {
+    loadTranslationSettings();
+
+    // Iniciar observador cuando el DOM esté listo
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(startTranslationObserver, 2000);
+      });
+    } else {
+      setTimeout(startTranslationObserver, 2000);
+    }
+  }
+
+  init();
+
+  // Exponer funciones globalmente para uso en el código existente
+  window.beaboTranslate = {
+    translateText,
+    detectLanguage,
+    processTextForTranslation,
+    isEnabled: () => autoTranslateEnabled,
+    getLang: () => userPreferredLang,
+  };
+
+})();
+</script>
