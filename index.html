@@ -90,6 +90,15 @@ body {
   word-break: break-word;
 }
 
+.drex-verified-badge {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  margin-left: 3px;
+  vertical-align: middle;
+  transform: translateY(-2px);
+}
+
 /* Ocultar título "Capítulos" y tagline en la pantalla de inicio */
 #detail-chapters-title,
 #tagline {
@@ -1715,7 +1724,7 @@ body {
                   <img src="${userData.profileImage || 'https://via.placeholder.com/150'}" alt="${userData.username}" class="w-full h-40 object-cover">
                 </div>
                 <div class="mt-2">
-                  <h3 class="font-semibold text-sm">${userData.username}</h3>
+                  <h3 class="font-semibold text-sm">${userData.username}${getVerificationIcon(userData.email || '')}</h3>
                 </div>
               `;
             container.appendChild(card);
@@ -5867,7 +5876,7 @@ function openPhotoDetail(photo) {
       <div class="flex items-start gap-2">
         <img src="${post.authorImage || 'https://via.placeholder.com/40'}" class="w-8 h-8 rounded-full object-cover flex-shrink-0">
         <div class="flex-1 min-w-0">
-          <p class="font-semibold text-xs text-gray-800">${post.authorName || 'Usuario'}</p>
+          <p class="font-semibold text-xs text-gray-800">${post.authorName || 'Usuario'}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')}</p>
           ${post.content ? `<p class="text-xs text-gray-700 mt-1 line-clamp-3">${post.content}</p>` : ''}
           <div class="mt-2 flex items-center gap-2 text-xs text-gray-500">
             <span>${formatRelativeTime(post.timestamp)}</span>
@@ -7204,7 +7213,7 @@ const KLIPY_GIFS = [
       if (notesFeed) notesFeed.classList.remove('hidden');
       if (photosFeed) photosFeed.classList.add('hidden');
       if (addNoteForm) addNoteForm.classList.add('hidden');
-      loadNotes();
+      loadNotes(false);
     } else if (tab === 'photos') {
       if (photosTab) photosTab.classList.add('text-[#FE2C55]', 'border-b-2', 'border-[#FE2C55]');
       if (feedTab) feedTab.classList.remove('text-[#FE2C55]', 'border-b-2', 'border-[#FE2C55]');
@@ -7266,6 +7275,7 @@ const KLIPY_GIFS = [
         content: content,
         authorId: user.uid,
         authorName: userData.username || 'Usuario',
+        authorEmail: (userData.email || user.email || '').toLowerCase(),
         authorImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
         timestamp: Date.now(),
         upvotes: 0,
@@ -7517,7 +7527,7 @@ const KLIPY_GIFS = [
     return false;
   }
 
-  function loadNotes() {
+  function loadNotes(showLoader = true) {
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
 
@@ -7531,7 +7541,9 @@ const KLIPY_GIFS = [
       }).catch(err => console.error('Error cargando votos:', err));
     }
 
-    feedContainer.innerHTML = `<div class="py-3 text-center">${getFadingCircleLoaderMarkup()}</div>`;
+    if (showLoader) {
+      feedContainer.innerHTML = `<div class="py-3 text-center">${getFadingCircleLoaderMarkup()}</div>`;
+    }
 
     const notesRef = firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     notesRef.off();
@@ -7596,6 +7608,7 @@ const KLIPY_GIFS = [
             const safeTimestamp = Number(note.timestamp) || Date.now();
             const safeAuthorId = note.authorId || '';
             const safeAuthorName = note.authorName || 'Usuario';
+            const safeAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', safeAuthorId);
             let safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
 
             // Si el autor es el usuario actual, usar su foto de perfil vinculada
@@ -7626,7 +7639,7 @@ const KLIPY_GIFS = [
                   </button>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-2">
-                      <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}</button>
+                      <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}</button>
                       <button onclick="openPostOptionsSheet('${note.id}')" class="ml-auto p-2 rounded-full bg-[#f8f6f4] border border-[#e8e1dc] hover:bg-[#f1ece9] text-[#6f5c54]" aria-label="Opciones de publicación">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                           <circle cx="6" cy="12" r="1.8" />
@@ -7838,7 +7851,7 @@ function setupBlockedAccountsListener(userId) {
   blockedAccountsRef.on('value', snapshot => {
     const data = snapshot.val() || {};
     blockedAccountsSet = new Set(Object.keys(data));
-    loadNotes();
+    loadNotes(false);
   });
 }
 
@@ -7983,7 +7996,7 @@ function confirmBlockAccountFromOptions() {
       ok.classList.remove('hidden');
       ok.classList.add('flex');
     }
-    loadNotes();
+    loadNotes(false);
     performRealTimeSearch();
   }).catch(error => {
     console.error('Error bloqueando cuenta:', error);
@@ -8422,6 +8435,13 @@ function selectSticker(url) {
 }
 
 // Abrir vista de comentarios
+function openAuthorProfileFromComments(authorId) {
+  if (!authorId) return;
+  const commentsView = document.getElementById('comments-view');
+  if (commentsView) commentsView.classList.add('hidden');
+  setTimeout(() => openAuthorProfile(authorId), 20);
+}
+
 function openCommentsView(noteId) {
   currentPostId = noteId;
   const user = firebase.auth().currentUser;
@@ -8489,14 +8509,15 @@ function openCommentsView(noteId) {
     }
 
     const originalAuthorId = note.authorId || '';
+    const originalAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', originalAuthorId);
     document.getElementById('original-post').innerHTML = `
       <div class="flex items-start gap-3 mb-2">
-        <button ${originalAuthorId ? `onclick="openAuthorProfile('${originalAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${note.authorName || 'Usuario'}">
+        <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${note.authorName || 'Usuario'}">
           <img src="${note.authorImage || 'https://via.placeholder.com/150'}" class="w-full h-full object-cover">
         </button>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1">
-            <button ${originalAuthorId ? `onclick="openAuthorProfile('${originalAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}">${note.authorName || 'Usuario'}</button>
+            <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}">${note.authorName || 'Usuario'}${originalAuthorVerifiedIcon}</button>
           </div>
           ${renderNoteAnchoredMeta(note)}
           ${note.content ? renderContentWithSticker(note.content, 'text-[#2f1a14] text-base mb-2 leading-relaxed') : ''}
@@ -8643,15 +8664,16 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   const commentPath = parentPath ? `${parentPath}/replies/${commentId}` : commentId;
 
   const commentAuthorId = comment.authorId || '';
+  const commentVerifiedIcon = getVerificationIconByAuthor(comment.authorEmail || '', commentAuthorId);
 
   commentDiv.innerHTML = `
     <div class="flex items-start gap-3">
-      <button ${commentAuthorId ? `onclick="openAuthorProfile('${commentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${comment.authorName || 'Usuario'}">
+      <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${comment.authorName || 'Usuario'}">
         <img src="${comment.authorImage}" class="w-full h-full object-cover">
       </button>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
-          <button ${commentAuthorId ? `onclick="openAuthorProfile('${commentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${comment.authorName}</button>
+          <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${comment.authorName || 'Usuario'}${commentVerifiedIcon}</button>
           <span class="text-xs text-[#b2a7a1]">${formatTimestamp(comment.timestamp)}</span>
         </div>
         ${renderContentWithSticker(comment.content, 'text-sm text-[#2f1a14] mb-2 leading-relaxed')}
@@ -8729,6 +8751,7 @@ function submitComment() {
       content: content,
       authorId: user.uid,
       authorName: userData.username || 'Usuario',
+      authorEmail: (userData.email || user.email || '').toLowerCase(),
       authorImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
       timestamp: Date.now(),
       upvotes: 0,
@@ -9340,13 +9363,51 @@ function saveNote() {
       /* Traducciones en portugués */ }
   };
 
+  const VERIFIED_EMAILS = new Set([
+    "darelvega6@icloud.com",
+    "glamworksappstv@gmail.com",
+    "linapaolaromero99@gmail.com",
+    "darelvega6@yahoo.com",
+    "zam.contact@yahoo.com"
+  ]);
+  const VERIFIED_USER_IDS = new Set();
+
+  function isVerifiedEmail(email) {
+    return VERIFIED_EMAILS.has(String(email || '').trim().toLowerCase());
+  }
+
+  function getVerificationBadgeMarkup() {
+    return `
+      <span class="drex-verified-badge" title="Cuenta verificada" aria-label="Cuenta verificada">
+        <svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg" fill="none">
+          <circle cx="12" cy="12" r="10" fill="#1D9BF0"/>
+          <path d="M7.4 12.5l2.8 2.8 6.4-6.4" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    `;
+  }
+
   function getVerificationIcon(email) {
-    // Si el correo es uno de los que deben estar verificados,
-    // se mostrará el icono nuevo.
-    if (email === "darelvega6@icloud.com" || email === "glamworksappstv@gmail.com" || email === "linapaolaromero99@gmail.com") {
-      return '<img src="https://static.vecteezy.com/system/resources/previews/028/084/106/original/verified-check-mark-icon-png.png" alt="Verificado" class="inline-block w-4 h-4 ml-1">';
+    return isVerifiedEmail(email) ? getVerificationBadgeMarkup() : "";
+  }
+
+  function getVerificationIconByAuthor(email, authorId = "") {
+    if (isVerifiedEmail(email) || (authorId && VERIFIED_USER_IDS.has(authorId))) {
+      return getVerificationBadgeMarkup();
     }
     return "";
+  }
+
+  function refreshVerifiedUsersCache() {
+    firebase.database().ref('users').once('value').then(snapshot => {
+      VERIFIED_USER_IDS.clear();
+      snapshot.forEach(child => {
+        const userData = child.val() || {};
+        if (isVerifiedEmail(userData.email || "")) {
+          VERIFIED_USER_IDS.add(child.key);
+        }
+      });
+    }).catch(() => {});
   }
 
   function updateTranslations() {
@@ -9712,6 +9773,16 @@ function saveNote() {
       authError.classList.remove('hidden');
       return;
     }
+
+    const defaultSubmitText = isLogin ? translations[currentLanguage].btnIniciarSesion : 'Registrarse';
+    submitButton.disabled = true;
+    submitButton.innerHTML = `<span class="inline-flex items-center gap-2 justify-center"><i class="fas fa-spinner fa-spin"></i><span>${defaultSubmitText}...</span></span>`;
+
+    const restoreSubmitButton = () => {
+      submitButton.disabled = false;
+      submitButton.textContent = defaultSubmitText;
+    };
+
     if (isLogin) {
       firebase.auth().signInWithEmailAndPassword(email, password)
         .then(userCredential => {
@@ -9721,6 +9792,7 @@ function saveNote() {
           console.error(error);
           authError.textContent = error.message;
           authError.classList.remove('hidden');
+          restoreSubmitButton();
         });
     } else {
       firebase.auth().createUserWithEmailAndPassword(email, password)
@@ -9748,12 +9820,14 @@ function saveNote() {
           console.error(error);
           authError.textContent = error.message;
           authError.classList.remove('hidden');
+          restoreSubmitButton();
         });
     }
   });
 
   firebase.auth().onAuthStateChanged(user => {
     if (user) {
+      refreshVerifiedUsersCache();
       if (authorizedEmails.includes(user.email)) {
         document.getElementById('live-transmit-btn').style.display = "block";
       } else {
@@ -9833,6 +9907,8 @@ function saveNote() {
       clearNotificationsBadge();
       authFormContainer.classList.remove('hidden');
       mainApp.classList.add('hidden');
+      submitButton.disabled = false;
+      submitButton.textContent = isLogin ? translations[currentLanguage].btnIniciarSesion : 'Registrarse';
     }
   });
   /*********************** AUTENTICACIÓN CON GOOGLE Y FACEBOOK **************************/
@@ -10316,11 +10392,6 @@ function saveNote() {
       node.innerHTML = `
         <div class="bg-white border border-[#e8e1dc] rounded-3xl p-4 mb-4">
           <p class="text-sm text-[#6f5c54]">Drex Bank permite recibir apoyo económico en perfiles y manejar una tarjeta digital segura para recargas y transacciones.</p>
-        </div>
-        <div class="rounded-3xl p-5 text-white mb-4" style="background: linear-gradient(135deg,#1f2937,#374151,#111827);">
-          <div class="flex justify-between items-start"><span class="text-sm opacity-80">Drex Bank</span><span class="font-black">DREX</span></div>
-          <p class="mt-8 text-xl tracking-[0.2em] font-mono">5354 00•• •••• 3491</p>
-          <div class="mt-4 text-xs opacity-80">Titular: USUARIO DREX</div>
         </div>
         <button onclick="openDrexBankApplicationView()" class="w-full bg-[#2f1a14] text-white py-3 rounded-2xl font-semibold">Aplicar</button>
       `;
@@ -11026,45 +11097,70 @@ function saveNote() {
     });
   }
 
+  function setSavingButtonState(button, isLoading, idleLabel = 'Guardar') {
+    if (!button) return;
+    if (isLoading) {
+      button.disabled = true;
+      button.innerHTML = '<span class="inline-flex items-center gap-2"><i class="fas fa-spinner fa-spin"></i><span>Guardando...</span></span>';
+      return;
+    }
+    button.disabled = false;
+    button.textContent = idleLabel;
+  }
+
   function saveUsernameConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const input = document.getElementById('settings-username');
     saveProfileField({ username: input ? input.value.trim() : "" }, true).then(saved => {
       if (saved) closeUsernameConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function saveInfoConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const info = (document.getElementById('settings-info')?.value || "").slice(0, 50);
     saveProfileField({ bio: info }).then(saved => {
       if (saved) closeInfoConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function saveLocationConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const location = (document.getElementById('settings-location')?.value || "").trim().slice(0, 50);
     saveProfileField({ city: location, location }).then(saved => {
       if (saved) closeLocationConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function savePronounsConfig() {
+    const actionButton = window.event?.currentTarget || null;
     if (!selectedPronounsOption) {
       alert("Selecciona una opción de pronombres.");
       return;
     }
+    setSavingButtonState(actionButton, true);
     saveProfileField({ pronouns: selectedPronounsOption }).then(saved => {
       if (saved) closePronounsConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function saveEmailConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const user = firebase.auth().currentUser;
     const emailInput = document.getElementById('settings-account-email');
     const nextEmail = (emailInput?.value || "").trim();
 
-    if (!user) return;
+    if (!user) {
+      setSavingButtonState(actionButton, false);
+      return;
+    }
     if (!nextEmail) {
       alert("Ingresa un correo electrónico.");
+      setSavingButtonState(actionButton, false);
       return;
     }
 
@@ -11082,23 +11178,30 @@ function saveNote() {
         return;
       }
       alert("No se pudo actualizar el correo.");
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function savePasswordConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const user = firebase.auth().currentUser;
     const passwordInput = document.getElementById('settings-account-password');
     const confirmInput = document.getElementById('settings-account-password-confirm');
     const nextPassword = passwordInput?.value || "";
     const confirmPassword = confirmInput?.value || "";
 
-    if (!user) return;
+    if (!user) {
+      setSavingButtonState(actionButton, false);
+      return;
+    }
     if (nextPassword.length < 6) {
       alert("La contraseña debe tener al menos 6 caracteres.");
+      setSavingButtonState(actionButton, false);
       return;
     }
     if (nextPassword !== confirmPassword) {
       alert("Las contraseñas no coinciden.");
+      setSavingButtonState(actionButton, false);
       return;
     }
 
@@ -11112,17 +11215,19 @@ function saveNote() {
         return;
       }
       alert("No se pudo actualizar la contraseña.");
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function saveBirthdayConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const nextBirthday = document.getElementById('settings-account-birthday')?.value || "";
     saveProfileField({ birthday: nextBirthday }).then(saved => {
       if (!saved) return;
       const preview = document.getElementById('settings-account-birthday-preview');
       if (preview) preview.textContent = nextBirthday || "Sin fecha registrada";
       closeBirthdayConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function saveProfileField(partialUpdates, validateUsername = false) {
@@ -11247,7 +11352,7 @@ function saveNote() {
     document.getElementById('create-community-view')?.classList.add('hidden');
     document.getElementById('community-wiki-view')?.classList.add('hidden');
     document.getElementById('main-app').classList.remove('hidden');
-    loadNotes();
+    loadNotes(false);
   }
 
   let selectedCommunityWiki = null;
@@ -11888,7 +11993,7 @@ function saveNote() {
               </button>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-2">
-                  <button ${post.authorId ? `onclick="openAuthorProfile('${post.authorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${post.authorId ? 'cursor-pointer' : 'cursor-default'}">${escapeHtml(post.authorName || 'Usuario')}</button>
+                  <button ${post.authorId ? `onclick="openAuthorProfile('${post.authorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${post.authorId ? 'cursor-pointer' : 'cursor-default'}">${escapeHtml(post.authorName || 'Usuario')}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')}</button>
                   <button onclick="openPostOptionsSheet('${post.id}')" class="ml-auto p-2 rounded-full bg-[#f8f6f4] border border-[#e8e1dc] hover:bg-[#f1ece9] text-[#6f5c54]" aria-label="Opciones de publicación del grupo">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <circle cx="6" cy="12" r="1.8" />
@@ -12100,7 +12205,7 @@ function initFeedPullToRefresh() {
       return;
     }
     isPullRefreshing = true;
-    loadNotes();
+    loadNotes(false);
     setTimeout(() => {
       indicator.classList.add('hidden');
       indicator.innerHTML = '';
@@ -12521,6 +12626,7 @@ function performRealTimeSearch() {
     if (currentNonce !== searchRequestNonce) return { posts: [], photos: [], places: [] };
     const posts = [];
     const photos = [];
+    const seenPhotos = new Set();
     const placesMap = new Map();
     snapshot.forEach(child => {
       const note = child.val() || {};
@@ -12534,7 +12640,14 @@ function performRealTimeSearch() {
       const imgs = [];
       if (Array.isArray(note.imageUrls)) imgs.push(...note.imageUrls.filter(Boolean));
       if (note.imageUrl) imgs.push(note.imageUrl);
-      if (imgs.length && matches) imgs.forEach(url => photos.push({ postId: child.key, url, authorName: note.authorName || 'Usuario' }));
+      if (imgs.length && matches) {
+        imgs.forEach(url => {
+          const key = `${child.key}__${url}`;
+          if (seenPhotos.has(key)) return;
+          seenPhotos.add(key);
+          photos.push({ postId: child.key, url, authorName: note.authorName || 'Usuario' });
+        });
+      }
 
       const locName = `${note.location?.name || ''}`.trim();
       const locNameLower = locName.toLowerCase();
@@ -12595,7 +12708,7 @@ function renderPostsList(posts) {
       <div class="flex items-start gap-3">
         <img src="${post.authorImage || 'https://via.placeholder.com/80'}" class="w-10 h-10 rounded-full object-cover">
         <div class="min-w-0">
-          <p class="text-sm font-semibold text-[#7a6962]">${post.authorName || 'Usuario'} • ${formatRelativeTime(post.timestamp)}</p>
+          <p class="text-sm font-semibold text-[#7a6962]">${post.authorName || 'Usuario'}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')} • ${formatRelativeTime(post.timestamp)}</p>
           <p class="text-lg leading-tight text-[#2f1a14] line-clamp-2 mt-1">${post.content || 'Sin texto'}</p>
         </div>
       </div>`;
@@ -12631,7 +12744,7 @@ function renderAccountsList(accounts) {
     item.className = 'flex items-center space-x-3 cursor-pointer p-3 rounded-2xl bg-white border border-[#e8e1dc] hover:border-[#d8cec8] shadow-sm';
     item.innerHTML = `
       <img src="${account.profileImage || 'https://via.placeholder.com/50'}" alt="${account.username || 'Cuenta'}" class="w-11 h-11 rounded-full object-cover">
-      <span class="font-semibold text-[#2f1a14]">${account.username || 'Cuenta'}${getVerificationIcon(account.email || '')}</span>`;
+      <span class="font-semibold text-[#2f1a14]">${account.username || 'Cuenta'}${getVerificationIconByAuthor(account.email || '', account.uid || '')}</span>`;
     item.addEventListener('click', () => { closeSearch(); openAuthorProfile(account.uid); });
     list.appendChild(item);
   });
@@ -13309,7 +13422,7 @@ function renderPlacesList(places) {
   }
 
   function buildAuthorRelationRow(userId, userData) {
-    const verifiedIcon = getVerificationIcon(userData?.email || "");
+    const verifiedIcon = getVerificationIconByAuthor(userData?.email || "", userId);
     return `
       <button onclick="openAuthorFromRelationList('${userId}')" class="w-full bg-white border border-[#e8e1dc] rounded-2xl p-4 flex items-center gap-3 text-left hover:bg-[#f8f6f4] transition">
         <img src="${userData?.profileImage || 'https://via.placeholder.com/50'}" alt="${userData?.username || 'Usuario'}" class="w-12 h-12 rounded-full object-cover">
@@ -13794,7 +13907,7 @@ function renderPlacesList(places) {
                   <img src="${userData.profileImage || 'https://via.placeholder.com/150'}" alt="${userData.username}" class="w-full h-40 object-cover">
                 </div>
                 <div class="mt-2">
-                  <h3 class="font-semibold text-sm">${userData.username}</h3>
+                  <h3 class="font-semibold text-sm">${userData.username}${getVerificationIcon(userData.email || '')}</h3>
                 </div>
               `;
           container.appendChild(card);
@@ -14522,7 +14635,7 @@ function renderPlacesList(places) {
                   <img src="${userData.profileImage || 'https://via.placeholder.com/150'}" alt="${userData.username}" class="w-full h-40 object-cover">
                 </div>
                 <div class="mt-2">
-                  <h3 class="font-semibold text-sm">${userData.username}</h3>
+                  <h3 class="font-semibold text-sm">${userData.username}${getVerificationIcon(userData.email || '')}</h3>
                 </div>
               `;
           container.appendChild(card);
