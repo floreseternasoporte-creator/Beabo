@@ -1847,22 +1847,41 @@ body {
 </div>
 
 <!-- MODAL DE SOPORTE -->
-<div id="support-modal" class="fixed inset-0 overflow-y-auto z-50 hidden">
-  <div class="p-6">
-    <button onclick="closeSupportModal()" class="text-[#58CC02] mb-4 flex items-center">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <polyline points="15 18 9 12 15 6" />
-      </svg>
-      <span>Volver</span>
+<!-- NUEVA VISTA DE SOPORTE CON CHAT DE BARO -->
+<div id="support-modal" class="fixed inset-0 bg-[#f5f4f2] z-50 hidden flex flex-col">
+  <!-- Header -->
+  <div class="flex items-center justify-between p-4 border-b border-[#e8e1dc] bg-white">
+    <button onclick="closeSupportModal()" class="text-[#5f4b44] p-1">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
-    <h2 class="text-2xl font-bold text-[#58CC02] mb-4 flex items-center justify-center">
-      <i class="fas fa-headset mr-2"></i> Soporte
-    </h2>
-    <form id="support-form" class="space-y-4">
-      <input id="support-subject" type="text" placeholder="Asunto" class="w-full p-3 border border-gray-200 rounded-xl" required>
-      <textarea id="support-message" placeholder="Describe tu problema o consulta..." class="w-full p-3 border border-gray-200 rounded-xl" rows="4" required></textarea>
-      <button id="btn-send-support" type="submit" class="w-full bg-blue-500 text-white p-3 rounded-xl">Enviar Solicitud</button>
-    </form>
+    <h2 class="text-xl font-black text-[#2f1a14] absolute left-1/2 -translate-x-1/2">Soporte</h2>
+    <div class="w-9"></div>
+  </div>
+
+  <!-- Contenido del Chat -->
+  <div class="flex-1 overflow-y-auto p-4 space-y-4" id="support-chat-container">
+    <!-- Los mensajes se agregarán aquí dinámicamente -->
+  </div>
+
+  <!-- Carrusel de Sugerencias (solo al inicio) -->
+  <div id="support-suggestions-carousel" class="px-4 py-3 border-t border-[#e8e1dc] bg-white overflow-x-auto">
+    <div class="flex gap-2 pb-2" style="overflow-x: auto; scroll-behavior: smooth;">
+      <button onclick="sendSupportMessage('Problema con internet')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap hover:bg-[#f0ebe7] transition">🌐 Internet</button>
+      <button onclick="sendSupportMessage('Problema con funciones')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap hover:bg-[#f0ebe7] transition">⚙️ Funciones</button>
+      <button onclick="sendSupportMessage('Problema de seguridad')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap hover:bg-[#f0ebe7] transition">🔒 Seguridad</button>
+      <button onclick="sendSupportMessage('Reportar un error')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap hover:bg-[#f0ebe7] transition">🐛 Error</button>
+      <button onclick="sendSupportMessage('Otra consulta')" class="px-3 py-2 rounded-2xl border border-[#e8e1dc] bg-white text-[0.9rem] whitespace-nowrap hover:bg-[#f0ebe7] transition">❓ Otra</button>
+    </div>
+  </div>
+
+  <!-- Input de Mensaje -->
+  <div class="p-4 border-t border-[#e8e1dc] bg-white">
+    <div class="flex items-end gap-2">
+      <input id="support-message-input" type="text" placeholder="Escribe tu consulta..." class="flex-1 p-3 border border-[#e8e1dc] rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#FE2C55] focus:border-transparent" />
+      <button onclick="sendSupportMessage()" class="bg-[#FE2C55] text-white p-3 rounded-2xl hover:bg-[#ef2950] transition-colors flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -9736,37 +9755,233 @@ function saveNote() {
       });
   }
   /*********************** SOPORTE **************************/
+  let supportChatMessages = [];
+  let supportAgentConnected = false;
+  let supportAwaitingAgent = false;
+  let supportImageUpload = null;
+
   function openSupportModal() {
     const supportModal = document.getElementById('support-modal');
-    supportModal.style.zIndex = 9999;
-    supportModal.style.display = "block";
+    supportModal.classList.remove('hidden');
+    supportChatMessages = [];
+    supportAgentConnected = false;
+    supportAwaitingAgent = false;
+    supportImageUpload = null;
+    
+    const chatContainer = document.getElementById('support-chat-container');
+    chatContainer.innerHTML = '';
+    
+    const initialMessage = `
+      <div class="flex gap-3 mb-4">
+        <div class="flex-shrink-0">
+          <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
+        </div>
+        <div class="flex-1">
+          <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 shadow-sm">
+            <p class="text-sm text-[#2f1a14]">Hola, soy un agente potenciado por <strong>Baro</strong>. ¿En qué puedo ayudarte hoy?</p>
+          </div>
+          <p class="text-xs text-[#8a7a71] mt-1">Powered by <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-4 h-4 inline rounded-full object-cover" style="display: inline; margin-left: 2px;"></p>
+        </div>
+      </div>
+    `;
+    chatContainer.innerHTML = initialMessage;
+    supportChatMessages.push({ role: 'agent', text: 'Hola, soy un agente potenciado por Baro. ¿En qué puedo ayudarte hoy?' });
   }
 
   function closeSupportModal() {
-    document.getElementById('support-modal').style.display = "none";
+    const supportModal = document.getElementById('support-modal');
+    supportModal.classList.add('hidden');
   }
-  document.getElementById('support-form').addEventListener('submit', e => {
-    e.preventDefault();
-    const subject = document.getElementById('support-subject').value;
-    const message = document.getElementById('support-message').value;
-    const user = firebase.auth().currentUser;
-    if (!user) return;
-    const supportData = {
-      userId: user.uid,
-      subject,
-      message,
-      timestamp: Date.now(),
-      status: "pending"
-    };
-    firebase.database().ref('supportRequests').push(supportData)
-      .then(() => {
-        alert("Tu solicitud ha sido enviada. Pronto recibirás una respuesta.");
-        closeSupportModal();
-      })
-      .catch(error => {
-        console.error("Error al enviar solicitud de soporte:", error);
-      });
-  });
+
+  function sendSupportMessage(predefinedMessage = null) {
+    const input = document.getElementById('support-message-input');
+    const message = predefinedMessage || input.value.trim();
+    
+    if (!message) return;
+    
+    const chatContainer = document.getElementById('support-chat-container');
+    const userMessageDiv = `
+      <div class="flex gap-3 justify-end mb-4">
+        <div class="flex-1 max-w-xs">
+          <div class="bg-[#FE2C55] text-white rounded-2xl p-4 shadow-sm">
+            <p class="text-sm">${escapeHtml(message)}</p>
+          </div>
+        </div>
+      </div>
+    `;
+    chatContainer.innerHTML += userMessageDiv;
+    supportChatMessages.push({ role: 'user', text: message });
+    input.value = '';
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    if (message.toLowerCase().includes('agente')) {
+      connectToAgent();
+    } else {
+      processBaroResponse(message);
+    }
+  }
+
+  function processBaroResponse(userMessage) {
+    const chatContainer = document.getElementById('support-chat-container');
+    const keywords = userMessage.toLowerCase();
+    let baroResponse = '';
+    
+    if (keywords.includes('internet') || keywords.includes('conexion')) {
+      baroResponse = 'La conexion a Internet es la capacidad de un dispositivo para conectarse a la red mundial. Si tienes problemas, intenta reiniciar tu router o verifica tu plan de datos. Si el problema persiste, escribe "agente" para hablar con un especialista.';
+    } else if (keywords.includes('funcion') || keywords.includes('caracteristica')) {
+      baroResponse = 'Las funciones de Drex incluyen crear publicaciones, seguir usuarios, comentar y compartir contenido. ¿Hay alguna funcion especifica que no encuentres? Escribe "agente" si necesitas ayuda personalizada.';
+    } else if (keywords.includes('seguridad') || keywords.includes('contrasena')) {
+      baroResponse = 'La seguridad es fundamental. Nunca compartas tu contrasena y activa la autenticacion de dos factores en tu cuenta. Si sospechas actividad sospechosa, contacta a un agente escribiendo "agente".';
+    } else if (keywords.includes('error') || keywords.includes('problema')) {
+      baroResponse = 'Lamento que experimentes un problema. Para ayudarte mejor, necesito que un agente revise tu caso. Escribe "agente" para conectarte con nuestro equipo.';
+    } else {
+      baroResponse = 'Entiendo tu consulta. Para brindarte la mejor asistencia, te conectare con un agente especializado. Escribe "agente" para continuar.';
+    }
+    
+    setTimeout(() => {
+      const agentMessageDiv = `
+        <div class="flex gap-3 mb-4">
+          <div class="flex-shrink-0">
+            <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
+          </div>
+          <div class="flex-1">
+            <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 shadow-sm">
+              <p class="text-sm text-[#2f1a14]">${escapeHtml(baroResponse)}</p>
+            </div>
+          </div>
+        </div>
+      `;
+      chatContainer.innerHTML += agentMessageDiv;
+      supportChatMessages.push({ role: 'agent', text: baroResponse });
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }, 500);
+  }
+
+  function connectToAgent() {
+    const chatContainer = document.getElementById('support-chat-container');
+    supportAwaitingAgent = true;
+    
+    const waitingMessageDiv = `
+      <div class="flex gap-3 mb-4">
+        <div class="flex-shrink-0">
+          <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
+        </div>
+        <div class="flex-1">
+          <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 shadow-sm">
+            <p class="text-sm text-[#2f1a14] mb-2">Conectando con un agente...</p>
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 bg-[#FE2C55] rounded-full animate-pulse"></div>
+              <p id="support-countdown" class="text-xs text-[#8a7a71]">Esperando...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    chatContainer.innerHTML += waitingMessageDiv;
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    const randomSeconds = Math.floor(Math.random() * (60 - 15 + 1)) + 15;
+    let countdown = randomSeconds;
+    
+    const countdownInterval = setInterval(() => {
+      const countdownElement = document.getElementById('support-countdown');
+      if (countdownElement) {
+        countdownElement.textContent = 'Esperando... ' + countdown + 's';
+      }
+      countdown--;
+      
+      if (countdown < 0) {
+        clearInterval(countdownInterval);
+        agentConnected();
+      }
+    }, 1000);
+  }
+
+  function agentConnected() {
+    const chatContainer = document.getElementById('support-chat-container');
+    supportAgentConnected = true;
+    supportAwaitingAgent = false;
+    
+    const lastMessage = chatContainer.lastElementChild;
+    if (lastMessage) {
+      lastMessage.remove();
+    }
+    
+    const connectedMessageDiv = `
+      <div class="flex gap-3 mb-4">
+        <div class="flex-shrink-0">
+          <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
+        </div>
+        <div class="flex-1">
+          <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 shadow-sm">
+            <p class="text-sm font-semibold text-[#2f1a14] mb-1">Agente conectado</p>
+            <p class="text-sm text-[#2f1a14]">Hola, soy un agente potenciado por Baro. ¿En qué puedo ayudarte el dia de hoy?</p>
+          </div>
+        </div>
+      </div>
+    `;
+    chatContainer.innerHTML += connectedMessageDiv;
+    supportChatMessages.push({ role: 'agent', text: 'Hola, soy un agente potenciado por Baro. ¿En qué puedo ayudarte el dia de hoy?' });
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
+
+  function requestImageUpload() {
+    const chatContainer = document.getElementById('support-chat-container');
+    
+    const imageRequestDiv = `
+      <div class="flex gap-3 mb-4">
+        <div class="flex-shrink-0">
+          <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
+        </div>
+        <div class="flex-1">
+          <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 shadow-sm">
+            <p class="text-sm text-[#2f1a14] mb-3">Por favor, carga una imagen y describe lo que esta ocurriendo para que podamos ayudarte mejor.</p>
+            <input type="file" id="support-image-input" accept="image/*" class="w-full p-2 border border-[#e8e1dc] rounded-lg text-sm" onchange="handleSupportImageUpload(event)" />
+          </div>
+        </div>
+      </div>
+    `;
+    chatContainer.innerHTML += imageRequestDiv;
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
+
+  function handleSupportImageUpload(event) {
+    const file = event.target.files[0];
+    if (file) {
+      supportImageUpload = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const chatContainer = document.getElementById('support-chat-container');
+        const imagePreviewDiv = `
+          <div class="flex gap-3 justify-end mb-4">
+            <div class="flex-1 max-w-xs">
+              <img src="${e.target.result}" alt="Imagen cargada" class="w-full rounded-2xl shadow-sm border border-[#e8e1dc]" />
+            </div>
+          </div>
+        `;
+        chatContainer.innerHTML += imagePreviewDiv;
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+        setTimeout(() => {
+          const confirmationDiv = `
+            <div class="flex gap-3 mb-4">
+              <div class="flex-shrink-0">
+                <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
+              </div>
+              <div class="flex-1">
+                <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 shadow-sm">
+                  <p class="text-sm text-[#2f1a14]">Imagen recibida. El equipo de Drex revisara tu caso y te respondera en un plazo de <strong>24 horas</strong>. Gracias por tu paciencia.</p>
+                </div>
+              </div>
+            </div>
+          `;
+          chatContainer.innerHTML += confirmationDiv;
+          chatContainer.scrollTop = chatContainer.scrollHeight;
+        }, 1000);
+      };
+      reader.readAsDataURL(file);
+    }
+  }
   /*********************** NAVEGACIÓN Y MODALES **************************/
 
 
