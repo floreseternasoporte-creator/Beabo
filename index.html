@@ -7485,6 +7485,12 @@ const KLIPY_GIFS = [
       return;
     }
 
+    // Validación: No permitir publicar solo GIF sin texto
+    if (selectedGif && !content && !imageFiles.length && !pollQuestion) {
+      alert('⚠️ No puedes publicar solo un GIF sin texto. Por favor, añade una descripción o comentario a tu post.');
+      return;
+    }
+
     const user = firebase.auth().currentUser;
     if (!user) {
       alert('Debes iniciar sesión para publicar');
@@ -13122,7 +13128,45 @@ function performRealTimeSearch() {
       const authorId = note.authorId || note.userId || '';
       if (isAccountBlockedForCurrentUser(authorId)) return;
 
-      const matches = !query || content.includes(query) || (note.authorName || '').toLowerCase().includes(query);
+      // Búsqueda mejorada: detecta cualquier palabra en el contenido
+      let matches = false;
+      if (!query) {
+        matches = true;
+      } else {
+        // Buscar coincidencia exacta o parcial
+        matches = content.includes(query);
+        
+        // Si no hay coincidencia exacta, buscar por palabras individuales
+        if (!matches) {
+          const queryWords = query.split(/\s+/).filter(w => w.length > 0);
+          const contentWords = content.split(/\s+/);
+          // Buscar si alguna palabra del contenido contiene alguna palabra de la búsqueda
+          matches = queryWords.some(qWord => 
+            contentWords.some(cWord => cWord.includes(qWord))
+          );
+        }
+        
+        // También buscar en el nombre del autor
+        if (!matches) {
+          matches = (note.authorName || '').toLowerCase().includes(query);
+        }
+        
+        // Buscar en la URL si existe
+        if (!matches && note.url) {
+          matches = (note.url || '').toLowerCase().includes(query);
+        }
+        
+        // Buscar en el título si existe
+        if (!matches && note.title) {
+          matches = (note.title || '').toLowerCase().includes(query);
+        }
+        
+        // Buscar en la pregunta de la encuesta si existe
+        if (!matches && note.poll?.question) {
+          matches = (note.poll.question || '').toLowerCase().includes(query);
+        }
+      }
+      
       if (matches) posts.push({ ...note, id: child.key });
 
       const imgs = [];
