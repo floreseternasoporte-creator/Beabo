@@ -770,6 +770,52 @@ body {
   background: #ece7e2;
 }
 
+/* Burbuja animada para copiar username */
+#username-copy-bubble {
+  position: fixed;
+  z-index: 250;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 8px) scale(0.88);
+  background: #2f1a14;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(47, 26, 20, 0.28);
+}
+
+#username-copy-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%) rotate(45deg);
+  background: #2f1a14;
+}
+
+#username-copy-bubble.show {
+  animation: copyBubblePopIn 0.24s ease-out forwards;
+}
+
+#username-copy-bubble.burst {
+  animation: copyBubbleBurst 0.44s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+@keyframes copyBubblePopIn {
+  from { opacity: 0; transform: translate(-50%, 8px) scale(0.88); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes copyBubbleBurst {
+  0% { opacity: 1; transform: translate(-50%, 0) scale(1); filter: blur(0); }
+  70% { opacity: 1; transform: translate(-50%, -4px) scale(1.18); filter: blur(0.3px); }
+  100% { opacity: 0; transform: translate(-50%, -20px) scale(0.2); filter: blur(2px); }
+}
+
 /* Etiqueta de fundador */
 .founder-tag {
   font-size: 0.8rem;
@@ -4156,7 +4202,7 @@ function handleProfileImageUploadDesktop(event) {
         </svg>
         <span id="btn-volver-author">Volver</span>
       </button>
-      <span class="text-sm font-semibold text-gray-500">Perfil del autor</span>
+      <span class="text-sm font-semibold text-gray-500">Perfil</span>
     </div>
 
     <div id="author-profile-content" class="p-4">
@@ -4169,8 +4215,8 @@ function handleProfileImageUploadDesktop(event) {
         </div>
 
         <!-- Nombre de usuario -->
-        <h2 id="author-profile-name" class="text-xl font-semibold mb-1"></h2>
-        <p id="author-profile-handle" class="text-sm text-gray-500 mb-2">@autor</p>
+        <h2 id="author-profile-name" class="text-xl font-semibold mb-1 cursor-pointer select-none" title="Copiar usuario"></h2>
+        <p id="author-profile-handle" class="text-sm text-gray-500 mb-2 cursor-pointer select-none" title="Copiar usuario">@autor</p>
         <p id="author-bio" class="text-sm text-center text-gray-600 mb-4 px-4"></p>
 
         <!-- Pills de ubicación y pronombres -->
@@ -4257,6 +4303,8 @@ function handleProfileImageUploadDesktop(event) {
           </div>
         </div>
       </div>
+
+      <div id="username-copy-bubble" aria-hidden="true">Copiar</div>
 
 <script>
 function openNoteModal() {
@@ -9135,7 +9183,8 @@ function submitComment() {
   if (!content && !selectedCommentGif) return;
 
   firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
-    const userData = userSnap.val();
+    const userData = userSnap.val() || {};
+    const actorName = userData.username || user.displayName || user.email || 'Alguien';
 
     const payload = {
       content: content,
@@ -9150,20 +9199,70 @@ function submitComment() {
 
     if (selectedCommentGif) payload.gifUrl = selectedCommentGif;
 
+    const hasSticker = typeof payload.content === 'string' && payload.content.startsWith(STICKER_PREFIX);
+    const hasGif = Boolean(payload.gifUrl);
+
+    const typeForMedia = hasGif ? 'gif' : (hasSticker ? 'sticker' : 'comment');
+    const buildPostMessage = () => {
+      if (hasGif && hasSticker) return `${actorName} envió un GIF y un sticker en tu publicación.`;
+      if (hasGif) return `${actorName} envió un GIF en tu publicación.`;
+      if (hasSticker) return `${actorName} envió un sticker en tu publicación.`;
+      return `${actorName} comentó tu publicación.`;
+    };
+
     if (replyTarget && replyTarget.commentId) {
-      firebase.database().ref('postComments/' + currentPostId + '/' + replyTarget.commentId + '/replies').push(payload).then(() => {
+      Promise.all([
+        firebase.database().ref('communityNotes/' + currentPostId).once('value'),
+        firebase.database().ref('postComments/' + currentPostId + '/' + replyTarget.commentId).once('value')
+      ]).then(([noteSnap, parentCommentSnap]) => {
+        const note = noteSnap.val() || {};
+        const parentComment = parentCommentSnap.val() || {};
+
+        return firebase.database().ref('postComments/' + currentPostId + '/' + replyTarget.commentId + '/replies').push(payload).then(() => {
+          const notificationJobs = [];
+
+          if (note.authorId && note.authorId !== user.uid) {
+            notificationJobs.push(addNotification(note.authorId, buildPostMessage(), typeForMedia));
+          }
+
+          if (parentComment.authorId && parentComment.authorId !== user.uid && parentComment.authorId !== note.authorId) {
+            const replyMessage = hasGif
+              ? `${actorName} envió un GIF en respuesta a tu comentario.`
+              : (hasSticker
+                ? `${actorName} envió un sticker en respuesta a tu comentario.`
+                : `${actorName} respondió tu comentario.`);
+            notificationJobs.push(addNotification(parentComment.authorId, replyMessage, hasGif ? 'gif' : (hasSticker ? 'sticker' : 'reply')));
+          }
+
+          return Promise.all(notificationJobs);
+        });
+      }).then(() => {
         updateCommentsCount(currentPostId);
         input.value = '';
         removeCommentGif();
         clearReplyTarget();
+      }).catch(error => {
+        console.error('Error al enviar respuesta:', error);
+        alert('No se pudo enviar tu respuesta. Inténtalo de nuevo.');
       });
       return;
     }
 
-    firebase.database().ref('postComments/' + currentPostId).push(payload).then(() => {
+    firebase.database().ref('communityNotes/' + currentPostId).once('value').then(noteSnap => {
+      const note = noteSnap.val() || {};
+      return firebase.database().ref('postComments/' + currentPostId).push(payload).then(() => {
+        if (note.authorId && note.authorId !== user.uid) {
+          return addNotification(note.authorId, buildPostMessage(), typeForMedia);
+        }
+        return Promise.resolve();
+      });
+    }).then(() => {
       updateCommentsCount(currentPostId);
       input.value = '';
       removeCommentGif();
+    }).catch(error => {
+      console.error('Error al comentar:', error);
+      alert('No se pudo enviar tu comentario. Inténtalo de nuevo.');
     });
   });
 }
@@ -9228,6 +9327,7 @@ function voteComment(noteId, commentPath, voteType = "up") {
 
   userVoteRef.once('value').then(snapshot => {
     const currentVote = snapshot.val();
+    const isReplyVote = commentPath.includes('/replies/');
 
     commentRef.transaction(comment => {
       if (comment) {
@@ -9240,6 +9340,22 @@ function voteComment(noteId, commentPath, voteType = "up") {
         }
       }
       return comment;
+    }).then(result => {
+      const updatedComment = result && result.snapshot ? result.snapshot.val() : null;
+      if (
+        updatedComment &&
+        voteType === 'up' &&
+        currentVote !== 'up' &&
+        updatedComment.authorId &&
+        updatedComment.authorId !== user.uid
+      ) {
+        firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
+          const userData = userSnap.val() || {};
+          const voterName = userData.username || user.displayName || user.email || 'Alguien';
+          const targetType = isReplyVote ? 'respuesta' : 'comentario';
+          addNotification(updatedComment.authorId, `${voterName} votó positivamente tu ${targetType}.`, 'vote');
+        });
+      }
     });
 
     if (currentVote === 'up') {
@@ -10120,10 +10236,12 @@ function saveNote() {
           follow: 'user-plus',
           like: 'heart',
           comment: 'comment',
+          reply: 'reply',
+          gif: 'file-image',
+          sticker: 'face-smile',
           vote: 'arrow-up',
           message: 'envelope',
           moderation: 'shield-alt',
-          chapter_published: 'book-open',
           info: 'info-circle'
         };
 
@@ -10164,6 +10282,57 @@ function saveNote() {
     if (notificationsListenerRef) {
       notificationsListenerRef.off('value');
       notificationsListenerRef = null;
+    }
+  }
+
+  function showUsernameCopyBubble(anchorElement, text = 'Copiar') {
+    const bubble = document.getElementById('username-copy-bubble');
+    if (!bubble || !anchorElement) return;
+    const rect = anchorElement.getBoundingClientRect();
+    bubble.textContent = text;
+    bubble.classList.remove('show', 'burst');
+    bubble.style.left = `${rect.left + rect.width / 2}px`;
+    bubble.style.top = `${Math.max(14, rect.top - 34)}px`;
+    void bubble.offsetWidth;
+    bubble.classList.add('show');
+  }
+
+  function burstUsernameCopyBubble() {
+    const bubble = document.getElementById('username-copy-bubble');
+    if (!bubble) return;
+    bubble.classList.remove('show');
+    void bubble.offsetWidth;
+    bubble.classList.add('burst');
+  }
+
+  function copyAuthorUsername(rawUsername, anchorElement) {
+    const username = String(rawUsername || '').replace(/^@+/, '').trim();
+    if (!username) return;
+    const valueToCopy = `@${username}`;
+    showUsernameCopyBubble(anchorElement, 'Copiar');
+
+    const fallbackCopy = () => {
+      const tempInput = document.createElement('input');
+      tempInput.value = valueToCopy;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+    };
+
+    const onCopied = () => {
+      showUsernameCopyBubble(anchorElement, '¡Copiado!');
+      setTimeout(() => burstUsernameCopyBubble(), 90);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(valueToCopy).then(onCopied).catch(() => {
+        fallbackCopy();
+        onCopied();
+      });
+    } else {
+      fallbackCopy();
+      onCopied();
     }
   }
   /*********************** UTILIDADES DE FORMATO **************************/
@@ -13725,6 +13894,13 @@ function renderPlacesList(places) {
       authorNameNode.innerHTML = authorNameHTML;
       if (authorHandleNode) {
         authorHandleNode.textContent = `@${authorData.username || 'autor'}`;
+      }
+      const usernameForCopy = authorData.username || 'autor';
+      if (authorNameNode) {
+        authorNameNode.onclick = () => copyAuthorUsername(usernameForCopy, authorNameNode);
+      }
+      if (authorHandleNode) {
+        authorHandleNode.onclick = () => copyAuthorUsername(usernameForCopy, authorHandleNode);
       }
       authorImageNode.src = authorData.profileImage || 'https://via.placeholder.com/150';
       authorFollowersNode.textContent = formatNumber(authorData.followersCount || 0);
