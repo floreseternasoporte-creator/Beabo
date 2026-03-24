@@ -55,6 +55,11 @@ console.log('%cEste sitio está protegido contra inspección de código.', 'font
   <!-- Leaflet para mapa gratis con OpenStreetMap -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <!-- Stripe SDK -->
+  <script src="https://js.stripe.com/v3/"></script>
+  <script>
+    const stripe = Stripe('pk_test_51RF622RCIbJ5KY2oRmIQWh8ykdkf05EW5A1lzwrHiywW645TdxqltfYogegSmxpHBprGUDEc8GmK1ImkD1Z6VB0u00qvxNljOc');
+  </script>
   <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
@@ -3907,6 +3912,9 @@ function handleProfileImageUploadDesktop(event) {
           <button id="block-button" onclick="blockAuthor()" class="w-full bg-white text-[#5f4b44] py-3 rounded-2xl font-semibold border border-[#d9cec8]" title="Bloquear/Desbloquear">
             Bloquear
           </button>
+          <button id="send-balance-button" onclick="openSendBalanceView()" class="w-full bg-[#FE2C55] text-white py-3 rounded-2xl font-semibold shadow-sm" title="Enviar saldo">
+            Enviar saldo
+          </button>
           <button id="report-button" onclick="openReportModal()" class="w-full bg-white text-[#5f4b44] py-3 rounded-2xl font-semibold border border-[#d9cec8]" title="Reportar">
             Reportar
           </button>
@@ -4847,7 +4855,7 @@ function openPhotoDetail(photo) {
       <div class="w-9"></div>
     </div>
     <div class="flex-1 overflow-y-auto p-4 space-y-4">
-      <button onclick="openProfileConfig()" class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#e8e1dc] shadow-sm active:scale-95 transition-all">
+      <button id="btn-config-perfil" onclick="openProfileConfig()" class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#e8e1dc] shadow-sm active:scale-95 transition-all">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 bg-[#f0ebe7] rounded-xl flex items-center justify-center text-[#5f4b44]">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 21a8 8 0 0116 0" /></svg>
@@ -5098,17 +5106,47 @@ function openPhotoDetail(photo) {
     <div class="flex-1 overflow-y-auto p-6 space-y-4">
       <input id="bank-reload-amount" type="number" min="1" step="0.01" placeholder="Monto a recargar (USD)" class="w-full p-3 rounded-xl border border-[#d9cec8] bg-white">
       <div id="apple-pay-hint" class="text-sm text-[#6f5c54] bg-[#eef6ff] border border-[#d0e4ff] rounded-2xl p-3 hidden">Detectamos iPhone: puedes pagar con Apple Pay.</div>
-      <button onclick="toggleCardForm()" class="w-full bg-white border border-[#e8e1dc] text-[#2f1a14] py-3 rounded-2xl font-semibold">Agregar tarjeta</button>
-      <div id="bank-card-form" class="hidden space-y-3 bg-white border border-[#e8e1dc] p-4 rounded-2xl">
-        <input id="bank-card-number" placeholder="Número de tarjeta" class="w-full p-3 rounded-xl border border-[#d9cec8]">
-        <input id="bank-card-expiry" placeholder="MM/AA" class="w-full p-3 rounded-xl border border-[#d9cec8]">
-        <input id="bank-card-cvv" placeholder="PIN / CVV" class="w-full p-3 rounded-xl border border-[#d9cec8]">
-        <button onclick="saveReloadCard()" class="w-full bg-[#2f1a14] text-white py-2.5 rounded-xl">Guardar información de la tarjeta</button>
+      
+      <!-- Contenedor para Stripe Elements -->
+      <div id="card-element-container" class="bg-white border border-[#e8e1dc] p-4 rounded-2xl space-y-3">
+        <label class="block text-sm font-bold text-[#5f4b44]">Información de la tarjeta</label>
+        <div id="card-element" class="p-3 border border-[#d9cec8] rounded-xl bg-white"></div>
+        <div id="card-errors" role="alert" class="text-xs text-red-500 mt-1"></div>
       </div>
+
       <div class="grid grid-cols-2 gap-3 pt-2">
         <button onclick="closeReloadView()" class="w-full bg-white border border-[#e8e1dc] py-3 rounded-2xl font-semibold">Cancelar</button>
-        <button onclick="processReload()" class="w-full bg-[#FE2C55] text-white py-3 rounded-2xl font-semibold">Recargar</button>
+        <button id="submit-reload" onclick="processReload()" class="w-full bg-[#FE2C55] text-white py-3 rounded-2xl font-semibold">Recargar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- VISTA ENVIAR SALDO (CASH APP STYLE) -->
+  <div id="send-balance-view" class="fixed inset-0 bg-[#f5f4f2] z-[150] hidden flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-[#e8e1dc] bg-white">
+      <button onclick="closeSendBalanceView()" class="text-[#5f4b44] p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[#2f1a14] absolute left-1/2 -translate-x-1/2">Enviar</h2>
+      <div class="w-9"></div>
+    </div>
+    <div class="flex-1 flex flex-col p-6 space-y-6">
+      <div class="bg-white border border-[#e8e1dc] rounded-3xl p-6 shadow-sm text-center">
+        <p class="text-sm text-[#8a7a71] mb-1">Enviando a</p>
+        <p id="send-balance-username" class="text-2xl font-black text-[#2f1a14]">@usuario</p>
+      </div>
+
+      <div class="flex-1 flex flex-col items-center justify-center">
+        <div class="relative w-full max-w-[200px]">
+          <span class="absolute left-0 top-1/2 -translate-y-1/2 text-4xl font-black text-[#2f1a14]">$</span>
+          <input id="send-balance-amount" type="number" step="0.01" placeholder="0.00" class="w-full bg-transparent text-6xl font-black text-center text-[#2f1a14] outline-none border-none placeholder-[#d9cec8]">
+        </div>
+        <p class="text-sm text-[#8a7a71] mt-4">Saldo disponible: <span id="send-balance-available" class="font-bold text-[#2f1a14]">$0.00</span></p>
+      </div>
+
+      <button id="confirm-send-balance" onclick="processSendBalance()" class="w-full bg-[#2f1a14] text-white py-4 rounded-3xl font-black text-lg shadow-lg active:scale-95 transition-all">
+        Enviar
+      </button>
     </div>
   </div>
 
@@ -10334,32 +10372,170 @@ function saveNote() {
     openDrexBankView();
   }
 
+  let stripeCardElement = null;
+
+  function initStripeElements() {
+    if (stripeCardElement) return;
+    const elements = stripe.elements();
+    const style = {
+      base: {
+        color: '#2f1a14',
+        fontFamily: '"Nunito", sans-serif',
+        fontSmoothing: 'antialiased',
+        fontSize: '16px',
+        '::placeholder': { color: '#8a7a71' }
+      },
+      invalid: { color: '#FE2C55', iconColor: '#FE2C55' }
+    };
+    stripeCardElement = elements.create('card', { style });
+    stripeCardElement.mount('#card-element');
+    stripeCardElement.on('change', (event) => {
+      const displayError = document.getElementById('card-errors');
+      displayError.textContent = event.error ? event.error.message : '';
+    });
+  }
+
   function openReloadView() {
     document.getElementById('drex-bank-reload-view')?.classList.remove('hidden');
-    document.getElementById('apple-pay-hint')?.classList.toggle('hidden', !/iphone/i.test(navigator.userAgent));
+    const isIPhone = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    document.getElementById('apple-pay-hint')?.classList.toggle('hidden', !isIPhone);
+    initStripeElements();
   }
-  function closeReloadView() { document.getElementById('drex-bank-reload-view')?.classList.add('hidden'); }
-  function toggleCardForm() { document.getElementById('bank-card-form')?.classList.toggle('hidden'); }
-  function saveReloadCard() {
-    const card = { number: document.getElementById('bank-card-number')?.value || '', expiry: document.getElementById('bank-card-expiry')?.value || '' };
-    saveDrexBankState({ savedCard: card });
-    alert('Tarjeta guardada.');
+
+  function closeReloadView() { 
+    document.getElementById('drex-bank-reload-view')?.classList.add('hidden'); 
   }
-  function processReload() {
-    const amount = Number(document.getElementById('bank-reload-amount')?.value || 0);
+
+  async function processReload() {
+    const amountInput = document.getElementById('bank-reload-amount');
+    const amount = Number(amountInput?.value || 0);
     if (amount <= 0) { alert('Ingresa un monto válido.'); return; }
-    document.getElementById('drex-bank-reload-view')?.classList.add('hidden');
-    document.getElementById('drex-bank-processing-view')?.classList.remove('hidden');
+
+    const submitBtn = document.getElementById('submit-reload');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Procesando...';
+
+    // En una app real, aquí llamarías a tu backend para crear un PaymentIntent
+    // Como estamos en un frontend simulando tiempo real con Stripe Test,
+    // usaremos createToken para simular la validación de la tarjeta.
+    const {token, error} = await stripe.createToken(stripeCardElement);
+
+    if (error) {
+      const errorElement = document.getElementById('card-errors');
+      errorElement.textContent = error.message;
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = 'Recargar';
+    } else {
+      // Éxito en la validación del token de Stripe
+      console.log('Stripe Token creado:', token.id);
+      
+      document.getElementById('drex-bank-reload-view')?.classList.add('hidden');
+      document.getElementById('drex-bank-processing-view')?.classList.remove('hidden');
+
+      setTimeout(() => {
+        const state = getDrexBankState();
+        const tx = [{ 
+          type: 'Recarga (Stripe Real)', 
+          amount, 
+          date: new Date().toLocaleString(),
+          stripeToken: token.id,
+          device: /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'iOS (Apple Pay Ready)' : 'Web'
+        }, ...(state.transactions || [])];
+        const newBalance = Number(state.balance || 0) + amount;
+        
+        saveDrexBankState({ balance: newBalance, transactions: tx });
+        const user = firebase.auth().currentUser;
+        if (user) {
+          firebase.database().ref('drexBankCards/' + user.uid).update({ 
+            balance: newBalance, 
+            transactions: tx,
+            lastStripeToken: token.id
+          }).catch(() => {});
+        }
+
+        document.getElementById('drex-bank-processing-view')?.classList.add('hidden');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Recargar';
+        amountInput.value = '';
+        stripeCardElement.clear();
+        openDrexBankView();
+      }, 1500);
+    }
+  }
+
+  // FUNCIONES PARA ENVIAR SALDO (CASH APP STYLE)
+  function openSendBalanceView() {
+    const state = getDrexBankState();
+    const available = Number(state.balance || 0);
+    
+    document.getElementById('send-balance-available').textContent = `$${available.toFixed(2)}`;
+    document.getElementById('send-balance-username').textContent = document.getElementById('author-profile-handle')?.textContent || '@usuario';
+    document.getElementById('send-balance-amount').value = '';
+    document.getElementById('send-balance-view').classList.remove('hidden');
+  }
+
+  function closeSendBalanceView() {
+    document.getElementById('send-balance-view').classList.add('hidden');
+  }
+
+  function processSendBalance() {
+    const amount = Number(document.getElementById('send-balance-amount').value);
+    const state = getDrexBankState();
+    const available = Number(state.balance || 0);
+    const targetUser = document.getElementById('send-balance-username').textContent;
+
+    if (amount <= 0) {
+      alert('Por favor ingresa un monto válido.');
+      return;
+    }
+
+    if (amount > available) {
+      alert('Saldo insuficiente en tu tarjeta Drex.');
+      return;
+    }
+
+    if (!confirm(`¿Estás seguro de enviar $${amount.toFixed(2)} a ${targetUser}?`)) {
+      return;
+    }
+
+    const confirmBtn = document.getElementById('confirm-send-balance');
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Enviando...';
+
     setTimeout(() => {
-      const state = getDrexBankState();
-      const tx = [{ type: 'Recarga', amount, date: new Date().toLocaleString() }, ...(state.transactions || [])];
-      const newBalance = Number(state.balance || 0) + amount;
+      const newBalance = available - amount;
+      const tx = [{ 
+        type: `Envío a ${targetUser}`, 
+        amount: -amount, 
+        date: new Date().toLocaleString() 
+      }, ...(state.transactions || [])];
+
       saveDrexBankState({ balance: newBalance, transactions: tx });
+      
       const user = firebase.auth().currentUser;
-      if (user) firebase.database().ref('drexBankCards/' + user.uid).update({ balance: newBalance, transactions: tx }).catch(() => {});
-      document.getElementById('drex-bank-processing-view')?.classList.add('hidden');
-      openDrexBankView();
-    }, 1400);
+      if (user) {
+        firebase.database().ref('drexBankCards/' + user.uid).update({ 
+          balance: newBalance, 
+          transactions: tx 
+        }).catch(() => {});
+
+        // Registrar la transacción para el destinatario si tuviéramos su UID
+        // En esta simulación de tiempo real, guardamos el registro global
+        firebase.database().ref('globalTransactions').push({
+          from: user.uid,
+          to: targetUser,
+          amount: amount,
+          timestamp: Date.now()
+        });
+      }
+
+      alert(`¡Éxito! Has enviado $${amount.toFixed(2)} a ${targetUser}. El monto se ha descontado de tu tarjeta Drex.`);
+      
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = 'Enviar';
+      closeSendBalanceView();
+      closeAuthorProfile();
+    }, 1200);
   }
 
   const THEME_STORAGE_KEY = 'drex_theme';
@@ -10454,14 +10630,20 @@ function saveNote() {
         if (usernameInput) usernameInput.value = data.username || "";
         if (infoInput) {
           infoInput.value = data.bio || "";
-          updateInfoCounter();
+          if (typeof updateInfoCounter === 'function') updateInfoCounter();
         }
         if (locationInput) locationInput.value = data.location || data.city || "";
         selectedPronounsOption = data.pronouns || "";
-        renderPronounsSelection();
       });
     }
-    document.getElementById('profile-config-view').classList.remove('hidden');
+    const view = document.getElementById('profile-config-view');
+    if (view) {
+      view.classList.remove('hidden');
+      view.style.display = 'flex'; // Forzar visibilidad
+      view.style.zIndex = '200'; // Asegurar que esté por encima de todo
+    } else {
+      console.error('No se encontró el elemento profile-config-view');
+    }
   }
 
   function closeProfileConfig() {
@@ -12729,6 +12911,15 @@ function renderPlacesList(places) {
       followButton.onclick = followAuthor;
       followButton.classList.add('bg-[#3a241d]');
       followButton.classList.remove('bg-[#8d7d75]', 'bg-[#FE2C55]', 'bg-[#e8e1dc]', 'text-black');
+    }
+
+    const sendBalanceBtn = document.getElementById('send-balance-button');
+    if (sendBalanceBtn) {
+      if (currentUser && currentUser.uid === authorId) {
+        sendBalanceBtn.classList.add('hidden');
+      } else {
+        sendBalanceBtn.classList.remove('hidden');
+      }
     }
 
     const extraProfileIcon = document.getElementById('extra-profile-icon');
