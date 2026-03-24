@@ -94,9 +94,9 @@ body {
   display: inline-flex;
   width: 15px;
   height: 15px;
-  margin-left: 6px;
+  margin-left: 3px;
   vertical-align: middle;
-  transform: translateY(-4px);
+  transform: translateY(-2px);
 }
 
 /* Ocultar título "Capítulos" y tagline en la pantalla de inicio */
@@ -7227,7 +7227,7 @@ const KLIPY_GIFS = [
       if (notesFeed) notesFeed.classList.remove('hidden');
       if (photosFeed) photosFeed.classList.add('hidden');
       if (addNoteForm) addNoteForm.classList.add('hidden');
-      loadNotes();
+      loadNotes(false);
     } else if (tab === 'photos') {
       if (photosTab) photosTab.classList.add('text-[#FE2C55]', 'border-b-2', 'border-[#FE2C55]');
       if (feedTab) feedTab.classList.remove('text-[#FE2C55]', 'border-b-2', 'border-[#FE2C55]');
@@ -7541,7 +7541,7 @@ const KLIPY_GIFS = [
     return false;
   }
 
-  function loadNotes() {
+  function loadNotes(showLoader = true) {
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
 
@@ -7555,7 +7555,9 @@ const KLIPY_GIFS = [
       }).catch(err => console.error('Error cargando votos:', err));
     }
 
-    feedContainer.innerHTML = `<div class="py-3 text-center">${getFadingCircleLoaderMarkup()}</div>`;
+    if (showLoader) {
+      feedContainer.innerHTML = `<div class="py-3 text-center">${getFadingCircleLoaderMarkup()}</div>`;
+    }
 
     const notesRef = firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     notesRef.off();
@@ -7863,7 +7865,7 @@ function setupBlockedAccountsListener(userId) {
   blockedAccountsRef.on('value', snapshot => {
     const data = snapshot.val() || {};
     blockedAccountsSet = new Set(Object.keys(data));
-    loadNotes();
+    loadNotes(false);
   });
 }
 
@@ -8008,7 +8010,7 @@ function confirmBlockAccountFromOptions() {
       ok.classList.remove('hidden');
       ok.classList.add('flex');
     }
-    loadNotes();
+    loadNotes(false);
     performRealTimeSearch();
   }).catch(error => {
     console.error('Error bloqueando cuenta:', error);
@@ -9785,6 +9787,16 @@ function saveNote() {
       authError.classList.remove('hidden');
       return;
     }
+
+    const defaultSubmitText = isLogin ? translations[currentLanguage].btnIniciarSesion : 'Registrarse';
+    submitButton.disabled = true;
+    submitButton.innerHTML = `<span class="inline-flex items-center gap-2 justify-center"><i class="fas fa-spinner fa-spin"></i><span>${defaultSubmitText}...</span></span>`;
+
+    const restoreSubmitButton = () => {
+      submitButton.disabled = false;
+      submitButton.textContent = defaultSubmitText;
+    };
+
     if (isLogin) {
       firebase.auth().signInWithEmailAndPassword(email, password)
         .then(userCredential => {
@@ -9794,6 +9806,7 @@ function saveNote() {
           console.error(error);
           authError.textContent = error.message;
           authError.classList.remove('hidden');
+          restoreSubmitButton();
         });
     } else {
       firebase.auth().createUserWithEmailAndPassword(email, password)
@@ -9821,6 +9834,7 @@ function saveNote() {
           console.error(error);
           authError.textContent = error.message;
           authError.classList.remove('hidden');
+          restoreSubmitButton();
         });
     }
   });
@@ -9907,6 +9921,8 @@ function saveNote() {
       clearNotificationsBadge();
       authFormContainer.classList.remove('hidden');
       mainApp.classList.add('hidden');
+      submitButton.disabled = false;
+      submitButton.textContent = isLogin ? translations[currentLanguage].btnIniciarSesion : 'Registrarse';
     }
   });
   /*********************** AUTENTICACIÓN CON GOOGLE Y FACEBOOK **************************/
@@ -11095,45 +11111,70 @@ function saveNote() {
     });
   }
 
+  function setSavingButtonState(button, isLoading, idleLabel = 'Guardar') {
+    if (!button) return;
+    if (isLoading) {
+      button.disabled = true;
+      button.innerHTML = '<span class="inline-flex items-center gap-2"><i class="fas fa-spinner fa-spin"></i><span>Guardando...</span></span>';
+      return;
+    }
+    button.disabled = false;
+    button.textContent = idleLabel;
+  }
+
   function saveUsernameConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const input = document.getElementById('settings-username');
     saveProfileField({ username: input ? input.value.trim() : "" }, true).then(saved => {
       if (saved) closeUsernameConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function saveInfoConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const info = (document.getElementById('settings-info')?.value || "").slice(0, 50);
     saveProfileField({ bio: info }).then(saved => {
       if (saved) closeInfoConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function saveLocationConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const location = (document.getElementById('settings-location')?.value || "").trim().slice(0, 50);
     saveProfileField({ city: location, location }).then(saved => {
       if (saved) closeLocationConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function savePronounsConfig() {
+    const actionButton = window.event?.currentTarget || null;
     if (!selectedPronounsOption) {
       alert("Selecciona una opción de pronombres.");
       return;
     }
+    setSavingButtonState(actionButton, true);
     saveProfileField({ pronouns: selectedPronounsOption }).then(saved => {
       if (saved) closePronounsConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function saveEmailConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const user = firebase.auth().currentUser;
     const emailInput = document.getElementById('settings-account-email');
     const nextEmail = (emailInput?.value || "").trim();
 
-    if (!user) return;
+    if (!user) {
+      setSavingButtonState(actionButton, false);
+      return;
+    }
     if (!nextEmail) {
       alert("Ingresa un correo electrónico.");
+      setSavingButtonState(actionButton, false);
       return;
     }
 
@@ -11152,23 +11193,30 @@ function saveNote() {
         return;
       }
       alert("No se pudo actualizar el correo.");
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function savePasswordConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const user = firebase.auth().currentUser;
     const passwordInput = document.getElementById('settings-account-password');
     const confirmInput = document.getElementById('settings-account-password-confirm');
     const nextPassword = passwordInput?.value || "";
     const confirmPassword = confirmInput?.value || "";
 
-    if (!user) return;
+    if (!user) {
+      setSavingButtonState(actionButton, false);
+      return;
+    }
     if (nextPassword.length < 6) {
       alert("La contraseña debe tener al menos 6 caracteres.");
+      setSavingButtonState(actionButton, false);
       return;
     }
     if (nextPassword !== confirmPassword) {
       alert("Las contraseñas no coinciden.");
+      setSavingButtonState(actionButton, false);
       return;
     }
 
@@ -11183,17 +11231,19 @@ function saveNote() {
         return;
       }
       alert("No se pudo actualizar la contraseña.");
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function saveBirthdayConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
     const nextBirthday = document.getElementById('settings-account-birthday')?.value || "";
     saveProfileField({ birthday: nextBirthday }).then(saved => {
       if (!saved) return;
       const preview = document.getElementById('settings-account-birthday-preview');
       if (preview) preview.textContent = nextBirthday || "Sin fecha registrada";
       closeBirthdayConfigView();
-    });
+    }).finally(() => setSavingButtonState(actionButton, false));
   }
 
   function showSaveSuccessAnimation() {
@@ -11329,7 +11379,7 @@ function saveNote() {
     document.getElementById('create-community-view')?.classList.add('hidden');
     document.getElementById('community-wiki-view')?.classList.add('hidden');
     document.getElementById('main-app').classList.remove('hidden');
-    loadNotes();
+    loadNotes(false);
   }
 
   let selectedCommunityWiki = null;
@@ -12182,7 +12232,7 @@ function initFeedPullToRefresh() {
       return;
     }
     isPullRefreshing = true;
-    loadNotes();
+    loadNotes(false);
     setTimeout(() => {
       indicator.classList.add('hidden');
       indicator.innerHTML = '';
@@ -12603,6 +12653,7 @@ function performRealTimeSearch() {
     if (currentNonce !== searchRequestNonce) return { posts: [], photos: [], places: [] };
     const posts = [];
     const photos = [];
+    const seenPhotos = new Set();
     const placesMap = new Map();
     snapshot.forEach(child => {
       const note = child.val() || {};
@@ -12616,7 +12667,14 @@ function performRealTimeSearch() {
       const imgs = [];
       if (Array.isArray(note.imageUrls)) imgs.push(...note.imageUrls.filter(Boolean));
       if (note.imageUrl) imgs.push(note.imageUrl);
-      if (imgs.length && matches) imgs.forEach(url => photos.push({ postId: child.key, url, authorName: note.authorName || 'Usuario' }));
+      if (imgs.length && matches) {
+        imgs.forEach(url => {
+          const key = `${child.key}__${url}`;
+          if (seenPhotos.has(key)) return;
+          seenPhotos.add(key);
+          photos.push({ postId: child.key, url, authorName: note.authorName || 'Usuario' });
+        });
+      }
 
       const locName = `${note.location?.name || ''}`.trim();
       const locNameLower = locName.toLowerCase();
