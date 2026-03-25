@@ -6407,7 +6407,7 @@ function openPhotoDetail(photo) {
     // Cargar publicaciones existentes
     postsSnapshot.forEach(child => {
       const post = { ...(child.val() || {}), id: child.key };
-      const postCard = createProfilePostCard(post);
+      const postCard = createFullPostElement(post, true);
       if (userPostsDesktop) userPostsDesktop.appendChild(postCard.cloneNode(true));
       if (userPostsMobile) userPostsMobile.appendChild(postCard);
     });
@@ -14436,7 +14436,7 @@ function renderPlacesList(places) {
       posts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
       posts.forEach(post => {
-        const postCard = createProfilePostCard(post);
+        const postCard = createFullPostElement(post, true);
         container.appendChild(postCard);
       });
     }).catch(error => {
@@ -16805,3 +16805,115 @@ body.theme-dark #theme-config-view button {
 
 })();
 </script>
+
+
+  /*********************** RENDERIZADO DE POSTS COMPLETO **************************/
+  function createFullPostElement(note, isProfileContext = false) {
+    const noteElement = document.createElement('div');
+    noteElement.id = `post-${note.id}`;
+    noteElement.className = 'bg-white border-b border-[#e8e1dc] p-4';
+
+    const user = firebase.auth().currentUser;
+    const userVotes = window.userVotes || {};
+
+    const upvotes = Number(note.upvotes || 0);
+    const downvotes = Number(note.downvotes || 0);
+    const score = upvotes - downvotes;
+    const commentsCount = Number(note.commentsCount || 0);
+    const userVote = userVotes[note.id] || null;
+
+    let pollHTML = '';
+    const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
+    if (note.poll && pollOptions.length) {
+      const totalVotes = pollOptions.reduce((sum, opt) => sum + Number(opt?.votes || 0), 0);
+      pollHTML = `
+      <div class="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <h4 class="font-medium text-gray-900 mb-3 text-sm">${note.poll.question}</h4>
+        <div class="space-y-2">
+          ${pollOptions.map((option, index) => {
+            const votes = Number(option?.votes || 0);
+            const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+            const hasVoted = user && Array.isArray(option?.voters) && option.voters.includes(user.uid);
+            return `
+              <button onclick="votePoll('${note.id}', ${index})" class="w-full text-left p-2.5 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#FE2C55] bg-red-50' : 'border-gray-300 bg-white hover:border-gray-400'}">
+                <div class="absolute inset-0 bg-[#FE2C55]" style="width: ${percentage}%; opacity: 0.08"></div>
+                <div class="relative flex justify-between items-center">
+                  <span class="text-sm font-medium text-gray-900">${option?.text || 'Opción'}</span>
+                  <span class="text-xs font-bold ${hasVoted ? 'text-[#FE2C55]' : 'text-gray-500'}">${percentage}%</span>
+                </div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+        <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''} • Toca para votar</p>
+      </div>
+    `;
+    }
+
+    const safeTimestamp = Number(note.timestamp) || Date.now();
+    const safeAuthorId = note.authorId || '';
+    const safeAuthorName = note.authorName || 'Usuario';
+    const safeAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', safeAuthorId);
+    let safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
+
+    if (user && safeAuthorId === user.uid) {
+      const headerProfileImage = document.getElementById('header-profile-image');
+      if (headerProfileImage && headerProfileImage.src && !headerProfileImage.src.includes('placeholder')) {
+        safeAuthorImage = headerProfileImage.src;
+      }
+    }
+
+    let urlHTML = '';
+    if (note.url && !isStickerLikeUrl(note.url)) {
+      urlHTML = `
+        <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <a href="${note.url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 font-semibold text-sm hover:underline break-all">
+            ${note.url}
+          </a>
+        </div>
+      `;
+    }
+
+    noteElement.innerHTML = `
+      <div class="relative">
+        <div class="flex items-start gap-3 mb-3">
+          <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
+            <img src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-full h-full object-cover">
+          </button>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-2">
+              <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}</button>
+              <button onclick="openPostOptionsSheet('${note.id}')" class="ml-auto p-2 rounded-full bg-[#f8f6f4] border border-[#e8e1dc] hover:bg-[#f1ece9] text-[#6f5c54]" aria-label="Opciones de publicación">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <circle cx="6" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="18" cy="12" r="1.8" />
+                </svg>
+              </button>
+            </div>
+            ${renderNoteAnchoredMeta(note)}
+            ${note.content ? renderContentWithSticker(note.content, 'text-[#2f1a14] text-base whitespace-pre-wrap leading-relaxed') : ''}
+          </div>
+        </div>
+        ${renderNoteImages(note, note.id)}
+        ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#e8e1dc]"><img src="${note.gifUrl}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+        ${urlHTML}
+        ${pollHTML}
+
+        <div class="flex items-center pt-3 border-t border-[#efe9e5]">
+          <div class="flex items-center gap-3 text-[#7a6962]">
+            <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="vote-star flex items-center gap-1 ${userVote === 'up' ? 'active' : ''}" aria-label="Votar publicación">
+              <span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span>
+              <svg class="fire-icon" fill="currentColor" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2c0 0-1.5 3.5-3.5 5.5C10 10 7 11.5 7 16c0 5 4 9 9 9s9-4 9-9c0-3.5-2-6-4-8-0.5 2-1.5 3.5-3 4.5 0-3.5-1-7.5-2-10.5z"/><path d="M16 18c0 0-0.7 1.5-1.5 2.2C13.5 21.2 13 22 13 23c0 1.7 1.3 3 3 3s3-1.3 3-3c0-1.5-1-2.5-2-3.5-0.2 0.8-0.5 1.5-1 2z" opacity="0.7"/></svg>
+            </button>
+            <span id="score-${note.id}" class="text-sm font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
+            <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1.5 hover:text-[#5f4b44] transition-colors text-[#7a6962]">
+              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/></svg>
+              <span class="text-sm font-bold">${commentsCount}</span>
+            </button>
+          </div>
+        </div>
+        <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(safeTimestamp)}</p>
+      </div>
+    `;
+
+    return noteElement;
+  }
