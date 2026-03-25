@@ -10214,13 +10214,20 @@ function saveNote() {
   async function addNotification(userId, message, type = 'info') {
     const notificationsRef = firebase.database().ref('notifications/' + userId);
     const newNotificationRef = notificationsRef.push();
-    newNotificationRef.set({
+    const notificationData = {
       message: message,
       timestamp: Date.now(),
       read: false,
       type: type,
       notificationId: newNotificationRef.key
-    });
+    };
+    
+    newNotificationRef.set(notificationData);
+
+    // Eliminar de Firebase después de 10 segundos
+    setTimeout(() => {
+      newNotificationRef.remove().catch(err => console.error("Error al eliminar notificación de Firebase:", err));
+    }, 10000);
 
     // Play sound based on notification type
     const audio = new Audio();
@@ -10276,6 +10283,28 @@ function saveNote() {
   let notificationsListenerRef = null;
   let notificationsBadgeRef = null;
 
+  function getLocalNotifications(userId) {
+    try {
+      const key = `drex_notifications_${userId}`;
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      console.error("Error al leer notificaciones locales:", e);
+      return [];
+    }
+  }
+
+  function saveLocalNotifications(userId, notifications) {
+    try {
+      const key = `drex_notifications_${userId}`;
+      // Limitar a las últimas 100 notificaciones para no saturar localStorage
+      const limited = notifications.slice(0, 100);
+      localStorage.setItem(key, JSON.stringify(limited));
+    } catch (e) {
+      console.error("Error al guardar notificaciones locales:", e);
+    }
+  }
+
   function setupNotificationsBadge(userId) {
     const badge = document.getElementById('unread-notifications-count');
     if (!badge) return;
@@ -10287,11 +10316,29 @@ function saveNote() {
 
     notificationsBadgeRef = firebase.database().ref('notifications/' + userId);
     notificationsBadgeRef.on('value', snapshot => {
-      let unread = 0;
-      snapshot.forEach(child => {
-        const n = child.val();
-        if (!n || !n.read) unread++;
-      });
+      // Sincronizar con localStorage al recibir nuevas notificaciones
+      if (snapshot.exists()) {
+        let localNotes = getLocalNotifications(userId);
+        snapshot.forEach(child => {
+          const n = child.val();
+          if (n && n.notificationId) {
+            const exists = localNotes.some(ln => ln.notificationId === n.notificationId);
+            if (!exists) {
+              localNotes.unshift(n);
+            } else {
+              // Actualizar estado de lectura si cambió en Firebase
+              const idx = localNotes.findIndex(ln => ln.notificationId === n.notificationId);
+              if (idx !== -1) localNotes[idx].read = n.read;
+            }
+          }
+        });
+        // Ordenar por timestamp descendente
+        localNotes.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        saveLocalNotifications(userId, localNotes);
+      }
+
+      const allNotes = getLocalNotifications(userId);
+      const unread = allNotes.filter(n => !n.read).length;
 
       if (unread > 0) {
         badge.textContent = unread > 99 ? '99+' : String(unread);
@@ -10299,6 +10346,12 @@ function saveNote() {
       } else {
         badge.classList.add('hidden');
         badge.textContent = '0';
+      }
+      
+      // Si el modal está abierto, refrescar la lista
+      const modal = document.getElementById('notifications-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        renderNotificationsList(userId);
       }
     });
   }
@@ -10323,83 +10376,103 @@ function saveNote() {
       return;
     }
 
-    // iPhone/Safari: evitar dependencias que no existan (Notification / fullscreen)
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== "granted") {
       Notification.requestPermission().catch(() => {});
     }
 
     const modal = document.getElementById('notifications-modal');
-    const notificationsList = document.getElementById('notifications-list');
-    if (!modal || !notificationsList) return;
+    if (!modal) return;
 
     modal.classList.remove('hidden');
     setBottomNavVisibility(false);
+    renderNotificationsList(currentUser.uid);
+  }
 
-    // Evitar listeners duplicados al abrir/cerrar repetidas veces
-    if (notificationsListenerRef) {
-      notificationsListenerRef.off('value');
-      notificationsListenerRef = null;
+  function renderNotificationsList(userId) {
+    const notificationsList = document.getElementById('notifications-list');
+    if (!notificationsList) return;
+
+    const items = getLocalNotifications(userId);
+    notificationsList.innerHTML = "";
+
+    if (items.length === 0) {
+      notificationsList.innerHTML = '<p class="text-gray-500 text-sm">No tienes notificaciones por ahora.</p>';
+      return;
     }
 
-    notificationsListenerRef = firebase.database().ref('notifications/' + currentUser.uid);
-    notificationsListenerRef.on('value', snapshot => {
-      notificationsList.innerHTML = "";
+    items.forEach(notification => {
+      const div = document.createElement('div');
+      div.className = `notification-item ${notification.type || 'info'}`;
 
-      if (!snapshot.exists()) {
-        notificationsList.innerHTML = '<p class="text-gray-500 text-sm">No tienes notificaciones por ahora.</p>';
-        return;
+      const iconMap = {
+        follow: 'user-plus',
+        like: 'heart',
+        comment: 'comment',
+        reply: 'reply',
+        gif: 'file-image',
+        sticker: 'face-smile',
+        vote: 'arrow-up',
+        message: 'envelope',
+        moderation: 'shield-alt',
+        info: 'info-circle'
+      };
+
+      div.innerHTML = `
+        <i class="fas fa-${iconMap[notification.type || 'info'] || 'info-circle'} mt-0.5"></i>
+        <div class="flex-1 min-w-0">
+          <div class="notification-message break-words">${notification.message || 'Notificación'}</div>
+          <div class="notification-time">${notification.timestamp ? new Date(notification.timestamp).toLocaleString() : ''}</div>
+        </div>
+        <button class="notification-delete-btn" aria-label="Eliminar notificación">Eliminar</button>
+        ${!notification.read ? '<span class="unread-dot"></span>' : ''}
+      `;
+
+      const deleteBtn = div.querySelector('.notification-delete-btn');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          // Eliminar de localStorage
+          let localNotes = getLocalNotifications(userId);
+          localNotes = localNotes.filter(ln => ln.notificationId !== notification.notificationId);
+          saveLocalNotifications(userId, localNotes);
+          // Intentar eliminar de Firebase por si acaso aún existe
+          firebase.database().ref('notifications/' + userId + '/' + notification.notificationId).remove().catch(() => {});
+          renderNotificationsList(userId);
+          updateBadgeCount(userId);
+        });
       }
 
-      const items = [];
-      snapshot.forEach(child => {
-        items.push({ id: child.key, ...child.val() });
-      });
-      items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-      items.forEach(notification => {
-        const div = document.createElement('div');
-        div.className = `notification-item ${notification.type || 'info'}`;
-
-        const iconMap = {
-          follow: 'user-plus',
-          like: 'heart',
-          comment: 'comment',
-          reply: 'reply',
-          gif: 'file-image',
-          sticker: 'face-smile',
-          vote: 'arrow-up',
-          message: 'envelope',
-          moderation: 'shield-alt',
-          info: 'info-circle'
-        };
-
-        div.innerHTML = `
-          <i class="fas fa-${iconMap[notification.type || 'info'] || 'info-circle'} mt-0.5"></i>
-          <div class="flex-1 min-w-0">
-            <div class="notification-message break-words">${notification.message || 'Notificación'}</div>
-            <div class="notification-time">${notification.timestamp ? new Date(notification.timestamp).toLocaleString() : ''}</div>
-          </div>
-          <button class="notification-delete-btn" aria-label="Eliminar notificación">Eliminar</button>
-          ${!notification.read ? '<span class="unread-dot"></span>' : ''}
-        `;
-
-        const deleteBtn = div.querySelector('.notification-delete-btn');
-        if (deleteBtn) {
-          deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).remove();
-          });
-        }
-
-        div.addEventListener('click', () => {
-          if (!notification.read) {
-            firebase.database().ref('notifications/' + currentUser.uid + '/' + notification.id).update({ read: true });
+      div.addEventListener('click', () => {
+        if (!notification.read) {
+          // Marcar como leído en localStorage
+          let localNotes = getLocalNotifications(userId);
+          const idx = localNotes.findIndex(ln => ln.notificationId === notification.notificationId);
+          if (idx !== -1) {
+            localNotes[idx].read = true;
+            saveLocalNotifications(userId, localNotes);
           }
-        });
-
-        notificationsList.appendChild(div);
+          // Intentar marcar en Firebase por si acaso aún existe
+          firebase.database().ref('notifications/' + userId + '/' + notification.notificationId).update({ read: true }).catch(() => {});
+          renderNotificationsList(userId);
+          updateBadgeCount(userId);
+        }
       });
+
+      notificationsList.appendChild(div);
     });
+  }
+
+  function updateBadgeCount(userId) {
+    const badge = document.getElementById('unread-notifications-count');
+    if (!badge) return;
+    const allNotes = getLocalNotifications(userId);
+    const unread = allNotes.filter(n => !n.read).length;
+    if (unread > 0) {
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
   }
 
   function closeNotifications() {
