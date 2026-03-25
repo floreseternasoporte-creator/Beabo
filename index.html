@@ -5386,6 +5386,19 @@ function openPhotoDetail(photo) {
           </div>
           <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
+
+        <button onclick="openCacheConfig()" class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#e8e1dc] shadow-sm active:scale-95 transition-all">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-[#f0ebe7] rounded-xl flex items-center justify-center text-[#5f4b44]">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+            </div>
+            <div class="text-left">
+              <p class="font-bold text-[#2f1a14]">Caché</p>
+              <p id="cache-size-preview" class="text-sm text-[#8a7a71]">Calculando...</p>
+            </div>
+          </div>
+          <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+        </button>
       </div>
 
       <!-- SECCIÓN: BIENESTAR Y SOPORTE -->
@@ -5428,6 +5441,34 @@ function openPhotoDetail(photo) {
           <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
       </div>
+    </div>
+  </div>
+
+  <div id="cache-config-view" class="fixed inset-0 bg-[#f5f4f2] z-[120] hidden flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-[#e8e1dc] bg-white">
+      <button onclick="closeCacheConfig()" class="text-[#5f4b44] p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[#2f1a14] absolute left-1/2 -translate-x-1/2">Caché</h2>
+      <div class="w-9"></div>
+    </div>
+    <div class="flex-1 overflow-y-auto p-6 space-y-6">
+      <div class="bg-white border border-[#e8e1dc] rounded-3xl p-6 shadow-sm text-center">
+        <div class="w-20 h-20 bg-[#f0ebe7] rounded-full flex items-center justify-center text-[#5f4b44] mx-auto mb-4">
+          <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+        </div>
+        <h3 class="text-2xl font-black text-[#2f1a14]" id="cache-size-display">0 KB</h3>
+        <p class="text-sm text-[#8a7a71] mt-1">Espacio utilizado por Drex en este dispositivo</p>
+      </div>
+
+      <div class="bg-white border border-[#e8e1dc] rounded-3xl p-5 shadow-sm">
+        <p class="text-sm text-[#6f5c54] leading-relaxed">El caché almacena publicaciones, comentarios y respuestas localmente para que la aplicación cargue mucho más rápido y consuma menos datos.</p>
+      </div>
+
+      <button onclick="clearAppCache()" class="w-full bg-[#FE2C55] text-white p-5 rounded-3xl font-bold shadow-lg active:scale-95 transition-all flex items-center justify-center gap-3">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+        Borrar caché de la aplicación
+      </button>
     </div>
   </div>
 
@@ -8107,11 +8148,15 @@ const KLIPY_GIFS = [
       feedContainer.innerHTML = `<div class="py-3 text-center">${getFadingCircleLoaderMarkup()}</div>`;
     }
 
+    // Intentar cargar desde caché primero para velocidad instantánea
+    const cachedNotes = getFromCache('feed', 'main', 300000); // 5 minutos de caché
+    if (cachedNotes && cachedNotes.length > 0) {
+      renderNotesToFeed(cachedNotes, feedContainer);
+    }
+
     const notesRef = firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     notesRef.off();
     notesRef.on('value', snapshot => {
-      feedContainer.innerHTML = '';
-
       const notes = [];
       snapshot.forEach(child => {
         const rawNote = child.val() || {};
@@ -8125,9 +8170,18 @@ const KLIPY_GIFS = [
         return;
       }
 
-      const feedFragment = document.createDocumentFragment();
+      // Guardar en caché para la próxima vez
+      saveToCache('feed', 'main', notes);
+      renderNotesToFeed(notes, feedContainer);
+    });
+  }
 
-      notes.forEach(note => {
+  function renderNotesToFeed(notes, feedContainer) {
+    const user = firebase.auth().currentUser;
+    feedContainer.innerHTML = '';
+    const feedFragment = document.createDocumentFragment();
+
+    notes.forEach(note => {
           try {
             const noteElement = document.createElement('div');
             noteElement.id = `post-${note.id}`;
@@ -8240,7 +8294,6 @@ const KLIPY_GIFS = [
                 <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(safeTimestamp)}</p>
               </div>
             `;
-
         feedFragment.appendChild(noteElement);
         } catch (renderError) {
           console.error('Error renderizando publicación:', note?.id, renderError);
@@ -8248,7 +8301,6 @@ const KLIPY_GIFS = [
       });
 
       feedContainer.appendChild(feedFragment);
-    });
   }
 
   // Función para votar en encuestas
@@ -9042,62 +9094,76 @@ function openCommentsView(noteId) {
     });
   }
 
+  // Intentar cargar post original desde caché
+  const cachedPost = getFromCache('post', noteId, 600000); // 10 minutos
+  if (cachedPost) {
+    renderOriginalPostToComments(cachedPost, noteId);
+  }
+
   firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
     const note = { ...(snapshot.val() || {}), id: noteId };
-    const upvotes = note.upvotes || 0;
-    const downvotes = note.downvotes || 0;
-    const score = upvotes - downvotes;
-
-    let pollHTML = '';
-    if (note.poll) {
-      const totalVotes = note.poll.options.reduce((sum, opt) => sum + (opt.votes || 0), 0);
-      pollHTML = `
-        <div class="mt-2 p-3 bg-white rounded-lg border border-gray-300">
-          <h4 class="font-medium text-gray-900 mb-2 text-sm">${note.poll.question}</h4>
-          <div class="space-y-2">
-            ${note.poll.options.map((option, index) => {
-              const percentage = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
-              const hasVoted = user && option.voters && option.voters.includes(user.uid);
-              return `
-                <button onclick="votePoll('${noteId}', ${index})" class="w-full text-left p-2 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#FE2C55] bg-red-50' : 'border-gray-300 bg-white'}">
-                  <div class="absolute inset-0 bg-[#FE2C55]" style="width: ${percentage}%; opacity: 0.08"></div>
-                  <div class="relative flex justify-between items-center">
-                    <span class="text-xs font-medium text-gray-900">${option.text}</span>
-                    <span class="text-xs font-bold ${hasVoted ? 'text-[#FE2C55]' : 'text-gray-500'}">${percentage}%</span>
-                  </div>
-                </button>
-              `;
-            }).join('')}
-          </div>
-          <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''}</p>
-        </div>
-      `;
-    }
-
-    const originalAuthorId = note.authorId || '';
-    const originalAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', originalAuthorId);
-    document.getElementById('original-post').innerHTML = `
-      <div class="flex items-start gap-3 mb-2">
-        <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${note.authorName || 'Usuario'}">
-          <img src="${note.authorImage || 'https://via.placeholder.com/150'}" class="w-full h-full object-cover">
-        </button>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 mb-1">
-            <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}">${note.authorName || 'Usuario'}${originalAuthorVerifiedIcon}</button>
-          </div>
-          ${renderNoteAnchoredMeta(note)}
-          ${note.content ? renderContentWithSticker(note.content, 'text-[#2f1a14] text-base mb-2 leading-relaxed') : ''}
-        </div>
-      </div>
-      ${renderNoteImages(note, noteId)}
-      ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#e8e1dc]"><img src="${note.gifUrl}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
-      ${pollHTML}
-      <div class="flex items-center gap-3 text-xs text-[#8d7d75] mt-2">
-        <span class="font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
-      </div>
-      <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(note.timestamp)}</p>
-    `;
+    saveToCache('post', noteId, note);
+    renderOriginalPostToComments(note, noteId);
   });
+}
+
+function renderOriginalPostToComments(note, noteId) {
+  const user = firebase.auth().currentUser;
+  const upvotes = note.upvotes || 0;
+  const downvotes = note.downvotes || 0;
+  const score = upvotes - downvotes;
+
+  let pollHTML = '';
+  if (note.poll) {
+    const totalVotes = note.poll.options.reduce((sum, opt) => sum + (opt.votes || 0), 0);
+    pollHTML = `
+      <div class="mt-2 p-3 bg-white rounded-lg border border-gray-300">
+        <h4 class="font-medium text-gray-900 mb-2 text-sm">${note.poll.question}</h4>
+        <div class="space-y-2">
+          ${note.poll.options.map((option, index) => {
+            const percentage = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
+            const hasVoted = user && option.voters && option.voters.includes(user.uid);
+            return `
+              <button onclick="votePoll('${noteId}', ${index})" class="w-full text-left p-2 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#FE2C55] bg-red-50' : 'border-gray-300 bg-white'}">
+                <div class="absolute inset-0 bg-[#FE2C55]" style="width: ${percentage}%; opacity: 0.08"></div>
+                <div class="relative flex justify-between items-center">
+                  <span class="text-xs font-medium text-gray-900">${option.text}</span>
+                  <span class="text-xs font-bold ${hasVoted ? 'text-[#FE2C55]' : 'text-gray-500'}">${percentage}%</span>
+                </div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+        <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''}</p>
+      </div>
+    `;
+  }
+
+  const originalAuthorId = note.authorId || '';
+  const originalAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', originalAuthorId);
+  document.getElementById('original-post').innerHTML = `
+    <div class="flex items-start gap-3 mb-2">
+      <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${note.authorName || 'Usuario'}">
+        <img src="${note.authorImage || 'https://via.placeholder.com/150'}" class="w-full h-full object-cover">
+      </button>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1">
+          <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}">${note.authorName || 'Usuario'}${originalAuthorVerifiedIcon}</button>
+        </div>
+        ${renderNoteAnchoredMeta(note)}
+        ${note.content ? renderContentWithSticker(note.content, 'text-[#2f1a14] text-base mb-2 leading-relaxed') : ''}
+      </div>
+    </div>
+    ${renderNoteImages(note, noteId)}
+    ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#e8e1dc]"><img src="${note.gifUrl}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+    ${pollHTML}
+    <div class="flex items-center gap-3 text-xs text-[#8d7d75] mt-2">
+      <span class="font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
+    </div>
+    <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(note.timestamp)}</p>
+  `;
+}
+
 
   loadCommentsInView(noteId);
 }
@@ -9122,33 +9188,50 @@ function closeCommentsView() {
 function loadCommentsInView(noteId) {
   const commentsList = document.getElementById('comments-list-view');
 
-  const skeletonHTML = '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>' +
-    '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>' +
-    '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>';
-  commentsList.innerHTML = skeletonHTML;
+  // Intentar cargar desde caché
+  const cachedComments = getFromCache('comments', noteId, 300000); // 5 minutos
+  if (cachedComments) {
+    renderCommentsList(noteId, cachedComments, commentsList);
+  } else {
+    const skeletonHTML = '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>' +
+      '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>' +
+      '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>';
+    commentsList.innerHTML = skeletonHTML;
+  }
 
   if (commentsListenerRef) {
     commentsListenerRef.off();
   }
   commentsListenerRef = firebase.database().ref('postComments/' + noteId);
   commentsListenerRef.on('value', snapshot => {
-    commentsList.innerHTML = '';
-    let totalCount = 0;
-
+    const commentsData = [];
     snapshot.forEach(child => {
-      const comment = child.val();
-      const commentId = child.key;
-      totalCount++;
-
-      if (comment.replies) {
-        totalCount += countReplies(comment.replies);
-      }
-
-      renderCommentModern(noteId, commentId, comment, commentsList, 0);
+      commentsData.push({ id: child.key, ...child.val() });
     });
 
-    document.getElementById('comments-count-header').textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
+    // Guardar en caché
+    saveToCache('comments', noteId, commentsData);
+    renderCommentsList(noteId, commentsData, commentsList);
   });
+}
+
+function renderCommentsList(noteId, commentsData, commentsList) {
+  commentsList.innerHTML = '';
+  let totalCount = 0;
+
+  commentsData.forEach(comment => {
+    const commentId = comment.id;
+    totalCount++;
+
+    if (comment.replies) {
+      totalCount += countReplies(comment.replies);
+    }
+
+    renderCommentModern(noteId, commentId, comment, commentsList, 0);
+  });
+
+  const header = document.getElementById('comments-count-header');
+  if (header) header.textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
 }
 
 // Función para formatear timestamp de comentarios
@@ -11695,11 +11778,104 @@ function saveNote() {
     }
   }
 
-  function closeLocationConfigView() {
-    const view = document.getElementById('location-config-view');
-    if (view) {
-      view.classList.add('hidden');
-      view.style.display = 'none';
+  function closeSettingsView() {
+    const view = document.getElementById('settings-view');
+    if (view) view.classList.add('hidden');
+  }
+
+  /*********************** SISTEMA DE CACHÉ REAL **************************/
+  const CACHE_KEYS = {
+    POSTS: 'drex_cache_posts',
+    COMMENTS: 'drex_cache_comments',
+    USER_DATA: 'drex_cache_users'
+  };
+
+  function getAppCacheSize() {
+    let total = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith('drex_')) {
+        total += (localStorage.getItem(key).length * 2); // Aproximación en bytes (UTF-16)
+      }
+    }
+    return total;
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 KB';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  function updateCacheUI() {
+    const size = getAppCacheSize();
+    const formatted = formatBytes(size);
+    const preview = document.getElementById('cache-size-preview');
+    const display = document.getElementById('cache-size-display');
+    if (preview) preview.textContent = formatted;
+    if (display) display.textContent = formatted;
+  }
+
+  function openCacheConfig() {
+    document.getElementById('cache-config-view').classList.remove('hidden');
+    updateCacheUI();
+    // Actualizar en tiempo real cada segundo mientras esté abierto
+    window.cacheInterval = setInterval(updateCacheUI, 1000);
+  }
+
+  function closeCacheConfig() {
+    document.getElementById('cache-config-view').classList.add('hidden');
+    if (window.cacheInterval) clearInterval(window.cacheInterval);
+  }
+
+  function clearAppCache() {
+    if (!confirm('¿Estás seguro de que quieres borrar el caché? Las publicaciones y comentarios tardarán un poco más en cargar la próxima vez.')) return;
+    
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith('drex_cache_')) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    
+    updateCacheUI();
+    alert('Caché borrado exitosamente.');
+  }
+
+  function saveToCache(type, id, data) {
+    try {
+      const cacheKey = `drex_cache_${type}_${id}`;
+      localStorage.setItem(cacheKey, JSON.stringify({
+        data: data,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.warn('Error al guardar en caché:', e);
+      // Si el localStorage está lleno, podríamos limpiar entradas antiguas aquí
+    }
+  }
+
+  function getFromCache(type, id, maxAge = 3600000) { // 1 hora por defecto
+    try {
+      const cacheKey = `drex_cache_${type}_${id}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (!cached) return null;
+      
+      const parsed = JSON.parse(cached);
+      if (Date.now() - parsed.timestamp > maxAge) {
+        localStorage.removeItem(cacheKey);
+        return null;
+      }
+      return parsed.data;
+    } catch (e) {
+      return null;
+    }
+  }
+    view.style.display = 'none';
     }
   }
 
