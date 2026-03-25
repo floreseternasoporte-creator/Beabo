@@ -10401,9 +10401,9 @@ function saveNote() {
     }
 
     items.forEach(notification => {
-      const div = document.createElement('div');
-      div.className = `notification-item ${notification.type || 'info'}`;
-
+      const container = document.createElement('div');
+      container.className = 'notification-swipe-container relative overflow-hidden mb-2 rounded-xl';
+      
       const iconMap = {
         follow: 'user-plus',
         like: 'heart',
@@ -10417,48 +10417,111 @@ function saveNote() {
         info: 'info-circle'
       };
 
-      div.innerHTML = `
-        <i class="fas fa-${iconMap[notification.type || 'info'] || 'info-circle'} mt-0.5"></i>
-        <div class="flex-1 min-w-0">
-          <div class="notification-message break-words">${notification.message || 'Notificación'}</div>
-          <div class="notification-time">${notification.timestamp ? new Date(notification.timestamp).toLocaleString() : ''}</div>
+      container.innerHTML = `
+        <div class="notification-delete-action absolute inset-y-0 left-0 w-20 bg-red-500 flex items-center justify-center text-white rounded-l-xl opacity-0 transition-opacity duration-200">
+          <i class="fas fa-trash-alt text-xl"></i>
         </div>
-        <button class="notification-delete-btn" aria-label="Eliminar notificación">Eliminar</button>
-        ${!notification.read ? '<span class="unread-dot"></span>' : ''}
+        <div class="notification-item ${notification.type || 'info'} relative z-10 transition-transform duration-200 ease-out cursor-pointer bg-white p-4 flex items-start gap-3 border border-[#e8e1dc] rounded-xl shadow-sm" style="transform: translateX(0px)">
+          <i class="fas fa-${iconMap[notification.type || 'info'] || 'info-circle'} mt-0.5 text-[#FE2C55]"></i>
+          <div class="flex-1 min-w-0">
+            <div class="notification-message break-words text-sm text-gray-800">${notification.message || 'Notificación'}</div>
+            <div class="notification-time text-[10px] text-gray-400 mt-1">${notification.timestamp ? new Date(notification.timestamp).toLocaleString() : ''}</div>
+          </div>
+          ${!notification.read ? '<span class="unread-dot w-2 h-2 bg-[#FE2C55] rounded-full mt-2"></span>' : ''}
+        </div>
       `;
 
-      const deleteBtn = div.querySelector('.notification-delete-btn');
-      if (deleteBtn) {
-        deleteBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          // Eliminar de localStorage
-          let localNotes = getLocalNotifications(userId);
-          localNotes = localNotes.filter(ln => ln.notificationId !== notification.notificationId);
-          saveLocalNotifications(userId, localNotes);
-          // Intentar eliminar de Firebase por si acaso aún existe
-          firebase.database().ref('notifications/' + userId + '/' + notification.notificationId).remove().catch(() => {});
+      const item = container.querySelector('.notification-item');
+      const deleteAction = container.querySelector('.notification-delete-action');
+      let startX = 0;
+      let currentX = 0;
+      let isSwiping = false;
+
+      const handleDelete = () => {
+        // Eliminar de localStorage
+        let localNotes = getLocalNotifications(userId);
+        localNotes = localNotes.filter(ln => ln.notificationId !== notification.notificationId);
+        saveLocalNotifications(userId, localNotes);
+        // Intentar eliminar de Firebase
+        firebase.database().ref('notifications/' + userId + '/' + notification.notificationId).remove().catch(() => {});
+        
+        // Animación de salida
+        container.style.transition = 'all 0.3s ease';
+        container.style.height = '0';
+        container.style.margin = '0';
+        container.style.opacity = '0';
+        setTimeout(() => {
           renderNotificationsList(userId);
           updateBadgeCount(userId);
-        });
-      }
+        }, 300);
+      };
 
-      div.addEventListener('click', () => {
+      // Eventos de Touch
+      item.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        item.style.transition = 'none';
+        deleteAction.style.transition = 'none';
+      }, { passive: true });
+
+      item.addEventListener('touchmove', (e) => {
+        currentX = e.touches[0].clientX - startX;
+        if (currentX > 0) { // Solo deslizar a la derecha
+          isSwiping = true;
+          const moveX = Math.min(currentX, 100); // Límite de deslizamiento
+          item.style.transform = `translateX(${moveX}px)`;
+          deleteAction.style.opacity = Math.min(moveX / 80, 1);
+        }
+      }, { passive: true });
+
+      item.addEventListener('touchend', () => {
+        item.style.transition = 'transform 0.2s ease-out';
+        deleteAction.style.transition = 'opacity 0.2s ease-out';
+        
+        if (currentX > 60) {
+          // Si deslizó lo suficiente, mostrar el icono de borrar y esperar click o completar el swipe
+          item.style.transform = 'translateX(80px)';
+          deleteAction.style.opacity = '1';
+        } else {
+          // Volver a la posición original
+          item.style.transform = 'translateX(0px)';
+          deleteAction.style.opacity = '0';
+        }
+        
+        setTimeout(() => { isSwiping = false; }, 50);
+        currentX = 0;
+      });
+
+      // Click en la acción de borrar
+      deleteAction.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleDelete();
+      });
+
+      // Click en la notificación para leer
+      item.addEventListener('click', () => {
+        if (isSwiping) return;
+        
+        // Si está desplazado, volver a 0
+        if (item.style.transform !== 'translateX(0px)') {
+          item.style.transform = 'translateX(0px)';
+          deleteAction.style.opacity = '0';
+          return;
+        }
+
         if (!notification.read) {
-          // Marcar como leído en localStorage
           let localNotes = getLocalNotifications(userId);
           const idx = localNotes.findIndex(ln => ln.notificationId === notification.notificationId);
           if (idx !== -1) {
             localNotes[idx].read = true;
             saveLocalNotifications(userId, localNotes);
           }
-          // Intentar marcar en Firebase por si acaso aún existe
           firebase.database().ref('notifications/' + userId + '/' + notification.notificationId).update({ read: true }).catch(() => {});
           renderNotificationsList(userId);
           updateBadgeCount(userId);
         }
       });
 
-      notificationsList.appendChild(div);
+      notificationsList.appendChild(container);
     });
   }
 
