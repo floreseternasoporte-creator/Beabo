@@ -840,25 +840,9 @@ body {
   z-index: 9999 !important;
 }
 
-/* Modal Reporte a pantalla completa */
+/* Modal Reporte de perfil (pantalla completa) */
 #report-modal {
-  position: fixed;
-  inset: 0;
-  display: none;
-  background-color: rgba(255,255,255,0.8);
-  justify-content: center;
-  align-items: center;
-}
-
-#report-modal .modal-content {
-  background: #fff;
-  border-radius: 1rem;
-  padding: 1.5rem;
-  width: 100%;
-  max-width: 500px;
-  margin: 1rem;
-  border: 1px solid #FE2C55;
-  color: #000;
+  overscroll-behavior: contain;
 }
 
     /* MODAL DE ERROR PARA USUARIO BLOQUEADO */
@@ -1871,27 +1855,24 @@ body {
 </div>
 
 <!-- MODAL DE REPORTAR PERFIL -->
-<div id="report-modal" class="fixed inset-x-0 bottom-0 transform translate-y-full transition-transform duration-300 bg-[#f5f4f2] rounded-t-[28px] shadow-lg border-t border-[#e8e1dc]" style="height: 50vh; z-index: 9999;">
-  <div class="p-6">
-    <div class="flex justify-between items-center mb-4">
-      <h2 id="report-title" class="text-2xl font-black text-[#2f1a14]">Reportar Perfil</h2>
-      <button onclick="closeReportModal()" class="text-[#8d7d75]">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
+<div id="report-modal" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] overflow-y-auto hidden z-[145]">
+  <div class="max-w-2xl mx-auto min-h-full flex flex-col">
+    <div class="sticky top-0 bg-[#f5f4f2] border-b border-[#e8e1dc] p-4 flex items-center justify-between">
+      <button onclick="closeReportModal()" class="text-[#5f4b44] hover:text-[#2f1a14]">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
+      <h2 id="report-title" class="text-lg font-black">Reportar perfil</h2>
+      <div class="w-6"></div>
     </div>
-    <p id="report-instructions" class="mb-4 text-[#6f5c54]">Selecciona un motivo o describe el problema:</p>
-    <form id="report-form" class="space-y-4">
-      <select id="report-reason" class="w-full p-3 border border-[#d9cec8] rounded-2xl bg-white text-[#2f1a14]">
-        <option value="perfil_falso">Perfil falso: el autor está suplantando identidad</option>
-        <option value="spam">Spam</option>
-        <option value="infraccion_normas">Infracción a las normas</option>
-        <option value="otro">Otro</option>
-      </select>
-      <textarea id="report-description" placeholder="Describe el problema (opcional)" class="w-full p-3 border border-[#d9cec8] rounded-2xl bg-white text-[#2f1a14]" rows="4"></textarea>
-      <button id="btn-enviar-report" type="submit" class="w-full bg-[#3a241d] text-white p-3 rounded-2xl font-semibold">Enviar Reporte</button>
-    </form>
+
+    <div class="p-4 space-y-4 flex-1">
+      <p id="report-instructions" class="bg-white border border-[#e8e1dc] rounded-2xl p-4 text-sm text-[#6f5c54]">Selecciona un motivo o describe el problema:</p>
+      <form id="report-form" class="space-y-4">
+        <div id="profile-report-reasons" class="space-y-2"></div>
+        <textarea id="report-description" placeholder="Describe el problema (opcional)" class="w-full p-3 border border-[#d9cec8] rounded-2xl bg-white text-[#2f1a14] focus:outline-none focus:ring-2 focus:ring-[#cdbeb7]" rows="4"></textarea>
+        <button id="btn-enviar-report" type="submit" class="w-full bg-[#3a241d] text-white p-3 rounded-2xl font-semibold">Enviar reporte</button>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -3410,6 +3391,31 @@ firebase.auth().onAuthStateChanged(user => {
 <div id="comment-actions-sheet">
   <div id="comment-actions-content"></div>
 </div>
+
+<style>
+  .report-option-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.85rem;
+    border: 1px solid #e8e1dc;
+    border-radius: 1rem;
+    background: #fff;
+    cursor: pointer;
+    transition: all .2s ease;
+  }
+
+  .report-option-card:hover {
+    border-color: #cdbeb7;
+    background: #f8f6f4;
+  }
+
+  .report-option-card.is-selected {
+    border-color: #cdbeb7;
+    background: #f8f6f4;
+    box-shadow: 0 1px 4px rgba(58, 36, 29, 0.06);
+  }
+</style>
 
 <!-- REPORTE DE PUBLICACIÓN (PANTALLA COMPLETA) -->
 <div id="post-report-fullscreen" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] overflow-y-auto hidden z-[75]">
@@ -8619,55 +8625,68 @@ const postReportReasons = [
   { value: 'other', label: 'Otro motivo' }
 ];
 
-function buildPostReportOptions() {
-  const container = document.getElementById('post-report-reasons');
+const profileReportReasons = [
+  { value: 'perfil_falso', label: 'Perfil falso: el autor está suplantando identidad' },
+  { value: 'spam', label: 'Spam o actividad sospechosa' },
+  { value: 'infraccion_normas', label: 'Infracción a las normas de la comunidad' },
+  { value: 'otro', label: 'Otro motivo' }
+];
+
+const reportReasonIconMap = {
+  sexual: 'fa-person-dress-burst',
+  violence: 'fa-triangle-exclamation',
+  hate: 'fa-ban',
+  self_harm: 'fa-heart-crack',
+  misinformation: 'fa-bullhorn',
+  copyright: 'fa-copyright',
+  other: 'fa-ellipsis',
+  perfil_falso: 'fa-user-secret',
+  spam: 'fa-comment-slash',
+  infraccion_normas: 'fa-shield-halved',
+  otro: 'fa-ellipsis'
+};
+
+function renderReportReasonCards(containerId, options, inputName) {
+  const container = document.getElementById(containerId);
   if (!container) return;
 
-  const iconMap = {
-    sexual: 'fa-person-dress-burst',
-    violence: 'fa-triangle-exclamation',
-    hate: 'fa-ban',
-    self_harm: 'fa-heart-crack',
-    misinformation: 'fa-bullhorn',
-    copyright: 'fa-copyright',
-    other: 'fa-ellipsis'
-  };
-
-  container.innerHTML = postReportReasons.map((reason, idx) => `
-    <label class="post-report-option group flex items-start gap-3 p-3 border border-[#e8e1dc] rounded-2xl bg-white hover:border-[#cdbeb7] hover:bg-[#f8f6f4] cursor-pointer transition-all">
-      <input type="radio" name="post-report-reason" value="${reason.value}" class="sr-only" ${idx === 0 ? 'checked' : ''}>
-      <span class="w-9 h-9 rounded-xl bg-[#f3efec] text-[#5f4b44] flex items-center justify-center group-hover:bg-[#ece5df] group-hover:text-[#3a241d] transition-colors">
-        <i class="fas ${iconMap[reason.value] || 'fa-flag'}"></i>
+  container.innerHTML = options.map((reason, idx) => `
+    <label class="report-option-card" data-report-card>
+      <input type="radio" name="${inputName}" value="${reason.value}" class="sr-only" ${idx === 0 ? 'checked' : ''}>
+      <span class="w-9 h-9 rounded-xl bg-[#f3efec] text-[#5f4b44] flex items-center justify-center transition-colors">
+        <i class="fas ${reportReasonIconMap[reason.value] || 'fa-flag'}"></i>
       </span>
       <span class="text-sm text-gray-800 leading-relaxed">${reason.label}</span>
       <span class="ml-auto mt-1 w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center">
-        <span class="w-2.5 h-2.5 rounded-full bg-[#5f4b44] opacity-0"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-[#5f4b44] opacity-0" data-report-dot></span>
       </span>
     </label>
   `).join('');
 
-  refreshPostReportSelectionUI();
-  container.querySelectorAll('input[name="post-report-reason"]').forEach(input => {
-    input.addEventListener('change', refreshPostReportSelectionUI);
+  container.querySelectorAll(`input[name="${inputName}"]`).forEach(input => {
+    input.addEventListener('change', () => refreshReportSelectionUI(containerId, inputName));
+  });
+
+  refreshReportSelectionUI(containerId, inputName);
+}
+
+function refreshReportSelectionUI(containerId, inputName) {
+  document.querySelectorAll(`#${containerId} [data-report-card]`).forEach(option => {
+    const input = option.querySelector(`input[name="${inputName}"]`);
+    const dot = option.querySelector('[data-report-dot]');
+    if (!input) return;
+
+    option.classList.toggle('is-selected', !!input.checked);
+    if (dot) dot.classList.toggle('opacity-0', !input.checked);
   });
 }
 
-function refreshPostReportSelectionUI() {
-  document.querySelectorAll('#post-report-reasons .post-report-option').forEach(option => {
-    const input = option.querySelector('input[name="post-report-reason"]');
-    const dot = option.querySelector('span > span');
-    if (!input) return;
+function buildPostReportOptions() {
+  renderReportReasonCards('post-report-reasons', postReportReasons, 'post-report-reason');
+}
 
-    if (input.checked) {
-      option.classList.add('border-[#cdbeb7]', 'bg-[#f8f6f4]', 'shadow-sm');
-      option.classList.remove('border-[#e8e1dc]', 'bg-white');
-      if (dot) dot.classList.remove('opacity-0');
-    } else {
-      option.classList.remove('border-[#cdbeb7]', 'bg-[#f8f6f4]', 'shadow-sm');
-      option.classList.add('border-[#e8e1dc]', 'bg-white');
-      if (dot) dot.classList.add('opacity-0');
-    }
-  });
+function buildProfileReportOptions() {
+  renderReportReasonCards('profile-report-reasons', profileReportReasons, 'profile-report-reason');
 }
 
 function reportNote(noteId) {
@@ -14361,7 +14380,7 @@ function renderPlacesList(places) {
       alert("No puedes reportarte a ti mismo.");
       return;
     }
-    const reason = document.getElementById('report-reason').value;
+    const reason = document.querySelector("input[name='profile-report-reason']:checked")?.value || 'otro';
     const description = document.getElementById('report-description').value;
     // Guardar el reporte de inmediato en la base de datos
     const reporterName = user.displayName || user.email || "Usuario";
@@ -15633,22 +15652,15 @@ function renderPlacesList(places) {
 <script>
   function openReportModal() {
     const modal = document.getElementById('report-modal');
-    const modalContent = modal.querySelector('div');
-    modal.style.display = 'flex';
-    requestAnimationFrame(() => {
-      modal.classList.remove('opacity-0', 'pointer-events-none');
-      modalContent.classList.remove('translate-y-full');
-    });
+    if (!modal) return;
+    buildProfileReportOptions();
+    modal.classList.remove('hidden');
   }
 
   function closeReportModal() {
     const modal = document.getElementById('report-modal');
-    const modalContent = modal.querySelector('div');
-    modalContent.classList.add('translate-y-full');
-    modal.classList.add('opacity-0', 'pointer-events-none');
-    setTimeout(() => {
-      modal.style.display = 'none';
-    }, 300);
+    if (!modal) return;
+    modal.classList.add('hidden');
   }
 </script>
 <script>
