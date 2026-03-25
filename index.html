@@ -1878,16 +1878,12 @@ body {
 
 <!-- MODAL DE RESPUESTA AL REPORTE -->
 <div id="report-response-modal" class="fixed inset-0 flex flex-col items-center justify-center z-50 hidden bg-[#f5f4f2]/90 backdrop-blur-sm" style="z-index: 9999;">
-  <div class="bg-white p-6 rounded-3xl text-center border border-[#e8e1dc] shadow-sm">
-    <div class="flex justify-center mb-4">
-      <div class="sk-fading-circle" aria-hidden="true">
-        <div class="sk-circle1 sk-circle"></div><div class="sk-circle2 sk-circle"></div><div class="sk-circle3 sk-circle"></div><div class="sk-circle4 sk-circle"></div>
-        <div class="sk-circle5 sk-circle"></div><div class="sk-circle6 sk-circle"></div><div class="sk-circle7 sk-circle"></div><div class="sk-circle8 sk-circle"></div>
-        <div class="sk-circle9 sk-circle"></div><div class="sk-circle10 sk-circle"></div><div class="sk-circle11 sk-circle"></div><div class="sk-circle12 sk-circle"></div>
-      </div>
+  <div class="bg-white p-6 rounded-3xl text-center border border-[#e8e1dc] shadow-sm max-w-sm mx-4">
+    <div class="w-14 h-14 rounded-full bg-[#f0ebe7] text-[#5f4b44] flex items-center justify-center mx-auto mb-4">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
     </div>
-    <p class="text-xl font-bold mb-2 text-[#2f1a14]">Procesando tu reporte...</p>
-    <p class="text-[#7a6962]">Espera unos instantes.</p>
+    <p class="text-xl font-bold mb-2 text-[#2f1a14]">Reporte enviado correctamente</p>
+    <p class="text-[#7a6962]">Se revisará y te avisaremos en notificaciones.</p>
   </div>
 </div>
 
@@ -8632,19 +8628,6 @@ const profileReportReasons = [
   { value: 'otro', label: 'Otro motivo' }
 ];
 
-const reportReasonIconMap = {
-  sexual: 'fa-person-dress-burst',
-  violence: 'fa-triangle-exclamation',
-  hate: 'fa-ban',
-  self_harm: 'fa-heart-crack',
-  misinformation: 'fa-bullhorn',
-  copyright: 'fa-copyright',
-  other: 'fa-ellipsis',
-  perfil_falso: 'fa-user-secret',
-  spam: 'fa-comment-slash',
-  infraccion_normas: 'fa-shield-halved',
-  otro: 'fa-ellipsis'
-};
 
 function renderReportReasonCards(containerId, options, inputName) {
   const container = document.getElementById(containerId);
@@ -8653,11 +8636,8 @@ function renderReportReasonCards(containerId, options, inputName) {
   container.innerHTML = options.map((reason, idx) => `
     <label class="report-option-card" data-report-card>
       <input type="radio" name="${inputName}" value="${reason.value}" class="sr-only" ${idx === 0 ? 'checked' : ''}>
-      <span class="w-9 h-9 rounded-xl bg-[#f3efec] text-[#5f4b44] flex items-center justify-center transition-colors">
-        <i class="fas ${reportReasonIconMap[reason.value] || 'fa-flag'}"></i>
-      </span>
-      <span class="text-sm text-gray-800 leading-relaxed">${reason.label}</span>
-      <span class="ml-auto mt-1 w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center">
+      <span class="text-sm text-gray-800 leading-relaxed flex-1">${reason.label}</span>
+      <span class="ml-auto mt-0.5 w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center">
         <span class="w-2.5 h-2.5 rounded-full bg-[#5f4b44] opacity-0" data-report-dot></span>
       </span>
     </label>
@@ -14372,6 +14352,13 @@ function renderPlacesList(places) {
     document.getElementById('author-posts-restricted-view').classList.add('hidden');
   }
   /*********************** REPORTES **************************/
+  function showQuickReportFeedback() {
+    const responseModal = document.getElementById('report-response-modal');
+    if (!responseModal) return;
+    responseModal.classList.remove('hidden');
+    setTimeout(() => responseModal.classList.add('hidden'), 1400);
+  }
+
   document.getElementById('report-form').addEventListener('submit', function(e) {
     e.preventDefault();
     const user = firebase.auth().currentUser;
@@ -14380,76 +14367,36 @@ function renderPlacesList(places) {
       alert("No puedes reportarte a ti mismo.");
       return;
     }
+
     const reason = document.querySelector("input[name='profile-report-reason']:checked")?.value || 'otro';
-    const description = document.getElementById('report-description').value;
-    // Guardar el reporte de inmediato en la base de datos
+    const description = document.getElementById('report-description').value.trim();
     const reporterName = user.displayName || user.email || "Usuario";
     const reportData = {
       reporter: user.uid,
-      reporterName: reporterName,
+      reporterName,
       reportedUser: currentViewedAuthorId,
-      reportedName: "", // lo obtendremos luego
-      reason: reason,
-      description: description,
+      reportedName: "",
+      reason,
+      description,
       timestamp: Date.now(),
       status: "pending"
     };
-    firebase.database().ref('reports').push(reportData)
-      .catch(error => {
-        console.error("Error al enviar el reporte:", error);
-      });
-    closeReportModal();
-    document.getElementById('report-response-modal').classList.remove('hidden');
-    // Se obtiene la información del perfil denunciado
-    firebase.database().ref('users/' + currentViewedAuthorId).once('value').then(authorSnap => {
-      if (!authorSnap.exists()) {
-        document.getElementById('report-response-modal').classList.add('hidden');
-        alert("El perfil reportado no existe.");
-        return;
-      }
-      const reportedData = authorSnap.val();
-      const reportedUsername = reportedData.username || "";
-      // Guardamos el nombre denunciado en el reporte (opcional)
-      reportData.reportedName = reportedUsername;
-      // Simular un tiempo de verificación de 16 segundos
-      setTimeout(() => {
-        // Se realizan las comprobaciones (puedes agregar otros criterios si lo deseas)
-        if (contienePalabrasOfensivas(reportedUsername)) {
-          // Si se detecta lenguaje ofensivo: actualizar el perfil denunciado para bloquearlo
-          firebase.database().ref('users/' + currentViewedAuthorId).update({
-            blocked: true,
-            // Bloqueo por 24 horas (ajusta este tiempo según tus políticas)
-            blockedUntil: Date.now() + (24 * 60 * 60 * 1000)
-          }).then(() => {
-            // Notificación al perfil denunciado indicando el bloqueo
-            firebase.database().ref('notifications/' + currentViewedAuthorId).push({
-              message: "Hemos detectado que tu perfil contiene lenguaje ofensivo. Tu cuenta ha sido bloqueada temporalmente hasta que un administrador la revise.",
-              timestamp: Date.now(),
-              read: false
-            });
-          });
-          // Notificar al denunciante
-          addNotification(user.uid, "Hemos revisado el perfil que has reportado y se han detectado infracciones. El perfil denunciado ha sido bloqueado hasta su revisión.");
-          // Mostrar un mensaje en un modal de respuesta
-          document.getElementById('admin-response-modal').innerHTML = `
-          <div class="p-6 text-center">
-            <h2 class="text-2xl font-bold mb-4">Reporte Procesado</h2>
-            <p>Hemos revisado el perfil que has reportado. Se han detectado infracciones por lenguaje ofensivo y el perfil ha sido bloqueado hasta que un administrador lo revise.</p>
-            <button onclick="closeAdminResponseModal()" class="bg-[#58CC02] text-white px-4 py-2 rounded mt-4">Cerrar</button>
-          </div>`;
-        } else {
-          // Si no se detecta ninguna infracción en el nombre
-          addNotification(user.uid, "Hemos revisado el perfil que has reportado y no hemos encontrado ningún problema.");
-          document.getElementById('admin-response-modal').innerHTML = `
-          <div class="p-6 text-center">
-            <h2 class="text-2xl font-bold mb-4">Reporte Procesado</h2>
-            <p>Hemos revisado el perfil que has reportado y no se han encontrado infracciones.</p>
-            <button onclick="closeAdminResponseModal()" class="bg-[#58CC02] text-white px-4 py-2 rounded mt-4">Cerrar</button>
-          </div>`;
+
+    firebase.database().ref('reports').push(reportData).then((reportRef) => {
+      closeReportModal();
+      showQuickReportFeedback();
+      document.getElementById('report-description').value = '';
+      addNotification(user.uid, "Tu reporte fue enviado correctamente y será revisado por el equipo.");
+
+      // Completar nombre reportado sin bloquear la UI.
+      return firebase.database().ref('users/' + currentViewedAuthorId + '/username').once('value').then((snap) => {
+        if (snap.exists()) {
+          return reportRef.update({ reportedName: snap.val() || '' });
         }
-        document.getElementById('report-response-modal').classList.add('hidden');
-        document.getElementById('admin-response-modal').style.display = "flex";
-      }, 16000); // 16 segundos de retardo para procesar
+      });
+    }).catch((error) => {
+      console.error("Error al enviar el reporte:", error);
+      alert("No se pudo enviar el reporte. Inténtalo de nuevo.");
     });
   });
   /*********************** CREACIÓN DE HISTORIAS **************************/
