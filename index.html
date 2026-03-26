@@ -239,6 +239,45 @@ body {
   color: #b2a7a1;
 }
 
+/* ===== SEGUIR RÁPIDO EN AVATAR ===== */
+.quick-follow-btn {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  background: #3a241d;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+  transform: scale(1);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.quick-follow-btn:active {
+  transform: scale(0.92);
+}
+
+.quick-follow-btn.following {
+  background: #8d7d75;
+}
+
+.quick-follow-btn.pop {
+  animation: quickFollowPop 0.35s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+@keyframes quickFollowPop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
 .vote-star.active .fire-icon-sm {
   color: #ff6a00;
   filter:
@@ -8138,6 +8177,79 @@ const KLIPY_GIFS = [
     return false;
   }
 
+  function getQuickFollowButtonMarkup(targetUserId, currentUserId) {
+    if (!targetUserId || !currentUserId || targetUserId === currentUserId) return '';
+    return `
+      <button type="button"
+        class="quick-follow-btn"
+        data-follow-user-id="${targetUserId}"
+        data-following="false"
+        onclick="event.stopPropagation(); event.preventDefault(); quickFollowUser('${targetUserId}', this)"
+        aria-label="Seguir usuario">
+        +
+      </button>
+    `;
+  }
+
+  function hydrateQuickFollowButtons(root = document) {
+    const currentUser = firebase.auth().currentUser;
+    if (!currentUser) return;
+
+    const buttons = root.querySelectorAll ? root.querySelectorAll('.quick-follow-btn[data-follow-user-id]') : [];
+    buttons.forEach(btn => {
+      const targetUserId = btn.dataset.followUserId;
+      if (!targetUserId || targetUserId === currentUser.uid) {
+        btn.remove();
+        return;
+      }
+      firebase.database().ref('followers/' + targetUserId + '/' + currentUser.uid).once('value').then(snapshot => {
+        updateQuickFollowButtonState(btn, snapshot.exists(), false);
+      }).catch(() => {
+        updateQuickFollowButtonState(btn, false, false);
+      });
+    });
+  }
+
+  function updateQuickFollowButtonState(button, isFollowing, animate = true) {
+    if (!button) return;
+    button.dataset.following = isFollowing ? 'true' : 'false';
+    button.classList.toggle('following', isFollowing);
+    button.innerHTML = isFollowing
+      ? '<svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3.25-3.25a1 1 0 111.414-1.414l2.543 2.543 6.543-6.543a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>'
+      : '+';
+    if (animate) {
+      button.classList.remove('pop');
+      void button.offsetWidth;
+      button.classList.add('pop');
+      setTimeout(() => button.classList.remove('pop'), 360);
+    }
+  }
+
+  function quickFollowUser(targetUserId, buttonElement = null) {
+    const currentUser = firebase.auth().currentUser;
+    if (!currentUser || !targetUserId || currentUser.uid === targetUserId) return;
+
+    const followRef = firebase.database().ref('followers/' + targetUserId + '/' + currentUser.uid);
+    followRef.once('value').then(snapshot => {
+      if (snapshot.exists()) {
+        updateQuickFollowButtonState(buttonElement, true, true);
+        return;
+      }
+
+      followRef.set({ followedAt: Date.now() }).then(() => {
+        firebase.database().ref('users/' + targetUserId + '/followersCount').transaction(current => (current || 0) + 1);
+        firebase.database().ref('users/' + currentUser.uid).once('value').then(userSnap => {
+          const followerName = userSnap.val()?.username || 'Alguien';
+          addNotification(targetUserId, `${followerName} te ha seguido`);
+        }).catch(() => {});
+
+        updateQuickFollowButtonState(buttonElement, true, true);
+      });
+    }).catch(() => {
+      updateQuickFollowButtonState(buttonElement, false, false);
+    });
+  }
+
   function loadNotes(showLoader = true) {
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
@@ -8245,9 +8357,12 @@ const KLIPY_GIFS = [
             noteElement.innerHTML = `
               <div class="p-5 relative">
                 <div class="flex items-start gap-3 mb-3">
-                  <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
-                    <img src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-full h-full object-cover">
-                  </button>
+                  <div class="relative w-10 h-10 flex-shrink-0">
+                    <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="w-10 h-10 rounded-full overflow-hidden ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
+                      <img src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-full h-full object-cover">
+                    </button>
+                    ${getQuickFollowButtonMarkup(safeAuthorId, user?.uid || '')}
+                  </div>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-2">
                       <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}</button>
@@ -8297,6 +8412,7 @@ const KLIPY_GIFS = [
       });
 
       feedContainer.appendChild(feedFragment);
+      hydrateQuickFollowButtons(feedContainer);
     });
   }
 
@@ -9052,7 +9168,7 @@ function openAuthorProfileFromComments(authorId) {
   if (!authorId) return;
   const commentsView = document.getElementById('comments-view');
   if (commentsView) commentsView.classList.add('hidden');
-  setTimeout(() => openAuthorProfile(authorId), 20);
+  setTimeout(() => openAuthorProfile(authorId, 'comments'), 20);
 }
 
 function openCommentsView(noteId) {
@@ -9125,9 +9241,12 @@ function openCommentsView(noteId) {
     const originalAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', originalAuthorId);
     document.getElementById('original-post').innerHTML = `
       <div class="flex items-start gap-3 mb-2">
-        <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${note.authorName || 'Usuario'}">
-          <img src="${note.authorImage || 'https://via.placeholder.com/150'}" class="w-full h-full object-cover">
-        </button>
+        <div class="relative w-8 h-8 flex-shrink-0">
+          <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${note.authorName || 'Usuario'}">
+            <img src="${note.authorImage || 'https://via.placeholder.com/150'}" class="w-full h-full object-cover">
+          </button>
+          ${getQuickFollowButtonMarkup(originalAuthorId, user?.uid || '')}
+        </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1">
             <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}">${note.authorName || 'Usuario'}${originalAuthorVerifiedIcon}</button>
@@ -9147,6 +9266,7 @@ function openCommentsView(noteId) {
   });
 
   loadCommentsInView(noteId);
+  hydrateQuickFollowButtons(document.getElementById('original-post'));
 }
 
 // Cerrar vista de comentarios
@@ -9281,9 +9401,12 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
 
   commentDiv.innerHTML = `
     <div class="flex items-start gap-3">
-      <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${comment.authorName || 'Usuario'}">
-        <img src="${comment.authorImage}" class="w-full h-full object-cover">
-      </button>
+      <div class="relative w-8 h-8 flex-shrink-0">
+        <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${comment.authorName || 'Usuario'}">
+          <img src="${comment.authorImage}" class="w-full h-full object-cover">
+        </button>
+        ${getQuickFollowButtonMarkup(commentAuthorId, firebase.auth().currentUser?.uid || '')}
+      </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
           <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${comment.authorName || 'Usuario'}${commentVerifiedIcon}</button>
@@ -9319,6 +9442,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   `;
 
   container.appendChild(commentDiv);
+  hydrateQuickFollowButtons(commentDiv);
 
   // Cargar respuestas
   if (comment.replies) {
@@ -12446,13 +12570,14 @@ function saveNote() {
     loadNotes(false);
   }
 
-  let selectedCommunityWiki = null;
-  let activeCommunityId = null;
-  let communitiesCache = [];
-  let selectedGroupForPost = null;
-  let commentsOriginView = 'main';
-  let commentsListenerRef = null;
-  let activeUserGroupsViewUserId = null;
+let selectedCommunityWiki = null;
+let activeCommunityId = null;
+let communitiesCache = [];
+let selectedGroupForPost = null;
+let commentsOriginView = 'main';
+let commentsListenerRef = null;
+let activeUserGroupsViewUserId = null;
+let authorProfileOrigin = 'main';
 
   function getCommunityById(communityId) {
     return communitiesCache.find(item => item.id === communityId) || null;
@@ -14199,7 +14324,7 @@ function renderPlacesList(places) {
     }
   }
 
-  function openAuthorProfile(authorId) {
+  function openAuthorProfile(authorId, origin = 'main') {
     const currentUser = firebase.auth().currentUser;
     if (!authorId) return;
     // Si intentan abrir su propio perfil desde tarjetas/autores,
@@ -14211,6 +14336,7 @@ function renderPlacesList(places) {
     }
 
     currentViewedAuthorId = authorId;
+    authorProfileOrigin = origin || 'main';
     setAuthorProfileVisibility(true);
 
     const addNoteBtn = document.getElementById('add-note-btn');
@@ -14407,6 +14533,12 @@ function renderPlacesList(places) {
     closeFollowingModal();
     closeAuthorPostsRestrictedView();
     setAuthorProfileVisibility(false);
+    if (authorProfileOrigin === 'comments') {
+      document.getElementById('comments-view')?.classList.remove('hidden');
+    } else {
+      document.getElementById('main-app')?.classList.remove('hidden');
+    }
+    authorProfileOrigin = 'main';
   }
 
   function closeBlockedErrorModal() {
