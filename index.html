@@ -10363,7 +10363,7 @@ function saveNote() {
 
     items.forEach(notification => {
       const container = document.createElement('div');
-      container.className = 'notification-swipe-container relative overflow-hidden mb-2 rounded-xl';
+      container.className = 'notification-container mb-2';
       
       const iconMap = {
         follow: 'user-plus',
@@ -10379,108 +10379,20 @@ function saveNote() {
       };
 
       container.innerHTML = `
-        <div class="notification-delete-action absolute left-3 top-1/2 -translate-y-1/2 w-12 h-12 bg-red-500 flex items-center justify-center text-white rounded-full opacity-0 scale-75 transition-all duration-200 z-20 pointer-events-none shadow-md">
-          <i class="fas fa-trash-alt text-lg"></i>
-        </div>
-        <div class="notification-item ${notification.type || 'info'} relative z-10 transition-transform duration-200 ease-out cursor-pointer bg-white p-4 flex items-start gap-3 border border-[#e8e1dc] rounded-xl shadow-sm" style="transform: translateX(0px)">
+        <div class="notification-item ${notification.type || 'info'} cursor-pointer bg-white p-4 flex items-start gap-3 border border-[#e8e1dc] rounded-xl shadow-sm">
           <i class="fas fa-${iconMap[notification.type || 'info'] || 'info-circle'} mt-0.5 text-[#FE2C55]"></i>
           <div class="flex-1 min-w-0">
             <div class="notification-message break-words text-sm text-gray-800">${notification.message || 'Notificación'}</div>
-            <div class="notification-time text-[10px] text-gray-400 mt-1">${notification.timestamp ? new Date(notification.timestamp).toLocaleString() : ''}</div>
+            <div class="notification-time text-[10px] text-gray-400 mt-1">${notification.timestamp ? formatRelativeTime(notification.timestamp) : ''}</div>
           </div>
           ${!notification.read ? '<span class="unread-dot w-2 h-2 bg-[#FE2C55] rounded-full mt-2"></span>' : ''}
         </div>
       `;
 
       const item = container.querySelector('.notification-item');
-      const deleteAction = container.querySelector('.notification-delete-action');
-      let startX = 0;
-      let currentX = 0;
-      let isSwiping = false;
-
-      deleteAction.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleDelete();
-      });
-
-      const handleDelete = () => {
-        // Eliminar de localStorage
-        let localNotes = getLocalNotifications(userId);
-        localNotes = localNotes.filter(ln => ln.notificationId !== notification.notificationId);
-        saveLocalNotifications(userId, localNotes);
-        // Intentar eliminar de Firebase
-        firebase.database().ref('notifications/' + userId + '/' + notification.notificationId).remove().catch(() => {});
-        
-        // Animación de salida
-        container.style.transition = 'all 0.3s ease';
-        container.style.height = '0';
-        container.style.margin = '0';
-        container.style.opacity = '0';
-        setTimeout(() => {
-          renderNotificationsList(userId);
-          updateBadgeCount(userId);
-        }, 300);
-      };
-
-      // Eventos de Touch
-      item.addEventListener('touchstart', (e) => {
-        startX = e.touches[0].clientX;
-        item.style.transition = 'none';
-        deleteAction.style.transition = 'none';
-      }, { passive: true });
-
-      item.addEventListener('touchmove', (e) => {
-        currentX = e.touches[0].clientX - startX;
-        if (currentX < 0) { // Solo deslizar a la izquierda
-          isSwiping = true;
-          const moveX = Math.max(currentX, -100); // Límite de deslizamiento
-          item.style.transform = `translateX(${moveX}px)`;
-          const swipeAmount = Math.abs(moveX);
-          deleteAction.style.opacity = Math.min(swipeAmount / 80, 1);
-          deleteAction.style.transform = `translateY(-50%) scale(${0.75 + Math.min(swipeAmount / 200, 0.25)})`;
-        }
-      }, { passive: true });
-
-      item.addEventListener('touchend', () => {
-        item.style.transition = 'transform 0.2s ease-out';
-        deleteAction.style.transition = 'opacity 0.2s ease-out';
-        
-        if (currentX < -60) {
-          // Si deslizó lo suficiente, mostrar el icono de borrar y esperar click o completar el swipe
-          item.style.transform = 'translateX(-80px)';
-          deleteAction.style.opacity = '1';
-          deleteAction.style.transform = 'translateY(-50%) scale(1)';
-          deleteAction.style.pointerEvents = 'auto';
-        } else {
-          // Volver a la posición original
-          item.style.transform = 'translateX(0px)';
-          deleteAction.style.opacity = '0';
-          deleteAction.style.transform = 'translateY(-50%) scale(0.75)';
-          deleteAction.style.pointerEvents = 'none';
-        }
-        
-        setTimeout(() => { isSwiping = false; }, 50);
-        currentX = 0;
-      });
-
-      // Click en la acción de borrar
-      item.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        if (item.style.transform === 'translateX(-80px)') handleDelete();
-      });
 
       // Click en la notificación para leer
       item.addEventListener('click', () => {
-        if (isSwiping) return;
-        
-        // Si está desplazado, volver a 0
-        if (item.style.transform !== 'translateX(0px)') {
-          item.style.transform = 'translateX(0px)';
-          deleteAction.style.opacity = '0';
-          deleteAction.style.transform = 'translateY(-50%) scale(0.75)';
-          return;
-        }
-
         if (!notification.read) {
           let localNotes = getLocalNotifications(userId);
           const idx = localNotes.findIndex(ln => ln.notificationId === notification.notificationId);
