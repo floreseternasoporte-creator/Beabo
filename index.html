@@ -290,6 +290,75 @@ body {
   animation: fireBurst 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards, fireFlicker 0.8s ease-in-out 0.4s infinite alternate;
 }
 
+/* ===== ICONO DE GUARDAR CON ANIMACIÓN ===== */
+.save-post-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 2px;
+  transition: transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.save-post-btn:active {
+  transform: scale(0.92);
+}
+
+.save-icon {
+  width: 20px;
+  height: 20px;
+  position: relative;
+  z-index: 2;
+  transition: all 0.3s ease;
+  color: #b2a7a1;
+}
+
+/* Icono guardado: relleno y color destacado */
+.save-post-btn.saved .save-icon {
+  color: #FE2C55;
+  fill: #FE2C55;
+  filter: drop-shadow(0 0 2px rgba(254, 44, 85, 0.4));
+}
+
+/* Animación de guardado */
+.save-post-btn.pop .save-icon {
+  animation: savePopAnimation 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+}
+
+@keyframes savePopAnimation {
+  0% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.3) rotate(-5deg); }
+  50% { transform: scale(0.95) rotate(3deg); }
+  75% { transform: scale(1.15) rotate(-2deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+/* Partículas de confirmación al guardar */
+.save-post-btn .save-spark {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+}
+
+.save-post-btn.pop .save-spark:nth-child(1) { background: #FE2C55; animation: saveSpark1 0.6s ease-out forwards; }
+.save-post-btn.pop .save-spark:nth-child(2) { background: #ff6b9d; animation: saveSpark2 0.6s ease-out forwards; }
+.save-post-btn.pop .save-spark:nth-child(3) { background: #FE2C55; animation: saveSpark3 0.6s ease-out forwards; }
+.save-post-btn.pop .save-spark:nth-child(4) { background: #ff8ab3; animation: saveSpark4 0.6s ease-out forwards; }
+
+@keyframes saveSpark1 { 0% { opacity:1; transform: translate(0,0) scale(1); } 100% { opacity:0; transform: translate(-12px,-15px) scale(0.3); } }
+@keyframes saveSpark2 { 0% { opacity:1; transform: translate(0,0) scale(1); } 100% { opacity:0; transform: translate(10px,-18px) scale(0.25); } }
+@keyframes saveSpark3 { 0% { opacity:1; transform: translate(0,0) scale(1); } 100% { opacity:0; transform: translate(-8px,-20px) scale(0.35); } }
+@keyframes saveSpark4 { 0% { opacity:1; transform: translate(0,0) scale(1); } 100% { opacity:0; transform: translate(14px,-14px) scale(0.28); } }
+
 /* ===== LOADER DE COMENTARIOS ===== */
 .comment-skeleton {
   display: flex;
@@ -3673,7 +3742,9 @@ firebase.auth().onAuthStateChanged(user => {
             <button class="tab-button py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium" data-tab="notes">
               Notas
             </button>
-
+            <button class="tab-button py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium" data-tab="saved">
+              Guardados
+            </button>
           </nav>
         </div>
       </div>
@@ -3709,6 +3780,16 @@ firebase.auth().onAuthStateChanged(user => {
               <p class="text-gray-600">Tus notas y pensamientos publicados en la comunidad</p>
             </div>
 
+            <!-- Tab de Guardados -->
+            <div id="saved-tab-content" class="tab-content hidden">
+              <div class="flex justify-between items-center mb-6">
+                <div>
+                  <h2 id="profile-saved-header" class="text-2xl font-bold text-gray-900">0 guardados</h2>
+                  <p class="text-sm text-gray-500 mt-1">Posts que has guardado para leer después</p>
+                </div>
+              </div>
+              <div id="user-saved-posts" class="space-y-4"></div>
+            </div>
 
           </div>
 
@@ -3777,6 +3858,10 @@ document.addEventListener('DOMContentLoaded', function() {
         // Si es el tab de notas, cargar las notas del usuario
         if (tabName === 'notes') {
           loadUserNotes();
+        }
+        // Si es el tab de guardados, cargar los posts guardados
+        if (tabName === 'saved') {
+          loadUserSavedPosts();
         }
       }
     });
@@ -8173,7 +8258,22 @@ const KLIPY_GIFS = [
                 ${urlHTML}
                 ${pollHTML}
 
-                <div class="flex items-center pt-3 border-t border-[#efe9e5]">
+                <div class="flex flex-col gap-2 pt-3 border-t border-[#efe9e5]">
+                  <!-- Primera fila: Comentar -->
+                  <div class="flex items-center gap-3 text-[#7a6962]">
+                    <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1.5 hover:text-[#5f4b44] transition-colors text-[#7a6962] flex-1">
+                      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/>
+                      </svg>
+                      <span class="text-sm font-bold">${commentsCount}</span>
+                    </button>
+                    <button onclick="toggleSharePost('${note.id}')" class="flex items-center gap-1.5 hover:text-[#5f4b44] transition-colors text-[#7a6962] flex-1">
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m0 0l4 4m10-4v12m0 0l4-4m0 0l-4-4"/>
+                      </svg>
+                    </button>
+                  </div>
+                  <!-- Segunda fila: Votar y Guardar -->
                   <div class="flex items-center gap-3 text-[#7a6962]">
                     <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="vote-star flex items-center gap-1 ${userVote === 'up' ? 'active' : ''}" aria-label="Votar publicación">
                       <span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span>
@@ -8183,11 +8283,11 @@ const KLIPY_GIFS = [
                       </svg>
                     </button>
                     <span id="score-${note.id}" class="text-sm font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
-                    <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1.5 hover:text-[#5f4b44] transition-colors text-[#7a6962]">
-                      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/>
+                    <button onclick="toggleSavePost('${note.id}')" id="save-btn-${note.id}" class="save-post-btn flex items-center gap-1.5 hover:text-[#5f4b44] transition-colors text-[#7a6962] ml-auto" aria-label="Guardar publicación">
+                      <span class="save-spark"></span><span class="save-spark"></span><span class="save-spark"></span><span class="save-spark"></span>
+                      <svg class="w-5 h-5 save-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 19V5z"/>
                       </svg>
-                      <span class="text-sm font-bold">${commentsCount}</span>
                     </button>
                   </div>
                 </div>
@@ -8203,6 +8303,8 @@ const KLIPY_GIFS = [
 
       feedContainer.appendChild(feedFragment);
       hydrateQuickFollowButtons(feedContainer);
+      // Actualizar estado de botones de guardar
+      notes.forEach(note => updateSaveButtonState(note.id));
     });
   }
 
@@ -8784,6 +8886,70 @@ function votePost(noteId, voteType) {
     }
     });
   });
+}
+
+// Función para guardar/desguardar posts
+function toggleSavePost(noteId) {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para guardar publicaciones');
+    return;
+  }
+
+  // Obtener posts guardados del localStorage
+  const savedPostsKey = `savedPosts_${user.uid}`;
+  let savedPosts = JSON.parse(localStorage.getItem(savedPostsKey) || '{}');
+  
+  const saveBtn = document.getElementById(`save-btn-${noteId}`);
+  
+  if (savedPosts[noteId]) {
+    // Desguardar
+    delete savedPosts[noteId];
+    if (saveBtn) {
+      saveBtn.classList.remove('saved');
+    }
+  } else {
+    // Guardar - obtener datos del post
+    firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
+      const postData = snapshot.val();
+      if (postData) {
+        savedPosts[noteId] = {
+          ...postData,
+          id: noteId,
+          savedAt: Date.now()
+        };
+        localStorage.setItem(savedPostsKey, JSON.stringify(savedPosts));
+        
+        if (saveBtn) {
+          saveBtn.classList.add('saved');
+          // Animar
+          saveBtn.classList.remove('pop');
+          void saveBtn.offsetWidth; // forzar reflow
+          requestAnimationFrame(() => {
+            saveBtn.classList.add('pop');
+            setTimeout(() => saveBtn.classList.remove('pop'), 600);
+          });
+        }
+      }
+    });
+    return;
+  }
+  
+  localStorage.setItem(savedPostsKey, JSON.stringify(savedPosts));
+}
+
+// Función para cargar estado de guardado al renderizar posts
+function updateSaveButtonState(noteId) {
+  const user = firebase.auth().currentUser;
+  if (!user) return;
+  
+  const savedPostsKey = `savedPosts_${user.uid}`;
+  const savedPosts = JSON.parse(localStorage.getItem(savedPostsKey) || '{}');
+  const saveBtn = document.getElementById(`save-btn-${noteId}`);
+  
+  if (saveBtn && savedPosts[noteId]) {
+    saveBtn.classList.add('saved');
+  }
 }
 
 let currentPostId = null;
@@ -13935,6 +14101,44 @@ function renderPlacesList(places) {
       }
 
       notesContainer.innerHTML = notesHTML;
+    });
+  }
+
+  // Funcion para cargar posts guardados desde localStorage
+  function loadUserSavedPosts() {
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+
+    const savedPostsKey = 'savedPosts_' + user.uid;
+    const savedPosts = JSON.parse(localStorage.getItem(savedPostsKey) || '{}');
+    const savedPostsContainer = document.getElementById('user-saved-posts');
+    const headerElement = document.getElementById('profile-saved-header');
+    
+    if (!savedPostsContainer) return;
+
+    const postIds = Object.keys(savedPosts);
+    
+    if (postIds.length === 0) {
+      savedPostsContainer.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-6 text-center text-[#8d7d75]">Aun no has guardado ningun post. Cuando guardes posts, apareceran aqui.</div>';
+      if (headerElement) headerElement.textContent = '0 guardados';
+      return;
+    }
+
+    if (headerElement) headerElement.textContent = postIds.length + ' guardado' + (postIds.length !== 1 ? 's' : '');
+
+    savedPostsContainer.innerHTML = '';
+    
+    // Ordenar posts guardados por fecha de guardado (mas recientes primero)
+    const sortedPostIds = postIds.sort((a, b) => {
+      const timeA = savedPosts[a].savedAt || 0;
+      const timeB = savedPosts[b].savedAt || 0;
+      return timeB - timeA;
+    });
+
+    sortedPostIds.forEach(postId => {
+      const post = savedPosts[postId];
+      const postCard = createProfilePostCard(post);
+      savedPostsContainer.appendChild(postCard);
     });
   }
 
