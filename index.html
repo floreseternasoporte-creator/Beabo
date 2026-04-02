@@ -10814,6 +10814,7 @@ function saveNote() {
   let supportAgentConnected = false;
   let supportAwaitingAgent = false;
   let supportImageUpload = null;
+  let supportTypingIndicatorId = null;
 
   function openSupportModal() {
     const supportModal = document.getElementById('support-modal');
@@ -10824,6 +10825,7 @@ function saveNote() {
     supportAgentConnected = false;
     supportAwaitingAgent = false;
     supportImageUpload = null;
+    supportTypingIndicatorId = null;
     
     const chatContainer = document.getElementById('support-chat-container');
     chatContainer.innerHTML = '';
@@ -10848,6 +10850,7 @@ function saveNote() {
   function closeSupportModal() {
     const supportModal = document.getElementById('support-modal');
     supportModal.classList.add('hidden');
+    removeSupportTypingIndicator();
   }
 
   function sendSupportMessage(predefinedMessage = null) {
@@ -10878,40 +10881,132 @@ function saveNote() {
     }
   }
 
-  function processBaroResponse(userMessage) {
-    const chatContainer = document.getElementById('support-chat-container');
+  function getSupportFallbackResponse(userMessage) {
     const keywords = userMessage.toLowerCase();
-    let baroResponse = '';
-    
+
     if (keywords.includes('internet') || keywords.includes('conexion')) {
-      baroResponse = 'La conexion a Internet es la capacidad de un dispositivo para conectarse a la red mundial. Si tienes problemas, intenta reiniciar tu router o verifica tu plan de datos. Si el problema persiste, escribe "agente" para hablar con un especialista.';
-    } else if (keywords.includes('funcion') || keywords.includes('caracteristica')) {
-      baroResponse = 'Las funciones de Drex incluyen crear publicaciones, seguir usuarios, comentar y compartir contenido. ¿Hay alguna funcion especifica que no encuentres? Escribe "agente" si necesitas ayuda personalizada.';
-    } else if (keywords.includes('seguridad') || keywords.includes('contrasena')) {
-      baroResponse = 'La seguridad es fundamental. Nunca compartas tu contrasena y activa la autenticacion de dos factores en tu cuenta. Si sospechas actividad sospechosa, contacta a un agente escribiendo "agente".';
-    } else if (keywords.includes('error') || keywords.includes('problema')) {
-      baroResponse = 'Lamento que experimentes un problema. Para ayudarte mejor, necesito que un agente revise tu caso. Escribe "agente" para conectarte con nuestro equipo.';
-    } else {
-      baroResponse = 'Entiendo tu consulta. Para brindarte la mejor asistencia, te conectare con un agente especializado. Escribe "agente" para continuar.';
+      return 'La conexion a Internet es la capacidad de un dispositivo para conectarse a la red mundial. Si tienes problemas, intenta reiniciar tu router o verifica tu plan de datos. Si el problema persiste, escribe "agente" para hablar con un especialista.';
     }
-    
-    setTimeout(() => {
-      const agentMessageDiv = `
-        <div class="flex gap-3 mb-4">
-          <div class="flex-shrink-0">
-            <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
-          </div>
-          <div class="flex-1">
-            <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 shadow-sm">
-              <p class="text-sm text-[#2f1a14]">${escapeHtml(baroResponse)}</p>
-            </div>
+
+    if (keywords.includes('funcion') || keywords.includes('caracteristica')) {
+      return 'Las funciones de Drex incluyen crear publicaciones, seguir usuarios, comentar y compartir contenido. ¿Hay alguna funcion especifica que no encuentres? Escribe "agente" si necesitas ayuda personalizada.';
+    }
+
+    if (keywords.includes('seguridad') || keywords.includes('contrasena')) {
+      return 'La seguridad es fundamental. Nunca compartas tu contrasena y activa la autenticacion de dos factores en tu cuenta. Si sospechas actividad sospechosa, contacta a un agente escribiendo "agente".';
+    }
+
+    if (keywords.includes('error') || keywords.includes('problema')) {
+      return 'Lamento que experimentes un problema. Para ayudarte mejor, necesito que un agente revise tu caso. Escribe "agente" para conectarte con nuestro equipo.';
+    }
+
+    return 'Entiendo tu consulta. Para brindarte la mejor asistencia, te conectare con un agente especializado. Escribe "agente" para continuar.';
+  }
+
+  function showSupportTypingIndicator() {
+    removeSupportTypingIndicator();
+    const chatContainer = document.getElementById('support-chat-container');
+    const typingId = 'support-typing-' + Date.now();
+    supportTypingIndicatorId = typingId;
+
+    const typingDiv = `
+      <div class="flex gap-3 mb-4" id="${typingId}">
+        <div class="flex-shrink-0">
+          <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
+        </div>
+        <div class="flex-1">
+          <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 shadow-sm inline-flex items-center gap-2">
+            <span class="w-2 h-2 bg-[#b69f94] rounded-full animate-pulse"></span>
+            <span class="w-2 h-2 bg-[#b69f94] rounded-full animate-pulse" style="animation-delay: 0.2s"></span>
+            <span class="w-2 h-2 bg-[#b69f94] rounded-full animate-pulse" style="animation-delay: 0.4s"></span>
+            <span class="text-xs text-[#8a7a71] ml-1">Baro está escribiendo...</span>
           </div>
         </div>
-      `;
-      chatContainer.innerHTML += agentMessageDiv;
-      supportChatMessages.push({ role: 'agent', text: baroResponse });
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }, 500);
+      </div>
+    `;
+
+    chatContainer.innerHTML += typingDiv;
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
+
+  function removeSupportTypingIndicator() {
+    if (!supportTypingIndicatorId) return;
+    const node = document.getElementById(supportTypingIndicatorId);
+    if (node) {
+      node.remove();
+    }
+    supportTypingIndicatorId = null;
+  }
+
+  async function fetchSupportResponse(userMessage) {
+    const endpoint = window.DREX_SUPPORT_AI_ENDPOINT;
+
+    if (!endpoint) {
+      return null;
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'minimax/minimax-m2.5-chat:free',
+        message: userMessage,
+        history: supportChatMessages.slice(-8)
+      })
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    if (typeof data.reply === 'string' && data.reply.trim()) {
+      return data.reply.trim();
+    }
+
+    return null;
+  }
+
+  async function processBaroResponse(userMessage) {
+    const chatContainer = document.getElementById('support-chat-container');
+    showSupportTypingIndicator();
+
+    const minTypingDelayMs = 1200;
+    const typingStartedAt = Date.now();
+
+    let baroResponse = '';
+    try {
+      baroResponse = await fetchSupportResponse(userMessage) || getSupportFallbackResponse(userMessage);
+    } catch (error) {
+      console.error('No se pudo obtener respuesta IA del soporte:', error);
+      baroResponse = getSupportFallbackResponse(userMessage);
+    }
+
+    const elapsed = Date.now() - typingStartedAt;
+    if (elapsed < minTypingDelayMs) {
+      await new Promise(resolve => setTimeout(resolve, minTypingDelayMs - elapsed));
+    }
+
+    removeSupportTypingIndicator();
+
+    const agentMessageDiv = `
+      <div class="flex gap-3 mb-4">
+        <div class="flex-shrink-0">
+          <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
+        </div>
+        <div class="flex-1">
+          <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 shadow-sm">
+            <p class="text-sm text-[#2f1a14]">${escapeHtml(baroResponse)}</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    chatContainer.innerHTML += agentMessageDiv;
+    supportChatMessages.push({ role: 'agent', text: baroResponse });
+    chatContainer.scrollTop = chatContainer.scrollHeight;
   }
 
   function connectToAgent() {
