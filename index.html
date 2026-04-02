@@ -10856,9 +10856,9 @@ function saveNote() {
   function sendSupportMessage(predefinedMessage = null) {
     const input = document.getElementById('support-message-input');
     const message = predefinedMessage || input.value.trim();
-    
+
     if (!message) return;
-    
+
     const chatContainer = document.getElementById('support-chat-container');
     const userMessageDiv = `
       <div class="flex gap-3 justify-end mb-4">
@@ -10873,34 +10873,44 @@ function saveNote() {
     supportChatMessages.push({ role: 'user', text: message });
     input.value = '';
     chatContainer.scrollTop = chatContainer.scrollHeight;
-    
+
+    if (supportAwaitingAgent) {
+      return;
+    }
+
+    if (supportAgentConnected) {
+      processBaroResponse(message);
+      return;
+    }
+
     if (message.toLowerCase().includes('agente')) {
       connectToAgent();
-    } else {
-      processBaroResponse(message);
+      return;
     }
+
+    processBaroResponse(message);
   }
 
   function getSupportFallbackResponse(userMessage) {
     const keywords = userMessage.toLowerCase();
 
     if (keywords.includes('internet') || keywords.includes('conexion')) {
-      return 'La conexion a Internet es la capacidad de un dispositivo para conectarse a la red mundial. Si tienes problemas, intenta reiniciar tu router o verifica tu plan de datos. Si el problema persiste, escribe "agente" para hablar con un especialista.';
+      return 'Si tienes problemas de conexion, reinicia tu router, valida tu plan de datos y prueba desde otra red. Si quieres, te puedo guiar paso a paso para diagnosticarlo.';
     }
 
     if (keywords.includes('funcion') || keywords.includes('caracteristica')) {
-      return 'Las funciones de Drex incluyen crear publicaciones, seguir usuarios, comentar y compartir contenido. ¿Hay alguna funcion especifica que no encuentres? Escribe "agente" si necesitas ayuda personalizada.';
+      return 'Drex incluye publicaciones, comentarios, seguimiento de usuarios y notificaciones. Dime exactamente que parte no encuentras y te ayudo ahora mismo.';
     }
 
     if (keywords.includes('seguridad') || keywords.includes('contrasena')) {
-      return 'La seguridad es fundamental. Nunca compartas tu contrasena y activa la autenticacion de dos factores en tu cuenta. Si sospechas actividad sospechosa, contacta a un agente escribiendo "agente".';
+      return 'Para seguridad de tu cuenta: usa una contrasena unica, activa verificacion en dos pasos y no compartas codigos. Si detectas actividad rara, te guio para asegurarla.';
     }
 
     if (keywords.includes('error') || keywords.includes('problema')) {
-      return 'Lamento que experimentes un problema. Para ayudarte mejor, necesito que un agente revise tu caso. Escribe "agente" para conectarte con nuestro equipo.';
+      return 'Entiendo el problema. Enviame el texto exacto del error y los pasos que hiciste antes de que aparezca para ayudarte a resolverlo.';
     }
 
-    return 'Entiendo tu consulta. Para brindarte la mejor asistencia, te conectare con un agente especializado. Escribe "agente" para continuar.';
+    return 'Entendido. Cuentame mas detalles y te ayudo de inmediato.';
   }
 
   function showSupportTypingIndicator() {
@@ -10919,8 +10929,7 @@ function saveNote() {
             <span class="w-2 h-2 bg-[#b69f94] rounded-full animate-pulse"></span>
             <span class="w-2 h-2 bg-[#b69f94] rounded-full animate-pulse" style="animation-delay: 0.2s"></span>
             <span class="w-2 h-2 bg-[#b69f94] rounded-full animate-pulse" style="animation-delay: 0.4s"></span>
-            <span class="text-xs text-[#8a7a71] ml-1">Baro está escribiendo...</span>
-          </div>
+                      </div>
         </div>
       </div>
     `;
@@ -10939,31 +10948,64 @@ function saveNote() {
   }
 
   async function fetchSupportResponse(userMessage) {
+    const history = supportChatMessages.slice(-8);
     const endpoint = window.DREX_SUPPORT_AI_ENDPOINT;
 
-    if (!endpoint) {
+    if (endpoint) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'minimax/minimax-m2.5-chat:free',
+          message: userMessage,
+          history
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (typeof data.reply === 'string' && data.reply.trim()) {
+          return data.reply.trim();
+        }
+      }
+    }
+
+    const openRouterApiKey = window.DREX_OPENROUTER_API_KEY;
+    if (!openRouterApiKey) {
       return null;
     }
 
-    const response = await fetch(endpoint, {
+    const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Authorization': 'Bearer ' + openRouterApiKey,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Drex Support'
       },
       body: JSON.stringify({
         model: 'minimax/minimax-m2.5-chat:free',
-        message: userMessage,
-        history: supportChatMessages.slice(-8)
+        messages: [
+          {
+            role: 'system',
+            content: 'Eres soporte oficial de Drex. Responde claro, breve y util en espanol.'
+          },
+          ...history.map(item => ({ role: item.role === 'agent' ? 'assistant' : 'user', content: item.text })),
+          { role: 'user', content: userMessage }
+        ]
       })
     });
 
-    if (!response.ok) {
+    if (!openRouterResponse.ok) {
       return null;
     }
 
-    const data = await response.json();
-    if (typeof data.reply === 'string' && data.reply.trim()) {
-      return data.reply.trim();
+    const openRouterData = await openRouterResponse.json();
+    const content = openRouterData?.choices?.[0]?.message?.content;
+    if (typeof content === 'string' && content.trim()) {
+      return content.trim();
     }
 
     return null;
@@ -11010,6 +11052,10 @@ function saveNote() {
   }
 
   function connectToAgent() {
+    if (supportAgentConnected || supportAwaitingAgent) {
+      return;
+    }
+
     const chatContainer = document.getElementById('support-chat-container');
     supportAwaitingAgent = true;
     
