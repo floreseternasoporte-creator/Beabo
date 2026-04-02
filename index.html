@@ -2820,6 +2820,17 @@ firebase.auth().onAuthStateChanged(user => {
             </div>
           </div>
 
+          <!-- Usuario vinculado -->
+          <div id="tagged-user-preview-fullscreen" class="hidden mb-3 p-1 bg-transparent border-0 rounded-none shadow-none">
+            <div class="flex items-center justify-between gap-2">
+              <button type="button" onclick="openTaggedUserSheet()" class="flex items-center gap-2 min-w-0 text-left hover:opacity-85 transition">
+                <img id="tagged-user-preview-image" src="https://via.placeholder.com/150" class="w-7 h-7 rounded-full object-cover border border-[#e8e1dc]" alt="Usuario vinculado">
+                <p id="tagged-user-preview-name" class="text-sm font-semibold text-[#5f4b44] truncate"></p>
+              </button>
+              <button onclick="clearTaggedUserSelection()" class="text-[#8c6f66] hover:text-[#5f4b44] text-xs font-semibold">Quitar</button>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -2850,6 +2861,15 @@ firebase.auth().onAuthStateChanged(user => {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
           </svg>
           <span id="location-badge" class="hidden absolute top-1 right-1 bg-[#6f5c54] text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">1</span>
+        </button>
+
+        <button onclick="openTaggedUserSheet()" class="p-2 hover:bg-gray-100 rounded-full transition relative" title="Añadir persona">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#5f4b44]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 12a4 4 0 10-8 0 4 4 0 008 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 19a7 7 0 0114 0"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h4m-2-2v4"/>
+          </svg>
+          <span id="tagged-user-badge" class="hidden absolute top-1 right-1 bg-[#6f5c54] text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">@</span>
         </button>
 
         <button onclick="openStickerPicker('note-content-fullscreen')" class="p-2 hover:bg-gray-100 rounded-full transition" title="Agregar sticker">
@@ -2931,6 +2951,27 @@ firebase.auth().onAuthStateChanged(user => {
       </div>
       <div id="location-results" class="mt-3 space-y-2"></div>
     </div>
+  </div>
+</div>
+
+<div id="tagged-user-sheet-overlay" class="fixed inset-0 bg-black/40 hidden z-[64]" onclick="closeTaggedUserSheet()"></div>
+<div id="tagged-user-sheet" class="fixed inset-0 bg-[#f5f4f2] hidden z-[65] flex flex-col">
+  <div class="bg-[#f5f4f2] border-b border-[#e8e1dc] p-4 flex items-center justify-between">
+    <button onclick="closeTaggedUserSheet()" class="text-gray-600">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+    <h3 class="text-lg font-bold text-[#2f1a14]">Añadir persona</h3>
+    <div class="w-6"></div>
+  </div>
+  <div class="flex-1 overflow-y-auto p-5">
+    <div class="relative">
+      <input id="tagged-user-search-input" type="text" placeholder="Buscar usuario" class="w-full h-12 pl-4 pr-12 bg-white text-[#2f1a14] border border-[#e8e1dc] rounded-full placeholder:text-[#b2a7a1] focus:outline-none focus:ring-2 focus:ring-[#cdbeb7] focus:border-[#cdbeb7]" oninput="handleTaggedUserSearchInput(this.value)">
+      <button type="button" onclick="triggerTaggedUserSearch()" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#3a241d] text-white flex items-center justify-center hover:bg-[#2f1a14] transition" aria-label="Buscar usuario">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      </button>
+    </div>
+    <div id="tagged-user-search-loading" class="hidden mt-4 py-2 text-center"></div>
+    <div id="tagged-user-results" class="mt-3 space-y-2"></div>
   </div>
 </div>
 <!-- Formulario antiguo (mantener oculto para compatibilidad) -->
@@ -6473,6 +6514,7 @@ const KLIPY_GIFS = [
     document.getElementById('poll-preview-fullscreen').classList.add('hidden');
     document.getElementById('note-image-fullscreen').value = '';
     loadLocationStateFromStorage();
+    clearTaggedUserSelection();
 
     // Cargar imagen de perfil actual
     const user = firebase.auth().currentUser;
@@ -6563,6 +6605,8 @@ const KLIPY_GIFS = [
     currentLat: null,
     currentLng: null
   };
+  let taggedUserSearchDebounce = null;
+  let selectedTaggedUser = null;
 
   const predefinedLocations = [
     'Centro Histórico', 'Parque Central', 'Plaza Mayor', 'Malecón', 'Zona Universitaria',
@@ -7191,6 +7235,122 @@ const KLIPY_GIFS = [
     updateLocationPreview();
   }
 
+  function updateTaggedUserPreview() {
+    const preview = document.getElementById('tagged-user-preview-fullscreen');
+    const badge = document.getElementById('tagged-user-badge');
+    const nameLabel = document.getElementById('tagged-user-preview-name');
+    const image = document.getElementById('tagged-user-preview-image');
+    if (!preview || !badge || !nameLabel || !image) return;
+
+    if (!selectedTaggedUser?.uid) {
+      preview.classList.add('hidden');
+      badge.classList.add('hidden');
+      nameLabel.textContent = '';
+      image.src = 'https://via.placeholder.com/150';
+      return;
+    }
+
+    nameLabel.textContent = `@${selectedTaggedUser.username || 'usuario'}`;
+    image.src = selectedTaggedUser.profileImage || 'https://via.placeholder.com/150';
+    preview.classList.remove('hidden');
+    badge.classList.remove('hidden');
+  }
+
+  function clearTaggedUserSelection() {
+    selectedTaggedUser = null;
+    updateTaggedUserPreview();
+  }
+
+  function closeTaggedUserSheet() {
+    document.getElementById('tagged-user-sheet')?.classList.add('hidden');
+    document.getElementById('tagged-user-sheet-overlay')?.classList.add('hidden');
+  }
+
+  function renderTaggedUserResults(users = []) {
+    const container = document.getElementById('tagged-user-results');
+    if (!container) return;
+    if (!users.length) {
+      container.innerHTML = '<p class="text-sm text-[#9f918a] py-2">No encontramos usuarios con ese nombre.</p>';
+      return;
+    }
+
+    container.innerHTML = '';
+    users.slice(0, 30).forEach(userData => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'w-full text-left p-3 rounded-2xl bg-white border border-[#e8e1dc] hover:border-[#d8cec8] shadow-sm transition';
+      button.innerHTML = `
+        <div class="flex items-center gap-3">
+          <img src="${userData.profileImage || 'https://via.placeholder.com/64'}" alt="${escapeHtml(userData.username || 'Usuario')}" class="w-11 h-11 rounded-full object-cover">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-[#2f1a14] truncate">${escapeHtml(userData.username || 'Usuario')}${getVerificationIconByAuthor(userData.email || '', userData.uid || '')}</p>
+            <p class="text-xs text-[#8d7d75] truncate">@${escapeHtml(userData.username || 'usuario')}</p>
+          </div>
+        </div>
+      `;
+      button.onclick = () => {
+        selectedTaggedUser = {
+          uid: userData.uid,
+          username: userData.username || 'usuario',
+          profileImage: userData.profileImage || '',
+          email: userData.email || ''
+        };
+        updateTaggedUserPreview();
+        closeTaggedUserSheet();
+      };
+      container.appendChild(button);
+    });
+  }
+
+  function searchUsersToTag(query = '') {
+    const trimmedQuery = String(query || '').trim().toLowerCase();
+    const loading = document.getElementById('tagged-user-search-loading');
+    if (loading) {
+      loading.innerHTML = getFadingCircleLoaderMarkup();
+      loading.classList.remove('hidden');
+    }
+
+    firebase.database().ref('users').once('value').then(snapshot => {
+      const users = [];
+      snapshot.forEach(child => {
+        const userData = child.val() || {};
+        const username = String(userData.username || '').trim();
+        if (!username) return;
+        if (isAccountBlockedForCurrentUser(child.key)) return;
+        if (!trimmedQuery || username.toLowerCase().includes(trimmedQuery)) {
+          users.push({ ...userData, uid: child.key });
+        }
+      });
+      users.sort((a, b) => String(a.username || '').localeCompare(String(b.username || ''), 'es', { sensitivity: 'base' }));
+      renderTaggedUserResults(users);
+    }).catch(error => {
+      console.error('Error buscando usuarios para etiquetar:', error);
+      renderTaggedUserResults([]);
+    }).finally(() => {
+      if (loading) loading.classList.add('hidden');
+    });
+  }
+
+  function triggerTaggedUserSearch() {
+    const input = document.getElementById('tagged-user-search-input');
+    searchUsersToTag(input?.value || '');
+  }
+
+  function handleTaggedUserSearchInput(value = '') {
+    if (taggedUserSearchDebounce) clearTimeout(taggedUserSearchDebounce);
+    taggedUserSearchDebounce = setTimeout(() => searchUsersToTag(value), 350);
+  }
+
+  function openTaggedUserSheet() {
+    const input = document.getElementById('tagged-user-search-input');
+    const results = document.getElementById('tagged-user-results');
+    if (input) input.value = '';
+    if (results) results.innerHTML = '<p class="text-sm text-[#9f918a] py-2">Busca para vincular una persona en tu publicación.</p>';
+    document.getElementById('tagged-user-sheet-overlay')?.classList.remove('hidden');
+    document.getElementById('tagged-user-sheet')?.classList.remove('hidden');
+    searchUsersToTag('');
+  }
+
   async function fetchPhotonSuggestions(query) {
     const q = (query || '').trim();
     const hasCoords = typeof noteLocationState.currentLat === 'number' && typeof noteLocationState.currentLng === 'number';
@@ -7418,6 +7578,7 @@ const KLIPY_GIFS = [
     setBottomNavVisibility(true);
     clearStickerSelection('note-content-fullscreen');
     closeLocationSheet();
+    closeTaggedUserSheet();
   }
 
   function processImageFile(file) {
@@ -7531,7 +7692,7 @@ const KLIPY_GIFS = [
       }
     }
 
-    if (!content && !imageFiles.length && !pollQuestion && !noteLocationState.name && !selectedGif) {
+    if (!content && !imageFiles.length && !pollQuestion && !noteLocationState.name && !selectedGif && !selectedTaggedUser?.uid) {
       alert('Por favor escribe algo, agrega una imagen, un GIF, ubicación o crea una encuesta');
       return;
     }
@@ -7583,6 +7744,14 @@ const KLIPY_GIFS = [
           name: noteLocationState.name,
           lat: noteLocationState.lat,
           lng: noteLocationState.lng
+        };
+      }
+      if (selectedTaggedUser?.uid) {
+        note.taggedUser = {
+          uid: selectedTaggedUser.uid,
+          username: selectedTaggedUser.username || 'usuario',
+          profileImage: selectedTaggedUser.profileImage || '',
+          email: selectedTaggedUser.email || ''
         };
       }
 
@@ -7877,6 +8046,20 @@ const KLIPY_GIFS = [
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           <span>${safeName}</span>
+        </button>
+      `);
+    }
+
+    if (note.taggedUser?.uid) {
+      const safeTaggedName = escapeHtml(note.taggedUser.username || 'usuario');
+      const safeTaggedId = escapeHtml(note.taggedUser.uid || '');
+      chips.push(`
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-full bg-[#f0f6ff] text-[#285ea8] border border-[#c8ddfb] px-2.5 py-1 text-[11px] font-semibold hover:bg-[#e9f1ff] transition"
+          onclick="openAuthorProfile('${safeTaggedId}')"
+        >
+          <span>@${safeTaggedName}</span>
         </button>
       `);
     }
