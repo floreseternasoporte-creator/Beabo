@@ -2210,10 +2210,10 @@ body {
       </button>
     </div>
     
-    <!-- Centro: Logo de Baro -->
-    <div class="absolute left-1/2 transform -translate-x-1/2">
-      <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover">
-    </div>
+    <!-- Centro: Logo de Baro (clickeable para abrir Chat) -->
+    <button onclick="openBaroChatView()" aria-label="Chat con Baro" class="absolute left-1/2 transform -translate-x-1/2 hover:scale-110 transition-transform">
+      <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-8 h-8 rounded-full object-cover shadow-md">
+    </button>
 
     <!-- Lado derecho: Notificaciones y Perfil -->
     <div class="flex items-center space-x-4">
@@ -3554,6 +3554,45 @@ firebase.auth().onAuthStateChanged(user => {
     <button onclick="closeBaroSourcesSheet()" class="w-12 h-12 rounded-full bg-[#dce1e5] text-[#151d23] flex items-center justify-center" aria-label="Cerrar fuentes">✕</button>
   </div>
   <div id="baro-sources-list" class="space-y-3"></div>
+</div>
+
+<!-- NUEVA SECCIÓN DE CHAT CON BARO -->
+<div id="baro-chat-view" class="fixed inset-0 bg-white text-[#1e252b] hidden z-[70] overflow-y-auto flex flex-col">
+  <!-- Header del Chat -->
+  <div class="sticky top-0 bg-white z-10 pb-4 border-b border-[#e8e1dc] px-4 pt-3">
+    <div class="flex items-center justify-between">
+      <button onclick="closeBaroChatView()" class="text-[#1e252b] p-1" aria-label="Volver">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+      <h2 class="font-extrabold text-[1.35rem] leading-none tracking-tight text-center flex-1">Chat con Baro</h2>
+      <button onclick="openBaroChatHistory()" class="text-[#1e252b] p-1" aria-label="Historial">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Área de mensajes -->
+  <div id="baro-chat-messages" class="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-3xl mx-auto w-full"></div>
+
+  <!-- Input de chat -->
+  <div class="sticky bottom-0 bg-white border-t border-[#e8e1dc] px-4 py-3 max-w-3xl mx-auto w-full">
+    <div class="flex items-center gap-3 bg-[#f0f0f0] rounded-[2rem] px-4 py-3">
+      <input id="baro-chat-input" type="text" placeholder="Escribe tu mensaje..." class="flex-1 bg-transparent border-0 text-[1rem] text-[#1e252b] placeholder:text-[#7a8a99] focus:outline-none">
+      <button onclick="sendBaroChatMessage()" class="text-[#1e252b] flex items-center justify-center hover:opacity-70 transition" aria-label="Enviar">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DE HISTORIAL DE CHATS -->
+<div id="baro-chat-history-overlay" class="fixed inset-0 hidden z-[76] bg-black/45" onclick="closeBaroChatHistory()"></div>
+<div id="baro-chat-history-sheet" class="fixed left-0 right-0 bottom-0 hidden z-[77] bg-white rounded-t-[2rem] border-t border-[#e8e1dc] p-4 max-h-[85vh] overflow-y-auto">
+  <div class="flex items-center justify-between mb-4 max-w-3xl mx-auto w-full">
+    <h3 class="text-xl font-extrabold text-[#1f252c]">Historial de Chats</h3>
+    <button onclick="closeBaroChatHistory()" class="w-10 h-10 rounded-full bg-[#f0f0f0] text-[#1e252b] flex items-center justify-center hover:bg-[#e8e8e8] transition" aria-label="Cerrar historial">✕</button>
+  </div>
+  <div id="baro-chat-history-list" class="space-y-2 max-w-3xl mx-auto w-full"></div>
 </div>
 
 <!-- PERFIL PROPIO CON SUBIDA DE FOTO EN TIEMPO REAL -->
@@ -17138,4 +17177,272 @@ body.theme-dark #theme-config-view button {
   };
 
 })();
+</script>
+
+<!-- JAVASCRIPT PARA CHAT CON BARO -->
+<script>
+// Constantes para LocalStorage
+const BARO_CHAT_HISTORY_KEY = 'drex_baro_chat_history_v1';
+const BARO_CHAT_SESSIONS_KEY = 'drex_baro_chat_sessions_v1';
+let currentChatSessionId = null;
+let currentChatMessages = [];
+
+// Obtener el historial de chats desde LocalStorage
+function getBaroChatHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(BARO_CHAT_HISTORY_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+// Obtener todas las sesiones de chat
+function getBaroChatSessions() {
+  try {
+    return JSON.parse(localStorage.getItem(BARO_CHAT_SESSIONS_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+// Guardar una sesión de chat en LocalStorage
+function saveBaroChatSession(sessionId, messages, title) {
+  const sessions = getBaroChatSessions();
+  sessions[sessionId] = {
+    id: sessionId,
+    title: title || messages[0]?.text?.substring(0, 50) || 'Chat sin título',
+    messages: messages,
+    timestamp: Date.now(),
+    lastUpdated: Date.now()
+  };
+  localStorage.setItem(BARO_CHAT_SESSIONS_KEY, JSON.stringify(sessions));
+  
+  // Actualizar historial de sesiones
+  const history = getBaroChatHistory();
+  const sessionEntry = history.find(h => h.id === sessionId);
+  if (!sessionEntry) {
+    history.unshift({ id: sessionId, title: sessions[sessionId].title, timestamp: Date.now() });
+    localStorage.setItem(BARO_CHAT_HISTORY_KEY, JSON.stringify(history.slice(0, 50)));
+  }
+}
+
+// Crear una nueva sesión de chat
+function createNewBaroChatSession() {
+  currentChatSessionId = 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  currentChatMessages = [];
+  renderBaroChatMessages();
+}
+
+// Abrir la vista de chat
+function openBaroChatView() {
+  document.getElementById('baro-chat-view')?.classList.remove('hidden');
+  if (!currentChatSessionId) {
+    createNewBaroChatSession();
+  }
+  renderBaroChatMessages();
+  setTimeout(() => {
+    const input = document.getElementById('baro-chat-input');
+    if (input) input.focus();
+  }, 100);
+}
+
+// Cerrar la vista de chat
+function closeBaroChatView() {
+  document.getElementById('baro-chat-view')?.classList.add('hidden');
+  if (currentChatMessages.length > 0) {
+    saveBaroChatSession(currentChatSessionId, currentChatMessages);
+  }
+}
+
+// Renderizar los mensajes del chat
+function renderBaroChatMessages() {
+  const container = document.getElementById('baro-chat-messages');
+  if (!container) return;
+  
+  if (currentChatMessages.length === 0) {
+    container.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-12 text-center">
+        <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Baro" class="w-16 h-16 rounded-2xl object-cover mb-4 shadow-md">
+        <h3 class="text-[1.4rem] font-extrabold text-[#1f252c] mb-2">Hola, soy Baro</h3>
+        <p class="text-[1rem] text-[#5f6c76] max-w-xs">Tu asistente de IA. Cuéntame qué necesitas y haré mi mejor esfuerzo para ayudarte.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  container.innerHTML = currentChatMessages.map((msg, idx) => {
+    const isUser = msg.role === 'user';
+    return `
+      <div class="flex ${isUser ? 'justify-end' : 'justify-start'} animate-fadeIn">
+        <div class="max-w-xs lg:max-w-md ${isUser ? 'bg-[#2f1a14] text-white rounded-3xl rounded-tr-lg' : 'bg-[#f0f0f0] text-[#1e252b] rounded-3xl rounded-tl-lg'} px-4 py-3 shadow-sm">
+          <p class="text-[1rem] leading-tight break-words">${escapeHtml(msg.text)}</p>
+          <p class="text-xs ${isUser ? 'text-gray-300' : 'text-[#7a8a99]'} mt-1">${formatBaroChatTime(msg.timestamp)}</p>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // Scroll al final
+  setTimeout(() => {
+    container.scrollTop = container.scrollHeight;
+  }, 50);
+}
+
+// Formatear la hora del mensaje
+function formatBaroChatTime(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) return 'Ahora';
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h`;
+  return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+}
+
+// Enviar un mensaje de chat
+function sendBaroChatMessage() {
+  const input = document.getElementById('baro-chat-input');
+  if (!input) return;
+  
+  const message = input.value.trim();
+  if (!message) return;
+  
+  // Agregar mensaje del usuario
+  currentChatMessages.push({
+    role: 'user',
+    text: message,
+    timestamp: Date.now()
+  });
+  
+  input.value = '';
+  renderBaroChatMessages();
+  
+  // Simular respuesta de Baro (aquí se integraría con la API real de Baro)
+  setTimeout(() => {
+    const baroResponse = generateBaroResponse(message);
+    currentChatMessages.push({
+      role: 'assistant',
+      text: baroResponse,
+      timestamp: Date.now()
+    });
+    renderBaroChatMessages();
+    saveBaroChatSession(currentChatSessionId, currentChatMessages);
+  }, 800);
+}
+
+// Generar una respuesta simulada de Baro (esto se reemplazará con la API real)
+function generateBaroResponse(userMessage) {
+  const responses = [
+    `Entendido. Sobre "${userMessage.substring(0, 30)}...", déjame buscar información relevante en la comunidad Drex para darte la mejor respuesta.`,
+    `Interesante pregunta sobre ${userMessage.substring(0, 25)}. Estoy analizando publicaciones y comentarios de la comunidad para ayudarte.`,
+    `Veo que preguntas sobre "${userMessage.substring(0, 35)}". Permíteme consultar las fuentes más relevantes de Drex.`,
+    `Esa es una buena pregunta. Basándome en el contenido de la comunidad, puedo decirte que...`,
+    `Perfecto, estoy buscando información sobre ese tema en nuestras publicaciones y comentarios.`
+  ];
+  return responses[Math.floor(Math.random() * responses.length)];
+}
+
+// Abrir el historial de chats
+function openBaroChatHistory() {
+  const overlay = document.getElementById('baro-chat-history-overlay');
+  const sheet = document.getElementById('baro-chat-history-sheet');
+  if (overlay) overlay.classList.remove('hidden');
+  if (sheet) sheet.classList.remove('hidden');
+  renderBaroChatHistoryList();
+}
+
+// Cerrar el historial de chats
+function closeBaroChatHistory() {
+  const overlay = document.getElementById('baro-chat-history-overlay');
+  const sheet = document.getElementById('baro-chat-history-sheet');
+  if (overlay) overlay.classList.add('hidden');
+  if (sheet) sheet.classList.add('hidden');
+}
+
+// Renderizar la lista de historial de chats
+function renderBaroChatHistoryList() {
+  const container = document.getElementById('baro-chat-history-list');
+  if (!container) return;
+  
+  const sessions = getBaroChatSessions();
+  const sessionsList = Object.values(sessions)
+    .sort((a, b) => b.lastUpdated - a.lastUpdated)
+    .slice(0, 50);
+  
+  if (sessionsList.length === 0) {
+    container.innerHTML = '<p class="text-center text-[#7a8a99] py-8">No hay chats anteriores. Comienza una nueva conversación.</p>';
+    return;
+  }
+  
+  container.innerHTML = sessionsList.map(session => `
+    <button onclick="loadBaroChatSession('${session.id}')" class="w-full text-left p-3 rounded-2xl bg-[#f0f0f0] hover:bg-[#e8e8e8] transition flex items-center justify-between group">
+      <div class="flex-1 min-w-0">
+        <p class="font-semibold text-[#1f252c] truncate">${escapeHtml(session.title)}</p>
+        <p class="text-xs text-[#7a8a99] mt-1">${formatBaroChatTime(session.lastUpdated)}</p>
+      </div>
+      <button onclick="event.stopPropagation(); deleteBaroChatSession('${session.id}')" class="ml-2 text-[#7a8a99] hover:text-red-500 transition opacity-0 group-hover:opacity-100" aria-label="Eliminar">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </button>
+    </button>
+  `).join('');
+}
+
+// Cargar una sesión de chat anterior
+function loadBaroChatSession(sessionId) {
+  const sessions = getBaroChatSessions();
+  const session = sessions[sessionId];
+  if (!session) return;
+  
+  currentChatSessionId = sessionId;
+  currentChatMessages = session.messages || [];
+  closeBaroChatHistory();
+  renderBaroChatMessages();
+}
+
+// Eliminar una sesión de chat
+function deleteBaroChatSession(sessionId) {
+  if (!confirm('¿Eliminar este chat?')) return;
+  
+  const sessions = getBaroChatSessions();
+  delete sessions[sessionId];
+  localStorage.setItem(BARO_CHAT_SESSIONS_KEY, JSON.stringify(sessions));
+  
+  const history = getBaroChatHistory();
+  const newHistory = history.filter(h => h.id !== sessionId);
+  localStorage.setItem(BARO_CHAT_HISTORY_KEY, JSON.stringify(newHistory));
+  
+  if (currentChatSessionId === sessionId) {
+    createNewBaroChatSession();
+  }
+  
+  renderBaroChatHistoryList();
+}
+
+// Event listener para Enter en el input de chat
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('baro-chat-input');
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendBaroChatMessage();
+      }
+    });
+  }
+});
+
+// Agregar estilos de animación
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+  }
+`;
+document.head.appendChild(style);
 </script>
