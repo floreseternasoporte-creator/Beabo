@@ -285,6 +285,38 @@ body {
   animation: fireBurst 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards, fireFlicker 0.8s ease-in-out 0.4s infinite alternate;
 }
 
+/* ===== REPOST MODERNO ===== */
+.repost-btn {
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #8d7d75;
+  transition: transform 0.18s ease, color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.repost-btn:active {
+  transform: scale(0.92);
+}
+
+.repost-btn .repost-icon {
+  width: 21px;
+  height: 21px;
+  transition: transform 0.22s ease, filter 0.22s ease;
+}
+
+.repost-btn.active {
+  color: #00a364;
+}
+
+.repost-btn.active .repost-icon {
+  transform: rotate(-8deg) scale(1.05);
+  filter: drop-shadow(0 0 6px rgba(0, 163, 100, 0.35));
+}
+
 /* ===== LOADER DE COMENTARIOS ===== */
 .comment-skeleton {
   display: flex;
@@ -3658,10 +3690,14 @@ firebase.auth().onAuthStateChanged(user => {
 
 
 
-      <div class="grid grid-cols-2 gap-3 w-full mb-6">
+      <div class="grid grid-cols-3 gap-3 w-full mb-6">
         <button onclick="scrollProfilePostsIntoView()" class="bg-white border border-[#e8e1dc] rounded-2xl p-4 text-center shadow-sm">
           <span id="profile-posts-count-mobile" class="block font-black text-xl text-[#2f1a14]">0</span>
           <span class="text-sm text-[#7a6962]">Posts</span>
+        </button>
+        <button onclick="scrollProfileRepostsIntoView()" class="bg-white border border-[#e8e1dc] rounded-2xl p-4 text-center shadow-sm">
+          <span id="profile-reposts-count-mobile" class="block font-black text-xl text-[#2f1a14]">0</span>
+          <span class="text-sm text-[#7a6962]">Reposts</span>
         </button>
         <button onclick="openMyGroupsView()" class="bg-white border border-[#e8e1dc] rounded-2xl p-4 text-center shadow-sm">
           <span id="profile-groups-count-mobile" class="block font-black text-xl text-[#2f1a14]">0</span>
@@ -3674,6 +3710,10 @@ firebase.auth().onAuthStateChanged(user => {
       <div class="mt-6 w-full">
         <h3 id="profile-posts-title" class="text-lg font-bold mb-4 text-black">0 posts</h3>
         <div id="user-posts" class="flex flex-col gap-4"></div>
+      </div>
+      <div class="mt-8 w-full" id="profile-reposts-section-mobile">
+        <h3 id="profile-reposts-title" class="text-lg font-bold mb-4 text-black">0 reposts</h3>
+        <div id="user-reposts" class="flex flex-col gap-4"></div>
       </div>
     </div>
   </div>
@@ -3733,6 +3773,10 @@ firebase.auth().onAuthStateChanged(user => {
                 <div class="text-white text-opacity-80 text-sm">posts</div>
               </div>
               <div class="text-center">
+                <div id="profile-reposts-count-desktop" class="text-2xl font-bold text-white">0</div>
+                <div class="text-white text-opacity-80 text-sm">reposts</div>
+              </div>
+              <div class="text-center">
                 <div id="profile-groups-count-desktop" class="text-2xl font-bold text-white">0</div>
                 <div class="text-white text-opacity-80 text-sm">grupos</div>
               </div>
@@ -3753,6 +3797,9 @@ firebase.auth().onAuthStateChanged(user => {
             </button>
             <button class="tab-button py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium" data-tab="notes">
               Notas
+            </button>
+            <button class="tab-button py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium" data-tab="reposts">
+              Reposts
             </button>
 
           </nav>
@@ -3789,6 +3836,10 @@ firebase.auth().onAuthStateChanged(user => {
               <h2 class="text-2xl font-bold mb-6">Notas</h2>
               <p class="text-gray-600">Tus notas y pensamientos publicados en la comunidad</p>
             </div>
+            <div id="reposts-tab-content" class="tab-content hidden">
+              <h2 id="profile-reposts-header" class="text-2xl font-bold mb-6">0 reposts</h2>
+              <div id="user-reposts-desktop" class="space-y-4"></div>
+            </div>
 
 
           </div>
@@ -3802,6 +3853,10 @@ firebase.auth().onAuthStateChanged(user => {
                 <div class="flex items-center justify-between">
                   <span class="text-gray-600">Posts</span>
                   <span id="sidebar-posts-count" class="font-bold text-[#FE2C55]">0</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-gray-600">Reposts</span>
+                  <span id="sidebar-reposts-count" class="font-bold text-[#FE2C55]">0</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="text-gray-600">Total de lecturas</span>
@@ -3858,6 +3913,12 @@ document.addEventListener('DOMContentLoaded', function() {
         // Si es el tab de notas, cargar las notas del usuario
         if (tabName === 'notes') {
           loadUserNotes();
+        }
+        if (tabName === 'reposts') {
+          const user = firebase.auth().currentUser;
+          if (user) {
+            firebase.database().ref('userReposts/' + user.uid).once('value').then(loadUserRepostsGrid);
+          }
         }
       }
     });
@@ -4231,10 +4292,14 @@ function handleProfileImageUploadDesktop(event) {
         </div>
 
         <!-- Tarjetas de Posts y Grupos -->
-        <div class="grid grid-cols-2 gap-3 w-full mb-6">
+        <div class="grid grid-cols-3 gap-3 w-full mb-6">
           <button onclick="openAuthorPostsView()" class="bg-white border border-[#e8e1dc] rounded-2xl p-4 text-center shadow-sm">
             <span id="author-posts-count" class="block font-black text-xl text-[#2f1a14]">0</span>
             <span class="text-sm text-[#7a6962]">Posts</span>
+          </button>
+          <button onclick="openAuthorRepostsView()" class="bg-white border border-[#e8e1dc] rounded-2xl p-4 text-center shadow-sm">
+            <span id="author-reposts-count" class="block font-black text-xl text-[#2f1a14]">0</span>
+            <span class="text-sm text-[#7a6962]">Reposts</span>
           </button>
           <button onclick="openAuthorGroupsView()" class="bg-white border border-[#e8e1dc] rounded-2xl p-4 text-center shadow-sm">
             <span id="author-groups-count" class="block font-black text-xl text-[#2f1a14]">0</span>
@@ -6314,6 +6379,22 @@ function openPhotoDetail(photo) {
       loadUserPostsGrid(postsSnapshot);
     });
 
+    firebase.database().ref('userReposts/' + userId).on('value', repostsSnapshot => {
+      const repostsCount = repostsSnapshot.numChildren();
+      const profileRepostsTitle = document.getElementById('profile-reposts-title');
+      const profileRepostsHeader = document.getElementById('profile-reposts-header');
+      const profileRepostsCountDesktop = document.getElementById('profile-reposts-count-desktop');
+      const profileRepostsCountMobile = document.getElementById('profile-reposts-count-mobile');
+      const sidebarRepostsCount = document.getElementById('sidebar-reposts-count');
+
+      if (profileRepostsTitle) profileRepostsTitle.textContent = `${repostsCount} reposts`;
+      if (profileRepostsHeader) profileRepostsHeader.textContent = `${repostsCount} reposts`;
+      if (profileRepostsCountDesktop) profileRepostsCountDesktop.textContent = formatNumber(repostsCount);
+      if (profileRepostsCountMobile) profileRepostsCountMobile.textContent = formatNumber(repostsCount);
+      if (sidebarRepostsCount) sidebarRepostsCount.textContent = formatNumber(repostsCount);
+      loadUserRepostsGrid(repostsSnapshot);
+    });
+
     firebase.database().ref('users/' + userId + '/followersCount').on('value', snapshot => {
       const followersCount = snapshot.val() || 0;
       const sidebarFollowersCount = document.getElementById('sidebar-followers-count');
@@ -6366,9 +6447,8 @@ function openPhotoDetail(photo) {
     // Cargar publicaciones existentes
     postsSnapshot.forEach(child => {
       const post = { ...(child.val() || {}), id: child.key };
-      const postCard = createProfilePostCard(post);
-      if (userPostsDesktop) userPostsDesktop.appendChild(postCard.cloneNode(true));
-      if (userPostsMobile) userPostsMobile.appendChild(postCard);
+      if (userPostsDesktop) userPostsDesktop.appendChild(createProfilePostCard(post));
+      if (userPostsMobile) userPostsMobile.appendChild(createProfilePostCard(post));
     });
   }
 
@@ -6392,6 +6472,70 @@ function openPhotoDetail(photo) {
     `;
 
     return card;
+  }
+
+  function createProfileRepostCard(payload, originalPost) {
+    const card = document.createElement('div');
+    card.className = 'bg-[#f8f6f4] rounded-xl border border-[#e8e1dc] p-4 hover:shadow-md transition-all cursor-pointer w-full';
+    if (originalPost?.id) {
+      card.onclick = () => openCommentsView(originalPost.id);
+    }
+    card.innerHTML = `
+      <div class="flex items-center gap-2 text-xs text-[#00a364] font-semibold mb-2">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 7H19L16.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M16 17H5L7.5 19.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M19 7V12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M5 12V17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        Reposteado ${formatRelativeTime(payload?.timestamp || Date.now())}
+      </div>
+      <div class="flex items-start gap-2">
+        <img src="${originalPost?.authorImage || 'https://via.placeholder.com/40'}" class="w-8 h-8 rounded-full object-cover flex-shrink-0">
+        <div class="flex-1 min-w-0">
+          <p class="font-semibold text-xs text-gray-800">${originalPost?.authorName || payload?.originalAuthorName || 'Usuario'}${getVerificationIconByAuthor(originalPost?.authorEmail || '', originalPost?.authorId || '')}</p>
+          <p class="text-xs text-gray-700 mt-1 line-clamp-3">${originalPost?.content || 'Publicación sin texto'}</p>
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
+  function loadUserRepostsGrid(repostsSnapshot) {
+    const userRepostsDesktop = document.getElementById('user-reposts-desktop');
+    const userRepostsMobile = document.getElementById('user-reposts');
+    if (userRepostsDesktop) userRepostsDesktop.innerHTML = '';
+    if (userRepostsMobile) userRepostsMobile.innerHTML = '';
+
+    if (!repostsSnapshot.exists()) {
+      const emptyMarkup = `<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">Todavía no has hecho reposts.</div>`;
+      if (userRepostsDesktop) userRepostsDesktop.innerHTML = emptyMarkup;
+      if (userRepostsMobile) userRepostsMobile.innerHTML = emptyMarkup;
+      return;
+    }
+
+    const repostItems = [];
+    repostsSnapshot.forEach(child => repostItems.push({ ...(child.val() || {}), noteId: child.key }));
+    repostItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    Promise.all(repostItems.map(item => firebase.database().ref('communityNotes/' + item.noteId).once('value').then(s => ({
+      payload: item,
+      post: s.val() ? { ...s.val(), id: item.noteId } : null
+    })))).then(items => {
+      const validItems = items.filter(item => item.post);
+      if (!validItems.length) {
+        const emptyMarkup = `<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">No hay reposts disponibles.</div>`;
+        if (userRepostsDesktop) userRepostsDesktop.innerHTML = emptyMarkup;
+        if (userRepostsMobile) userRepostsMobile.innerHTML = emptyMarkup;
+        return;
+      }
+      validItems.forEach(item => {
+        if (userRepostsDesktop) userRepostsDesktop.appendChild(createProfileRepostCard(item.payload, item.post));
+        if (userRepostsMobile) userRepostsMobile.appendChild(createProfileRepostCard(item.payload, item.post));
+      });
+    }).catch(error => {
+      console.error('Error cargando reposts de perfil:', error);
+    });
   }
 
   // FUNCIONES DEL CREATOR HUB
@@ -7891,7 +8035,8 @@ const KLIPY_GIFS = [
         timestamp: Date.now(),
         upvotes: 0,
         downvotes: 0,
-        commentsCount: 0
+        commentsCount: 0,
+        repostsCount: 0
       };
 
       const saveToDatabases = (noteData) => {
@@ -8217,12 +8362,16 @@ const KLIPY_GIFS = [
 
     const user = firebase.auth().currentUser;
     let userVotes = {};
+    let userReposts = {};
 
     // Cargar votos del usuario en segundo plano sin bloquear la renderizacion
     if (user) {
       firebase.database().ref('userVotes/' + user.uid).once('value').then(snap => {
         userVotes = snap.val() || {};
       }).catch(err => console.error('Error cargando votos:', err));
+      firebase.database().ref('userReposts/' + user.uid).once('value').then(snap => {
+        userReposts = snap.val() || {};
+      }).catch(err => console.error('Error cargando reposts:', err));
     }
 
     if (showLoader) {
@@ -8260,6 +8409,8 @@ const KLIPY_GIFS = [
             const score = upvotes - downvotes;
             const commentsCount = Number(note.commentsCount || 0);
             const userVote = userVotes[note.id] || null;
+            const repostsCount = Number(note.repostsCount || 0);
+            const hasReposted = Boolean(userReposts[note.id]);
 
             let pollHTML = '';
             const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
@@ -8359,6 +8510,15 @@ const KLIPY_GIFS = [
                         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/>
                       </svg>
                       <span class="text-sm font-bold">${commentsCount}</span>
+                    </button>
+                    <button onclick="toggleRepost('${note.id}')" id="repost-${note.id}" class="repost-btn ${hasReposted ? 'active' : ''}" aria-label="Repostear publicación">
+                      <svg class="repost-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M8 7H19L16.5 4.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M16 17H5L7.5 19.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M19 7V12" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+                        <path d="M5 12V17" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+                      </svg>
+                      <span class="text-sm font-bold">${repostsCount}</span>
                     </button>
                   </div>
                 </div>
@@ -8954,6 +9114,97 @@ function votePost(noteId, voteType) {
       });
     }
     });
+  });
+}
+
+async function shareRepost(note, reposterName = 'Alguien') {
+  const shareText = `🔁 ${reposterName} hizo Repost en Drex\n\n${(note?.content || '').trim() || 'Mira este post.'}`;
+  const shareUrl = `${location.origin}${location.pathname}#post-${note?.id || ''}`;
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: 'Repost en Drex',
+        text: shareText,
+        url: shareUrl
+      });
+      return true;
+    } catch (_) {}
+  }
+  try {
+    await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+    alert('Link de Repost copiado al portapapeles.');
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function toggleRepost(noteId) {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para repostear');
+    return;
+  }
+
+  const noteRef = firebase.database().ref('communityNotes/' + noteId);
+  const userRepostRef = firebase.database().ref('userReposts/' + user.uid + '/' + noteId);
+  const postRepostRef = firebase.database().ref('postReposts/' + noteId + '/' + user.uid);
+
+  Promise.all([
+    noteRef.once('value'),
+    firebase.database().ref('users/' + user.uid).once('value'),
+    userRepostRef.once('value')
+  ]).then(([noteSnap, userSnap, repostSnap]) => {
+    const note = noteSnap.val();
+    if (!note) {
+      alert('Este post ya no existe.');
+      return;
+    }
+
+    const alreadyReposted = repostSnap.exists();
+    const userData = userSnap.val() || {};
+    const reposterName = userData.username || user.displayName || user.email || 'Alguien';
+
+    if (alreadyReposted) {
+      Promise.all([
+        userRepostRef.remove(),
+        postRepostRef.remove(),
+        noteRef.transaction(currentNote => {
+          if (!currentNote) return currentNote;
+          currentNote.repostsCount = Math.max(0, Number(currentNote.repostsCount || 0) - 1);
+          return currentNote;
+        })
+      ]);
+      return;
+    }
+
+    const payload = {
+      noteId,
+      originalAuthorId: note.authorId || '',
+      originalAuthorName: note.authorName || 'Usuario',
+      reposterId: user.uid,
+      reposterName,
+      reposterImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
+      timestamp: Date.now()
+    };
+
+    Promise.all([
+      userRepostRef.set(payload),
+      postRepostRef.set(payload),
+      noteRef.transaction(currentNote => {
+        if (!currentNote) return currentNote;
+        currentNote.repostsCount = Number(currentNote.repostsCount || 0) + 1;
+        return currentNote;
+      })
+    ]).then(() => {
+      shareRepost({ ...note, id: noteId }, reposterName);
+      if (note.authorId && note.authorId !== user.uid) {
+        addNotification(note.authorId, `${reposterName} hizo Repost de tu publicación.`, 'repost');
+      }
+    });
+  }).catch(error => {
+    console.error('Error al hacer repost:', error);
+    alert('No se pudo completar el Repost.');
   });
 }
 
@@ -12727,6 +12978,11 @@ let authorProfileOrigin = 'main';
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  function scrollProfileRepostsIntoView() {
+    const target = document.getElementById('profile-reposts-title') || document.getElementById('user-reposts');
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function openGroupsView() {
     document.getElementById('main-app').classList.add('hidden');
     document.getElementById('community-view').classList.add('hidden');
@@ -12820,6 +13076,7 @@ let authorProfileOrigin = 'main';
       upvotes: 0,
       downvotes: 0,
       commentsCount: 0,
+      repostsCount: 0,
       groupId,
       groupName: name
     };
@@ -14564,6 +14821,11 @@ function renderPlacesList(places) {
         if (currentViewedAuthorId !== authorId) return;
         if (authorPostsNode) authorPostsNode.textContent = formatNumber(postsSnap.numChildren() || 0);
       });
+      firebase.database().ref('userReposts/' + authorId).once('value').then(repostsSnap => {
+        if (currentViewedAuthorId !== authorId) return;
+        const authorRepostsNode = document.getElementById('author-reposts-count');
+        if (authorRepostsNode) authorRepostsNode.textContent = formatNumber(repostsSnap.numChildren() || 0);
+      });
       fetchCommunitiesCreatedByUser(authorId).then(groups => {
         if (currentViewedAuthorId !== authorId) return;
         if (authorGroupsNode) authorGroupsNode.textContent = formatNumber(groups.length || 0);
@@ -14809,6 +15071,45 @@ function renderPlacesList(places) {
     }).catch(error => {
       console.error("Error al cargar posts del autor:", error);
       container.innerHTML = `<div class="py-10 text-center text-red-500">Error al cargar las publicaciones.</div>`;
+    });
+  }
+
+  function openAuthorRepostsView() {
+    const container = document.getElementById('author-posts-list');
+    if (!container) return;
+
+    container.innerHTML = `<div class="py-10 text-center text-[#7a6962]">Cargando reposts...</div>`;
+    document.getElementById('author-posts-view').classList.remove('hidden');
+
+    if (!currentViewedAuthorId) return;
+
+    firebase.database().ref('userReposts/' + currentViewedAuthorId).once('value').then(snapshot => {
+      container.innerHTML = '';
+      if (!snapshot.exists()) {
+        container.innerHTML = `<div class="py-10 text-center text-[#7a6962]">Este autor aún no tiene reposts.</div>`;
+        return;
+      }
+
+      const reposts = [];
+      snapshot.forEach(child => reposts.push({ ...(child.val() || {}), noteId: child.key }));
+      reposts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      Promise.all(reposts.map(item =>
+        firebase.database().ref('communityNotes/' + item.noteId).once('value').then(postSnap => ({
+          payload: item,
+          post: postSnap.val() ? { ...postSnap.val(), id: item.noteId } : null
+        }))
+      )).then(items => {
+        const validItems = items.filter(item => item.post);
+        if (!validItems.length) {
+          container.innerHTML = `<div class="py-10 text-center text-[#7a6962]">No hay reposts disponibles.</div>`;
+          return;
+        }
+        validItems.forEach(item => container.appendChild(createProfileRepostCard(item.payload, item.post)));
+      });
+    }).catch(error => {
+      console.error('Error al cargar reposts del autor:', error);
+      container.innerHTML = `<div class="py-10 text-center text-red-500">Error al cargar los reposts.</div>`;
     });
   }
 
