@@ -294,18 +294,26 @@ body {
   justify-content: center;
   gap: 6px;
   color: #8d7d75;
-  transition: transform 0.18s ease, color 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 20px;
+}
+
+.repost-btn:hover {
+  background-color: rgba(0, 163, 100, 0.1);
+  color: #00a364;
 }
 
 .repost-btn:active {
-  transform: scale(0.92);
+  transform: scale(0.85);
 }
 
 .repost-btn .repost-icon {
-  width: 21px;
-  height: 21px;
-  transition: transform 0.22s ease, filter 0.22s ease;
+  width: 20px;
+  height: 20px;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .repost-btn.active {
@@ -313,8 +321,18 @@ body {
 }
 
 .repost-btn.active .repost-icon {
-  transform: rotate(-8deg) scale(1.05);
-  filter: drop-shadow(0 0 6px rgba(0, 163, 100, 0.35));
+  transform: rotate(180deg) scale(1.1);
+  filter: drop-shadow(0 0 8px rgba(0, 163, 100, 0.4));
+}
+
+@keyframes repost-bounce {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.4); }
+  100% { transform: scale(1.1); }
+}
+
+.repost-btn.animating .repost-icon {
+  animation: repost-bounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 /* ===== LOADER DE COMENTARIOS ===== */
@@ -8381,8 +8399,6 @@ const KLIPY_GIFS = [
     const notesRef = firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     notesRef.off();
     notesRef.on('value', snapshot => {
-      feedContainer.innerHTML = '';
-
       const notes = [];
       snapshot.forEach(child => {
         const rawNote = child.val() || {};
@@ -8396,9 +8412,28 @@ const KLIPY_GIFS = [
         return;
       }
 
+      // Actualización inteligente: solo actualizar lo necesario o reconstruir si hay cambios importantes
       const feedFragment = document.createDocumentFragment();
 
       notes.forEach(note => {
+          // Si el elemento ya existe, solo actualizar contadores para evitar parpadeo
+          const existingPost = document.getElementById(`post-${note.id}`);
+          if (existingPost) {
+              const scoreSpan = existingPost.querySelector(`#score-${note.id}`);
+              const repostBtn = existingPost.querySelector(`#repost-${note.id}`);
+              const repostSpan = repostBtn ? repostBtn.querySelector('span') : null;
+              
+              if (scoreSpan) scoreSpan.textContent = formatVoteScore(Number(note.upvotes || 0) - Number(note.downvotes || 0));
+              
+              // Solo actualizar repost si no está en medio de una animación local (UI optimista)
+              if (repostBtn && !repostBtn.classList.contains('animating')) {
+                  const hasReposted = Boolean(userReposts[note.id]);
+                  repostBtn.classList.toggle('active', hasReposted);
+                  if (repostSpan) repostSpan.textContent = Number(note.repostsCount || 0);
+              }
+              return;
+          }
+
           try {
             const noteElement = document.createElement('div');
             noteElement.id = `post-${note.id}`;
@@ -8513,10 +8548,10 @@ const KLIPY_GIFS = [
                     </button>
                     <button onclick="toggleRepost('${note.id}')" id="repost-${note.id}" class="repost-btn ${hasReposted ? 'active' : ''}" aria-label="Repostear publicación">
                       <svg class="repost-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                        <path d="M8 7H19L16.5 4.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M16 17H5L7.5 19.5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M19 7V12" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
-                        <path d="M5 12V17" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+                        <path d="M17 1L21 5L17 9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M3 11V9C3 7.93913 3.42143 6.92172 4.17157 6.17157C4.92172 5.42143 5.93913 5 7 5H21" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M7 23L3 19L7 15" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
                       </svg>
                       <span class="text-sm font-bold">${repostsCount}</span>
                     </button>
@@ -8525,15 +8560,20 @@ const KLIPY_GIFS = [
                 <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(safeTimestamp)}</p>
               </div>
             `;
-
-        feedFragment.appendChild(noteElement);
-        } catch (renderError) {
-          console.error('Error renderizando publicación:', note?.id, renderError);
-        }
+            feedFragment.appendChild(noteElement);
+          } catch (renderError) {
+            console.error('Error renderizando publicación:', note?.id, renderError);
+          }
       });
 
-      feedContainer.appendChild(feedFragment);
-      hydrateQuickFollowButtons(feedContainer);
+      if (feedFragment.children.length > 0) {
+          // Si el contenedor estaba vacío o tenía el mensaje de "no hay posts", limpiarlo
+          if (feedContainer.querySelector('.bg-white.border')) {
+              feedContainer.innerHTML = '';
+          }
+          feedContainer.prepend(feedFragment);
+          hydrateQuickFollowButtons(feedContainer);
+      }
     });
   }
 
@@ -9139,24 +9179,49 @@ async function shareRepost(note, reposterName = 'Alguien') {
   }
 }
 
-function toggleRepost(noteId) {
+async function toggleRepost(noteId) {
   const user = firebase.auth().currentUser;
   if (!user) {
     alert('Debes iniciar sesión para repostear');
     return;
   }
 
+  const btn = document.getElementById(`repost-${noteId}`);
+  if (!btn) return;
+
+  const countSpan = btn.querySelector('span');
+  const isCurrentlyActive = btn.classList.contains('active');
+  let currentCount = parseInt(countSpan.textContent) || 0;
+
+  // Actualización Optimista (UI Instantánea)
+  btn.classList.add('animating');
+  if (isCurrentlyActive) {
+    btn.classList.remove('active');
+    currentCount = Math.max(0, currentCount - 1);
+  } else {
+    btn.classList.add('active');
+    currentCount = currentCount + 1;
+  }
+  countSpan.textContent = currentCount;
+
+  setTimeout(() => btn.classList.remove('animating'), 400);
+
   const noteRef = firebase.database().ref('communityNotes/' + noteId);
   const userRepostRef = firebase.database().ref('userReposts/' + user.uid + '/' + noteId);
   const postRepostRef = firebase.database().ref('postReposts/' + noteId + '/' + user.uid);
 
-  Promise.all([
-    noteRef.once('value'),
-    firebase.database().ref('users/' + user.uid).once('value'),
-    userRepostRef.once('value')
-  ]).then(([noteSnap, userSnap, repostSnap]) => {
+  try {
+    const [noteSnap, userSnap, repostSnap] = await Promise.all([
+      noteRef.once('value'),
+      firebase.database().ref('users/' + user.uid).once('value'),
+      userRepostRef.once('value')
+    ]);
+
     const note = noteSnap.val();
     if (!note) {
+      // Revertir UI si el post no existe
+      btn.classList.toggle('active', isCurrentlyActive);
+      countSpan.textContent = parseInt(countSpan.textContent) + (isCurrentlyActive ? 1 : -1);
       alert('Este post ya no existe.');
       return;
     }
@@ -9166,7 +9231,7 @@ function toggleRepost(noteId) {
     const reposterName = userData.username || user.displayName || user.email || 'Alguien';
 
     if (alreadyReposted) {
-      Promise.all([
+      await Promise.all([
         userRepostRef.remove(),
         postRepostRef.remove(),
         noteRef.transaction(currentNote => {
@@ -9175,37 +9240,39 @@ function toggleRepost(noteId) {
           return currentNote;
         })
       ]);
-      return;
-    }
+    } else {
+      const payload = {
+        noteId,
+        originalAuthorId: note.authorId || '',
+        originalAuthorName: note.authorName || 'Usuario',
+        reposterId: user.uid,
+        reposterName,
+        reposterImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
+        timestamp: Date.now()
+      };
 
-    const payload = {
-      noteId,
-      originalAuthorId: note.authorId || '',
-      originalAuthorName: note.authorName || 'Usuario',
-      reposterId: user.uid,
-      reposterName,
-      reposterImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
-      timestamp: Date.now()
-    };
+      await Promise.all([
+        userRepostRef.set(payload),
+        postRepostRef.set(payload),
+        noteRef.transaction(currentNote => {
+          if (!currentNote) return currentNote;
+          currentNote.repostsCount = Number(currentNote.repostsCount || 0) + 1;
+          return currentNote;
+        })
+      ]);
 
-    Promise.all([
-      userRepostRef.set(payload),
-      postRepostRef.set(payload),
-      noteRef.transaction(currentNote => {
-        if (!currentNote) return currentNote;
-        currentNote.repostsCount = Number(currentNote.repostsCount || 0) + 1;
-        return currentNote;
-      })
-    ]).then(() => {
       shareRepost({ ...note, id: noteId }, reposterName);
       if (note.authorId && note.authorId !== user.uid) {
         addNotification(note.authorId, `${reposterName} hizo Repost de tu publicación.`, 'repost');
       }
-    });
-  }).catch(error => {
+    }
+  } catch (error) {
     console.error('Error al hacer repost:', error);
+    // Revertir UI en caso de error
+    btn.classList.toggle('active', isCurrentlyActive);
+    countSpan.textContent = parseInt(countSpan.textContent) + (isCurrentlyActive ? 1 : -1);
     alert('No se pudo completar el Repost.');
-  });
+  }
 }
 
 let currentPostId = null;
