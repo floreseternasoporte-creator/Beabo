@@ -13548,7 +13548,11 @@ function buildBaroSources(postsSnap, commentsSnap, query, tokens) {
     else if (ageInDays < 7) score += 2; // Menos de una semana
     
     // 11. Bonus por contenido multimedia (Imágenes/GIFs suelen ser más informativos)
-    if (post.imageUrl || post.gifUrl) score += 1.5;
+    if (post.imageUrl || post.gifUrl) {
+      score += 2.5; // Subimos el bonus visual
+      // Si el término de búsqueda está en el contenido y tiene imagen, es una fuente de alta calidad
+      if (score > 5) score += 3; 
+    }
 
     // 12. Bonus por autor verificado o con reputación (simulado con likes totales si existiera)
     if (post.authorVerified) score += 3;
@@ -13558,7 +13562,8 @@ function buildBaroSources(postsSnap, commentsSnap, query, tokens) {
       post,
       score: score,
       evidence: [],
-      commentHits: 0
+      commentHits: 0,
+      image: post.imageUrl || post.gifUrl || null
     });
 
     if (score > 0) {
@@ -13655,11 +13660,26 @@ function formatBaroAnswer(query, sources) {
     return `<li><strong>${escapeHtml(source.post?.authorName || 'Usuario')}:</strong> ${escapeHtml(trimmed)}</li>`;
   }).join('');
 
+  const images = sources
+    .filter(s => s.image)
+    .slice(0, 6)
+    .map(s => `<img src="${s.image}" class="w-full aspect-square object-cover rounded-xl shadow-sm hover:scale-105 transition-transform cursor-pointer" onclick="openImageModal('${s.image}', '${s.postId}')" alt="Evidencia visual">`)
+    .join('');
+
+  const imageSection = images.length > 0 ? `
+    <div class="mt-6">
+      <p class="text-[1.1rem] font-extrabold text-[#2f1a14] mb-3">Evidencia Visual Coincidente</p>
+      <div class="grid grid-cols-3 gap-2">
+        ${images}
+      </div>
+    </div>
+  ` : '';
+
   return `
     <p class="text-[1.65rem] leading-tight text-[#1f252c]">Según posts, comentarios y respuestas de la comunidad, la respuesta sobre <strong>${escapeHtml(query)}</strong> apunta a estos patrones:</p>
     <ul class="list-disc pl-8 text-[1rem] leading-tight text-[#1b232a] space-y-2">${highlights}</ul>
-    <p class="text-[0.95rem] leading-tight text-[#4f5e6a]"><strong>Síntesis IA:</strong> Baro encontró ${sources.length} fuentes relacionadas y priorizó las más votadas y con más coincidencias semánticas. Primera fuente destacada: ${escapeHtml(topEvidence.slice(0, 130))}${topEvidence.length > 130 ? '...' : ''}.</p>
-
+    ${imageSection}
+    <p class="mt-6 text-[0.95rem] leading-tight text-[#4f5e6a]"><strong>Síntesis IA:</strong> Baro encontró ${sources.length} fuentes relacionadas y priorizó las más votadas, con más coincidencias semánticas y evidencia visual. Primera fuente destacada: ${escapeHtml(topEvidence.slice(0, 130))}${topEvidence.length > 130 ? '...' : ''}.</p>
   `;
 }
 
