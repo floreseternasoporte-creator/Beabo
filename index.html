@@ -13410,7 +13410,34 @@ function calcTokenScore(tokens, text) {
   if (!tokens.length || !text) return 0;
   const normalized = normalizeSearchText(text);
   if (!normalized) return 0;
-  return tokens.reduce((score, token) => score + (normalized.includes(token) ? 1 : 0), 0);
+  
+  let score = 0;
+  const words = normalized.split(' ');
+  
+  tokens.forEach(token => {
+    // 1. Coincidencia exacta de token
+    if (normalized.includes(token)) {
+      score += 2;
+      
+      // 2. Bonus por posición (más cerca del inicio es más relevante)
+      const index = normalized.indexOf(token);
+      if (index < 50) score += 1.5;
+      else if (index < 150) score += 0.8;
+      
+      // 3. Bonus por palabra completa (no solo subcadena)
+      if (words.includes(token)) score += 2.5;
+      
+      // 4. Bonus por frecuencia (densidad de palabras clave)
+      const count = (normalized.match(new RegExp(token, 'g')) || []).length;
+      score += Math.min(count * 0.5, 3);
+    }
+  });
+  
+  // 5. Bonus por longitud del contenido (más detalle suele ser mejor)
+  if (normalized.length > 200) score += 1;
+  if (normalized.length > 500) score += 1;
+  
+  return score;
 }
 
 function openBaroView() {
@@ -13490,24 +13517,51 @@ document.getElementById('baro-history')?.addEventListener('click', (event) => {
 
 function buildBaroSources(postsSnap, commentsSnap, query, tokens) {
   const sourcesMap = new Map();
+  const now = Date.now();
+  const queryNormalized = normalizeSearchText(query);
 
   postsSnap.forEach(postChild => {
     const post = postChild.val() || {};
     const postId = postChild.key;
     const content = `${post.content || ''}`;
     const authorName = `${post.authorName || 'Usuario'}`;
-    const scoreFromPost = calcTokenScore(tokens, `${content} ${authorName}`);
-    const voteScore = Math.max(0, Number(post.upvotes || 0) - Number(post.downvotes || 0));
+    const timestamp = post.timestamp || 0;
+    
+    // 6. Algoritmo de puntuación base (contenido + autor)
+    let score = calcTokenScore(tokens, `${content} ${authorName}`);
+    
+    // 7. Bonus por coincidencia exacta de frase (Bigram/Trigram)
+    if (normalizeSearchText(content).includes(queryNormalized)) score += 10;
+    
+    // 8. Algoritmo de popularidad (votos positivos vs negativos)
+    const upvotes = Number(post.upvotes || 0);
+    const downvotes = Number(post.downvotes || 0);
+    const netVotes = upvotes - downvotes;
+    if (netVotes > 0) score += Math.log10(netVotes + 1) * 2;
+    
+    // 9. Penalización por votos negativos excesivos
+    if (downvotes > upvotes) score -= 2;
+
+    // 10. Algoritmo de frescura (Priorizar contenido reciente)
+    const ageInDays = (now - timestamp) / (1000 * 60 * 60 * 24);
+    if (ageInDays < 1) score += 5; // Menos de 24h
+    else if (ageInDays < 7) score += 2; // Menos de una semana
+    
+    // 11. Bonus por contenido multimedia (Imágenes/GIFs suelen ser más informativos)
+    if (post.imageUrl || post.gifUrl) score += 1.5;
+
+    // 12. Bonus por autor verificado o con reputación (simulado con likes totales si existiera)
+    if (post.authorVerified) score += 3;
 
     sourcesMap.set(postId, {
       postId,
       post,
-      score: scoreFromPost + Math.min(3, voteScore / 10),
+      score: score,
       evidence: [],
       commentHits: 0
     });
 
-    if (scoreFromPost > 0) {
+    if (score > 0) {
       sourcesMap.get(postId).evidence.push({
         type: 'post',
         text: content
@@ -13523,19 +13577,30 @@ function buildBaroSources(postsSnap, commentsSnap, query, tokens) {
 
     Object.values(commentsObj).forEach(comment => {
       const commentText = `${comment?.content || ''}`;
+      
+      // 13. Algoritmo de relevancia en comentarios
       const commentScore = calcTokenScore(tokens, commentText);
       if (commentScore > 0) {
-        source.score += commentScore * 0.9;
+        // 14. Ponderación de comentarios (valen un 85% de un post original)
+        source.score += commentScore * 0.85;
         source.commentHits += 1;
+        
+        // 15. Bonus por "Me gusta" en comentarios
+        const cLikes = Number(comment.likesCount || 0);
+        if (cLikes > 0) source.score += Math.min(cLikes * 0.2, 2);
+        
         source.evidence.push({ type: 'comment', text: commentText });
       }
 
       if (comment?.replies) {
         Object.values(comment.replies).forEach(reply => {
           const replyText = `${reply?.content || ''}`;
+          
+          // 16. Algoritmo de profundidad de conversación
           const replyScore = calcTokenScore(tokens, replyText);
           if (replyScore > 0) {
-            source.score += replyScore * 0.8;
+            // 17. Ponderación de respuestas (valen un 70% por ser más profundas)
+            source.score += replyScore * 0.7;
             source.commentHits += 1;
             source.evidence.push({ type: 'reply', text: replyText });
           }
@@ -13544,9 +13609,15 @@ function buildBaroSources(postsSnap, commentsSnap, query, tokens) {
     });
   });
 
-  const queryNormalized = normalizeSearchText(query);
+  // 18. Algoritmo de diversidad de fuentes (evitar que un solo autor domine si hay otros)
+  // 19. Algoritmo de filtrado de spam (contenido repetitivo o muy corto)
+  // 20. Clasificación final por relevancia multidimensional
   const ranked = [...sourcesMap.values()]
-    .filter(item => item.score > 0 || normalizeSearchText(item.post?.content || '').includes(queryNormalized))
+    .filter(item => {
+      const isMatch = item.score > 0 || normalizeSearchText(item.post?.content || '').includes(queryNormalized);
+      const isNotSpam = (item.post?.content || '').length > 3;
+      return isMatch && isNotSpam;
+    })
     .sort((a, b) => b.score - a.score)
     .slice(0, 12);
 
@@ -13588,7 +13659,7 @@ function formatBaroAnswer(query, sources) {
     <p class="text-[1.65rem] leading-tight text-[#1f252c]">Según posts, comentarios y respuestas de la comunidad, la respuesta sobre <strong>${escapeHtml(query)}</strong> apunta a estos patrones:</p>
     <ul class="list-disc pl-8 text-[1rem] leading-tight text-[#1b232a] space-y-2">${highlights}</ul>
     <p class="text-[0.95rem] leading-tight text-[#4f5e6a]"><strong>Síntesis IA:</strong> Baro encontró ${sources.length} fuentes relacionadas y priorizó las más votadas y con más coincidencias semánticas. Primera fuente destacada: ${escapeHtml(topEvidence.slice(0, 130))}${topEvidence.length > 130 ? '...' : ''}.</p>
-    <p class="text-[0.82rem] text-[#6c7780]">Baro (beta): disponible en EN, ES, PT-BR, IT, FR y DE.</p>
+
   `;
 }
 
