@@ -2902,16 +2902,21 @@ firebase.auth().onAuthStateChanged(user => {
     <button onclick="closeGifPicker()" class="text-[#6f5c54]">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
     </button>
-    <div class="flex-1 bg-white border border-[#e8e1dc] rounded-full flex items-center px-4 py-2">
+    <div class="flex-1 bg-white border border-[#e8e1dc] rounded-full flex items-center px-4 py-2 gap-2">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#b2a7a1] mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
       <input type="text" id="gif-search-input" placeholder="Buscar GIFs" class="bg-transparent border-0 focus:outline-none w-full text-sm text-[#2f1a14] placeholder:text-[#b2a7a1]">
+      <button id="clear-gif-search" onclick="clearGifSearch()" class="hidden w-7 h-7 rounded-full bg-[#ece5e1] text-[#7a6962] hover:bg-[#e1d7d2] flex items-center justify-center transition" aria-label="Limpiar búsqueda GIF">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
     </div>
   </div>
-  <div id="gif-results-container" class="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-3">
+  <div id="gif-results-container" class="flex-1 overflow-y-auto p-3 pb-6 grid grid-cols-2 gap-3 content-start">
     <!-- GIFs se cargarán aquí -->
     <div class="col-span-2 py-10 text-center text-[#9f918a] text-sm">Busca algo increíble...</div>
   </div>
-  <div class="p-2 text-center">
+  <div class="p-2 text-center shrink-0">
     <img src="https://static.gettyimages.com/display-sets/creative-landing/images/Tenor_Logo_White.png" class="h-4 inline-block opacity-50 grayscale" alt="Powered by Tenor">
   </div>
 </div>
@@ -6423,33 +6428,92 @@ const KLIPY_GIFS = [
     }, 300);
   }
 
+  const GIF_CACHE_KEY = 'drex_gif_search_cache_v1';
+
+  function getGifCache() {
+    try {
+      const raw = localStorage.getItem(GIF_CACHE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (error) {
+      console.warn('No se pudo leer caché GIF:', error);
+      return {};
+    }
+  }
+
+  function saveGifCache(query, urls = []) {
+    try {
+      const key = (query || 'trending').toLowerCase().trim() || 'trending';
+      const cache = getGifCache();
+      cache[key] = { urls: urls.slice(0, 24), updatedAt: Date.now() };
+      localStorage.setItem(GIF_CACHE_KEY, JSON.stringify(cache));
+    } catch (error) {
+      console.warn('No se pudo guardar caché GIF:', error);
+    }
+  }
+
+  function getCachedGifUrls(query) {
+    const key = (query || 'trending').toLowerCase().trim() || 'trending';
+    const cache = getGifCache();
+    return Array.isArray(cache[key]?.urls) ? cache[key].urls : [];
+  }
+
+  function renderGifCards(container, gifUrls = []) {
+    gifUrls.forEach(url => {
+      const img = document.createElement('img');
+      img.src = url;
+      img.loading = 'lazy';
+      img.className = 'w-full h-40 md:h-44 object-cover rounded-2xl cursor-pointer hover:opacity-90 transition border border-[#e8e1dc]';
+      img.onclick = () => selectGif(url);
+      container.appendChild(img);
+    });
+  }
+
+  function renderGifErrorState(container, query) {
+    const normalizedQuery = (query || 'trending').trim() || 'trending';
+    const cached = getCachedGifUrls(normalizedQuery);
+    if (cached.length > 0) {
+      container.innerHTML = '<div class="col-span-2 py-2 text-center text-[#8d7d75] text-xs">Mostrando GIFs guardados en caché.</div>';
+      renderGifCards(container, cached);
+      return;
+    }
+
+    const offlineHint = navigator.onLine
+      ? 'Ocurrió un problema con el servicio de GIFs. Inténtalo de nuevo.'
+      : 'Sin conexión a Internet. Revisa tu red e inténtalo nuevamente.';
+    container.innerHTML = `
+      <div class="col-span-2 py-10 text-center">
+        <p class="text-[#9f918a] text-sm mb-3">${offlineHint}</p>
+        <button onclick="searchGifs('${normalizedQuery.replace(/'/g, "\\'")}')" class="px-4 py-2 rounded-full bg-[#7a6962] text-white text-sm hover:bg-[#5f4b44] transition">
+          Reintentar
+        </button>
+      </div>
+    `;
+  }
+
   function searchGifs(query) {
     const container = document.getElementById('gif-results-container');
     container.innerHTML = `<div class="col-span-2 py-2 text-center">${getFadingCircleLoaderMarkup()}</div>`;
 
     const normalizedQuery = (query || 'trending').trim() || 'trending';
-    const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(normalizedQuery)}&key=${TENOR_API_KEY}&limit=20&media_filter=minimal`;
+    const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(normalizedQuery)}&key=${TENOR_API_KEY}&limit=24&media_filter=minimal`;
 
     fetch(url)
       .then(res => res.json())
       .then(data => {
-        container.innerHTML = '';
         if (data.results && data.results.length > 0) {
-          data.results.forEach(gif => {
-            const media = gif.media_formats.tinygif;
-            const img = document.createElement('img');
-            img.src = media.url;
-            img.className = 'w-full h-32 object-cover rounded-2xl cursor-pointer hover:opacity-90 transition border border-[#e8e1dc]';
-            img.onclick = () => selectGif(media.url);
-            container.appendChild(img);
-          });
+          const urls = data.results
+            .map(gif => gif?.media_formats?.mediumgif?.url || gif?.media_formats?.tinygif?.url)
+            .filter(Boolean);
+          container.innerHTML = '';
+          renderGifCards(container, urls);
+          saveGifCache(normalizedQuery, urls);
         } else {
           container.innerHTML = '<div class="col-span-2 py-10 text-center text-[#9f918a] text-sm">No se encontraron GIFs</div>';
         }
       })
       .catch(err => {
         console.error('Error fetching GIFs:', err);
-        container.innerHTML = '<div class="col-span-2 py-10 text-center text-[#9f918a] text-sm">Error al buscar GIFs</div>';
+        renderGifErrorState(container, normalizedQuery);
       });
   }
 
@@ -6472,6 +6536,14 @@ const KLIPY_GIFS = [
     }
     if (clearBtn) clearBtn.classList.add('hidden');
   };
+
+  window.addEventListener('online', () => {
+    const pickerOpen = !document.getElementById('gif-picker-sheet')?.classList.contains('hidden');
+    if (pickerOpen) {
+      const currentQuery = document.getElementById('gif-search-input')?.value?.trim() || 'trending';
+      searchGifs(currentQuery);
+    }
+  });
 
   function selectGif(url) {
     if (window.__gifPickerContext === 'comment') {
