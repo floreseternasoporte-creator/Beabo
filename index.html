@@ -13072,6 +13072,12 @@ let currentChatRoomId = null;
 let currentChatRecipient = null;
 let chatMessagesListener = null;
 let chatPhotoAttachment = null;
+let chatUsersIndexCache = [];
+let chatUsersIndexLoadedAt = 0;
+let chatSearchDebounceTimer = null;
+let chatConversationCache = { items: [], loadedAt: 0 };
+const CHAT_CACHE_TTL_MS = 25000;
+const CHAT_USERS_CACHE_TTL_MS = 60000;
 
   function getCommunityById(communityId) {
     return communitiesCache.find(item => item.id === communityId) || null;
@@ -13220,6 +13226,13 @@ let chatPhotoAttachment = null;
     const user = firebase.auth().currentUser;
     const container = document.getElementById('chat-conversations-list');
     if (!user || !container) return;
+    const now = Date.now();
+    if (chatConversationCache.items.length && (now - chatConversationCache.loadedAt) < CHAT_CACHE_TTL_MS) {
+      allChatConversations = chatConversationCache.items.slice();
+      renderChatConversations(allChatConversations);
+      return;
+    }
+
     container.innerHTML = `<div class="py-6 text-center">${getFadingCircleLoaderMarkup()}</div>`;
     allChatConversations = [];
 
@@ -13227,6 +13240,7 @@ let chatPhotoAttachment = null;
       const entries = Object.keys(snap.val() || {});
       if (!entries.length) {
         container.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">Aún no tienes chats. Toca el botón de escribir para iniciar uno.</div>';
+        chatConversationCache = { items: [], loadedAt: Date.now() };
         return;
       }
 
@@ -13236,23 +13250,62 @@ let chatPhotoAttachment = null;
         const participantIds = Object.keys(convo.participants || {}).filter(uid => uid !== user.uid);
         if (!participantIds.length) return null;
         const otherUid = participantIds[0];
-        const userSnap = await firebase.database().ref('users/' + otherUid).once('value');
-        const other = userSnap.val() || {};
+        const other = await getChatUserProfile(otherUid);
         return {
           id: convoId,
           otherUid,
-          otherName: other.username || other.displayName || other.email || 'Usuario',
-          otherImage: other.profileImage || 'https://via.placeholder.com/80',
+          otherName: other.name || 'Usuario',
+          otherImage: other.image || 'https://via.placeholder.com/80',
           updatedAt: Number(convo.updatedAt || 0),
           lastMessage: convo.lastMessage || 'Sin mensajes aún'
         };
       }));
 
       allChatConversations = conversations.filter(Boolean).sort((a, b) => b.updatedAt - a.updatedAt);
+      chatConversationCache = { items: allChatConversations.slice(), loadedAt: Date.now() };
       renderChatConversations(allChatConversations);
     }).catch(() => {
       container.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">No pudimos cargar tus chats.</div>';
     });
+  }
+
+  async function getChatUserProfile(uid) {
+    const cached = chatUsersIndexCache.find(item => item.uid === uid);
+    if (cached) return cached;
+    const snap = await firebase.database().ref('users/' + uid).once('value');
+    const data = snap.val() || {};
+    const profile = {
+      uid,
+      name: data.username || data.displayName || data.email || 'Usuario',
+      image: data.profileImage || 'https://via.placeholder.com/80'
+    };
+    chatUsersIndexCache.push(profile);
+    return profile;
+  }
+
+  function ensureChatUsersIndex() {
+    const user = firebase.auth().currentUser;
+    if (!user) return Promise.resolve([]);
+    const now = Date.now();
+    if (chatUsersIndexCache.length && (now - chatUsersIndexLoadedAt) < CHAT_USERS_CACHE_TTL_MS) {
+      return Promise.resolve(chatUsersIndexCache);
+    }
+    return firebase.database().ref('users').limitToFirst(350).once('value').then(snapshot => {
+      const users = [];
+      snapshot.forEach(child => {
+        if (child.key === user.uid) return;
+        const data = child.val() || {};
+        users.push({
+          uid: child.key,
+          name: data.username || data.displayName || data.email || 'Usuario',
+          image: data.profileImage || 'https://via.placeholder.com/80',
+          normalizedName: (data.username || data.displayName || data.email || '').toLowerCase()
+        });
+      });
+      chatUsersIndexCache = users;
+      chatUsersIndexLoadedAt = Date.now();
+      return users;
+    }).catch(() => []);
   }
 
   function renderChatConversations(items) {
@@ -13308,30 +13361,24 @@ let chatPhotoAttachment = null;
   }
 
   function searchUsersForNewChat(rawQuery) {
-    const user = firebase.auth().currentUser;
     const query = (rawQuery || '').trim().toLowerCase();
     const list = document.getElementById('new-chat-results');
-    if (!user || !list) return;
+    if (!list) return;
+
+    if (chatSearchDebounceTimer) {
+      clearTimeout(chatSearchDebounceTimer);
+      chatSearchDebounceTimer = null;
+    }
+
     if (!query) {
       list.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">Escribe para buscar usuarios.</div>';
       return;
     }
 
-    list.innerHTML = `<div class="py-6 text-center">${getFadingCircleLoaderMarkup()}</div>`;
-    firebase.database().ref('users').limitToFirst(250).once('value').then(snapshot => {
-      const users = [];
-      snapshot.forEach(child => {
-        if (child.key === user.uid) return;
-        const data = child.val() || {};
-        const username = (data.username || data.displayName || data.email || '').toLowerCase();
-        if (username.includes(query)) {
-          users.push({
-            uid: child.key,
-            name: data.username || data.displayName || data.email || 'Usuario',
-            image: data.profileImage || 'https://via.placeholder.com/80'
-          });
-        }
-      });
+    list.innerHTML = `<div class="py-4 text-center text-[#8d7d75] text-sm">Buscando...</div>`;
+    chatSearchDebounceTimer = setTimeout(() => {
+      ensureChatUsersIndex().then(usersIndex => {
+      const users = usersIndex.filter(item => (item.normalizedName || '').includes(query));
       if (!users.length) {
         list.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">No encontramos usuarios.</div>';
         return;
@@ -13347,9 +13394,10 @@ let chatPhotoAttachment = null;
       setTimeout(() => {
         list.querySelectorAll('.animate-pulse').forEach(node => node.classList.remove('animate-pulse'));
       }, 800);
-    }).catch(() => {
-      list.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">No pudimos buscar usuarios por ahora.</div>';
-    });
+      }).catch(() => {
+        list.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">No pudimos buscar usuarios por ahora.</div>';
+      });
+    }, 220);
   }
 
   function openChatFromUserSelection(uid) {
@@ -13422,7 +13470,7 @@ let chatPhotoAttachment = null;
 
   function detachChatMessagesListener() {
     if (chatMessagesListener?.ref && chatMessagesListener?.callback) {
-      chatMessagesListener.ref.off('value', chatMessagesListener.callback);
+      chatMessagesListener.ref.off('child_added', chatMessagesListener.callback);
     }
     chatMessagesListener = null;
   }
@@ -13431,30 +13479,34 @@ let chatPhotoAttachment = null;
     detachChatMessagesListener();
     const container = document.getElementById('chat-room-messages');
     if (!container) return;
-    container.innerHTML = `<div class="py-6 text-center">${getFadingCircleLoaderMarkup()}</div>`;
-    const ref = firebase.database().ref('conversationMessages/' + conversationId).limitToLast(120);
+    container.innerHTML = '';
+    const empty = document.createElement('div');
+    empty.className = 'text-center text-[#8d7d75] text-sm py-8';
+    empty.id = 'chat-room-empty-state';
+    empty.textContent = 'Comienza la conversación enviando un mensaje.';
+    container.appendChild(empty);
+
+    const ref = firebase.database().ref('conversationMessages/' + conversationId).limitToLast(80);
     const callback = snapshot => {
+      const emptyState = document.getElementById('chat-room-empty-state');
+      if (emptyState) emptyState.remove();
+      const msg = snapshot.val() || {};
       const currentUserId = firebase.auth().currentUser?.uid || '';
-      const messages = [];
-      snapshot.forEach(child => messages.push({ id: child.key, ...(child.val() || {}) }));
-      if (!messages.length) {
-        container.innerHTML = '<div class="text-center text-[#8d7d75] text-sm py-8">Comienza la conversación enviando un mensaje.</div>';
-        return;
-      }
-      container.innerHTML = messages.map(msg => {
-        const mine = msg.senderId === currentUserId;
-        const content = msg.image ? `<img src="${msg.image}" class="max-w-[220px] rounded-2xl border border-[#e8e1dc]" alt="Foto enviada">` : `<p class="text-sm break-words">${escapeHtml(msg.text || '')}</p>`;
-        return `
-          <div class="w-full flex ${mine ? 'justify-end' : 'justify-start'}">
-            <div class="${mine ? 'bg-[#2f1a14] text-white' : 'bg-white text-[#2f1a14] border border-[#e8e1dc]'} rounded-2xl px-4 py-2 max-w-[80%]">
-              ${content}
-            </div>
-          </div>
-        `;
-      }).join('');
+      const mine = msg.senderId === currentUserId;
+      const content = msg.image
+        ? `<img src="${msg.image}" class="max-w-[220px] rounded-2xl border border-[#e8e1dc]" alt="Foto enviada">`
+        : `<p class="text-sm break-words">${escapeHtml(msg.text || '')}</p>`;
+      const wrapper = document.createElement('div');
+      wrapper.className = `w-full flex ${mine ? 'justify-end' : 'justify-start'}`;
+      wrapper.innerHTML = `
+        <div class="${mine ? 'bg-[#2f1a14] text-white' : 'bg-white text-[#2f1a14] border border-[#e8e1dc]'} rounded-2xl px-4 py-2 max-w-[80%]">
+          ${content}
+        </div>
+      `;
+      container.appendChild(wrapper);
       container.scrollTop = container.scrollHeight;
     };
-    ref.on('value', callback);
+    ref.on('child_added', callback);
     chatMessagesListener = { ref, callback };
   }
 
@@ -13509,6 +13561,7 @@ let chatPhotoAttachment = null;
     }).then(() => {
       input.value = '';
       clearChatPhotoAttachment();
+      chatConversationCache.loadedAt = 0;
     }).catch(() => {
       alert('No se pudo enviar el mensaje. Inténtalo de nuevo.');
     });
