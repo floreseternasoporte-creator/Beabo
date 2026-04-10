@@ -2627,7 +2627,7 @@ firebase.auth().onAuthStateChanged(user => {
 
 <!-- VISTA CONVERSACIÓN -->
 <div id="chat-room-view" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] hidden z-[66] flex flex-col">
-  <div class="max-w-3xl mx-auto w-full h-full flex flex-col">
+  <div class="max-w-3xl mx-auto w-full h-full flex flex-col relative">
     <div class="sticky top-0 z-10 bg-[#f5f4f2] border-b border-[#e8e1dc] px-4 py-3">
       <div class="flex items-center gap-3">
         <button onclick="closeChatRoomView()" class="text-[#5f4b44] p-1" aria-label="Volver">
@@ -2641,8 +2641,9 @@ firebase.auth().onAuthStateChanged(user => {
       </div>
     </div>
 
-    <div id="chat-room-temporary-pull-indicator" class="hidden pt-2 pb-1 flex justify-center">
-      <div id="chat-room-temporary-bubble" class="w-4 h-4 rounded-full bg-[#2f1a14]/70 transition-all duration-150"></div>
+    <div id="chat-room-temporary-pull-indicator" class="hidden absolute left-1/2 -translate-x-1/2 top-[74px] z-20 flex flex-col items-center pointer-events-none">
+      <div id="chat-room-temporary-bubble" class="w-5 h-5 rounded-full bg-[#2f1a14] shadow-[0_6px_18px_rgba(47,26,20,0.25)] transition-all duration-100"></div>
+      <p id="chat-room-temporary-text" class="mt-1 text-[10px] font-semibold text-[#6e5a52] opacity-80">Desliza para activar chat temporal</p>
     </div>
     <div id="chat-room-messages" class="flex-1 overflow-y-auto px-4 py-4 space-y-3"></div>
 
@@ -13645,8 +13646,10 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
 
   function updateChatTemporaryUI() {
     const pill = document.getElementById('chat-temporary-pill');
+    const indicator = document.getElementById('chat-room-temporary-pull-indicator');
     const active = chatTemporaryUntil > Date.now();
     if (!pill) return;
+    if (active && indicator) indicator.classList.add('hidden');
     pill.classList.toggle('hidden', !active);
     if (active) {
       const hoursLeft = Math.max(1, Math.ceil((chatTemporaryUntil - Date.now()) / (60 * 60 * 1000)));
@@ -13784,23 +13787,26 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
     const container = document.getElementById('chat-room-messages');
     const indicator = document.getElementById('chat-room-temporary-pull-indicator');
     const bubble = document.getElementById('chat-room-temporary-bubble');
-    if (!container || !indicator || !bubble || container.dataset.tempPullBound === 'true') return;
+    const text = document.getElementById('chat-room-temporary-text');
+    if (!container || !indicator || !bubble || !text || container.dataset.tempPullBound === 'true') return;
     container.dataset.tempPullBound = 'true';
 
     const updateBubble = (distance = 0) => {
       const progress = Math.max(0, Math.min(1, distance / CHAT_TEMP_PULL_TRIGGER_PX));
-      const size = 14 + Math.round(progress * 14);
+      const size = 18 + Math.round(progress * 16);
       bubble.style.width = `${size}px`;
       bubble.style.height = `${size}px`;
-      bubble.style.opacity = `${0.5 + (progress * 0.5)}`;
-      bubble.style.transform = `scale(${0.9 + progress * 0.15})`;
-      bubble.classList.toggle('bg-[#2f1a14]', progress > 0.8);
-      bubble.classList.toggle('bg-[#2f1a14]/70', progress <= 0.8);
+      bubble.style.opacity = `${0.35 + (progress * 0.65)}`;
+      bubble.style.transform = `translateY(${Math.min(34, distance * 0.35)}px) scale(${0.88 + progress * 0.35})`;
+      bubble.style.boxShadow = `0 ${Math.round(6 + progress * 6)}px ${Math.round(18 + progress * 10)}px rgba(47,26,20,${0.18 + progress * 0.18})`;
+      text.textContent = progress >= 1 ? 'Suelta para activar · 24h' : 'Desliza para activar chat temporal';
+      text.style.opacity = `${0.7 + progress * 0.3}`;
     };
 
     const resetPull = () => {
       indicator.classList.add('hidden');
       updateBubble(0);
+      text.textContent = 'Desliza para activar chat temporal';
       chatTemporaryPullState = { startY: 0, pulling: false, triggered: false };
     };
 
@@ -13811,10 +13817,11 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
       chatTemporaryPullState.triggered = false;
     };
 
-    const onMove = y => {
+    const onMove = (y, rawEvent = null) => {
       if (!chatTemporaryPullState.pulling) return;
       const distance = Math.max(0, y - chatTemporaryPullState.startY);
       if (distance <= 0) return;
+      if (rawEvent?.cancelable) rawEvent.preventDefault();
       indicator.classList.remove('hidden');
       updateBubble(distance);
       if (distance >= CHAT_TEMP_PULL_TRIGGER_PX) {
@@ -13824,16 +13831,24 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
 
     const onEnd = () => {
       if (chatTemporaryPullState.pulling && chatTemporaryPullState.triggered) {
+        bubble.animate(
+          [
+            { transform: bubble.style.transform || 'translateY(0) scale(1)' },
+            { transform: 'translateY(10px) scale(1.25)' },
+            { transform: 'translateY(0) scale(1)' }
+          ],
+          { duration: 260, easing: 'ease-out' }
+        );
         activateTemporaryChatMode();
       }
       resetPull();
     };
 
     container.addEventListener('touchstart', e => onStart(e.touches?.[0]?.clientY || 0), { passive: true });
-    container.addEventListener('touchmove', e => onMove(e.touches?.[0]?.clientY || 0), { passive: true });
+    container.addEventListener('touchmove', e => onMove(e.touches?.[0]?.clientY || 0, e), { passive: false });
     container.addEventListener('touchend', onEnd);
     container.addEventListener('mousedown', e => onStart(e.clientY));
-    container.addEventListener('mousemove', e => onMove(e.clientY));
+    container.addEventListener('mousemove', e => onMove(e.clientY, e));
     container.addEventListener('mouseup', onEnd);
     container.addEventListener('mouseleave', onEnd);
   }
