@@ -5475,6 +5475,19 @@ function openPhotoDetail(photo) {
           </div>
           <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
         </button>
+
+        <button onclick="openCacheConfigView()" class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#e8e1dc] shadow-sm active:scale-95 transition-all">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-[#f0ebe7] rounded-xl flex items-center justify-center text-[#5f4b44]">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+            </div>
+            <div class="text-left">
+              <p class="font-bold text-[#2f1a14]">Caché</p>
+              <p id="cache-storage-preview" class="text-sm text-[#8a7a71]">Gestiona el caché acumulado</p>
+            </div>
+          </div>
+          <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+        </button>
       </div>
 
       <!-- SECCIÓN: BIENESTAR Y SOPORTE -->
@@ -5552,6 +5565,30 @@ function openPhotoDetail(photo) {
           <span class="theme-option-check text-[#2f1a14] text-xl font-bold">✓</span>
         </div>
       </button>
+    </div>
+  </div>
+
+  <div id="cache-config-view" class="fixed inset-0 bg-[#f5f4f2] z-[120] hidden flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-[#e8e1dc] bg-white">
+      <button onclick="closeCacheConfigView()" class="text-[#5f4b44] p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[#2f1a14] absolute left-1/2 -translate-x-1/2">Caché</h2>
+      <div class="w-9"></div>
+    </div>
+    <div class="flex-1 overflow-y-auto p-6 space-y-5">
+      <div class="bg-white border border-[#e8e1dc] rounded-3xl p-5 shadow-sm">
+        <p class="text-sm text-[#6f5c54] leading-relaxed">Aquí puedes eliminar en tiempo real el caché acumulado de la plataforma para acelerar la app cuando notes lentitud.</p>
+        <p id="cache-usage-text" class="mt-3 text-sm font-semibold text-[#2f1a14]">Uso de caché estimado: 0 KB</p>
+      </div>
+
+      <button id="clear-cache-btn" onclick="clearRealtimeCache()" class="w-full bg-[#2f1a14] text-white py-4 rounded-2xl font-bold active:scale-95 transition-all">
+        Eliminar caché acumulado ahora
+      </button>
+
+      <div class="bg-white border border-[#e8e1dc] rounded-3xl p-4 text-xs text-[#8a7a71]">
+        Se conservarán tus datos de cuenta y sesión. Solo se limpia información temporal (historiales/caché local).
+      </div>
     </div>
   </div>
 
@@ -11878,6 +11915,7 @@ function saveNote() {
   function openProfileSettings() {
     closeAllSettingsSubViews();
     document.getElementById('settings-view').classList.remove('hidden');
+    refreshCacheUsageUI();
   }
 
   function closeSettingsView() {
@@ -11897,6 +11935,7 @@ function saveNote() {
       'password-config-view',
       'birthday-config-view',
       'theme-config-view',
+      'cache-config-view',
       'privacy-config-view',
       'blocked-accounts-view',
       'drex-bank-view',
@@ -12283,6 +12322,88 @@ function saveNote() {
       view.classList.add('hidden');
       view.style.display = 'none';
     }
+  }
+
+  function estimateCacheUsageBytes() {
+    let total = 0;
+    const cachePrefixes = ['drex_', 'baro_', 'detect_'];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || '';
+      if (!cachePrefixes.some(prefix => key.startsWith(prefix))) continue;
+      const value = localStorage.getItem(key) || '';
+      total += key.length + value.length;
+    }
+    return total;
+  }
+
+  function formatCacheSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  function refreshCacheUsageUI() {
+    const usage = estimateCacheUsageBytes();
+    const usageLabel = document.getElementById('cache-usage-text');
+    const previewLabel = document.getElementById('cache-storage-preview');
+    const message = `Uso estimado: ${formatCacheSize(usage)}`;
+    if (usageLabel) usageLabel.textContent = `Uso de caché estimado: ${formatCacheSize(usage)}`;
+    if (previewLabel) previewLabel.textContent = message;
+  }
+
+  function openCacheConfigView() {
+    const view = document.getElementById('cache-config-view');
+    if (!view) return;
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+    view.style.zIndex = '120';
+    refreshCacheUsageUI();
+  }
+
+  function closeCacheConfigView() {
+    const view = document.getElementById('cache-config-view');
+    if (!view) return;
+    view.classList.add('hidden');
+    view.style.display = 'none';
+  }
+
+  function clearRealtimeCache() {
+    const button = document.getElementById('clear-cache-btn');
+    if (button) {
+      button.disabled = true;
+      button.innerHTML = '<span class="inline-flex items-center gap-2"><i class="fas fa-spinner fa-spin"></i><span>Limpiando caché...</span></span>';
+    }
+
+    const protectedKeys = ['drex_theme'];
+    const cachePrefixes = ['drex_', 'baro_', 'detect_'];
+    const keysToDelete = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || '';
+      if (protectedKeys.includes(key)) continue;
+      if (cachePrefixes.some(prefix => key.startsWith(prefix))) {
+        keysToDelete.push(key);
+      }
+    }
+    keysToDelete.forEach(key => localStorage.removeItem(key));
+
+    // Reiniciar cachés en memoria para efecto inmediato
+    if (typeof translationCache?.clear === 'function') translationCache.clear();
+    chatUsersIndexCache = [];
+    chatUsersIndexLoadedAt = 0;
+    chatConversationCache = { items: [], loadedAt: 0 };
+    allChatConversations = [];
+    if (chatSearchDebounceTimer) {
+      clearTimeout(chatSearchDebounceTimer);
+      chatSearchDebounceTimer = null;
+    }
+
+    refreshCacheUsageUI();
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Eliminar caché acumulado ahora';
+    }
+    showSaveSuccessAnimation();
+    alert('Caché eliminado en tiempo real correctamente.');
   }
 
   function selectThemeOption(theme) {
@@ -17150,6 +17271,7 @@ body,
 #password-config-view,
 #birthday-config-view,
 #theme-config-view,
+#cache-config-view,
 #privacy-config-view,
 #blocked-accounts-view,
 #update-photo-view,
@@ -17465,6 +17587,7 @@ body.theme-dark #email-config-view,
 body.theme-dark #password-config-view,
 body.theme-dark #birthday-config-view,
 body.theme-dark #theme-config-view,
+body.theme-dark #cache-config-view,
 body.theme-dark #privacy-config-view,
 body.theme-dark #blocked-accounts-view,
 body.theme-dark #update-photo-view,
