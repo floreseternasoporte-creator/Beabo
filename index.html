@@ -12325,15 +12325,33 @@ function saveNote() {
   }
 
   function estimateCacheUsageBytes() {
+    const cacheKeys = getClearableCacheKeys();
     let total = 0;
-    const cachePrefixes = ['drex_', 'baro_', 'detect_'];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i) || '';
-      if (!cachePrefixes.some(prefix => key.startsWith(prefix))) continue;
+    cacheKeys.forEach(key => {
       const value = localStorage.getItem(key) || '';
       total += key.length + value.length;
-    }
+    });
     return total;
+  }
+
+  function getClearableCacheKeys() {
+    const keys = [];
+    const allowList = [
+      CHAT_USERS_CACHE_KEY,
+      CHAT_CONVERSATIONS_CACHE_KEY
+    ];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || '';
+      const normalized = key.toLowerCase();
+      if (
+        allowList.includes(key) ||
+        normalized.includes('cache') ||
+        key.startsWith('detect_')
+      ) {
+        keys.push(key);
+      }
+    }
+    return keys;
   }
 
   function formatCacheSize(bytes) {
@@ -12374,23 +12392,17 @@ function saveNote() {
       button.innerHTML = '<span class="inline-flex items-center gap-2"><i class="fas fa-spinner fa-spin"></i><span>Limpiando caché...</span></span>';
     }
 
-    const protectedKeys = ['drex_theme'];
-    const cachePrefixes = ['drex_', 'baro_', 'detect_'];
-    const keysToDelete = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i) || '';
-      if (protectedKeys.includes(key)) continue;
-      if (cachePrefixes.some(prefix => key.startsWith(prefix))) {
-        keysToDelete.push(key);
-      }
-    }
-    keysToDelete.forEach(key => localStorage.removeItem(key));
+    const keysToDelete = getClearableCacheKeys();
+    keysToDelete.forEach(key => {
+      try { localStorage.removeItem(key); } catch (_) {}
+    });
 
     // Reiniciar cachés en memoria para efecto inmediato
     if (typeof translationCache?.clear === 'function') translationCache.clear();
     chatUsersIndexCache = [];
     chatUsersIndexLoadedAt = 0;
     chatConversationCache = { items: [], loadedAt: 0 };
+    chatMessagesMemoryCache.clear();
     allChatConversations = [];
     if (chatSearchDebounceTimer) {
       clearTimeout(chatSearchDebounceTimer);
@@ -13197,8 +13209,13 @@ let chatUsersIndexCache = [];
 let chatUsersIndexLoadedAt = 0;
 let chatSearchDebounceTimer = null;
 let chatConversationCache = { items: [], loadedAt: 0 };
+let chatMessagesMemoryCache = new Map();
 const CHAT_CACHE_TTL_MS = 25000;
 const CHAT_USERS_CACHE_TTL_MS = 60000;
+const CHAT_USERS_INDEX_LIMIT = 180;
+const CHAT_MESSAGES_LIMIT = 80;
+const CHAT_USERS_CACHE_KEY = 'drex_chat_users_cache_v1';
+const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
 
   function getCommunityById(communityId) {
     return communitiesCache.find(item => item.id === communityId) || null;
@@ -13348,6 +13365,15 @@ const CHAT_USERS_CACHE_TTL_MS = 60000;
     const container = document.getElementById('chat-conversations-list');
     if (!user || !container) return;
     const now = Date.now();
+    if (!chatConversationCache.items.length) {
+      try {
+        const raw = localStorage.getItem(CHAT_CONVERSATIONS_CACHE_KEY);
+        const persisted = JSON.parse(raw || '{}');
+        if (Array.isArray(persisted.items) && (now - Number(persisted.loadedAt || 0)) < CHAT_CACHE_TTL_MS) {
+          chatConversationCache = { items: persisted.items, loadedAt: Number(persisted.loadedAt || 0) };
+        }
+      } catch (_) {}
+    }
     if (chatConversationCache.items.length && (now - chatConversationCache.loadedAt) < CHAT_CACHE_TTL_MS) {
       allChatConversations = chatConversationCache.items.slice();
       renderChatConversations(allChatConversations);
@@ -13358,7 +13384,8 @@ const CHAT_USERS_CACHE_TTL_MS = 60000;
     allChatConversations = [];
 
     firebase.database().ref('userConversations/' + user.uid).once('value').then(async snap => {
-      const entries = Object.keys(snap.val() || {});
+      const map = snap.val() || {};
+      const entries = Object.keys(map);
       if (!entries.length) {
         container.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">Aún no tienes chats. Toca el botón de escribir para iniciar uno.</div>';
         chatConversationCache = { items: [], loadedAt: Date.now() };
@@ -13366,24 +13393,37 @@ const CHAT_USERS_CACHE_TTL_MS = 60000;
       }
 
       const conversations = await Promise.all(entries.map(async convoId => {
-        const convoSnap = await firebase.database().ref('conversations/' + convoId).once('value');
-        const convo = convoSnap.val() || {};
-        const participantIds = Object.keys(convo.participants || {}).filter(uid => uid !== user.uid);
-        if (!participantIds.length) return null;
-        const otherUid = participantIds[0];
+        const raw = map[convoId];
+        const meta = (raw && typeof raw === 'object') ? raw : {};
+        let otherUid = meta.otherUid || null;
+        let updatedAt = Number(meta.updatedAt || 0);
+        let lastMessage = meta.lastMessage || 'Sin mensajes aún';
+
+        // Compatibilidad con datos viejos (valor boolean) y conversación sin metadatos
+        if (!otherUid || !updatedAt) {
+          const convoSnap = await firebase.database().ref('conversations/' + convoId).once('value');
+          const convo = convoSnap.val() || {};
+          const participantIds = Object.keys(convo.participants || {}).filter(uid => uid !== user.uid);
+          if (!participantIds.length) return null;
+          otherUid = participantIds[0];
+          updatedAt = Number(convo.updatedAt || 0);
+          lastMessage = convo.lastMessage || lastMessage;
+        }
+
         const other = await getChatUserProfile(otherUid);
         return {
           id: convoId,
           otherUid,
           otherName: other.name || 'Usuario',
           otherImage: other.image || 'https://via.placeholder.com/80',
-          updatedAt: Number(convo.updatedAt || 0),
-          lastMessage: convo.lastMessage || 'Sin mensajes aún'
+          updatedAt,
+          lastMessage
         };
       }));
 
       allChatConversations = conversations.filter(Boolean).sort((a, b) => b.updatedAt - a.updatedAt);
       chatConversationCache = { items: allChatConversations.slice(), loadedAt: Date.now() };
+      try { localStorage.setItem(CHAT_CONVERSATIONS_CACHE_KEY, JSON.stringify(chatConversationCache)); } catch (_) {}
       renderChatConversations(allChatConversations);
     }).catch(() => {
       container.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">No pudimos cargar tus chats.</div>';
@@ -13408,10 +13448,20 @@ const CHAT_USERS_CACHE_TTL_MS = 60000;
     const user = firebase.auth().currentUser;
     if (!user) return Promise.resolve([]);
     const now = Date.now();
+    if (!chatUsersIndexCache.length) {
+      try {
+        const raw = localStorage.getItem(CHAT_USERS_CACHE_KEY);
+        const persisted = JSON.parse(raw || '{}');
+        if (Array.isArray(persisted.items) && (now - Number(persisted.loadedAt || 0)) < CHAT_USERS_CACHE_TTL_MS) {
+          chatUsersIndexCache = persisted.items;
+          chatUsersIndexLoadedAt = Number(persisted.loadedAt || 0);
+        }
+      } catch (_) {}
+    }
     if (chatUsersIndexCache.length && (now - chatUsersIndexLoadedAt) < CHAT_USERS_CACHE_TTL_MS) {
       return Promise.resolve(chatUsersIndexCache);
     }
-    return firebase.database().ref('users').limitToFirst(350).once('value').then(snapshot => {
+    return firebase.database().ref('users').limitToFirst(CHAT_USERS_INDEX_LIMIT).once('value').then(snapshot => {
       const users = [];
       snapshot.forEach(child => {
         if (child.key === user.uid) return;
@@ -13425,6 +13475,12 @@ const CHAT_USERS_CACHE_TTL_MS = 60000;
       });
       chatUsersIndexCache = users;
       chatUsersIndexLoadedAt = Date.now();
+      try {
+        localStorage.setItem(CHAT_USERS_CACHE_KEY, JSON.stringify({
+          items: users,
+          loadedAt: chatUsersIndexLoadedAt
+        }));
+      } catch (_) {}
       return users;
     }).catch(() => []);
   }
@@ -13583,8 +13639,17 @@ const CHAT_USERS_CACHE_TTL_MS = 60000;
       return null;
     }).then(() => {
       const updates = {};
-      updates['userConversations/' + uidA + '/' + conversationId] = true;
-      updates['userConversations/' + uidB + '/' + conversationId] = true;
+      const updatedAt = Date.now();
+      updates['userConversations/' + uidA + '/' + conversationId] = {
+        otherUid: uidB,
+        updatedAt,
+        lastMessage: 'Nueva conversación'
+      };
+      updates['userConversations/' + uidB + '/' + conversationId] = {
+        otherUid: uidA,
+        updatedAt,
+        lastMessage: 'Nueva conversación'
+      };
       return firebase.database().ref().update(updates);
     });
   }
@@ -13607,11 +13672,7 @@ const CHAT_USERS_CACHE_TTL_MS = 60000;
     empty.textContent = 'Comienza la conversación enviando un mensaje.';
     container.appendChild(empty);
 
-    const ref = firebase.database().ref('conversationMessages/' + conversationId).limitToLast(80);
-    const callback = snapshot => {
-      const emptyState = document.getElementById('chat-room-empty-state');
-      if (emptyState) emptyState.remove();
-      const msg = snapshot.val() || {};
+    const renderMessageNode = msg => {
       const currentUserId = firebase.auth().currentUser?.uid || '';
       const mine = msg.senderId === currentUserId;
       const content = msg.image
@@ -13626,6 +13687,27 @@ const CHAT_USERS_CACHE_TTL_MS = 60000;
       `;
       container.appendChild(wrapper);
       container.scrollTop = container.scrollHeight;
+    };
+
+    const cachedMessages = chatMessagesMemoryCache.get(conversationId) || [];
+    if (cachedMessages.length) {
+      const emptyState = document.getElementById('chat-room-empty-state');
+      if (emptyState) emptyState.remove();
+      cachedMessages.forEach(renderMessageNode);
+    }
+
+    const ref = firebase.database().ref('conversationMessages/' + conversationId).limitToLast(CHAT_MESSAGES_LIMIT);
+    const callback = snapshot => {
+      const emptyState = document.getElementById('chat-room-empty-state');
+      if (emptyState) emptyState.remove();
+      const msg = snapshot.val() || {};
+      const msgId = snapshot.key || '';
+      if (!msgId) return;
+      const currentCache = chatMessagesMemoryCache.get(conversationId) || [];
+      if (currentCache.some(item => item.id === msgId)) return;
+      const nextCache = [...currentCache, { id: msgId, ...msg }].slice(-CHAT_MESSAGES_LIMIT);
+      chatMessagesMemoryCache.set(conversationId, nextCache);
+      renderMessageNode(msg);
     };
     ref.on('child_added', callback);
     chatMessagesListener = { ref, callback };
@@ -13663,26 +13745,54 @@ const CHAT_USERS_CACHE_TTL_MS = 60000;
     if (!text && !chatPhotoAttachment) return;
 
     const msgRef = firebase.database().ref('conversationMessages/' + currentChatRoomId).push();
+    const messageId = msgRef.key;
+    const sentAt = Date.now();
     const payload = {
       senderId: user.uid,
       text: text || '',
       image: chatPhotoAttachment || '',
-      timestamp: Date.now()
+      timestamp: sentAt
     };
 
+    // Render optimista inmediato para evitar sensación de retraso
+    const currentCache = chatMessagesMemoryCache.get(currentChatRoomId) || [];
+    chatMessagesMemoryCache.set(
+      currentChatRoomId,
+      [...currentCache, { id: messageId, ...payload }].slice(-CHAT_MESSAGES_LIMIT)
+    );
+    const container = document.getElementById('chat-room-messages');
+    if (container) {
+      const empty = document.getElementById('chat-room-empty-state');
+      if (empty) empty.remove();
+      const html = payload.image
+        ? `<img src="${payload.image}" class="max-w-[220px] rounded-2xl border border-[#e8e1dc]" alt="Foto enviada">`
+        : `<p class="text-sm break-words">${escapeHtml(payload.text || '')}</p>`;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'w-full flex justify-end';
+      wrapper.innerHTML = `<div class="bg-[#2f1a14] text-white rounded-2xl px-4 py-2 max-w-[80%]">${html}</div>`;
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
+    }
+    const recipientId = currentChatRecipient;
+    const conversationId = currentChatRoomId;
+    const lastMessage = chatPhotoAttachment ? '📷 Foto' : text;
+    input.value = '';
+    clearChatPhotoAttachment();
+    chatConversationCache.loadedAt = 0;
+
     msgRef.set(payload).then(() => {
-      const lastMessage = chatPhotoAttachment ? '📷 Foto' : text;
       const updates = {};
-      updates['conversations/' + currentChatRoomId + '/lastMessage'] = lastMessage;
-      updates['conversations/' + currentChatRoomId + '/lastSenderId'] = user.uid;
-      updates['conversations/' + currentChatRoomId + '/updatedAt'] = Date.now();
-      updates['userConversations/' + user.uid + '/' + currentChatRoomId] = true;
-      updates['userConversations/' + currentChatRecipient + '/' + currentChatRoomId] = true;
+      const updatedAt = Date.now();
+      updates['conversations/' + conversationId + '/lastMessage'] = lastMessage;
+      updates['conversations/' + conversationId + '/lastSenderId'] = user.uid;
+      updates['conversations/' + conversationId + '/updatedAt'] = updatedAt;
+      updates['userConversations/' + user.uid + '/' + conversationId + '/otherUid'] = recipientId;
+      updates['userConversations/' + user.uid + '/' + conversationId + '/updatedAt'] = updatedAt;
+      updates['userConversations/' + user.uid + '/' + conversationId + '/lastMessage'] = lastMessage;
+      updates['userConversations/' + recipientId + '/' + conversationId + '/otherUid'] = user.uid;
+      updates['userConversations/' + recipientId + '/' + conversationId + '/updatedAt'] = updatedAt;
+      updates['userConversations/' + recipientId + '/' + conversationId + '/lastMessage'] = lastMessage;
       return firebase.database().ref().update(updates);
-    }).then(() => {
-      input.value = '';
-      clearChatPhotoAttachment();
-      chatConversationCache.loadedAt = 0;
     }).catch(() => {
       alert('No se pudo enviar el mensaje. Inténtalo de nuevo.');
     });
