@@ -259,6 +259,16 @@ body {
   transform: scale(0.92);
 }
 
+.mention-link {
+  color: #FE2C55;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.mention-link:hover {
+  text-decoration: underline;
+}
+
 .quick-follow-btn.following {
   background: #8d7d75;
 }
@@ -8204,8 +8214,9 @@ const KLIPY_GIFS = [
       const saveToDatabases = (noteData) => {
         const p1 = db1.ref('communityNotes').push(noteData);
         const p2 = db2.ref('communityNotes').push(noteData);
+        const mentionPromise = sendMentionNotifications(noteData.content, user.uid, noteData.authorName, 'publicación', [user.uid]);
 
-        return Promise.all([p1, p2]).then(() => {
+        return Promise.all([p1, p2, mentionPromise]).then(() => {
           document.getElementById('note-content').value = '';
           if (imageInput) imageInput.value = '';
           const preview = document.getElementById('image-preview');
@@ -8255,7 +8266,8 @@ const KLIPY_GIFS = [
     const p1 = db1.ref('communityNotes').push(note);
     const p2 = db2.ref('communityNotes').push(note);
 
-    Promise.all([p1, p2]).then(([ref1, ref2]) => {
+    const mentionPromise = sendMentionNotifications(note.content, note.authorId, note.authorName, 'publicación', [note.authorId]);
+    Promise.all([p1, p2, mentionPromise]).then(([ref1, ref2]) => {
       // Verifica una vez más después de publicar (en db1)
       if (note.content) {
         moderarContenidoAutomaticamente(ref1.key, note.content);
@@ -9445,6 +9457,111 @@ function escapeHTML(text) {
     .replace(/'/g, '&#039;');
 }
 
+function extractMentionUsernames(text) {
+  if (!text) return [];
+  const regex = /@([\p{L}\p{N}_-]+)/gu;
+  const mentions = new Set();
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    const username = (match[1] || '').trim();
+    if (username) mentions.add(username);
+  }
+
+  return Array.from(mentions);
+}
+
+function renderTextWithMentions(text) {
+  if (!text) return '';
+  const safeText = escapeHTML(text);
+  return safeText.replace(/@([\p{L}\p{N}_-]+)/gu, (_, username) => {
+    const safeUsername = escapeHTML(username);
+    return `<a href="javascript:void(0)" class="mention-link" onclick="openAuthorProfileByUsername('${safeUsername}')">@${safeUsername}</a>`;
+  });
+}
+
+function openAuthorProfileByUsername(username) {
+  if (!username) return;
+  const desired = username.toLowerCase();
+
+  firebase.database().ref('users').orderByChild('username').once('value').then(snapshot => {
+    let foundUid = null;
+    snapshot.forEach(child => {
+      const user = child.val() || {};
+      if (String(user.username || '').toLowerCase() === desired) {
+        foundUid = child.key;
+        return true;
+      }
+    });
+
+    if (foundUid) {
+      openAuthorProfile(foundUid);
+    } else {
+      alert('Usuario no encontrado: @' + username);
+    }
+  }).catch(err => {
+    console.error('Error al buscar usuario mencionado:', err);
+    alert('No se pudo abrir el perfil del usuario mencionado.');
+  });
+}
+
+function resolveMentionedUserIds(text) {
+  const mentionedUsernames = extractMentionUsernames(text);
+  if (!mentionedUsernames.length) return Promise.resolve([]);
+
+  return firebase.database().ref('users').once('value').then(snapshot => {
+    const normalized = {};
+    snapshot.forEach(child => {
+      const user = child.val() || {};
+      const username = String(user.username || '');
+      if (username) {
+        normalized[username.toLowerCase()] = child.key;
+      }
+    });
+
+    return mentionedUsernames.reduce((ids, username) => {
+      const uid = normalized[username.toLowerCase()];
+      if (uid && !ids.includes(uid)) {
+        ids.push(uid);
+      }
+      return ids;
+    }, []);
+  });
+}
+
+function sendMentionNotifications(content, fromUserId, fromUserName, context = 'publicación', excludedUserIds = []) {
+  const mentionUsernames = extractMentionUsernames(content);
+  if (!mentionUsernames.length) return Promise.resolve([]);
+
+  return firebase.database().ref('users').once('value').then(snapshot => {
+    const lowerToUid = {};
+    snapshot.forEach(child => {
+      const user = child.val() || {};
+      const username = String(user.username || '').toLowerCase();
+      if (username) {
+        lowerToUid[username] = child.key;
+      }
+    });
+
+    const jobs = [];
+    const seen = new Set();
+    const article = context === 'comentario' ? 'un' : 'una';
+
+    mentionUsernames.forEach(username => {
+      const uid = lowerToUid[username.toLowerCase()];
+      if (!uid || uid === fromUserId || excludedUserIds.includes(uid) || seen.has(uid)) return;
+      seen.add(uid);
+      const message = `${fromUserName} te mencionó en ${article} ${context}.`;
+      jobs.push(addNotification(uid, message, 'mention'));
+    });
+
+    return Promise.all(jobs);
+  }).catch(error => {
+    console.error('Error al enviar notificaciones de mención:', error);
+    return [];
+  });
+}
+
 function isStickerLikeUrl(url = '') {
   const value = String(url || '').toLowerCase();
   return value.includes('i.ibb.co') || value.includes('sticker') || value.match(/\.(png|webp|gif|jpg|jpeg)(\?|$)/);
@@ -9460,11 +9577,11 @@ function renderContentWithSticker(content, textClass = 'text-sm text-gray-800 mb
     return `
       <div class="mb-2">
         <img src="${stickerUrl}" alt="sticker" class="w-24 h-24 object-contain rounded-lg sticker-item" data-url="${stickerUrl}">
-        ${stickerText ? `<p class="${textClass} mt-2">${escapeHTML(stickerText)}</p>` : ''}
+        ${stickerText ? `<p class="${textClass} mt-2">${renderTextWithMentions(stickerText)}</p>` : ''}
       </div>
     `;
   }
-  return `<p class="${textClass}">${escapeHTML(content || '')}</p>`;
+  return `<p class="${textClass}">${renderTextWithMentions(content || '')}</p>`;
 }
 
 function renderStickerGrid(filter = '') {
@@ -9939,6 +10056,8 @@ function submitComment() {
       return `${actorName} comentó tu publicación.`;
     };
 
+    const mentionPromise = sendMentionNotifications(payload.content, user.uid, actorName, 'comentario', [user.uid]);
+
     if (replyTarget && replyTarget.commentId) {
       Promise.all([
         firebase.database().ref('communityNotes/' + currentPostId).once('value'),
@@ -9963,6 +10082,7 @@ function submitComment() {
             notificationJobs.push(addNotification(parentComment.authorId, replyMessage, hasGif ? 'gif' : (hasSticker ? 'sticker' : 'reply')));
           }
 
+          notificationJobs.push(mentionPromise);
           return Promise.all(notificationJobs);
         });
       }).then(() => {
@@ -9980,10 +10100,12 @@ function submitComment() {
     firebase.database().ref('communityNotes/' + currentPostId).once('value').then(noteSnap => {
       const note = noteSnap.val() || {};
       return firebase.database().ref('postComments/' + currentPostId).push(payload).then(() => {
+        const notifications = [];
         if (note.authorId && note.authorId !== user.uid) {
-          return addNotification(note.authorId, buildPostMessage(), typeForMedia);
+          notifications.push(addNotification(note.authorId, buildPostMessage(), typeForMedia));
         }
-        return Promise.resolve();
+        notifications.push(mentionPromise);
+        return Promise.all(notifications);
       });
     }).then(() => {
       updateCommentsCount(currentPostId);
