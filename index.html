@@ -3746,10 +3746,53 @@ firebase.auth().onAuthStateChanged(user => {
   <!-- Input de chat -->
   <div class="sticky bottom-0 bg-white border-t border-[#e8e1dc] px-4 py-3 max-w-3xl mx-auto w-full">
     <div class="flex items-center gap-3 bg-[#f0f0f0] rounded-[2rem] px-4 py-3">
+      <!-- Botón de micrófono -->
+      <button id="baro-mic-btn" onclick="startBaroVoiceRecording()" class="text-[#1e252b] flex items-center justify-center hover:opacity-70 transition" aria-label="Grabar voz" title="Grabar voz">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 16.91c-1.48 1.46-3.51 2.36-5.76 2.36-2.25 0-4.28-.9-5.76-2.36M19 12c0 .46-.08.92-.21 1.36m-2.79 2.26C14.47 15.08 13.29 15.5 12 15.5s-2.47-.42-3.54-1.18M23 12a11 11 0 0 1-22 0"/></svg>
+      </button>
+      
       <input id="baro-chat-input" type="text" placeholder="Escribe tu mensaje..." class="flex-1 bg-transparent border-0 text-[1rem] text-[#1e252b] placeholder:text-[#7a8a99] focus:outline-none">
-      <button onclick="sendBaroChatMessage()" class="text-[#1e252b] flex items-center justify-center hover:opacity-70 transition" aria-label="Enviar">
+      
+      <!-- Botón de enviar -->
+      <button onclick="sendBaroChatMessage()" class="text-[#1e252b] flex items-center justify-center hover:opacity-70 transition" aria-label="Enviar" title="Enviar mensaje">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>
       </button>
+      
+      <!-- Botón de galería (foto) -->
+      <button id="baro-gallery-btn" onclick="openBaroGallery()" class="text-[#1e252b] flex items-center justify-center hover:opacity-70 transition" aria-label="Adjuntar foto" title="Adjuntar foto">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+      </button>
+      
+      <!-- Input oculto para galería -->
+      <input id="baro-gallery-input" type="file" accept="image/*" style="display: none;" onchange="handleBaroGallerySelect(event)">
+    </div>
+  </div>
+  
+  <!-- Contenedor de grabación de voz -->
+  <div id="baro-voice-recorder" class="fixed bottom-0 left-0 right-0 bg-white border-t border-[#e8e1dc] hidden z-[99] px-4 py-4">
+    <div class="max-w-3xl mx-auto w-full">
+      <div class="flex items-center gap-4 bg-[#f0f0f0] rounded-[2rem] px-4 py-3">
+        <!-- Botón de parar grabación -->
+        <button onclick="stopBaroVoiceRecording()" class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 text-white hover:bg-red-600 transition" aria-label="Detener grabación" title="Detener grabación">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+        </button>
+        
+        <!-- Visualizador de ondas -->
+        <div class="flex-1 flex items-center justify-center gap-1 h-8">
+          <div id="baro-wave-1" class="w-1 bg-[#2f1a14] rounded-full" style="height: 30%; transition: height 0.1s ease;"></div>
+          <div id="baro-wave-2" class="w-1 bg-[#2f1a14] rounded-full" style="height: 50%; transition: height 0.1s ease;"></div>
+          <div id="baro-wave-3" class="w-1 bg-[#2f1a14] rounded-full" style="height: 70%; transition: height 0.1s ease;"></div>
+          <div id="baro-wave-4" class="w-1 bg-[#2f1a14] rounded-full" style="height: 90%; transition: height 0.1s ease;"></div>
+          <div id="baro-wave-5" class="w-1 bg-[#2f1a14] rounded-full" style="height: 70%; transition: height 0.1s ease;"></div>
+          <div id="baro-wave-6" class="w-1 bg-[#2f1a14] rounded-full" style="height: 50%; transition: height 0.1s ease;"></div>
+          <div id="baro-wave-7" class="w-1 bg-[#2f1a14] rounded-full" style="height: 30%; transition: height 0.1s ease;"></div>
+        </div>
+        
+        <!-- Contador de tiempo -->
+        <div class="text-[#1e252b] font-semibold text-sm min-w-[50px] text-right">
+          <span id="baro-recording-time">0:00</span>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -19082,6 +19125,230 @@ function renderBaroChatMessages() {
   }, 100);
 }
 
+
+// ============= FUNCIONES DE VOZ Y GALERÍA PARA BARO =============
+
+// Variables globales para grabación de voz
+let baroMediaRecorder = null;
+let baroAudioChunks = [];
+let baroRecordingStartTime = null;
+let baroRecordingInterval = null;
+let baroRecognition = null;
+let baroIsRecording = false;
+
+// Inicializar Web Speech API
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  baroRecognition = new SpeechRecognition();
+  baroRecognition.lang = 'es-MX';
+  baroRecognition.continuous = true;
+  baroRecognition.interimResults = true;
+}
+
+// Función para abrir galería
+function openBaroGallery() {
+  document.getElementById('baro-gallery-input').click();
+}
+
+// Función para manejar selección de foto
+function handleBaroGallerySelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const imageData = e.target.result;
+    
+    // Agregar mensaje con imagen
+    const userMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    currentChatMessages.push({
+      id: userMsgId,
+      role: 'user',
+      text: '[Foto adjunta]',
+      image: imageData,
+      timestamp: Date.now()
+    });
+    
+    renderBaroChatMessages();
+    
+    // Simular respuesta de Baro
+    const typingMsgId = 'typing_' + Date.now();
+    currentChatMessages.push({
+      id: typingMsgId,
+      role: 'assistant',
+      text: '',
+      isTyping: true,
+      timestamp: Date.now()
+    });
+    renderBaroChatMessages();
+    
+    setTimeout(() => {
+      currentChatMessages = currentChatMessages.filter(msg => msg.id !== typingMsgId);
+      const baroResponse = 'He recibido tu foto. ¿En qué puedo ayudarte con esta imagen?';
+      const assistantMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      currentChatMessages.push({
+        id: assistantMsgId,
+        role: 'assistant',
+        text: baroResponse,
+        timestamp: Date.now()
+      });
+      renderBaroChatMessages();
+      saveBaroChatSession(currentChatSessionId, currentChatMessages);
+    }, 1200);
+  };
+  reader.readAsDataURL(file);
+  
+  // Limpiar input
+  event.target.value = '';
+}
+
+// Función para iniciar grabación de voz
+async function startBaroVoiceRecording() {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert('Tu navegador no soporta grabación de audio');
+      return;
+    }
+    
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    baroMediaRecorder = new MediaRecorder(stream);
+    baroAudioChunks = [];
+    baroIsRecording = true;
+    baroRecordingStartTime = Date.now();
+    
+    // Mostrar grabador
+    document.getElementById('baro-voice-recorder').classList.remove('hidden');
+    document.getElementById('baro-chat-input').style.display = 'none';
+    
+    // Iniciar animación de ondas
+    startBaroWaveAnimation();
+    
+    // Iniciar contador de tiempo
+    startBaroRecordingTimer();
+    
+    // Iniciar reconocimiento de voz
+    if (baroRecognition) {
+      baroRecognition.start();
+    }
+    
+    baroMediaRecorder.ondataavailable = (event) => {
+      baroAudioChunks.push(event.data);
+    };
+    
+    baroMediaRecorder.onstop = () => {
+      const audioBlob = new Blob(baroAudioChunks, { type: 'audio/webm' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // Reproducir audio grabado
+      const audio = new Audio(audioUrl);
+      audio.play();
+    };
+    
+    baroMediaRecorder.start();
+  } catch (error) {
+    console.error('Error al acceder al micrófono:', error);
+    alert('No se pudo acceder al micrófono');
+  }
+}
+
+// Función para detener grabación
+function stopBaroVoiceRecording() {
+  if (!baroMediaRecorder || !baroIsRecording) return;
+  
+  baroIsRecording = false;
+  baroMediaRecorder.stop();
+  
+  // Detener reconocimiento de voz
+  if (baroRecognition) {
+    baroRecognition.stop();
+  }
+  
+  // Detener animación
+  clearInterval(baroRecordingInterval);
+  
+  // Ocultar grabador
+  document.getElementById('baro-voice-recorder').classList.add('hidden');
+  document.getElementById('baro-chat-input').style.display = 'block';
+  
+  // Detener stream
+  if (baroMediaRecorder.stream) {
+    baroMediaRecorder.stream.getTracks().forEach(track => track.stop());
+  }
+  
+  // Enviar mensaje de voz transcrito
+  const input = document.getElementById('baro-chat-input');
+  if (input && input.value.trim()) {
+    sendBaroChatMessage();
+  }
+}
+
+// Función para animar ondas
+function startBaroWaveAnimation() {
+  const waves = ['baro-wave-1', 'baro-wave-2', 'baro-wave-3', 'baro-wave-4', 'baro-wave-5', 'baro-wave-6', 'baro-wave-7'];
+  const heights = [30, 50, 70, 90, 70, 50, 30];
+  let direction = 1;
+  let currentHeights = [...heights];
+  
+  baroRecordingInterval = setInterval(() => {
+    if (!baroIsRecording) return;
+    
+    // Animar ondas
+    for (let i = 0; i < waves.length; i++) {
+      const element = document.getElementById(waves[i]);
+      if (element) {
+        currentHeights[i] += (Math.random() * 40 - 20) * direction;
+        currentHeights[i] = Math.max(20, Math.min(100, currentHeights[i]));
+        element.style.height = currentHeights[i] + '%';
+      }
+    }
+    
+    // Cambiar dirección ocasionalmente
+    if (Math.random() > 0.7) {
+      direction = direction === 1 ? -1 : 1;
+    }
+  }, 100);
+}
+
+// Función para contador de tiempo
+function startBaroRecordingTimer() {
+  const timerInterval = setInterval(() => {
+    if (!baroIsRecording) {
+      clearInterval(timerInterval);
+      return;
+    }
+    
+    const elapsed = Math.floor((Date.now() - baroRecordingStartTime) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    document.getElementById('baro-recording-time').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+  }, 100);
+}
+
+// Manejar resultados de reconocimiento de voz
+if (baroRecognition) {
+  baroRecognition.onresult = (event) => {
+    let interimTranscript = '';
+    let finalTranscript = '';
+    
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript + ' ';
+      } else {
+        interimTranscript += transcript;
+      }
+    }
+    
+    // Mostrar transcripción en el input
+    if (finalTranscript) {
+      document.getElementById('baro-chat-input').value = (document.getElementById('baro-chat-input').value + ' ' + finalTranscript).trim();
+    }
+  };
+  
+  baroRecognition.onerror = (event) => {
+    console.error('Error en reconocimiento de voz:', event.error);
+  };
+}
 
 // Estilos de animación extra
 const baroStyle = document.createElement('style');
