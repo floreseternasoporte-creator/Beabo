@@ -18670,11 +18670,46 @@ function renderBaroChatMessages() {
   
   container.innerHTML = currentChatMessages.map((msg, idx) => {
     const isUser = msg.role === 'user';
+    const isLastMessage = idx === currentChatMessages.length - 1;
+    const showFeedback = !isUser && isLastMessage && msg.feedback === undefined && !msg.isTyping;
+    
+    // Mostrar indicador de escritura
+    if (msg.isTyping) {
+      return `
+        <div class="flex justify-start animate-fadeIn message-item" data-msg-id="${msg.id}">
+          <div class="bg-[#f0f0f0] text-[#1e252b] rounded-3xl rounded-tl-lg px-4 py-3 shadow-sm">
+            <div class="flex items-center gap-1">
+              <div class="w-2 h-2 bg-[#7a8a99] rounded-full animate-bounce" style="animation-delay: 0s;"></div>
+              <div class="w-2 h-2 bg-[#7a8a99] rounded-full animate-bounce" style="animation-delay: 0.2s;"></div>
+              <div class="w-2 h-2 bg-[#7a8a99] rounded-full animate-bounce" style="animation-delay: 0.4s;"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    
     return `
-      <div class="flex ${isUser ? 'justify-end' : 'justify-start'} animate-fadeIn">
+      <div class="flex ${isUser ? 'justify-end' : 'justify-start'} animate-fadeIn message-item" data-msg-id="${msg.id}">
         <div class="max-w-xs lg:max-w-md ${isUser ? 'bg-[#2f1a14] text-white rounded-3xl rounded-tr-lg' : 'bg-[#f0f0f0] text-[#1e252b] rounded-3xl rounded-tl-lg'} px-4 py-3 shadow-sm">
           <p class="text-[1rem] leading-tight break-words">${escapeHtml(msg.text)}</p>
-          <p class="text-xs ${isUser ? 'text-gray-300' : 'text-[#7a8a99]'} mt-1">${formatBaroChatTime(msg.timestamp)}</p>
+          ${showFeedback ? `
+            <div class="flex items-center gap-2 mt-3 pt-2 border-t ${isUser ? 'border-gray-600' : 'border-gray-300'}">
+              <button onclick="setBaroMessageFeedback('${msg.id}', 'like')" class="flex items-center justify-center p-1.5 rounded-full hover:bg-opacity-20 hover:bg-gray-400 transition feedback-btn" title="Me gusta">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14 10h4.764a2 2 0 011.789 2.894l-3.646 7.23a2 2 0 01-1.789 1.106H7a2 2 0 01-2-2v-8a2 2 0 012-2h.5a2 2 0 01.667.125A6.97 6.97 0 0112 3c3.314 0 6 1.79 6 4v2z"/></svg>
+              </button>
+              <button onclick="setBaroMessageFeedback('${msg.id}', 'dislike')" class="flex items-center justify-center p-1.5 rounded-full hover:bg-opacity-20 hover:bg-gray-400 transition feedback-btn" title="No me gusta">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.646-7.23a2 2 0 011.789-1.106H17a2 2 0 012 2v8a2 2 0 01-2 2h-.5a2 2 0 01-.667-.125A6.97 6.97 0 0112 21c-3.314 0-6-1.79-6-4v-2z"/></svg>
+              </button>
+              <button onclick="playBaroMessageAudio('${msg.id}')" class="flex items-center justify-center p-1.5 rounded-full hover:bg-opacity-20 hover:bg-gray-400 transition" title="Escuchar">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1V10a1 1 0 011-1h1.586l4.707-4.707a1 1 0 011.414 0l4.707 4.707V9a1 1 0 011 1v4a1 1 0 01-1 1h-1.586l-4.707 4.707a1 1 0 01-1.414 0L5.586 15z"/></svg>
+              </button>
+            </div>
+          ` : ''}
+          ${msg.feedback ? `
+            <div class="flex items-center justify-center mt-3 pt-2 border-t ${isUser ? 'border-gray-600' : 'border-gray-300'}">
+              <p class="text-xs ${isUser ? 'text-gray-300' : 'text-[#7a8a99]'}">✓ Gracias por tu comentario</p>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
@@ -18707,8 +18742,10 @@ function sendBaroChatMessage() {
   const message = input.value.trim();
   if (!message) return;
   
-  // Agregar mensaje del usuario
+  // Agregar mensaje del usuario con ID único
+  const userMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   currentChatMessages.push({
+    id: userMsgId,
     role: 'user',
     text: message,
     timestamp: Date.now()
@@ -18717,17 +18754,33 @@ function sendBaroChatMessage() {
   input.value = '';
   renderBaroChatMessages();
   
+  // Mostrar indicador de escritura
+  const typingMsgId = 'typing_' + Date.now();
+  currentChatMessages.push({
+    id: typingMsgId,
+    role: 'assistant',
+    text: '',
+    isTyping: true,
+    timestamp: Date.now()
+  });
+  renderBaroChatMessages();
+  
   // Simular respuesta de Baro (aquí se integraría con la API real de Baro)
   setTimeout(() => {
+    // Remover el indicador de escritura
+    currentChatMessages = currentChatMessages.filter(msg => msg.id !== typingMsgId);
+    
     const baroResponse = generateBaroResponse(message);
+    const assistantMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     currentChatMessages.push({
+      id: assistantMsgId,
       role: 'assistant',
       text: baroResponse,
       timestamp: Date.now()
     });
     renderBaroChatMessages();
     saveBaroChatSession(currentChatSessionId, currentChatMessages);
-  }, 800);
+  }, 1200);
 }
 
 // Generar una respuesta simulada de Baro (esto se reemplazará con la API real)
@@ -18829,6 +18882,147 @@ document.addEventListener('DOMContentLoaded', () => {
         sendBaroChatMessage();
       }
     });
+
+// Función para establecer feedback de mensaje
+function setBaroMessageFeedback(msgId, feedbackType) {
+  const msgIndex = currentChatMessages.findIndex(m => m.id === msgId);
+  if (msgIndex === -1) return;
+  
+  currentChatMessages[msgIndex].feedback = feedbackType;
+  renderBaroChatMessages();
+  saveBaroChatSession(currentChatSessionId, currentChatMessages);
+}
+
+// Función para reproducir audio del mensaje con ElevenLabs
+function playBaroMessageAudio(msgId) {
+  const msg = currentChatMessages.find(m => m.id === msgId);
+  if (!msg || !msg.text) return;
+  
+  showAudioPlayer(msgId, msg.text);
+}
+
+// Función para mostrar reproductor de audio
+function showAudioPlayer(msgId, text) {
+  const existingPlayer = document.getElementById('baro-audio-player');
+  if (existingPlayer) existingPlayer.remove();
+  
+  const player = document.createElement('div');
+  player.id = 'baro-audio-player';
+  player.className = 'fixed bottom-0 left-0 right-0 bg-white border-t border-[#e8e1dc] shadow-lg z-[100] p-4';
+  player.innerHTML = `
+    <div class="max-w-3xl mx-auto">
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-sm font-semibold text-[#1e252b]">Reproduciendo audio</p>
+        <button onclick="document.getElementById('baro-audio-player').remove()" class="text-[#7a8a99] hover:text-[#1e252b] transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="audio-play-btn" onclick="toggleAudioPlayback()" class="flex items-center justify-center w-10 h-10 rounded-full bg-[#2f1a14] text-white hover:bg-[#3a241d] transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <div class="flex-1">
+          <div class="w-full h-1 bg-[#e8e1dc] rounded-full">
+            <div id="audio-progress" class="h-1 bg-[#2f1a14] rounded-full" style="width: 0%"></div>
+          </div>
+        </div>
+        <span id="audio-time" class="text-xs text-[#7a8a99] font-mono">0:00 / 0:30</span>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(player);
+  generateAndPlayAudio(msgId, text);
+}
+
+// Función para generar y reproducir audio con ElevenLabs
+async function generateAndPlayAudio(msgId, text) {
+  try {
+    const apiKey = '2fac09560be32f029e8ed1cc8e9e6d58dc14e57bd6616a39f1f22052cc83dd4f';
+    const voiceId = 'JBFqnCBsd6RMkjVY5Cd5';
+    
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'xi-api-key': apiKey
+      },
+      body: JSON.stringify({
+        text: text,
+        model_id: 'eleven_monolingual_v1',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75
+        }
+      })
+    });
+    
+    if (!response.ok) {
+      console.error('Error al generar audio:', response.statusText);
+      return;
+    }
+    
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    
+    const audio = new Audio(audioUrl);
+    const playBtn = document.getElementById('audio-play-btn');
+    const progressBar = document.getElementById('audio-progress');
+    const timeDisplay = document.getElementById('audio-time');
+    
+    window.currentAudio = audio;
+    
+    playBtn.onclick = () => {
+      if (audio.paused) {
+        audio.play();
+        playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+      } else {
+        audio.pause();
+        playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+      }
+    };
+    
+    audio.addEventListener('timeupdate', () => {
+      const percent = (audio.currentTime / audio.duration) * 100;
+      progressBar.style.width = percent + '%';
+      const mins = Math.floor(audio.currentTime / 60);
+      const secs = Math.floor(audio.currentTime % 60);
+      const totalMins = Math.floor(audio.duration / 60);
+      const totalSecs = Math.floor(audio.duration % 60);
+      timeDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')} / ${totalMins}:${totalSecs.toString().padStart(2, '0')}`;
+    });
+    
+    audio.addEventListener('ended', () => {
+      playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+      progressBar.style.width = '0%';
+      timeDisplay.textContent = '0:00 / 0:30';
+    });
+    
+    audio.play();
+    playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+    
+  } catch (error) {
+    console.error('Error al reproducir audio:', error);
+    alert('No se pudo generar el audio. Intenta de nuevo.');
+  }
+}
+
+// Función auxiliar para alternar reproducción
+function toggleAudioPlayback() {
+  const audio = window.currentAudio;
+  if (!audio) return;
+  
+  const playBtn = document.getElementById('audio-play-btn');
+  if (audio.paused) {
+    audio.play();
+    playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+  } else {
+    audio.pause();
+    playBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  }
+}
+
+
   }
 });
 
