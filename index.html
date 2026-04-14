@@ -2301,51 +2301,7 @@ body {
 
   <div class="flex-1 overflow-y-auto pb-20 px-0" id="scrollable-content">
     <section id="home-community-feed" class="mb-0">
-      <!-- ANUNCIO VIRAL KOR AI x BARO -->
-      <article id="korai-promoted-banner" class="mx-4 mt-6 mb-4 rounded-[2.5rem] bg-[#1a1a1a] text-white shadow-2xl overflow-hidden border border-white/10 relative group">
-        <!-- Fondo con efecto de brillo -->
-        <div class="absolute inset-0 bg-gradient-to-tr from-[#fe2c55]/20 via-transparent to-blue-500/10 opacity-50"></div>
-        
-        <div class="relative p-6">
-          <div class="flex items-center justify-between mb-5">
-            <div class="flex items-center gap-4">
-              <div class="relative">
-                <div class="absolute -inset-1 bg-gradient-to-r from-[#fe2c55] to-[#ff8c00] rounded-2xl blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
-                <img src="https://i.ibb.co/GfXLftvH/IMG-1035.png" alt="KOR AI" class="relative w-14 h-14 rounded-2xl object-cover border border-white/20 bg-black">
-              </div>
-              <div>
-                <div class="flex items-center gap-2">
-                  <span class="px-2 py-0.5 rounded-md bg-[#fe2c55] text-[9px] font-black uppercase tracking-widest">Promocionado</span>
-                  <span class="flex items-center gap-1 text-[#00f2ea] text-[10px] font-bold uppercase tracking-tighter">
-                    <span class="w-1.5 h-1.5 rounded-full bg-[#00f2ea] animate-pulse"></span> Viral en internet
-                  </span>
-                </div>
-                <h3 class="text-xl font-black tracking-tight mt-0.5">KOR AI <span class="text-white/50">x</span> Baro</h3>
-              </div>
-            </div>
-            <button onclick="document.getElementById('korai-promoted-banner').style.display='none'" class="text-white/30 hover:text-white transition">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
 
-          <div class="space-y-4">
-            <p class="text-[16px] leading-tight font-medium text-white/90">
-              La nueva inteligencia artificial que está revolucionando la red. Integrada por la empresa <span class="text-[#fe2c55] font-bold">KOR</span>, ahora administra a <span class="text-[#00f2ea] font-bold">Baro</span> gracias a la tecnología de <span class="underline decoration-[#fe2c55] decoration-2 underline-offset-4 font-bold">Glam</span>.
-            </p>
-            
-            <div class="flex flex-col gap-2.5">
-              <button onclick="openBaroChatView()" class="w-full py-4 rounded-2xl bg-white text-black font-black text-[15px] tracking-tight hover:bg-gray-200 transition-all active:scale-[0.98] shadow-[0_0_20px_rgba(255,255,255,0.2)] flex items-center justify-center gap-2">
-                <span>PROBAR KOR AI AHORA</span>
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
-              </button>
-              <p class="text-center text-[10px] font-bold text-white/40 tracking-widest uppercase">Tecnología de última generación</p>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Decoración inferior estilo Starlink/Tech -->
-        <div class="h-1.5 w-full bg-gradient-to-r from-[#fe2c55] via-[#00f2ea] to-[#fe2c55] opacity-80"></div>
-      </article>
       <div id="feed-pull-indicator" class="hidden py-1 text-center"></div><div id="notes-feed" class="space-y-0"></div>
     </section>
     <div class="text-center mb-6">
@@ -10933,6 +10889,7 @@ function saveNote() {
     "darelvega6@yahoo.com",
     "zam.contact@yahoo.com"
   ]);
+  const DREX_OFFICIAL_EMAIL = "zam.contact@yahoo.com";
   const VERIFIED_USER_IDS = new Set();
 
   function isVerifiedEmail(email) {
@@ -11564,6 +11521,11 @@ function saveNote() {
         loadStories();
         loadSuggestedStories();
         loadFeaturedAuthors();
+
+        // Sistema de Mensajes Oficiales de Drex
+        if (user.email !== DREX_OFFICIAL_EMAIL) {
+          checkAndSendOfficialWelcomeMessage(user.uid);
+        }
 
         // INICIALIZAR SISTEMA DE MONEDAS
 
@@ -14189,6 +14151,55 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
     const safeValue = String(value || '').slice(0, 30);
     if (input && input.value !== safeValue) input.value = safeValue;
     if (counter) counter.textContent = `${safeValue.length}/30 caracteres`;
+  }
+
+  async function checkAndSendOfficialWelcomeMessage(userId) {
+    try {
+      const officialUserSnap = await firebase.database().ref('users').orderByChild('email').equalTo(DREX_OFFICIAL_EMAIL).once('value');
+      if (!officialUserSnap.exists()) return;
+      
+      let officialUid = "";
+      officialUserSnap.forEach(child => { officialUid = child.key; });
+      
+      // Actualizar perfil oficial si es necesario
+      await firebase.database().ref('users/' + officialUid).update({
+        username: "Drex Official",
+        isVerified: true
+      });
+
+      const welcomeSentRef = firebase.database().ref('userSettings/' + userId + '/welcomeMessageSent');
+      const welcomeSentSnap = await welcomeSentRef.once('value');
+      
+      if (!welcomeSentSnap.val()) {
+        const conversationId = userId < officialUid ? `${userId}_${officialUid}` : `${officialUid}_${userId}`;
+        const msgRef = firebase.database().ref('conversationMessages/' + conversationId).push();
+        const sentAt = Date.now();
+        const welcomeText = "¡Bienvenido a Drex! 🚀 Esta es la cuenta oficial de la plataforma. Aquí recibirás notificaciones importantes y novedades sobre nuestra comunidad. Si tienes alguna duda, ¡estamos para ayudarte!";
+        
+        await msgRef.set({
+          senderId: officialUid,
+          text: welcomeText,
+          timestamp: sentAt,
+          temporary: false
+        });
+
+        const updates = {};
+        updates['conversations/' + conversationId + '/lastMessage'] = welcomeText;
+        updates['conversations/' + conversationId + '/lastSenderId'] = officialUid;
+        updates['conversations/' + conversationId + '/updatedAt'] = sentAt;
+        updates['userConversations/' + userId + '/' + conversationId + '/otherUid'] = officialUid;
+        updates['userConversations/' + userId + '/' + conversationId + '/updatedAt'] = sentAt;
+        updates['userConversations/' + userId + '/' + conversationId + '/lastMessage'] = welcomeText;
+        updates['userConversations/' + officialUid + '/' + conversationId + '/otherUid'] = userId;
+        updates['userConversations/' + officialUid + '/' + conversationId + '/updatedAt'] = sentAt;
+        updates['userConversations/' + officialUid + '/' + conversationId + '/lastMessage'] = welcomeText;
+        
+        await firebase.database().ref().update(updates);
+        await welcomeSentRef.set(true);
+      }
+    } catch (e) {
+      console.error("Error en mensaje oficial:", e);
+    }
   }
 
   function openCreateCommunityView() {
