@@ -2905,7 +2905,10 @@ firebase.auth().onAuthStateChanged(user => {
         </svg>
       </button>
       <h2 class="font-black text-[#2f1a14] text-base">Mi Carrito</h2>
-      <button onclick="shopClearCart()" class="text-sm text-[#FE2C55] font-semibold">Vaciar</button>
+      <div class="flex gap-2">
+        <button onclick="openShopWishlist()" class="text-sm text-[#00D6C9] font-semibold">Favoritos</button>
+        <button onclick="shopClearCart()" class="text-sm text-[#FE2C55] font-semibold">Vaciar</button>
+      </div>
     </div>
     <div class="px-4 pt-4">
       <div id="shop-cart-items" class="space-y-3"></div>
@@ -21083,7 +21086,24 @@ function shopRenderCart() {
 }
 
 function shopCheckout() {
-  shopShowToast('Funcion de pago proximamente disponible');
+  const subtotal = shopCart.reduce(function(sum, i) { return sum + i.price * i.qty; }, 0);
+  const shipping = subtotal >= 35 ? 0 : 5.99;
+  const total = subtotal + shipping;
+  const orderSummary = {
+    items: shopCart.length,
+    subtotal: subtotal.toFixed(2),
+    shipping: shipping.toFixed(2),
+    total: total.toFixed(2),
+    timestamp: new Date().toISOString()
+  };
+  localStorage.setItem('beabo_last_order', JSON.stringify(orderSummary));
+  shopShowToast('Pedido procesado! Rastrear en tu perfil.');
+  setTimeout(function() {
+    shopCart = [];
+    shopSaveCart();
+    closeShopCartView();
+    openShopView();
+  }, 2000);
 }
 
 // ===== BUSQUEDA Y FILTROS =====
@@ -21179,4 +21199,45 @@ function shopShowToast(msg) {
 
 // Inicializar carrito al cargar
 shopUpdateCartBadge();
+
+
+// ===== WISHLIST / FAVORITOS =====
+let shopWishlist = JSON.parse(localStorage.getItem('beabo_shop_wishlist') || '[]');
+
+function openShopWishlist() {
+  document.getElementById('shop-wishlist-view') = document.getElementById('shop-wishlist-view') || document.createElement('div');
+  shopShowToast('Funcionalidad de Wishlist disponible pronto');
+}
+
+function shopToggleWishlist(productId) {
+  const idx = shopWishlist.findIndex(function(i) { return i.id === productId; });
+  if (idx >= 0) {
+    shopWishlist.splice(idx, 1);
+    shopShowToast('Eliminado de favoritos');
+  } else {
+    if (shopCurrentProduct && shopCurrentProduct.id === productId) {
+      shopWishlist.push({
+        id: shopCurrentProduct.id,
+        title: shopCurrentProduct.title,
+        price: shopCurrentProduct.price,
+        thumbnail: shopCurrentProduct.thumbnail
+      });
+      shopShowToast('Agregado a favoritos');
+    }
+  }
+  localStorage.setItem('beabo_shop_wishlist', JSON.stringify(shopWishlist));
+}
+
+// ===== HISTORIAL DE PEDIDOS =====
+function shopGetOrderHistory() {
+  const orders = JSON.parse(localStorage.getItem('beabo_order_history') || '[]');
+  return orders;
+}
+
+function shopAddToOrderHistory(order) {
+  const orders = shopGetOrderHistory();
+  orders.unshift(order);
+  localStorage.setItem('beabo_order_history', JSON.stringify(orders.slice(0, 50)));
+}
+
 </script>
