@@ -19029,7 +19029,16 @@ function renderPlacesList(places) {
       
       <div id="reward-box" class="bg-white/10 border border-white/20 rounded-3xl p-6 mb-8 w-full max-w-xs hidden">
         <p class="text-[#00D6C9] font-black text-sm mb-2">¡PREMIO DESBLOQUEADO!</p>
-        <p id="reward-text" class="text-white font-bold mb-4">Cupón 20% OFF en Marca Kor</p>
+        <p id="reward-text" class="text-white font-bold mb-2">Cupón 20% OFF en Marca Kor</p>
+        <p id="reward-code" class="text-[#FFD700] font-black text-lg text-center mb-4 bg-white/5 py-2 rounded-lg">KOR2024</p>
+        <div class="flex gap-2 mb-3">
+          <button onclick="shareToTikTok()" class="flex-1 bg-black text-white py-2 rounded-lg font-black text-xs active:scale-95 transition flex items-center justify-center gap-1">
+            <span>TikTok</span>
+          </button>
+          <button onclick="shareToInstagram()" class="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-2 rounded-lg font-black text-xs active:scale-95 transition">
+            IG
+          </button>
+        </div>
         <button onclick="shareToClaim()" class="w-full bg-[#00D6C9] text-[#2f1a14] py-3 rounded-xl font-black text-sm active:scale-95 transition">
           COMPARTIR PARA RECLAMAR
         </button>
@@ -21515,14 +21524,14 @@ function gameOver() {
   
   const rewardBox = document.getElementById('reward-box');
   const rewardText = document.getElementById('reward-text');
+  const rewardCode = document.getElementById('reward-code');
   
-  if(gameScore >= 100) {
+  const reward = getRewardForScore(gameScore);
+  
+  if(reward) {
     rewardBox.classList.remove('hidden');
-    if(gameScore >= 300) {
-      rewardText.textContent = '¡PRODUCTO KOR GRATIS! (Muestra este código)';
-    } else {
-      rewardText.textContent = 'Cupón 30% OFF en Marca Kor';
-    }
+    rewardText.textContent = reward.description;
+    rewardCode.textContent = reward.code;
   } else {
     rewardBox.classList.add('hidden');
   }
@@ -21621,14 +21630,16 @@ function playGameSound(type) {
 }
 
 function shareToClaim() {
-  const text = `¡He conseguido ${gameScore} puntos en el Kor Challenge de Beabo! ¿Puedes superarme? #KorChallenge #BeaboShop`;
+  const reward = getRewardForScore(gameScore);
+  const text = `¡He conseguido ${gameScore} puntos en el Kor Challenge de Beabo! 🎮 Gané un cupón ${reward.discount} en Marca Kor. ¿Puedes superarme? #KorChallenge #BeaboShop #TikTokShop`;
+  
   if(navigator.share) {
     navigator.share({
       title: 'Kor Catch Challenge',
       text: text,
       url: window.location.href
     }).then(() => {
-      shopShowToast('¡Gracias por compartir! Tu premio ha sido activado.');
+      recordShare('generic');
     });
   } else {
     // Fallback copiar al portapapeles
@@ -21638,8 +21649,68 @@ function shareToClaim() {
     el.select();
     document.execCommand('copy');
     document.body.removeChild(el);
-    shopShowToast('Texto copiado. ¡Compártelo para activar tu premio!');
+    recordShare('clipboard');
   }
+}
+
+
+
+// ===== SISTEMA DE CUPONES Y COMPARTIR =====
+const REWARD_TIERS = {
+  50: { discount: '10%', code: 'KOR10', description: 'Cupón 10% OFF' },
+  100: { discount: '20%', code: 'KOR20', description: 'Cupón 20% OFF' },
+  200: { discount: '35%', code: 'KOR35', description: 'Cupón 35% OFF' },
+  300: { discount: 'GRATIS', code: 'KORGRATIS', description: 'Producto Kor GRATIS' }
+};
+
+function getRewardForScore(score) {
+  let reward = null;
+  for(const [minScore, rewardData] of Object.entries(REWARD_TIERS)) {
+    if(score >= parseInt(minScore)) {
+      reward = rewardData;
+    }
+  }
+  return reward;
+}
+
+function shareToTikTok() {
+  const reward = getRewardForScore(gameScore);
+  const text = `¡Acabo de conseguir ${gameScore} puntos en el Kor Catch Challenge! 🎮 Gané un cupón ${reward.discount} en Marca Kor. ¿Puedes superarme? #KorChallenge #BeaboShop #TikTokShop`;
+  const url = `https://www.tiktok.com/share?url=${encodeURIComponent(window.location.href)}&quote=${encodeURIComponent(text)}`;
+  
+  if(navigator.share) {
+    navigator.share({
+      title: 'Kor Catch Challenge',
+      text: text,
+      url: window.location.href
+    });
+  } else {
+    window.open(url, '_blank', 'width=600,height=400');
+  }
+  
+  recordShare('tiktok');
+}
+
+function shareToInstagram() {
+  const reward = getRewardForScore(gameScore);
+  const text = `¡Acabo de conseguir ${gameScore} puntos en el Kor Catch Challenge! 🎮 Gané un cupón ${reward.discount} en Marca Kor. ¿Puedes superarme? #KorChallenge #BeaboShop`;
+  
+  // Instagram no tiene API de compartir directa, mostrar instrucciones
+  const message = `Copia este texto y comparte en tu historia de Instagram:\n\n${text}\n\nCódigo: ${reward.code}`;
+  alert(message);
+  
+  recordShare('instagram');
+}
+
+function recordShare(platform) {
+  const shares = JSON.parse(localStorage.getItem('beabo_game_shares') || '[]');
+  shares.push({
+    platform: platform,
+    score: gameScore,
+    timestamp: new Date().toISOString()
+  });
+  localStorage.setItem('beabo_game_shares', JSON.stringify(shares.slice(-50)));
+  shopShowToast(`¡Gracias por compartir en ${platform}! Tu cupón está activo.`);
 }
 
 </script>
