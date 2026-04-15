@@ -349,6 +349,56 @@ body {
   animation: repost-bounce 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+/* ===== SPREAD MODERNO ===== */
+.spread-btn {
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #8d7d75;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 20px;
+}
+
+.spread-btn:hover {
+  background-color: rgba(47, 26, 20, 0.08);
+  color: #5f4b44;
+}
+
+.spread-btn:active {
+  transform: scale(0.85);
+}
+
+.spread-btn .spread-icon {
+  width: 17px;
+  height: 17px;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.spread-btn.active {
+  color: #2f1a14;
+}
+
+.spread-btn.active .spread-icon {
+  transform: scale(1.2);
+  filter: drop-shadow(0 0 4px rgba(47, 26, 20, 0.22));
+}
+
+@keyframes spread-pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.spread-btn.animating .spread-icon {
+  animation: spread-pulse 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
 /* ===== LOADER DE COMENTARIOS ===== */
 .comment-skeleton {
   display: flex;
@@ -8345,7 +8395,8 @@ const KLIPY_GIFS = [
         upvotes: 0,
         downvotes: 0,
         commentsCount: 0,
-        repostsCount: 0
+        repostsCount: 0,
+        spreadsCount: 0
       };
 
       const saveToDatabases = (noteData) => {
@@ -8674,6 +8725,7 @@ const KLIPY_GIFS = [
     const user = firebase.auth().currentUser;
     let userVotes = {};
     let userReposts = {};
+    let userSpreads = {};
 
     // Cargar votos del usuario en segundo plano sin bloquear la renderizacion
     if (user) {
@@ -8683,6 +8735,9 @@ const KLIPY_GIFS = [
       firebase.database().ref('userReposts/' + user.uid).once('value').then(snap => {
         userReposts = snap.val() || {};
       }).catch(err => console.error('Error cargando reposts:', err));
+      firebase.database().ref('userSpreads/' + user.uid).once('value').then(snap => {
+        userSpreads = snap.val() || {};
+      }).catch(err => console.error('Error cargando spreads:', err));
     }
 
     if (showLoader) {
@@ -8739,6 +8794,8 @@ const KLIPY_GIFS = [
             const userVote = userVotes[note.id] || null;
             const repostsCount = Number(note.repostsCount || 0);
             const hasReposted = Boolean(userReposts[note.id]);
+            const spreadsCount = Number(note.spreadsCount || 0);
+            const hasSpread = Boolean(userSpreads && userSpreads[note.id]);
 
             let pollHTML = '';
             const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
@@ -8847,6 +8904,14 @@ const KLIPY_GIFS = [
                         <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                       </svg>
                       <span class="text-sm font-bold">${repostsCount}</span>
+                    </button>
+                    <button onclick="toggleSpread('${note.id}')" id="spread-${note.id}" class="spread-btn ${hasSpread ? 'active' : ''}" aria-label="Amplificar publicación">
+                      <svg class="spread-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="12" cy="12" r="6" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none" opacity="0.5"/>
+                      </svg>
+                      <span class="text-sm font-bold">${spreadsCount || 0}</span>
                     </button>
                   </div>
                 </div>
@@ -9565,6 +9630,104 @@ async function toggleRepost(noteId) {
     btn.classList.toggle('active', isCurrentlyActive);
     countSpan.textContent = parseInt(countSpan.textContent) + (isCurrentlyActive ? 1 : -1);
     alert('No se pudo completar el Repost.');
+  }
+}
+
+async function toggleSpread(noteId) {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para amplificar');
+    return;
+  }
+
+  const btn = document.getElementById(`spread-${noteId}`);
+  if (!btn) return;
+
+  const countSpan = btn.querySelector('span');
+  const isCurrentlyActive = btn.classList.contains('active');
+  let currentCount = parseInt(countSpan.textContent) || 0;
+
+  // Actualización Optimista (UI Instantánea)
+  btn.classList.add('animating');
+  if (isCurrentlyActive) {
+    btn.classList.remove('active');
+    currentCount = Math.max(0, currentCount - 1);
+  } else {
+    btn.classList.add('active');
+    currentCount = currentCount + 1;
+  }
+  countSpan.textContent = currentCount;
+
+  setTimeout(() => btn.classList.remove('animating'), 400);
+
+  const noteRef = firebase.database().ref('communityNotes/' + noteId);
+  const userSpreadRef = firebase.database().ref('userSpreads/' + user.uid + '/' + noteId);
+  const postSpreadRef = firebase.database().ref('postSpreads/' + noteId + '/' + user.uid);
+
+  try {
+    const [noteSnap, userSnap, spreadSnap] = await Promise.all([
+      noteRef.once('value'),
+      firebase.database().ref('users/' + user.uid).once('value'),
+      userSpreadRef.once('value')
+    ]);
+
+    const note = noteSnap.val();
+    if (!note) {
+      // Revertir UI si el post no existe
+      btn.classList.toggle('active', isCurrentlyActive);
+      countSpan.textContent = parseInt(countSpan.textContent) + (isCurrentlyActive ? 1 : -1);
+      alert('Este post ya no existe.');
+      return;
+    }
+
+    const alreadySpread = spreadSnap.exists();
+    const userData = userSnap.val() || {};
+    const spreaderName = userData.username || user.displayName || user.email || 'Alguien';
+
+    if (alreadySpread) {
+      // Remover el spread
+      await Promise.all([
+        userSpreadRef.remove(),
+        postSpreadRef.remove(),
+        noteRef.transaction(currentNote => {
+          if (!currentNote) return currentNote;
+          currentNote.spreadsCount = Math.max(0, Number(currentNote.spreadsCount || 0) - 1);
+          return currentNote;
+        })
+      ]);
+    } else {
+      // Agregar el spread
+      const payload = {
+        noteId,
+        originalAuthorId: note.authorId || '',
+        originalAuthorName: note.authorName || 'Usuario',
+        spreaderId: user.uid,
+        spreaderName,
+        spreaderImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
+        timestamp: Date.now()
+      };
+
+      await Promise.all([
+        userSpreadRef.set(payload),
+        postSpreadRef.set(payload),
+        noteRef.transaction(currentNote => {
+          if (!currentNote) return currentNote;
+          currentNote.spreadsCount = Number(currentNote.spreadsCount || 0) + 1;
+          return currentNote;
+        })
+      ]);
+
+      // Notificar al autor del post (opcional)
+      if (note.authorId && note.authorId !== user.uid) {
+        addNotification(note.authorId, `${spreaderName} amplificó tu publicación.`, 'spread');
+      }
+    }
+  } catch (error) {
+    console.error('Error al amplificar:', error);
+    // Revertir UI en caso de error
+    btn.classList.toggle('active', isCurrentlyActive);
+    countSpan.textContent = parseInt(countSpan.textContent) + (isCurrentlyActive ? 1 : -1);
+    alert('No se pudo completar la amplificación.');
   }
 }
 
@@ -14571,6 +14734,7 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
       downvotes: 0,
       commentsCount: 0,
       repostsCount: 0,
+      spreadsCount: 0,
       groupId,
       groupName: name
     };
