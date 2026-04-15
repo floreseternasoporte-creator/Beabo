@@ -292,9 +292,9 @@ body {
   top: 1rem;
   right: 1rem;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.55rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
   z-index: 3;
 }
 
@@ -11708,23 +11708,47 @@ function saveNote() {
 
     return `
       <div class="post-top-actions">
-        <span class="post-views-badge" title="${formatSocialCount(viewsCount)} vistas">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5c-5.5 0-9.5 4.5-10 5 .5.5 4.5 9 10 9s9.5-8.5 10-9c-.5-.5-4.5-5-10-5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>
-          <span ${viewsIdAttribute}>${formatSocialCount(viewsCount)}</span>
-        </span>
-        <button onclick="openPostOptionsSheet('${safeNoteId}')" class="post-menu-btn" aria-label="${optionsLabel}">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="6" cy="12" r="1.8" />
-            <circle cx="12" cy="12" r="1.8" />
-            <circle cx="18" cy="12" r="1.8" />
-          </svg>
-        </button>
+        <div class="flex items-center gap-2">
+          <span class="post-views-badge" title="${formatSocialCount(viewsCount)} vistas">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5c-5.5 0-9.5 4.5-10 5 .5.5 4.5 9 10 9s9.5-8.5 10-9c-.5-.5-4.5-5-10-5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>
+            <span ${viewsIdAttribute}>${formatSocialCount(viewsCount)}</span>
+          </span>
+          <button onclick="openPostOptionsSheet('${safeNoteId}')" class="post-menu-btn" aria-label="${optionsLabel}">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="6" cy="12" r="1.8" />
+              <circle cx="12" cy="12" r="1.8" />
+              <circle cx="18" cy="12" r="1.8" />
+            </svg>
+          </button>
+        </div>
       </div>
     `;
   }
 
   const viewedPostsInSession = new Set();
+  const viewedPostsStorage = 'drex_viewed_posts_v1';
   let postViewsObserver = null;
+
+  function loadViewedPostsFromStorage() {
+    try {
+      const stored = localStorage.getItem(viewedPostsStorage);
+      if (stored) {
+        const ids = JSON.parse(stored);
+        ids.forEach(id => viewedPostsInSession.add(id));
+      }
+    } catch (e) {
+      console.warn('Error loading viewed posts from storage:', e);
+    }
+  }
+
+  function saveViewedPostsToStorage() {
+    try {
+      const ids = Array.from(viewedPostsInSession);
+      localStorage.setItem(viewedPostsStorage, JSON.stringify(ids));
+    } catch (e) {
+      console.warn('Error saving viewed posts to storage:', e);
+    }
+  }
 
   function ensurePostViewsObserver() {
     if (postViewsObserver || typeof IntersectionObserver === 'undefined') return;
@@ -11757,10 +11781,13 @@ function saveNote() {
     if (!noteId || viewedPostsInSession.has(noteId)) return;
 
     viewedPostsInSession.add(noteId);
+    saveViewedPostsToStorage();
 
     const viewsRef = firebase.database().ref('communityNotes/' + noteId + '/viewsCount');
     viewsRef.transaction(current => (Number(current || 0) + 1));
   }
+
+  loadViewedPostsFromStorage();
 
   /*********************** AUTENTICACIÓN **************************/
   function showAuthSection(section) {
