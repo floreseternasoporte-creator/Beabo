@@ -6821,6 +6821,7 @@ function openPhotoDetail(photo) {
     const commentsCount = Number(post.commentsCount || 0);
     const repostsCount = Number(post.repostsCount || 0);
     const spreadsCount = Number(post.spreadsCount || 0);
+    const viewsCount = Number(post.viewsCount || 0);
     const noteId = post.id || '';
 
     card.innerHTML = `
@@ -6833,6 +6834,8 @@ function openPhotoDetail(photo) {
           ${renderNoteImages(post, noteId)}
           <div class="mt-2 flex items-center gap-2 text-xs text-gray-500">
             <span>${formatRelativeTime(post.timestamp)}</span>
+            <span>•</span>
+            <span class="inline-flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5c-5.5 0-9.5 4.5-10 5 .5.5 4.5 9 10 9s9.5-8.5 10-9c-.5-.5-4.5-5-10-5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>${formatSocialCount(viewsCount)} vistas</span>
           </div>
         </div>
       </div>
@@ -8288,7 +8291,8 @@ const KLIPY_GIFS = [
         authorImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
         timestamp: Date.now(),
         likes: 0,
-        comments: 0
+        comments: 0,
+        viewsCount: 0
       };
 
       // Agregar encuesta si existe
@@ -8432,7 +8436,8 @@ const KLIPY_GIFS = [
         downvotes: 0,
         commentsCount: 0,
         repostsCount: 0,
-        spreadsCount: 0
+        spreadsCount: 0,
+        viewsCount: 0
       };
 
       const saveToDatabases = (noteData) => {
@@ -8808,8 +8813,10 @@ const KLIPY_GIFS = [
               const repostSpan = repostBtn ? repostBtn.querySelector('span') : null;
               const spreadBtn = existingPost.querySelector(`#spread-${note.id}`);
               const spreadSpan = spreadBtn ? spreadBtn.querySelector('span') : null;
+              const viewsSpan = existingPost.querySelector(`#views-${note.id}`);
               
               if (scoreSpan) scoreSpan.textContent = formatVoteScore(Number(note.upvotes || 0) - Number(note.downvotes || 0));
+              if (viewsSpan) viewsSpan.textContent = formatSocialCount(Number(note.viewsCount || 0));
               
               // Solo actualizar repost si no está en medio de una animación local (UI optimista)
               if (repostBtn && !repostBtn.classList.contains('animating')) {
@@ -8829,6 +8836,7 @@ const KLIPY_GIFS = [
             const noteElement = document.createElement('div');
             noteElement.id = `post-${note.id}`;
             noteElement.className = 'bg-white border-b border-[#e8e1dc] rounded-none mb-0 w-full shadow-none';
+            noteElement.dataset.noteId = note.id;
 
             const upvotes = Number(note.upvotes || 0);
             const downvotes = Number(note.downvotes || 0);
@@ -8839,6 +8847,7 @@ const KLIPY_GIFS = [
             const hasReposted = Boolean(userReposts[note.id]);
             const spreadsCount = Number(note.spreadsCount || 0);
             const hasSpread = Boolean(userSpreads && userSpreads[note.id]);
+            const viewsCount = Number(note.viewsCount || 0);
 
             let pollHTML = '';
             const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
@@ -8906,13 +8915,19 @@ const KLIPY_GIFS = [
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-2">
                       <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}</button>
-                      <button onclick="openPostOptionsSheet('${note.id}')" class="ml-auto p-2 rounded-full bg-[#f8f6f4] border border-[#e8e1dc] hover:bg-[#f1ece9] text-[#6f5c54]" aria-label="Opciones de publicación">
+                      <div class="ml-auto flex items-center gap-2">
+                        <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7a6962] bg-[#f8f6f4] border border-[#e8e1dc] px-2 py-1 rounded-full">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5c-5.5 0-9.5 4.5-10 5 .5.5 4.5 9 10 9s9.5-8.5 10-9c-.5-.5-4.5-5-10-5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>
+                          <span id="views-${note.id}">${formatSocialCount(viewsCount)}</span>
+                        </span>
+                        <button onclick="openPostOptionsSheet('${note.id}')" class="p-2 rounded-full bg-[#f8f6f4] border border-[#e8e1dc] hover:bg-[#f1ece9] text-[#6f5c54]" aria-label="Opciones de publicación">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                           <circle cx="6" cy="12" r="1.8" />
                           <circle cx="12" cy="12" r="1.8" />
                           <circle cx="18" cy="12" r="1.8" />
                         </svg>
                       </button>
+                      </div>
                     </div>
                     ${renderNoteAnchoredMeta(note)}
                     ${note.content ? renderContentWithSticker(note.content, 'text-[#2f1a14] text-base whitespace-pre-wrap leading-relaxed') : ''}
@@ -8962,6 +8977,7 @@ const KLIPY_GIFS = [
               </div>
             `;
             feedFragment.appendChild(noteElement);
+            trackPostView(note.id, noteElement);
           } catch (renderError) {
             console.error('Error renderizando publicación:', note?.id, renderError);
           }
@@ -11619,6 +11635,62 @@ function saveNote() {
     const absValue = Math.abs(numericScore);
     const compact = formatNumber(absValue);
     return numericScore > 0 ? `${compact}` : `-${compact}`;
+  }
+
+  function formatSocialCount(value) {
+    const numericValue = Number(value || 0);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) return '0';
+
+    if (numericValue >= 1000000000) {
+      return (numericValue / 1000000000).toFixed(1).replace(/\.0$/, '') + 'b';
+    }
+    if (numericValue >= 1000000) {
+      return (numericValue / 1000000).toFixed(1).replace(/\.0$/, '') + 'm';
+    }
+    if (numericValue >= 1000) {
+      return (numericValue / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    }
+
+    return Math.floor(numericValue).toString();
+  }
+
+  const viewedPostsInSession = new Set();
+  let postViewsObserver = null;
+
+  function ensurePostViewsObserver() {
+    if (postViewsObserver || typeof IntersectionObserver === 'undefined') return;
+
+    postViewsObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting || entry.intersectionRatio < 0.65) return;
+        const target = entry.target;
+        const noteId = target?.dataset?.noteId;
+        if (!noteId) return;
+        registerPostView(noteId);
+        postViewsObserver.unobserve(target);
+      });
+    }, { threshold: [0.65] });
+  }
+
+  function trackPostView(noteId, postElement) {
+    if (!noteId || !postElement || viewedPostsInSession.has(noteId)) return;
+
+    ensurePostViewsObserver();
+    if (postViewsObserver) {
+      postViewsObserver.observe(postElement);
+      return;
+    }
+
+    registerPostView(noteId);
+  }
+
+  function registerPostView(noteId) {
+    if (!noteId || viewedPostsInSession.has(noteId)) return;
+
+    viewedPostsInSession.add(noteId);
+
+    const viewsRef = firebase.database().ref('communityNotes/' + noteId + '/viewsCount');
+    viewsRef.transaction(current => (Number(current || 0) + 1));
   }
 
   /*********************** AUTENTICACIÓN **************************/
@@ -14827,6 +14899,7 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
           </button>
         `;
       }).join('');
+
     }).catch(() => {
       list.innerHTML = '';
       empty.classList.remove('hidden');
@@ -15105,6 +15178,7 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
       container.innerHTML = posts.map(post => {
         const score = Number(post.upvotes || 0) - Number(post.downvotes || 0);
         const commentsCount = Number(post.commentsCount || 0);
+        const viewsCount = Number(post.viewsCount || 0);
         const userVote = user ? (post.userVotes?.[user.uid] || null) : null;
         const pollOptions = Array.isArray(post.poll?.options) ? post.poll.options : [];
         const pollHtml = post.poll && pollOptions.length ? `
@@ -15132,7 +15206,7 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
         ` : '';
 
         return `
-          <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4">
+          <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4" data-note-id="${post.id}">
             <div class="flex items-start gap-3 mb-3">
               <button ${post.authorId ? `onclick="openAuthorProfile('${post.authorId}')"` : 'disabled'} class="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden ${post.authorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${escapeHtml(post.authorName || 'Usuario')}">
                 <img src="${post.authorImage || 'https://via.placeholder.com/80'}" class="w-full h-full object-cover" alt="${escapeHtml(post.authorName || 'Usuario')}">
@@ -15140,13 +15214,19 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-2">
                   <button ${post.authorId ? `onclick="openAuthorProfile('${post.authorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${post.authorId ? 'cursor-pointer' : 'cursor-default'}">${escapeHtml(post.authorName || 'Usuario')}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')}</button>
-                  <button onclick="openPostOptionsSheet('${post.id}')" class="ml-auto p-2 rounded-full bg-[#f8f6f4] border border-[#e8e1dc] hover:bg-[#f1ece9] text-[#6f5c54]" aria-label="Opciones de publicación del grupo">
+                  <div class="ml-auto flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7a6962] bg-[#f8f6f4] border border-[#e8e1dc] px-2 py-1 rounded-full">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5c-5.5 0-9.5 4.5-10 5 .5.5 4.5 9 10 9s9.5-8.5 10-9c-.5-.5-4.5-5-10-5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>
+                      <span>${formatSocialCount(viewsCount)}</span>
+                    </span>
+                    <button onclick="openPostOptionsSheet('${post.id}')" class="p-2 rounded-full bg-[#f8f6f4] border border-[#e8e1dc] hover:bg-[#f1ece9] text-[#6f5c54]" aria-label="Opciones de publicación del grupo">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <circle cx="6" cy="12" r="1.8" />
                       <circle cx="12" cy="12" r="1.8" />
                       <circle cx="18" cy="12" r="1.8" />
                     </svg>
                   </button>
+                  </div>
                 </div>
                 ${renderNoteAnchoredMeta(post)}
                 ${post.content ? renderContentWithSticker(post.content, 'text-[#2f1a14] text-base whitespace-pre-wrap leading-relaxed') : ''}
@@ -15177,6 +15257,11 @@ const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
           </div>
         `;
       }).join('');
+
+      container.querySelectorAll('[data-note-id]').forEach(postElement => {
+        const noteId = postElement.getAttribute('data-note-id');
+        if (noteId) trackPostView(noteId, postElement);
+      });
     }).catch(() => {
       container.innerHTML = '<p class="text-sm text-[#8d7d75]">No pudimos cargar publicaciones.</p>';
     });
