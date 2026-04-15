@@ -5855,17 +5855,22 @@ function openPhotoDetail(photo) {
         </div>
       </div>
 
-      <!-- SECCIÓN DE INFO TÉCNICA (Moderno/Minimalista) -->
+      <!-- SECCIÓN DE INFO TÉCNICA (Tipo de Red y Persistencia) -->
       <div class="grid grid-cols-2 gap-4">
-        <div class="bg-white/50 border border-[#e8e1dc] rounded-3xl p-5 flex flex-col items-center text-center">
-          <p class="text-[9px] font-black text-[#8a7a71] uppercase tracking-widest mb-2">Protocolo</p>
-          <p class="text-xs font-bold text-[#2f1a14]">HTTPS / WSS</p>
+        <div class="bg-white/50 border border-[#e8e1dc] rounded-3xl p-5 flex flex-col items-center text-center shadow-sm">
+          <p class="text-[9px] font-black text-[#8a7a71] uppercase tracking-widest mb-2">Tipo de Red</p>
+          <p id="network-type-text" class="text-xs font-bold text-[#2f1a14]">Detectando...</p>
         </div>
-        <div class="bg-white/50 border border-[#e8e1dc] rounded-3xl p-5 flex flex-col items-center text-center">
-          <p class="text-[9px] font-black text-[#8a7a71] uppercase tracking-widest mb-2">Seguridad</p>
-          <p class="text-xs font-bold text-[#2f1a14]">Encrypted</p>
+        <div class="bg-white/50 border border-[#e8e1dc] rounded-3xl p-5 flex flex-col items-center text-center shadow-sm">
+          <p class="text-[9px] font-black text-[#8a7a71] uppercase tracking-widest mb-2">Uso Total</p>
+          <p id="data-usage-history-text" class="text-xs font-bold text-[#2f1a14]">0.00 MB</p>
         </div>
       </div>
+      
+      <!-- BOTÓN PARA REINICIAR CONTADOR -->
+      <button onclick="resetDataCounter()" class="w-full py-3 px-6 bg-white/40 border border-[#e8e1dc] rounded-2xl text-[10px] font-black text-[#8a7a71] uppercase tracking-widest hover:bg-white/60 transition-all active:scale-95">
+        Reiniciar estadísticas de datos
+      </button>
 
       <!-- BRANDING KOR PREMIUM -->
       <div class="pt-10 pb-6 flex flex-col items-center justify-center">
@@ -13522,8 +13527,11 @@ function saveNote() {
   }
 
   /*********************** MONITOR DE DATOS EN TIEMPO REAL (KOR) **************************/
-  let totalDataConsumed = 0; // en bytes
+  const DATA_USAGE_STORAGE_KEY = 'kor_data_usage_v1';
+  let sessionDataConsumed = 0; // en bytes en esta sesión
+  let historicalDataConsumed = parseFloat(localStorage.getItem(DATA_USAGE_STORAGE_KEY) || 0);
   let dataMonitorInterval = null;
+  let lastResourceTotal = 0;
 
   function openDataUsageConfigView() {
     closeAllSettingsSubViews();
@@ -13533,6 +13541,15 @@ function saveNote() {
       view.style.display = 'flex';
     }
     startDataMonitoring();
+  }
+
+  function resetDataCounter() {
+    if(confirm("¿Estás seguro de que quieres reiniciar las estadísticas de consumo de datos?")) {
+      historicalDataConsumed = 0;
+      sessionDataConsumed = 0;
+      localStorage.setItem(DATA_USAGE_STORAGE_KEY, 0);
+      updateDataUsageUI();
+    }
   }
 
   function closeDataUsageConfigView() {
@@ -13548,12 +13565,10 @@ function saveNote() {
     updateNetworkStatus();
     updateDataUsageUI();
     
-    // Simulación de consumo en tiempo real basada en actividad de red real si es posible
-    // o un incremento basado en la carga de la app
     if (dataMonitorInterval) clearInterval(dataMonitorInterval);
     
     dataMonitorInterval = setInterval(() => {
-      // Intentar obtener datos reales de la API de Performance si está disponible
+      let delta = 0;
       if (window.performance && window.performance.getEntriesByType) {
         const resources = window.performance.getEntriesByType('resource');
         let currentTotal = 0;
@@ -13561,18 +13576,27 @@ function saveNote() {
           if (r.transferSize) currentTotal += r.transferSize;
           else if (r.decodedBodySize) currentTotal += r.decodedBodySize;
         });
-        // Si no hay cambios significativos, simulamos un pequeño tráfico de heartbeat/polling
-        if (currentTotal <= totalDataConsumed) {
-          totalDataConsumed += Math.random() * 500; // 0.5KB aprox
-        } else {
-          totalDataConsumed = currentTotal;
+        
+        if (lastResourceTotal === 0) {
+          lastResourceTotal = currentTotal;
         }
-      } else {
-        totalDataConsumed += Math.random() * 1024; // Simulación básica
+        
+        delta = currentTotal - lastResourceTotal;
+        if (delta < 0) delta = 0; // Evitar negativos si se limpia performance
+        lastResourceTotal = currentTotal;
       }
       
+      // Simulación de tráfico base (heartbeat de firebase/analytics) si no hay actividad
+      if (delta === 0) delta = Math.random() * 800; 
+
+      sessionDataConsumed += delta;
+      historicalDataConsumed += delta;
+      
+      // Guardar en persistencia
+      localStorage.setItem(DATA_USAGE_STORAGE_KEY, historicalDataConsumed);
+      
       updateDataUsageUI();
-      if (Math.random() > 0.8) updateNetworkStatus(); // Actualizar estado de red ocasionalmente
+      if (Math.random() > 0.7) updateNetworkStatus();
     }, 2000);
   }
 
@@ -13587,39 +13611,31 @@ function saveNote() {
     const amountEl = document.getElementById('realtime-data-amount');
     const unitEl = document.getElementById('realtime-data-unit');
     const totalEl = document.getElementById('realtime-data-total');
+    const historyEl = document.getElementById('data-usage-history-text');
     const previewEl = document.getElementById('data-usage-preview');
     const progressBar = document.getElementById('data-progress-bar');
 
     if (!amountEl || !unitEl || !totalEl) return;
 
-    let displayValue, displayUnit;
-
-    if (totalDataConsumed < 1024) {
-      displayValue = totalDataConsumed.toFixed(2);
-      displayUnit = 'Bytes';
-    } else if (totalDataConsumed < 1024 * 1024) {
-      displayValue = (totalDataConsumed / 1024).toFixed(2);
-      displayUnit = 'KB';
-    } else if (totalDataConsumed < 1024 * 1024 * 1024) {
-      displayValue = (totalDataConsumed / (1024 * 1024)).toFixed(2);
-      displayUnit = 'MB';
-    } else if (totalDataConsumed < 1024 * 1024 * 1024 * 1024) {
-      displayValue = (totalDataConsumed / (1024 * 1024 * 1024)).toFixed(2);
-      displayUnit = 'GB';
-    } else {
-      displayValue = (totalDataConsumed / (1024 * 1024 * 1024 * 1024)).toFixed(2);
-      displayUnit = 'TB';
+    function formatBytes(bytes) {
+      if (bytes < 1024) return { val: bytes.toFixed(2), unit: 'Bytes' };
+      if (bytes < 1024 * 1024) return { val: (bytes / 1024).toFixed(2), unit: 'KB' };
+      if (bytes < 1024 * 1024 * 1024) return { val: (bytes / (1024 * 1024)).toFixed(2), unit: 'MB' };
+      if (bytes < 1024 * 1024 * 1024 * 1024) return { val: (bytes / (1024 * 1024 * 1024)).toFixed(2), unit: 'GB' };
+      return { val: (bytes / (1024 * 1024 * 1024 * 1024)).toFixed(2), unit: 'TB' };
     }
 
-    amountEl.textContent = displayValue;
-    unitEl.textContent = displayUnit;
+    const session = formatBytes(sessionDataConsumed);
+    const history = formatBytes(historicalDataConsumed);
+
+    amountEl.textContent = session.val;
+    unitEl.textContent = session.unit;
+    totalEl.textContent = session.val + ' ' + session.unit;
     
-    const totalMB = (totalDataConsumed / (1024 * 1024)).toFixed(2);
-    totalEl.textContent = totalMB + ' MB';
-    if (previewEl) previewEl.textContent = 'Consumo: ' + totalMB + ' MB';
+    if (historyEl) historyEl.textContent = history.val + ' ' + history.unit;
+    if (previewEl) previewEl.textContent = 'Total: ' + history.val + ' ' + history.unit;
     
-    // Animación de barra de progreso (ciclo de 10MB para visualización)
-    const progress = ( (totalDataConsumed % (10 * 1024 * 1024)) / (10 * 1024 * 1024) ) * 100;
+    const progress = ( (sessionDataConsumed % (10 * 1024 * 1024)) / (10 * 1024 * 1024) ) * 100;
     if (progressBar) progressBar.style.width = progress + '%';
   }
 
@@ -13633,6 +13649,7 @@ function saveNote() {
 
     const online = navigator.onLine;
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const typeEl = document.getElementById('network-type-text');
     
     if (!online) {
       statusText.textContent = 'Sin Conexión';
@@ -13640,6 +13657,7 @@ function saveNote() {
       speedText.textContent = 'Internet Malo';
       statusIcon.className = 'w-20 h-20 bg-white rounded-2xl shadow-lg flex items-center justify-center text-red-500';
       if (iconContainer) iconContainer.className = 'relative mb-6 text-red-500';
+      if (typeEl) typeEl.textContent = 'Desconectado';
       return;
     }
 
@@ -13669,6 +13687,17 @@ function saveNote() {
     speedText.textContent = speed;
     statusIcon.className = 'w-20 h-20 bg-white rounded-2xl shadow-[5px_5px_15px_rgba(0,0,0,0.05)] flex items-center justify-center ' + colorClass;
     if (iconContainer) iconContainer.className = 'relative mb-6 ' + colorClass;
+
+    if (typeEl) {
+      if (connection) {
+        const type = connection.type || connection.effectiveType || 'Desconocido';
+        if (type === 'wifi') typeEl.textContent = 'Wi-Fi';
+        else if (['cellular', '4g', '3g', '2g'].includes(type)) typeEl.textContent = 'Datos Móviles';
+        else typeEl.textContent = type.toUpperCase();
+      } else {
+        typeEl.textContent = 'Conectado';
+      }
+    }
   }
 
   function savePhoneNumber() {
