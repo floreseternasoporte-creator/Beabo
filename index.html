@@ -6814,19 +6814,54 @@ function openPhotoDetail(photo) {
   // Función para crear una tarjeta de publicación del usuario
   function createProfilePostCard(post) {
     const card = document.createElement('div');
-    card.className = 'bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-all cursor-pointer w-full';
-    card.onclick = () => openCommentsView(post.id);
+    card.className = 'bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-all w-full';
+    const upvotes = Number(post.upvotes || 0);
+    const downvotes = Number(post.downvotes || 0);
+    const score = upvotes - downvotes;
+    const commentsCount = Number(post.commentsCount || 0);
+    const repostsCount = Number(post.repostsCount || 0);
+    const spreadsCount = Number(post.spreadsCount || 0);
+    const noteId = post.id || '';
 
     card.innerHTML = `
-      <div class="flex items-start gap-2">
-        <img src="${post.authorImage || 'https://via.placeholder.com/40'}" class="w-8 h-8 rounded-full object-cover flex-shrink-0">
+      <div class="flex items-start gap-2 cursor-pointer" onclick="openCommentsView('${noteId}')">
+        <img src="${post.authorImage || 'https://via.placeholder.com/40'}" class="w-8 h-8 rounded-full object-cover flex-shrink-0" alt="${post.authorName || 'Usuario'}">
         <div class="flex-1 min-w-0">
           <p class="font-semibold text-xs text-gray-800">${post.authorName || 'Usuario'}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')}</p>
+          ${renderNoteAnchoredMeta(post)}
           ${post.content ? `<p class="text-xs text-gray-700 mt-1 line-clamp-3">${post.content}</p>` : ''}
+          ${renderNoteImages(post, noteId)}
           <div class="mt-2 flex items-center gap-2 text-xs text-gray-500">
             <span>${formatRelativeTime(post.timestamp)}</span>
           </div>
         </div>
+      </div>
+      <div class="mt-3 pt-3 border-t border-[#efe9e5] flex items-center gap-3 text-[#7a6962]">
+        <button onclick="votePost('${noteId}', 'up')" class="vote-star flex items-center gap-1" aria-label="Votar publicación">
+          <span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span><span class="spark"></span>
+          <svg class="fire-icon-sm" fill="currentColor" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+            <path d="M16 2c0 0-1.5 3.5-3.5 5.5C10 10 7 11.5 7 16c0 5 4 9 9 9s9-4 9-9c0-3.5-2-6-4-8-0.5 2-1.5 3.5-3 4.5 0-3.5-1-7.5-2-10.5z"/>
+          </svg>
+        </button>
+        <span class="text-xs font-bold">${formatVoteScore(score)}</span>
+        <button onclick="openCommentsView('${noteId}')" class="flex items-center gap-1 text-xs font-bold hover:text-[#5f4b44]">${commentsCount}</button>
+        <button onclick="toggleRepost('${noteId}')" class="repost-btn" aria-label="Repostear publicación">
+          <svg class="repost-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M17 1L21 5L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M3 11V9C3 7.93913 3.42143 6.92172 4.17157 6.17157C4.92172 5.42143 5.93913 5 7 5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M7 23L3 19L7 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="text-xs font-bold">${repostsCount}</span>
+        </button>
+        <button onclick="toggleSpread('${noteId}')" class="spread-btn" aria-label="Amplificar publicación">
+          <svg class="spread-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="2"/>
+            <circle cx="12" cy="12" r="6" stroke="currentColor" stroke-width="2" fill="none"/>
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none" opacity="0.5"/>
+          </svg>
+          <span class="text-xs font-bold">${spreadsCount}</span>
+        </button>
       </div>
     `;
 
@@ -6853,6 +6888,7 @@ function openPhotoDetail(photo) {
         <img src="${originalPost?.authorImage || 'https://via.placeholder.com/40'}" class="w-8 h-8 rounded-full object-cover flex-shrink-0">
         <div class="flex-1 min-w-0">
           <p class="font-semibold text-xs text-gray-800">${originalPost?.authorName || payload?.originalAuthorName || 'Usuario'}${getVerificationIconByAuthor(originalPost?.authorEmail || '', originalPost?.authorId || '')}</p>
+          ${renderNoteAnchoredMeta(originalPost || {})}
           <p class="text-xs text-gray-700 mt-1 line-clamp-3">${originalPost?.content || 'Publicación sin texto'}</p>
         </div>
       </div>
@@ -8770,6 +8806,8 @@ const KLIPY_GIFS = [
               const scoreSpan = existingPost.querySelector(`#score-${note.id}`);
               const repostBtn = existingPost.querySelector(`#repost-${note.id}`);
               const repostSpan = repostBtn ? repostBtn.querySelector('span') : null;
+              const spreadBtn = existingPost.querySelector(`#spread-${note.id}`);
+              const spreadSpan = spreadBtn ? spreadBtn.querySelector('span') : null;
               
               if (scoreSpan) scoreSpan.textContent = formatVoteScore(Number(note.upvotes || 0) - Number(note.downvotes || 0));
               
@@ -8778,6 +8816,11 @@ const KLIPY_GIFS = [
                   const hasReposted = Boolean(userReposts[note.id]);
                   repostBtn.classList.toggle('active', hasReposted);
                   if (repostSpan) repostSpan.textContent = Number(note.repostsCount || 0);
+              }
+              if (spreadBtn && !spreadBtn.classList.contains('animating')) {
+                  const hasSpread = Boolean(userSpreads[note.id]);
+                  spreadBtn.classList.toggle('active', hasSpread);
+                  if (spreadSpan) spreadSpan.textContent = Number(note.spreadsCount || 0);
               }
               return;
           }
@@ -19900,5 +19943,3 @@ baroStyle.textContent = `
 `;
 document.head.appendChild(baroStyle);
 </script>
-
-
