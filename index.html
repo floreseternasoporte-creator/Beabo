@@ -7097,7 +7097,6 @@ function openPhotoDetail(photo) {
     const commentsCount = Number(post.commentsCount || 0);
     const repostsCount = Number(post.repostsCount || 0);
     const spreadsCount = Number(post.spreadsCount || 0);
-    const viewsCount = Number(post.viewsCount || 0);
     const noteId = post.id || '';
 
     card.innerHTML = `
@@ -7110,8 +7109,6 @@ function openPhotoDetail(photo) {
           ${renderNoteImages(post, noteId)}
           <div class="mt-2 flex items-center gap-2 text-xs text-gray-500">
             <span>${formatRelativeTime(post.timestamp)}</span>
-            <span>•</span>
-            <span class="inline-flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5c-5.5 0-9.5 4.5-10 5 .5.5 4.5 9 10 9s9.5-8.5 10-9c-.5-.5-4.5-5-10-5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>${formatSocialCount(viewsCount)} vistas</span>
           </div>
         </div>
       </div>
@@ -9155,10 +9152,7 @@ const KLIPY_GIFS = [
               const repostSpan = repostBtn ? repostBtn.querySelector('span') : null;
               const spreadBtn = existingPost.querySelector(`#spread-${note.id}`);
               const spreadSpan = spreadBtn ? spreadBtn.querySelector('span') : null;
-              const viewsSpan = existingPost.querySelector(`#views-${note.id}`);
-              
               if (scoreSpan) scoreSpan.textContent = formatVoteScore(Number(note.upvotes || 0) - Number(note.downvotes || 0));
-              if (viewsSpan) viewsSpan.textContent = formatSocialCount(Number(note.viewsCount || 0));
               
               // Solo actualizar repost si no está en medio de una animación local (UI optimista)
               if (repostBtn && !repostBtn.classList.contains('animating')) {
@@ -9189,7 +9183,6 @@ const KLIPY_GIFS = [
             const hasReposted = Boolean(userReposts[note.id]);
             const spreadsCount = Number(note.spreadsCount || 0);
             const hasSpread = Boolean(userSpreads && userSpreads[note.id]);
-            const viewsCount = Number(note.viewsCount || 0);
 
             let pollHTML = '';
             const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
@@ -9247,7 +9240,7 @@ const KLIPY_GIFS = [
 
             noteElement.innerHTML = `
               <div class="p-5 relative">
-                ${renderPostTopActions(note.id, viewsCount, 'Opciones de publicación')}
+                ${renderPostTopActions(note.id, 'Opciones de publicación')}
                 <div class="flex items-start gap-3 mb-3">
                   <div class="relative w-10 h-10 flex-shrink-0">
                     <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="w-10 h-10 rounded-full overflow-hidden ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
@@ -11989,17 +11982,12 @@ function saveNote() {
     return Math.floor(numericValue).toString();
   }
 
-  function renderPostTopActions(noteId, viewsCount, optionsLabel = 'Opciones de publicación') {
+  function renderPostTopActions(noteId, optionsLabel = 'Opciones de publicación') {
     const safeNoteId = String(noteId || '');
-    const viewsIdAttribute = safeNoteId ? `id="views-${safeNoteId}"` : '';
 
     return `
       <div class="post-top-actions">
         <div class="flex items-center gap-2">
-          <span class="post-views-badge" title="${formatSocialCount(viewsCount)} vistas">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5c-5.5 0-9.5 4.5-10 5 .5.5 4.5 9 10 9s9.5-8.5 10-9c-.5-.5-4.5-5-10-5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg>
-            <span ${viewsIdAttribute}>${formatSocialCount(viewsCount)}</span>
-          </span>
           <button onclick="openPostOptionsSheet('${safeNoteId}')" class="post-menu-btn" aria-label="${optionsLabel}">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <circle cx="6" cy="12" r="1.8" />
@@ -12012,69 +12000,10 @@ function saveNote() {
     `;
   }
 
-  const viewedPostsInSession = new Set();
-  const viewedPostsStorage = 'drex_viewed_posts_v1';
-  let postViewsObserver = null;
-
-  function loadViewedPostsFromStorage() {
-    try {
-      const stored = localStorage.getItem(viewedPostsStorage);
-      if (stored) {
-        const ids = JSON.parse(stored);
-        ids.forEach(id => viewedPostsInSession.add(id));
-      }
-    } catch (e) {
-      console.warn('Error loading viewed posts from storage:', e);
-    }
-  }
-
-  function saveViewedPostsToStorage() {
-    try {
-      const ids = Array.from(viewedPostsInSession);
-      localStorage.setItem(viewedPostsStorage, JSON.stringify(ids));
-    } catch (e) {
-      console.warn('Error saving viewed posts to storage:', e);
-    }
-  }
-
-  function ensurePostViewsObserver() {
-    if (postViewsObserver || typeof IntersectionObserver === 'undefined') return;
-
-    postViewsObserver = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (!entry.isIntersecting || entry.intersectionRatio < 0.65) return;
-        const target = entry.target;
-        const noteId = target?.dataset?.noteId;
-        if (!noteId) return;
-        registerPostView(noteId);
-        postViewsObserver.unobserve(target);
-      });
-    }, { threshold: [0.65] });
-  }
-
+  // Visualizaciones de posts desactivadas por solicitud del producto.
   function trackPostView(noteId, postElement) {
-    if (!noteId || !postElement || viewedPostsInSession.has(noteId)) return;
-
-    ensurePostViewsObserver();
-    if (postViewsObserver) {
-      postViewsObserver.observe(postElement);
-      return;
-    }
-
-    registerPostView(noteId);
+    return;
   }
-
-  function registerPostView(noteId) {
-    if (!noteId || viewedPostsInSession.has(noteId)) return;
-
-    viewedPostsInSession.add(noteId);
-    saveViewedPostsToStorage();
-
-    const viewsRef = firebase.database().ref('communityNotes/' + noteId + '/viewsCount');
-    viewsRef.transaction(current => (Number(current || 0) + 1));
-  }
-
-  loadViewedPostsFromStorage();
 
   /*********************** AUTENTICACIÓN **************************/
   function showAuthSection(section) {
@@ -16173,8 +16102,7 @@ const TRANSLATOR_CALL_LANGUAGES = [
       container.innerHTML = posts.map(post => {
         const score = Number(post.upvotes || 0) - Number(post.downvotes || 0);
         const commentsCount = Number(post.commentsCount || 0);
-        const viewsCount = Number(post.viewsCount || 0);
-        const userVote = user ? (post.userVotes?.[user.uid] || null) : null;
+            const userVote = user ? (post.userVotes?.[user.uid] || null) : null;
         const pollOptions = Array.isArray(post.poll?.options) ? post.poll.options : [];
         const pollHtml = post.poll && pollOptions.length ? `
           <div class="mt-3 p-3 bg-white rounded-lg border border-gray-300">
@@ -16202,7 +16130,7 @@ const TRANSLATOR_CALL_LANGUAGES = [
 
         return `
           <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 relative" data-note-id="${post.id}">
-            ${renderPostTopActions(post.id, viewsCount, 'Opciones de publicación del grupo')}
+            ${renderPostTopActions(post.id, 'Opciones de publicación del grupo')}
             <div class="flex items-start gap-3 mb-3">
               <button ${post.authorId ? `onclick="openAuthorProfile('${post.authorId}')"` : 'disabled'} class="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden ${post.authorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${escapeHtml(post.authorName || 'Usuario')}">
                 <img src="${post.authorImage || 'https://via.placeholder.com/80'}" class="w-full h-full object-cover" alt="${escapeHtml(post.authorName || 'Usuario')}">
