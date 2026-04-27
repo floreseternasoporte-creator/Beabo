@@ -6941,8 +6941,43 @@ function openPhotoDetail(photo) {
     return;
   }
 
-  function loadUserFrame() {
-    return;
+  const liveFrameListeners = new Map();
+
+  function loadUserFrame(userId, targetElementId) {
+    if (!userId || !targetElementId) return;
+
+    const resolvedElementId = (() => {
+      if (document.getElementById(targetElementId)) return targetElementId;
+      if (targetElementId === 'profile-frame') return 'profile-image';
+      if (targetElementId === 'profile-frame-desktop') return 'profile-image-desktop';
+      if (targetElementId.endsWith('-frame')) {
+        const fallbackId = targetElementId.replace(/-frame$/, '');
+        if (document.getElementById(fallbackId)) return fallbackId;
+      }
+      return targetElementId;
+    })();
+
+    const targetElement = document.getElementById(resolvedElementId);
+    if (!targetElement) return;
+
+    const listenerKey = `${resolvedElementId}:${userId}`;
+    const previousListener = liveFrameListeners.get(listenerKey);
+    if (previousListener) {
+      previousListener.ref.off('value', previousListener.handler);
+    }
+
+    const liveRef = firebase.database().ref(`liveStreams/${userId}/isLive`);
+    const liveHandler = snapshot => {
+      const isLive = Boolean(snapshot.exists() && snapshot.val());
+      targetElement.classList.toggle('live-border', isLive);
+      targetElement.dataset.liveUserId = userId;
+    };
+
+    liveRef.on('value', liveHandler);
+    liveFrameListeners.set(listenerKey, {
+      ref: liveRef,
+      handler: liveHandler
+    });
   }
 
   function countGroupsCreatedFromSnapshot(groupsSnapshot, userId) {
@@ -9088,6 +9123,7 @@ const KLIPY_GIFS = [
             const safeAuthorId = note.authorId || '';
             const safeAuthorName = note.authorName || 'Usuario';
             const safeAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', safeAuthorId);
+            const authorAvatarId = `feed-author-${note.id}`;
             let safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
 
             // Si el autor es el usuario actual, usar su foto de perfil vinculada
@@ -9116,7 +9152,7 @@ const KLIPY_GIFS = [
                 <div class="flex items-start gap-3 mb-3">
                   <div class="relative w-10 h-10 flex-shrink-0">
                     <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="w-10 h-10 rounded-full overflow-hidden ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
-                      <img src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-full h-full object-cover">
+                      <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-full h-full object-cover">
                     </button>
                     ${getQuickFollowButtonMarkup(safeAuthorId, user?.uid || '')}
                   </div>
@@ -9171,6 +9207,7 @@ const KLIPY_GIFS = [
                 <p class="text-xs text-[#b2a7a1] mt-2">${formatRelativeTime(safeTimestamp)}</p>
               </div>
             `;
+            loadUserFrame(safeAuthorId, authorAvatarId);
             feedFragment.appendChild(noteElement);
             trackPostView(note.id, noteElement);
           } catch (renderError) {
@@ -15858,7 +15895,7 @@ const TRANSLATOR_CALL_LANGUAGES = [
             ${renderPostTopActions(post.id, 'Opciones de publicación del grupo')}
             <div class="flex items-start gap-3 mb-3">
               <button ${post.authorId ? `onclick="openAuthorProfile('${post.authorId}')"` : 'disabled'} class="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden ${post.authorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${escapeHtml(post.authorName || 'Usuario')}">
-                <img src="${post.authorImage || 'https://via.placeholder.com/80'}" class="w-full h-full object-cover" alt="${escapeHtml(post.authorName || 'Usuario')}">
+                <img id="community-post-author-${post.id}" data-author-id="${post.authorId || ''}" src="${post.authorImage || 'https://via.placeholder.com/80'}" class="w-full h-full object-cover" alt="${escapeHtml(post.authorName || 'Usuario')}">
               </button>
               <div class="flex-1 min-w-0 pr-20">
                 <div class="flex items-center gap-2 mb-2">
@@ -15897,6 +15934,9 @@ const TRANSLATOR_CALL_LANGUAGES = [
       container.querySelectorAll('[data-note-id]').forEach(postElement => {
         const noteId = postElement.getAttribute('data-note-id');
         if (noteId) trackPostView(noteId, postElement);
+      });
+      posts.forEach(post => {
+        if (post.authorId) loadUserFrame(post.authorId, `community-post-author-${post.id}`);
       });
     }).catch(() => {
       container.innerHTML = '<p class="text-sm text-[#8d7d75]">No pudimos cargar publicaciones.</p>';
@@ -16704,11 +16744,12 @@ function renderPostsList(posts) {
   if (!list) return;
   list.innerHTML = '';
   posts.forEach(post => {
+    const authorAvatarId = `search-post-author-${post.id}`;
     const item = document.createElement('button');
     item.className = 'w-full text-left p-4 bg-white border border-[#e8e1dc] rounded-3xl shadow-sm hover:border-[#d8cec8] transition';
     item.innerHTML = `
       <div class="flex items-start gap-3">
-        <img src="${post.authorImage || 'https://via.placeholder.com/80'}" class="w-10 h-10 rounded-full object-cover">
+        <img id="${authorAvatarId}" data-author-id="${post.authorId || ''}" src="${post.authorImage || 'https://via.placeholder.com/80'}" class="w-10 h-10 rounded-full object-cover">
         <div class="min-w-0">
           <p class="text-sm font-semibold text-[#7a6962]">${post.authorName || 'Usuario'}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')} • ${formatRelativeTime(post.timestamp)}</p>
           <p class="text-lg leading-tight text-[#2f1a14] line-clamp-2 mt-1">${post.content || 'Sin texto'}</p>
@@ -16719,6 +16760,7 @@ function renderPostsList(posts) {
       openCommentsView(post.id);
     };
     list.appendChild(item);
+    loadUserFrame(post.authorId || '', authorAvatarId);
   });
   if (!posts.length) list.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-3xl p-5 text-sm text-[#8d7d75]">No hay posts que coincidan.</div>';
 }
@@ -16742,13 +16784,15 @@ function renderAccountsList(accounts) {
   if (!list) return;
   list.innerHTML = '';
   accounts.forEach(account => {
+    const accountAvatarId = `search-account-author-${account.uid}`;
     const item = document.createElement('div');
     item.className = 'flex items-center space-x-3 cursor-pointer p-3 rounded-2xl bg-white border border-[#e8e1dc] hover:border-[#d8cec8] shadow-sm';
     item.innerHTML = `
-      <img src="${account.profileImage || 'https://via.placeholder.com/50'}" alt="${account.username || 'Cuenta'}" class="w-11 h-11 rounded-full object-cover">
+      <img id="${accountAvatarId}" data-author-id="${account.uid || ''}" src="${account.profileImage || 'https://via.placeholder.com/50'}" alt="${account.username || 'Cuenta'}" class="w-11 h-11 rounded-full object-cover">
       <span class="font-semibold text-[#2f1a14]">${account.username || 'Cuenta'}${getVerificationIconByAuthor(account.email || '', account.uid || '')}</span>`;
     item.addEventListener('click', () => { closeSearch(); openAuthorProfile(account.uid); });
     list.appendChild(item);
+    loadUserFrame(account.uid || '', accountAvatarId);
   });
   if (!accounts.length) list.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-3xl p-5 text-sm text-[#8d7d75]">No hay cuentas que coincidan.</div>';
 }
