@@ -157,6 +157,17 @@ body {
   transform: scale(0.9);
 }
 
+.like-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.like-counter {
+  margin-left: 0;
+  line-height: 1;
+}
+
 .heart-icon {
   width: 22px;
   height: 22px;
@@ -8607,7 +8618,8 @@ const KLIPY_GIFS = [
 
   function publishNoteToDatabase(note) {
     // Verifica el contenido de la nota específicamente
-    if (note.content && moderarContenidoNota(note.content)) {
+    const preModeration = evaluateContentModeration(note.content || '', note.imageUrls || note.imageUrl || []);
+    if (preModeration.flagged) {
       alert('Tu nota no puede ser publicada porque contiene contenido inapropiado.');
       // Restaurar botón
       const publishBtn = document.getElementById('publish-btn-fullscreen');
@@ -8625,8 +8637,8 @@ const KLIPY_GIFS = [
     const mentionPromise = sendMentionNotifications(note.content, note.authorId, note.authorName, 'publicación', [note.authorId]);
     Promise.all([p1, p2, mentionPromise]).then(([ref1, ref2]) => {
       // Verifica una vez más después de publicar (en db1)
-      if (note.content) {
-        moderarContenidoAutomaticamente(ref1.key, note.content);
+      if (note.content || note.imageUrls || note.imageUrl) {
+        moderarContenidoAutomaticamente(ref1.key, `${note.content || ''} ${(note.imageUrls || []).join(' ')} ${note.imageUrl || ''}`);
       }
 
       try {
@@ -9045,12 +9057,12 @@ const KLIPY_GIFS = [
 
                 <div class="flex items-center pt-3 border-t border-[#efe9e5]">
                   <div class="flex items-center gap-3 text-[#7a6962]">
-<button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="vote-star flex items-center gap-1 ${userVote === 'up' ? 'active' : ''}" aria-label="Dar Like">
+<button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="vote-star ${userVote === 'up' ? 'active' : ''}" aria-label="Dar Like">
                       <svg class="heart-icon" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
                       </svg>
                     </button>
-                    <span id="score-${note.id}" class="text-sm font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
+                    <span class="like-action"><span id="score-${note.id}" class="like-counter text-sm font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span></span>
                     <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1.5 hover:text-[#5f4b44] transition-colors text-[#7a6962]">
                       <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/>
@@ -9139,39 +9151,47 @@ function closeImageModal() {
 }
 
 
-  function moderarContenidoNota(texto) {
-    if (!texto) return false;
+  function normalizeModerationText(texto = '') {
+    return String(texto)
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^\p{L}\p{N}\s:/._-]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
 
-    const palabrasProhibidasNotas = [
-      // Insultos y lenguaje ofensivo
-      "idiota", "estúpido", "imbécil", "tonto", "pendejo",
-      "maldito", "puta", "mierda", "carajo", "joder",
-      "perra", "zorra", "maricón", "puto", "cabrón",
-      // Discriminación
-      "negro", "sudaca", "indio", "gitano", "judio",
-      // Contenido inapropiado
-      "xxx", "porn", "sex", "desnudo",
-      // Violencia
-      "matar", "muerte", "suicidio", "sangre",
-      // Spam y estafas
-      "ganar dinero", "hazte rico", "click aquí",
-      // Enlaces maliciosos
-      "bit.ly", "acortar.link", "short.io"
+  function evaluateContentModeration(rawText = '', imageUrls = []) {
+    const text = normalizeModerationText(rawText);
+    const imageMeta = normalizeModerationText(Array.isArray(imageUrls) ? imageUrls.join(' ') : String(imageUrls || ''));
+    const combined = `${text} ${imageMeta}`.trim();
+
+    const ruleGroups = [
+      { category: 'sexual', weight: 3, rules: [/\b(nude|nudity|desnudo|desnuda|porno|porn|xxx|onlyfans|erotica|sexual|sexo)\b/, /\b(18\+|adultos|contenido adulto)\b/] },
+      { category: 'violence', weight: 3, rules: [/\b(matar|asesinar|degollar|apunalar|disparar|violacion|tortura|descuartizar)\b/, /\b(knife|cuchillo|machete|arma blanca|pistola|rifle|shotgun|gun)\b/] },
+      { category: 'hate', weight: 3, rules: [/\b(odio|racista|racismo|homofobia|xenofobia|supremacista|nazi|antisemita)\b/, /\b(mata a|eliminen a|exterminar a)\b/] },
+      { category: 'self_harm', weight: 2, rules: [/\b(suicidio|suicidarme|autolesion|self harm|cortarme)\b/] },
+      { category: 'threat', weight: 2, rules: [/\b(te voy a matar|te voy a romper|te voy a apunalar|amenaza de muerte)\b/] }
     ];
 
-    const textoNormalizado = texto.toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z\s]/g, ''); // Elimina caracteres especiales
+    const hits = [];
+    let score = 0;
+    for (const group of ruleGroups) {
+      for (const rule of group.rules) {
+        if (rule.test(combined)) {
+          hits.push(group.category);
+          score += group.weight;
+          break;
+        }
+      }
+    }
 
-    // Busca palabras completas, no partes de palabras
-    const palabras = textoNormalizado.split(/\s+/);
-    return palabras.some(palabra =>
-      palabrasProhibidasNotas.includes(palabra) ||
-      palabrasProhibidasNotas.some(palabraOfensiva =>
-        palabra.includes(palabraOfensiva) && palabra.length < palabraOfensiva.length + 3
-      )
-    );
+    const uniqueHits = [...new Set(hits)];
+    return { flagged: score >= 3 || uniqueHits.length >= 2, score, categories: uniqueHits, combined };
+  }
+
+  function moderarContenidoNota(texto, imageUrls = []) {
+    return evaluateContentModeration(texto, imageUrls).flagged;
   }
 
 function moderarContenidoAutomaticamente(noteId, content) {
@@ -9557,7 +9577,8 @@ function submitPostReport() {
     if (!note) throw new Error('Publicación no encontrada');
 
     const algorithmInput = `${note.content || ''} ${reasonLabel} ${reasonKeywords[reason] || ''} ${description}`;
-    const autoFlag = moderarContenidoNota(algorithmInput);
+    const autoDetails = evaluateContentModeration(algorithmInput);
+    const autoFlag = autoDetails.flagged;
     const requiresHuman = ['sexual', 'violence', 'hate', 'self_harm', 'copyright'].includes(reason) || !autoFlag;
     const reportId = firebase.database().ref().push().key;
 
@@ -9571,6 +9592,8 @@ function submitPostReport() {
       reasonLabel,
       description,
       algorithmInput,
+      moderationCategories: autoDetails.categories,
+      moderationScore: autoDetails.score,
       autoFlag,
       requiresHuman,
       status: requiresHuman ? 'pending_human_review' : 'auto_resolved',
@@ -9626,6 +9649,8 @@ function votePost(noteId, voteType) {
 
   const userVoteRef = firebase.database().ref('userVotes/' + user.uid + '/' + noteId);
   const noteRef = firebase.database().ref('communityNotes/' + noteId);
+  const upvoteBtn = document.getElementById('upvote-' + noteId);
+  const scoreLabel = document.getElementById('score-' + noteId);
   firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
     const userData = userSnap.val();
     const userName = (userData && userData.username) ? userData.username : (user.displayName || user.email || 'Alguien');
@@ -9635,17 +9660,24 @@ function votePost(noteId, voteType) {
 
     noteRef.transaction(note => {
       if (note) {
+        const prevUpvotes = Number(note.upvotes || 0);
         if (currentVote === 'up') {
-          note.upvotes = (note.upvotes || 1) - 1;
+          note.upvotes = Math.max(0, prevUpvotes - 1);
         }
 
         if (currentVote !== 'up') {
-          note.upvotes = (note.upvotes || 0) + 1;
+          note.upvotes = prevUpvotes + 1;
         }
       }
       return note;
     }).then(result => {
       const updatedNote = result && result.snapshot ? result.snapshot.val() : null;
+      if (upvoteBtn) upvoteBtn.classList.toggle('active', currentVote !== 'up');
+      if (scoreLabel && updatedNote) {
+        scoreLabel.textContent = formatVoteScore(updatedNote.upvotes || 0);
+        scoreLabel.classList.toggle('text-[#5f4b44]', (updatedNote.upvotes || 0) > 0);
+        scoreLabel.classList.toggle('text-[#8d7d75]', !(updatedNote.upvotes > 0));
+      }
       if (
         updatedNote &&
         voteType === 'up' &&
@@ -15657,12 +15689,12 @@ const TRANSLATOR_CALL_LANGUAGES = [
             ${pollHtml}
             <div class="flex items-center pt-3 border-t border-[#efe9e5]">
               <div class="flex items-center gap-3 text-[#7a6962]">
-                <button onclick="votePost('${post.id}', 'up')" id="upvote-${post.id}" class="vote-star flex items-center gap-1 ${userVote === 'up' ? 'active' : ''}" aria-label="Dar Like">
+                <button onclick="votePost('${post.id}', 'up')" id="upvote-${post.id}" class="vote-star ${userVote === 'up' ? 'active' : ''}" aria-label="Dar Like">
                   <svg class="heart-icon" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
                   </svg>
                 </button>
-                <span id="score-${post.id}" class="text-sm font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
+                <span class="like-action"><span id="score-${post.id}" class="like-counter text-sm font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span></span>
                 <button onclick="openCommentsView('${post.id}')" class="flex items-center gap-1.5 hover:text-[#5f4b44] transition-colors text-[#7a6962]">
                   <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" fill="currentColor"/>
