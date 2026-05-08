@@ -364,6 +364,181 @@ body {
   50% { opacity: 0.6; }
 }
 
+
+/* ===== COMENTARIOS ORGANIZADOS TIPO HILO ===== */
+.comments-detail-shell {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.comments-thread {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 14px 96px;
+}
+
+.comments-sort-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e8e1dc;
+  background: #f5f4f2;
+}
+
+.comments-sort-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.comment-sort-btn {
+  border: 1px solid #e8e1dc;
+  background: #fff;
+  color: #7a6962;
+  border-radius: 9999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.comment-sort-btn.active {
+  border-color: #cdbeb7;
+  color: #2f1a14;
+}
+
+.comment-thread-node {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.comment-thread-node + .comment-thread-node {
+  border-top: 1px solid #efe9e5;
+}
+
+.comment-thread-node.is-reply {
+  padding-top: 10px;
+  padding-bottom: 4px;
+  border-top: 0;
+}
+
+.comment-vote-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding-top: 2px;
+}
+
+.comment-avatar-wrap {
+  position: relative;
+  width: 32px;
+  height: 32px;
+}
+
+.comment-body-card {
+  min-width: 0;
+}
+
+.comment-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.comment-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8d7d75;
+}
+
+.comment-action-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+  transition: color 0.2s ease;
+}
+
+.comment-action-text:hover {
+  color: #5f4b44;
+}
+
+.comment-replies {
+  position: relative;
+  margin-top: 10px;
+  padding-left: 18px;
+}
+
+.comment-replies::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 9999px;
+  background: #d8cec8;
+}
+
+.comment-replies:empty {
+  display: none;
+}
+
+.comment-collapse-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  border: 1px solid #e8e1dc;
+  background: #fff;
+  color: #8d7d75;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.comment-thread-node.collapsed .comment-body-content,
+.comment-thread-node.collapsed .comment-action-row,
+.comment-thread-node.collapsed .comment-replies,
+.comment-thread-node.collapsed .comment-media {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .comments-thread {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .comment-thread-node {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .comment-replies {
+    padding-left: 14px;
+  }
+}
+
 /* ===== DETALLE DE UBICACIÓN ===== */
 .location-chip-button {
   display: inline-flex;
@@ -2446,8 +2621,15 @@ body {
 
     <!-- Contenedor scrolleable -->
     <div class="flex-1" style="overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;">
-      <div id="original-post" class="bg-white p-4 border-b border-[#e8e1dc]"></div>
-      <div id="comments-list-view" class="p-3 space-y-3 pb-20"></div>
+      <div id="original-post" class="comments-detail-shell bg-white p-4 border-b border-[#e8e1dc]"></div>
+      <div class="comments-sort-bar">
+        <span id="comments-thread-label" class="text-xs font-bold uppercase tracking-wide text-[#8d7d75]">Hilo de comentarios</span>
+        <div class="comments-sort-actions" aria-label="Ordenar comentarios">
+          <button id="comment-sort-best" onclick="setCommentSortMode('best')" class="comment-sort-btn active" type="button">Mejores</button>
+          <button id="comment-sort-new" onclick="setCommentSortMode('new')" class="comment-sort-btn" type="button">Nuevos</button>
+        </div>
+      </div>
+      <div id="comments-list-view" class="comments-thread"></div>
     </div>
 
     <!-- Input fijo abajo -->
@@ -8096,6 +8278,7 @@ async function toggleRepost(noteId) {
 
 let currentPostId = null;
 let replyTarget = null;
+let commentSortMode = 'best';
 let stickerTargetInputId = null;
 const pendingStickers = {};
 const STICKER_PREFIX = '__sticker__:';
@@ -8510,10 +8693,11 @@ function loadCommentsInView(noteId) {
   commentsListenerRef = firebase.database().ref('postComments/' + noteId);
   commentsListenerRef.on('value', snapshot => {
     commentsList.innerHTML = '';
+    const comments = [];
     let totalCount = 0;
 
     snapshot.forEach(child => {
-      const comment = child.val();
+      const comment = child.val() || {};
       const commentId = child.key;
       totalCount++;
 
@@ -8521,11 +8705,51 @@ function loadCommentsInView(noteId) {
         totalCount += countReplies(comment.replies);
       }
 
-      renderCommentModern(noteId, commentId, comment, commentsList, 0);
+      comments.push({ id: commentId, data: comment });
     });
+
+    sortCommentEntries(comments).forEach(item => {
+      renderCommentModern(noteId, item.id, item.data, commentsList, 0);
+    });
+
+    if (!comments.length) {
+      commentsList.innerHTML = '<div class="py-10 text-center text-sm text-[#8d7d75]">Sé el primero en comentar.</div>';
+    }
 
     document.getElementById('comments-count-header').textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
   });
+}
+
+function getCommentScore(comment) {
+  return Number(comment?.upvotes || 0) - Number(comment?.downvotes || 0);
+}
+
+function sortCommentEntries(entries) {
+  return [...entries].sort((a, b) => {
+    if (commentSortMode === 'new') {
+      return Number(b.data?.timestamp || 0) - Number(a.data?.timestamp || 0);
+    }
+
+    const scoreDiff = getCommentScore(b.data) - getCommentScore(a.data);
+    if (scoreDiff !== 0) return scoreDiff;
+    return Number(b.data?.timestamp || 0) - Number(a.data?.timestamp || 0);
+  });
+}
+
+function setCommentSortMode(mode) {
+  commentSortMode = mode === 'new' ? 'new' : 'best';
+  document.getElementById('comment-sort-best')?.classList.toggle('active', commentSortMode === 'best');
+  document.getElementById('comment-sort-new')?.classList.toggle('active', commentSortMode === 'new');
+  if (currentPostId) loadCommentsInView(currentPostId);
+}
+
+function toggleCommentThread(commentPath) {
+  const node = document.getElementById(`comment-node-${commentPath}`);
+  const button = document.getElementById(`comment-collapse-${commentPath}`);
+  if (!node || !button) return;
+  const isCollapsed = node.classList.toggle('collapsed');
+  button.textContent = isCollapsed ? '+' : '−';
+  button.setAttribute('aria-label', isCollapsed ? 'Expandir comentario' : 'Contraer comentario');
 }
 
 // Función para formatear timestamp de comentarios
@@ -8588,79 +8812,77 @@ function escapeSingleQuote(value) {
 }
 
 function renderCommentModern(noteId, commentId, comment, container, level, parentId = null, parentPath = "") {
-  const marginLeft = level * 16;
-  const commentDiv = document.createElement('div');
-  commentDiv.className = 'bg-white border border-[#e8e1dc] rounded-2xl p-3';
-  commentDiv.style.marginLeft = marginLeft + 'px';
-  if (level > 0) {
-    commentDiv.className = 'pl-3 py-2';
-    commentDiv.style.marginLeft = (Math.max(8, level * 14)) + 'px';
-    commentDiv.style.borderLeft = '2px solid #d8cec8';
-    commentDiv.style.background = 'transparent';
-  }
-
-  const upvotes = comment.upvotes || 0;
-  const downvotes = comment.downvotes || 0;
-  const score = upvotes - downvotes;
-
-  // Generar path completo para respuestas anidadas
   const commentPath = parentPath ? `${parentPath}/replies/${commentId}` : commentId;
+  const commentDiv = document.createElement('div');
+  commentDiv.id = `comment-node-${commentPath}`;
+  commentDiv.className = `comment-thread-node ${level > 0 ? 'is-reply' : ''}`;
 
+  const upvotes = Number(comment.upvotes || 0);
+  const downvotes = Number(comment.downvotes || 0);
+  const score = upvotes - downvotes;
   const commentAuthorId = comment.authorId || '';
   const commentVerifiedIcon = getVerificationIconByAuthor(comment.authorEmail || '', commentAuthorId);
+  const currentUserId = firebase.auth().currentUser?.uid || '';
+  const hasReplies = comment.replies && Object.keys(comment.replies).length > 0;
+  const replyCount = hasReplies ? countReplies(comment.replies) : 0;
+  const replyLabel = replyCount === 1 ? '1 respuesta' : `${replyCount} respuestas`;
+  const avatarSrc = comment.authorImage || 'https://via.placeholder.com/150';
 
   commentDiv.innerHTML = `
-    <div class="flex items-start gap-3">
-      <div class="relative w-8 h-8 flex-shrink-0">
+    <div class="comment-vote-rail">
+      <div class="comment-avatar-wrap">
         <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${comment.authorName || 'Usuario'}">
-          <img src="${comment.authorImage}" class="w-full h-full object-cover">
+          <img src="${avatarSrc}" class="w-full h-full object-cover">
         </button>
-        ${getQuickFollowButtonMarkup(commentAuthorId, firebase.auth().currentUser?.uid || '')}
+        ${getQuickFollowButtonMarkup(commentAuthorId, currentUserId)}
       </div>
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2 mb-1">
-          <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${comment.authorName || 'Usuario'}${commentVerifiedIcon}</button>
-          <span class="text-xs text-[#b2a7a1]">${formatTimestamp(comment.timestamp)}</span>
-        </div>
-        ${renderContentWithSticker(comment.content, 'text-sm text-[#2f1a14] mb-2 leading-relaxed')}
-        ${comment.gifUrl ? `<div class="mb-2 rounded-xl overflow-hidden border border-[#e8e1dc]"><img src="${comment.gifUrl}" class="w-full max-h-60 object-cover"></div>` : ''}
-        <div class="flex items-center gap-4 text-xs text-[#8d7d75]">
-          <div class="flex items-center gap-2">
-<button onclick="voteComment('${noteId}', '${commentPath}', 'up')" id="comment-upvote-${commentPath}" class="vote-star" aria-label="Dar Like">
-              <svg class="heart-icon-sm" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-              </svg>
-            </button>
-            <span id="comment-score-${commentPath}" class="font-semibold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
-          </div>
-          <button onclick="setReplyTarget('${commentPath}', '${escapeSingleQuote(comment.authorName || 'Usuario')}')" class="hover:text-[#5f4b44] transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-            </svg>
-          </button>
-          ${comment.authorId === firebase.auth().currentUser?.uid ? `
-          <button onclick="openCommentActionsSheet('${noteId}', '${commentPath}', '${escapeSingleQuote(comment.content || '')}')" class="hover:text-[#5f4b44] transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
-          </button>
-          ` : ''}
-        </div>
-        <div id="replies-${commentPath}" class="mt-2 space-y-2"></div>
+      <button onclick="voteComment('${noteId}', '${commentPath}', 'up')" id="comment-upvote-${commentPath}" class="vote-star" aria-label="Dar Like">
+        <svg class="heart-icon-sm" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+        </svg>
+      </button>
+      <span id="comment-score-${commentPath}" class="text-xs font-bold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
+    </div>
+    <div class="comment-body-card">
+      <div class="comment-meta-row">
+        <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${comment.authorName || 'Usuario'}${commentVerifiedIcon}</button>
+        <span class="text-xs text-[#b2a7a1]">${formatTimestamp(comment.timestamp)}</span>
+        ${hasReplies ? `<button id="comment-collapse-${commentPath}" onclick="toggleCommentThread('${commentPath}')" class="comment-collapse-btn" aria-label="Contraer comentario">−</button>` : ''}
       </div>
+      <div class="comment-body-content">
+        ${renderContentWithSticker(comment.content, 'text-sm text-[#2f1a14] leading-relaxed')}
+      </div>
+      ${comment.gifUrl ? `<div class="comment-media mt-2 rounded-xl overflow-hidden border border-[#e8e1dc]"><img src="${comment.gifUrl}" class="w-full max-h-60 object-cover"></div>` : ''}
+      <div class="comment-action-row">
+        <button onclick="setReplyTarget('${commentPath}', '${escapeSingleQuote(comment.authorName || 'Usuario')}')" class="comment-action-text" type="button">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+          </svg>
+          Responder
+        </button>
+        ${hasReplies ? `<span class="font-bold text-[#8d7d75]">${replyLabel}</span>` : ''}
+        ${comment.authorId === currentUserId ? `
+        <button onclick="openCommentActionsSheet('${noteId}', '${commentPath}', '${escapeSingleQuote(comment.content || '')}')" class="comment-action-text" type="button">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+          Opciones
+        </button>
+        ` : ''}
+      </div>
+      <div id="replies-${commentPath}" class="comment-replies"></div>
     </div>
   `;
 
   container.appendChild(commentDiv);
   hydrateQuickFollowButtons(commentDiv);
 
-  // Cargar respuestas
   if (comment.replies) {
     const repliesContainer = document.getElementById(`replies-${commentPath}`);
-    Object.keys(comment.replies).forEach(replyId => {
-      renderCommentModern(noteId, replyId, comment.replies[replyId], repliesContainer, level + 1, commentId, commentPath);
+    const replies = Object.keys(comment.replies).map(replyId => ({ id: replyId, data: comment.replies[replyId] || {} }));
+    sortCommentEntries(replies).forEach(reply => {
+      renderCommentModern(noteId, reply.id, reply.data, repliesContainer, level + 1, commentId, commentPath);
     });
   }
 
-  // Verificar voto del usuario
   const user = firebase.auth().currentUser;
   if (user) {
     const safeVoteKey = commentPath.replace(/\//g, '__');
