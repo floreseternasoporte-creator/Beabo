@@ -721,6 +721,27 @@ body {
   50% { transform: translateY(-6px) rotate(-2deg); }
 }
 
+/* ===== HEADER Y ORDENAMIENTO DE COMENTARIOS ===== */
+.comments-header-sort-trigger:active {
+  transform: scale(0.98);
+}
+
+#comments-sort-menu {
+  transform: translateX(-50%);
+}
+
+.comment-sort-option.active {
+  background: #f0ebe7;
+}
+
+.comment-sort-option.active .comment-sort-check {
+  display: inline;
+}
+
+.comment-sort-option:not(.active) .comment-sort-check {
+  display: none;
+}
+
 /* ===== BOTTOM SHEET DE OPCIONES DE COMENTARIO ===== */
 #comment-actions-sheet {
   position: fixed;
@@ -2434,14 +2455,38 @@ body {
 <div id="comments-view" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] hidden z-[80]">
   <div class="h-full flex flex-col">
     <!-- Header fijo -->
-    <div class="bg-[#f5f4f2] border-b border-[#e8e1dc] p-3 flex items-center gap-3 flex-shrink-0">
-      <button onclick="closeCommentsView()" class="text-gray-600">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+    <div class="bg-[#f5f4f2] border-b border-[#e8e1dc] p-3 flex items-center gap-3 flex-shrink-0 relative">
+      <div class="w-9 flex-shrink-0" aria-hidden="true"></div>
+      <div class="flex-1 flex items-center justify-center min-w-0">
+        <button onclick="toggleCommentsSortMenu()" class="comments-header-sort-trigger inline-flex items-center gap-2 text-[#0b0b0b] hover:text-[#5f4b44] transition-colors" aria-haspopup="true" aria-expanded="false" aria-controls="comments-sort-menu" title="Ordenar comentarios">
+          <span id="comments-count-header" class="text-xl font-black tracking-tight">0 comentarios</span>
+          <svg class="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+            <path d="M4 7h14"/>
+            <path d="M8 12h10"/>
+            <path d="M12 17h6"/>
+          </svg>
+        </button>
+      </div>
+      <button onclick="closeCommentsView()" class="w-9 h-9 flex items-center justify-center text-[#0b0b0b] hover:text-[#5f4b44]" aria-label="Cerrar comentarios">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
-      <h2 class="text-lg font-bold flex-1">Comentarios</h2>
-      <span id="comments-count-header" class="text-sm text-[#8d7d75]">0</span>
+      <div id="comments-sort-menu" class="hidden absolute top-full left-1/2 -translate-x-1/2 mt-2 w-60 bg-white border border-[#e8e1dc] rounded-2xl shadow-xl p-2 z-[90]">
+        <button onclick="setCommentsSortMode('popular')" data-comment-sort-option="popular" class="comment-sort-option w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold text-[#2f1a14] hover:bg-[#f0ebe7]">
+          <span>Populares</span>
+          <span class="comment-sort-check text-[#5f4b44]">✓</span>
+        </button>
+        <button onclick="setCommentsSortMode('recent')" data-comment-sort-option="recent" class="comment-sort-option w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold text-[#2f1a14] hover:bg-[#f0ebe7]">
+          <span>Recientes</span>
+          <span class="comment-sort-check hidden text-[#5f4b44]">✓</span>
+        </button>
+        <button onclick="setCommentsSortMode('new')" data-comment-sort-option="new" class="comment-sort-option w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold text-[#2f1a14] hover:bg-[#f0ebe7]">
+          <span>Nuevos</span>
+          <span class="comment-sort-check hidden text-[#5f4b44]">✓</span>
+        </button>
+        <p id="comments-sort-description" class="px-3 pb-2 pt-1 text-[11px] leading-snug text-[#8d7d75]">Ordenado por más interacción.</p>
+      </div>
     </div>
 
     <!-- Contenedor scrolleable -->
@@ -8490,41 +8535,140 @@ function closeCommentsView() {
     commentsListenerRef = null;
   }
   closeStickerPicker();
+  closeCommentsSortMenu();
   removeCommentGif();
   clearReplyTarget();
+  latestCommentsSnapshot = null;
   currentPostId = null;
 }
 
 // Cargar comentarios en la vista
+function toggleCommentsSortMenu() {
+  const menu = document.getElementById('comments-sort-menu');
+  const trigger = document.querySelector('.comments-header-sort-trigger');
+  if (!menu) return;
+  const isHidden = menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !isHidden);
+  if (trigger) trigger.setAttribute('aria-expanded', String(isHidden));
+}
+
+function closeCommentsSortMenu() {
+  const menu = document.getElementById('comments-sort-menu');
+  const trigger = document.querySelector('.comments-header-sort-trigger');
+  if (menu) menu.classList.add('hidden');
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+
+function setCommentsSortMode(mode) {
+  if (!['popular', 'recent', 'new'].includes(mode)) return;
+  commentsSortMode = mode;
+  updateCommentsSortUI();
+  renderCommentsSnapshot(currentPostId);
+  closeCommentsSortMenu();
+}
+
+function updateCommentsSortUI() {
+  const descriptions = {
+    popular: 'Ordenado por más interacción.',
+    recent: 'Ordenado por actividad más reciente.',
+    new: 'Ordenado por comentarios nuevos.'
+  };
+  document.querySelectorAll('[data-comment-sort-option]').forEach(option => {
+    option.classList.toggle('active', option.dataset.commentSortOption === commentsSortMode);
+  });
+  const description = document.getElementById('comments-sort-description');
+  if (description) description.textContent = descriptions[commentsSortMode] || descriptions.popular;
+}
+
+function getCommentRepliesCount(comment) {
+  return countReplies(comment?.replies || null);
+}
+
+function getCommentLatestActivity(comment) {
+  let latest = Number(comment?.timestamp || 0);
+  if (comment?.replies) {
+    Object.values(comment.replies).forEach(reply => {
+      latest = Math.max(latest, getCommentLatestActivity(reply));
+    });
+  }
+  return latest;
+}
+
+function getCommentPopularityScore(comment) {
+  const upvotes = Number(comment?.upvotes || 0);
+  const downvotes = Number(comment?.downvotes || 0);
+  const repliesCount = getCommentRepliesCount(comment);
+  const latestActivity = getCommentLatestActivity(comment);
+  const hoursOld = Math.max(1, (Date.now() - latestActivity) / 3600000);
+  const recencyBoost = 24 / Math.sqrt(hoursOld);
+  return ((upvotes - downvotes) * 6) + (repliesCount * 3) + recencyBoost;
+}
+
+function getSortedTopLevelComments(items) {
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    if (commentsSortMode === 'new') {
+      return Number(b.comment?.timestamp || 0) - Number(a.comment?.timestamp || 0);
+    }
+    if (commentsSortMode === 'recent') {
+      return getCommentLatestActivity(b.comment) - getCommentLatestActivity(a.comment);
+    }
+    const popularityDiff = getCommentPopularityScore(b.comment) - getCommentPopularityScore(a.comment);
+    if (popularityDiff !== 0) return popularityDiff;
+    return getCommentLatestActivity(b.comment) - getCommentLatestActivity(a.comment);
+  });
+  return sorted;
+}
+
+function renderCommentsSnapshot(noteId) {
+  const commentsList = document.getElementById('comments-list-view');
+  const countHeader = document.getElementById('comments-count-header');
+  if (!commentsList || !latestCommentsSnapshot) return;
+
+  commentsList.innerHTML = '';
+  let totalCount = 0;
+  const items = [];
+
+  latestCommentsSnapshot.forEach(child => {
+    const comment = child.val();
+    const commentId = child.key;
+    totalCount++;
+
+    if (comment.replies) {
+      totalCount += countReplies(comment.replies);
+    }
+
+    items.push({ commentId, comment });
+  });
+
+  getSortedTopLevelComments(items).forEach(({ commentId, comment }) => {
+    renderCommentModern(noteId, commentId, comment, commentsList, 0);
+  });
+
+  if (countHeader) {
+    countHeader.textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
+  }
+  updateCommentsSortUI();
+}
+
 function loadCommentsInView(noteId) {
   const commentsList = document.getElementById('comments-list-view');
+  const countHeader = document.getElementById('comments-count-header');
 
   const skeletonHTML = '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>' +
     '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>' +
     '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>';
   commentsList.innerHTML = skeletonHTML;
+  if (countHeader) countHeader.textContent = 'Cargando comentarios…';
+  updateCommentsSortUI();
 
   if (commentsListenerRef) {
     commentsListenerRef.off();
   }
   commentsListenerRef = firebase.database().ref('postComments/' + noteId);
   commentsListenerRef.on('value', snapshot => {
-    commentsList.innerHTML = '';
-    let totalCount = 0;
-
-    snapshot.forEach(child => {
-      const comment = child.val();
-      const commentId = child.key;
-      totalCount++;
-
-      if (comment.replies) {
-        totalCount += countReplies(comment.replies);
-      }
-
-      renderCommentModern(noteId, commentId, comment, commentsList, 0);
-    });
-
-    document.getElementById('comments-count-header').textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
+    latestCommentsSnapshot = snapshot;
+    renderCommentsSnapshot(noteId);
   });
 }
 
@@ -12396,6 +12540,8 @@ let communitiesCache = [];
 let selectedGroupForPost = null;
 let commentsOriginView = 'main';
 let commentsListenerRef = null;
+let commentsSortMode = 'popular';
+let latestCommentsSnapshot = null;
 let activeUserGroupsViewUserId = null;
 let authorProfileOrigin = 'main';
 let allChatConversations = [];
@@ -16080,6 +16226,7 @@ body,
 #baro-followup-bar,
 #community-info-sheet,
 #comment-actions-sheet,
+#comments-sort-menu,
 #post-options-sheet,
 #location-more-sheet,
 #author-profile-modal {
@@ -16117,6 +16264,7 @@ body.theme-dark .comment-skeleton,
 body.theme-dark #baro-followup-bar,
 body.theme-dark #community-info-sheet,
 body.theme-dark #comment-actions-sheet,
+body.theme-dark #comments-sort-menu,
 body.theme-dark #post-options-sheet,
 body.theme-dark #location-more-sheet,
 body.theme-dark #author-profile-modal {
