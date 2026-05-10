@@ -1,34 +1,76 @@
-<!-- Protección anti-debugging y anti-inspección -->
+<!-- Protección anti-inspección básica + endurecimiento -->
 <script>
-// Deshabilitar clic derecho
-document.addEventListener('contextmenu', function(e) {
-  e.preventDefault();
-  return false;
-});
+(() => {
+  'use strict';
 
-// Deshabilitar teclas de desarrollo
-document.addEventListener('keydown', function(e) {
-  // Deshabilitar F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U
-  if (
-    e.keyCode === 123 ||
-    (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74)) ||
-    (e.ctrlKey && e.keyCode === 85)
-  ) {
+  const bloqueoTotal = () => {
+    try { document.documentElement.style.display = 'none'; } catch {}
+    try { document.body.innerHTML = ''; } catch {}
+    try { window.stop(); } catch {}
+  };
+
+  const devtoolsAbiertas = () => {
+    const ancho = Math.abs(window.outerWidth - window.innerWidth);
+    const alto  = Math.abs(window.outerHeight - window.innerHeight);
+    return ancho > 160 || alto > 160;
+  };
+
+  // Bloquear clic derecho
+  document.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    e.stopPropagation();
     return false;
-  }
-});
+  }, true);
 
-// Deshabilitar vista de código fuente
-document.onkeypress = function (event) {
-  event = (event || window.event);
-  if (event.keyCode == 123) return false;
-  if (event.ctrlKey && event.keyCode == 85) return false;
-}
+  // Bloquear selección/arrastre
+  document.addEventListener('selectstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  }, true);
 
-// Mensaje de advertencia
-console.log('%cAdvertencia!', 'color: red; font-size: 30px; font-weight: bold;');
-console.log('%cEste sitio está protegido contra inspección de código.', 'font-size: 20px;');
+  document.addEventListener('dragstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    return false;
+  }, true);
+
+  // Bloquear teclas típicas de inspección
+  document.addEventListener('keydown', (e) => {
+    const tecla = e.key.toLowerCase();
+    const ctrl = e.ctrlKey || e.metaKey;
+
+    const bloqueadas =
+      e.key === 'F12' ||
+      (ctrl && e.shiftKey && ['i', 'j', 'c'].includes(tecla)) ||
+      (ctrl && ['u', 's', 'p'].includes(tecla)) ||
+      (ctrl && e.shiftKey && tecla === 'k');
+
+    if (bloqueadas) {
+      e.preventDefault();
+      e.stopPropagation();
+      bloqueoTotal();
+      return false;
+    }
+  }, true);
+
+  // Vigilar apertura de DevTools
+  let yaBloqueado = false;
+  setInterval(() => {
+    if (devtoolsAbiertas()) {
+      if (!yaBloqueado) {
+        yaBloqueado = true;
+        bloqueoTotal();
+      }
+    } else {
+      yaBloqueado = false;
+    }
+  }, 500);
+
+  // Mensaje en consola
+  console.log('%cACCESO RESTRINGIDO', 'color:#ff3b30;font-size:28px;font-weight:800;');
+  console.log('%cEsta página está protegida y su uso está monitorizado.', 'font-size:16px;');
+})();
 </script>
 
 <!DOCTYPE html>
