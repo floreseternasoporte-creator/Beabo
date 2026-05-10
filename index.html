@@ -2818,7 +2818,7 @@ body {
         <i class="fas fa-chevron-right text-gray-400"></i>
       </button>
 
-      <button onclick="openReportFromPostOptions()" class="w-full flex items-center justify-between p-4 hover:bg-red-50 text-left transition">
+      <button id="report-post-btn" onclick="openReportFromPostOptions()" class="w-full flex items-center justify-between p-4 hover:bg-red-50 text-left transition">
         <div class="flex items-center gap-3">
           <i class="fas fa-exclamation-circle text-lg text-red-600"></i>
           <p class="text-base font-semibold text-red-600">Reportar</p>
@@ -7608,10 +7608,12 @@ function openPostOptionsSheet(noteId) {
   const sheet = document.getElementById('post-options-sheet');
   const deleteBtn = document.getElementById('delete-post-btn');
   const copyBtn = document.getElementById('copy-post-text-btn');
+  const reportBtn = document.getElementById('report-post-btn');
   if (!overlay || !sheet) return;
 
   const user = firebase.auth().currentUser;
   if (deleteBtn) deleteBtn.classList.add('hidden');
+  if (reportBtn) reportBtn.classList.remove('hidden');
   currentPostOptionsNoteData = null;
 
   if (user) {
@@ -7620,10 +7622,12 @@ function openPostOptionsSheet(noteId) {
       currentPostOptionsNoteData = note;
       const isOwner = !!note && (note.authorId === user.uid || note.userId === user.uid);
       if (deleteBtn) deleteBtn.classList.toggle('hidden', !isOwner);
+      if (reportBtn) reportBtn.classList.toggle('hidden', isOwner);
       const hasText = !!(note.content && String(note.content).trim());
       if (copyBtn) copyBtn.classList.toggle('hidden', !hasText);
     }).catch(() => {
       if (deleteBtn) deleteBtn.classList.add('hidden');
+      if (reportBtn) reportBtn.classList.remove('hidden');
     });
   }
 
@@ -7863,17 +7867,36 @@ function buildCommentReportOptions() {
   renderReportReasonCards('comment-report-reasons', commentReportReasons, 'comment-report-reason');
 }
 
+function isPostOwnedByUser(note, user) {
+  if (!note || !user) return false;
+  return note.authorId === user.uid || note.userId === user.uid;
+}
+
 function reportNote(noteId) {
   const user = firebase.auth().currentUser;
   if (!user) {
     alert('Debes iniciar sesión para reportar');
     return;
   }
-  currentReportNoteId = noteId;
-  buildPostReportOptions();
-  document.getElementById('post-report-description').value = '';
-  document.getElementById('post-report-fullscreen').classList.remove('hidden');
-  if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
+  if (!noteId) return;
+
+  firebase.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
+    const note = snapshot.val();
+    if (!note) throw new Error('Publicación no encontrada');
+    if (isPostOwnedByUser(note, user)) {
+      alert('No puedes reportar tu propia publicación.');
+      return;
+    }
+
+    currentReportNoteId = noteId;
+    buildPostReportOptions();
+    document.getElementById('post-report-description').value = '';
+    document.getElementById('post-report-fullscreen').classList.remove('hidden');
+    if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
+  }).catch(error => {
+    console.error('Error al abrir reporte de publicación:', error);
+    alert('No se pudo abrir el reporte. Inténtalo de nuevo.');
+  });
 }
 
 function closePostReportFullscreen() {
@@ -7917,6 +7940,13 @@ function submitPostReport() {
   firebase.database().ref('communityNotes/' + currentReportNoteId).once('value').then(snapshot => {
     const note = snapshot.val();
     if (!note) throw new Error('Publicación no encontrada');
+    if (isPostOwnedByUser(note, user)) {
+      currentReportNoteId = null;
+      document.getElementById('post-report-fullscreen').classList.add('hidden');
+      if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
+      alert('No puedes reportar tu propia publicación.');
+      return Promise.resolve('self_report_blocked');
+    }
 
     const algorithmInput = `${note.content || ''} ${reasonLabel} ${reasonKeywords[reason] || ''} ${description}`;
     const autoDetails = evaluateContentModeration(algorithmInput);
@@ -7962,7 +7992,12 @@ function submitPostReport() {
         addNotification(user.uid, statusMessage, 'moderation');
       }, 15000);
     });
-  }).then(() => {
+  }).then(result => {
+    if (result === 'self_report_blocked') {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Enviar reporte';
+      return;
+    }
     setTimeout(() => {
       document.getElementById('post-report-processing').classList.add('hidden');
       document.getElementById('post-report-response').classList.remove('hidden');
@@ -7988,6 +8023,10 @@ function openCommentReport(noteId, commentPath, commentText = '', commentAuthorI
     return;
   }
   if (!noteId || !commentPath) return;
+  if (commentAuthorId && commentAuthorId === user.uid) {
+    alert('No puedes reportar tu propio comentario.');
+    return;
+  }
 
   currentCommentReportTarget = { noteId, commentPath, commentText, commentAuthorId };
   closeCommentActionsSheet();
@@ -9067,6 +9106,7 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
   const user = firebase.auth().currentUser;
   const canDelete = !!user && !!commentAuthorId && user.uid === commentAuthorId;
   const canBlock = !!user && !!commentAuthorId && user.uid !== commentAuthorId;
+  const canReport = !!user && (!commentAuthorId || user.uid !== commentAuthorId);
   const safeNoteId = escapeSingleQuote(noteId);
   const safeCommentPath = escapeSingleQuote(commentPath);
   const safeCommentText = escapeSingleQuote(commentText || '');
@@ -9087,12 +9127,14 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
       <span>Bloquear cuenta</span>
     </div>
     ` : ''}
+    ${canReport ? `
     <div class="comment-action-item report" onclick="openCommentReport('${safeNoteId}', '${safeCommentPath}', '${safeCommentText}', '${safeAuthorId}')">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v18m2-16.8c.69-.52 1.67-.03 1.67.83v10.7c0 .86-.98 1.35-1.67.83L5 15.2V4.8l2-1.6zM8.67 5.2l1.97 1.48a1 1 0 00.6.2H18a1 1 0 01.8 1.6l-1.7 2.27a1 1 0 000 1.2l1.7 2.27A1 1 0 0118 15h-6.76a1 1 0 00-.6.2l-1.97 1.48" />
       </svg>
       <span>Reportar</span>
     </div>
+    ` : ''}
     ${canDelete ? `
     <div class="comment-action-item delete" onclick="deleteCommentConfirm('${safeNoteId}', '${safeCommentPath}')">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
