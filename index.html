@@ -2768,14 +2768,6 @@ body {
         <i class="fas fa-chevron-right text-gray-400"></i>
       </button>
 
-      <button id="block-account-btn" onclick="openBlockAccountConfirmFromOptions()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left transition">
-        <div class="flex items-center gap-3">
-          <i class="fas fa-user-slash text-lg text-black"></i>
-          <p class="text-base font-semibold text-black">Bloquear cuenta</p>
-        </div>
-        <i class="fas fa-chevron-right text-gray-400"></i>
-      </button>
-
       <button id="delete-post-btn" onclick="deletePostFromOptions()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left transition hidden">
         <div class="flex items-center gap-3">
           <i class="fas fa-trash-alt text-lg text-black"></i>
@@ -2805,10 +2797,10 @@ body {
 <div id="block-account-confirm-modal" class="fixed inset-0 bg-black/50 hidden z-[90] items-center justify-center p-4">
   <div class="w-full max-w-md bg-white rounded-2xl p-5">
     <h3 class="text-lg font-bold text-gray-900 mb-2">Bloquear cuenta</h3>
-    <p class="text-sm text-gray-600 mb-5">Si bloqueas esta cuenta, dejarás de ver su contenido, sus publicaciones y todo lo relacionado con ella.</p>
+    <p class="text-sm text-gray-600 mb-5">Si bloqueas esta cuenta desde el comentario, dejarás de ver su contenido, sus publicaciones y todo lo relacionado con ella.</p>
     <div class="flex gap-3">
       <button onclick="closeBlockAccountConfirmModal()" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold">No quiero</button>
-      <button onclick="confirmBlockAccountFromOptions()" class="flex-1 py-2.5 rounded-xl bg-[#FE2C55] text-white font-semibold">Sí acepto</button>
+      <button onclick="confirmBlockAccountFromComment()" class="flex-1 py-2.5 rounded-xl bg-[#FE2C55] text-white font-semibold">Sí acepto</button>
     </div>
   </div>
 </div>
@@ -7559,6 +7551,7 @@ function deleteNote(noteId) {
 
 let currentReportNoteId = null;
 let currentCommentReportTarget = null;
+let currentBlockAccountTarget = null;
 let currentPostOptionsNoteId = null;
 let currentPostOptionsNoteData = null;
 let blockedAccountsSet = new Set();
@@ -7593,7 +7586,6 @@ function openPostOptionsSheet(noteId) {
   const sheet = document.getElementById('post-options-sheet');
   const deleteBtn = document.getElementById('delete-post-btn');
   const copyBtn = document.getElementById('copy-post-text-btn');
-  const blockBtn = document.getElementById('block-account-btn');
   if (!overlay || !sheet) return;
 
   const user = firebase.auth().currentUser;
@@ -7608,9 +7600,6 @@ function openPostOptionsSheet(noteId) {
       if (deleteBtn) deleteBtn.classList.toggle('hidden', !isOwner);
       const hasText = !!(note.content && String(note.content).trim());
       if (copyBtn) copyBtn.classList.toggle('hidden', !hasText);
-      const targetAuthorId = note.authorId || note.userId || '';
-      const canBlock = !!targetAuthorId && targetAuthorId !== user.uid;
-      if (blockBtn) blockBtn.classList.toggle('hidden', !canBlock);
     }).catch(() => {
       if (deleteBtn) deleteBtn.classList.add('hidden');
     });
@@ -7682,10 +7671,19 @@ function copyPostTextFromOptions() {
   onSuccess();
 }
 
-function openBlockAccountConfirmFromOptions() {
+function openBlockAccountConfirmFromComment(noteId, commentPath, commentAuthorId) {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para bloquear una cuenta.');
+    return;
+  }
+  if (!commentAuthorId || user.uid === commentAuthorId) return;
+
+  currentBlockAccountTarget = { noteId, commentPath, targetAuthorId: commentAuthorId };
+  closeCommentActionsSheet();
+
   const modal = document.getElementById('block-account-confirm-modal');
   if (!modal) return;
-  closePostOptionsSheet();
   modal.classList.remove('hidden');
   modal.classList.add('flex');
 }
@@ -7695,17 +7693,25 @@ function closeBlockAccountConfirmModal() {
   if (!modal) return;
   modal.classList.add('hidden');
   modal.classList.remove('flex');
+  currentBlockAccountTarget = null;
 }
 
-function confirmBlockAccountFromOptions() {
+function confirmBlockAccountFromComment() {
   const user = firebase.auth().currentUser;
-  const targetAuthorId = currentPostOptionsNoteData?.authorId || currentPostOptionsNoteData?.userId || '';
+  const targetAuthorId = currentBlockAccountTarget?.targetAuthorId || '';
+  const noteId = currentBlockAccountTarget?.noteId || currentPostId;
   if (!user || !targetAuthorId || user.uid === targetAuthorId) {
     closeBlockAccountConfirmModal();
     return;
   }
 
-  const blockPayload = { blockedAt: Date.now(), by: user.uid };
+  const blockPayload = {
+    blockedAt: Date.now(),
+    by: user.uid,
+    source: 'comment',
+    noteId: currentBlockAccountTarget?.noteId || '',
+    commentPath: currentBlockAccountTarget?.commentPath || ''
+  };
 
   firebase.database().ref('blocks/' + user.uid + '/' + targetAuthorId).set(blockPayload).then(() => {
     blockedAccountsSet.add(targetAuthorId);
@@ -7715,15 +7721,17 @@ function confirmBlockAccountFromOptions() {
       ok.classList.remove('hidden');
       ok.classList.add('flex');
     }
+    if (noteId) loadCommentsInView(noteId);
     loadNotes(false);
     performRealTimeSearch();
   }).catch(error => {
-    console.error('Error bloqueando cuenta:', error);
+    console.error('Error bloqueando cuenta desde comentario:', error);
     alert('No se pudo bloquear la cuenta. Intenta de nuevo.');
   });
 }
 
 function closeBlockAccountSuccessModal() {
+  currentBlockAccountTarget = null;
   const modal = document.getElementById('block-account-success-modal');
   if (!modal) return;
   modal.classList.add('hidden');
@@ -8674,10 +8682,11 @@ function loadCommentsInView(noteId) {
     snapshot.forEach(child => {
       const comment = child.val();
       const commentId = child.key;
+      if (isAccountBlockedForCurrentUser(comment?.authorId || '')) return;
       totalCount++;
 
       if (comment.replies) {
-        totalCount += countReplies(comment.replies);
+        totalCount += countVisibleReplies(comment.replies);
       }
 
       renderCommentModern(noteId, commentId, comment, commentsList, 0);
@@ -8741,12 +8750,27 @@ function countReplies(replies) {
   return count;
 }
 
+function countVisibleReplies(replies) {
+  let count = 0;
+  if (!replies) return count;
+
+  Object.keys(replies).forEach(key => {
+    const reply = replies[key] || {};
+    if (isAccountBlockedForCurrentUser(reply.authorId || '')) return;
+    count++;
+    if (reply.replies) count += countVisibleReplies(reply.replies);
+  });
+
+  return count;
+}
+
 // Renderizar comentario moderno
 function escapeSingleQuote(value) {
   return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 function renderCommentModern(noteId, commentId, comment, container, level, parentId = null, parentPath = "") {
+  if (isAccountBlockedForCurrentUser(comment?.authorId || '')) return;
   const marginLeft = level * 16;
   const commentDiv = document.createElement('div');
   commentDiv.className = 'bg-white border border-[#e8e1dc] rounded-2xl p-3';
@@ -9042,6 +9066,7 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
   const content = document.getElementById('comment-actions-content');
   const user = firebase.auth().currentUser;
   const canDelete = !!user && !!commentAuthorId && user.uid === commentAuthorId;
+  const canBlock = !!user && !!commentAuthorId && user.uid !== commentAuthorId;
   const safeNoteId = escapeSingleQuote(noteId);
   const safeCommentPath = escapeSingleQuote(commentPath);
   const safeCommentText = escapeSingleQuote(commentText || '');
@@ -9054,6 +9079,14 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
       </svg>
       <span>Copiar texto</span>
     </div>
+    ${canBlock ? `
+    <div class="comment-action-item" onclick="openBlockAccountConfirmFromComment('${safeNoteId}', '${safeCommentPath}', '${safeAuthorId}')">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636A9 9 0 115.636 18.364 9 9 0 0118.364 5.636zM6.343 6.343l11.314 11.314" />
+      </svg>
+      <span>Bloquear cuenta</span>
+    </div>
+    ` : ''}
     <div class="comment-action-item report" onclick="openCommentReport('${safeNoteId}', '${safeCommentPath}', '${safeCommentText}', '${safeAuthorId}')">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v18m2-16.8c.69-.52 1.67-.03 1.67.83v10.7c0 .86-.98 1.35-1.67.83L5 15.2V4.8l2-1.6zM8.67 5.2l1.97 1.48a1 1 0 00.6.2H18a1 1 0 01.8 1.6l-1.7 2.27a1 1 0 000 1.2l1.7 2.27A1 1 0 0118 15h-6.76a1 1 0 00-.6.2l-1.97 1.48" />
