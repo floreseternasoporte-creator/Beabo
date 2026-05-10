@@ -790,7 +790,8 @@ body {
   background-color: #f9f9f9;
 }
 
-.comment-action-item.delete {
+.comment-action-item.delete,
+.comment-action-item.report {
   color: #d32f2f;
 }
 
@@ -2711,13 +2712,34 @@ body {
   <p class="text-sm text-[#7a6962] mt-1">Estamos validando automáticamente el motivo seleccionado</p>
 </div>
 
-<div id="post-report-response" class="fixed inset-0 bg-[#f5f4f2] hidden z-[77] flex flex-col items-center justify-center text-center p-6">
+<div id="post-report-response" class="fixed inset-0 bg-[#f5f4f2] hidden z-[95] flex flex-col items-center justify-center text-center p-6">
   <div class="w-16 h-16 rounded-full bg-[#f0ebe7] text-[#5f4b44] flex items-center justify-center mb-4">
     <svg xmlns="http://www.w3.org/2000/svg" class="h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
   </div>
   <h3 class="text-xl font-black mb-2 text-[#2f1a14]">Reporte enviado</h3>
   <p class="text-[#6f5c54] max-w-md">Gracias por mantener la comunidad saludable. Normalmente respondemos en menos de 24 horas y, si es necesario, la revisión la hará un humano.</p>
   <button onclick="closePostReportResponse()" class="mt-6 bg-[#3a241d] text-white px-6 py-3 rounded-2xl font-semibold">Entendido</button>
+</div>
+
+<!-- REPORTE DE COMENTARIO (PANTALLA COMPLETA) -->
+<div id="comment-report-fullscreen" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] overflow-y-auto hidden z-[95]">
+  <div class="max-w-2xl mx-auto min-h-full flex flex-col">
+    <div class="sticky top-0 bg-[#f5f4f2] border-b border-[#e8e1dc] p-4 flex items-center justify-between">
+      <button onclick="closeCommentReportFullscreen()" class="text-[#5f4b44] hover:text-[#2f1a14]" aria-label="Cerrar reporte de comentario">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+      <h2 class="text-lg font-black">Reportar comentario</h2>
+      <div class="w-6"></div>
+    </div>
+
+    <div class="p-4 space-y-4 flex-1">
+      <div class="bg-white border border-[#e8e1dc] rounded-2xl p-4 text-sm text-[#6f5c54]">Cuéntanos qué pasa con este comentario. El reporte será enviado al sistema automático y, si hace falta, a revisión humana.</div>
+      <div id="comment-report-preview" class="hidden bg-white border border-[#e8e1dc] rounded-2xl p-4 text-sm text-[#2f1a14]"></div>
+      <div id="comment-report-reasons" class="space-y-2"></div>
+      <textarea id="comment-report-description" rows="4" maxlength="240" placeholder="Detalles opcionales para ayudar en la revisión" class="w-full p-3 border border-[#d9cec8] rounded-2xl bg-white focus:outline-none focus:ring-2 focus:ring-[#cdbeb7]"></textarea>
+      <button id="comment-report-submit-btn" onclick="submitCommentReport()" class="w-full bg-[#3a241d] text-white py-3 rounded-2xl font-semibold hover:bg-[#2f1a14] transition">Enviar reporte</button>
+    </div>
+  </div>
 </div>
 
 <!-- STICKER PICKER GLOBAL -->
@@ -2742,14 +2764,6 @@ body {
         <div class="flex items-center gap-3">
           <i class="fas fa-eye-slash text-lg text-black"></i>
           <p class="text-base font-semibold text-black">Ocultar publicación</p>
-        </div>
-        <i class="fas fa-chevron-right text-gray-400"></i>
-      </button>
-
-      <button id="block-account-btn" onclick="openBlockAccountConfirmFromOptions()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left transition">
-        <div class="flex items-center gap-3">
-          <i class="fas fa-user-slash text-lg text-black"></i>
-          <p class="text-base font-semibold text-black">Bloquear cuenta</p>
         </div>
         <i class="fas fa-chevron-right text-gray-400"></i>
       </button>
@@ -2783,10 +2797,10 @@ body {
 <div id="block-account-confirm-modal" class="fixed inset-0 bg-black/50 hidden z-[90] items-center justify-center p-4">
   <div class="w-full max-w-md bg-white rounded-2xl p-5">
     <h3 class="text-lg font-bold text-gray-900 mb-2">Bloquear cuenta</h3>
-    <p class="text-sm text-gray-600 mb-5">Si bloqueas esta cuenta, dejarás de ver su contenido, sus publicaciones y todo lo relacionado con ella.</p>
+    <p class="text-sm text-gray-600 mb-5">Si bloqueas esta cuenta desde el comentario, dejarás de ver su contenido, sus publicaciones y todo lo relacionado con ella.</p>
     <div class="flex gap-3">
       <button onclick="closeBlockAccountConfirmModal()" class="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold">No quiero</button>
-      <button onclick="confirmBlockAccountFromOptions()" class="flex-1 py-2.5 rounded-xl bg-[#FE2C55] text-white font-semibold">Sí acepto</button>
+      <button onclick="confirmBlockAccountFromComment()" class="flex-1 py-2.5 rounded-xl bg-[#FE2C55] text-white font-semibold">Sí acepto</button>
     </div>
   </div>
 </div>
@@ -3753,9 +3767,6 @@ function handleProfileImageUploadDesktop(event) {
           <button id="block-button" onclick="blockAuthor()" class="w-full bg-white text-[#5f4b44] py-3 rounded-2xl font-semibold border border-[#d9cec8]" title="Bloquear">
             Bloquear
           </button>
-          <button id="send-balance-button" onclick="openSendBalanceView()" class="w-full bg-[#FE2C55] text-white py-3 rounded-2xl font-semibold shadow-sm" title="Enviar saldo">
-            Enviar saldo
-          </button>
           <button id="report-button" onclick="openReportModal()" class="w-full bg-white text-[#5f4b44] py-3 rounded-2xl font-semibold border border-[#d9cec8]" title="Reportar">
             Reportar
           </button>
@@ -4507,23 +4518,6 @@ function saveNote() {
       <div class="w-9"></div>
     </div>
     <div id="blocked-accounts-list" class="flex-1 overflow-y-auto p-6 space-y-3"></div>
-  </div>
-
-  <!-- VISTA DE MANTENIMIENTO (DREX BANK / ENVIAR SALDO) -->
-  <div id="maintenance-view" class="fixed inset-0 bg-[#f5f4f2] z-[200] hidden flex flex-col items-center justify-center p-10 text-center">
-    <div class="max-w-xs w-full flex flex-col items-center">
-      <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-8 border border-[#e8e1dc]">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-[#2f1a14]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      </div>
-      <h2 class="text-[22px] font-semibold text-[#2f1a14] mb-3 leading-tight">Esta función no está disponible en este momento</h2>
-      <p class="text-[14px] text-[#6f5c54] leading-normal mb-10">Estamos realizando tareas de mantenimiento para mejorar tu experiencia. Vuelve a intentarlo más tarde.</p>
-      <button onclick="closeMaintenanceView()" class="w-full bg-[#2f1a14] hover:bg-[#1a0f0a] text-white py-3 rounded-lg font-semibold text-sm transition-colors active:opacity-70">
-        Aceptar
-      </button>
-    </div>
   </div>
 
   <!-- SECCIÓN DE DESACTIVAR/ELIMINAR CUENTA -->
@@ -7536,6 +7530,8 @@ function deleteNote(noteId) {
 }
 
 let currentReportNoteId = null;
+let currentCommentReportTarget = null;
+let currentBlockAccountTarget = null;
 let currentPostOptionsNoteId = null;
 let currentPostOptionsNoteData = null;
 let blockedAccountsSet = new Set();
@@ -7570,7 +7566,6 @@ function openPostOptionsSheet(noteId) {
   const sheet = document.getElementById('post-options-sheet');
   const deleteBtn = document.getElementById('delete-post-btn');
   const copyBtn = document.getElementById('copy-post-text-btn');
-  const blockBtn = document.getElementById('block-account-btn');
   if (!overlay || !sheet) return;
 
   const user = firebase.auth().currentUser;
@@ -7585,9 +7580,6 @@ function openPostOptionsSheet(noteId) {
       if (deleteBtn) deleteBtn.classList.toggle('hidden', !isOwner);
       const hasText = !!(note.content && String(note.content).trim());
       if (copyBtn) copyBtn.classList.toggle('hidden', !hasText);
-      const targetAuthorId = note.authorId || note.userId || '';
-      const canBlock = !!targetAuthorId && targetAuthorId !== user.uid;
-      if (blockBtn) blockBtn.classList.toggle('hidden', !canBlock);
     }).catch(() => {
       if (deleteBtn) deleteBtn.classList.add('hidden');
     });
@@ -7659,10 +7651,19 @@ function copyPostTextFromOptions() {
   onSuccess();
 }
 
-function openBlockAccountConfirmFromOptions() {
+function openBlockAccountConfirmFromComment(noteId, commentPath, commentAuthorId) {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para bloquear una cuenta.');
+    return;
+  }
+  if (!commentAuthorId || user.uid === commentAuthorId) return;
+
+  currentBlockAccountTarget = { noteId, commentPath, targetAuthorId: commentAuthorId };
+  closeCommentActionsSheet();
+
   const modal = document.getElementById('block-account-confirm-modal');
   if (!modal) return;
-  closePostOptionsSheet();
   modal.classList.remove('hidden');
   modal.classList.add('flex');
 }
@@ -7672,17 +7673,25 @@ function closeBlockAccountConfirmModal() {
   if (!modal) return;
   modal.classList.add('hidden');
   modal.classList.remove('flex');
+  currentBlockAccountTarget = null;
 }
 
-function confirmBlockAccountFromOptions() {
+function confirmBlockAccountFromComment() {
   const user = firebase.auth().currentUser;
-  const targetAuthorId = currentPostOptionsNoteData?.authorId || currentPostOptionsNoteData?.userId || '';
+  const targetAuthorId = currentBlockAccountTarget?.targetAuthorId || '';
+  const noteId = currentBlockAccountTarget?.noteId || currentPostId;
   if (!user || !targetAuthorId || user.uid === targetAuthorId) {
     closeBlockAccountConfirmModal();
     return;
   }
 
-  const blockPayload = { blockedAt: Date.now(), by: user.uid };
+  const blockPayload = {
+    blockedAt: Date.now(),
+    by: user.uid,
+    source: 'comment',
+    noteId: currentBlockAccountTarget?.noteId || '',
+    commentPath: currentBlockAccountTarget?.commentPath || ''
+  };
 
   firebase.database().ref('blocks/' + user.uid + '/' + targetAuthorId).set(blockPayload).then(() => {
     blockedAccountsSet.add(targetAuthorId);
@@ -7692,15 +7701,17 @@ function confirmBlockAccountFromOptions() {
       ok.classList.remove('hidden');
       ok.classList.add('flex');
     }
+    if (noteId) loadCommentsInView(noteId);
     loadNotes(false);
     performRealTimeSearch();
   }).catch(error => {
-    console.error('Error bloqueando cuenta:', error);
+    console.error('Error bloqueando cuenta desde comentario:', error);
     alert('No se pudo bloquear la cuenta. Intenta de nuevo.');
   });
 }
 
 function closeBlockAccountSuccessModal() {
+  currentBlockAccountTarget = null;
   const modal = document.getElementById('block-account-success-modal');
   if (!modal) return;
   modal.classList.add('hidden');
@@ -7746,6 +7757,15 @@ const postReportReasons = [
   { value: 'self_harm', label: 'Promueve autolesión o suicidio' },
   { value: 'misinformation', label: 'Información engañosa o spam' },
   { value: 'copyright', label: 'Infracción de derechos de autor' },
+  { value: 'other', label: 'Otro motivo' }
+];
+
+const commentReportReasons = [
+  { value: 'harassment', label: 'Acoso, insultos o ataques personales' },
+  { value: 'hate', label: 'Odio o discriminación' },
+  { value: 'sexual', label: 'Contenido sexual o desnudez' },
+  { value: 'violence', label: 'Amenazas, violencia o autolesión' },
+  { value: 'spam', label: 'Spam, fraude o contenido engañoso' },
   { value: 'other', label: 'Otro motivo' }
 ];
 
@@ -7795,6 +7815,10 @@ function buildPostReportOptions() {
 
 function buildProfileReportOptions() {
   renderReportReasonCards('profile-report-reasons', profileReportReasons, 'profile-report-reason');
+}
+
+function buildCommentReportOptions() {
+  renderReportReasonCards('comment-report-reasons', commentReportReasons, 'comment-report-reason');
 }
 
 function reportNote(noteId) {
@@ -7909,6 +7933,129 @@ function submitPostReport() {
     console.error('Error al enviar reporte de publicación:', error);
     document.getElementById('post-report-processing').classList.add('hidden');
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
+    alert('No se pudo enviar el reporte. Inténtalo de nuevo.');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Enviar reporte';
+  });
+}
+
+function openCommentReport(noteId, commentPath, commentText = '', commentAuthorId = '') {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para reportar');
+    return;
+  }
+  if (!noteId || !commentPath) return;
+
+  currentCommentReportTarget = { noteId, commentPath, commentText, commentAuthorId };
+  closeCommentActionsSheet();
+  buildCommentReportOptions();
+
+  const description = document.getElementById('comment-report-description');
+  if (description) description.value = '';
+
+  const preview = document.getElementById('comment-report-preview');
+  if (preview) {
+    const trimmedText = String(commentText || '').trim();
+    preview.textContent = trimmedText ? `Comentario: ${trimmedText.slice(0, 220)}` : 'Comentario sin texto adjunto.';
+    preview.classList.remove('hidden');
+  }
+
+  document.getElementById('comment-report-fullscreen').classList.remove('hidden');
+  if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
+}
+
+function closeCommentReportFullscreen() {
+  document.getElementById('comment-report-fullscreen').classList.add('hidden');
+  if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
+  currentCommentReportTarget = null;
+}
+
+function submitCommentReport() {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para reportar');
+    return;
+  }
+  if (!currentCommentReportTarget) return;
+
+  const { noteId, commentPath, commentText, commentAuthorId } = currentCommentReportTarget;
+  if (commentAuthorId && commentAuthorId === user.uid) {
+    alert('No puedes reportar tu propio comentario.');
+    return;
+  }
+
+  const reasonInput = document.querySelector('input[name="comment-report-reason"]:checked');
+  const reason = reasonInput ? reasonInput.value : 'other';
+  const reasonLabel = commentReportReasons.find(r => r.value === reason)?.label || 'Otro motivo';
+  const description = document.getElementById('comment-report-description').value.trim();
+  const submitBtn = document.getElementById('comment-report-submit-btn');
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Enviando...';
+
+  const reasonKeywords = {
+    harassment: 'acoso insultos amenazas bullying ataques personales',
+    hate: 'odio racismo homofobia discriminación xenofobia',
+    sexual: 'desnudo xxx sexual pornografía',
+    violence: 'violencia amenaza matar golpear autolesión suicidio',
+    spam: 'spam fraude engaño estafa enlaces repetidos',
+    other: ''
+  };
+
+  const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
+  commentRef.once('value').then(snapshot => {
+    const comment = snapshot.val();
+    if (!comment) throw new Error('Comentario no encontrado');
+
+    const algorithmInput = `${comment.content || commentText || ''} ${reasonLabel} ${reasonKeywords[reason] || ''} ${description}`;
+    const autoDetails = evaluateContentModeration(algorithmInput);
+    const requiresHuman = ['harassment', 'hate', 'sexual', 'violence'].includes(reason) || !autoDetails.flagged;
+    const reportId = firebase.database().ref().push().key;
+    const safeVoteKey = commentPath.replace(/\//g, '__');
+
+    const reportPayload = {
+      reportId,
+      noteId,
+      commentPath,
+      commentKey: safeVoteKey,
+      reporter: user.uid,
+      reporterName: user.displayName || user.email || 'Usuario',
+      commentAuthorId: comment.authorId || commentAuthorId || '',
+      commentAuthorName: comment.authorName || 'Usuario',
+      commentText: comment.content || commentText || '',
+      reason,
+      reasonLabel,
+      description,
+      moderationCategories: autoDetails.categories,
+      moderationScore: autoDetails.score,
+      autoFlag: autoDetails.flagged,
+      requiresHuman,
+      status: requiresHuman ? 'pending_human_review' : 'auto_resolved',
+      timestamp: Date.now()
+    };
+
+    return firebase.database().ref('commentReports/' + reportId).set(reportPayload).then(() => {
+      if (requiresHuman) {
+        return firebase.database().ref('commentReportsHumanQueue/' + reportId).set({
+          ...reportPayload,
+          humanPriority: autoDetails.flagged ? 'high' : 'normal',
+          queuedAt: Date.now()
+        });
+      }
+      return Promise.resolve();
+    }).then(() => {
+      addNotification(user.uid, 'Tu reporte de comentario fue enviado y será revisado por el equipo.', 'moderation');
+    });
+  }).then(() => {
+    document.getElementById('comment-report-fullscreen').classList.add('hidden');
+    document.getElementById('post-report-response').classList.remove('hidden');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Enviar reporte';
+    currentCommentReportTarget = null;
+    if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
+  }).catch(error => {
+    console.error('Error al enviar reporte de comentario:', error);
     alert('No se pudo enviar el reporte. Inténtalo de nuevo.');
     submitBtn.disabled = false;
     submitBtn.textContent = 'Enviar reporte';
@@ -8515,10 +8662,11 @@ function loadCommentsInView(noteId) {
     snapshot.forEach(child => {
       const comment = child.val();
       const commentId = child.key;
+      if (isAccountBlockedForCurrentUser(comment?.authorId || '')) return;
       totalCount++;
 
       if (comment.replies) {
-        totalCount += countReplies(comment.replies);
+        totalCount += countVisibleReplies(comment.replies);
       }
 
       renderCommentModern(noteId, commentId, comment, commentsList, 0);
@@ -8545,28 +8693,6 @@ function formatRelativeTime(timestamp) {
   return `hace ${week} semana${week > 1 ? "s" : ""}`;
 }
 
-function formatTimestamp(timestamp) {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (days < 1) {
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    if (hours < 1) {
-      const minutes = Math.floor(diff / (1000 * 60));
-      return minutes < 1 ? 'Ahora' : `Hace ${minutes}m`;
-    }
-    return `Hace ${hours}h`;
-  } else if (days <= 9) {
-    return `Hace ${days} día${days > 1 ? 's' : ''}`;
-  } else {
-    const date = new Date(timestamp);
-    const hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()} ${hours}:${minutes}`;
-  }
-}
-
 // Contar respuestas recursivamente
 function countReplies(replies) {
   let count = 0;
@@ -8582,12 +8708,27 @@ function countReplies(replies) {
   return count;
 }
 
+function countVisibleReplies(replies) {
+  let count = 0;
+  if (!replies) return count;
+
+  Object.keys(replies).forEach(key => {
+    const reply = replies[key] || {};
+    if (isAccountBlockedForCurrentUser(reply.authorId || '')) return;
+    count++;
+    if (reply.replies) count += countVisibleReplies(reply.replies);
+  });
+
+  return count;
+}
+
 // Renderizar comentario moderno
 function escapeSingleQuote(value) {
   return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 function renderCommentModern(noteId, commentId, comment, container, level, parentId = null, parentPath = "") {
+  if (isAccountBlockedForCurrentUser(comment?.authorId || '')) return;
   const marginLeft = level * 16;
   const commentDiv = document.createElement('div');
   commentDiv.className = 'bg-white border border-[#e8e1dc] rounded-2xl p-3';
@@ -8620,7 +8761,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
           <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${comment.authorName || 'Usuario'}${commentVerifiedIcon}</button>
-          <span class="text-xs text-[#b2a7a1]">${formatTimestamp(comment.timestamp)}</span>
+          <span class="text-xs text-[#b2a7a1]">${formatRelativeTime(comment.timestamp)}</span>
         </div>
         ${renderContentWithSticker(comment.content, 'text-sm text-[#2f1a14] mb-2 leading-relaxed')}
         ${comment.gifUrl ? `<div class="mb-2 rounded-xl overflow-hidden border border-[#e8e1dc]"><img src="${comment.gifUrl}" class="w-full max-h-60 object-cover"></div>` : ''}
@@ -8638,11 +8779,9 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
             </svg>
           </button>
-          ${comment.authorId === firebase.auth().currentUser?.uid ? `
-          <button onclick="openCommentActionsSheet('${noteId}', '${commentPath}', '${escapeSingleQuote(comment.content || '')}')" class="hover:text-[#5f4b44] transition-colors">
+          <button onclick="openCommentActionsSheet('${noteId}', '${commentPath}', '${escapeSingleQuote(comment.content || '')}', '${escapeSingleQuote(commentAuthorId)}')" class="hover:text-[#5f4b44] transition-colors" aria-label="Opciones del comentario">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
           </button>
-          ` : ''}
         </div>
         <div id="replies-${commentPath}" class="mt-2 space-y-2"></div>
       </div>
@@ -8879,24 +9018,47 @@ function voteComment(noteId, commentPath, voteType = "up") {
 }
 
 // Abrir bottom sheet de opciones de comentario
-function openCommentActionsSheet(noteId, commentPath, commentText) {
+function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthorId = '') {
   const overlay = document.getElementById('comment-actions-overlay');
   const sheet = document.getElementById('comment-actions-sheet');
   const content = document.getElementById('comment-actions-content');
+  const user = firebase.auth().currentUser;
+  const canDelete = !!user && !!commentAuthorId && user.uid === commentAuthorId;
+  const canBlock = !!user && !!commentAuthorId && user.uid !== commentAuthorId;
+  const safeNoteId = escapeSingleQuote(noteId);
+  const safeCommentPath = escapeSingleQuote(commentPath);
+  const safeCommentText = escapeSingleQuote(commentText || '');
+  const safeAuthorId = escapeSingleQuote(commentAuthorId || '');
 
   content.innerHTML = `
-    <div class="comment-action-item" onclick="copyCommentText('${escapeSingleQuote(commentText)}')">
+    <div class="comment-action-item" onclick="copyCommentText('${safeCommentText}')">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
       </svg>
       <span>Copiar texto</span>
     </div>
-    <div class="comment-action-item delete" onclick="deleteCommentConfirm('${noteId}', '${commentPath}')">
+    ${canBlock ? `
+    <div class="comment-action-item" onclick="openBlockAccountConfirmFromComment('${safeNoteId}', '${safeCommentPath}', '${safeAuthorId}')">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636A9 9 0 115.636 18.364 9 9 0 0118.364 5.636zM6.343 6.343l11.314 11.314" />
+      </svg>
+      <span>Bloquear cuenta</span>
+    </div>
+    ` : ''}
+    <div class="comment-action-item report" onclick="openCommentReport('${safeNoteId}', '${safeCommentPath}', '${safeCommentText}', '${safeAuthorId}')">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v18m2-16.8c.69-.52 1.67-.03 1.67.83v10.7c0 .86-.98 1.35-1.67.83L5 15.2V4.8l2-1.6zM8.67 5.2l1.97 1.48a1 1 0 00.6.2H18a1 1 0 01.8 1.6l-1.7 2.27a1 1 0 000 1.2l1.7 2.27A1 1 0 0118 15h-6.76a1 1 0 00-.6.2l-1.97 1.48" />
+      </svg>
+      <span>Reportar</span>
+    </div>
+    ${canDelete ? `
+    <div class="comment-action-item delete" onclick="deleteCommentConfirm('${safeNoteId}', '${safeCommentPath}')">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
       </svg>
       <span>Eliminar</span>
     </div>
+    ` : ''}
   `;
 
   overlay.classList.add('active');
@@ -10914,22 +11076,6 @@ function deleteComment(noteId, commentPath) {
         el.style.display = 'none'; // Asegurar que no bloquee
       }
     });
-  }
-
-  function showMaintenanceView() {
-    const view = document.getElementById('maintenance-view');
-    if (view) {
-      view.classList.remove('hidden');
-      view.style.display = 'flex';
-    }
-  }
-
-  function closeMaintenanceView() {
-    const view = document.getElementById('maintenance-view');
-    if (view) {
-      view.classList.add('hidden');
-      view.style.display = 'none';
-    }
   }
 
   const THEME_STORAGE_KEY = 'drex_theme';
@@ -15389,15 +15535,6 @@ function renderPlacesList(places) {
       blockButton.classList.remove('opacity-60', 'cursor-not-allowed');
     }
 
-    const sendBalanceBtn = document.getElementById('send-balance-button');
-    if (sendBalanceBtn) {
-      if (currentUser && currentUser.uid === authorId) {
-        sendBalanceBtn.classList.add('hidden');
-      } else {
-        sendBalanceBtn.classList.remove('hidden');
-      }
-    }
-
     const extraProfileIcon = document.getElementById('extra-profile-icon');
     if (extraProfileIcon) extraProfileIcon.remove();
 
@@ -16057,6 +16194,7 @@ body,
 #post-report-fullscreen,
 #post-report-processing,
 #post-report-response,
+#comment-report-fullscreen,
 #search-view,
 #baro-view,
 #baro-sources-sheet,
