@@ -2540,6 +2540,17 @@ body {
       </button>
       <h2 class="text-lg font-bold flex-1">Comentarios</h2>
       <span id="comments-count-header" class="text-sm text-[#8d7d75]">0</span>
+      <div class="relative">
+        <button onclick="toggleCommentSortMenu()" class="flex items-center gap-1 text-xs text-[#7a6962] hover:text-[#5f4b44] transition border border-[#e8e1dc] rounded-full px-2.5 py-1 bg-white" id="comment-sort-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9M3 12h5m8 0l4-4m0 0l-4-4m4 4H11"/></svg>
+          <span id="comment-sort-label">Mejor</span>
+        </button>
+        <div id="comment-sort-menu" class="hidden absolute right-0 top-8 bg-white border border-[#e8e1dc] rounded-2xl shadow-lg z-10 w-32 overflow-hidden">
+          <button onclick="setCommentSort('best')" class="w-full text-left px-4 py-2.5 text-sm text-[#2f1a14] hover:bg-[#f5f4f2] transition flex items-center gap-2"><span class="text-base">⭐</span>Mejor</button>
+          <button onclick="setCommentSort('new')" class="w-full text-left px-4 py-2.5 text-sm text-[#2f1a14] hover:bg-[#f5f4f2] transition flex items-center gap-2"><span class="text-base">🕐</span>Nuevo</button>
+          <button onclick="setCommentSort('top')" class="w-full text-left px-4 py-2.5 text-sm text-[#2f1a14] hover:bg-[#f5f4f2] transition flex items-center gap-2"><span class="text-base">🔥</span>Top</button>
+        </div>
+      </div>
     </div>
 
     <!-- Contenedor scrolleable -->
@@ -2555,8 +2566,9 @@ body {
         <button onclick="clearReplyTarget()" class="text-[#8d7d75] hover:text-[#5f4b44]">Cancelar</button>
       </div>
       <div id="comment-gif-preview" class="hidden mb-2 relative inline-block rounded-2xl overflow-hidden border border-[#e8e1dc] bg-white"><img id="selected-comment-gif-img" src="" class="max-h-40"><button onclick="removeCommentGif()" class="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
+      <div id="sticker-preview-comment-input-main" class="hidden mb-2"></div>
       <div class="flex gap-2 items-center">
-        <input type="text" id="comment-input-main" placeholder="Comparte tu opinión sobre este episodio..." class="flex-1 p-2.5 border border-[#e8e1dc] bg-white text-[#2f1a14] placeholder:text-[#b2a7a1] rounded-full focus:outline-none focus:ring-2 focus:ring-[#cdbeb7]">
+        <input type="text" id="comment-input-main" placeholder="¿Qué opinas?" class="flex-1 p-2.5 border border-[#e8e1dc] bg-white text-[#2f1a14] placeholder:text-[#b2a7a1] rounded-full focus:outline-none focus:ring-2 focus:ring-[#cdbeb7]">
         <button onclick="openCommentGifPicker()" class="border border-[#e8e1dc] text-[#7a6962] bg-white p-2 rounded-full flex-shrink-0 hover:text-[#5f4b44]" title="GIF">
           <div class="border border-[#7a6962] rounded text-[10px] font-bold px-1 leading-none">GIF</div>
         </button>
@@ -2913,8 +2925,8 @@ body {
   </div>
 </div>
 
-<div id="sticker-sheet-overlay" class="fixed inset-0 bg-black/40 hidden z-[60]" onclick="closeStickerPicker()"></div>
-<div id="sticker-sheet" class="fixed bottom-0 left-0 right-0 bg-[#f5f4f2] rounded-t-3xl hidden z-[61] flex flex-col transition-transform duration-300 translate-y-full border-t border-[#e8e1dc]" style="height: 70vh;">
+<div id="sticker-sheet-overlay" class="fixed inset-0 bg-black/40 hidden z-[90]" onclick="closeStickerPicker()"></div>
+<div id="sticker-sheet" class="fixed bottom-0 left-0 right-0 bg-[#f5f4f2] rounded-t-3xl hidden z-[91] flex flex-col transition-transform duration-300 translate-y-full border-t border-[#e8e1dc]" style="height: 70vh;">
   <div class="p-4 border-b border-[#e8e1dc] flex items-center gap-4">
     <button onclick="closeStickerPicker()" class="text-[#6f5c54]">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -8666,17 +8678,62 @@ function selectSticker(url) {
   const targetInput = document.getElementById(stickerTargetInputId);
   if (!targetInput) return;
 
-  // Validación: No permitir sticker si ya hay imágenes seleccionadas
-  const imageInput = document.getElementById('note-image-fullscreen');
-  if (imageInput && imageInput.files && imageInput.files.length > 0) {
-    alert('❌ Error: No puedes agregar un sticker si ya has seleccionado imágenes. Por favor, elimina las imágenes primero.');
-    return;
+  // Validación: Solo bloquear sticker+imagen en la creación de notas
+  if (stickerTargetInputId === 'note-content-fullscreen') {
+    const imageInput = document.getElementById('note-image-fullscreen');
+    if (imageInput && imageInput.files && imageInput.files.length > 0) {
+      alert('❌ Error: No puedes agregar un sticker si ya has seleccionado imágenes. Por favor, elimina las imágenes primero.');
+      return;
+    }
   }
 
   pendingStickers[stickerTargetInputId] = url;
   updateStickerPreview(stickerTargetInputId);
   targetInput.focus();
   closeStickerPicker();
+}
+
+// ===== ORDENAMIENTO DE COMENTARIOS (estilo Reddit) =====
+let currentCommentSort = 'best';
+
+function toggleCommentSortMenu() {
+  const menu = document.getElementById('comment-sort-menu');
+  if (!menu) return;
+  menu.classList.toggle('hidden');
+  const closeMenu = (e) => {
+    if (!e.target.closest('#comment-sort-menu') && !e.target.closest('#comment-sort-btn')) {
+      menu.classList.add('hidden');
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  if (!menu.classList.contains('hidden')) {
+    setTimeout(() => document.addEventListener('click', closeMenu), 10);
+  }
+}
+
+function setCommentSort(sort) {
+  currentCommentSort = sort;
+  const labels = { best: 'Mejor', new: 'Nuevo', top: 'Top' };
+  const labelEl = document.getElementById('comment-sort-label');
+  if (labelEl) labelEl.textContent = labels[sort] || 'Mejor';
+  const menu = document.getElementById('comment-sort-menu');
+  if (menu) menu.classList.add('hidden');
+  if (currentPostId) loadCommentsInView(currentPostId);
+}
+
+function sortCommentEntries(entries) {
+  if (currentCommentSort === 'new') {
+    return entries.sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0));
+  }
+  if (currentCommentSort === 'top') {
+    return entries.sort((a, b) => ((b[1].upvotes || 0)) - ((a[1].upvotes || 0)));
+  }
+  // 'best': score neto (upvotes - downvotes)
+  return entries.sort((a, b) => {
+    const scoreB = (b[1].upvotes || 0) - (b[1].downvotes || 0);
+    const scoreA = (a[1].upvotes || 0) - (a[1].downvotes || 0);
+    return scoreB - scoreA;
+  });
 }
 
 // Abrir vista de comentarios
@@ -8717,7 +8774,8 @@ function openCommentsView(noteId) {
   if (user) {
     firebase.database().ref('users/' + user.uid).once('value').then(snap => {
       const userData = snap.val();
-      document.getElementById('current-user-avatar-comment').src = userData?.profileImage || 'https://via.placeholder.com/150';
+      const avatarEl = document.getElementById('current-user-avatar-comment');
+      if (avatarEl) avatarEl.src = userData?.profileImage || 'https://via.placeholder.com/150';
     });
   }
 
@@ -8798,7 +8856,14 @@ function closeCommentsView() {
   closeStickerPicker();
   removeCommentGif();
   clearReplyTarget();
+  clearStickerSelection('comment-input-main');
   currentPostId = null;
+  // Resetear ordenamiento al volver
+  currentCommentSort = 'best';
+  const labelEl = document.getElementById('comment-sort-label');
+  if (labelEl) labelEl.textContent = 'Mejor';
+  const menu = document.getElementById('comment-sort-menu');
+  if (menu) menu.classList.add('hidden');
 }
 
 // Cargar comentarios en la vista
@@ -8818,20 +8883,25 @@ function loadCommentsInView(noteId) {
     commentsList.innerHTML = '';
     let totalCount = 0;
 
+    const entries = [];
     snapshot.forEach(child => {
       const comment = child.val();
-      const commentId = child.key;
       if (isAccountBlockedForCurrentUser(comment?.authorId || '')) return;
-      totalCount++;
+      entries.push([child.key, comment]);
+    });
 
+    const sorted = sortCommentEntries(entries);
+
+    sorted.forEach(([commentId, comment]) => {
+      totalCount++;
       if (comment.replies) {
         totalCount += countVisibleReplies(comment.replies);
       }
-
       renderCommentModern(noteId, commentId, comment, commentsList, 0);
     });
 
-    document.getElementById('comments-count-header').textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
+    const countEl = document.getElementById('comments-count-header');
+    if (countEl) countEl.textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
   });
 }
 
@@ -8983,16 +9053,17 @@ function submitComment() {
   }
 
   const input = document.getElementById('comment-input-main');
-  const content = input.value.trim();
+  const resolvedContent = resolveCommentContent('comment-input-main');
+  const hasSticker = typeof resolvedContent === 'string' && resolvedContent.startsWith(STICKER_PREFIX);
 
-  if (!content && !selectedCommentGif) return;
+  if (!resolvedContent && !selectedCommentGif) return;
 
   firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
     const userData = userSnap.val() || {};
     const actorName = userData.username || user.displayName || user.email || 'Alguien';
 
     const payload = {
-      content: content,
+      content: resolvedContent,
       authorId: user.uid,
       authorName: userData.username || 'Usuario',
       authorEmail: (userData.email || user.email || '').toLowerCase(),
@@ -9004,7 +9075,6 @@ function submitComment() {
 
     if (selectedCommentGif) payload.gifUrl = selectedCommentGif;
 
-    const hasSticker = typeof payload.content === 'string' && payload.content.startsWith(STICKER_PREFIX);
     const hasGif = Boolean(payload.gifUrl);
 
     const typeForMedia = hasGif ? 'gif' : (hasSticker ? 'sticker' : 'comment');
@@ -9015,7 +9085,13 @@ function submitComment() {
       return `${actorName} comentó tu publicación.`;
     };
 
-    const mentionPromise = sendMentionNotifications(payload.content, user.uid, actorName, 'comentario', [user.uid]);
+    const mentionPromise = sendMentionNotifications(resolvedContent, user.uid, actorName, 'comentario', [user.uid]);
+
+    const clearCommentInput = () => {
+      input.value = '';
+      clearStickerSelection('comment-input-main');
+      removeCommentGif();
+    };
 
     if (replyTarget && replyTarget.commentId) {
       Promise.all([
@@ -9046,8 +9122,7 @@ function submitComment() {
         });
       }).then(() => {
         updateCommentsCount(currentPostId);
-        input.value = '';
-        removeCommentGif();
+        clearCommentInput();
         clearReplyTarget();
       }).catch(error => {
         console.error('Error al enviar respuesta:', error);
@@ -9068,8 +9143,7 @@ function submitComment() {
       });
     }).then(() => {
       updateCommentsCount(currentPostId);
-      input.value = '';
-      removeCommentGif();
+      clearCommentInput();
     }).catch(error => {
       console.error('Error al comentar:', error);
       alert('No se pudo enviar tu comentario. Inténtalo de nuevo.');
