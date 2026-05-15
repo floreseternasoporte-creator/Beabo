@@ -2099,6 +2099,20 @@ body {
       </div>
     </div>
 
+    <!-- Reply preview bar -->
+    <div id="chat-reply-preview" class="hidden border-t border-[#e8e1dc] bg-[#f8f6f4] px-4 py-2">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="w-0.5 h-8 bg-[#2f1a14] rounded-full shrink-0"></div>
+          <div class="min-w-0">
+            <p class="text-[11px] font-bold text-[#2f1a14]" id="chat-reply-name">Nombre</p>
+            <p class="text-xs text-[#8d7d75] truncate" id="chat-reply-text">mensaje...</p>
+          </div>
+        </div>
+        <button onclick="clearChatReply()" class="w-7 h-7 rounded-full bg-[#e8e1dc] text-[#5f4b44] flex items-center justify-center shrink-0 text-xs active:scale-90 transition" aria-label="Cancelar respuesta">✕</button>
+      </div>
+    </div>
+
     <div class="border-t border-[#e8e1dc] bg-white px-4 py-3">
       <div id="chat-photo-preview-wrap" class="hidden mb-2">
         <div class="relative inline-block">
@@ -2129,13 +2143,18 @@ body {
 </div>
 
 <!-- REACTION PICKER FLOTANTE -->
-<div id="chat-reaction-picker" class="fixed hidden z-[80] bg-white border border-[#e8e1dc] rounded-full shadow-xl px-3 py-2 flex items-center gap-3 transition-all" style="transform:scale(0.85);opacity:0;">
+<div id="chat-reaction-picker" class="fixed hidden z-[80] bg-white border border-[#e8e1dc] rounded-full shadow-xl px-3 py-2 flex items-center gap-2 transition-all" style="transform:scale(0.85);opacity:0;">
   <button onclick="submitChatReaction('❤️')" class="text-xl active:scale-75 transition hover:scale-125">❤️</button>
   <button onclick="submitChatReaction('😂')" class="text-xl active:scale-75 transition hover:scale-125">😂</button>
   <button onclick="submitChatReaction('😮')" class="text-xl active:scale-75 transition hover:scale-125">😮</button>
   <button onclick="submitChatReaction('👍')" class="text-xl active:scale-75 transition hover:scale-125">👍</button>
   <button onclick="submitChatReaction('👎')" class="text-xl active:scale-75 transition hover:scale-125">👎</button>
   <button onclick="submitChatReaction('🔥')" class="text-xl active:scale-75 transition hover:scale-125">🔥</button>
+  <span class="w-px h-5 bg-[#e8e1dc] shrink-0"></span>
+  <button onclick="triggerChatReply()" class="flex items-center gap-1 text-xs font-semibold text-[#5f4b44] px-2 py-1 rounded-full hover:bg-[#f1ece9] active:scale-95 transition" aria-label="Responder">
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M9 17l-5-5 5-5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 12h11a5 5 0 0 1 5 5v1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Responder
+  </button>
 </div>
 
 <!-- PANEL INFO DEL CHAT -->
@@ -13026,6 +13045,7 @@ let currentChatRoomId = null;
 let currentChatRecipient = null;
 let chatMessagesListener = null;
 let chatPhotoAttachment = null;
+let chatReplyContext = null;
 let chatUsersIndexCache = [];
 let chatUsersIndexLoadedAt = 0;
 let chatSearchDebounceTimer = null;
@@ -13476,6 +13496,7 @@ let chatTypingListener = null;
     detachChatTypingListener();
     detachAllMsgReactionListeners();
     hideChatReactionPicker();
+    clearChatReply();
     document.getElementById('chat-room-view')?.classList.add('hidden');
     document.getElementById('chat-inbox-view')?.classList.remove('hidden');
     loadChatConversations();
@@ -13609,12 +13630,20 @@ let chatTypingListener = null;
         ? `<img src="${msg.image}" class="max-w-[220px] rounded-2xl border border-[#e8e1dc]" alt="Foto enviada">`
         : `<p class="text-sm break-words">${escapeHtml(msg.text || '')}</p>`;
       const timeStr = formatMsgTime(msg.timestamp);
+
+      const replyBlock = msg.replyTo
+        ? `<div class="mb-2 pl-2 border-l-2 ${mine ? 'border-white/40' : 'border-[#2f1a14]/30'} opacity-80">
+            <p class="text-[10px] font-bold mb-0.5 ${mine ? 'text-white/70' : 'text-[#5f4b44]'}">${escapeHtml(msg.replyTo.senderName || 'Mensaje')}</p>
+            <p class="text-xs truncate ${mine ? 'text-white/60' : 'text-[#8d7d75]'}">${msg.replyTo.image ? '📷 Foto' : escapeHtml(msg.replyTo.text || '')}</p>
+           </div>`
+        : '';
+
       const wrapper = document.createElement('div');
       wrapper.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
       if (resolvedId) wrapper.dataset.msgId = resolvedId;
       wrapper.innerHTML = `
         <div class="msg-bubble ${mine ? 'bg-[#2f1a14] text-white' : 'bg-white text-[#2f1a14] border border-[#e8e1dc]'} rounded-2xl px-4 py-2 max-w-[80%] select-none cursor-pointer" data-msg-id="${resolvedId}">
-          ${content}
+          ${replyBlock}${content}
         </div>
         <div class="msg-reactions flex gap-1 mt-0.5 px-1 flex-wrap ${mine ? 'justify-end' : 'justify-start'}" id="reactions-${resolvedId}"></div>
         ${timeStr ? `<span class="text-[10px] text-[#b4a9a4] px-1">${timeStr}</span>` : ''}
@@ -13825,6 +13854,9 @@ let chatTypingListener = null;
       temporary: temporaryActive,
       expiresAt: temporaryActive ? (sentAt + CHAT_TEMPORARY_DURATION_MS) : null
     };
+    if (chatReplyContext) {
+      payload.replyTo = chatReplyContext;
+    }
 
     // Render optimista inmediato para evitar sensación de retraso
     const currentCache = chatMessagesMemoryCache.get(currentChatRoomId) || [];
@@ -13839,12 +13871,16 @@ let chatTypingListener = null;
       const html = payload.image
         ? `<img src="${payload.image}" class="max-w-[220px] rounded-2xl border border-[#e8e1dc]" alt="Foto enviada">`
         : `<p class="text-sm break-words">${escapeHtml(payload.text || '')}</p>`;
+      const replyHtml = payload.replyTo
+        ? `<div class="mb-2 pl-2 border-l-2 border-white/40 opacity-80"><p class="text-[10px] font-bold mb-0.5 text-white/70">${escapeHtml(payload.replyTo.senderName || 'Mensaje')}</p><p class="text-xs truncate text-white/60">${payload.replyTo.image ? '📷 Foto' : escapeHtml(payload.replyTo.text || '')}</p></div>`
+        : '';
       const wrapper = document.createElement('div');
-      wrapper.className = 'w-full flex justify-end';
-      wrapper.innerHTML = `<div class="bg-[#2f1a14] text-white rounded-2xl px-4 py-2 max-w-[80%]">${html}</div>`;
+      wrapper.className = 'w-full flex flex-col items-end';
+      wrapper.innerHTML = `<div class="bg-[#2f1a14] text-white rounded-2xl px-4 py-2 max-w-[80%]">${replyHtml}${html}</div>`;
       container.appendChild(wrapper);
       container.scrollTop = container.scrollHeight;
     }
+    clearChatReply();
     const recipientId = currentChatRecipient;
     const conversationId = currentChatRoomId;
     const lastMessage = chatPhotoAttachment ? '📷 Foto' : text;
@@ -13971,6 +14007,42 @@ let chatTypingListener = null;
       const active = myReaction === emoji;
       return `<button onclick="window._lastReactionMsgId='${msgId}';activeReactionMsgId='${msgId}';submitChatReaction('${emoji}')" class="inline-flex items-center gap-0.5 text-sm px-2 py-0.5 rounded-full border transition active:scale-90 ${active ? 'bg-[#f6e5dc] border-[#e4c5b2]' : 'bg-white border-[#e8e1dc]'}">${emoji}<span class="text-xs text-[#5f4b44] font-semibold">${count}</span></button>`;
     }).join('');
+  }
+
+  function triggerChatReply() {
+    hideChatReactionPicker();
+    const msgId = activeReactionMsgId || window._lastReactionMsgId;
+    if (!msgId || !currentChatRoomId) return;
+    firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).once('value').then(snap => {
+      const msg = snap.val() || {};
+      const user = firebase.auth().currentUser;
+      const isMe = msg.senderId === user?.uid;
+      let senderName = isMe ? 'Tú' : (document.getElementById('chat-room-username')?.textContent || 'Usuario');
+      setChatReply({
+        msgId,
+        text: msg.text || '',
+        image: msg.image || '',
+        senderId: msg.senderId || '',
+        senderName
+      });
+    }).catch(() => {});
+  }
+
+  function setChatReply(context) {
+    chatReplyContext = context;
+    const bar = document.getElementById('chat-reply-preview');
+    const nameEl = document.getElementById('chat-reply-name');
+    const textEl = document.getElementById('chat-reply-text');
+    if (!bar || !nameEl || !textEl) return;
+    nameEl.textContent = context.senderName || 'Mensaje';
+    textEl.textContent = context.image ? '📷 Foto' : (context.text || '');
+    bar.classList.remove('hidden');
+    document.getElementById('chat-room-input')?.focus();
+  }
+
+  function clearChatReply() {
+    chatReplyContext = null;
+    document.getElementById('chat-reply-preview')?.classList.add('hidden');
   }
 
   function toggleChatEmojiPicker() {
