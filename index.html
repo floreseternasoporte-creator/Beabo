@@ -360,6 +360,11 @@ body {
 
 
 
+/* ===== COLLAPSE DE HILOS ===== */
+.thread-collapsed {
+  display: none !important;
+}
+
 /* ===== LOADER DE COMENTARIOS ===== */
 .comment-skeleton {
   display: flex;
@@ -8826,36 +8831,62 @@ function escapeSingleQuote(value) {
   return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+function toggleThreadCollapse(commentPath) {
+  const repliesEl = document.getElementById(`replies-${commentPath}`);
+  const pillEl = document.getElementById(`collapsed-pill-${commentPath}`);
+  const lineEl = document.getElementById(`thread-line-${commentPath}`);
+  if (!repliesEl) return;
+
+  const isCollapsed = repliesEl.classList.contains('thread-collapsed');
+
+  if (isCollapsed) {
+    repliesEl.classList.remove('thread-collapsed');
+    if (pillEl) pillEl.classList.add('hidden');
+    if (lineEl) lineEl.setAttribute('aria-label', 'Colapsar hilo');
+  } else {
+    repliesEl.classList.add('thread-collapsed');
+    if (pillEl) pillEl.classList.remove('hidden');
+    if (lineEl) lineEl.setAttribute('aria-label', 'Expandir hilo');
+  }
+}
+
 function renderCommentModern(noteId, commentId, comment, container, level, parentId = null, parentPath = "") {
   if (isAccountBlockedForCurrentUser(comment?.authorId || '')) return;
-  const marginLeft = level * 16;
+  const commentPath = parentPath ? `${parentPath}/replies/${commentId}` : commentId;
+  const commentAuthorId = comment.authorId || '';
+  const commentVerifiedIcon = getVerificationIconByAuthor(comment.authorEmail || '', commentAuthorId);
+  const upvotes = comment.upvotes || 0;
+  const downvotes = comment.downvotes || 0;
+  const score = upvotes - downvotes;
+
+  const hasReplies = comment.replies && Object.keys(comment.replies).length > 0;
+  const replyCount = hasReplies ? countVisibleReplies(comment.replies) : 0;
+  const isTopLevel = level === 0;
+
   const commentDiv = document.createElement('div');
-  commentDiv.className = 'bg-white border border-[#e8e1dc] rounded-2xl p-3';
-  commentDiv.style.marginLeft = marginLeft + 'px';
+
   if (level > 0) {
     commentDiv.className = 'pl-3 py-2';
     commentDiv.style.marginLeft = (Math.max(8, level * 14)) + 'px';
     commentDiv.style.borderLeft = '2px solid #d8cec8';
     commentDiv.style.background = 'transparent';
+  } else {
+    commentDiv.className = 'bg-white border border-[#e8e1dc] rounded-2xl p-3';
   }
 
-  const upvotes = comment.upvotes || 0;
-  const downvotes = comment.downvotes || 0;
-  const score = upvotes - downvotes;
-
-  // Generar path completo para respuestas anidadas
-  const commentPath = parentPath ? `${parentPath}/replies/${commentId}` : commentId;
-
-  const commentAuthorId = comment.authorId || '';
-  const commentVerifiedIcon = getVerificationIconByAuthor(comment.authorEmail || '', commentAuthorId);
+  const threadLineHtml = isTopLevel && hasReplies ? `
+    <button id="thread-line-${commentPath}" onclick="toggleThreadCollapse('${commentPath}')" aria-label="Colapsar hilo"
+      class="absolute left-3.5 top-10 bottom-0 w-0.5 bg-[#e8e1dc] hover:bg-[#c8b8b0] active:bg-[#a89080] transition-colors rounded-full cursor-pointer" style="transform:translateX(-50%);min-height:16px;">
+    </button>` : '';
 
   commentDiv.innerHTML = `
-    <div class="flex items-start gap-3">
-      <div class="relative w-8 h-8 flex-shrink-0">
+    <div class="flex items-start gap-3 relative">
+      <div class="relative flex-shrink-0" style="width:2rem;">
         <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${comment.authorName || 'Usuario'}">
           <img src="${comment.authorImage}" class="w-full h-full object-cover">
         </button>
         ${getQuickFollowButtonMarkup(commentAuthorId, firebase.auth().currentUser?.uid || '')}
+        ${threadLineHtml}
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
@@ -8866,7 +8897,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
         ${comment.gifUrl ? `<div class="mb-2 rounded-xl overflow-hidden border border-[#e8e1dc]"><img src="${comment.gifUrl}" class="w-full max-h-60 object-cover"></div>` : ''}
         <div class="flex items-center gap-4 text-xs text-[#8d7d75]">
           <div class="flex items-center gap-2">
-<button onclick="voteComment('${noteId}', '${commentPath}', 'up')" id="comment-upvote-${commentPath}" class="vote-star" aria-label="Dar Like">
+            <button onclick="voteComment('${noteId}', '${commentPath}', 'up')" id="comment-upvote-${commentPath}" class="vote-star" aria-label="Dar Like">
               <svg class="like-icon-sm" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path d="M2 21h4V9H2v12zm20-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L13.17 1 6.59 7.59C6.22 7.95 6 8.45 6 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/>
               </svg>
@@ -8878,11 +8909,22 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
             </svg>
           </button>
-          <button onclick="openCommentActionsSheet('${noteId}', '${commentPath}', '${escapeSingleQuote(comment.content || '')}', '${escapeSingleQuote(commentAuthorId)}')" class="hover:text-[#5f4b44] transition-colors" aria-label="Opciones del comentario">
+          ${isTopLevel && hasReplies ? `
+          <button onclick="toggleThreadCollapse('${commentPath}')" class="flex items-center gap-1 hover:text-[#5f4b44] transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+            <span class="text-[10px]">${replyCount} ${replyCount === 1 ? 'respuesta' : 'respuestas'}</span>
+          </button>` : ''}
+          <button onclick="openCommentActionsSheet('${noteId}', '${commentPath}', '${escapeSingleQuote(comment.content || '')}', '${escapeSingleQuote(commentAuthorId)}')" class="hover:text-[#5f4b44] transition-colors ml-auto" aria-label="Opciones del comentario">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
           </button>
         </div>
-        <div id="replies-${commentPath}" class="mt-2 space-y-2"></div>
+        ${isTopLevel && hasReplies ? `
+        <button id="collapsed-pill-${commentPath}" onclick="toggleThreadCollapse('${commentPath}')"
+          class="hidden mt-2 text-xs text-[#7a6962] bg-[#f0ebe7] border border-[#e8e1dc] rounded-full px-3 py-1 flex items-center gap-1.5 hover:bg-[#e8e1dc] transition-colors w-fit">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          Ver ${replyCount} ${replyCount === 1 ? 'respuesta' : 'respuestas'}
+        </button>` : ''}
+        <div id="replies-${commentPath}" class="mt-2 space-y-2 thread-replies-container"></div>
       </div>
     </div>
   `;
