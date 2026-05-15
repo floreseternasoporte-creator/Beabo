@@ -232,6 +232,23 @@ body {
   stroke: #EF4444;
 }
 
+/* ===== DOBLE TAP LIKE ===== */
+.dt-heart {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%) scale(0);
+  animation: dtHeartBurst 0.65s cubic-bezier(0.17,0.89,0.32,1.28) forwards;
+  filter: drop-shadow(0 0 12px rgba(239,68,68,0.55));
+}
+@keyframes dtHeartBurst {
+  0%   { transform: translate(-50%,-50%) scale(0.1); opacity: 0; }
+  25%  { opacity: 1; }
+  55%  { transform: translate(-50%,-50%) scale(1.35); opacity: 1; }
+  80%  { transform: translate(-50%,-50%) scale(1.15); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(1.25); opacity: 0; }
+}
+
 /* ===== SEGUIR RÁPIDO EN AVATAR ===== */
 .quick-follow-btn {
   position: absolute;
@@ -7719,6 +7736,7 @@ const KLIPY_GIFS = [
           feedContainer.prepend(feedFragment);
           hydrateQuickFollowButtons(feedContainer);
           applyFeedTypeFilter();
+          initFeedDoubleTapLike();
       }
     });
   }
@@ -8471,6 +8489,48 @@ function votePost(noteId, voteType) {
     });
     if (currentVote === 'up') userVoteRef.remove(); else userVoteRef.set('up');
   });
+}
+
+function showDoubleTapHeart(x, y, noteId) {
+  const heart = document.createElement('div');
+  heart.className = 'dt-heart';
+  heart.style.left = x + 'px';
+  heart.style.top = y + 'px';
+  heart.innerHTML = `<svg width="90" height="90" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="#EF4444" stroke="#EF4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  document.body.appendChild(heart);
+  setTimeout(() => heart.remove(), 700);
+
+  const btn = document.getElementById('upvote-' + noteId);
+  if (btn && !btn.classList.contains('active')) {
+    votePost(noteId, 'up');
+  }
+}
+
+function initFeedDoubleTapLike() {
+  const feed = document.getElementById('notes-feed');
+  if (!feed || feed._dtLikeReady) return;
+  feed._dtLikeReady = true;
+
+  let lastTap = 0;
+  let lastNoteId = null;
+
+  feed.addEventListener('touchend', function(e) {
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    const postEl = e.target.closest('[data-note-id]');
+    if (!postEl) return;
+
+    const noteId = postEl.dataset.noteId;
+    const now = Date.now();
+    const gap = now - lastTap;
+
+    if (gap < 320 && gap > 0 && lastNoteId === noteId) {
+      const touch = e.changedTouches[0];
+      showDoubleTapHeart(touch.clientX, touch.clientY, noteId);
+      e.preventDefault();
+    }
+    lastTap = now;
+    lastNoteId = noteId;
+  }, { passive: false });
 }
 
 async function shareRepost(note, reposterName = 'Alguien') {
