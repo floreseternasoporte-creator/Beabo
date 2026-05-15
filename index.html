@@ -1792,6 +1792,31 @@ body {
         </div>
       </div>
 
+      <!-- Sección de Tendencias -->
+      <div id="trending-section" class="hidden mx-4 my-3 bg-white border border-[#e8e1dc] rounded-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-4 pt-3 pb-2">
+          <div class="flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-[#c2410c]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+            <span class="text-xs font-bold text-[#2f1a14]">Tendencias esta semana</span>
+          </div>
+          <button onclick="document.getElementById('trending-section').classList.add('hidden')" class="text-[#b2a7a1] hover:text-[#5f4b44] transition" aria-label="Cerrar tendencias">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <!-- Tipos más usados -->
+        <div class="px-4 pb-2">
+          <p class="text-[9px] font-semibold text-[#b2a7a1] uppercase tracking-wide mb-1.5">Tipos populares</p>
+          <div id="trending-types" class="flex flex-wrap gap-1.5"></div>
+        </div>
+
+        <!-- Palabras clave -->
+        <div class="px-4 pb-3">
+          <p class="text-[9px] font-semibold text-[#b2a7a1] uppercase tracking-wide mb-1.5">Temas del momento</p>
+          <div id="trending-keywords" class="flex flex-wrap gap-1.5"></div>
+        </div>
+      </div>
+
       <div id="feed-pull-indicator" class="hidden py-1 text-center"></div><div id="notes-feed" class="space-y-0"></div>
     </section>
 
@@ -7349,6 +7374,117 @@ const KLIPY_GIFS = [
     }
   }
 
+  const TRENDING_STOP_WORDS = new Set([
+    'de','la','el','en','y','a','que','los','las','es','por','con','del','un','una',
+    'se','no','su','lo','al','me','te','le','si','ya','más','muy','hay','pero','este',
+    'esta','como','todo','todo','para','bien','qué','ser','tiene','tienen','así',
+    'hola','yo','mi','tu','él','nos','fue','han','está','son','era','también',
+    'cuando','porque','entre','sobre','hasta','desde','donde','aunque','sin','the',
+    'que','les','eso','eso','esa','esos','esas','hacer','puede','qué','cómo','has',
+  ]);
+
+  function loadTrendingTopics(notes) {
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const recentNotes = notes.filter(n => (n.timestamp || 0) >= oneWeekAgo);
+
+    if (!recentNotes.length) return;
+
+    // Contar tipos
+    const typeCounts = {};
+    recentNotes.forEach(n => {
+      if (n.postType) typeCounts[n.postType] = (typeCounts[n.postType] || 0) + 1;
+    });
+
+    // Contar palabras clave
+    const wordCounts = {};
+    recentNotes.forEach(n => {
+      if (!n.content) return;
+      const words = n.content.toLowerCase()
+        .replace(/[^a-záéíóúüñ\s]/gi, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 4 && !TRENDING_STOP_WORDS.has(w));
+      words.forEach(w => { wordCounts[w] = (wordCounts[w] || 0) + 1; });
+    });
+
+    // Tomar top tipos y top palabras
+    const topTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const topWords = Object.entries(wordCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+    if (!topTypes.length && !topWords.length) return;
+
+    const typeStyles = {
+      debate:   { bg: '#fff4e6', color: '#b45309', border: '#fcd34d', label: 'Debate' },
+      opinion:  { bg: '#f0f9ff', color: '#0369a1', border: '#7dd3fc', label: 'Opinión' },
+      pregunta: { bg: '#f5f3ff', color: '#6d28d9', border: '#c4b5fd', label: 'Pregunta' },
+      noticia:  { bg: '#f0fdf4', color: '#15803d', border: '#86efac', label: 'Noticia' },
+      humor:    { bg: '#fff1f2', color: '#be123c', border: '#fda4af', label: 'Humor' },
+    };
+
+    const typesEl = document.getElementById('trending-types');
+    const keywordsEl = document.getElementById('trending-keywords');
+    const section = document.getElementById('trending-section');
+    if (!typesEl || !keywordsEl || !section) return;
+
+    if (topTypes.length) {
+      typesEl.innerHTML = topTypes.map(([type, count]) => {
+        const s = typeStyles[type] || { bg:'#f5f4f2', color:'#5f4b44', border:'#e8e1dc', label: type };
+        const filterChip = document.querySelector(`.feed-filter-chip[data-filter="${type}"]`);
+        return `<button onclick="setFeedTypeFilter(document.querySelector('.feed-filter-chip[data-filter=\\'${type}\\']'), '${type}')"
+          style="background:${s.bg};color:${s.color};border:1px solid ${s.border}"
+          class="text-[10px] font-semibold px-2.5 py-1 rounded-full transition hover:opacity-80">
+          ${s.label} <span class="opacity-60">${count}</span>
+        </button>`;
+      }).join('');
+    } else {
+      typesEl.closest('.px-4').classList.add('hidden');
+    }
+
+    if (topWords.length) {
+      keywordsEl.innerHTML = topWords.map(([word, count]) =>
+        `<button onclick="filterFeedByKeyword('${word}')"
+          class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-[#f5f4f2] border border-[#e8e1dc] text-[#5f4b44] hover:bg-[#ece5e1] transition">
+          #${word} <span class="text-[#b2a7a1]">${count}</span>
+        </button>`
+      ).join('');
+    } else {
+      keywordsEl.closest('.px-4').classList.add('hidden');
+    }
+
+    section.classList.remove('hidden');
+  }
+
+  function filterFeedByKeyword(keyword) {
+    const posts = document.querySelectorAll('#notes-feed > div[data-post-type]');
+    const kw = keyword.toLowerCase();
+    let visibleCount = 0;
+
+    // Resetear tipo de filtro activo
+    currentFeedTypeFilter = '';
+    document.querySelectorAll('.feed-filter-chip').forEach(c => c.classList.remove('feed-filter-active'));
+    document.querySelector('.feed-filter-chip[data-filter=""]')?.classList.add('feed-filter-active');
+
+    posts.forEach(post => {
+      const text = (post.textContent || '').toLowerCase();
+      const show = text.includes(kw);
+      post.style.display = show ? '' : 'none';
+      if (show) visibleCount++;
+    });
+
+    let emptyMsg = document.getElementById('feed-filter-empty');
+    if (!visibleCount) {
+      if (!emptyMsg) {
+        emptyMsg = document.createElement('div');
+        emptyMsg.id = 'feed-filter-empty';
+        emptyMsg.className = 'py-10 text-center text-sm text-[#8d7d75]';
+        document.getElementById('notes-feed').after(emptyMsg);
+      }
+      emptyMsg.textContent = `No hay publicaciones con "#${keyword}" todavía.`;
+      emptyMsg.style.display = '';
+    } else if (emptyMsg) {
+      emptyMsg.style.display = 'none';
+    }
+  }
+
   function loadNotes(showLoader = true) {
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
@@ -7388,6 +7524,9 @@ const KLIPY_GIFS = [
         feedContainer.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-3xl p-6 text-center text-sm text-[#8d7d75] shadow-sm">Aún no hay posts. Sé la primera persona en publicar.</div>';
         return;
       }
+
+      // Cargar tendencias con los datos actuales
+      loadTrendingTopics(notes);
 
       // Actualización inteligente: solo actualizar lo necesario o reconstruir si hay cambios importantes
       const feedFragment = document.createDocumentFragment();
