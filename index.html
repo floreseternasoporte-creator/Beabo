@@ -2128,6 +2128,16 @@ body {
   </div>
 </div>
 
+<!-- REACTION PICKER FLOTANTE -->
+<div id="chat-reaction-picker" class="fixed hidden z-[80] bg-white border border-[#e8e1dc] rounded-full shadow-xl px-3 py-2 flex items-center gap-3 transition-all" style="transform:scale(0.85);opacity:0;">
+  <button onclick="submitChatReaction('❤️')" class="text-xl active:scale-75 transition hover:scale-125">❤️</button>
+  <button onclick="submitChatReaction('😂')" class="text-xl active:scale-75 transition hover:scale-125">😂</button>
+  <button onclick="submitChatReaction('😮')" class="text-xl active:scale-75 transition hover:scale-125">😮</button>
+  <button onclick="submitChatReaction('👍')" class="text-xl active:scale-75 transition hover:scale-125">👍</button>
+  <button onclick="submitChatReaction('👎')" class="text-xl active:scale-75 transition hover:scale-125">👎</button>
+  <button onclick="submitChatReaction('🔥')" class="text-xl active:scale-75 transition hover:scale-125">🔥</button>
+</div>
+
 <!-- PANEL INFO DEL CHAT -->
 <div id="chat-room-info-panel" class="fixed inset-0 bg-black/45 hidden z-[72] flex items-end justify-center p-4">
   <div class="w-full max-w-lg bg-white rounded-3xl p-5 border border-[#e8e1dc] shadow-2xl">
@@ -13464,6 +13474,8 @@ let chatTypingListener = null;
     clearChatPhotoAttachment();
     stopChatTyping();
     detachChatTypingListener();
+    detachAllMsgReactionListeners();
+    hideChatReactionPicker();
     document.getElementById('chat-room-view')?.classList.add('hidden');
     document.getElementById('chat-inbox-view')?.classList.remove('hidden');
     loadChatConversations();
@@ -13588,22 +13600,39 @@ let chatTypingListener = null;
       return d.toLocaleDateString([], { day: '2-digit', month: 'short' }) + ' · ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
-    const renderMessageNode = msg => {
+    const renderMessageNode = (msg, msgId) => {
       if (msg.expiresAt && Number(msg.expiresAt) <= Date.now()) return;
       const currentUserId = firebase.auth().currentUser?.uid || '';
       const mine = msg.senderId === currentUserId;
+      const resolvedId = msgId || msg.id || '';
       const content = msg.image
         ? `<img src="${msg.image}" class="max-w-[220px] rounded-2xl border border-[#e8e1dc]" alt="Foto enviada">`
         : `<p class="text-sm break-words">${escapeHtml(msg.text || '')}</p>`;
       const timeStr = formatMsgTime(msg.timestamp);
       const wrapper = document.createElement('div');
       wrapper.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
+      if (resolvedId) wrapper.dataset.msgId = resolvedId;
       wrapper.innerHTML = `
-        <div class="${mine ? 'bg-[#2f1a14] text-white' : 'bg-white text-[#2f1a14] border border-[#e8e1dc]'} rounded-2xl px-4 py-2 max-w-[80%]">
+        <div class="msg-bubble ${mine ? 'bg-[#2f1a14] text-white' : 'bg-white text-[#2f1a14] border border-[#e8e1dc]'} rounded-2xl px-4 py-2 max-w-[80%] select-none cursor-pointer" data-msg-id="${resolvedId}">
           ${content}
         </div>
-        ${timeStr ? `<span class="text-[10px] text-[#b4a9a4] mt-0.5 px-1">${timeStr}</span>` : ''}
+        <div class="msg-reactions flex gap-1 mt-0.5 px-1 flex-wrap ${mine ? 'justify-end' : 'justify-start'}" id="reactions-${resolvedId}"></div>
+        ${timeStr ? `<span class="text-[10px] text-[#b4a9a4] px-1">${timeStr}</span>` : ''}
       `;
+      const bubble = wrapper.querySelector('.msg-bubble');
+      if (bubble && resolvedId) {
+        let pressTimer = null;
+        const openPicker = e => {
+          e.preventDefault();
+          const rect = bubble.getBoundingClientRect();
+          showChatReactionPicker(resolvedId, rect, mine);
+        };
+        bubble.addEventListener('touchstart', () => { pressTimer = setTimeout(() => openPicker({ preventDefault: () => {} }), 500); }, { passive: true });
+        bubble.addEventListener('touchend', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
+        bubble.addEventListener('touchmove', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
+        bubble.addEventListener('dblclick', openPicker);
+      }
+      if (resolvedId) subscribeMsgReactions(conversationId, resolvedId);
       container.appendChild(wrapper);
       container.scrollTop = container.scrollHeight;
     };
@@ -13612,7 +13641,7 @@ let chatTypingListener = null;
     if (cachedMessages.length) {
       const emptyState = document.getElementById('chat-room-empty-state');
       if (emptyState) emptyState.remove();
-      cachedMessages.forEach(renderMessageNode);
+      cachedMessages.forEach(item => renderMessageNode(item, item.id));
     }
 
     const ref = firebase.database().ref('conversationMessages/' + conversationId).limitToLast(CHAT_MESSAGES_LIMIT);
@@ -13627,7 +13656,7 @@ let chatTypingListener = null;
       if (currentCache.some(item => item.id === msgId)) return;
       const nextCache = [...currentCache, { id: msgId, ...msg }].slice(-CHAT_MESSAGES_LIMIT);
       chatMessagesMemoryCache.set(conversationId, nextCache);
-      renderMessageNode(msg);
+      renderMessageNode(msg, msgId);
     };
     ref.on('child_added', callback);
     chatMessagesListener = { ref, callback };
@@ -13851,6 +13880,97 @@ let chatTypingListener = null;
         resolve(snap1.exists() && snap2.exists());
       });
     });
+  }
+
+  let activeReactionMsgId = null;
+  let msgReactionListeners = new Map();
+
+  function showChatReactionPicker(msgId, rect, mine) {
+    activeReactionMsgId = msgId;
+    const picker = document.getElementById('chat-reaction-picker');
+    if (!picker) return;
+    picker.classList.remove('hidden');
+    const pickerWidth = 260;
+    const pickerHeight = 52;
+    let left = mine ? rect.right - pickerWidth : rect.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - pickerWidth - 8));
+    const top = rect.top - pickerHeight - 8 < 0 ? rect.bottom + 8 : rect.top - pickerHeight - 8;
+    picker.style.left = left + 'px';
+    picker.style.top = top + 'px';
+    picker.style.transform = 'scale(0.85)';
+    picker.style.opacity = '0';
+    requestAnimationFrame(() => {
+      picker.style.transition = 'transform 0.18s ease, opacity 0.18s ease';
+      picker.style.transform = 'scale(1)';
+      picker.style.opacity = '1';
+    });
+    const close = e => {
+      if (!picker.contains(e.target)) hideChatReactionPicker();
+    };
+    setTimeout(() => document.addEventListener('click', close, { once: true }), 10);
+  }
+
+  function hideChatReactionPicker() {
+    const picker = document.getElementById('chat-reaction-picker');
+    if (!picker) return;
+    picker.style.transition = 'transform 0.14s ease, opacity 0.14s ease';
+    picker.style.transform = 'scale(0.85)';
+    picker.style.opacity = '0';
+    setTimeout(() => picker.classList.add('hidden'), 140);
+    activeReactionMsgId = null;
+  }
+
+  function submitChatReaction(emoji) {
+    hideChatReactionPicker();
+    const user = firebase.auth().currentUser;
+    if (!user || !activeReactionMsgId && !window._lastReactionMsgId) return;
+    const msgId = activeReactionMsgId || window._lastReactionMsgId;
+    if (!msgId || !currentChatRoomId) return;
+    const ref = firebase.database().ref('msgReactions/' + currentChatRoomId + '/' + msgId + '/' + user.uid);
+    ref.once('value').then(snap => {
+      if (snap.val() === emoji) {
+        ref.remove();
+      } else {
+        ref.set(emoji);
+      }
+    }).catch(() => {});
+  }
+
+  function subscribeMsgReactions(conversationId, msgId) {
+    if (!msgId || !conversationId) return;
+    if (msgReactionListeners.has(msgId)) return;
+    const ref = firebase.database().ref('msgReactions/' + conversationId + '/' + msgId);
+    const callback = snapshot => {
+      const data = snapshot.val() || {};
+      renderMsgReactions(msgId, data);
+    };
+    ref.on('value', callback);
+    msgReactionListeners.set(msgId, { ref, callback });
+  }
+
+  function detachAllMsgReactionListeners() {
+    msgReactionListeners.forEach(({ ref, callback }) => {
+      try { ref.off('value', callback); } catch (_) {}
+    });
+    msgReactionListeners.clear();
+  }
+
+  function renderMsgReactions(msgId, data) {
+    const container = document.getElementById('reactions-' + msgId);
+    if (!container) return;
+    const counts = {};
+    const currentUser = firebase.auth().currentUser?.uid || '';
+    let myReaction = null;
+    Object.entries(data).forEach(([uid, emoji]) => {
+      counts[emoji] = (counts[emoji] || 0) + 1;
+      if (uid === currentUser) myReaction = emoji;
+    });
+    const entries = Object.entries(counts);
+    if (!entries.length) { container.innerHTML = ''; return; }
+    container.innerHTML = entries.map(([emoji, count]) => {
+      const active = myReaction === emoji;
+      return `<button onclick="window._lastReactionMsgId='${msgId}';activeReactionMsgId='${msgId}';submitChatReaction('${emoji}')" class="inline-flex items-center gap-0.5 text-sm px-2 py-0.5 rounded-full border transition active:scale-90 ${active ? 'bg-[#f6e5dc] border-[#e4c5b2]' : 'bg-white border-[#e8e1dc]'}">${emoji}<span class="text-xs text-[#5f4b44] font-semibold">${count}</span></button>`;
+    }).join('');
   }
 
   function toggleChatEmojiPicker() {
