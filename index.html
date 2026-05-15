@@ -371,6 +371,11 @@ body {
   color: #fff !important;
   border-color: #3a241d !important;
 }
+.feed-filter-active {
+  background-color: #3a241d !important;
+  color: #fff !important;
+  border-color: #3a241d !important;
+}
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -1774,6 +1779,18 @@ body {
 
   <div class="flex-1 overflow-y-auto pb-20 px-0" id="scrollable-content">
     <section id="home-community-feed" class="mb-0">
+
+      <!-- Filtros de tipo de publicación -->
+      <div class="sticky top-0 z-10 bg-[#f5f4f2] border-b border-[#e8e1dc] px-4 py-2.5">
+        <div class="flex gap-2 overflow-x-auto no-scrollbar">
+          <button onclick="setFeedTypeFilter(this, '')" data-filter="" class="feed-filter-chip flex-shrink-0 text-xs px-3.5 py-1.5 rounded-full border border-[#e8e1dc] bg-white text-[#5f4b44] font-medium transition feed-filter-active">Todo</button>
+          <button onclick="setFeedTypeFilter(this, 'debate')" data-filter="debate" class="feed-filter-chip flex-shrink-0 text-xs px-3.5 py-1.5 rounded-full border border-[#e8e1dc] bg-white text-[#5f4b44] font-medium transition">Debate</button>
+          <button onclick="setFeedTypeFilter(this, 'opinion')" data-filter="opinion" class="feed-filter-chip flex-shrink-0 text-xs px-3.5 py-1.5 rounded-full border border-[#e8e1dc] bg-white text-[#5f4b44] font-medium transition">Opinión</button>
+          <button onclick="setFeedTypeFilter(this, 'pregunta')" data-filter="pregunta" class="feed-filter-chip flex-shrink-0 text-xs px-3.5 py-1.5 rounded-full border border-[#e8e1dc] bg-white text-[#5f4b44] font-medium transition">Pregunta</button>
+          <button onclick="setFeedTypeFilter(this, 'noticia')" data-filter="noticia" class="feed-filter-chip flex-shrink-0 text-xs px-3.5 py-1.5 rounded-full border border-[#e8e1dc] bg-white text-[#5f4b44] font-medium transition">Noticia</button>
+          <button onclick="setFeedTypeFilter(this, 'humor')" data-filter="humor" class="feed-filter-chip flex-shrink-0 text-xs px-3.5 py-1.5 rounded-full border border-[#e8e1dc] bg-white text-[#5f4b44] font-medium transition">Humor</button>
+        </div>
+      </div>
 
       <div id="feed-pull-indicator" class="hidden py-1 text-center"></div><div id="notes-feed" class="space-y-0"></div>
     </section>
@@ -7297,6 +7314,41 @@ const KLIPY_GIFS = [
     });
   }
 
+  let currentFeedTypeFilter = '';
+
+  function setFeedTypeFilter(btn, type) {
+    currentFeedTypeFilter = type;
+    document.querySelectorAll('.feed-filter-chip').forEach(c => c.classList.remove('feed-filter-active'));
+    btn.classList.add('feed-filter-active');
+    applyFeedTypeFilter();
+  }
+
+  function applyFeedTypeFilter() {
+    const posts = document.querySelectorAll('#notes-feed > div[data-post-type]');
+    let visibleCount = 0;
+    posts.forEach(post => {
+      const postType = post.dataset.postType || '';
+      const show = !currentFeedTypeFilter || postType === currentFeedTypeFilter;
+      post.style.display = show ? '' : 'none';
+      if (show) visibleCount++;
+    });
+    // Mensaje si no hay posts del tipo seleccionado
+    let emptyMsg = document.getElementById('feed-filter-empty');
+    if (!visibleCount && currentFeedTypeFilter) {
+      if (!emptyMsg) {
+        emptyMsg = document.createElement('div');
+        emptyMsg.id = 'feed-filter-empty';
+        emptyMsg.className = 'py-10 text-center text-sm text-[#8d7d75]';
+        document.getElementById('notes-feed').after(emptyMsg);
+      }
+      const labels = { debate:'Debates', opinion:'Opiniones', pregunta:'Preguntas', noticia:'Noticias', humor:'Humor' };
+      emptyMsg.textContent = `No hay publicaciones de tipo "${labels[currentFeedTypeFilter] || currentFeedTypeFilter}" todavía.`;
+      emptyMsg.style.display = '';
+    } else if (emptyMsg) {
+      emptyMsg.style.display = 'none';
+    }
+  }
+
   function loadNotes(showLoader = true) {
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
@@ -7365,6 +7417,7 @@ const KLIPY_GIFS = [
             noteElement.id = `post-${note.id}`;
             noteElement.className = 'bg-white border-b border-[#e8e1dc] rounded-none mb-0 w-full shadow-none';
             noteElement.dataset.noteId = note.id;
+            noteElement.dataset.postType = note.postType || '';
 
             const upvotes = Number(note.upvotes || 0);
             const downvotes = Number(note.downvotes || 0);
@@ -7498,6 +7551,7 @@ const KLIPY_GIFS = [
           }
           feedContainer.prepend(feedFragment);
           hydrateQuickFollowButtons(feedContainer);
+          applyFeedTypeFilter();
       }
     });
   }
