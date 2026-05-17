@@ -2638,6 +2638,9 @@ body {
 
   <!-- Overlay de filtro CSS (se aplica sobre el video) -->
   <div id="chat-camera-filter-overlay" class="absolute inset-0 pointer-events-none" style="mix-blend-mode:normal;"></div>
+  
+  <!-- Overlay de Efectos (Estrellitas) -->
+  <div id="chat-camera-effects-overlay" class="absolute inset-0 pointer-events-none overflow-hidden z-[5]"></div>
 
   <!-- Top bar -->
   <div class="relative z-10 flex items-center justify-between px-5 pt-12 pb-3">
@@ -2690,6 +2693,30 @@ body {
           <path d="M22 2L15 22l-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- MENÚ DE EFECTOS LIVE -->
+<div id="live-effects-menu" class="fixed inset-0 bg-black/40 hidden z-[100] flex items-end justify-center">
+  <div class="w-full bg-white rounded-t-3xl p-6 pb-10 animate-slide-up">
+    <div class="flex items-center justify-between mb-6">
+      <h3 class="text-lg font-bold text-[#2f1a14]">Efectos Visuales</h3>
+      <button onclick="toggleLiveEffectsMenu()" class="text-[#2f1a14] opacity-50"><i class="fas fa-times text-xl"></i></button>
+    </div>
+    <div class="flex gap-6 overflow-x-auto pb-2" style="scrollbar-width:none;">
+      <div onclick="applyLiveEffect('none')" class="flex-shrink-0 flex flex-col items-center gap-2">
+        <div class="w-16 h-16 rounded-full border-2 border-[#e8e1dc] flex items-center justify-center bg-gray-50">
+          <i class="fas fa-ban text-gray-400"></i>
+        </div>
+        <span class="text-xs font-semibold text-[#5f4b44]">Ninguno</span>
+      </div>
+      <div onclick="applyLiveEffect('stars')" class="flex-shrink-0 flex flex-col items-center gap-2">
+        <div class="w-16 h-16 rounded-full border-2 border-[#ff3040] flex items-center justify-center bg-gradient-to-br from-yellow-200 to-yellow-500 shadow-lg">
+          <i class="fas fa-star text-white"></i>
+        </div>
+        <span class="text-xs font-bold text-[#2f1a14]">Estrellas</span>
+      </div>
     </div>
   </div>
 </div>
@@ -3671,6 +3698,7 @@ body {
 <!-- VISTA: BROADCASTER (transmitiendo) -->
 <div id="live-broadcast-view">
   <video id="live-broadcast-video" class="live-fullvideo" autoplay muted playsinline></video>
+  <div id="live-broadcast-effects-overlay" class="absolute inset-0 pointer-events-none overflow-hidden z-[5]"></div>
   <div class="live-overlay-ui">
     <!-- Top bar -->
     <div class="live-top-bar">
@@ -3700,6 +3728,14 @@ body {
           </div>
           <span class="live-action-label" id="broadcast-likes-count">0</span>
         </div>
+        <div class="live-action-btn" onclick="toggleLiveEffectsMenu()">
+          <div class="live-action-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+            </svg>
+          </div>
+          <span class="live-action-label">Efectos</span>
+        </div>
         <div class="live-action-btn" onclick="shareLiveStream()">
           <div class="live-action-icon">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -3724,6 +3760,7 @@ body {
 <!-- VISTA: VIEWER (espectador) -->
 <div id="live-viewer-view">
   <video id="live-viewer-video" class="live-fullvideo" autoplay playsinline></video>
+  <div id="live-viewer-effects-overlay" class="absolute inset-0 pointer-events-none overflow-hidden z-[5]"></div>
   <div class="live-overlay-ui">
     <!-- Top bar -->
     <div class="live-top-bar">
@@ -3759,6 +3796,14 @@ body {
             </svg>
           </div>
           <span class="live-action-label" id="viewer-likes-count">0</span>
+        </div>
+        <div class="live-action-btn" onclick="toggleLiveEffectsMenu()">
+          <div class="live-action-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+            </svg>
+          </div>
+          <span class="live-action-label">Efectos</span>
         </div>
         <div class="live-action-btn" onclick="shareLiveStream()">
           <div class="live-action-icon">
@@ -15262,11 +15307,12 @@ let chatTypingListener = null;
   /* ── CÁMARA ──────────────────────────────────────────────────── */
   const CAMERA_FILTERS = [
     { id: 'normal', label: 'Normal',  css: 'none',                                          thumb: '#f5f0eb' },
+    { id: 'stars',  label: 'Estrellas', css: 'none', effect: 'stars',                        thumb: 'radial-gradient(circle, #fff 10%, #ffd700 20%, #2f1a14 70%)' },
     { id: 'noir',   label: 'Noir',    css: 'grayscale(1) contrast(1.3)',                     thumb: '#444' },
     { id: 'fade',   label: 'Fade',    css: 'brightness(1.15) contrast(0.8) saturate(0.7)',   thumb: '#d9cfc9' },
     { id: 'cálido', label: 'Cálido',  css: 'sepia(0.35) saturate(1.5) brightness(1.05)',     thumb: '#d4935a' },
     { id: 'frío',   label: 'Frío',    css: 'hue-rotate(190deg) saturate(1.2) brightness(1.05)', thumb: '#7ab8d4' },
-    { id: 'vivid',  label: 'Vívido',  css: 'saturate(2.2) contrast(1.1)',                   thumb: '#c85e9e' },
+    { id: 'vivid',  label: 'Vívido',  saturate: 2.2, contrast: 1.1, css: 'saturate(2.2) contrast(1.1)', thumb: '#c85e9e' },
     { id: 'neon',   label: 'Neon',    css: 'hue-rotate(100deg) saturate(3) brightness(0.9) contrast(1.2)', thumb: '#3de87a' },
   ];
   let _camStream = null;
@@ -15308,6 +15354,10 @@ let chatTypingListener = null;
     _camFilterIndex = idx;
     const video = document.getElementById('chat-camera-video');
     if (video) video.style.filter = CAMERA_FILTERS[idx].css;
+    
+    // Manejar efectos visuales (estrellas, etc.)
+    const effect = CAMERA_FILTERS[idx].effect;
+    toggleVisualEffect('chat-camera-effects-overlay', 'stars', effect === 'stars');
     CAMERA_FILTERS.forEach((f, i) => {
       const disc = document.getElementById('camfil-disc-' + i);
       const label = document.getElementById('camfil-label-' + i);
@@ -15377,12 +15427,45 @@ let chatTypingListener = null;
     const video = document.getElementById('chat-camera-video');
     const canvas = document.getElementById('chat-camera-canvas');
     if (!video || !canvas) return;
+    
+    // Ajustar resolución
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
-    ctx.filter = CAMERA_FILTERS[_camFilterIndex].css;
+    
+    // 1. Aplicar el filtro CSS al contexto del canvas
+    const currentFilter = CAMERA_FILTERS[_camFilterIndex];
+    ctx.filter = currentFilter.css === 'none' ? 'none' : currentFilter.css;
+    
+    // 2. Dibujar el video en el canvas
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    _camCapturedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+    
+    // 3. Si hay un efecto activo (estrellas), dibujarlo sobre la foto
+    if (currentFilter.effect === 'stars') {
+      const starsContainer = document.getElementById('chat-camera-effects-overlay');
+      if (starsContainer) {
+        const stars = starsContainer.querySelectorAll('div');
+        ctx.filter = 'none'; // Reset filter for stars
+        stars.forEach(s => {
+          const rect = s.getBoundingClientRect();
+          const videoRect = video.getBoundingClientRect();
+          
+          // Calcular posición relativa al video
+          const x = ((rect.left - videoRect.left) / videoRect.width) * canvas.width;
+          const y = ((rect.top - videoRect.top) / videoRect.height) * canvas.height;
+          const size = (parseFloat(s.style.width) / videoRect.width) * canvas.width;
+          
+          ctx.fillStyle = 'white';
+          ctx.globalAlpha = parseFloat(s.style.opacity) || 0.8;
+          ctx.beginPath();
+          ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1.0;
+      }
+    }
+    
+    _camCapturedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
     video.classList.add('hidden');
     canvas.classList.remove('hidden');
     document.getElementById('chat-camera-controls')?.classList.add('hidden');
@@ -20665,6 +20748,12 @@ async function joinLiveStream(hostUserId, hostUsername, hostAvatar) {
   // Escuchar comentarios
   _startListeningComments(hostUserId, 'viewer-comments-area');
 
+  // Escuchar efectos activos del host
+  firebase.database().ref(`liveStreams/${hostUserId}/activeEffect`).on('value', snap => {
+    const effect = snap.val() || 'none';
+    toggleVisualEffect('live-viewer-effects-overlay', 'stars', effect === 'stars');
+  });
+
   // WebRTC: escribir entrada de señal y esperar offer
   const signalRef = firebase.database().ref(`liveStreams/${hostUserId}/signals/${user.uid}`);
   await signalRef.set({ joinedAt: Date.now() });
@@ -21335,6 +21424,87 @@ async function _checkLiveBan(uid) {
   const snap = await firebase.database().ref('users/' + uid + '/liveBanned').once('value');
   return snap.exists();
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  SISTEMA DE EFECTOS VISUALES
+// ═══════════════════════════════════════════════════════════════════
+let _activeEffectsIntervals = new Map();
+
+function toggleVisualEffect(containerId, effectName, active) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  if (!active) {
+    if (_activeEffectsIntervals.has(containerId)) {
+      clearInterval(_activeEffectsIntervals.get(containerId));
+      _activeEffectsIntervals.delete(containerId);
+    }
+    container.innerHTML = '';
+    return;
+  }
+
+  if (effectName === 'stars') {
+    if (_activeEffectsIntervals.has(containerId)) return;
+    const interval = setInterval(() => {
+      const star = document.createElement('div');
+      star.style.position = 'absolute';
+      star.style.background = 'white';
+      star.style.borderRadius = '50%';
+      const size = Math.random() * 3 + 1 + 'px';
+      star.style.width = size;
+      star.style.height = size;
+      star.style.left = Math.random() * 100 + '%';
+      star.style.top = '-10px';
+      star.style.opacity = Math.random();
+      const duration = Math.random() * 3 + 2;
+      star.style.transition = `transform ${duration}s linear, opacity ${duration}s linear`;
+      container.appendChild(star);
+      
+      setTimeout(() => {
+        star.style.transform = 'translateY(100vh)';
+      }, 10);
+
+      setTimeout(() => {
+        star.remove();
+      }, duration * 1000);
+    }, 150);
+    _activeEffectsIntervals.set(containerId, interval);
+  }
+}
+
+function toggleLiveEffectsMenu() {
+  const menu = document.getElementById('live-effects-menu');
+  if (!menu) return;
+  menu.classList.toggle('hidden');
+}
+
+function applyLiveEffect(effectName) {
+  const isBroadcaster = _isLiveBroadcasting;
+  const containerId = isBroadcaster ? 'live-broadcast-effects-overlay' : 'live-viewer-effects-overlay';
+  
+  // Limpiar efectos actuales
+  toggleVisualEffect(containerId, 'stars', false);
+  
+  if (effectName !== 'none') {
+    toggleVisualEffect(containerId, effectName, true);
+  }
+  
+  toggleLiveEffectsMenu();
+  showMiniToast(effectName === 'none' ? 'Efectos desactivados' : 'Efecto aplicado');
+  
+  // Si es broadcaster, podríamos sincronizar con los viewers vía Firebase
+  if (isBroadcaster && _currentLiveStreamId) {
+    firebase.database().ref(`liveStreams/${_currentLiveStreamId}/activeEffect`).set(effectName);
+  }
+}
+
+// Escuchar cambios de efectos si somos viewers
+firebase.auth().onAuthStateChanged(user => {
+  if (user) {
+    // Esta lógica debería ir dentro de joinLiveStream, pero la ponemos aquí como referencia
+    // En una implementación real, se añadiría el listener al entrar al live.
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════════
 //  FIN SISTEMA DE TRANSMISIÓN EN VIVO
