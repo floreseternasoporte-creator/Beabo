@@ -3223,19 +3223,20 @@ body {
       <div id="comment-gif-preview" class="hidden mb-2 relative inline-block rounded-2xl overflow-hidden border border-[#e8e1dc] bg-white"><img id="selected-comment-gif-img" src="" class="max-h-40"><button onclick="removeCommentGif()" class="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
       <div id="sticker-preview-comment-input-main" class="hidden mb-2"></div>
       <div class="flex gap-2 items-center">
-        <input type="text" id="comment-input-main" placeholder="¿Qué opinas?" class="flex-1 p-2.5 border border-[#e8e1dc] bg-white text-[#2f1a14] placeholder:text-[#b2a7a1] rounded-full focus:outline-none focus:ring-2 focus:ring-[#cdbeb7]">
+        <input type="text" id="comment-input-main" maxlength="500" oninput="updateCommentCharCounter()" placeholder="¿Qué opinas?" class="flex-1 p-2.5 border border-[#e8e1dc] bg-white text-[#2f1a14] placeholder:text-[#b2a7a1] rounded-full focus:outline-none focus:ring-2 focus:ring-[#cdbeb7]">
         <button onclick="openCommentGifPicker()" class="border border-[#e8e1dc] text-[#7a6962] bg-white p-2 rounded-full flex-shrink-0 hover:text-[#5f4b44]" title="GIF">
           <div class="border border-[#7a6962] rounded text-[10px] font-bold px-1 leading-none">GIF</div>
         </button>
         <button onclick="openStickerPicker('comment-input-main')" class="border border-[#e8e1dc] text-[#7a6962] bg-white p-2 rounded-full flex-shrink-0 hover:text-[#5f4b44]" title="Stickers">
           <img src="https://i.ibb.co/rGMpvhnm/IMG-9702.png" alt="sticker" class="w-5 h-5 object-contain grayscale opacity-70 hover:grayscale-0 hover:opacity-100 transition">
         </button>
-        <button onclick="submitComment()" class="bg-[#3a241d] text-white p-2 rounded-full flex-shrink-0">
+        <button id="comment-submit-btn" onclick="submitComment()" class="bg-[#3a241d] text-white p-2 rounded-full flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
           </svg>
         </button>
       </div>
+      <div class="mt-1 text-right text-[11px] text-[#b2a7a1]"><span id="comment-char-counter">0</span>/500</div>
     </div>
 
   </div>
@@ -9694,12 +9695,30 @@ const baseStickerUrls = [
 const stickerUrls = [...baseStickerUrls];
 
 function escapeHTML(text) {
-  return text
+  return String(text || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function escapeInlineSingleQuote(value) {
+  return escapeSingleQuote(String(value || '')).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function getSafeMediaUrl(url, fallback = '') {
+  const value = String(url || '').trim();
+  if (!value) return fallback;
+  try {
+    const parsed = new URL(value, window.location.origin);
+    const isHttp = parsed.protocol === 'https:' || parsed.protocol === 'http:';
+    const isSafeDataImage = parsed.protocol === 'data:' && /^data:image\/(png|jpe?g|gif|webp);base64,/i.test(value);
+    if (!isHttp && !isSafeDataImage) return fallback;
+    return escapeHTML(value);
+  } catch (error) {
+    return fallback;
+  }
 }
 
 function extractMentionUsernames(text) {
@@ -9794,10 +9813,11 @@ function renderContentWithSticker(content, textClass = 'text-sm text-gray-800 mb
     const separatorIndex = payload.indexOf(STICKER_TEXT_SEPARATOR);
     const stickerUrl = separatorIndex >= 0 ? payload.slice(0, separatorIndex) : payload;
     const stickerText = separatorIndex >= 0 ? payload.slice(separatorIndex + STICKER_TEXT_SEPARATOR.length) : '';
+    const safeStickerUrl = getSafeMediaUrl(stickerUrl);
 
     return `
       <div class="mb-2">
-        <img src="${stickerUrl}" alt="sticker" class="w-24 h-24 object-contain rounded-lg sticker-item" data-url="${stickerUrl}">
+        ${safeStickerUrl ? `<img src="${safeStickerUrl}" alt="sticker" class="w-24 h-24 object-contain rounded-lg sticker-item" data-url="${safeStickerUrl}">` : ''}
         ${stickerText ? `<p class="${textClass} mt-2">${renderTextWithMentions(stickerText)}</p>` : ''}
       </div>
     `;
@@ -9934,7 +9954,26 @@ function selectSticker(url) {
 }
 
 // ===== ORDENAMIENTO DE COMENTARIOS (estilo Reddit) =====
+const COMMENT_MAX_LENGTH = 500;
 let currentCommentSort = 'best';
+let isSubmittingComment = false;
+
+function updateCommentCharCounter() {
+  const input = document.getElementById('comment-input-main');
+  const counter = document.getElementById('comment-char-counter');
+  if (!input || !counter) return;
+  if (input.value.length > COMMENT_MAX_LENGTH) input.value = input.value.slice(0, COMMENT_MAX_LENGTH);
+  counter.textContent = String(input.value.length);
+  counter.parentElement?.classList.toggle('text-red-500', input.value.length >= COMMENT_MAX_LENGTH);
+}
+
+function setCommentSubmitting(isSubmitting) {
+  isSubmittingComment = isSubmitting;
+  const submitBtn = document.getElementById('comment-submit-btn');
+  const input = document.getElementById('comment-input-main');
+  if (submitBtn) submitBtn.disabled = isSubmitting;
+  if (input) input.disabled = isSubmitting;
+}
 
 function setCommentSort(sort) {
   currentCommentSort = sort;
@@ -10079,6 +10118,8 @@ function closeCommentsView() {
   removeCommentGif();
   clearReplyTarget();
   clearStickerSelection('comment-input-main');
+  updateCommentCharCounter();
+  setCommentSubmitting(false);
   currentPostId = null;
   // Resetear ordenamiento al volver
   currentCommentSort = 'best';
@@ -10119,6 +10160,16 @@ function loadCommentsInView(noteId) {
       }
       renderCommentModern(noteId, commentId, comment, commentsList, 0);
     });
+
+    if (!totalCount) {
+      commentsList.innerHTML = `
+        <div class="bg-white border border-[#e8e1dc] rounded-2xl p-6 text-center text-[#7a6962]">
+          <div class="text-3xl mb-2">💬</div>
+          <p class="font-semibold text-[#5f4b44]">Todavía no hay comentarios</p>
+          <p class="text-sm mt-1">Sé el primero en opinar.</p>
+        </div>
+      `;
+    }
 
     const countEl = document.getElementById('comments-count-header');
     if (countEl) countEl.textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
@@ -10203,6 +10254,14 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   const upvotes = comment.upvotes || 0;
   const downvotes = comment.downvotes || 0;
   const score = upvotes - downvotes;
+  const safeNoteId = escapeInlineSingleQuote(noteId);
+  const safeCommentPath = escapeInlineSingleQuote(commentPath);
+  const safeCommentAuthorId = escapeInlineSingleQuote(commentAuthorId);
+  const safeAuthorName = escapeHTML(comment.authorName || 'Usuario');
+  const safeAuthorNameArg = escapeInlineSingleQuote(comment.authorName || 'Usuario');
+  const safeCommentTextArg = escapeInlineSingleQuote(comment.content || '');
+  const safeAuthorImage = getSafeMediaUrl(comment.authorImage, 'https://via.placeholder.com/150');
+  const safeGifUrl = getSafeMediaUrl(comment.gifUrl);
 
   const hasReplies = comment.replies && Object.keys(comment.replies).length > 0;
   const replyCount = hasReplies ? countVisibleReplies(comment.replies) : 0;
@@ -10220,51 +10279,51 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   }
 
   const threadLineHtml = isTopLevel && hasReplies ? `
-    <button id="thread-line-${commentPath}" onclick="toggleThreadCollapse('${commentPath}')" aria-label="Colapsar hilo"
+    <button id="thread-line-${commentPath}" onclick="toggleThreadCollapse('${safeCommentPath}')" aria-label="Colapsar hilo"
       class="absolute left-3.5 top-10 bottom-0 w-0.5 bg-[#e8e1dc] hover:bg-[#c8b8b0] active:bg-[#a89080] transition-colors rounded-full cursor-pointer" style="transform:translateX(-50%);min-height:16px;">
     </button>` : '';
 
   commentDiv.innerHTML = `
     <div class="flex items-start gap-3 relative">
       <div class="relative flex-shrink-0" style="width:2rem;">
-        <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${comment.authorName || 'Usuario'}">
-          <img src="${comment.authorImage}" class="w-full h-full object-cover">
+        <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
+          <img src="${safeAuthorImage}" class="w-full h-full object-cover">
         </button>
         ${getQuickFollowButtonMarkup(commentAuthorId, firebase.auth().currentUser?.uid || '')}
         ${threadLineHtml}
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
-          <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${commentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${comment.authorName || 'Usuario'}${commentVerifiedIcon}</button>
+          <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${commentVerifiedIcon}</button>
           <span class="text-xs text-[#b2a7a1]">${formatRelativeTime(comment.timestamp)}</span>
         </div>
         ${renderContentWithSticker(comment.content, 'text-sm text-[#2f1a14] mb-2 leading-relaxed')}
-        ${comment.gifUrl ? `<div class="mb-2 rounded-xl overflow-hidden border border-[#e8e1dc]"><img src="${comment.gifUrl}" class="w-full max-h-60 object-cover"></div>` : ''}
+        ${safeGifUrl ? `<div class="mb-2 rounded-xl overflow-hidden border border-[#e8e1dc]"><img src="${safeGifUrl}" class="w-full max-h-60 object-cover" loading="lazy"></div>` : ''}
         <div class="flex items-center gap-4 text-xs text-[#8d7d75]">
           <div class="flex items-center gap-2">
-            <button onclick="voteComment('${noteId}', '${commentPath}', 'up')" id="comment-upvote-${commentPath}" class="vote-star" aria-label="Dar Like">
+            <button onclick="voteComment('${safeNoteId}', '${safeCommentPath}', 'up')" id="comment-upvote-${commentPath}" class="vote-star" aria-label="Dar Like">
               <svg class="like-icon-sm" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
               </svg>
             </button>
             <span id="comment-score-${commentPath}" class="font-semibold ${score > 0 ? 'text-[#5f4b44]' : 'text-[#8d7d75]'}">${formatVoteScore(score)}</span>
           </div>
-          <button onclick="setReplyTarget('${commentPath}', '${escapeSingleQuote(comment.authorName || 'Usuario')}')" class="hover:text-[#5f4b44] transition-colors">
+          <button onclick="setReplyTarget('${safeCommentPath}', '${safeAuthorNameArg}')" class="hover:text-[#5f4b44] transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
             </svg>
           </button>
           ${isTopLevel && hasReplies ? `
-          <button onclick="toggleThreadCollapse('${commentPath}')" class="flex items-center gap-1 hover:text-[#5f4b44] transition-colors">
+          <button onclick="toggleThreadCollapse('${safeCommentPath}')" class="flex items-center gap-1 hover:text-[#5f4b44] transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
             <span class="text-[10px]">${replyCount} ${replyCount === 1 ? 'respuesta' : 'respuestas'}</span>
           </button>` : ''}
-          <button onclick="openCommentActionsSheet('${noteId}', '${commentPath}', '${escapeSingleQuote(comment.content || '')}', '${escapeSingleQuote(commentAuthorId)}')" class="hover:text-[#5f4b44] transition-colors ml-auto" aria-label="Opciones del comentario">
+          <button onclick="openCommentActionsSheet('${safeNoteId}', '${safeCommentPath}', '${safeCommentTextArg}', '${safeCommentAuthorId}')" class="hover:text-[#5f4b44] transition-colors ml-auto" aria-label="Opciones del comentario">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
           </button>
         </div>
         ${isTopLevel && hasReplies ? `
-        <button id="collapsed-pill-${commentPath}" onclick="toggleThreadCollapse('${commentPath}')"
+        <button id="collapsed-pill-${commentPath}" onclick="toggleThreadCollapse('${safeCommentPath}')"
           class="hidden mt-2 text-xs text-[#7a6962] bg-[#f0ebe7] border border-[#e8e1dc] rounded-full px-3 py-1 flex items-center gap-1.5 hover:bg-[#e8e1dc] transition-colors w-fit">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           Ver ${replyCount} ${replyCount === 1 ? 'respuesta' : 'respuestas'}
@@ -10280,8 +10339,10 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   // Cargar respuestas
   if (comment.replies) {
     const repliesContainer = document.getElementById(`replies-${commentPath}`);
-    Object.keys(comment.replies).forEach(replyId => {
-      renderCommentModern(noteId, replyId, comment.replies[replyId], repliesContainer, level + 1, commentId, commentPath);
+    const replyEntries = Object.entries(comment.replies || {})
+      .filter(([, reply]) => !isAccountBlockedForCurrentUser(reply?.authorId || ''));
+    sortCommentEntries(replyEntries).forEach(([replyId, reply]) => {
+      renderCommentModern(noteId, replyId, reply, repliesContainer, level + 1, commentId, commentPath);
     });
   }
 
@@ -10301,7 +10362,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
 
 // Enviar comentario principal
 function submitComment() {
-  if (!currentPostId) return;
+  if (!currentPostId || isSubmittingComment) return;
 
   const user = firebase.auth().currentUser;
   if (!user) {
@@ -10310,10 +10371,24 @@ function submitComment() {
   }
 
   const input = document.getElementById('comment-input-main');
+  if (!input) return;
+
+  updateCommentCharCounter();
+  const visibleText = input.value.trim();
+  if (visibleText.length > COMMENT_MAX_LENGTH) {
+    alert(`Tu comentario no puede superar ${COMMENT_MAX_LENGTH} caracteres.`);
+    return;
+  }
+
+  const noteId = currentPostId;
+  const targetReply = replyTarget ? { ...replyTarget } : null;
   const resolvedContent = resolveCommentContent('comment-input-main');
   const hasSticker = typeof resolvedContent === 'string' && resolvedContent.startsWith(STICKER_PREFIX);
+  const gifUrl = selectedCommentGif;
 
-  if (!resolvedContent && !selectedCommentGif) return;
+  if (!resolvedContent && !gifUrl) return;
+
+  setCommentSubmitting(true);
 
   firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
     const userData = userSnap.val() || {};
@@ -10330,7 +10405,7 @@ function submitComment() {
       downvotes: 0
     };
 
-    if (selectedCommentGif) payload.gifUrl = selectedCommentGif;
+    if (gifUrl) payload.gifUrl = gifUrl;
 
     const hasGif = Boolean(payload.gifUrl);
 
@@ -10348,17 +10423,19 @@ function submitComment() {
       input.value = '';
       clearStickerSelection('comment-input-main');
       removeCommentGif();
+      updateCommentCharCounter();
     };
 
-    if (replyTarget && replyTarget.commentId) {
-      Promise.all([
-        firebase.database().ref('communityNotes/' + currentPostId).once('value'),
-        firebase.database().ref('postComments/' + currentPostId + '/' + replyTarget.commentId).once('value')
+    if (targetReply && targetReply.commentId) {
+      return Promise.all([
+        firebase.database().ref('communityNotes/' + noteId).once('value'),
+        firebase.database().ref('postComments/' + noteId + '/' + targetReply.commentId).once('value')
       ]).then(([noteSnap, parentCommentSnap]) => {
         const note = noteSnap.val() || {};
         const parentComment = parentCommentSnap.val() || {};
+        if (!parentCommentSnap.exists()) throw new Error('El comentario al que respondes ya no existe');
 
-        return firebase.database().ref('postComments/' + currentPostId + '/' + replyTarget.commentId + '/replies').push(payload).then(() => {
+        return firebase.database().ref('postComments/' + noteId + '/' + targetReply.commentId + '/replies').push(payload).then(() => {
           const notificationJobs = [];
 
           if (note.authorId && note.authorId !== user.uid) {
@@ -10378,19 +10455,15 @@ function submitComment() {
           return Promise.all(notificationJobs);
         });
       }).then(() => {
-        updateCommentsCount(currentPostId);
+        updateCommentsCount(noteId);
         clearCommentInput();
         clearReplyTarget();
-      }).catch(error => {
-        console.error('Error al enviar respuesta:', error);
-        alert('No se pudo enviar tu respuesta. Inténtalo de nuevo.');
       });
-      return;
     }
 
-    firebase.database().ref('communityNotes/' + currentPostId).once('value').then(noteSnap => {
+    return firebase.database().ref('communityNotes/' + noteId).once('value').then(noteSnap => {
       const note = noteSnap.val() || {};
-      return firebase.database().ref('postComments/' + currentPostId).push(payload).then(() => {
+      return firebase.database().ref('postComments/' + noteId).push(payload).then(() => {
         const notifications = [];
         if (note.authorId && note.authorId !== user.uid) {
           notifications.push(addNotification(note.authorId, buildPostMessage(), typeForMedia));
@@ -10399,15 +10472,16 @@ function submitComment() {
         return Promise.all(notifications);
       });
     }).then(() => {
-      updateCommentsCount(currentPostId);
+      updateCommentsCount(noteId);
       clearCommentInput();
-    }).catch(error => {
-      console.error('Error al comentar:', error);
-      alert('No se pudo enviar tu comentario. Inténtalo de nuevo.');
     });
+  }).catch(error => {
+    console.error(targetReply ? 'Error al enviar respuesta:' : 'Error al comentar:', error);
+    alert(targetReply ? 'No se pudo enviar tu respuesta. Inténtalo de nuevo.' : 'No se pudo enviar tu comentario. Inténtalo de nuevo.');
+  }).finally(() => {
+    setCommentSubmitting(false);
   });
 }
-
 // Actualizar contador de comentarios (incluyendo respuestas)
 function updateCommentsCount(noteId) {
   firebase.database().ref('postComments/' + noteId).once('value').then(snapshot => {
@@ -10516,10 +10590,10 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
   const canDelete = !!user && !!commentAuthorId && user.uid === commentAuthorId;
   const canBlock = !!user && !!commentAuthorId && user.uid !== commentAuthorId;
   const canReport = !!user && (!commentAuthorId || user.uid !== commentAuthorId);
-  const safeNoteId = escapeSingleQuote(noteId);
-  const safeCommentPath = escapeSingleQuote(commentPath);
-  const safeCommentText = escapeSingleQuote(commentText || '');
-  const safeAuthorId = escapeSingleQuote(commentAuthorId || '');
+  const safeNoteId = escapeInlineSingleQuote(noteId);
+  const safeCommentPath = escapeInlineSingleQuote(commentPath);
+  const safeCommentText = escapeInlineSingleQuote(commentText || '');
+  const safeAuthorId = escapeInlineSingleQuote(commentAuthorId || '');
 
   content.innerHTML = `
     <div class="comment-action-item" onclick="copyCommentText('${safeCommentText}')">
@@ -10590,9 +10664,17 @@ function deleteComment(noteId, commentPath) {
   if (!user) return;
 
   const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
-  commentRef.remove().then(() => {
+  commentRef.once('value').then(snapshot => {
+    const comment = snapshot.val();
+    if (!comment) throw new Error('Comentario no encontrado');
+    if (comment.authorId !== user.uid) throw new Error('No tienes permiso para eliminar este comentario');
+    return commentRef.remove();
+  }).then(() => {
     closeCommentActionsSheet();
-    loadCommentsInView(noteId);
+    updateCommentsCount(noteId);
+  }).catch(error => {
+    console.error('Error al eliminar comentario:', error);
+    alert(error.message || 'No se pudo eliminar el comentario.');
   });
 }
 
