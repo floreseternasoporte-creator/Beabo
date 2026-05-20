@@ -1568,7 +1568,7 @@ body {
     /* comentarios: solo mitad inferior izquierda */
     .live-comments-area {
       flex: 1;
-      max-height: 42vh;
+      max-height: 50vh;
       overflow: hidden;
       display: flex; flex-direction: column; justify-content: flex-end; gap: 5px;
       padding-bottom: 10px;
@@ -20979,10 +20979,44 @@ function triggerLiveHeart(isHost) {
 // Compartir transmisión
 function shareLiveStream() {
   const url = window.location.href;
-  if (navigator.share) {
-    navigator.share({ title: '¡Estoy en vivo en Drex!', url }).catch(() => {});
+  const shareText = '¡Estoy en vivo en Drex! 🔴';
+  
+  // Detectar si es mobile
+  const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+  
+  // Si es mobile, mostrar opciones de compartir
+  if (isMobile && navigator.share) {
+    navigator.share({ 
+      title: shareText,
+      text: shareText,
+      url: url 
+    }).catch(() => {
+      // Fallback: copiar al portapapeles
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(shareText + '\n' + url).then(() => showMiniToast('Enlace copiado'));
+      }
+    });
   } else if (navigator.clipboard) {
-    navigator.clipboard.writeText(url).then(() => showMiniToast('Enlace copiado'));
+    // Desktop: copiar enlace
+    navigator.clipboard.writeText(shareText + '\n' + url).then(() => showMiniToast('Enlace copiado al portapapeles'));
+  }
+  
+  // Registrar compartición
+  recordLiveShare('live_stream');
+}
+
+// Registrar comparticiones de live
+function recordLiveShare(type) {
+  try {
+    const shares = JSON.parse(localStorage.getItem('beabo_live_shares') || '[]');
+    shares.push({
+      type: type,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent
+    });
+    localStorage.setItem('beabo_live_shares', JSON.stringify(shares.slice(-100)));
+  } catch (e) {
+    console.error('Error registrando compartición:', e);
   }
 }
 
