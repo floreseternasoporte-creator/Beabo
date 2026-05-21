@@ -1592,6 +1592,14 @@ body {
       line-height: 1.4; word-break: break-word;
     }
     .live-comment-text strong { font-weight: 800; margin-right: 4px; color: #fff; }
+    .live-pinned-comment {
+      margin-top: 8px; padding: 8px 10px; border-radius: 12px;
+      background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.2);
+      color: #fff; font-size: 12px; font-weight: 700; display: none; max-width: 95%;
+      backdrop-filter: blur(2px);
+    }
+    .live-pinned-comment.show { display: block; }
+    .live-pinned-comment .tag { color: #ffd56a; margin-right: 6px; font-size: 11px; font-weight: 900; }
 
     /* ─── BOTONES LADO DERECHO (TikTok style) ─── */
     .live-right-actions {
@@ -3721,6 +3729,7 @@ body {
     <div class="live-bottom-zone">
       <!-- Comentarios (izquierda, mitad inferior) -->
       <div class="live-comments-area" id="broadcast-comments-area"></div>
+      <div id="broadcast-pinned-comment" class="live-pinned-comment"></div>
       <!-- Botones lado derecho -->
       <div class="live-right-actions">
         <div class="live-action-btn" onclick="triggerLiveHeart(true)">
@@ -3747,6 +3756,10 @@ body {
             </svg>
           </div>
           <span class="live-action-label">Compartir</span>
+        </div>
+        <div class="live-action-btn" onclick="togglePinLatestComment()">
+          <div class="live-action-icon"><i class="fas fa-thumbtack"></i></div>
+          <span class="live-action-label">Fijar</span>
         </div>
       </div>
     </div>
@@ -3790,6 +3803,7 @@ body {
     <div class="live-bottom-zone">
       <!-- Comentarios (izquierda, mitad inferior) -->
       <div class="live-comments-area" id="viewer-comments-area"></div>
+      <div id="viewer-pinned-comment" class="live-pinned-comment"></div>
       <!-- Botones lado derecho -->
       <div class="live-right-actions">
         <div class="live-action-btn" onclick="triggerLiveHeart(false)" id="viewer-heart-btn">
@@ -20457,6 +20471,8 @@ let _liveCommentListenerRef = null;
 let _liveViewCountRef       = null;
 let _liveViewerPresenceRef  = null;
 let _liveBroadcastViewerListenerRef = null;
+let _livePinnedRef          = null;
+let _lastLiveCommentPayload = null;
 let _activeLiveStreamsRef    = null;
 let _activeLiveStreamsCache  = {};    // uid → {username, profileImage, title}
 
@@ -20614,9 +20630,11 @@ async function _doStartLiveBroadcast(title) {
 
   // Escuchar comentarios (incluye likes)
   _startListeningComments(user.uid, 'broadcast-comments-area');
+  _startListeningPinnedComment(user.uid, true);
 
   // Resetear likes al iniciar nueva transmisión
   firebase.database().ref('liveStreams/' + user.uid + '/likes').set(0).catch(() => {});
+  firebase.database().ref('liveStreams/' + user.uid + '/pinnedComment').remove().catch(() => {});
 
   // Iniciar moderación automática por voz
   _startSpeechModeration();
@@ -20646,6 +20664,7 @@ async function endLiveBroadcast() {
   if (_liveBroadcastViewerListenerRef) { _liveBroadcastViewerListenerRef.off(); _liveBroadcastViewerListenerRef = null; }
   if (_liveViewCountRef) { _liveViewCountRef.off(); _liveViewCountRef = null; }
   if (_liveLikesRef) { _liveLikesRef.off(); _liveLikesRef = null; }
+  _stopListeningPinnedComment();
   _stopListeningComments();
 
   // Detener moderación por voz
@@ -20755,6 +20774,7 @@ async function joinLiveStream(hostUserId, hostUsername, hostAvatar) {
 
   // Escuchar comentarios
   _startListeningComments(hostUserId, 'viewer-comments-area');
+  _startListeningPinnedComment(hostUserId, false);
 
   // Escuchar efectos activos del host
   firebase.database().ref(`liveStreams/${hostUserId}/activeEffect`).on('value', snap => {
@@ -20827,6 +20847,7 @@ async function leaveLiveStream() {
   }
   if (_liveViewCountRef) { _liveViewCountRef.off(); _liveViewCountRef = null; }
   if (_liveLikesRef) { _liveLikesRef.off(); _liveLikesRef = null; }
+  _stopListeningPinnedComment();
   _stopListeningComments();
 
   if (hostUserId) {
@@ -21043,6 +21064,53 @@ function _appendLiveComment(areaId, username, text, avatarUrl, isOwn) {
   area.scrollTop = area.scrollHeight;
   // Limitar a 60 burbujas
   while (area.children.length > 60) area.removeChild(area.firstChild);
+  _lastLiveCommentPayload = { username, text };
+}
+
+function _renderPinnedComment(data, isHost) {
+  const targetId = isHost ? 'broadcast-pinned-comment' : 'viewer-pinned-comment';
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  if (!data || !data.text) {
+    el.classList.remove('show');
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = `<span class="tag">📌 FIJADO</span><strong>@${escapeHtml(data.username || 'usuario')}:</strong> ${escapeHtml(data.text)}`;
+  el.classList.add('show');
+}
+
+function _startListeningPinnedComment(streamUserId, isHost) {
+  _stopListeningPinnedComment();
+  _livePinnedRef = firebase.database().ref('liveStreams/' + streamUserId + '/pinnedComment');
+  _livePinnedRef.on('value', snap => _renderPinnedComment(snap.val(), isHost));
+}
+
+function _stopListeningPinnedComment() {
+  if (_livePinnedRef) { _livePinnedRef.off(); _livePinnedRef = null; }
+  _renderPinnedComment(null, true);
+  _renderPinnedComment(null, false);
+}
+
+async function togglePinLatestComment() {
+  if (!_isLiveBroadcasting || !_currentLiveStreamId) return;
+  const ref = firebase.database().ref('liveStreams/' + _currentLiveStreamId + '/pinnedComment');
+  const current = (await ref.once('value')).val();
+  if (current) {
+    await ref.remove().catch(() => {});
+    showMiniToast('Comentario desfijado');
+    return;
+  }
+  if (!_lastLiveCommentPayload || !_lastLiveCommentPayload.text) {
+    showMiniToast('Aún no hay comentarios para fijar');
+    return;
+  }
+  await ref.set({
+    username: _lastLiveCommentPayload.username || 'usuario',
+    text: _lastLiveCommentPayload.text,
+    ts: Date.now()
+  }).catch(() => {});
+  showMiniToast('Comentario fijado');
 }
 
 // Enviar con Enter
