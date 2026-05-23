@@ -2837,13 +2837,11 @@ body {
       <img id="note-author-image-fullscreen" src="https://via.placeholder.com/150" class="w-12 h-12 rounded-full object-cover flex-shrink-0">
       <div class="flex flex-col gap-0.5">
         <span id="note-author-name-fullscreen" class="text-base font-bold text-[#2f1a14] leading-none">Tú</span>
-        <button id="note-audience-trigger" type="button" onclick="openNoteAudienceSelector()" class="inline-flex items-center gap-1.5 text-xs text-[#7a6962] font-semibold py-1 pr-2 rounded-lg active:bg-[#ece5e1] transition-colors w-fit">
-          <span id="note-audience-icon" class="inline-flex">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-[#7a6962]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1 13h4m-2-2v2m5-12h4m-2-2v2M3 19h12m5-2v2M3 12h4m-2-2v2m5-2h4m-2-2v2"/></svg>
-          </span>
-          <span id="note-audience-label">Todo el mundo</span>
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-[#8d7d75]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-        </button>
+        <select id="note-audience-selector" onchange="selectNoteAudience(this.value)" class="text-xs text-[#7a6962] font-semibold bg-transparent border-none focus:outline-none appearance-none cursor-pointer pr-4" style="background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%238d7d75%22 stroke-width=%222%22%3E%3Cpath stroke-linecap=%22round%22 stroke-linejoin=%22round%22 d=%22M19 9l-7 7-7-7%22/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right center;background-size:12px;">
+          <option value="public">Todo el mundo</option>
+          <option value="following">Personas que sigo</option>
+          <option value="private">Solo yo</option>
+        </select>
       </div>
       <!-- elementos hidden para compatibilidad con funciones existentes -->
       <input id="note-group-search-input" type="text" class="hidden" readonly>
@@ -3060,13 +3058,7 @@ body {
   </div>
 </div>
 
-<div id="note-audience-overlay" class="fixed inset-0 bg-black/40 hidden z-[88]" onclick="closeNoteAudienceSelector()"></div>
-<div id="note-audience-sheet" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl border border-[#e8e1dc] hidden z-[89] transform translate-y-full transition-transform duration-300">
-  <div class="px-4 py-3 border-b border-[#f0e9e4]">
-    <p class="text-sm font-bold text-[#2f1a14]">Quién puede ver esta publicación</p>
-  </div>
-  <div id="note-audience-options" class="p-3 space-y-1"></div>
-</div>
+<!-- El selector de audiencia ahora es nativo y está ubicado junto al nombre del autor -->
 
 <!-- VISTA DE COMENTARIOS -->
 <div id="comments-view" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] hidden z-[80]">
@@ -6508,75 +6500,15 @@ const KLIPY_GIFS = [
   ];
   let currentNoteAudience = 'public';
 
-  function getAudienceIconMarkup(audienceId) {
-    if (audienceId === 'following') {
-      return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#6f5c54]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-1a4 4 0 00-5-3.87M17 20H7m10 0v-1c0-.65-.1-1.28-.3-1.87M7 20H2v-1a4 4 0 015-3.87M7 20v-1c0-.65.1-1.28.3-1.87m0 0a5 5 0 019.4 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`;
-    }
-    if (audienceId === 'private') {
-      return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#6f5c54]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c-1.1 0-2 .9-2 2v2a2 2 0 104 0v-2c0-1.1-.9-2-2-2zm6 2v6a2 2 0 01-2 2H8a2 2 0 01-2-2v-6a2 2 0 012-2h1V9a3 3 0 116 0v2h1a2 2 0 012 2zm-7-2h2V9a1 1 0 10-2 0v2z"/></svg>`;
-    }
-    return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#6f5c54]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1 13h4m-2-2v2m5-12h4m-2-2v2M3 19h12m5-2v2M3 12h4m-2-2v2m5-2h4m-2-2v2"/></svg>`;
-  }
-
   function getCurrentAudienceConfig() {
     return NOTE_AUDIENCE_CONFIG.find(a => a.id === currentNoteAudience) || NOTE_AUDIENCE_CONFIG[0];
-  }
-
-  function updateNoteAudienceTrigger() {
-    const cfg = getCurrentAudienceConfig();
-    const labelEl = document.getElementById('note-audience-label');
-    const iconEl = document.getElementById('note-audience-icon');
-    if (labelEl) labelEl.textContent = cfg.label;
-    if (iconEl) iconEl.innerHTML = getAudienceIconMarkup(cfg.id);
-  }
-
-  function renderNoteAudienceOptions() {
-    const container = document.getElementById('note-audience-options');
-    if (!container) return;
-    container.innerHTML = NOTE_AUDIENCE_CONFIG.map(option => {
-      const selected = option.id === currentNoteAudience;
-      return `
-        <button type="button" onclick="selectNoteAudience('${option.id}')" class="w-full text-left px-3 py-3 rounded-2xl border transition ${selected ? 'bg-[#f8f4f1] border-[#d7c9c1]' : 'bg-white border-transparent hover:bg-[#faf7f5]'}">
-          <div class="flex items-start gap-3">
-            <span class="mt-0.5 flex-shrink-0">${getAudienceIconMarkup(option.id)}</span>
-            <span class="flex-1 min-w-0">
-              <span class="block text-sm font-semibold text-[#2f1a14]">${option.label}</span>
-              <span class="block mt-0.5 text-xs text-[#8d7d75] leading-relaxed">${option.description}</span>
-            </span>
-            ${selected ? '<span class="text-[#6f5c54] mt-1"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3.25-3.25a1 1 0 111.414-1.414l2.543 2.543 6.543-6.543a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>' : ''}
-          </div>
-        </button>
-      `;
-    }).join('');
-  }
-
-  function openNoteAudienceSelector() {
-    renderNoteAudienceOptions();
-    const overlay = document.getElementById('note-audience-overlay');
-    const sheet = document.getElementById('note-audience-sheet');
-    if (!overlay || !sheet) return;
-    overlay.classList.remove('hidden');
-    sheet.classList.remove('hidden');
-    requestAnimationFrame(() => sheet.classList.remove('translate-y-full'));
-  }
-
-  function closeNoteAudienceSelector() {
-    const overlay = document.getElementById('note-audience-overlay');
-    const sheet = document.getElementById('note-audience-sheet');
-    if (!overlay || !sheet) return;
-    sheet.classList.add('translate-y-full');
-    setTimeout(() => {
-      overlay.classList.add('hidden');
-      sheet.classList.add('hidden');
-    }, 220);
   }
 
   function selectNoteAudience(audienceId) {
     if (!NOTE_AUDIENCE_CONFIG.some(a => a.id === audienceId)) return;
     currentNoteAudience = audienceId;
-    updateNoteAudienceTrigger();
-    renderNoteAudienceOptions();
-    closeNoteAudienceSelector();
+    const selector = document.getElementById('note-audience-selector');
+    if (selector) selector.value = audienceId;
   }
 
   function getCurrentNoteMaxLength() {
@@ -6648,8 +6580,7 @@ function onNoteFormatChange(format) {
     const formatSelector = document.getElementById('note-format-selector');
     if (formatSelector) formatSelector.value = 'post';
     onNoteFormatChange('post');
-    currentNoteAudience = 'public';
-    updateNoteAudienceTrigger();
+    selectNoteAudience('public');
     document.getElementById('image-preview-fullscreen').classList.add('hidden');
     document.getElementById('preview-grid-fullscreen').innerHTML = '';
     document.getElementById('image-preview-counter-fullscreen').textContent = '';
