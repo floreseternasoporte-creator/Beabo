@@ -2837,7 +2837,13 @@ body {
       <img id="note-author-image-fullscreen" src="https://via.placeholder.com/150" class="w-12 h-12 rounded-full object-cover flex-shrink-0">
       <div class="flex flex-col gap-0.5">
         <span id="note-author-name-fullscreen" class="text-base font-bold text-[#2f1a14] leading-none">Tú</span>
-        <span class="text-xs text-[#8d7d75]">Todo el mundo</span>
+        <button id="note-audience-trigger" type="button" onclick="openNoteAudienceSelector()" class="inline-flex items-center gap-1.5 text-xs text-[#7a6962] font-semibold py-1 pr-2 rounded-lg active:bg-[#ece5e1] transition-colors w-fit">
+          <span id="note-audience-icon" class="inline-flex">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-[#7a6962]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1 13h4m-2-2v2m5-12h4m-2-2v2M3 19h12m5-2v2M3 12h4m-2-2v2m5-2h4m-2-2v2"/></svg>
+          </span>
+          <span id="note-audience-label">Todo el mundo</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-[#8d7d75]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
       </div>
       <!-- elementos hidden para compatibilidad con funciones existentes -->
       <input id="note-group-search-input" type="text" class="hidden" readonly>
@@ -2928,7 +2934,7 @@ body {
 
     <!-- Barra de herramientas -->
     <div class="border-t border-[#e6e2df] bg-[#f5f4f2] px-2 py-2 flex-shrink-0">
-      <div class="flex items-center">
+      <div id="note-tools-row" class="flex items-center">
         <label id="tool-photo" class="cursor-pointer flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white" title="Foto">
           <input type="file" id="note-image-fullscreen" accept="image/*" class="hidden" onchange="handleNoteImagePreviewFullscreen(event)" multiple>
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#5f4b44]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -2956,7 +2962,7 @@ body {
           <span id="location-badge" class="hidden absolute top-1 right-3 bg-[#6f5c54] text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center">1</span>
         </button>
 
-        <div class="flex-1 flex justify-end pr-2">
+        <div id="note-char-counter-wrap" class="flex-1 flex justify-end pr-2">
           <div id="char-counter-fullscreen" class="text-sm text-[#b2a7a1] font-semibold">3000</div>
         </div>
       </div>
@@ -3039,6 +3045,14 @@ body {
       <div id="location-results" class="mt-3 space-y-2"></div>
     </div>
   </div>
+</div>
+
+<div id="note-audience-overlay" class="fixed inset-0 bg-black/40 hidden z-[88]" onclick="closeNoteAudienceSelector()"></div>
+<div id="note-audience-sheet" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl border border-[#e8e1dc] hidden z-[89] transform translate-y-full transition-transform duration-300">
+  <div class="px-4 py-3 border-b border-[#f0e9e4]">
+    <p class="text-sm font-bold text-[#2f1a14]">Quién puede ver esta publicación</p>
+  </div>
+  <div id="note-audience-options" class="p-3 space-y-1"></div>
 </div>
 
 <!-- VISTA DE COMENTARIOS -->
@@ -6474,6 +6488,83 @@ const KLIPY_GIFS = [
 
   // Nueva función para abrir la pantalla completa de creación de notas
   let currentNoteFormat = 'post';
+  const NOTE_AUDIENCE_CONFIG = [
+    { id: 'public', label: 'Todo el mundo', description: 'La publicación será visible para todos los usuarios de la plataforma.' },
+    { id: 'following', label: 'Personas que sigo', description: 'Solo las personas que sigo podrán ver la publicación.' },
+    { id: 'private', label: 'Solo yo', description: 'Solo el autor podrá ver la publicación.' }
+  ];
+  let currentNoteAudience = 'public';
+
+  function getAudienceIconMarkup(audienceId) {
+    if (audienceId === 'following') {
+      return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#6f5c54]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-1a4 4 0 00-5-3.87M17 20H7m10 0v-1c0-.65-.1-1.28-.3-1.87M7 20H2v-1a4 4 0 015-3.87M7 20v-1c0-.65.1-1.28.3-1.87m0 0a5 5 0 019.4 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`;
+    }
+    if (audienceId === 'private') {
+      return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#6f5c54]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c-1.1 0-2 .9-2 2v2a2 2 0 104 0v-2c0-1.1-.9-2-2-2zm6 2v6a2 2 0 01-2 2H8a2 2 0 01-2-2v-6a2 2 0 012-2h1V9a3 3 0 116 0v2h1a2 2 0 012 2zm-7-2h2V9a1 1 0 10-2 0v2z"/></svg>`;
+    }
+    return `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#6f5c54]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1 13h4m-2-2v2m5-12h4m-2-2v2M3 19h12m5-2v2M3 12h4m-2-2v2m5-2h4m-2-2v2"/></svg>`;
+  }
+
+  function getCurrentAudienceConfig() {
+    return NOTE_AUDIENCE_CONFIG.find(a => a.id === currentNoteAudience) || NOTE_AUDIENCE_CONFIG[0];
+  }
+
+  function updateNoteAudienceTrigger() {
+    const cfg = getCurrentAudienceConfig();
+    const labelEl = document.getElementById('note-audience-label');
+    const iconEl = document.getElementById('note-audience-icon');
+    if (labelEl) labelEl.textContent = cfg.label;
+    if (iconEl) iconEl.innerHTML = getAudienceIconMarkup(cfg.id);
+  }
+
+  function renderNoteAudienceOptions() {
+    const container = document.getElementById('note-audience-options');
+    if (!container) return;
+    container.innerHTML = NOTE_AUDIENCE_CONFIG.map(option => {
+      const selected = option.id === currentNoteAudience;
+      return `
+        <button type="button" onclick="selectNoteAudience('${option.id}')" class="w-full text-left px-3 py-3 rounded-2xl border transition ${selected ? 'bg-[#f8f4f1] border-[#d7c9c1]' : 'bg-white border-transparent hover:bg-[#faf7f5]'}">
+          <div class="flex items-start gap-3">
+            <span class="mt-0.5 flex-shrink-0">${getAudienceIconMarkup(option.id)}</span>
+            <span class="flex-1 min-w-0">
+              <span class="block text-sm font-semibold text-[#2f1a14]">${option.label}</span>
+              <span class="block mt-0.5 text-xs text-[#8d7d75] leading-relaxed">${option.description}</span>
+            </span>
+            ${selected ? '<span class="text-[#6f5c54] mt-1"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3.25-3.25a1 1 0 111.414-1.414l2.543 2.543 6.543-6.543a1 1 0 011.414 0z" clip-rule="evenodd"/></svg></span>' : ''}
+          </div>
+        </button>
+      `;
+    }).join('');
+  }
+
+  function openNoteAudienceSelector() {
+    renderNoteAudienceOptions();
+    const overlay = document.getElementById('note-audience-overlay');
+    const sheet = document.getElementById('note-audience-sheet');
+    if (!overlay || !sheet) return;
+    overlay.classList.remove('hidden');
+    sheet.classList.remove('hidden');
+    requestAnimationFrame(() => sheet.classList.remove('translate-y-full'));
+  }
+
+  function closeNoteAudienceSelector() {
+    const overlay = document.getElementById('note-audience-overlay');
+    const sheet = document.getElementById('note-audience-sheet');
+    if (!overlay || !sheet) return;
+    sheet.classList.add('translate-y-full');
+    setTimeout(() => {
+      overlay.classList.add('hidden');
+      sheet.classList.add('hidden');
+    }, 220);
+  }
+
+  function selectNoteAudience(audienceId) {
+    if (!NOTE_AUDIENCE_CONFIG.some(a => a.id === audienceId)) return;
+    currentNoteAudience = audienceId;
+    updateNoteAudienceTrigger();
+    renderNoteAudienceOptions();
+    closeNoteAudienceSelector();
+  }
 
   function getCurrentNoteMaxLength() {
     return currentNoteFormat === 'articulo' ? 3000 : 200;
@@ -6494,11 +6585,30 @@ const KLIPY_GIFS = [
 
   function applyToolsByNoteFormat() {
     const isArticle = currentNoteFormat === 'articulo';
+    const toolsRow = document.getElementById('note-tools-row');
+    const counterWrap = document.getElementById('note-char-counter-wrap');
+    const toolIds = ['tool-photo', 'tool-gif', 'tool-sticker', 'tool-poll', 'tool-location'];
+
     setToolVisible('tool-photo', true);
     setToolVisible('tool-location', true);
     setToolVisible('tool-gif', !isArticle);
     setToolVisible('tool-sticker', !isArticle);
     setToolVisible('tool-poll', !isArticle);
+
+    toolIds.forEach(id => {
+      const tool = document.getElementById(id);
+      if (!tool) return;
+      tool.classList.toggle('flex-1', !isArticle);
+      tool.classList.toggle('w-16', isArticle);
+    });
+
+    if (toolsRow) toolsRow.classList.toggle('gap-1', isArticle);
+    if (counterWrap) {
+      counterWrap.classList.toggle('ml-auto', isArticle);
+      counterWrap.classList.toggle('flex-1', !isArticle);
+      counterWrap.classList.toggle('pr-2', !isArticle);
+      counterWrap.classList.toggle('pr-1', isArticle);
+    }
 
     if (isArticle) clearArticleIncompatibleContent();
   }
@@ -6525,6 +6635,8 @@ function onNoteFormatChange(format) {
     const formatSelector = document.getElementById('note-format-selector');
     if (formatSelector) formatSelector.value = 'post';
     onNoteFormatChange('post');
+    currentNoteAudience = 'public';
+    updateNoteAudienceTrigger();
     document.getElementById('image-preview-fullscreen').classList.add('hidden');
     document.getElementById('preview-grid-fullscreen').innerHTML = '';
     document.getElementById('image-preview-counter-fullscreen').textContent = '';
@@ -7482,6 +7594,7 @@ function onNoteFormatChange(format) {
     setBottomNavVisibility(true);
     clearStickerSelection('note-content-fullscreen');
     closeLocationSheet();
+    closeNoteAudienceSelector();
   }
 
   function processImageFile(file) {
@@ -7632,6 +7745,11 @@ function onNoteFormatChange(format) {
       };
 
       note.format = currentNoteFormat;
+      const audienceConfig = getCurrentAudienceConfig();
+      note.audience = {
+        id: audienceConfig.id,
+        label: audienceConfig.label
+      };
 
       // Agregar encuesta si existe
       if (pollQuestion && pollOptions) {
@@ -7658,11 +7776,30 @@ function onNoteFormatChange(format) {
         note.groupName = selectedGroupForPost.name || 'Grupo';
       }
 
+      const publishWithAudienceScope = () => {
+        if (note.audience?.id === 'private') {
+          note.audienceAllowedViewerIds = { [user.uid]: true };
+          return Promise.resolve();
+        }
+        if (note.audience?.id === 'following') {
+          return firebase.database().ref('following/' + user.uid).once('value').then(followingSnap => {
+            const allowed = { [user.uid]: true };
+            followingSnap.forEach(child => {
+              allowed[child.key] = true;
+            });
+            note.audienceAllowedViewerIds = allowed;
+          }).catch(() => {
+            note.audienceAllowedViewerIds = { [user.uid]: true };
+          });
+        }
+        return Promise.resolve();
+      };
+
       if (imageFiles.length) {
         Promise.all(imageFiles.map(processImageFile)).then(images => {
           note.imageUrls = images;
           note.imageUrl = images[0];
-          publishNoteToDatabase(note);
+          publishWithAudienceScope().then(() => publishNoteToDatabase(note));
         }).catch((error) => {
           console.error('Error al procesar imágenes:', error);
           alert('Error al procesar las imágenes. Inténtalo con fotos más ligeras.');
@@ -7670,7 +7807,7 @@ function onNoteFormatChange(format) {
           publishBtn.innerHTML = 'Publicar';
         });
       } else {
-        publishNoteToDatabase(note);
+        publishWithAudienceScope().then(() => publishNoteToDatabase(note));
       }
     }).catch(error => {
       console.error('Error al obtener datos del usuario:', error);
@@ -7926,6 +8063,15 @@ function onNoteFormatChange(format) {
     if (!getAdultContentPreference() && isAdultContentNote(note)) return true;
     const authorId = note?.authorId || note?.userId || '';
     if (isAccountBlockedForCurrentUser(authorId)) return true;
+    const audienceId = note?.audience?.id || 'public';
+    const currentUserId = firebase.auth().currentUser?.uid || '';
+    if (audienceId === 'private') return !currentUserId || currentUserId !== authorId;
+    if (audienceId === 'following') {
+      const allowedIds = note?.audienceAllowedViewerIds || {};
+      if (!currentUserId) return true;
+      if (currentUserId === authorId) return false;
+      return !Boolean(allowedIds[currentUserId]);
+    }
     return false;
   }
 
@@ -7989,6 +8135,7 @@ function onNoteFormatChange(format) {
       }
 
       followRef.set({ followedAt: Date.now() }).then(() => {
+        firebase.database().ref('following/' + currentUser.uid + '/' + targetUserId).set({ followedAt: Date.now() });
         firebase.database().ref('users/' + targetUserId + '/followersCount').transaction(current => (current || 0) + 1);
         firebase.database().ref('users/' + currentUser.uid).once('value').then(userSnap => {
           const followerName = userSnap.val()?.username || 'Alguien';
@@ -8667,7 +8814,8 @@ function toggleFollowFromUserActions() {
   followRef.once('value').then(snap => {
     if (snap.exists()) {
       // Dejar de seguir
-      followRef.remove().then(() => {
+          followRef.remove().then(() => {
+            firebase.database().ref('following/' + currentUser.uid + '/' + currentViewedAuthorId).remove();
         firebase.database().ref('users/' + targetId + '/followersCount').transaction(c => Math.max(0, (c || 1) - 1));
         showMiniToast('Dejaste de seguir a @' + (currentPostOptionsAuthorData?.username || 'usuario'));
         closeUserActionsSheet();
@@ -17585,6 +17733,7 @@ function renderPlacesList(places) {
         followRef.set({
           followedAt: Date.now()
         }).then(() => {
+          firebase.database().ref('following/' + currentUser.uid + '/' + currentViewedAuthorId).set({ followedAt: Date.now() });
           authorFollowersRef.transaction(current => {
             return (current || 0) + 1;
           });
@@ -17615,6 +17764,7 @@ function renderPlacesList(places) {
             followedAt: Date.now()
           })
           .then(() => {
+            firebase.database().ref('following/' + currentUser.uid + '/' + userId).set({ followedAt: Date.now() });
             const userFollowersCountRef = firebase.database().ref('users/' + userId + '/followersCount');
             userFollowersCountRef.transaction(current => (current || 0) + 1);
             firebase.database().ref('users/' + currentUser.uid).once('value').then(userSnap => {
