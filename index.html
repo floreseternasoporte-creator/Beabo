@@ -2929,28 +2929,28 @@ body {
     <!-- Barra de herramientas -->
     <div class="border-t border-[#e6e2df] bg-[#f5f4f2] px-2 py-2 flex-shrink-0">
       <div class="flex items-center">
-        <label class="cursor-pointer flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white" title="Foto">
+        <label id="tool-photo" class="cursor-pointer flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white" title="Foto">
           <input type="file" id="note-image-fullscreen" accept="image/*" class="hidden" onchange="handleNoteImagePreviewFullscreen(event)" multiple>
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#5f4b44]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
           <span class="text-[11px] text-[#8d7d75] font-medium">Foto</span>
         </label>
 
-        <button onclick="openGifPicker()" class="flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white" title="GIF">
+        <button id="tool-gif" onclick="openGifPicker()" class="flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white" title="GIF">
           <div class="border-2 border-[#5f4b44] rounded text-[11px] font-bold px-1 py-0.5 text-[#5f4b44]">GIF</div>
           <span class="text-[11px] text-[#8d7d75] font-medium">GIF</span>
         </button>
 
-        <button onclick="openStickerPicker('note-content-fullscreen')" class="flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white" title="Sticker">
+        <button id="tool-sticker" onclick="openStickerPicker('note-content-fullscreen')" class="flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white" title="Sticker">
           <img src="https://i.ibb.co/rGMpvhnm/IMG-9702.png" alt="sticker" class="w-6 h-6 object-contain">
           <span class="text-[11px] text-[#8d7d75] font-medium">Sticker</span>
         </button>
 
-        <button onclick="togglePollInput()" class="flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white" title="Encuesta">
+        <button id="tool-poll" onclick="togglePollInput()" class="flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white" title="Encuesta">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#5f4b44]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
           <span class="text-[11px] text-[#8d7d75] font-medium">Encuesta</span>
         </button>
 
-        <button onclick="openLocationSheet()" class="flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white relative" title="Ubicación">
+        <button id="tool-location" onclick="openLocationSheet()" class="flex flex-col items-center gap-1 flex-1 py-2 rounded-xl active:bg-white relative" title="Ubicación">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-[#5f4b44]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           <span class="text-[11px] text-[#8d7d75] font-medium">Ubicación</span>
           <span id="location-badge" class="hidden absolute top-1 right-3 bg-[#6f5c54] text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center">1</span>
@@ -2960,6 +2960,7 @@ body {
           <div id="char-counter-fullscreen" class="text-sm text-[#b2a7a1] font-semibold">3000</div>
         </div>
       </div>
+      <p id="note-format-tools-hint" class="px-2 pt-1 text-[11px] text-[#9b8f88] hidden"></p>
     </div>
 
   </div>
@@ -6479,7 +6480,43 @@ const KLIPY_GIFS = [
     return currentNoteFormat === 'articulo' ? 3000 : 200;
   }
 
-  function onNoteFormatChange(format) {
+  
+  function setToolEnabled(toolId, enabled) {
+    const el = document.getElementById(toolId);
+    if (!el) return;
+    if (el.tagName === 'BUTTON') el.disabled = !enabled;
+    el.style.opacity = enabled ? '1' : '0.4';
+    el.style.pointerEvents = enabled ? 'auto' : 'none';
+  }
+
+  function applyToolsByNoteFormat() {
+    const isArticle = currentNoteFormat === 'articulo';
+    // Post: todo habilitado. Artículo: experiencia más limpia para texto largo.
+    setToolEnabled('tool-photo', true);
+    setToolEnabled('tool-location', true);
+    setToolEnabled('tool-gif', !isArticle);
+    setToolEnabled('tool-sticker', !isArticle);
+    setToolEnabled('tool-poll', !isArticle);
+
+    const hint = document.getElementById('note-format-tools-hint');
+    if (hint) {
+      if (isArticle) {
+        hint.textContent = 'En Artículo dejamos Foto y Ubicación para mantener enfoque en lectura larga.';
+        hint.classList.remove('hidden');
+      } else {
+        hint.classList.add('hidden');
+        hint.textContent = '';
+      }
+    }
+
+    if (isArticle) {
+      // Si cambia a artículo, cerrar encuesta si estaba abierta
+      const pollPreview = document.getElementById('poll-preview-fullscreen');
+      if (pollPreview && !pollPreview.classList.contains('hidden')) removePollFullscreen();
+    }
+  }
+
+function onNoteFormatChange(format) {
     currentNoteFormat = format === 'articulo' ? 'articulo' : 'post';
     const textarea = document.getElementById('note-content-fullscreen');
     const counter = document.getElementById('char-counter-fullscreen');
@@ -6488,6 +6525,7 @@ const KLIPY_GIFS = [
     textarea.maxLength = maxLength;
     if (textarea.value.length > maxLength) textarea.value = textarea.value.slice(0, maxLength);
     counter.textContent = maxLength - textarea.value.length;
+    applyToolsByNoteFormat();
   }
 
   function openNoteCreationFullscreen() {
@@ -6536,6 +6574,7 @@ const KLIPY_GIFS = [
     };
   }
   function togglePollInput() {
+    if (currentNoteFormat === 'articulo') return;
     const pollPreview = document.getElementById('poll-preview-fullscreen');
     const noteContent = document.getElementById('note-content-fullscreen');
     const pollQuestion = document.getElementById('poll-question-main');
