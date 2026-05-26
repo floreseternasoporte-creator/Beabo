@@ -11629,8 +11629,49 @@ function deleteComment(noteId, commentPath) {
     showAuthSection(emailStep);
   });
 
-  continueWithUsername.addEventListener('click', () => {
-    alert('Inicio con nombre de usuario disponible próximamente.');
+  continueWithUsername.addEventListener('click', async () => {
+    const rawUsername = prompt('Ingresa tu nombre de usuario (sin @):');
+    const normalizedUsername = String(rawUsername || '').replace(/^@+/, '').trim().toLowerCase();
+
+    if (!normalizedUsername) {
+      return;
+    }
+
+    continueWithUsername.disabled = true;
+    const originalLabel = continueWithUsername.innerHTML;
+    continueWithUsername.innerHTML = `<span class="inline-flex items-center gap-2"><i class="fas fa-spinner fa-spin"></i><span>Buscando...</span></span>`;
+
+    try {
+      const snapshot = await firebase.database().ref('users').orderByChild('username').once('value');
+      let foundEmail = '';
+
+      snapshot.forEach(child => {
+        if (foundEmail) return;
+        const userData = child.val() || {};
+        const candidateUsername = String(userData.username || '').trim().toLowerCase();
+        if (candidateUsername === normalizedUsername) {
+          foundEmail = String(userData.email || '').trim();
+        }
+      });
+
+      if (!foundEmail) {
+        authError.textContent = 'No encontramos una cuenta con ese nombre de usuario.';
+        authError.classList.remove('hidden');
+        return;
+      }
+
+      pendingEmail = foundEmail;
+      emailInput.value = foundEmail;
+      selectedEmailLabel.textContent = `Usuario: @${normalizedUsername}`;
+      showAuthSection(passwordStep);
+    } catch (error) {
+      console.error('Error al buscar usuario para inicio de sesión:', error);
+      authError.textContent = 'No pudimos verificar ese nombre de usuario por ahora.';
+      authError.classList.remove('hidden');
+    } finally {
+      continueWithUsername.disabled = false;
+      continueWithUsername.innerHTML = originalLabel;
+    }
   });
 
   continueWithPhone.addEventListener('click', () => {
