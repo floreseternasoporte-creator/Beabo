@@ -2207,8 +2207,8 @@ body {
       </div>
 
       <div id="email-step" class="w-full hidden mt-auto mb-12">
-        <p class="text-center text-lg text-white font-medium mb-6">Ingresa tu correo</p>
-        <input id="emailInput" type="email" placeholder="Correo electrónico" class="w-full p-4 bg-white/10 border border-white/20 rounded-full text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition" required>
+        <p id="auth-identifier-title" class="text-center text-lg text-white font-medium mb-6">Ingresa tu correo</p>
+        <input id="emailInput" type="email" placeholder="Correo electrónico o usuario" class="w-full p-4 bg-white/10 border border-white/20 rounded-full text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition" required>
         <button id="goToPasswordStep" type="button" class="w-full mt-4 bg-white text-black p-4 font-bold rounded-full hover:bg-gray-200 transition">Continuar</button>
         <button id="backToOptionsFromEmail" type="button" class="w-full mt-4 text-sm text-gray-400 hover:text-white transition">Volver</button>
       </div>
@@ -2231,7 +2231,7 @@ body {
       <div id="recovery-step" class="w-full hidden mt-auto mb-12">
         <p class="text-center text-lg text-white font-medium mb-6">Recuperar contraseña</p>
         <div class="space-y-4">
-          <input id="recoveryEmailInput" type="email" placeholder="Correo electrónico" class="w-full p-4 bg-white/10 border border-white/20 rounded-full text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition">
+          <input id="recoveryEmailInput" type="email" placeholder="Correo electrónico o usuario" class="w-full p-4 bg-white/10 border border-white/20 rounded-full text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition">
           <button id="sendRecoveryButton" type="button" class="w-full bg-white text-black p-4 font-bold rounded-full hover:bg-gray-200 transition disabled:opacity-50">Enviar recuperación</button>
           <div id="authErrorRecovery" class="text-red-400 text-center text-sm hidden"></div>
           <button id="backToPasswordFromRecovery" type="button" class="w-full text-sm text-gray-400 hover:text-white transition">Volver</button>
@@ -10980,6 +10980,7 @@ function deleteComment(noteId, commentPath) {
   const selectedEmailLabel = document.getElementById('selectedEmailLabel');
   const authOptions = document.getElementById('auth-options');
   const emailStep = document.getElementById('email-step');
+  const authIdentifierTitle = document.getElementById('auth-identifier-title');
   const passwordStep = document.getElementById('password-step');
   const recoveryStep = document.getElementById('recovery-step');
   const authFormContainer = document.getElementById('auth-form');
@@ -11640,30 +11641,55 @@ function deleteComment(noteId, commentPath) {
     }
   }
 
+  let authEntryMode = 'email';
+
   continueWithEmail.addEventListener('click', () => {
-    const rawEmail = prompt('Ingresa tu correo electrónico:');
-    const nextEmail = String(rawEmail || '').trim().toLowerCase();
-
-    if (!nextEmail) return;
-
-    emailInput.value = nextEmail;
-    pendingEmail = nextEmail;
-    selectedEmailLabel.textContent = `Correo: ${pendingEmail}`;
-    showAuthSection(passwordStep);
+    authEntryMode = 'email';
+    if (authIdentifierTitle) authIdentifierTitle.textContent = 'Ingresa tu correo';
+    emailInput.type = 'email';
+    emailInput.value = '';
+    emailInput.placeholder = 'Correo electrónico';
+    showAuthSection(emailStep);
   });
 
-  continueWithUsername.addEventListener('click', async () => {
-    const rawUsername = prompt('Ingresa tu nombre de usuario (sin @):');
-    const normalizedUsername = String(rawUsername || '').replace(/^@+/, '').trim().toLowerCase();
+  continueWithUsername.addEventListener('click', () => {
+    authEntryMode = 'username';
+    if (authIdentifierTitle) authIdentifierTitle.textContent = 'Ingresa tu usuario';
+    emailInput.type = 'text';
+    emailInput.value = '';
+    emailInput.placeholder = 'Nombre de usuario (sin @)';
+    showAuthSection(emailStep);
+  });
 
-    if (!normalizedUsername) return;
+  continueWithPhone.addEventListener('click', () => {
+    alert('Inicio con teléfono disponible próximamente.');
+  });
 
-    setAuthContinueButtonLoading(continueWithUsername, true);
+  backToOptionsFromEmail.addEventListener('click', () => {
+    showAuthSection(authOptions);
+  });
 
+  goToPasswordStep.addEventListener('click', async () => {
+    const rawValue = emailInput.value.trim();
+    if (!rawValue) {
+      showAuthSection(emailStep);
+      authError.textContent = authEntryMode === 'username' ? 'Por favor ingresa tu nombre de usuario.' : 'Por favor ingresa tu correo electrónico.';
+      authError.classList.remove('hidden');
+      return;
+    }
+
+    if (authEntryMode === 'email') {
+      pendingEmail = rawValue.toLowerCase();
+      selectedEmailLabel.textContent = `Correo: ${pendingEmail}`;
+      showAuthSection(passwordStep);
+      return;
+    }
+
+    const normalizedUsername = rawValue.replace(/^@+/, '').trim().toLowerCase();
+    setAuthContinueButtonLoading(goToPasswordStep, true, 'Buscando usuario...');
     try {
       const snapshot = await firebase.database().ref('users').once('value');
       let foundEmail = '';
-
       snapshot.forEach(child => {
         if (foundEmail) return;
         const userData = child.val() || {};
@@ -11675,7 +11701,7 @@ function deleteComment(noteId, commentPath) {
       });
 
       if (!foundEmail) {
-        authError.textContent = 'No encontramos una cuenta válida con ese nombre de usuario. Prueba con tu correo.';
+        authError.textContent = 'No encontramos una cuenta con ese usuario. Intenta con tu correo.';
         authError.classList.remove('hidden');
         return;
       }
@@ -11689,29 +11715,8 @@ function deleteComment(noteId, commentPath) {
       authError.textContent = 'No pudimos verificar ese nombre de usuario por ahora.';
       authError.classList.remove('hidden');
     } finally {
-      setAuthContinueButtonLoading(continueWithUsername, false);
+      setAuthContinueButtonLoading(goToPasswordStep, false);
     }
-  });
-
-  continueWithPhone.addEventListener('click', () => {
-    alert('Inicio con teléfono disponible próximamente.');
-  });
-
-  backToOptionsFromEmail.addEventListener('click', () => {
-    showAuthSection(authOptions);
-  });
-
-  goToPasswordStep.addEventListener('click', () => {
-    const email = emailInput.value.trim();
-    if (!email) {
-      showAuthSection(emailStep);
-      authError.textContent = 'Por favor ingresa tu correo electrónico.';
-      authError.classList.remove('hidden');
-      return;
-    }
-    pendingEmail = email;
-    selectedEmailLabel.textContent = `Correo: ${pendingEmail}`;
-    showAuthSection(passwordStep);
   });
 
   backToEmailStep.addEventListener('click', () => {
