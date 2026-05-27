@@ -2405,6 +2405,36 @@ body {
     <!-- ══════════════════════════════════════════════
          REGISTRO — PASO 3: Nombre de usuario
     ══════════════════════════════════════════════ -->
+    <!-- ══════════════════════════════════════════════
+         REGISTRO — VERIFICACIÓN DE CORREO
+    ══════════════════════════════════════════════ -->
+    <div id="reg-verify-step" class="hidden absolute inset-0 bg-white flex flex-col px-6">
+      <div class="flex gap-1.5 pt-5 w-full">
+        <div class="h-1 flex-1 rounded-full" style="background:#3a241d;"></div>
+        <div class="h-1 flex-1 rounded-full" style="background:#3a241d;"></div>
+        <div class="h-1 flex-1 rounded-full" style="background:#e8e1dc;"></div>
+        <div class="h-1 flex-1 rounded-full" style="background:#e8e1dc;"></div>
+      </div>
+      <div class="flex-1 flex flex-col items-center justify-center text-center px-2">
+        <!-- Ícono sobre animado -->
+        <div class="w-24 h-24 rounded-full flex items-center justify-center mb-6" style="background:#f1ece9;">
+          <i class="fa-regular fa-envelope text-5xl" style="color:#3a241d;"></i>
+        </div>
+        <h2 class="text-2xl font-bold mb-3" style="color:#3a241d;">Verifica tu correo</h2>
+        <p class="text-sm mb-1" style="color:#8d7d75;">Enviamos un enlace de verificación a:</p>
+        <p id="regVerifyEmailLabel" class="text-sm font-semibold mb-6" style="color:#3a241d;"></p>
+        <p class="text-xs leading-relaxed mb-8" style="color:#8d7d75;">Abre tu bandeja de entrada, haz clic en el enlace y luego regresa aquí para continuar.</p>
+
+        <button id="regCheckVerifiedBtn" type="button" class="w-full p-4 font-bold rounded-full transition text-white mb-3" style="background:#3a241d;">
+          Ya verifiqué mi correo
+        </button>
+        <button id="regResendEmailBtn" type="button" class="w-full p-3 text-sm font-medium transition rounded-full" style="border:2px solid #e8e1dc; color:#8d7d75;">
+          Reenviar correo
+        </button>
+        <div id="regVerifyMsg" class="mt-4 text-sm font-medium hidden"></div>
+      </div>
+    </div>
+
     <div id="reg-username-step" class="hidden absolute inset-0 bg-white flex flex-col px-6">
       <div class="flex gap-1.5 pt-5 px-0 w-full">
         <div class="h-1 flex-1 rounded-full" style="background:#3a241d;"></div>
@@ -11881,10 +11911,12 @@ function deleteComment(noteId, commentPath) {
   let regData = { firstName: '', lastName: '', email: '', password: '', username: '', photoFile: null, firebaseUser: null };
 
   // Secciones a ocultar en showAuthSection
+  const regVerifyStep     = document.getElementById('reg-verify-step');
+
   const allAuthSections = [
     authOptions, loginOptions,
     emailStep, passwordStep, recoveryStep,
-    regNameStep, regCredStep, regUsernameStep, regPhotoStep, regSuccessStep
+    regNameStep, regCredStep, regVerifyStep, regUsernameStep, regPhotoStep, regSuccessStep
   ];
 
   function showAuthSection(section) {
@@ -12138,7 +12170,12 @@ function deleteComment(noteId, commentPath) {
         regData.firebaseUser = userCredential.user;
         btn.disabled = false;
         btn.textContent = 'Continuar';
-        showAuthSection(regUsernameStep);
+        // Enviar correo de verificación
+        userCredential.user.sendEmailVerification().catch(() => {});
+        // Mostrar pantalla de verificación
+        document.getElementById('regVerifyEmailLabel').textContent = email;
+        document.getElementById('regVerifyMsg').classList.add('hidden');
+        showAuthSection(regVerifyStep);
       })
       .catch(error => {
         err.textContent = getFriendlyErrorMessage(error);
@@ -12146,6 +12183,77 @@ function deleteComment(noteId, commentPath) {
         btn.disabled = false;
         btn.textContent = 'Continuar';
       });
+  });
+
+  // — PANTALLA VERIFICACIÓN DE CORREO
+  document.getElementById('regCheckVerifiedBtn').addEventListener('click', () => {
+    const btn = document.getElementById('regCheckVerifiedBtn');
+    const msg = document.getElementById('regVerifyMsg');
+    const user = regData.firebaseUser || firebase.auth().currentUser;
+    if (!user) { showAuthSection(regUsernameStep); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = `<span class="inline-flex items-center gap-2 justify-center"><i class="fas fa-spinner fa-spin"></i><span>Verificando...</span></span>`;
+
+    user.reload().then(() => {
+      if (user.emailVerified) {
+        msg.textContent  = '✓ Correo verificado correctamente.';
+        msg.style.color  = '#58CC02';
+        msg.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Ya verifiqué mi correo';
+        setTimeout(() => showAuthSection(regUsernameStep), 700);
+      } else {
+        msg.textContent  = 'Aún no hemos detectado la verificación. Revisa tu correo y vuelve a intentarlo.';
+        msg.style.color  = '#ff4d4f';
+        msg.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Ya verifiqué mi correo';
+      }
+    }).catch(() => {
+      msg.textContent = 'Error al verificar. Inténtalo de nuevo.';
+      msg.style.color = '#ff4d4f';
+      msg.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Ya verifiqué mi correo';
+    });
+  });
+
+  let resendCooldown = false;
+  document.getElementById('regResendEmailBtn').addEventListener('click', () => {
+    const btn = document.getElementById('regResendEmailBtn');
+    const msg = document.getElementById('regVerifyMsg');
+    const user = regData.firebaseUser || firebase.auth().currentUser;
+    if (!user || resendCooldown) return;
+
+    resendCooldown = true;
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    user.sendEmailVerification().then(() => {
+      msg.textContent = '✓ Correo reenviado. Revisa tu bandeja de entrada.';
+      msg.style.color = '#58CC02';
+      msg.classList.remove('hidden');
+      let secs = 30;
+      btn.textContent = `Reenviar correo (${secs}s)`;
+      const timer = setInterval(() => {
+        secs--;
+        btn.textContent = `Reenviar correo (${secs}s)`;
+        if (secs <= 0) {
+          clearInterval(timer);
+          btn.disabled = false;
+          btn.textContent = 'Reenviar correo';
+          resendCooldown = false;
+        }
+      }, 1000);
+    }).catch(() => {
+      msg.textContent = 'No se pudo reenviar el correo. Inténtalo más tarde.';
+      msg.style.color = '#ff4d4f';
+      msg.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Reenviar correo';
+      resendCooldown = false;
+    });
   });
 
   // — PASO 3: Nombre de usuario
