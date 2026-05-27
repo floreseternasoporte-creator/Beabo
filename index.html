@@ -5913,6 +5913,16 @@ function saveNote() {
         <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
       </button>
 
+      <button onclick="openNameConfigView()" class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#e8e1dc] shadow-sm active:scale-95 transition-all">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-[#f0ebe7] rounded-xl flex items-center justify-center text-[#5f4b44]">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A11.955 11.955 0 0112 15c2.977 0 5.703 1.085 7.779 2.876M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          </div>
+          <span class="font-bold text-[#2f1a14]">Nombre y Apellido</span>
+        </div>
+        <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+      </button>
+
       <button onclick="openUsernameConfigView()" class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#e8e1dc] shadow-sm active:scale-95 transition-all">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 bg-[#f0ebe7] rounded-xl flex items-center justify-center text-[#5f4b44]">
@@ -5952,6 +5962,32 @@ function saveNote() {
         </div>
         <svg class="w-5 h-5 text-[#b2a7a1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
       </button>
+    </div>
+  </div>
+
+  <!-- VISTA: Nombre y Apellido -->
+  <div id="name-config-view" class="fixed inset-0 bg-[#f5f4f2] z-[130] hidden flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-[#e8e1dc] bg-white">
+      <button onclick="closeNameConfigView()" class="text-[#5f4b44] p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[#2f1a14] absolute left-1/2 -translate-x-1/2">Nombre y Apellido</h2>
+      <button onclick="saveNameConfig()" class="text-[#2f1a14] font-bold text-lg">Guardar</button>
+    </div>
+    <div class="flex-1 p-6 space-y-4">
+      <div>
+        <label class="block mb-2 font-bold text-[#5f4b44]">Nombre</label>
+        <input id="settings-first-name" type="text" maxlength="40"
+          class="w-full p-3 rounded-xl border border-[#d9cec8] bg-white text-[#2f1a14]"
+          placeholder="Tu nombre">
+      </div>
+      <div>
+        <label class="block mb-2 font-bold text-[#5f4b44]">Apellido</label>
+        <input id="settings-last-name" type="text" maxlength="40"
+          class="w-full p-3 rounded-xl border border-[#d9cec8] bg-white text-[#2f1a14]"
+          placeholder="Tu apellido">
+      </div>
+      <p class="text-xs text-[#8a7a71]">Tu nombre real. Será visible en tu perfil.</p>
     </div>
   </div>
 
@@ -13881,6 +13917,7 @@ function deleteComment(noteId, commentPath) {
     [
       'account-config-view',
       'profile-config-view',
+      'name-config-view',
       'username-config-view',
       'info-config-view',
       'location-config-view',
@@ -14247,6 +14284,58 @@ function deleteComment(noteId, commentPath) {
   }
 
   let selectedPronounsOption = "";
+
+  function openNameConfigView() {
+    const user = firebase.auth().currentUser;
+    const view = document.getElementById('name-config-view');
+    if (!view) return;
+    // Pre-rellenar con datos actuales
+    if (user) {
+      firebase.database().ref('users/' + user.uid).once('value').then(snap => {
+        const d = snap.val() || {};
+        const fi = document.getElementById('settings-first-name');
+        const li = document.getElementById('settings-last-name');
+        if (fi) fi.value = d.firstName || '';
+        if (li) li.value = d.lastName  || '';
+      });
+    }
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+    view.style.zIndex = '130';
+  }
+
+  function closeNameConfigView() {
+    const view = document.getElementById('name-config-view');
+    if (view) { view.classList.add('hidden'); view.style.display = 'none'; }
+  }
+
+  function saveNameConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    const firstName = (document.getElementById('settings-first-name')?.value || '').trim();
+    const lastName  = (document.getElementById('settings-last-name')?.value  || '').trim();
+    if (!firstName || !lastName) {
+      alert('Por favor ingresa tu nombre y apellido.');
+      return;
+    }
+    setSavingButtonState(actionButton, true);
+    const displayName = `${firstName} ${lastName}`;
+    // Actualiza Firebase Auth profile + RTDB
+    const authUser = firebase.auth().currentUser;
+    const dbUpdate = saveProfileField({ firstName, lastName, displayName });
+    const authUpdate = authUser
+      ? authUser.updateProfile({ displayName })
+      : Promise.resolve();
+    Promise.all([dbUpdate, authUpdate])
+      .then(([saved]) => {
+        if (saved) {
+          // Refrescar nombre en la UI del perfil
+          const nameEl = document.getElementById('profile-display-name');
+          if (nameEl) nameEl.textContent = displayName;
+          closeNameConfigView();
+        }
+      })
+      .finally(() => setSavingButtonState(actionButton, false));
+  }
 
   function openUsernameConfigView() {
     const view = document.getElementById('username-config-view');
@@ -19720,6 +19809,7 @@ body.theme-dark #satellite-detail-view,
 body.theme-dark #settings-view,
 body.theme-dark #account-config-view,
 body.theme-dark #profile-config-view,
+body.theme-dark #name-config-view,
 body.theme-dark #username-config-view,
 body.theme-dark #info-config-view,
 body.theme-dark #location-config-view,
