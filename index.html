@@ -2493,9 +2493,13 @@ body {
         </div>
         <div class="relative w-full">
           <span class="absolute left-4 top-1/2 -translate-y-1/2 font-semibold text-base" style="color:#8d7d75;">@</span>
-          <input id="regUsername" type="text" placeholder="tunombredeusuario" class="w-full p-4 pl-9 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;" maxlength="30">
+          <input id="regUsername" type="text" placeholder="tunombredeusuario" autocomplete="off"
+            class="w-full p-4 pl-9 pr-12 rounded-2xl focus:outline-none focus:ring-2 transition text-base"
+            style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;" maxlength="30">
+          <span id="regUsernameIcon" class="absolute right-4 top-1/2 -translate-y-1/2 text-base hidden"></span>
         </div>
-        <div id="regUsernameError" class="mt-3 text-red-500 text-sm text-center hidden w-full"></div>
+        <p id="regUsernameStatus" class="mt-2 text-xs font-medium hidden px-1 w-full text-center"></p>
+        <div id="regUsernameError" class="mt-1 text-red-500 text-sm text-center hidden w-full"></div>
       </div>
       <div class="pb-10 pt-4">
         <button id="regUsernameContinue" type="button" class="w-full p-4 font-bold rounded-full transition text-white" style="background:#3a241d;">Continuar</button>
@@ -12299,7 +12303,100 @@ function deleteComment(noteId, commentPath) {
     });
   });
 
-  // — PASO 3: Nombre de usuario
+  // — PASO 3: Nombre de usuario — validación en tiempo real
+  let usernameCheckTimer = null;
+  let usernameIsAvailable = false;
+
+  function setUsernameUI(state, message) {
+    const icon   = document.getElementById('regUsernameIcon');
+    const status = document.getElementById('regUsernameStatus');
+    const input  = document.getElementById('regUsername');
+    const btn    = document.getElementById('regUsernameContinue');
+
+    icon.classList.remove('hidden');
+    status.classList.remove('hidden');
+    status.textContent = message;
+
+    if (state === 'checking') {
+      icon.innerHTML = '<i class="fas fa-spinner fa-spin" style="color:#8d7d75;"></i>';
+      input.style.borderColor = '#e8e1dc';
+      status.style.color = '#8d7d75';
+      btn.disabled = true;
+      usernameIsAvailable = false;
+    } else if (state === 'available') {
+      icon.innerHTML = '<i class="fa-solid fa-circle-check" style="color:#58CC02;"></i>';
+      input.style.borderColor = '#58CC02';
+      status.style.color = '#58CC02';
+      btn.disabled = false;
+      usernameIsAvailable = true;
+    } else if (state === 'taken') {
+      icon.innerHTML = '<i class="fa-solid fa-circle-xmark" style="color:#ff4d4f;"></i>';
+      input.style.borderColor = '#ff4d4f';
+      status.style.color = '#ff4d4f';
+      btn.disabled = true;
+      usernameIsAvailable = false;
+    } else if (state === 'invalid') {
+      icon.innerHTML = '<i class="fa-solid fa-circle-xmark" style="color:#ff4d4f;"></i>';
+      input.style.borderColor = '#ff4d4f';
+      status.style.color = '#ff4d4f';
+      btn.disabled = true;
+      usernameIsAvailable = false;
+    } else {
+      icon.classList.add('hidden');
+      status.classList.add('hidden');
+      input.style.borderColor = '#e8e1dc';
+      btn.disabled = false;
+      usernameIsAvailable = false;
+    }
+  }
+
+  document.getElementById('regUsername').addEventListener('input', () => {
+    clearTimeout(usernameCheckTimer);
+    const raw      = document.getElementById('regUsername').value.trim().toLowerCase().replace(/\s+/g, '');
+    const icon     = document.getElementById('regUsernameIcon');
+    const status   = document.getElementById('regUsernameStatus');
+    const errDiv   = document.getElementById('regUsernameError');
+    errDiv.classList.add('hidden');
+
+    if (!raw) {
+      icon.classList.add('hidden');
+      status.classList.add('hidden');
+      document.getElementById('regUsername').style.borderColor = '#e8e1dc';
+      document.getElementById('regUsernameContinue').disabled = false;
+      usernameIsAvailable = false;
+      return;
+    }
+    if (raw.length < 3) {
+      setUsernameUI('invalid', 'Mínimo 3 caracteres.');
+      return;
+    }
+    if (!/^[a-z0-9._]+$/.test(raw)) {
+      setUsernameUI('invalid', 'Solo letras, números, puntos y guiones bajos.');
+      return;
+    }
+
+    setUsernameUI('checking', 'Verificando disponibilidad…');
+
+    usernameCheckTimer = setTimeout(() => {
+      firebase.database().ref('usernames/' + raw).once('value').then(snap => {
+        if (snap.exists()) {
+          setUsernameUI('taken', '@' + raw + ' ya está en uso. Prueba otro.');
+        } else {
+          // También buscar en users por username (por si no se usa índice)
+          firebase.database().ref('users').orderByChild('username').equalTo(raw).once('value').then(snap2 => {
+            if (snap2.exists()) {
+              setUsernameUI('taken', '@' + raw + ' ya está en uso. Prueba otro.');
+            } else {
+              setUsernameUI('available', '@' + raw + ' está disponible ✓');
+            }
+          });
+        }
+      }).catch(() => {
+        setUsernameUI('available', '@' + raw + ' — continúa para confirmar.');
+      });
+    }, 400);
+  });
+
   document.getElementById('backFromRegUsername').addEventListener('click', () => { showAuthSection(regCredStep); });
 
   document.getElementById('regUsernameContinue').addEventListener('click', () => {
