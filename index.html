@@ -2281,20 +2281,55 @@ body {
     </div>
 
     <!-- PASO RECUPERAR CONTRASEÑA -->
-    <div id="recovery-step" class="hidden absolute inset-0 bg-white flex flex-col px-8">
-      <div class="pt-14 pb-2">
+    <div id="recovery-step" class="hidden absolute inset-0 bg-white flex flex-col px-6">
+      <!-- Flecha volver -->
+      <div class="pt-10 pb-0">
         <button id="backToPasswordFromRecovery" type="button" class="w-10 h-10 flex items-center justify-center rounded-full transition" style="color:#3a241d; background:#f1ece9;">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
-      <div class="mt-8 mb-10">
-        <h2 class="text-2xl font-bold mb-1" style="color:#3a241d;">Recuperar contraseña</h2>
-        <p class="text-sm" style="color:#8d7d75;">Te enviaremos un enlace para restablecer tu contraseña.</p>
+
+      <!-- Estado: formulario -->
+      <div id="recoveryForm" class="flex-1 flex flex-col items-center justify-center text-center">
+        <div class="w-20 h-20 rounded-full flex items-center justify-center mb-5" style="background:#f1ece9;">
+          <i class="fa-solid fa-lock-open text-4xl" style="color:#3a241d;"></i>
+        </div>
+        <h2 class="text-2xl font-bold mb-2" style="color:#3a241d;">¿Olvidaste tu contraseña?</h2>
+        <p class="text-sm mb-8 px-4" style="color:#8d7d75;">Ingresa tu correo y te enviaremos un enlace para crear una nueva contraseña.</p>
+        <div class="relative w-full mb-3">
+          <input id="recoveryEmailInput" type="email" placeholder="Correo electrónico" autocomplete="email"
+            class="w-full p-4 pr-12 rounded-2xl focus:outline-none focus:ring-2 transition text-base"
+            style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;">
+          <span id="recoveryEmailIcon" class="absolute right-4 top-1/2 -translate-y-1/2 text-base hidden"></span>
+        </div>
+        <div id="authErrorRecovery" class="text-red-500 text-center text-sm mb-3 hidden w-full"></div>
+        <button id="sendRecoveryButton" type="button"
+          class="w-full p-4 font-bold rounded-full transition text-white disabled:opacity-50"
+          style="background:#3a241d;">
+          Enviar enlace
+        </button>
       </div>
-      <input id="recoveryEmailInput" type="email" placeholder="Correo electrónico" class="w-full p-4 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;">
-      <button id="sendRecoveryButton" type="button" class="w-full mt-4 p-4 font-bold rounded-full transition text-white disabled:opacity-50" style="background:#3a241d;">Enviar enlace de recuperación</button>
-      <div id="authErrorRecovery" class="text-red-500 text-center text-sm mt-3 hidden"></div>
-      <div class="flex-1"></div>
+
+      <!-- Estado: éxito (se muestra tras enviar) -->
+      <div id="recoverySuccess" class="hidden flex-1 flex flex-col items-center justify-center text-center px-2">
+        <div class="w-24 h-24 rounded-full flex items-center justify-center mb-6" style="background:#f1ece9;">
+          <i class="fa-regular fa-paper-plane text-5xl" style="color:#3a241d;"></i>
+        </div>
+        <h2 class="text-2xl font-bold mb-3" style="color:#3a241d;">¡Correo enviado!</h2>
+        <p class="text-sm mb-2" style="color:#8d7d75;">Revisamos tu bandeja de entrada en:</p>
+        <p id="recoverySentEmail" class="text-sm font-semibold mb-6" style="color:#3a241d;"></p>
+        <p class="text-xs mb-8 px-2 leading-relaxed" style="color:#8d7d75;">Si no ves el correo, revisa la carpeta de spam. El enlace expira en 1 hora.</p>
+        <button id="recoveryResendBtn" type="button"
+          class="w-full p-4 font-semibold rounded-full transition mb-3"
+          style="border:2px solid #3a241d; color:#3a241d; background:white;">
+          Reenviar correo
+        </button>
+        <button id="recoveryBackToLoginBtn" type="button"
+          class="w-full p-4 font-bold rounded-full transition text-white"
+          style="background:#3a241d;">
+          Volver al inicio de sesión
+        </button>
+      </div>
     </div>
 
     <!-- ══════════════════════════════════════════════
@@ -12583,44 +12618,106 @@ function deleteComment(noteId, commentPath) {
     }, 3000);
   }
   /*********************** OLVIDÉ MI CONTRASEÑA **************************/
+  // Validación en tiempo real del campo email de recuperación
+  document.getElementById('recoveryEmailInput').addEventListener('input', () => {
+    const val  = document.getElementById('recoveryEmailInput').value.trim();
+    const icon = document.getElementById('recoveryEmailIcon');
+    const inp  = document.getElementById('recoveryEmailInput');
+    if (!val) { icon.classList.add('hidden'); inp.style.borderColor = '#e8e1dc'; return; }
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+    icon.classList.remove('hidden');
+    if (valid) {
+      icon.innerHTML = '<i class="fa-solid fa-circle-check" style="color:#58CC02;"></i>';
+      inp.style.borderColor = '#58CC02';
+    } else {
+      icon.innerHTML = '<i class="fa-solid fa-circle-xmark" style="color:#ff4d4f;"></i>';
+      inp.style.borderColor = '#ff4d4f';
+    }
+  });
+
+  // Botón reenviar de la pantalla de éxito
+  let recoveryCooldown = false;
+  document.getElementById('recoveryResendBtn').addEventListener('click', () => {
+    const email = document.getElementById('recoveryEmailInput').value.trim();
+    const btn   = document.getElementById('recoveryResendBtn');
+    if (!email || recoveryCooldown) return;
+    recoveryCooldown = true;
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+    firebase.auth().sendPasswordResetEmail(email).then(() => {
+      let secs = 30;
+      btn.textContent = `Reenviar correo (${secs}s)`;
+      const t = setInterval(() => {
+        secs--;
+        btn.textContent = `Reenviar correo (${secs}s)`;
+        if (secs <= 0) {
+          clearInterval(t);
+          btn.disabled = false;
+          btn.textContent = 'Reenviar correo';
+          recoveryCooldown = false;
+        }
+      }, 1000);
+    }).catch(() => {
+      btn.disabled = false;
+      btn.textContent = 'Reenviar correo';
+      recoveryCooldown = false;
+    });
+  });
+
+  // Botón "Volver al inicio de sesión" desde éxito
+  document.getElementById('recoveryBackToLoginBtn').addEventListener('click', () => {
+    document.getElementById('recoveryForm').classList.remove('hidden');
+    document.getElementById('recoverySuccess').classList.add('hidden');
+    showAuthSection(loginOptions);
+  });
+
   function resetPassword() {
     const email = (recoveryEmailInput.value || pendingEmail || emailInput.value).trim();
-    const errorDisplay = document.getElementById('authErrorRecovery') || authError;
-    
+    const errorDisplay = document.getElementById('authErrorRecovery');
+
     if (!email) {
-      errorDisplay.textContent = "Por favor, ingresa tu correo electrónico.";
+      errorDisplay.textContent = 'Por favor, ingresa tu correo electrónico.';
       errorDisplay.classList.remove('hidden');
       return;
     }
-    
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errorDisplay.textContent = 'El formato del correo no es válido.';
+      errorDisplay.classList.remove('hidden');
+      return;
+    }
+
     sendRecoveryButton.disabled = true;
-    sendRecoveryButton.textContent = "Enviando...";
+    sendRecoveryButton.innerHTML = '<span class="inline-flex items-center gap-2 justify-center"><i class="fas fa-spinner fa-spin"></i><span>Enviando...</span></span>';
     errorDisplay.classList.add('hidden');
 
     firebase.auth().sendPasswordResetEmail(email)
       .then(() => {
-        alert("¡Éxito! Se ha enviado un correo a " + email + " para restablecer tu contraseña. Revisa tu bandeja de entrada y carpeta de spam.");
         sendRecoveryButton.disabled = false;
-        sendRecoveryButton.textContent = "Enviar recuperación";
-        showAuthSection(passwordStep);
+        sendRecoveryButton.textContent = 'Enviar enlace';
+        // Mostrar pantalla de éxito
+        document.getElementById('recoverySentEmail').textContent = email;
+        document.getElementById('recoveryForm').classList.add('hidden');
+        document.getElementById('recoverySuccess').classList.remove('hidden');
+        recoveryCooldown = false;
       })
       .catch(error => {
         sendRecoveryButton.disabled = false;
-        sendRecoveryButton.textContent = "Enviar recuperación";
-        let errorMessage = "Error: ";
+        sendRecoveryButton.textContent = 'Enviar enlace';
         switch (error.code) {
           case 'auth/user-not-found':
-            errorMessage = "No hay ningún usuario registrado con este correo.";
+          case 'auth/invalid-credential':
+            errorDisplay.textContent = 'No encontramos ninguna cuenta con este correo.';
             break;
           case 'auth/invalid-email':
-            errorMessage = "El formato del correo no es válido.";
+            errorDisplay.textContent = 'El formato del correo no es válido.';
+            break;
+          case 'auth/too-many-requests':
+            errorDisplay.textContent = 'Demasiados intentos. Espera un momento e inténtalo de nuevo.';
             break;
           default:
-            errorMessage += error.message;
+            errorDisplay.textContent = 'Ocurrió un error. Inténtalo de nuevo.';
         }
-        errorDisplay.textContent = errorMessage;
         errorDisplay.classList.remove('hidden');
-        console.error("Error en resetPassword:", error);
       });
   }
   /*********************** SOPORTE INTELIGENTE CONECTADO **************************/
