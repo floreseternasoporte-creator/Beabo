@@ -2358,18 +2358,41 @@ body {
           <p class="text-sm" style="color:#8d7d75;">Ingresa tu correo y crea una contraseña segura.</p>
         </div>
         <div class="space-y-3 w-full">
-          <input id="regEmail" type="email" placeholder="Correo electrónico" class="w-full p-4 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;">
+          <!-- Email con ícono de validación -->
           <div class="relative">
-            <input id="regPassword" type="password" placeholder="Crear contraseña" class="w-full p-4 pr-12 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;">
-            <button type="button" id="toggleRegPwd" class="absolute right-4 top-1/2 -translate-y-1/2" style="color:#8d7d75;">
-              <i class="fa-regular fa-eye text-lg" id="toggleRegPwdIcon"></i>
-            </button>
+            <input id="regEmail" type="email" placeholder="Correo electrónico" class="w-full p-4 pr-12 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;">
+            <span id="regEmailIcon" class="absolute right-4 top-1/2 -translate-y-1/2 text-base hidden"></span>
           </div>
-          <div class="relative">
-            <input id="regPasswordConfirm" type="password" placeholder="Repetir contraseña" class="w-full p-4 pr-12 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;">
-            <button type="button" id="toggleRegPwdConfirm" class="absolute right-4 top-1/2 -translate-y-1/2" style="color:#8d7d75;">
-              <i class="fa-regular fa-eye text-lg" id="toggleRegPwdConfirmIcon"></i>
-            </button>
+
+          <!-- Contraseña con ojo + barra de fortaleza -->
+          <div>
+            <div class="relative">
+              <input id="regPassword" type="password" placeholder="Crear contraseña" class="w-full p-4 pr-12 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;">
+              <button type="button" id="toggleRegPwd" class="absolute right-4 top-1/2 -translate-y-1/2" style="color:#8d7d75;">
+                <i class="fa-regular fa-eye text-lg" id="toggleRegPwdIcon"></i>
+              </button>
+            </div>
+            <!-- Barra de fortaleza -->
+            <div id="regPwdStrengthWrap" class="hidden mt-2 px-1">
+              <div class="flex gap-1 mb-1">
+                <div id="regPwdBar1" class="h-1 flex-1 rounded-full transition-all duration-300" style="background:#e8e1dc;"></div>
+                <div id="regPwdBar2" class="h-1 flex-1 rounded-full transition-all duration-300" style="background:#e8e1dc;"></div>
+                <div id="regPwdBar3" class="h-1 flex-1 rounded-full transition-all duration-300" style="background:#e8e1dc;"></div>
+                <div id="regPwdBar4" class="h-1 flex-1 rounded-full transition-all duration-300" style="background:#e8e1dc;"></div>
+              </div>
+              <p id="regPwdStrengthLabel" class="text-xs font-medium" style="color:#8d7d75;"></p>
+            </div>
+          </div>
+
+          <!-- Repetir contraseña con ojo + indicador de coincidencia -->
+          <div>
+            <div class="relative">
+              <input id="regPasswordConfirm" type="password" placeholder="Repetir contraseña" class="w-full p-4 pr-12 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;">
+              <button type="button" id="toggleRegPwdConfirm" class="absolute right-4 top-1/2 -translate-y-1/2" style="color:#8d7d75;">
+                <i class="fa-regular fa-eye text-lg" id="toggleRegPwdConfirmIcon"></i>
+              </button>
+            </div>
+            <p id="regPwdMatchLabel" class="hidden text-xs font-medium mt-1 px-1"></p>
           </div>
         </div>
         <div id="regCredError" class="mt-3 text-red-500 text-sm text-center hidden w-full"></div>
@@ -11984,6 +12007,100 @@ function deleteComment(noteId, commentPath) {
 
   // — PASO 2: Correo y Contraseña
   document.getElementById('backFromRegCredentials').addEventListener('click', () => { showAuthSection(regNameStep); });
+
+  // Validación en tiempo real — Email
+  document.getElementById('regEmail').addEventListener('input', () => {
+    const val  = document.getElementById('regEmail').value.trim();
+    const icon = document.getElementById('regEmailIcon');
+    const inp  = document.getElementById('regEmail');
+    if (!val) { icon.classList.add('hidden'); inp.style.borderColor = '#e8e1dc'; return; }
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+    icon.classList.remove('hidden');
+    if (valid) {
+      icon.innerHTML = '<i class="fa-solid fa-circle-check" style="color:#58CC02;"></i>';
+      inp.style.borderColor = '#58CC02';
+    } else {
+      icon.innerHTML = '<i class="fa-solid fa-circle-xmark" style="color:#ff4d4f;"></i>';
+      inp.style.borderColor = '#ff4d4f';
+    }
+  });
+
+  // Validación en tiempo real — Fortaleza de contraseña
+  document.getElementById('regPassword').addEventListener('input', () => {
+    const val   = document.getElementById('regPassword').value;
+    const wrap  = document.getElementById('regPwdStrengthWrap');
+    const label = document.getElementById('regPwdStrengthLabel');
+    const bars  = [
+      document.getElementById('regPwdBar1'),
+      document.getElementById('regPwdBar2'),
+      document.getElementById('regPwdBar3'),
+      document.getElementById('regPwdBar4'),
+    ];
+    const inp = document.getElementById('regPassword');
+
+    if (!val) {
+      wrap.classList.add('hidden');
+      inp.style.borderColor = '#e8e1dc';
+      bars.forEach(b => b.style.background = '#e8e1dc');
+      // También actualizar coincidencia
+      document.getElementById('regPwdMatchLabel').classList.add('hidden');
+      return;
+    }
+
+    wrap.classList.remove('hidden');
+
+    let score = 0;
+    if (val.length >= 6)  score++;
+    if (val.length >= 10) score++;
+    if (/[A-Z]/.test(val) && /[0-9]/.test(val)) score++;
+    if (/[^A-Za-z0-9]/.test(val)) score++;
+
+    const configs = [
+      { color: '#ff4d4f', text: 'Muy débil',  border: '#ff4d4f' },
+      { color: '#ffa940', text: 'Débil',       border: '#ffa940' },
+      { color: '#fadb14', text: 'Regular',     border: '#fadb14' },
+      { color: '#58CC02', text: 'Fuerte',      border: '#58CC02' },
+    ];
+    const cfg = configs[Math.max(0, score - 1)] || configs[0];
+
+    bars.forEach((b, i) => {
+      b.style.background = i < score ? cfg.color : '#e8e1dc';
+    });
+    label.textContent   = cfg.text;
+    label.style.color   = cfg.color;
+    inp.style.borderColor = cfg.border;
+
+    // Actualizar coincidencia si ya hay algo en el confirm
+    const confirm = document.getElementById('regPasswordConfirm').value;
+    if (confirm) triggerMatchCheck(val, confirm);
+  });
+
+  // Validación en tiempo real — Coincidencia contraseñas
+  function triggerMatchCheck(pwd, confirm) {
+    const lbl  = document.getElementById('regPwdMatchLabel');
+    const cinp = document.getElementById('regPasswordConfirm');
+    lbl.classList.remove('hidden');
+    if (pwd === confirm) {
+      lbl.textContent      = '✓ Las contraseñas coinciden';
+      lbl.style.color      = '#58CC02';
+      cinp.style.borderColor = '#58CC02';
+    } else {
+      lbl.textContent      = '✗ Las contraseñas no coinciden';
+      lbl.style.color      = '#ff4d4f';
+      cinp.style.borderColor = '#ff4d4f';
+    }
+  }
+
+  document.getElementById('regPasswordConfirm').addEventListener('input', () => {
+    const pwd     = document.getElementById('regPassword').value;
+    const confirm = document.getElementById('regPasswordConfirm').value;
+    if (!confirm) {
+      document.getElementById('regPwdMatchLabel').classList.add('hidden');
+      document.getElementById('regPasswordConfirm').style.borderColor = '#e8e1dc';
+      return;
+    }
+    triggerMatchCheck(pwd, confirm);
+  });
 
   // Ojos contraseña registro
   document.getElementById('toggleRegPwd').addEventListener('click', () => {
