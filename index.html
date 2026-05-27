@@ -12425,9 +12425,10 @@ function deleteComment(noteId, commentPath) {
     const fullName = `${regData.firstName} ${regData.lastName}`;
     const userCountRef = firebase.database().ref('userCount');
     userCountRef.transaction(count => (count || 0) + 1).then(result => {
-      const newCount    = result.snapshot.val();
-      const isVerified  = newCount <= 100;
-      return firebase.database().ref('users/' + user.uid).set({
+      const newCount   = result.snapshot.val();
+      const isVerified = newCount <= 100;
+      const updates    = {};
+      updates['users/' + user.uid] = {
         username:              username,
         displayName:           fullName,
         bio:                   '',
@@ -12439,7 +12440,10 @@ function deleteComment(noteId, commentPath) {
         registrationTimestamp: Date.now(),
         founder:               false,
         email:                 user.email
-      });
+      };
+      // Índice de nombres de usuario para búsqueda rápida de disponibilidad
+      updates['usernames/' + username] = user.uid;
+      return firebase.database().ref().update(updates);
     }).then(() => {
       btn.disabled = false;
       btn.textContent = 'Continuar';
@@ -12470,34 +12474,34 @@ function deleteComment(noteId, commentPath) {
     reader.readAsDataURL(file);
   });
 
-  function finishRegistration() {
+  function finishRegistration(btn) {
     const user = regData.firebaseUser || firebase.auth().currentUser;
-    if (!user) { showAuthSection(regSuccessStep); launchConfetti(); return; }
+
+    const done = () => {
+      showAuthSection(regSuccessStep);
+      launchConfetti();
+    };
+
+    if (!user) { done(); return; }
 
     if (regData.photoFile) {
       const storageRef = firebase.storage().ref('profile_images/' + user.uid);
-      storageRef.put(regData.photoFile).then(snapshot => snapshot.ref.getDownloadURL()).then(url => {
-        return firebase.database().ref('users/' + user.uid).update({ profileImage: url });
-      }).then(() => {
-        showAuthSection(regSuccessStep);
-        launchConfetti();
-      }).catch(() => {
-        showAuthSection(regSuccessStep);
-        launchConfetti();
-      });
+      storageRef.put(regData.photoFile)
+        .then(snapshot => snapshot.ref.getDownloadURL())
+        .then(url => firebase.database().ref('users/' + user.uid).update({ profileImage: url }))
+        .then(() => done())
+        .catch(() => done());
     } else {
-      showAuthSection(regSuccessStep);
-      launchConfetti();
+      done();
     }
   }
 
   document.getElementById('regPhotoContinue').addEventListener('click', () => {
     const btn = document.getElementById('regPhotoContinue');
+    if (btn.disabled) return;
     btn.disabled = true;
     btn.innerHTML = `<span class="inline-flex items-center gap-2 justify-center"><i class="fas fa-spinner fa-spin"></i><span>Subiendo...</span></span>`;
-    finishRegistration();
-    btn.disabled = false;
-    btn.textContent = 'Continuar';
+    finishRegistration(btn);
   });
 
   document.getElementById('regPhotoSkip').addEventListener('click', () => {
