@@ -2253,31 +2253,48 @@ body {
     </div>
 
     <!-- PASO LOGIN CONTRASEÑA -->
-    <div id="password-step" class="hidden absolute inset-0 bg-white flex flex-col px-8">
-      <div class="pt-14 pb-2">
+    <div id="password-step" class="hidden absolute inset-0 bg-white flex flex-col px-6">
+      <div class="pt-10">
         <button id="backToEmailStep" type="button" class="w-10 h-10 flex items-center justify-center rounded-full transition" style="color:#3a241d; background:#f1ece9;">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
-      <div class="mt-8 mb-2">
-        <h2 class="text-2xl font-bold mb-1" style="color:#3a241d;">Ingresa tu contraseña</h2>
-        <p id="selectedEmailLabel" class="text-sm" style="color:#8d7d75;"></p>
-      </div>
-      <form id="authForm" class="w-full mt-8 space-y-3">
-        <div class="relative">
-          <input id="passwordInput" type="password" placeholder="Contraseña" class="w-full p-4 pr-12 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;" required>
-          <button type="button" id="toggleLoginPwd" class="absolute right-4 top-1/2 -translate-y-1/2" style="color:#8d7d75;">
-            <i class="fa-regular fa-eye text-lg" id="toggleLoginPwdIcon"></i>
-          </button>
+      <!-- Tarjeta de usuario reconocido -->
+      <div class="flex-1 flex flex-col items-center justify-center w-full">
+        <!-- Avatar + nombre (se rellena dinámicamente) -->
+        <div id="loginUserCard" class="flex flex-col items-center mb-8 hidden">
+          <div class="relative mb-3">
+            <img id="loginUserAvatar" src="" alt="foto"
+              class="w-20 h-20 rounded-full object-cover border-4"
+              style="border-color:#f1ece9; background:#f1ece9;">
+            <div id="loginUserAvatarFallback"
+              class="hidden w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold border-4"
+              style="border-color:#f1ece9; background:#f1ece9; color:#3a241d;"></div>
+          </div>
+          <p id="loginUserName" class="text-lg font-bold mb-0.5" style="color:#3a241d;"></p>
+          <p id="selectedEmailLabel" class="text-xs" style="color:#8d7d75;"></p>
         </div>
-        <button id="submitButton" type="submit" class="w-full p-4 font-bold rounded-full transition text-white" style="background:#3a241d;">Iniciar sesión</button>
-      </form>
-      <div id="authError" class="mt-3 text-red-500 font-medium text-sm text-center hidden"></div>
-      <div class="mt-6 text-center space-y-3">
-        <button id="forgotPasswordBtn" type="button" class="block w-full text-sm transition" style="color:#8d7d75;">¿Olvidaste tu contraseña?</button>
+        <!-- Título cuando no hay tarjeta -->
+        <div id="loginNoCard" class="w-full text-left mb-8">
+          <h2 class="text-2xl font-bold mb-1" style="color:#3a241d;">Ingresa tu contraseña</h2>
+          <p id="selectedEmailLabelAlt" class="text-sm" style="color:#8d7d75;"></p>
+        </div>
+        <!-- Formulario -->
+        <form id="authForm" class="w-full space-y-3">
+          <div class="relative">
+            <input id="passwordInput" type="password" placeholder="Contraseña"
+              class="w-full p-4 pr-12 rounded-2xl focus:outline-none focus:ring-2 transition text-base"
+              style="border:2px solid #e8e1dc; color:#3a241d; background:#faf9f8;" required>
+            <button type="button" id="toggleLoginPwd" class="absolute right-4 top-1/2 -translate-y-1/2" style="color:#8d7d75;">
+              <i class="fa-regular fa-eye text-lg" id="toggleLoginPwdIcon"></i>
+            </button>
+          </div>
+          <button id="submitButton" type="submit" class="w-full p-4 font-bold rounded-full transition text-white" style="background:#3a241d;">Iniciar sesión</button>
+        </form>
+        <div id="authError" class="mt-3 text-red-500 font-medium text-sm text-center hidden w-full"></div>
+        <button id="forgotPasswordBtn" type="button" class="mt-5 text-sm transition" style="color:#8d7d75;">¿Olvidaste tu contraseña?</button>
       </div>
       <button id="toggleAuth" type="button" class="hidden"></button>
-      <div class="flex-1"></div>
     </div>
 
     <!-- PASO RECUPERAR CONTRASEÑA -->
@@ -12007,14 +12024,55 @@ function deleteComment(noteId, commentPath) {
 
   document.getElementById('goToPasswordStep').addEventListener('click', () => {
     const email = emailInput.value.trim();
-    if (!email) {
-      authError.textContent = 'Por favor ingresa tu correo electrónico.';
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      authError.textContent = 'Por favor ingresa un correo válido.';
       authError.classList.remove('hidden');
       return;
     }
+    authError.classList.add('hidden');
     pendingEmail = email;
-    selectedEmailLabel.textContent = `Correo: ${pendingEmail}`;
+
+    // Limpiar estado previo
+    const userCard    = document.getElementById('loginUserCard');
+    const noCard      = document.getElementById('loginNoCard');
+    const avatar      = document.getElementById('loginUserAvatar');
+    const avatarFb    = document.getElementById('loginUserAvatarFallback');
+    const userName    = document.getElementById('loginUserName');
+    const emailLabel  = document.getElementById('selectedEmailLabel');
+    const emailLabelAlt = document.getElementById('selectedEmailLabelAlt');
+
+    userCard.classList.add('hidden');
+    noCard.classList.remove('hidden');
+    emailLabelAlt.textContent = email;
     showAuthSection(passwordStep);
+    passwordInput.focus();
+
+    // Buscar perfil en la base de datos por email
+    firebase.database().ref('users').orderByChild('email').equalTo(email).once('value')
+      .then(snap => {
+        if (!snap.exists()) return;
+        const data = Object.values(snap.val())[0];
+        if (!data) return;
+
+        // Rellenar tarjeta
+        userName.textContent    = data.displayName || data.username || '';
+        emailLabel.textContent  = email;
+
+        if (data.profileImage && data.profileImage.length > 0) {
+          avatar.src = data.profileImage;
+          avatar.classList.remove('hidden');
+          avatarFb.classList.add('hidden');
+        } else {
+          // Inicial del nombre como fallback
+          avatarFb.textContent = (data.displayName || data.username || '?')[0].toUpperCase();
+          avatarFb.classList.remove('hidden');
+          avatar.classList.add('hidden');
+        }
+
+        noCard.classList.add('hidden');
+        userCard.classList.remove('hidden');
+      })
+      .catch(() => {}); // Si falla la consulta, la pantalla sigue funcionando sin tarjeta
   });
 
   document.getElementById('backToEmailStep').addEventListener('click', () => { showAuthSection(emailStep); });
@@ -12470,6 +12528,30 @@ function deleteComment(noteId, commentPath) {
     reader.readAsDataURL(file);
   });
 
+  // Redimensiona y comprime una imagen a base64 (max 300px, JPEG 0.75)
+  function compressImageToBase64(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 300;
+          let w = img.width, h = img.height;
+          if (w > h) { if (w > MAX) { h = h * MAX / w; w = MAX; } }
+          else        { if (h > MAX) { w = w * MAX / h; h = MAX; } }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.75));
+        };
+        img.onerror = () => resolve(null);
+        img.src = ev.target.result;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
+  }
+
   function finishRegistration(btn) {
     const user = regData.firebaseUser || firebase.auth().currentUser;
 
@@ -12481,12 +12563,12 @@ function deleteComment(noteId, commentPath) {
     if (!user) { done(); return; }
 
     if (regData.photoFile) {
-      const storageRef = firebase.storage().ref('profile_images/' + user.uid);
-      storageRef.put(regData.photoFile)
-        .then(snapshot => snapshot.ref.getDownloadURL())
-        .then(url => firebase.database().ref('users/' + user.uid).update({ profileImage: url }))
-        .then(() => done())
-        .catch(() => done());
+      compressImageToBase64(regData.photoFile).then(base64 => {
+        if (!base64) { done(); return; }
+        firebase.database().ref('users/' + user.uid).update({ profileImage: base64 })
+          .then(() => done())
+          .catch(() => done());
+      });
     } else {
       done();
     }
