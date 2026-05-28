@@ -370,7 +370,13 @@
         <p id="group-info-count" class="text-sm text-[#8d7d75]"></p>
       </div>
       <div>
-        <p class="text-xs font-bold text-[#8d7d75] uppercase tracking-wider mb-3">Participantes</p>
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs font-bold text-[#8d7d75] uppercase tracking-wider">Participantes</p>
+          <button onclick="openAddMemberToGroup()" class="flex items-center gap-1.5 text-xs font-bold text-[#2f1a14] bg-[#f1ece9] px-3 py-1.5 rounded-full active:scale-95 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            Agregar
+          </button>
+        </div>
         <div id="group-info-members-list" class="space-y-2"></div>
       </div>
       <div class="space-y-2 pt-2">
@@ -386,6 +392,23 @@
     </div>
   </div>
 </div>
+  </div>
+
+  <!-- PANEL: AGREGAR MIEMBRO AL GRUPO -->
+  <div id="add-member-panel" class="fixed inset-0 bg-black/45 hidden z-[80] flex items-end justify-center p-4">
+    <div class="w-full max-w-lg bg-white rounded-3xl border border-[#e8e1dc] shadow-2xl overflow-hidden max-h-[80vh] flex flex-col">
+      <div class="flex items-center justify-between p-5 border-b border-[#f0ebe8]">
+        <h3 class="text-lg font-black text-[#2f1a14]">Agregar participante</h3>
+        <button onclick="closeAddMemberToGroup()" class="w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="p-4 border-b border-[#f0ebe8]">
+        <input id="add-member-search-input" type="text" placeholder="Buscar usuario..." oninput="searchUsersToAddToGroup(this.value)"
+          class="w-full h-11 px-4 rounded-2xl border border-[#e8e1dc] bg-[#f8f6f4] focus:outline-none focus:ring-2 focus:ring-[#cdbeb7] text-sm">
+      </div>
+      <div id="add-member-results" class="flex-1 overflow-y-auto p-4 space-y-2">
+        <p class="text-center text-sm text-[#8d7d75] py-6">Escribe para buscar usuarios</p>
+      </div>
+    </div>
   </div>
 
   <div id="mini-toast" class="fixed left-1/2 -translate-x-1/2 bottom-6 z-[120] hidden bg-[#2f1a14] text-white text-sm font-bold px-4 py-2 rounded-full shadow-xl"></div>
@@ -2074,6 +2097,113 @@ let chatTypingListener = null;
       closeChatRoomView();
     } catch (e) {
       showMiniToast('No se pudo salir del grupo');
+    }
+  }
+
+  let _addMemberSearchTimer = null;
+
+  function openAddMemberToGroup() {
+    const panel = document.getElementById('add-member-panel');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    const input = document.getElementById('add-member-search-input');
+    if (input) { input.value = ''; input.focus(); }
+    const results = document.getElementById('add-member-results');
+    if (results) results.innerHTML = '<p class="text-center text-sm text-[#8d7d75] py-6">Escribe para buscar usuarios</p>';
+  }
+
+  function closeAddMemberToGroup() {
+    document.getElementById('add-member-panel')?.classList.add('hidden');
+  }
+
+  function searchUsersToAddToGroup(rawQuery) {
+    const query = (rawQuery || '').trim().toLowerCase();
+    const results = document.getElementById('add-member-results');
+    if (!results) return;
+    if (_addMemberSearchTimer) clearTimeout(_addMemberSearchTimer);
+    if (!query) {
+      results.innerHTML = '<p class="text-center text-sm text-[#8d7d75] py-6">Escribe para buscar usuarios</p>';
+      return;
+    }
+    results.innerHTML = '<p class="text-center text-sm text-[#8d7d75] py-6">Buscando...</p>';
+    _addMemberSearchTimer = setTimeout(() => {
+      // Obtener miembros actuales del grupo
+      const currentMembers = Array.isArray(currentGroupMembers)
+        ? currentGroupMembers
+        : Object.keys(currentGroupMembers || {});
+      firebase.database().ref('users').limitToFirst(300).once('value').then(snap => {
+        const matches = [];
+        snap.forEach(child => {
+          if (currentMembers.includes(child.key)) return;
+          const d = child.val() || {};
+          const name = (d.username || d.displayName || d.email || '').toLowerCase();
+          if (!name.includes(query)) return;
+          matches.push({
+            uid: child.key,
+            name: d.username || d.displayName || 'Usuario',
+            image: d.profileImage || 'https://via.placeholder.com/80'
+          });
+        });
+        if (!matches.length) {
+          results.innerHTML = '<p class="text-center text-sm text-[#8d7d75] py-6">Sin resultados</p>';
+          return;
+        }
+        results.innerHTML = '';
+        matches.slice(0, 20).forEach(u => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'w-full flex items-center gap-3 bg-white border border-[#e8e1dc] rounded-2xl px-4 py-3 text-left transition active:bg-[#f5f0ed]';
+          btn.innerHTML = `<img src="${u.image}" class="w-10 h-10 rounded-full object-cover border border-[#e8e1dc]" alt="${escapeHtml(u.name)}">
+            <span class="font-semibold text-[#2f1a14] flex-1 truncate">${escapeHtml(u.name)}</span>
+            <span class="text-xs font-bold text-[#2f1a14] bg-[#f1ece9] px-3 py-1 rounded-full shrink-0">Agregar</span>`;
+          btn.onclick = () => addMemberToGroup(u.uid, u.name, u.image, btn);
+          results.appendChild(btn);
+        });
+      }).catch(() => {
+        results.innerHTML = '<p class="text-center text-sm text-[#8d7d75] py-6">No se pudo buscar usuarios</p>';
+      });
+    }, 250);
+  }
+
+  async function addMemberToGroup(uid, name, image, btnEl) {
+    if (!currentChatRoomId || !uid) return;
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+    if (btnEl) { btnEl.disabled = true; btnEl.querySelector('span:last-child').textContent = 'Agregando...'; }
+    try {
+      const groupSnap = await firebase.database().ref('groupChats/' + currentChatRoomId).once('value');
+      const groupData = groupSnap.val() || {};
+      const groupName = groupData.name || 'Grupo';
+      const now = Date.now();
+      const updates = {};
+      updates['groupChats/' + currentChatRoomId + '/members/' + uid] = true;
+      updates['userConversations/' + uid + '/' + currentChatRoomId] = {
+        isGroup: true,
+        groupId: currentChatRoomId,
+        groupName,
+        updatedAt: now,
+        lastMessage: 'Te han agregado al grupo'
+      };
+      await firebase.database().ref().update(updates);
+      // Mensaje de sistema
+      await firebase.database().ref('conversationMessages/' + currentChatRoomId).push({
+        system: true,
+        text: name + ' se unió al grupo',
+        timestamp: now
+      });
+      // Actualizar miembros en memoria
+      if (Array.isArray(currentGroupMembers)) {
+        currentGroupMembers.push(uid);
+      } else {
+        currentGroupMembers[uid] = true;
+      }
+      showMiniToast(name + ' agregado al grupo');
+      closeAddMemberToGroup();
+      // Refrescar panel de info
+      openGroupInfoPanel();
+    } catch (e) {
+      showMiniToast('No se pudo agregar al miembro');
+      if (btnEl) { btnEl.disabled = false; btnEl.querySelector('span:last-child').textContent = 'Agregar'; }
     }
   }
 
