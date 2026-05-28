@@ -13134,6 +13134,7 @@ function deleteComment(noteId, commentPath) {
       if (isRegistering) return;
 
       refreshVerifiedUsersCache();
+      ensureChatUserRecord(user);
       // INICIALIZAR SISTEMA DE MONEDAS de manera consistente
       setupNotificationsBadge(user.uid);
       setupChatUnreadBadge(user.uid);
@@ -17890,6 +17891,21 @@ let chatTypingListener = null;
     if (container) container.innerHTML = '<div class="text-center text-[#8d7d75] text-sm py-8">Conversación vaciada.</div>';
     chatMessagesMemoryCache.delete(currentChatRoomId);
     closeChatRoomInfo();
+  }
+
+  function ensureChatUserRecord(user) {
+    if (!user) return Promise.resolve();
+    const ref = firebase.database().ref('users/' + user.uid);
+    return ref.once('value').then(snapshot => {
+      const existing = snapshot.val() || {};
+      const updates = {
+        email: existing.email || user.email || '',
+        username: existing.username || user.displayName || (user.email ? user.email.split('@')[0] : 'Usuario'),
+        profileImage: existing.profileImage || user.photoURL || '',
+        lastChatLoginAt: Date.now()
+      };
+      return ref.update(updates);
+    }).catch(() => {});
   }
 
   function openGroupInfoPanel() {
