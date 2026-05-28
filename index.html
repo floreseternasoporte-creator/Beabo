@@ -2700,6 +2700,7 @@ body {
         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h8m-8 4h5m8-2c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.2-3.2A7.7 7.7 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
         </svg>
+        <span id="chat-unread-badge" class="hidden absolute -top-1 -right-0.5 bg-[#FE2C55] text-white text-[9px] font-black min-w-[1.1rem] h-[1.1rem] px-1 rounded-full flex items-center justify-center leading-none pointer-events-none">0</span>
       </button>
       <button id="nav-btn-3" data-nav-index="3" onclick="openGamesView()" class="nav-btn p-2 flex items-center justify-center text-gray-400 transition-all duration-300 active:scale-90 relative" aria-label="Juegos">
         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -11819,6 +11820,71 @@ function deleteComment(noteId, commentPath) {
     }
   }
 
+  /* ── CHAT UNREAD BADGE ─────────────────────────────────────── */
+  let chatUnreadBadgeRef = null;
+  const CHAT_LAST_READ_PREFIX = 'drex_chat_last_read_v1_';
+
+  function getChatLastReadKey(uid, conversationId) {
+    return CHAT_LAST_READ_PREFIX + uid + '_' + conversationId;
+  }
+
+  function markChatConversationRead(conversationId) {
+    const user = firebase.auth().currentUser;
+    if (!user || !conversationId) return;
+    try {
+      localStorage.setItem(getChatLastReadKey(user.uid, conversationId), String(Date.now()));
+    } catch (_) {}
+    updateChatUnreadBadge();
+  }
+
+  function updateChatUnreadBadge() {
+    const user = firebase.auth().currentUser;
+    const badge = document.getElementById('chat-unread-badge');
+    if (!badge) return;
+    if (!user) { badge.classList.add('hidden'); return; }
+
+    firebase.database().ref('userConversations/' + user.uid).once('value').then(snap => {
+      const map = snap.val() || {};
+      let unread = 0;
+      Object.entries(map).forEach(([convoId, meta]) => {
+        if (!meta || typeof meta !== 'object') return;
+        const updatedAt = Number(meta.updatedAt || 0);
+        if (!updatedAt) return;
+        let lastRead = 0;
+        try { lastRead = Number(localStorage.getItem(getChatLastReadKey(user.uid, convoId)) || 0); } catch (_) {}
+        if (updatedAt > lastRead) unread++;
+      });
+
+      if (unread > 0) {
+        badge.textContent = unread > 99 ? '99+' : String(unread);
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+        badge.textContent = '0';
+      }
+    }).catch(() => {});
+  }
+
+  function setupChatUnreadBadge(userId) {
+    if (chatUnreadBadgeRef) {
+      chatUnreadBadgeRef.off('value');
+      chatUnreadBadgeRef = null;
+    }
+    chatUnreadBadgeRef = firebase.database().ref('userConversations/' + userId);
+    chatUnreadBadgeRef.on('value', () => {
+      updateChatUnreadBadge();
+    });
+  }
+
+  function clearChatUnreadBadge() {
+    const badge = document.getElementById('chat-unread-badge');
+    if (badge) { badge.classList.add('hidden'); badge.textContent = '0'; }
+    if (chatUnreadBadgeRef) {
+      chatUnreadBadgeRef.off('value');
+      chatUnreadBadgeRef = null;
+    }
+  }
+
   function openNotifications() {
     const currentUser = firebase.auth().currentUser;
     if (!currentUser) {
@@ -12859,6 +12925,7 @@ function deleteComment(noteId, commentPath) {
       refreshVerifiedUsersCache();
       // INICIALIZAR SISTEMA DE MONEDAS de manera consistente
       setupNotificationsBadge(user.uid);
+      setupChatUnreadBadge(user.uid);
 
       // CARGAR ESTADÍSTICAS EN TIEMPO REAL
       loadUserStats(user.uid);
@@ -12932,6 +12999,7 @@ function deleteComment(noteId, commentPath) {
       });
     } else {
       clearNotificationsBadge();
+      clearChatUnreadBadge();
       hideSplashScreen();
       authFormContainer.classList.remove('hidden');
       mainApp.classList.add('hidden');
@@ -16032,6 +16100,21 @@ let chatTypingListener = null;
     if (typeof window.setActiveNavTab === 'function') window.setActiveNavTab(2);
     loadChatInboxHeader();
     loadChatConversations();
+    // Marcar todas las conversaciones como leídas al abrir el inbox
+    _markAllChatsRead();
+  }
+
+  function _markAllChatsRead() {
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+    firebase.database().ref('userConversations/' + user.uid).once('value').then(snap => {
+      const map = snap.val() || {};
+      const now = String(Date.now());
+      Object.keys(map).forEach(convoId => {
+        try { localStorage.setItem(getChatLastReadKey(user.uid, convoId), now); } catch (_) {}
+      });
+      updateChatUnreadBadge();
+    }).catch(() => {});
   }
 
   function loadChatInboxHeader() {
@@ -16337,8 +16420,11 @@ let chatTypingListener = null;
     if (!user || !otherUid) return;
     currentChatRoomId = getDirectConversationId(user.uid, otherUid);
     currentChatRecipient = otherUid;
+    currentChatIsGroup = false;
+    currentGroupMembers = {};
     chatPhotoAttachment = null;
     clearChatPhotoAttachment();
+    markChatConversationRead(currentChatRoomId);
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.remove('hidden');
@@ -16361,6 +16447,7 @@ let chatTypingListener = null;
     currentGroupMembers = {};
     chatPhotoAttachment = null;
     clearChatPhotoAttachment();
+    markChatConversationRead(groupId);
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.remove('hidden');
