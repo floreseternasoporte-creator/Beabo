@@ -4,8 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 5000;
-const ELEVENLABS_API_KEY = 'sk_659f8e4dbf9f900c3d53afba818b4faf8e97acd9e71b6392';
-const ELEVENLABS_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb';
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb';
 
 const mimeTypes = {
   '.html': 'text/html',
@@ -51,6 +51,12 @@ const server = http.createServer(async (req, res) => {
       if (!text) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'text is required' }));
+        return;
+      }
+
+      if (!ELEVENLABS_API_KEY) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'TTS service is not configured' }));
         return;
       }
 
