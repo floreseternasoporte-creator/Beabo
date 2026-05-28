@@ -1054,6 +1054,7 @@ let chatTypingListener = null;
       }
     });
     subscribeChatMessages(groupId);
+    subscribeChatTyping(groupId);
     setupChatTemporaryPullGesture();
     document.getElementById('chat-room-input')?.focus();
   }
@@ -1972,11 +1973,31 @@ let chatTypingListener = null;
       const now = Date.now();
       const othersTyping = Object.entries(data).filter(([uid, ts]) => uid !== user.uid && (now - Number(ts)) < 5000);
       const indicator = document.getElementById('chat-typing-indicator');
+      const textEl = document.getElementById('chat-typing-text');
       if (!indicator) return;
-      if (othersTyping.length) {
-        indicator.classList.remove('hidden');
+      if (!othersTyping.length) { indicator.classList.add('hidden'); return; }
+
+      if (currentChatIsGroup && othersTyping.length > 0) {
+        // Resolver nombres de los que están escribiendo
+        Promise.all(othersTyping.map(([uid]) => {
+          return firebase.database().ref('users/' + uid).once('value').then(snap => {
+            const d = snap.val() || {};
+            return (d.username || d.displayName || 'Alguien').split(' ')[0];
+          }).catch(() => 'Alguien');
+        })).then(names => {
+          let msg;
+          if (names.length === 1) msg = names[0] + ' está escribiendo...';
+          else if (names.length === 2) msg = names[0] + ' y ' + names[1] + ' están escribiendo...';
+          else msg = names[0] + ', ' + names[1] + ' y más están escribiendo...';
+          if (textEl) textEl.textContent = msg;
+          indicator.classList.remove('hidden');
+        }).catch(() => {
+          if (textEl) textEl.textContent = 'Alguien está escribiendo...';
+          indicator.classList.remove('hidden');
+        });
       } else {
-        indicator.classList.add('hidden');
+        if (textEl) textEl.textContent = 'escribiendo...';
+        indicator.classList.remove('hidden');
       }
     };
     ref.on('value', callback);
