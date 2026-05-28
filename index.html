@@ -2964,8 +2964,12 @@ body {
             <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <img id="chat-room-user-image" src="https://via.placeholder.com/80" class="w-10 h-10 rounded-full object-cover border border-[#e8e1dc]" alt="Usuario">
+          <div id="chat-room-group-avatar" class="hidden w-10 h-10 rounded-full bg-[#f1ece9] border border-[#e8e1dc] flex items-center justify-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#8a7a71]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
           <div class="min-w-0">
             <p id="chat-room-username" class="font-black text-base truncate">Usuario</p>
+            <p id="chat-room-group-subtitle" class="hidden text-xs text-[#8d7d75] truncate"></p>
             <div id="chat-temporary-pill" class="hidden mt-1 text-[11px] font-bold text-[#8a4b33] bg-[#f6e5dc] border border-[#edcfbe] px-2 py-0.5 rounded-full w-fit">Temporal · 24h</div>
           </div>
         </div>
@@ -16136,6 +16140,7 @@ let currentChatIsGroup = false;
 let currentGroupMembers = {};
 let currentGroupCreatedBy = null;
 let _chatSenderProfileUid = null;
+let _groupMsgSenderCache = new Map();
 let chatMessagesListener = null;
 let chatPhotoAttachment = null;
 let chatReplyContext = null;
@@ -16911,16 +16916,23 @@ let chatTypingListener = null;
   function openChatRoomFromInbox(otherUid) {
     const user = firebase.auth().currentUser;
     if (!user || !otherUid) return;
+    currentChatIsGroup = false;
+    currentGroupMembers = [];
     currentChatRoomId = getDirectConversationId(user.uid, otherUid);
     currentChatRecipient = otherUid;
-    currentChatIsGroup = false;
-    currentGroupMembers = {};
     chatPhotoAttachment = null;
     clearChatPhotoAttachment();
     markChatConversationRead(currentChatRoomId);
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.remove('hidden');
+    // Mostrar imagen de usuario, ocultar avatar de grupo y subtítulo
+    const userImg = document.getElementById('chat-room-user-image');
+    const groupAvatar = document.getElementById('chat-room-group-avatar');
+    const subtitle = document.getElementById('chat-room-group-subtitle');
+    if (userImg) userImg.classList.remove('hidden');
+    if (groupAvatar) groupAvatar.classList.add('hidden');
+    if (subtitle) subtitle.classList.add('hidden');
     loadChatRoomHeader(otherUid);
     ensureConversationExists(user.uid, otherUid).then(() => {
       subscribeChatTemporarySettings(currentChatRoomId);
@@ -16934,28 +16946,41 @@ let chatTypingListener = null;
   function openGroupChatRoom(groupId) {
     const user = firebase.auth().currentUser;
     if (!user || !groupId) return;
+    currentChatIsGroup = true;
     currentChatRoomId = groupId;
     currentChatRecipient = null;
-    currentChatIsGroup = true;
-    currentGroupMembers = {};
+    currentGroupMembers = [];
+    currentGroupCreatedBy = null;
     chatPhotoAttachment = null;
     clearChatPhotoAttachment();
     markChatConversationRead(groupId);
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.remove('hidden');
+    // Mostrar avatar de grupo, ocultar imagen de usuario
+    const userImg = document.getElementById('chat-room-user-image');
+    const groupAvatar = document.getElementById('chat-room-group-avatar');
+    const subtitle = document.getElementById('chat-room-group-subtitle');
+    if (userImg) userImg.classList.add('hidden');
+    if (groupAvatar) groupAvatar.classList.remove('hidden');
+    // Ocultar UI de mensajes temporales (no aplican a grupos)
+    document.getElementById('chat-temporary-pill')?.classList.add('hidden');
+    document.getElementById('chat-room-temporary-pull-indicator')?.classList.add('hidden');
     // Cargar nombre del grupo en el header
     firebase.database().ref('groupChats/' + groupId).once('value').then(snap => {
-      const group = snap.val() || {};
-      currentGroupMembers = group.members || {};
+      const data = snap.val() || {};
+      currentGroupCreatedBy = data.createdBy || null;
       const nameEl = document.getElementById('chat-room-username');
-      if (nameEl) nameEl.textContent = group.name || 'Grupo';
-      const imgEl = document.getElementById('chat-room-user-image');
-      if (imgEl) { imgEl.style.display = 'none'; }
+      if (nameEl) nameEl.textContent = data.name || 'Grupo';
+      const memberUids = Object.keys(data.members || {});
+      currentGroupMembers = memberUids;
+      if (subtitle) {
+        subtitle.textContent = memberUids.length + ' participante' + (memberUids.length !== 1 ? 's' : '');
+        subtitle.classList.remove('hidden');
+      }
     });
     subscribeChatMessages(groupId);
     subscribeChatTyping(groupId);
-    setupChatTemporaryPullGesture();
     document.getElementById('chat-room-input')?.focus();
   }
 
@@ -16965,7 +16990,8 @@ let chatTypingListener = null;
     currentChatRoomId = null;
     currentChatRecipient = null;
     currentChatIsGroup = false;
-    currentGroupMembers = {};
+    currentGroupMembers = [];
+    currentGroupCreatedBy = null;
     chatTemporaryUntil = 0;
     updateChatTemporaryUI();
     chatPhotoAttachment = null;
@@ -16975,6 +17001,13 @@ let chatTypingListener = null;
     detachAllMsgReactionListeners();
     hideChatReactionPicker();
     clearChatReply();
+    // Resetear header UI al estado DM
+    const userImg = document.getElementById('chat-room-user-image');
+    const groupAvatar = document.getElementById('chat-room-group-avatar');
+    const subtitle = document.getElementById('chat-room-group-subtitle');
+    if (userImg) userImg.classList.remove('hidden');
+    if (groupAvatar) groupAvatar.classList.add('hidden');
+    if (subtitle) subtitle.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.add('hidden');
     document.getElementById('chat-inbox-view')?.classList.remove('hidden');
     loadChatConversations();
@@ -16995,6 +17028,11 @@ let chatTypingListener = null;
   }
 
   function updateChatTemporaryUI() {
+    if (currentChatIsGroup) {
+      document.getElementById('chat-temporary-pill')?.classList.add('hidden');
+      document.getElementById('chat-room-temporary-pull-indicator')?.classList.add('hidden');
+      return;
+    }
     const pill = document.getElementById('chat-temporary-pill');
     const indicator = document.getElementById('chat-room-temporary-pull-indicator');
     const active = chatTemporaryUntil > Date.now();
@@ -17117,15 +17155,55 @@ let chatTypingListener = null;
         : '';
 
       const wrapper = document.createElement('div');
-      wrapper.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
-      if (resolvedId) wrapper.dataset.msgId = resolvedId;
-      wrapper.innerHTML = `
-        <div class="msg-bubble ${mine ? 'bg-[#2f1a14] text-white' : 'bg-white text-[#2f1a14] border border-[#e8e1dc]'} rounded-2xl px-4 py-2 max-w-[80%] select-none cursor-pointer" data-msg-id="${resolvedId}">
-          ${replyBlock}${content}
-        </div>
-        <div class="msg-reactions flex gap-1 mt-0.5 px-1 flex-wrap ${mine ? 'justify-end' : 'justify-start'}" id="reactions-${resolvedId}"></div>
-        ${timeStr ? `<span class="text-[10px] text-[#b4a9a4] px-1">${timeStr}</span>` : ''}
-      `;
+
+      if (currentChatIsGroup && !mine) {
+        const senderId = msg.senderId || '';
+        const senderName = msg.senderName || '...';
+        wrapper.className = 'w-full flex flex-col items-start';
+        if (resolvedId) wrapper.dataset.msgId = resolvedId;
+        wrapper.innerHTML = `
+          <p class="text-[11px] font-bold text-[#7a6962] mb-1 ml-11 px-1 cursor-pointer group-sender-label" data-uid="${escapeHtml(senderId)}">${escapeHtml(senderName)}</p>
+          <div class="flex items-end gap-2 max-w-[85%]">
+            <img class="group-sender-avatar w-8 h-8 rounded-full object-cover border border-[#e8e1dc] shrink-0 cursor-pointer" src="https://via.placeholder.com/80" data-uid="${escapeHtml(senderId)}" alt="${escapeHtml(senderName)}">
+            <div class="flex flex-col items-start min-w-0">
+              <div class="msg-bubble bg-white text-[#2f1a14] border border-[#e8e1dc] rounded-2xl px-4 py-2 select-none cursor-pointer" data-msg-id="${resolvedId}">
+                ${replyBlock}${content}
+              </div>
+              <div class="msg-reactions flex gap-1 mt-0.5 px-1 flex-wrap justify-start" id="reactions-${resolvedId}"></div>
+              ${timeStr ? `<span class="text-[10px] text-[#b4a9a4] px-1">${timeStr}</span>` : ''}
+            </div>
+          </div>
+        `;
+        const applyAvatar = img => {
+          const el = wrapper.querySelector('.group-sender-avatar');
+          if (el) el.src = img;
+        };
+        if (_groupMsgSenderCache.has(senderId)) {
+          applyAvatar(_groupMsgSenderCache.get(senderId).image);
+        } else if (senderId) {
+          firebase.database().ref('users/' + senderId).once('value').then(snap => {
+            const d = snap.val() || {};
+            const img = d.profileImage || 'https://via.placeholder.com/80';
+            const uname = d.username || d.displayName || 'Usuario';
+            _groupMsgSenderCache.set(senderId, { image: img, name: uname, username: d.username || '' });
+            applyAvatar(img);
+          }).catch(() => {});
+        }
+        wrapper.querySelectorAll('.group-sender-avatar, .group-sender-label').forEach(el => {
+          el.addEventListener('click', () => openSenderProfile(senderId));
+        });
+      } else {
+        wrapper.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
+        if (resolvedId) wrapper.dataset.msgId = resolvedId;
+        wrapper.innerHTML = `
+          <div class="msg-bubble ${mine ? 'bg-[#2f1a14] text-white' : 'bg-white text-[#2f1a14] border border-[#e8e1dc]'} rounded-2xl px-4 py-2 max-w-[80%] select-none cursor-pointer" data-msg-id="${resolvedId}">
+            ${replyBlock}${content}
+          </div>
+          <div class="msg-reactions flex gap-1 mt-0.5 px-1 flex-wrap ${mine ? 'justify-end' : 'justify-start'}" id="reactions-${resolvedId}"></div>
+          ${timeStr ? `<span class="text-[10px] text-[#b4a9a4] px-1">${timeStr}</span>` : ''}
+        `;
+      }
+
       const bubble = wrapper.querySelector('.msg-bubble');
       if (bubble && resolvedId) {
         let pressTimer = null;
@@ -18103,14 +18181,24 @@ let chatTypingListener = null;
     if (nameEl) nameEl.textContent = 'Cargando...';
     if (unameEl) unameEl.textContent = '';
     if (avatarEl) avatarEl.src = 'https://via.placeholder.com/80';
+    const apply = (img, name, username) => {
+      if (avatarEl) avatarEl.src = img;
+      if (nameEl) nameEl.textContent = name;
+      if (unameEl) unameEl.textContent = username ? '@' + username : '';
+    };
+    // Aplicar cache inmediatamente si existe
+    if (_groupMsgSenderCache.has(uid)) {
+      const c = _groupMsgSenderCache.get(uid);
+      apply(c.image, c.name, c.username || '');
+    }
+    // Siempre refrescar desde Firebase
     firebase.database().ref('users/' + uid).once('value').then(snap => {
       const d = snap.val() || {};
       const img = d.profileImage || 'https://via.placeholder.com/80';
       const name = d.username || d.displayName || 'Usuario';
       const username = d.username || '';
-      if (avatarEl) avatarEl.src = img;
-      if (nameEl) nameEl.textContent = name;
-      if (unameEl) unameEl.textContent = username ? '@' + username : '';
+      _groupMsgSenderCache.set(uid, { image: img, name, username });
+      apply(img, name, username);
     }).catch(() => {});
   }
 
