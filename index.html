@@ -4440,7 +4440,7 @@ body {
     <button onclick="closeAIAssistant()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:bg-white/20 transition" aria-label="Cerrar">
       <svg width="18" height="18" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
     </button>
-    <span class="font-bold tracking-widest text-white/70 uppercase text-xs">Drex IA</span>
+    <span class="font-bold tracking-widest text-white/70 uppercase text-xs">Drex IA gratis</span>
     <button onclick="clearAIChat()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center active:bg-white/20 transition" aria-label="Nueva conversación">
       <svg width="15" height="15" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
     </button>
@@ -14045,7 +14045,7 @@ function deleteComment(noteId, commentPath) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'minimax/minimax-m2.5-chat:free',
+          model: 'openrouter/free',
           message: userMessage,
           history
         })
@@ -14059,25 +14059,15 @@ function deleteComment(noteId, commentPath) {
       }
     }
 
-    const openRouterApiKey = window.DREX_OPENROUTER_API_KEY;
-    if (!openRouterApiKey) {
-      return null;
-    }
-
-    const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const openRouterResponse = await fetch('/api/ai', {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + openRouterApiKey,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'Drex Support'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'minimax/minimax-m2.5-chat:free',
+        model: 'openrouter/free',
         messages: [
           {
             role: 'system',
-            content: `Eres Baro, el asistente de soporte oficial de Drex (red social). Tienes acceso completo a todas las funciones de la plataforma. Funciones disponibles: publicaciones (posts/notas en communityNotes), busqueda de usuarios y posts, perfil y cuenta, mensajes directos (chat), comunidades y grupos, notificaciones, comentarios, seguridad y contrasena, transmisiones en vivo, historias, encuestas, stickers, ubicacion en posts. Cuando el usuario tiene un problema con una publicacion, puedes analizarla y eliminarla si tiene contenido inapropiado. Para problemas que requieren seguimiento, solicita email y detalle. Responde siempre en espanol, de forma clara, breve y util. Nunca inventes datos. Si no puedes resolver algo automaticamente, indica que se creara un ticket de soporte.`
+            content: `Eres Baro, el asistente de soporte oficial de Drex (red social), ejecutado con un modelo gratuito. Ayudas con publicaciones, busqueda de usuarios y posts, perfil y cuenta, mensajes directos, comunidades, notificaciones, comentarios, seguridad, transmisiones, historias, encuestas, stickers y ubicacion en posts. Importante: no digas que tienes acceso real si no se te paso un dato concreto; guia al usuario paso a paso y pide solo la informacion necesaria. Si el usuario pide ayuda con codigo o tareas tecnicas, actua como Codex: primero identifica el archivo o seccion a cambiar, propone cambios pequenos tipo parche/diff y evita reescribir todo el proyecto o todo el archivo salvo que sea indispensable. Para problemas que requieren seguimiento, solicita email y detalle. Responde siempre en espanol, claro, breve y util. Nunca inventes datos.`
           },
           ...history.map(item => ({ role: item.role === 'agent' ? 'assistant' : 'user', content: item.text })),
           { role: 'user', content: userMessage }
@@ -14088,7 +14078,7 @@ function deleteComment(noteId, commentPath) {
       return null;
     }
     const openRouterData = await openRouterResponse.json();
-    const content = openRouterData?.choices?.[0]?.message?.content;
+    const content = openRouterData?.reply || openRouterData?.choices?.[0]?.message?.content;
     if (typeof content === 'string' && content.trim()) {
       return content.trim();
     }
@@ -19274,7 +19264,8 @@ function calcTokenScore(tokens, text) {
 
 <script>
 // ===== ASISTENTE IA DREX =====
-const AI_SYSTEM_PROMPT = 'Eres el asistente inteligente de Drex, una plataforma social en español. Eres amigable, ingenioso y muy útil. Respondes siempre en español, con respuestas naturales y conversacionales. No uses asteriscos ni formato markdown. Sé conciso y directo.';
+const AI_SYSTEM_PROMPT = 'Eres el asistente inteligente gratuito de Drex, una plataforma social en español. Eres amigable, ingenioso y muy útil. Respondes siempre en español, con respuestas naturales y conversacionales. No uses asteriscos ni formato markdown. Sé conciso y directo. Si ayudas con código, trabaja como Codex: pregunta o identifica el archivo exacto, entrega cambios pequeños tipo parche o diff, explica qué editar y evita reescribir proyectos o archivos completos salvo que el usuario lo pida.';
+const AI_FREE_MODEL = 'openrouter/free';
 
 let aiMessages = [];
 let aiIsProcessing = false;
@@ -19330,14 +19321,17 @@ async function sendAIMessage(textOverride) {
   aiMessages.push({ role: 'user', content: text });
   setAIOrb('thinking');
   try {
-    const res = await fetch('https://text.pollinations.ai/openai', {
+    const res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'openai', messages: [{ role: 'system', content: AI_SYSTEM_PROMPT }, ...aiMessages], stream: false })
+      body: JSON.stringify({
+        model: AI_FREE_MODEL,
+        messages: [{ role: 'system', content: AI_SYSTEM_PROMPT }, ...aiMessages]
+      })
     });
     if (!res.ok) throw new Error('AI ' + res.status);
     const data = await res.json();
-    const reply = data.choices?.[0]?.message?.content || 'No pude procesar tu solicitud.';
+    const reply = data.reply || 'No pude procesar tu solicitud.';
     aiMessages.push({ role: 'assistant', content: reply });
     addAIBubble(reply, 'bot');
     setAIOrb('speaking');
@@ -19345,7 +19339,7 @@ async function sendAIMessage(textOverride) {
     setAIOrb('idle');
   } catch (err) {
     console.error('AI error:', err);
-    addAIBubble('Error al conectar con la IA. Verifica tu conexión.', 'bot');
+    addAIBubble('Error al conectar con la IA gratis. Verifica que el servidor tenga OPENROUTER_API_KEY configurada.', 'bot');
     setAIOrb('idle');
   }
   aiIsProcessing = false;
