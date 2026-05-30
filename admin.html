@@ -350,6 +350,30 @@
     const dateStr = ticket.timestamp ? new Date(ticket.timestamp).toLocaleString('es', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
     const hasResponse = !!ticket.response;
 
+    const messages = ticket.messages || [];
+    let chatHtml = '';
+    
+    // Si no hay mensajes pero hay detail antiguo, mostrarlo como primer mensaje
+    if (messages.length === 0 && ticket.detail) {
+      chatHtml += `
+        <div class="bg-[#f5f0ed] rounded-xl p-4 text-sm text-[#2f1a14] leading-relaxed whitespace-pre-wrap mb-4">
+          <div class="text-[10px] font-bold text-[#3a241d] mb-1">USUARIO</div>
+          ${escHtml(ticket.detail)}
+        </div>
+      `;
+    }
+
+    messages.forEach(m => {
+      const isAdmin = m.role === 'admin';
+      chatHtml += `
+        <div class="${isAdmin ? 'bg-emerald-50 border border-emerald-100' : 'bg-[#f5f0ed]'} rounded-xl p-4 text-sm text-[#2f1a14] leading-relaxed whitespace-pre-wrap mb-4">
+          <div class="text-[10px] font-bold ${isAdmin ? 'text-emerald-700' : 'text-[#3a241d]'} mb-1">${isAdmin ? 'SOPORTE' : 'USUARIO'}</div>
+          ${escHtml(m.text)}
+          <div class="text-[9px] text-[#b2a7a1] mt-2">${new Date(m.timestamp).toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+      `;
+    });
+
     panel.innerHTML = `
       <div class="sticky top-0 bg-white border-b border-[#f0ebe7] px-5 py-4 flex items-center justify-between z-10">
         <div>
@@ -362,8 +386,6 @@
       </div>
 
       <div class="flex-1 overflow-auto p-5 space-y-5">
-
-        <!-- Meta -->
         <div class="grid grid-cols-2 gap-3 text-xs">
           <div class="bg-[#faf9f8] rounded-xl p-3">
             <div class="text-[#b2a7a1] mb-0.5 font-medium">Usuario</div>
@@ -373,63 +395,57 @@
             <div class="text-[#b2a7a1] mb-0.5 font-medium">Estado actual</div>
             <span class="status-badge ${STATUS_BADGE[statusKey] || 'badge-open'}">${STATUS_LABELS[statusKey] || 'Abierto'}</span>
           </div>
-          <div class="bg-[#faf9f8] rounded-xl p-3 col-span-2">
-            <div class="text-[#b2a7a1] mb-0.5 font-medium">ID del ticket</div>
-            <div class="text-[#2f1a14] font-mono text-[10px] break-all">${id}</div>
-          </div>
         </div>
 
-        <!-- Detail message -->
         <div>
-          <div class="text-xs font-bold text-[#3a241d] uppercase tracking-wider mb-2">Mensaje del usuario</div>
-          <div class="bg-[#f5f0ed] rounded-xl p-4 text-sm text-[#2f1a14] leading-relaxed whitespace-pre-wrap">${escHtml(ticket.detail || 'Sin descripción.')}</div>
+          <div class="text-xs font-bold text-[#3a241d] uppercase tracking-wider mb-3">Conversación</div>
+          <div id="chatHistory" class="space-y-1">${chatHtml}</div>
         </div>
 
-        <!-- Existing response -->
-        ${hasResponse ? `
-        <div>
-          <div class="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <i class="fas fa-check-circle"></i> Respuesta enviada
-          </div>
-          <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-[#2f1a14] leading-relaxed whitespace-pre-wrap">${escHtml(ticket.response)}</div>
-          ${ticket.responseTimestamp ? `<div class="text-[10px] text-emerald-600 mt-1.5"><i class="fas fa-clock"></i> ${new Date(ticket.responseTimestamp).toLocaleString('es', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>` : ''}
-        </div>
-        ` : ''}
-
-        <!-- Change status -->
+        ${statusKey !== 'closed' ? `
         <div>
           <div class="text-xs font-bold text-[#3a241d] uppercase tracking-wider mb-2">Cambiar estado</div>
           <select id="statusSelect" class="w-full border border-[#e8e1dc] rounded-xl px-3 py-2.5 text-sm bg-[#faf9f8] text-[#2f1a14] font-medium">
             <option value="open" ${statusKey === 'open' ? 'selected' : ''}>Abierto</option>
             <option value="in_progress" ${statusKey === 'in_progress' ? 'selected' : ''}>En proceso</option>
-            <option value="resolved" ${statusKey === 'resolved' ? 'selected' : ''}>Resuelto</option>
-            <option value="closed" ${statusKey === 'closed' ? 'selected' : ''}>Cerrado</option>
+            <option value="resolved" ${statusKey === 'resolved' ? 'selected' : ''}>Resuelto (Habilita calificación)</option>
+            <option value="closed" ${statusKey === 'closed' ? 'selected' : ''}>Cerrado (Bloqueo total)</option>
           </select>
         </div>
 
-        <!-- Response -->
         <div>
-          <div class="text-xs font-bold text-[#3a241d] uppercase tracking-wider mb-2">
-            ${hasResponse ? 'Editar respuesta' : 'Escribir respuesta'}
-          </div>
-          <textarea id="responseTextarea" rows="5"
-            placeholder="Escribe tu respuesta al usuario. El usuario recibirá una notificación en la app al guardar."
+          <div class="text-xs font-bold text-[#3a241d] uppercase tracking-wider mb-2">Responder</div>
+          <textarea id="responseTextarea" rows="4"
+            placeholder="Escribe tu respuesta..."
             class="w-full border border-[#e8e1dc] rounded-xl px-4 py-3 text-sm bg-[#faf9f8] resize-none leading-relaxed"
-          >${escHtml(ticket.response || '')}</textarea>
-          <div class="text-[11px] text-[#b2a7a1] mt-1.5"><i class="fas fa-bell text-[10px]"></i> El usuario verá tu respuesta en "Mis tickets" y recibirá una notificación.</div>
+          ></textarea>
         </div>
+        ` : `
+        <div class="bg-gray-100 rounded-xl p-5 text-center">
+          <i class="fas fa-lock text-gray-400 mb-2 block"></i>
+          <p class="text-xs text-gray-500 font-medium">Este ticket está CERRADO. No se pueden enviar más mensajes.</p>
+        </div>
+        `}
+
+        ${ticket.rating ? `
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div class="text-xs font-bold text-amber-800 uppercase mb-2">Calificación del usuario</div>
+          <div class="flex items-center gap-1 text-amber-500 mb-1">
+            ${Array(5).fill(0).map((_, i) => `<i class="${i < ticket.rating ? 'fas' : 'far'} fa-star"></i>`).join('')}
+          </div>
+          ${ticket.ratingComment ? `<p class="text-sm text-amber-900 italic">"${escHtml(ticket.ratingComment)}"</p>` : ''}
+        </div>
+        ` : ''}
 
       </div>
 
-      <!-- Footer actions -->
+      ${statusKey !== 'closed' ? `
       <div class="sticky bottom-0 bg-white border-t border-[#f0ebe7] px-5 py-4 flex gap-3">
-        <button id="saveStatusBtn" onclick="saveStatus('${id}')" class="btn-secondary flex-1">
-          <i class="fas fa-tag mr-1.5"></i> Guardar estado
-        </button>
-        <button id="saveResponseBtn" onclick="saveResponse('${id}')" class="btn-primary flex-1">
-          <i class="fas fa-paper-plane mr-1.5"></i> ${hasResponse ? 'Actualizar' : 'Enviar respuesta'}
+        <button id="saveResponseBtn" onclick="saveResponse('${id}')" class="btn-primary w-full">
+          <i class="fas fa-paper-plane mr-1.5"></i> Enviar respuesta y actualizar
         </button>
       </div>
+      ` : ''}
     `;
   }
 
@@ -459,24 +475,47 @@
 
   async function saveResponse(id) {
     const btn = document.getElementById('saveResponseBtn');
-    const response = (document.getElementById('responseTextarea').value || '').trim();
-    if (!response) {
-      showToast('Escribe una respuesta antes de enviar.', 'error');
+    const responseText = (document.getElementById('responseTextarea').value || '').trim();
+    const statusSelect = document.getElementById('statusSelect');
+    const newStatus = statusSelect ? statusSelect.value : 'in_progress';
+
+    if (!responseText && newStatus === allTickets[id].status) {
+      showToast('Escribe una respuesta o cambia el estado.', 'error');
       return;
     }
+
     btn.disabled = true;
-    btn.textContent = 'Enviando…';
+    btn.textContent = 'Procesando…';
+    
     const now = Date.now();
-    const statusSelect = document.getElementById('statusSelect');
-    const newStatus = statusSelect ? statusSelect.value : undefined;
+    const ticket = allTickets[id];
+    const messages = ticket.messages || [];
+    
+    // Si es el primer mensaje y había un detail, migrarlo
+    if (messages.length === 0 && ticket.detail) {
+      messages.push({
+        role: 'user',
+        text: ticket.detail,
+        timestamp: ticket.timestamp || now - 1000
+      });
+    }
+
+    if (responseText) {
+      messages.push({
+        role: 'admin',
+        text: responseText,
+        timestamp: now
+      });
+    }
+
     try {
       const updates = {
-        response: response,
-        responseTimestamp: now,
-        status: newStatus || 'resolved'
+        messages: messages,
+        status: newStatus,
+        lastUpdate: now,
+        response: responseText || ticket.response || '' // Mantener compatibilidad
       };
-      if (newStatus) updates.status = newStatus;
-      else updates.status = 'resolved';
+      
       await db.ref('supportTickets/' + id).update(updates);
       showToast('Respuesta enviada. El usuario será notificado.', 'success');
     } catch (e) {

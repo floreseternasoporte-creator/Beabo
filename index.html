@@ -13954,8 +13954,9 @@ function deleteComment(noteId, commentPath) {
         chatContainer.appendChild(emptyEl);
         return;
       }
-      const statusLabels = { open: 'Abierto', in_progress: 'En progreso', resolved: 'Resuelto', closed: 'Cerrado' };
+      const statusLabels = { open: 'Abierto', in_progress: 'En proceso', resolved: 'Resuelto', closed: 'Cerrado' };
       const statusColors = { open: 'bg-amber-100 text-amber-700', in_progress: 'bg-blue-100 text-blue-700', resolved: 'bg-green-100 text-green-700', closed: 'bg-[#f0ebe7] text-[#5f4b44]' };
+      
       tickets.forEach(ticket => {
         const date = ticket.timestamp ? new Date(ticket.timestamp).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Fecha desconocida';
         const statusKey = ticket.status || 'open';
@@ -13963,32 +13964,87 @@ function deleteComment(noteId, commentPath) {
         const statusColor = statusColors[statusKey] || statusColors.open;
         const categoryMap = { post: 'Publicación', search: 'Búsqueda', profile: 'Perfil', chat: 'Mensajes', community: 'Comunidad', notification: 'Notificaciones', comment: 'Comentarios', security: 'Seguridad', internet: 'Conexión', error: 'Error técnico', report: 'Reporte', general: 'General' };
         const catLabel = categoryMap[ticket.category] || (ticket.category || 'General');
-        const detailPreview = escapeHtml((ticket.detail || 'Sin descripción').slice(0, 90));
-        const hasResponse = !!(ticket.response);
-        const responseHtml = hasResponse ? `
-          <div class="mt-3 bg-[#f0ece8] border border-[#d9cec8] rounded-xl p-3">
-            <div class="flex items-center gap-1.5 mb-1.5">
-              <i class="fas fa-headset text-[#3a241d] text-xs"></i>
-              <span class="text-xs font-bold text-[#3a241d] uppercase tracking-wide">Respuesta del equipo</span>
+        
+        const messages = ticket.messages || [];
+        let messagesHtml = '';
+        
+        if (messages.length === 0 && ticket.detail) {
+          messagesHtml += `
+            <div class="mb-3">
+              <p class="text-[10px] font-bold text-[#3a241d] mb-1 uppercase">Tú:</p>
+              <div class="bg-[#f5f4f2] rounded-xl p-3 text-sm text-[#2f1a14]">${escapeHtml(ticket.detail)}</div>
             </div>
-            <p class="text-sm text-[#2f1a14]">${escapeHtml(ticket.response)}</p>
-            ${ticket.responseTimestamp ? `<p class="text-[10px] text-[#8a7a71] mt-1">${new Date(ticket.responseTimestamp).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>` : ''}
-          </div>
-        ` : '';
+          `;
+        }
+
+        messages.forEach(m => {
+          const isAdmin = m.role === 'admin';
+          messagesHtml += `
+            <div class="mb-3 ${isAdmin ? '' : 'text-right'}">
+              <p class="text-[10px] font-bold ${isAdmin ? 'text-[#3a241d]' : 'text-[#8a7a71]'} mb-1 uppercase">${isAdmin ? 'Soporte Drex:' : 'Tú:'}</p>
+              <div class="${isAdmin ? 'bg-[#f0ece8] border border-[#d9cec8]' : 'bg-[#3a241d] text-white'} rounded-xl p-3 text-sm inline-block max-w-[90%] text-left">
+                ${escapeHtml(m.text)}
+              </div>
+            </div>
+          `;
+        });
+
+        let interactionHtml = '';
+        if (statusKey === 'in_progress' || statusKey === 'open') {
+          interactionHtml = `
+            <div class="mt-4 pt-3 border-t border-[#f0ebe7]">
+              <div class="flex gap-2">
+                <input id="reply-input-${ticket.id}" type="text" placeholder="Responder al soporte..." class="flex-1 bg-[#f5f4f2] border-none rounded-xl px-3 py-2 text-sm focus:ring-1 focus:ring-[#3a241d]">
+                <button onclick="replyToTicket('${ticket.id}')" class="bg-[#3a241d] text-white px-3 py-2 rounded-xl transition hover:bg-[#5f3d35]">
+                  <i class="fas fa-paper-plane"></i>
+                </button>
+              </div>
+            </div>
+          `;
+        } else if (statusKey === 'resolved') {
+          if (ticket.rating) {
+            interactionHtml = `
+              <div class="mt-4 pt-3 border-t border-[#f0ebe7] text-center">
+                <p class="text-xs font-bold text-green-700 mb-1">¡Gracias por calificar!</p>
+                <div class="flex justify-center gap-1 text-amber-500 text-xs">
+                  ${Array(5).fill(0).map((_, i) => `<i class="${i < ticket.rating ? 'fas' : 'far'} fa-star"></i>`).join('')}
+                </div>
+              </div>
+            `;
+          } else {
+            interactionHtml = `
+              <div class="mt-4 pt-3 border-t border-[#f0ebe7]">
+                <p class="text-xs font-bold text-[#3a241d] mb-2 text-center">¿Cómo fue tu experiencia?</p>
+                <div class="flex justify-center gap-3 mb-2">
+                  ${[1, 2, 3, 4, 5].map(n => `<button onclick="rateTicket('${ticket.id}', ${n})" class="w-8 h-8 rounded-full border border-[#d9cec8] flex items-center justify-center text-sm hover:bg-[#3a241d] hover:text-white transition">${n}</button>`).join('')}
+                </div>
+                <p class="text-[10px] text-[#8a7a71] text-center">Toca un número para calificar al asistente.</p>
+              </div>
+            `;
+          }
+        } else if (statusKey === 'closed') {
+          interactionHtml = `
+            <div class="mt-4 pt-3 border-t border-[#f0ebe7] text-center opacity-60">
+              <p class="text-[10px] font-bold text-gray-500"><i class="fas fa-lock mr-1"></i> TICKET CERRADO</p>
+            </div>
+          `;
+        }
+
         const ticketEl = document.createElement('div');
-        ticketEl.className = `bg-white border rounded-2xl p-4 mb-3 shadow-sm ${hasResponse ? 'border-[#3a241d]/30' : 'border-[#e8e1dc]'}`;
+        ticketEl.className = `bg-white border rounded-2xl p-4 mb-4 shadow-sm border-[#e8e1dc]`;
         ticketEl.innerHTML = `
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs font-bold text-[#3a241d] uppercase tracking-wide">${escapeHtml(catLabel)}</span>
-            <span class="text-xs px-2 py-0.5 rounded-full font-semibold ${statusColor}">${escapeHtml(statusLabel)}</span>
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-[10px] font-bold text-[#3a241d] uppercase tracking-wider bg-[#f5f4f2] px-2 py-1 rounded-md">${escapeHtml(catLabel)}</span>
+            <span class="text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-wider ${statusColor}">${escapeHtml(statusLabel)}</span>
           </div>
-          <p class="text-sm text-[#2f1a14] mb-2">${detailPreview}${(ticket.detail || '').length > 90 ? '...' : ''}</p>
-          <div class="flex items-center justify-between">
-            <p class="text-xs text-[#8a7a71]">${date}</p>
-            <p class="text-xs text-[#b2a7a1]">ID: ${(ticket.ticketId || ticket.id || '').slice(0, 8)}</p>
+          <div class="max-h-60 overflow-y-auto pr-1 mb-2">
+            ${messagesHtml}
           </div>
-          ${ticket.userEmail ? `<p class="text-xs text-[#8a7a71] mt-1">Contacto: ${escapeHtml(ticket.userEmail)}</p>` : ''}
-          ${responseHtml}
+          <div class="flex items-center justify-between mt-3 text-[10px] text-[#b2a7a1]">
+            <p>${date}</p>
+            <p>ID: ${ticket.id.slice(0, 8)}</p>
+          </div>
+          ${interactionHtml}
         `;
         chatContainer.appendChild(ticketEl);
       });
