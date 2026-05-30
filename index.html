@@ -8897,7 +8897,7 @@ function onNoteFormatChange(format) {
         firebase.database().ref('users/' + targetUserId + '/followersCount').transaction(current => (current || 0) + 1);
         firebase.database().ref('users/' + currentUser.uid).once('value').then(userSnap => {
           const followerName = userSnap.val()?.username || 'Alguien';
-          addNotification(targetUserId, `${followerName} te ha seguido`);
+          addNotification(targetUserId, `${followerName} te ha seguido`, 'follow', { actionType: 'profile', actionId: currentUser.uid });
         }).catch(() => {});
 
         updateQuickFollowButtonState(buttonElement, true, true);
@@ -9584,7 +9584,7 @@ function toggleFollowFromUserActions() {
         firebase.database().ref('users/' + targetId + '/followersCount').transaction(c => (c || 0) + 1);
         firebase.database().ref('users/' + user.uid).once('value').then(uSnap => {
           const followerName = uSnap.val()?.username || 'Alguien';
-          addNotification(targetId, `${followerName} te ha seguido`);
+          addNotification(targetId, `${followerName} te ha seguido`, 'follow', { actionType: 'profile', actionId: user.uid });
         });
         showMiniToast('Ahora sigues a @' + (currentPostOptionsAuthorData?.username || 'usuario'));
         closeUserActionsSheet();
@@ -10146,7 +10146,7 @@ function votePost(noteId, voteType) {
       if (updatedNote && !wasLiked && updatedNote.authorId && updatedNote.authorId !== user.uid) {
         firebase.database().ref('users/' + user.uid).once('value').then(s => {
           const uName = s.val()?.username || user.displayName || 'Alguien';
-          addNotification(updatedNote.authorId, `${uName} le dio Like a tu publicación.`, 'vote');
+          addNotification(updatedNote.authorId, `${uName} le dio Like a tu publicación.`, 'vote', { actionType: 'post', actionId: noteId });
         });
       }
       refreshHistorialIfVisible();
@@ -10465,7 +10465,7 @@ async function toggleRepost(noteId) {
 
       shareRepost({ ...note, id: noteId }, reposterName);
       if (note.authorId && note.authorId !== user.uid) {
-        addNotification(note.authorId, `${reposterName} hizo Repost de tu publicación.`, 'repost');
+        addNotification(note.authorId, `${reposterName} hizo Repost de tu publicación.`, 'repost', { actionType: 'post', actionId: noteId });
       }
       refreshHistorialIfVisible();
     }
@@ -11285,7 +11285,7 @@ function submitComment() {
           notificationJobs.push(firebase.database().ref('userComments/' + user.uid + '/' + replyRef.key).set(buildUserCommentEntry(note, resolvedContent, payload.timestamp)));
 
           if (note.authorId && note.authorId !== user.uid) {
-            notificationJobs.push(addNotification(note.authorId, buildPostMessage(), typeForMedia));
+            notificationJobs.push(addNotification(note.authorId, buildPostMessage(), typeForMedia, { actionType: 'post', actionId: noteId }));
           }
 
           if (parentComment.authorId && parentComment.authorId !== user.uid && parentComment.authorId !== note.authorId) {
@@ -11294,7 +11294,7 @@ function submitComment() {
               : (hasSticker
                 ? `${actorName} envió un sticker en respuesta a tu comentario.`
                 : `${actorName} respondió tu comentario.`);
-            notificationJobs.push(addNotification(parentComment.authorId, replyMessage, hasGif ? 'gif' : (hasSticker ? 'sticker' : 'reply')));
+            notificationJobs.push(addNotification(parentComment.authorId, replyMessage, hasGif ? 'gif' : (hasSticker ? 'sticker' : 'reply'), { actionType: 'post', actionId: noteId }));
           }
 
           notificationJobs.push(mentionPromise);
@@ -11314,7 +11314,7 @@ function submitComment() {
         const notifications = [];
         notifications.push(firebase.database().ref('userComments/' + user.uid + '/' + commentRef.key).set(buildUserCommentEntry(note, resolvedContent, payload.timestamp)));
         if (note.authorId && note.authorId !== user.uid) {
-          notifications.push(addNotification(note.authorId, buildPostMessage(), typeForMedia));
+          notifications.push(addNotification(note.authorId, buildPostMessage(), typeForMedia, { actionType: 'post', actionId: noteId }));
         }
         notifications.push(mentionPromise);
         return Promise.all(notifications);
@@ -11664,10 +11664,35 @@ function deleteComment(noteId, commentPath) {
   // Inicializar FCM cuando el usuario esté autenticado
   firebase.auth().onAuthStateChanged((user) => {
     if (user) {
-      // Pequeño delay para no bloquear la carga inicial
       setTimeout(() => initFCM().catch(console.warn), 2000);
+      setTimeout(() => setupSupportTicketResponseListener(user.uid), 3000);
     }
   });
+
+  let _supportTicketListenerRef = null;
+  const _supportTicketNotifiedKey = 'drex_support_notified_';
+
+  function setupSupportTicketResponseListener(userId) {
+    if (_supportTicketListenerRef) {
+      _supportTicketListenerRef.off('child_changed');
+      _supportTicketListenerRef = null;
+    }
+    _supportTicketListenerRef = firebase.database().ref('supportTickets').orderByChild('userId').equalTo(userId);
+    _supportTicketListenerRef.on('child_changed', (snapshot) => {
+      const ticket = snapshot.val();
+      if (!ticket || !ticket.response) return;
+      const ticketId = snapshot.key;
+      const notifiedKey = _supportTicketNotifiedKey + ticketId;
+      const lastNotified = localStorage.getItem(notifiedKey);
+      const responseTs = ticket.responseTimestamp || ticket.updatedAt || 0;
+      if (lastNotified && parseInt(lastNotified) >= responseTs) return;
+      localStorage.setItem(notifiedKey, String(responseTs || Date.now()));
+      const categoryMap = { post: 'tu publicación', search: 'la búsqueda', profile: 'tu perfil', chat: 'mensajes', community: 'tu comunidad', security: 'seguridad', internet: 'conexión', error: 'el error técnico', general: 'tu consulta' };
+      const catLabel = categoryMap[ticket.category] || 'tu consulta';
+      const msg = `Soporte respondió tu ticket sobre ${catLabel}. Toca para ver la respuesta.`;
+      addNotification(userId, msg, 'support_response', { actionType: 'support', actionId: 'tickets' });
+    });
+  }
   /******* FIN FIREBASE CLOUD MESSAGING *******/
   /*********************** FUNCIONES ADICIONALES **************************/
   function contienePalabrasOfensivas(texto) {
@@ -11857,7 +11882,7 @@ function deleteComment(noteId, commentPath) {
     hideSplashScreen(true);
   });
   /*********************** NOTIFICACIONES **************************/
-  async function addNotification(userId, message, type = 'info') {
+  async function addNotification(userId, message, type = 'info', meta = {}) {
     const notificationsRef = firebase.database().ref('notifications/' + userId);
     const newNotificationRef = notificationsRef.push();
     const notificationData = {
@@ -11865,7 +11890,8 @@ function deleteComment(noteId, commentPath) {
       timestamp: Date.now(),
       read: false,
       type: type,
-      notificationId: newNotificationRef.key
+      notificationId: newNotificationRef.key,
+      ...meta
     };
     
     newNotificationRef.set(notificationData);
@@ -12127,23 +12153,26 @@ function deleteComment(noteId, commentPath) {
         vote: 'thumbs-up',
         message: 'envelope',
         moderation: 'shield-alt',
+        mention: 'at',
+        repost: 'retweet',
+        support_response: 'headset',
         info: 'info-circle'
       };
 
+      const hasNav = !!(notification.actionType);
       container.innerHTML = `
-        <div class="notification-item ${notification.type || 'info'} cursor-pointer bg-white p-4 flex items-start gap-3 border border-[#e8e1dc] rounded-xl shadow-sm">
-          <i class="fas fa-${iconMap[notification.type || 'info'] || 'info-circle'} mt-0.5 text-[#FE2C55]"></i>
+        <div class="notification-item ${notification.type || 'info'} cursor-pointer bg-white p-4 flex items-start gap-3 border border-[#e8e1dc] rounded-xl shadow-sm ${hasNav ? 'hover:bg-[#faf9f8] active:scale-[0.99] transition-all' : ''}">
+          <i class="fas fa-${iconMap[notification.type || 'info'] || 'info-circle'} mt-0.5 text-[#3a241d]"></i>
           <div class="flex-1 min-w-0">
             <div class="notification-message break-words text-sm text-gray-800">${notification.message || 'Notificación'}</div>
-            <div class="notification-time text-[10px] text-gray-400 mt-1">${notification.timestamp ? formatRelativeTime(notification.timestamp) : ''}</div>
+            <div class="notification-time text-[10px] text-gray-400 mt-1">${notification.timestamp ? formatRelativeTime(notification.timestamp) : ''}${hasNav ? '<span class="ml-2 text-[#3a241d] font-semibold">Toca para ir →</span>' : ''}</div>
           </div>
-          ${!notification.read ? '<span class="unread-dot w-2 h-2 bg-[#FE2C55] rounded-full mt-2"></span>' : ''}
+          ${!notification.read ? '<span class="unread-dot w-2 h-2 bg-[#3a241d] rounded-full mt-2 flex-shrink-0"></span>' : ''}
         </div>
       `;
 
       const item = container.querySelector('.notification-item');
 
-      // Click en la notificación para leer
       item.addEventListener('click', () => {
         if (!notification.read) {
           let localNotes = getLocalNotifications(userId);
@@ -12153,13 +12182,54 @@ function deleteComment(noteId, commentPath) {
             saveLocalNotifications(userId, localNotes);
           }
           firebase.database().ref('notifications/' + userId + '/' + notification.notificationId).update({ read: true }).catch(() => {});
-          renderNotificationsList(userId);
           updateBadgeCount(userId);
         }
+        handleNotificationNavigation(notification);
       });
 
       notificationsList.appendChild(container);
     });
+  }
+
+  function handleNotificationNavigation(notification) {
+    const { actionType, actionId } = notification;
+    if (!actionType) return;
+    closeNotifications();
+    setTimeout(() => {
+      switch (actionType) {
+        case 'post':
+          if (actionId) {
+            if (typeof openCommentsView === 'function') {
+              openHome && openHome();
+              setTimeout(() => openCommentsView(actionId), 150);
+            }
+          }
+          break;
+        case 'profile':
+          if (actionId && typeof openAuthorProfile === 'function') {
+            openAuthorProfile(actionId);
+          }
+          break;
+        case 'chat':
+          if (actionId && typeof openChatRoomFromInbox === 'function') {
+            if (typeof openChatInboxView === 'function') openChatInboxView();
+            setTimeout(() => openChatRoomFromInbox(actionId), 150);
+          } else if (typeof openChatInboxView === 'function') {
+            openChatInboxView();
+          }
+          break;
+        case 'support':
+          if (typeof openSupportModal === 'function') {
+            openSupportModal();
+            if (actionId === 'tickets') {
+              setTimeout(() => showSupportTickets(), 150);
+            }
+          }
+          break;
+        default:
+          break;
+      }
+    }, 200);
   }
 
   function updateBadgeCount(userId) {
@@ -13893,8 +13963,19 @@ function deleteComment(noteId, commentPath) {
         const categoryMap = { post: 'Publicación', search: 'Búsqueda', profile: 'Perfil', chat: 'Mensajes', community: 'Comunidad', notification: 'Notificaciones', comment: 'Comentarios', security: 'Seguridad', internet: 'Conexión', error: 'Error técnico', report: 'Reporte', general: 'General' };
         const catLabel = categoryMap[ticket.category] || (ticket.category || 'General');
         const detailPreview = escapeHtml((ticket.detail || 'Sin descripción').slice(0, 90));
+        const hasResponse = !!(ticket.response);
+        const responseHtml = hasResponse ? `
+          <div class="mt-3 bg-[#f0ece8] border border-[#d9cec8] rounded-xl p-3">
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <i class="fas fa-headset text-[#3a241d] text-xs"></i>
+              <span class="text-xs font-bold text-[#3a241d] uppercase tracking-wide">Respuesta del equipo</span>
+            </div>
+            <p class="text-sm text-[#2f1a14]">${escapeHtml(ticket.response)}</p>
+            ${ticket.responseTimestamp ? `<p class="text-[10px] text-[#8a7a71] mt-1">${new Date(ticket.responseTimestamp).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>` : ''}
+          </div>
+        ` : '';
         const ticketEl = document.createElement('div');
-        ticketEl.className = 'bg-white border border-[#e8e1dc] rounded-2xl p-4 mb-3 shadow-sm';
+        ticketEl.className = `bg-white border rounded-2xl p-4 mb-3 shadow-sm ${hasResponse ? 'border-[#3a241d]/30' : 'border-[#e8e1dc]'}`;
         ticketEl.innerHTML = `
           <div class="flex items-center justify-between mb-2">
             <span class="text-xs font-bold text-[#3a241d] uppercase tracking-wide">${escapeHtml(catLabel)}</span>
@@ -13906,6 +13987,7 @@ function deleteComment(noteId, commentPath) {
             <p class="text-xs text-[#b2a7a1]">ID: ${(ticket.ticketId || ticket.id || '').slice(0, 8)}</p>
           </div>
           ${ticket.userEmail ? `<p class="text-xs text-[#8a7a71] mt-1">Contacto: ${escapeHtml(ticket.userEmail)}</p>` : ''}
+          ${responseHtml}
         `;
         chatContainer.appendChild(ticketEl);
       });
@@ -20475,7 +20557,7 @@ function renderPlacesList(places) {
 
           firebase.database().ref('users/' + currentUser.uid).once('value').then(userSnap => {
             const followerName = userSnap.val().username;
-            addNotification(currentViewedAuthorId, `${followerName} te ha seguido`);
+            addNotification(currentViewedAuthorId, `${followerName} te ha seguido`, 'follow', { actionType: 'profile', actionId: currentUser.uid });
           });
           updateFollowIcon();
         });
@@ -20504,7 +20586,7 @@ function renderPlacesList(places) {
             userFollowersCountRef.transaction(current => (current || 0) + 1);
             firebase.database().ref('users/' + currentUser.uid).once('value').then(userSnap => {
               const followerName = userSnap.val().username;
-              addNotification(userId, `${followerName} te ha seguido`);
+              addNotification(userId, `${followerName} te ha seguido`, 'follow', { actionType: 'profile', actionId: currentUser.uid });
             });
 
 
