@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Drex — Panel de Soporte</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f4f2; color: #2f1a14; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d9cec8; border-radius: 9px; }
+    .ticket-row { transition: background 0.15s; }
+    .ticket-row:hover { background: #faf7f5; }
+    .ticket-row.selected { background: #f0ebe7; border-left: 3px solid #3a241d; }
+    .status-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .badge-open { background: #fef3c7; color: #92400e; }
+    .badge-in_progress { background: #dbeafe; color: #1d4ed8; }
+    .badge-resolved { background: #d1fae5; color: #065f46; }
+    .badge-closed { background: #f3f4f6; color: #374151; }
+    .stat-card { background: white; border: 1px solid #e8e1dc; border-radius: 16px; padding: 20px; }
+    .side-panel { transition: transform 0.25s cubic-bezier(0.4,0,0.2,1); }
+    textarea:focus, input:focus, select:focus { outline: none; box-shadow: 0 0 0 2px #3a241d30; border-color: #3a241d; }
+    .btn-primary { background: #3a241d; color: white; border-radius: 12px; padding: 10px 20px; font-weight: 600; font-size: 14px; transition: background 0.15s; }
+    .btn-primary:hover { background: #5f3d35; }
+    .btn-primary:disabled { background: #b2a7a1; cursor: not-allowed; }
+    .btn-secondary { background: white; color: #3a241d; border: 1.5px solid #3a241d; border-radius: 12px; padding: 10px 20px; font-weight: 600; font-size: 14px; transition: all 0.15s; }
+    .btn-secondary:hover { background: #f5f0ed; }
+    .tab-active { border-bottom: 2px solid #3a241d; color: #3a241d; font-weight: 700; }
+    .tab-inactive { border-bottom: 2px solid transparent; color: #8a7a71; font-weight: 500; }
+    #authScreen { display: flex; }
+    #adminPanel { display: none; }
+    #accessDenied { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- ===== LOGIN SCREEN ===== -->
+<div id="authScreen" class="min-h-screen items-center justify-center bg-[#f5f4f2]">
+  <div class="w-full max-w-sm mx-auto px-6">
+    <div class="text-center mb-10">
+      <div class="text-5xl font-black text-[#3a241d] mb-2">Drex</div>
+      <div class="text-sm text-[#8a7a71] font-medium">Panel de administración</div>
+    </div>
+    <div class="bg-white rounded-3xl border border-[#e8e1dc] shadow-sm p-8">
+      <p class="text-sm font-semibold text-[#2f1a14] mb-4">Inicia sesión con tu cuenta de admin</p>
+      <input id="loginEmail" type="email" placeholder="Correo electrónico" class="w-full border border-[#e8e1dc] rounded-xl px-4 py-3 text-sm mb-3 bg-[#faf9f8]" />
+      <input id="loginPassword" type="password" placeholder="Contraseña" class="w-full border border-[#e8e1dc] rounded-xl px-4 py-3 text-sm mb-4 bg-[#faf9f8]" />
+      <div id="loginError" class="text-red-500 text-xs mb-3 hidden"></div>
+      <button id="loginBtn" class="btn-primary w-full">Entrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ACCESS DENIED ===== -->
+<div id="accessDenied" class="min-h-screen items-center justify-center bg-[#f5f4f2]">
+  <div class="text-center px-6">
+    <div class="text-6xl mb-4">🔒</div>
+    <h2 class="text-2xl font-bold text-[#3a241d] mb-2">Acceso denegado</h2>
+    <p class="text-[#8a7a71] mb-6">Tu cuenta no tiene permisos de administrador.</p>
+    <button onclick="firebase.auth().signOut()" class="btn-secondary">Cerrar sesión</button>
+  </div>
+</div>
+
+<!-- ===== ADMIN PANEL ===== -->
+<div id="adminPanel" class="min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-[#e8e1dc] px-6 py-4 flex items-center justify-between sticky top-0 z-30">
+    <div class="flex items-center gap-3">
+      <div class="text-2xl font-black text-[#3a241d]">Drex</div>
+      <span class="text-xs bg-[#3a241d] text-white px-2 py-0.5 rounded-full font-semibold">Admin</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="adminEmailLabel" class="text-xs text-[#8a7a71] hidden md:block"></span>
+      <button onclick="firebase.auth().signOut()" class="text-xs text-[#8a7a71] hover:text-[#3a241d] flex items-center gap-1.5 transition-colors">
+        <i class="fas fa-sign-out-alt"></i> Salir
+      </button>
+    </div>
+  </header>
+
+  <!-- Stats bar -->
+  <div id="statsBar" class="px-6 py-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="stat-card">
+      <div class="text-2xl font-black text-[#3a241d]" id="statTotal">—</div>
+      <div class="text-xs text-[#8a7a71] mt-0.5 font-medium">Total tickets</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-black text-amber-700" id="statOpen">—</div>
+      <div class="text-xs text-[#8a7a71] mt-0.5 font-medium">Abiertos</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-black text-blue-600" id="statProgress">—</div>
+      <div class="text-xs text-[#8a7a71] mt-0.5 font-medium">En proceso</div>
+    </div>
+    <div class="stat-card">
+      <div class="text-2xl font-black text-emerald-600" id="statResolved">—</div>
+      <div class="text-xs text-[#8a7a71] mt-0.5 font-medium">Resueltos</div>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="px-6 pb-3 flex flex-col sm:flex-row gap-3">
+    <div class="relative flex-1">
+      <i class="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-[#b2a7a1] text-sm"></i>
+      <input id="searchInput" type="text" placeholder="Buscar por email, categoría o detalle…"
+        class="w-full border border-[#e8e1dc] rounded-xl pl-9 pr-4 py-2.5 text-sm bg-white" />
+    </div>
+    <select id="statusFilter" class="border border-[#e8e1dc] rounded-xl px-3 py-2.5 text-sm bg-white text-[#2f1a14] font-medium">
+      <option value="all">Todos los estados</option>
+      <option value="open">Abiertos</option>
+      <option value="in_progress">En proceso</option>
+      <option value="resolved">Resueltos</option>
+      <option value="closed">Cerrados</option>
+    </select>
+    <select id="categoryFilter" class="border border-[#e8e1dc] rounded-xl px-3 py-2.5 text-sm bg-white text-[#2f1a14] font-medium">
+      <option value="all">Todas las categorías</option>
+      <option value="post">Publicación</option>
+      <option value="search">Búsqueda</option>
+      <option value="profile">Perfil</option>
+      <option value="chat">Mensajes</option>
+      <option value="community">Comunidad</option>
+      <option value="security">Seguridad</option>
+      <option value="internet">Conexión</option>
+      <option value="error">Error técnico</option>
+      <option value="report">Reporte</option>
+      <option value="general">General</option>
+    </select>
+  </div>
+
+  <!-- Main area -->
+  <div class="flex flex-1 overflow-hidden px-6 pb-6 gap-4" style="min-height: 0;">
+
+    <!-- Ticket list -->
+    <div class="flex-1 bg-white border border-[#e8e1dc] rounded-2xl overflow-auto" style="min-width: 0;">
+      <div id="ticketList" class="divide-y divide-[#f0ebe7]">
+        <div class="p-8 text-center text-[#b2a7a1] text-sm">
+          <i class="fas fa-spinner fa-spin text-2xl mb-3 block text-[#d9cec8]"></i>
+          Cargando tickets…
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail panel -->
+    <div id="detailPanel" class="side-panel w-full sm:w-96 bg-white border border-[#e8e1dc] rounded-2xl flex-col overflow-auto hidden" style="min-height: 0;">
+      <!-- Filled by JS -->
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyC9v2qp6zGtmvsFiOknlmTHnN6zZY1RLcI",
+    authDomain: "ggggg-f2508.firebaseapp.com",
+    databaseURL: "https://ggggg-f2508-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "ggggg-f2508",
+    storageBucket: "ggggg-f2508.firebasestorage.app",
+    messagingSenderId: "120837533638",
+    appId: "1:120837533638:web:dab060eedf39a6d19f4cc7"
+  };
+
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+
+  const db = firebase.database();
+  const auth = firebase.auth();
+
+  const CATEGORY_LABELS = {
+    post: 'Publicación', search: 'Búsqueda', profile: 'Perfil', chat: 'Mensajes',
+    community: 'Comunidad', notification: 'Notificaciones', comment: 'Comentarios',
+    security: 'Seguridad', internet: 'Conexión', error: 'Error técnico',
+    report: 'Reporte', general: 'General'
+  };
+
+  const STATUS_LABELS = { open: 'Abierto', in_progress: 'En proceso', resolved: 'Resuelto', closed: 'Cerrado' };
+  const STATUS_BADGE = { open: 'badge-open', in_progress: 'badge-in_progress', resolved: 'badge-resolved', closed: 'badge-closed' };
+
+  let allTickets = {};
+  let selectedTicketId = null;
+  let ticketsListenerRef = null;
+
+  // ===== AUTH FLOW =====
+  auth.onAuthStateChanged(async (user) => {
+    if (!user) {
+      show('authScreen');
+      hide('adminPanel');
+      hide('accessDenied');
+      return;
+    }
+    const adminSnap = await db.ref('admins/' + user.uid).once('value');
+    if (!adminSnap.exists() || !adminSnap.val()) {
+      hide('authScreen');
+      hide('adminPanel');
+      show('accessDenied');
+      return;
+    }
+    document.getElementById('adminEmailLabel').textContent = user.email;
+    hide('authScreen');
+    hide('accessDenied');
+    show('adminPanel');
+    startListening();
+  });
+
+  document.getElementById('loginBtn').addEventListener('click', () => {
+    const email = document.getElementById('loginEmail').value.trim();
+    const pw = document.getElementById('loginPassword').value;
+    const errEl = document.getElementById('loginError');
+    errEl.classList.add('hidden');
+    if (!email || !pw) { showLoginError('Ingresa tu correo y contraseña.'); return; }
+    document.getElementById('loginBtn').disabled = true;
+    document.getElementById('loginBtn').textContent = 'Entrando…';
+    auth.signInWithEmailAndPassword(email, pw).catch(e => {
+      showLoginError('Credenciales incorrectas. Verifica tu correo y contraseña.');
+      document.getElementById('loginBtn').disabled = false;
+      document.getElementById('loginBtn').textContent = 'Entrar';
+    });
+  });
+
+  document.getElementById('loginPassword').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('loginBtn').click();
+  });
+
+  function showLoginError(msg) {
+    const el = document.getElementById('loginError');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+
+  // ===== REALTIME LISTENER =====
+  function startListening() {
+    if (ticketsListenerRef) ticketsListenerRef.off('value');
+    ticketsListenerRef = db.ref('supportTickets').orderByChild('timestamp');
+    ticketsListenerRef.on('value', (snap) => {
+      allTickets = {};
+      if (snap.exists()) {
+        snap.forEach(child => {
+          allTickets[child.key] = { ...child.val(), _id: child.key };
+        });
+      }
+      updateStats();
+      renderList();
+      if (selectedTicketId && allTickets[selectedTicketId]) {
+        renderDetail(selectedTicketId);
+      }
+    });
+  }
+
+  // ===== FILTERS =====
+  document.getElementById('searchInput').addEventListener('input', renderList);
+  document.getElementById('statusFilter').addEventListener('change', renderList);
+  document.getElementById('categoryFilter').addEventListener('change', renderList);
+
+  function getFiltered() {
+    const q = document.getElementById('searchInput').value.toLowerCase().trim();
+    const status = document.getElementById('statusFilter').value;
+    const category = document.getElementById('categoryFilter').value;
+    return Object.values(allTickets)
+      .filter(t => {
+        if (status !== 'all' && t.status !== status) return false;
+        if (category !== 'all' && t.category !== category) return false;
+        if (q) {
+          const blob = (t.userEmail || '') + (t.category || '') + (t.detail || '') + (t.userId || '');
+          if (!blob.toLowerCase().includes(q)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }
+
+  // ===== STATS =====
+  function updateStats() {
+    const tickets = Object.values(allTickets);
+    document.getElementById('statTotal').textContent = tickets.length;
+    document.getElementById('statOpen').textContent = tickets.filter(t => !t.status || t.status === 'open').length;
+    document.getElementById('statProgress').textContent = tickets.filter(t => t.status === 'in_progress').length;
+    document.getElementById('statResolved').textContent = tickets.filter(t => t.status === 'resolved').length;
+  }
+
+  // ===== TICKET LIST =====
+  function renderList() {
+    const list = document.getElementById('ticketList');
+    const filtered = getFiltered();
+    list.innerHTML = '';
+    if (filtered.length === 0) {
+      list.innerHTML = `<div class="p-10 text-center text-[#b2a7a1] text-sm"><i class="fas fa-inbox text-3xl block mb-3 text-[#d9cec8]"></i>No hay tickets con estos filtros.</div>`;
+      return;
+    }
+    filtered.forEach(ticket => {
+      const id = ticket._id;
+      const isSelected = id === selectedTicketId;
+      const hasResponse = !!ticket.response;
+      const row = document.createElement('div');
+      row.className = `ticket-row px-5 py-4 cursor-pointer flex items-start gap-3 ${isSelected ? 'selected' : ''}`;
+      row.dataset.id = id;
+
+      const statusKey = ticket.status || 'open';
+      const catLabel = CATEGORY_LABELS[ticket.category] || ticket.category || 'General';
+      const detailPreview = (ticket.detail || 'Sin descripción').slice(0, 80);
+      const dateStr = ticket.timestamp ? new Date(ticket.timestamp).toLocaleDateString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+
+      row.innerHTML = `
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1 flex-wrap">
+            <span class="status-badge ${STATUS_BADGE[statusKey] || 'badge-open'}">${STATUS_LABELS[statusKey] || 'Abierto'}</span>
+            <span class="text-xs text-[#5f4b44] font-semibold">${escHtml(catLabel)}</span>
+            ${hasResponse ? '<span class="text-[10px] text-emerald-600 font-bold flex items-center gap-1"><i class="fas fa-check-circle"></i> Respondido</span>' : ''}
+          </div>
+          <p class="text-sm text-[#2f1a14] truncate">${escHtml(detailPreview)}${ticket.detail && ticket.detail.length > 80 ? '…' : ''}</p>
+          <div class="flex items-center gap-3 mt-1">
+            <span class="text-[11px] text-[#8a7a71]"><i class="fas fa-user text-[10px]"></i> ${escHtml(ticket.userEmail || ticket.userId || 'Anónimo')}</span>
+            <span class="text-[11px] text-[#b2a7a1]">${dateStr}</span>
+          </div>
+        </div>
+        <i class="fas fa-chevron-right text-[#d9cec8] text-xs mt-1 flex-shrink-0"></i>
+      `;
+      row.addEventListener('click', () => selectTicket(id));
+      list.appendChild(row);
+    });
+  }
+
+  // ===== DETAIL PANEL =====
+  function selectTicket(id) {
+    selectedTicketId = id;
+    renderList();
+    renderDetail(id);
+  }
+
+  function renderDetail(id) {
+    const ticket = allTickets[id];
+    if (!ticket) return;
+    const panel = document.getElementById('detailPanel');
+    panel.classList.remove('hidden');
+    panel.classList.add('flex');
+
+    const statusKey = ticket.status || 'open';
+    const catLabel = CATEGORY_LABELS[ticket.category] || ticket.category || 'General';
+    const dateStr = ticket.timestamp ? new Date(ticket.timestamp).toLocaleString('es', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+    const hasResponse = !!ticket.response;
+
+    panel.innerHTML = `
+      <div class="sticky top-0 bg-white border-b border-[#f0ebe7] px-5 py-4 flex items-center justify-between z-10">
+        <div>
+          <div class="font-bold text-[#3a241d] text-sm">${escHtml(catLabel)}</div>
+          <div class="text-[11px] text-[#b2a7a1] mt-0.5">${dateStr}</div>
+        </div>
+        <button onclick="closeDetail()" class="text-[#b2a7a1] hover:text-[#3a241d] transition-colors p-1.5 rounded-lg hover:bg-[#f5f0ed]">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-auto p-5 space-y-5">
+
+        <!-- Meta -->
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div class="bg-[#faf9f8] rounded-xl p-3">
+            <div class="text-[#b2a7a1] mb-0.5 font-medium">Usuario</div>
+            <div class="text-[#2f1a14] font-semibold break-all">${escHtml(ticket.userEmail || 'No disponible')}</div>
+          </div>
+          <div class="bg-[#faf9f8] rounded-xl p-3">
+            <div class="text-[#b2a7a1] mb-0.5 font-medium">Estado actual</div>
+            <span class="status-badge ${STATUS_BADGE[statusKey] || 'badge-open'}">${STATUS_LABELS[statusKey] || 'Abierto'}</span>
+          </div>
+          <div class="bg-[#faf9f8] rounded-xl p-3 col-span-2">
+            <div class="text-[#b2a7a1] mb-0.5 font-medium">ID del ticket</div>
+            <div class="text-[#2f1a14] font-mono text-[10px] break-all">${id}</div>
+          </div>
+        </div>
+
+        <!-- Detail message -->
+        <div>
+          <div class="text-xs font-bold text-[#3a241d] uppercase tracking-wider mb-2">Mensaje del usuario</div>
+          <div class="bg-[#f5f0ed] rounded-xl p-4 text-sm text-[#2f1a14] leading-relaxed whitespace-pre-wrap">${escHtml(ticket.detail || 'Sin descripción.')}</div>
+        </div>
+
+        <!-- Existing response -->
+        ${hasResponse ? `
+        <div>
+          <div class="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <i class="fas fa-check-circle"></i> Respuesta enviada
+          </div>
+          <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-[#2f1a14] leading-relaxed whitespace-pre-wrap">${escHtml(ticket.response)}</div>
+          ${ticket.responseTimestamp ? `<div class="text-[10px] text-emerald-600 mt-1.5"><i class="fas fa-clock"></i> ${new Date(ticket.responseTimestamp).toLocaleString('es', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>` : ''}
+        </div>
+        ` : ''}
+
+        <!-- Change status -->
+        <div>
+          <div class="text-xs font-bold text-[#3a241d] uppercase tracking-wider mb-2">Cambiar estado</div>
+          <select id="statusSelect" class="w-full border border-[#e8e1dc] rounded-xl px-3 py-2.5 text-sm bg-[#faf9f8] text-[#2f1a14] font-medium">
+            <option value="open" ${statusKey === 'open' ? 'selected' : ''}>Abierto</option>
+            <option value="in_progress" ${statusKey === 'in_progress' ? 'selected' : ''}>En proceso</option>
+            <option value="resolved" ${statusKey === 'resolved' ? 'selected' : ''}>Resuelto</option>
+            <option value="closed" ${statusKey === 'closed' ? 'selected' : ''}>Cerrado</option>
+          </select>
+        </div>
+
+        <!-- Response -->
+        <div>
+          <div class="text-xs font-bold text-[#3a241d] uppercase tracking-wider mb-2">
+            ${hasResponse ? 'Editar respuesta' : 'Escribir respuesta'}
+          </div>
+          <textarea id="responseTextarea" rows="5"
+            placeholder="Escribe tu respuesta al usuario. El usuario recibirá una notificación en la app al guardar."
+            class="w-full border border-[#e8e1dc] rounded-xl px-4 py-3 text-sm bg-[#faf9f8] resize-none leading-relaxed"
+          >${escHtml(ticket.response || '')}</textarea>
+          <div class="text-[11px] text-[#b2a7a1] mt-1.5"><i class="fas fa-bell text-[10px]"></i> El usuario verá tu respuesta en "Mis tickets" y recibirá una notificación.</div>
+        </div>
+
+      </div>
+
+      <!-- Footer actions -->
+      <div class="sticky bottom-0 bg-white border-t border-[#f0ebe7] px-5 py-4 flex gap-3">
+        <button id="saveStatusBtn" onclick="saveStatus('${id}')" class="btn-secondary flex-1">
+          <i class="fas fa-tag mr-1.5"></i> Guardar estado
+        </button>
+        <button id="saveResponseBtn" onclick="saveResponse('${id}')" class="btn-primary flex-1">
+          <i class="fas fa-paper-plane mr-1.5"></i> ${hasResponse ? 'Actualizar' : 'Enviar respuesta'}
+        </button>
+      </div>
+    `;
+  }
+
+  function closeDetail() {
+    selectedTicketId = null;
+    document.getElementById('detailPanel').classList.add('hidden');
+    document.getElementById('detailPanel').classList.remove('flex');
+    renderList();
+  }
+
+  // ===== SAVE ACTIONS =====
+  async function saveStatus(id) {
+    const btn = document.getElementById('saveStatusBtn');
+    const newStatus = document.getElementById('statusSelect').value;
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    try {
+      await db.ref('supportTickets/' + id).update({ status: newStatus });
+      showToast('Estado actualizado correctamente', 'success');
+    } catch (e) {
+      showToast('Error al guardar. Intenta de nuevo.', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-tag mr-1.5"></i> Guardar estado';
+    }
+  }
+
+  async function saveResponse(id) {
+    const btn = document.getElementById('saveResponseBtn');
+    const response = (document.getElementById('responseTextarea').value || '').trim();
+    if (!response) {
+      showToast('Escribe una respuesta antes de enviar.', 'error');
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Enviando…';
+    const now = Date.now();
+    const statusSelect = document.getElementById('statusSelect');
+    const newStatus = statusSelect ? statusSelect.value : undefined;
+    try {
+      const updates = {
+        response: response,
+        responseTimestamp: now,
+        status: newStatus || 'resolved'
+      };
+      if (newStatus) updates.status = newStatus;
+      else updates.status = 'resolved';
+      await db.ref('supportTickets/' + id).update(updates);
+      showToast('Respuesta enviada. El usuario será notificado.', 'success');
+    } catch (e) {
+      showToast('Error al enviar la respuesta.', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-paper-plane mr-1.5"></i> Actualizar';
+    }
+  }
+
+  // ===== TOAST =====
+  function showToast(msg, type = 'success') {
+    const existing = document.getElementById('adminToast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = 'adminToast';
+    toast.className = `fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-lg text-sm font-semibold flex items-center gap-2.5 transition-all ${type === 'success' ? 'bg-[#3a241d] text-white' : 'bg-red-600 text-white'}`;
+    toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${escHtml(msg)}`;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3200);
+  }
+
+  // ===== HELPERS =====
+  function show(id) {
+    const el = document.getElementById(id);
+    el.style.display = 'flex';
+    el.style.flexDirection = el.id === 'adminPanel' ? 'column' : '';
+  }
+  function hide(id) { document.getElementById(id).style.display = 'none'; }
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+</script>
+</body>
+</html>
