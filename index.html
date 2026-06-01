@@ -3606,6 +3606,10 @@ body {
         <span id="reply-context-text"></span>
         <button onclick="clearReplyTarget()" class="text-[#8d7d75] hover:text-[#5f4b44]">Cancelar</button>
       </div>
+      <div id="edit-context-bar" class="hidden mb-2 text-xs text-[#5f4b44] font-semibold bg-[#fff7ed] border border-[#fed7aa] rounded-full px-3 py-1 items-center justify-between">
+        <span>Editando comentario</span>
+        <button onclick="cancelCommentEdit()" class="text-[#9a3412] hover:text-[#7c2d12]">Cancelar</button>
+      </div>
       <div id="comment-gif-preview" class="hidden mb-2 relative inline-block rounded-2xl overflow-hidden border border-[#e8e1dc] bg-white"><img id="selected-comment-gif-img" src="" class="max-h-40"><button onclick="removeCommentGif()" class="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button></div>
       <div id="sticker-preview-comment-input-main" class="hidden mb-2"></div>
       <div class="flex gap-2 items-center">
@@ -10482,6 +10486,7 @@ async function toggleRepost(noteId) {
 
 let currentPostId = null;
 let replyTarget = null;
+let editingCommentTarget = null;
 let stickerTargetInputId = null;
 const pendingStickers = {};
 const STICKER_PREFIX = '__sticker__:';
@@ -10955,6 +10960,7 @@ function closeCommentsView() {
   }
   closeStickerPicker();
   removeCommentGif();
+  cancelCommentEdit();
   clearReplyTarget();
   clearStickerSelection('comment-input-main');
   updateCommentCharCounter();
@@ -11134,6 +11140,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
         <div class="flex items-center gap-2 mb-1">
           <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${commentVerifiedIcon}</button>
           <span class="text-xs text-[#b2a7a1]">${formatRelativeTime(comment.timestamp)}</span>
+          <span id="comment-edited-${commentPath}" class="text-[10px] text-[#b2a7a1] ${comment.editedAt ? '' : 'hidden'}">Editado</span>
         </div>
         ${renderContentWithSticker(comment.content, 'text-sm text-[#2f1a14] mb-2 leading-relaxed')}
         ${safeGifUrl ? `<div class="mb-2 rounded-xl overflow-hidden border border-[#e8e1dc]"><img src="${safeGifUrl}" class="w-full max-h-60 object-cover" loading="lazy"></div>` : ''}
@@ -11219,12 +11226,32 @@ function submitComment() {
   }
 
   const noteId = currentPostId;
+  const editTarget = editingCommentTarget ? { ...editingCommentTarget } : null;
   const targetReply = replyTarget ? { ...replyTarget } : null;
   const resolvedContent = resolveCommentContent('comment-input-main');
   const hasSticker = typeof resolvedContent === 'string' && resolvedContent.startsWith(STICKER_PREFIX);
   const gifUrl = selectedCommentGif;
 
   if (!resolvedContent && !gifUrl) return;
+
+  if (editTarget) {
+    if (gifUrl || String(resolvedContent || '').startsWith(STICKER_PREFIX)) {
+      alert('Para editar, deja solo texto en el comentario.');
+      return;
+    }
+    setCommentSubmitting(true);
+    updateExistingComment(editTarget.noteId, editTarget.commentPath, resolvedContent).then(() => {
+      input.value = '';
+      updateCommentCharCounter();
+      cancelCommentEdit();
+    }).catch(error => {
+      console.error('Error al editar comentario:', error);
+      alert(error.message || 'No se pudo editar el comentario. Inténtalo de nuevo.');
+    }).finally(() => {
+      setCommentSubmitting(false);
+    });
+    return;
+  }
 
   setCommentSubmitting(true);
 
@@ -11351,6 +11378,7 @@ function updateCommentsCount(noteId) {
 }
 
 function setReplyTarget(commentId, authorName) {
+  cancelCommentEdit();
   replyTarget = { commentId, authorName: authorName || 'Usuario' };
   const bar = document.getElementById('reply-context-bar');
   const text = document.getElementById('reply-context-text');
@@ -11375,6 +11403,94 @@ function clearReplyTarget() {
     bar.classList.remove('flex');
   }
   if (input) input.placeholder = '¿Qué opinas?';
+}
+
+function startCommentEdit(noteId, commentPath, currentContent = '') {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para editar comentarios');
+    return;
+  }
+
+  const textContent = String(currentContent || '');
+  if (textContent.startsWith(STICKER_PREFIX)) {
+    alert('Por ahora solo puedes editar comentarios de texto. Elimina y vuelve a publicar si necesitas cambiar un sticker.');
+    return;
+  }
+
+  editingCommentTarget = { noteId, commentPath };
+  clearReplyTarget();
+  removeCommentGif();
+  clearStickerSelection('comment-input-main');
+  closeCommentActionsSheet();
+
+  const input = document.getElementById('comment-input-main');
+  const editBar = document.getElementById('edit-context-bar');
+  if (editBar) {
+    editBar.classList.remove('hidden');
+    editBar.classList.add('flex');
+  }
+  if (input) {
+    input.value = textContent.slice(0, COMMENT_MAX_LENGTH);
+    input.placeholder = 'Edita tu comentario';
+    input.focus();
+    updateCommentCharCounter();
+  }
+}
+
+function cancelCommentEdit() {
+  editingCommentTarget = null;
+  const editBar = document.getElementById('edit-context-bar');
+  const input = document.getElementById('comment-input-main');
+  if (editBar) {
+    editBar.classList.add('hidden');
+    editBar.classList.remove('flex');
+  }
+  if (input) {
+    input.placeholder = replyTarget ? 'Escribe tu respuesta' : '¿Qué opinas?';
+  }
+}
+
+function updateCommentEditedBadge(commentPath, editedAt) {
+  const badge = document.getElementById(`comment-edited-${commentPath}`);
+  if (badge) {
+    badge.textContent = editedAt ? 'Editado' : '';
+    badge.classList.toggle('hidden', !editedAt);
+  }
+}
+
+function updateExistingComment(noteId, commentPath, newContent) {
+  const user = firebase.auth().currentUser;
+  if (!user) return Promise.reject(new Error('Debes iniciar sesión para editar comentarios'));
+
+  const cleanedContent = String(newContent || '').trim();
+  if (!cleanedContent) return Promise.reject(new Error('El comentario no puede quedar vacío'));
+  if (cleanedContent.length > COMMENT_MAX_LENGTH) return Promise.reject(new Error(`Tu comentario no puede superar ${COMMENT_MAX_LENGTH} caracteres.`));
+
+  const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
+  const editedAt = Date.now();
+
+  return commentRef.transaction(comment => {
+    if (!comment) return comment;
+    if (comment.authorId !== user.uid) return;
+    comment.content = cleanedContent;
+    comment.editedAt = editedAt;
+    return comment;
+  }).then(result => {
+    if (!result.committed) throw new Error('No tienes permiso para editar este comentario o ya no existe.');
+    const userCommentKey = commentPath.split('/').pop();
+    const syncHistory = userCommentKey
+      ? firebase.database().ref('userComments/' + user.uid + '/' + userCommentKey).update({
+          content: cleanedContent,
+          editedAt
+        }).catch(error => {
+          console.warn('No se pudo sincronizar el historial del comentario editado:', error);
+        })
+      : Promise.resolve();
+
+    updateCommentEditedBadge(commentPath, editedAt);
+    return syncHistory.then(() => refreshHistorialIfVisible());
+  });
 }
 
 // Votar comentario (funciona para comentarios y respuestas)
@@ -11436,13 +11552,22 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
   const sheet = document.getElementById('comment-actions-sheet');
   const content = document.getElementById('comment-actions-content');
   const user = firebase.auth().currentUser;
-  const canDelete = !!user && !!commentAuthorId && user.uid === commentAuthorId;
+  const canEdit = !!user && !!commentAuthorId && user.uid === commentAuthorId;
+  const canDelete = canEdit;
   const canBlock = !!user && !!commentAuthorId && user.uid !== commentAuthorId;
   const canReport = !!user && (!commentAuthorId || user.uid !== commentAuthorId);
   const safeNoteId = escapeInlineSingleQuote(noteId);
   const safeCommentPath = escapeInlineSingleQuote(commentPath);
   const safeCommentText = escapeInlineSingleQuote(commentText || '');
   const safeAuthorId = escapeInlineSingleQuote(commentAuthorId || '');
+  const deleteActionHtml = `
+    <div class="comment-action-item delete" onclick="deleteCommentConfirm('${safeNoteId}', '${safeCommentPath}')">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+      </svg>
+      <span>Eliminar</span>
+    </div>
+  `;
 
   content.innerHTML = `
     <div class="comment-action-item" onclick="copyCommentText('${safeCommentText}')">
@@ -11451,6 +11576,14 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
       </svg>
       <span>Copiar texto</span>
     </div>
+    ${canEdit ? `
+    <div class="comment-action-item" onclick="startCommentEdit('${safeNoteId}', '${safeCommentPath}', '${safeCommentText}')">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+      </svg>
+      <span>Editar</span>
+    </div>
+    ` : ''}
     ${canBlock ? `
     <div class="comment-action-item" onclick="openBlockAccountConfirmFromComment('${safeNoteId}', '${safeCommentPath}', '${safeAuthorId}')">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -11467,15 +11600,18 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
       <span>Reportar</span>
     </div>
     ` : ''}
-    ${canDelete ? `
-    <div class="comment-action-item delete" onclick="deleteCommentConfirm('${safeNoteId}', '${safeCommentPath}')">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-      </svg>
-      <span>Eliminar</span>
-    </div>
-    ` : ''}
+    ${canDelete ? deleteActionHtml : ''}
   `;
+
+  if (!canDelete && user) {
+    firebase.database().ref('communityNotes/' + noteId + '/authorId').once('value').then(noteAuthorSnap => {
+      if (noteAuthorSnap.val() === user.uid && content && !content.querySelector('.comment-action-item.delete')) {
+        content.insertAdjacentHTML('beforeend', deleteActionHtml);
+      }
+    }).catch(error => {
+      console.warn('No se pudo verificar si el autor del post puede moderar este comentario:', error);
+    });
+  }
 
   overlay.classList.add('active');
   sheet.classList.add('active');
@@ -11513,10 +11649,14 @@ function deleteComment(noteId, commentPath) {
   if (!user) return;
 
   const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
-  commentRef.once('value').then(snapshot => {
+  Promise.all([
+    commentRef.once('value'),
+    firebase.database().ref('communityNotes/' + noteId + '/authorId').once('value')
+  ]).then(([snapshot, noteAuthorSnap]) => {
     const comment = snapshot.val();
+    const noteAuthorId = noteAuthorSnap.val();
     if (!comment) throw new Error('Comentario no encontrado');
-    if (comment.authorId !== user.uid) throw new Error('No tienes permiso para eliminar este comentario');
+    if (comment.authorId !== user.uid && noteAuthorId !== user.uid) throw new Error('No tienes permiso para eliminar este comentario');
     return commentRef.remove();
   }).then(() => {
     closeCommentActionsSheet();
