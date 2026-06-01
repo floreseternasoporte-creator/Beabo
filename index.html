@@ -10800,6 +10800,8 @@ function selectSticker(url) {
 // ===== ORDENAMIENTO DE COMENTARIOS (estilo Reddit) =====
 const COMMENT_MAX_LENGTH = 500;
 let currentCommentSort = 'best';
+let currentPinnedCommentPath = '';
+let pinnedCommentListenerRef = null;
 let isSubmittingComment = false;
 
 function updateCommentCharCounter() {
@@ -10958,6 +10960,11 @@ function closeCommentsView() {
     commentsListenerRef.off();
     commentsListenerRef = null;
   }
+  if (pinnedCommentListenerRef) {
+    pinnedCommentListenerRef.off();
+    pinnedCommentListenerRef = null;
+  }
+  currentPinnedCommentPath = '';
   closeStickerPicker();
   removeCommentGif();
   cancelCommentEdit();
@@ -10981,11 +10988,13 @@ function loadCommentsInView(noteId) {
     '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>';
   commentsList.innerHTML = skeletonHTML;
 
-  if (commentsListenerRef) {
-    commentsListenerRef.off();
-  }
-  commentsListenerRef = firebase.database().ref('postComments/' + noteId);
-  commentsListenerRef.on('value', snapshot => {
+  if (commentsListenerRef) commentsListenerRef.off();
+  if (pinnedCommentListenerRef) pinnedCommentListenerRef.off();
+
+  let latestCommentsSnapshot = null;
+
+  const renderCommentsSnapshot = snapshot => {
+    if (!snapshot) return;
     commentsList.innerHTML = '';
     let totalCount = 0;
 
@@ -10997,6 +11006,13 @@ function loadCommentsInView(noteId) {
     });
 
     const sorted = sortCommentEntries(entries);
+    if (currentPinnedCommentPath && !currentPinnedCommentPath.includes('/replies/')) {
+      sorted.sort((a, b) => {
+        if (a[0] === currentPinnedCommentPath) return -1;
+        if (b[0] === currentPinnedCommentPath) return 1;
+        return 0;
+      });
+    }
 
     sorted.forEach(([commentId, comment]) => {
       totalCount++;
@@ -11017,6 +11033,18 @@ function loadCommentsInView(noteId) {
 
     const countEl = document.getElementById('comments-count-header');
     if (countEl) countEl.textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
+  };
+
+  pinnedCommentListenerRef = firebase.database().ref('communityNotes/' + noteId + '/pinnedCommentPath');
+  pinnedCommentListenerRef.on('value', snapshot => {
+    currentPinnedCommentPath = snapshot.val() || '';
+    renderCommentsSnapshot(latestCommentsSnapshot);
+  });
+
+  commentsListenerRef = firebase.database().ref('postComments/' + noteId);
+  commentsListenerRef.on('value', snapshot => {
+    latestCommentsSnapshot = snapshot;
+    renderCommentsSnapshot(snapshot);
   });
 }
 
@@ -11110,6 +11138,12 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   const hasReplies = comment.replies && Object.keys(comment.replies).length > 0;
   const replyCount = hasReplies ? countVisibleReplies(comment.replies) : 0;
   const isTopLevel = level === 0;
+  const isPinned = currentPinnedCommentPath === commentPath;
+  const pinnedBadgeHtml = isPinned ? `
+    <div class="mb-2 inline-flex items-center gap-1 rounded-full bg-[#fff7ed] border border-[#fed7aa] text-[#9a3412] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z" /></svg>
+      Fijado por el autor
+    </div>` : '';
 
   const commentDiv = document.createElement('div');
 
@@ -11119,7 +11153,9 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
     commentDiv.style.borderLeft = '2px solid #d8cec8';
     commentDiv.style.background = 'transparent';
   } else {
-    commentDiv.className = 'bg-white border border-[#e8e1dc] rounded-2xl p-3';
+    commentDiv.className = isPinned
+      ? 'bg-white border border-[#fed7aa] rounded-2xl p-3 shadow-sm ring-1 ring-[#fff7ed]'
+      : 'bg-white border border-[#e8e1dc] rounded-2xl p-3';
   }
 
   const threadLineHtml = isTopLevel && hasReplies ? `
@@ -11137,6 +11173,7 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
         ${threadLineHtml}
       </div>
       <div class="flex-1 min-w-0">
+        ${pinnedBadgeHtml}
         <div class="flex items-center gap-2 mb-1">
           <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${commentVerifiedIcon}</button>
           <span class="text-xs text-[#b2a7a1]">${formatRelativeTime(comment.timestamp)}</span>
@@ -11603,9 +11640,27 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
     ${canDelete ? deleteActionHtml : ''}
   `;
 
-  if (!canDelete && user) {
-    firebase.database().ref('communityNotes/' + noteId + '/authorId').once('value').then(noteAuthorSnap => {
-      if (noteAuthorSnap.val() === user.uid && content && !content.querySelector('.comment-action-item.delete')) {
+  if (user) {
+    Promise.all([
+      firebase.database().ref('communityNotes/' + noteId + '/authorId').once('value'),
+      firebase.database().ref('communityNotes/' + noteId + '/pinnedCommentPath').once('value')
+    ]).then(([noteAuthorSnap, pinnedSnap]) => {
+      const isPostAuthor = noteAuthorSnap.val() === user.uid;
+      if (!isPostAuthor || !content) return;
+
+      const isPinned = pinnedSnap.val() === commentPath;
+      if (!commentPath.includes('/replies/') && !content.querySelector('.comment-action-item.pin-comment')) {
+        content.insertAdjacentHTML('afterbegin', `
+          <div class="comment-action-item pin-comment" onclick="togglePinComment('${safeNoteId}', '${safeCommentPath}')">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z" />
+            </svg>
+            <span>${isPinned ? 'Desfijar comentario' : 'Fijar comentario'}</span>
+          </div>
+        `);
+      }
+
+      if (!canDelete && !content.querySelector('.comment-action-item.delete')) {
         content.insertAdjacentHTML('beforeend', deleteActionHtml);
       }
     }).catch(error => {
@@ -11633,6 +11688,43 @@ function copyCommentText(text) {
     alert('Texto copiado al portapapeles');
   }).catch(err => {
     console.error('Error al copiar:', err);
+  });
+}
+
+// Fijar o desfijar un comentario principal al estilo Instagram
+function togglePinComment(noteId, commentPath) {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para fijar comentarios');
+    return;
+  }
+  if (!noteId || !commentPath || commentPath.includes('/replies/')) return;
+
+  const noteRef = firebase.database().ref('communityNotes/' + noteId);
+  Promise.all([
+    noteRef.once('value'),
+    firebase.database().ref('postComments/' + noteId + '/' + commentPath).once('value')
+  ]).then(([noteSnap, commentSnap]) => {
+    const note = noteSnap.val() || {};
+    const comment = commentSnap.val();
+    if (!comment) throw new Error('El comentario ya no existe.');
+    if (note.authorId !== user.uid) throw new Error('Solo el autor del post puede fijar comentarios.');
+
+    const isAlreadyPinned = note.pinnedCommentPath === commentPath;
+    const updates = isAlreadyPinned
+      ? { pinnedCommentPath: null, pinnedCommentAt: null }
+      : { pinnedCommentPath: commentPath, pinnedCommentAt: Date.now() };
+
+    return noteRef.update(updates).then(() => {
+      closeCommentActionsSheet();
+      if (!isAlreadyPinned && comment.authorId && comment.authorId !== user.uid) {
+        const actorName = note.authorName || firebase.auth().currentUser?.displayName || 'El autor';
+        addNotification(comment.authorId, `${actorName} fijó tu comentario en su publicación.`, 'comment', { actionType: 'post', actionId: noteId });
+      }
+    });
+  }).catch(error => {
+    console.error('Error al fijar comentario:', error);
+    alert(error.message || 'No se pudo actualizar el comentario fijado.');
   });
 }
 
