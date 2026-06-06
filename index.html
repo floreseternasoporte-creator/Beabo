@@ -4882,18 +4882,7 @@ document.addEventListener('DOMContentLoaded', function() {
   .scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
 </style>
 
-<!-- JS para previsualizar la imagen en tiempo real -->
-<script>
-  function handleProfileImageUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = e => {
-      document.getElementById('profile-image').src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  }
-</script>
+<!-- handleProfileImageUpload defined later with Cloudinary upload -->
 
 
 <!-- MODAL DE EDICIÓN DE PERFIL -->
@@ -5137,20 +5126,7 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
-<script>
-  function handleEditProfileImageUpload(event) {
-    const file = event.target.files[0];
-    const reader = new FileReader();
-
-    reader.onload = function(e) {
-      document.getElementById('edit-profile-image').src = e.target.result;
-    }
-
-    if (file) {
-      reader.readAsDataURL(file);
-    }
-  }
-</script>
+<!-- handleEditProfileImageUpload defined later with Cloudinary upload -->
 
 <!-- MODAL DE PERFIL DEL AUTOR -->
 <div id="author-profile-modal" class="fixed inset-0 overflow-y-auto overflow-x-hidden z-[140] hidden bg-white text-black">
@@ -12128,7 +12104,7 @@ function deleteComment(noteId, commentPath) {
     "zam.contact@yahoo.com",
     "zam.privacy@yahoo.com"
   ]);
-  const DREX_OFFICIAL_EMAIL = "zam.contact@yahoo.com";
+
   const VERIFIED_USER_IDS = new Set();
 
   function isVerifiedEmail(email) {
@@ -13524,11 +13500,6 @@ function deleteComment(noteId, commentPath) {
         }
         authFormContainer.classList.add('hidden');
         mainApp.classList.remove('hidden');
-        // Sistema de Mensajes Oficiales de Drex
-        if (user.email !== DREX_OFFICIAL_EMAIL) {
-          checkAndSendOfficialWelcomeMessage(user.uid);
-        }
-
         // INICIALIZAR SISTEMA DE MONEDAS
 
         if (data) {
@@ -15581,14 +15552,6 @@ function deleteComment(noteId, commentPath) {
     view.style.display = 'none';
   }
 
-  function fileToDataURL(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
 
   function openBlockedAccountsView() {
     const view = document.getElementById('blocked-accounts-view');
@@ -18971,54 +18934,6 @@ let chatTypingListener = null;
     if (counter) counter.textContent = `${safeValue.length}/30 caracteres`;
   }
 
-  async function checkAndSendOfficialWelcomeMessage(userId) {
-    try {
-      const officialUserSnap = await firebase.database().ref('users').orderByChild('email').equalTo(DREX_OFFICIAL_EMAIL).once('value');
-      if (!officialUserSnap.exists()) return;
-      
-      let officialUid = "";
-      officialUserSnap.forEach(child => { officialUid = child.key; });
-      
-      // Actualizar perfil oficial si es necesario
-      await firebase.database().ref('users/' + officialUid).update({
-        username: "Drex Official",
-        isVerified: true
-      });
-
-      const welcomeSentRef = firebase.database().ref('userSettings/' + userId + '/welcomeMessageSent');
-      const welcomeSentSnap = await welcomeSentRef.once('value');
-      
-      if (!welcomeSentSnap.val()) {
-        const conversationId = userId < officialUid ? `${userId}_${officialUid}` : `${officialUid}_${userId}`;
-        const msgRef = firebase.database().ref('conversationMessages/' + conversationId).push();
-        const sentAt = Date.now();
-        const welcomeText = "¡Bienvenido a Drex! 🚀 Esta es la cuenta oficial de la plataforma. Aquí recibirás notificaciones importantes y novedades sobre nuestra comunidad. Si tienes alguna duda, ¡estamos para ayudarte!";
-        
-        await msgRef.set({
-          senderId: officialUid,
-          text: welcomeText,
-          timestamp: sentAt,
-          temporary: false
-        });
-
-        const updates = {};
-        updates['conversations/' + conversationId + '/lastMessage'] = welcomeText;
-        updates['conversations/' + conversationId + '/lastSenderId'] = officialUid;
-        updates['conversations/' + conversationId + '/updatedAt'] = sentAt;
-        updates['userConversations/' + userId + '/' + conversationId + '/otherUid'] = officialUid;
-        updates['userConversations/' + userId + '/' + conversationId + '/updatedAt'] = sentAt;
-        updates['userConversations/' + userId + '/' + conversationId + '/lastMessage'] = welcomeText;
-        updates['userConversations/' + officialUid + '/' + conversationId + '/otherUid'] = userId;
-        updates['userConversations/' + officialUid + '/' + conversationId + '/updatedAt'] = sentAt;
-        updates['userConversations/' + officialUid + '/' + conversationId + '/lastMessage'] = welcomeText;
-        
-        await firebase.database().ref().update(updates);
-        await welcomeSentRef.set(true);
-      }
-    } catch (e) {
-      console.error("Error en mensaje oficial:", e);
-    }
-  }
 
   function openCreateCommunityView() {
     document.getElementById('community-name-input').value = '';
@@ -20518,19 +20433,6 @@ function renderPlacesList(places) {
         console.error("Error al actualizar la biografía:", error);
       });
   }
-  // Función para convertir un archivo a una cadena Base64
-  function convertFileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        resolve(e.target.result);
-      };
-      reader.onerror = (error) => {
-        reject("Error al convertir la imagen: " + error);
-      };
-      reader.readAsDataURL(file);
-    });
-  }
   /*********************** MODAL DE EDICIÓN DE PERFIL **************************/
   function openProfileEdit() {
     const user = firebase.auth().currentUser;
@@ -20588,19 +20490,27 @@ function renderPlacesList(places) {
     });
   }
 
-  function handleEditProfileImageUploadDesktop(event) {
+  async function handleEditProfileImageUploadDesktop(event) {
     const file = event.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-
-    reader.onload = function(e) {
-      if (document.getElementById('edit-profile-image-desktop')) document.getElementById('edit-profile-image-desktop').src = e.target.result;
-      // También actualizar la imagen móvil
-      if (document.getElementById('edit-profile-image-mobile')) document.getElementById('edit-profile-image-mobile').src = e.target.result;
-    }
-
-    if (file) {
-      reader.readAsDataURL(file);
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+    const editImgDesktop = document.getElementById('edit-profile-image-desktop');
+    const editImgMobile = document.getElementById('edit-profile-image-mobile');
+    if (editImgDesktop) editImgDesktop.style.opacity = '0.5';
+    try {
+      const cloudUrl = await processImageFile(file);
+      await firebase.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
+      if (editImgDesktop) { editImgDesktop.src = cloudUrl; editImgDesktop.style.opacity = '1'; }
+      if (editImgMobile) editImgMobile.src = cloudUrl;
+      const profileImg = document.getElementById('profile-image');
+      if (profileImg) profileImg.src = cloudUrl;
+      const desktopImg = document.getElementById('profile-image-desktop');
+      if (desktopImg) desktopImg.src = cloudUrl;
+    } catch (error) {
+      console.error("Error al subir imagen de perfil (desktop):", error);
+      if (editImgDesktop) editImgDesktop.style.opacity = '1';
+      alert("Hubo un error al subir la foto.");
     }
   }
 
@@ -20734,24 +20644,30 @@ function renderPlacesList(places) {
     document.getElementById('edit-profile-image-input').click();
   }
 
-  function handleEditProfileImageUpload(event) {
+  async function handleEditProfileImageUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
     const user = firebase.auth().currentUser;
     if (!user) return;
-    const storageRef = firebase.storage().ref();
-    const imageRef = storageRef.child('profileImages/' + user.uid + '/' + file.name);
-    const uploadTask = imageRef.put(file);
-    uploadTask.on('state_changed', null, error => {
+    const editImg = document.getElementById('edit-profile-image');
+    const editImgMobile = document.getElementById('edit-profile-image-mobile');
+    const editImgDesktop = document.getElementById('edit-profile-image-desktop');
+    if (editImg) editImg.style.opacity = '0.5';
+    try {
+      const cloudUrl = await processImageFile(file);
+      await firebase.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
+      if (editImg) { editImg.src = cloudUrl; editImg.style.opacity = '1'; }
+      if (editImgMobile) editImgMobile.src = cloudUrl;
+      if (editImgDesktop) editImgDesktop.src = cloudUrl;
+      const profileImg = document.getElementById('profile-image');
+      if (profileImg) profileImg.src = cloudUrl;
+      const desktopImg = document.getElementById('profile-image-desktop');
+      if (desktopImg) desktopImg.src = cloudUrl;
+    } catch (error) {
       console.error("Error al subir la imagen (edición):", error);
-    }, () => {
-      uploadTask.snapshot.ref.getDownloadURL().then(downloadURL => {
-        firebase.database().ref('users/' + user.uid).update({
-          profileImage: downloadURL
-        });
-        document.getElementById('edit-profile-image').src = downloadURL;
-      });
-    });
+      if (editImg) editImg.style.opacity = '1';
+      alert("Hubo un error al subir la foto.");
+    }
   }
   /*********************** PERFIL DEL AUTOR **************************/
   function setAuthorProfileVisibility(isVisible) {
