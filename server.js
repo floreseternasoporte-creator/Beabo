@@ -1,8 +1,13 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT = 5000;
+
+const CLOUDINARY_CLOUD_NAME = 'dwkutkyqd';
+const CLOUDINARY_API_KEY = '448394361211235';
+const CLOUDINARY_API_SECRET = 'UV4brna4meM0I5uZ_UG_U7pJz4Q';
 
 const mimeTypes = {
   '.html': 'text/html',
@@ -21,7 +26,51 @@ const mimeTypes = {
   '.ttf': 'font/ttf',
 };
 
-const server = http.createServer((req, res) => {
+function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      try { resolve(JSON.parse(body)); }
+      catch (e) { resolve({}); }
+    });
+    req.on('error', reject);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // Endpoint para firmar uploads de Cloudinary
+  if (req.method === 'POST' && req.url === '/api/cloudinary-sign') {
+    try {
+      const body = await parseBody(req);
+      const timestamp = body.timestamp || Math.floor(Date.now() / 1000);
+      const paramsToSign = `timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+      const signature = crypto.createHash('sha1').update(paramsToSign).digest('hex');
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        signature,
+        api_key: CLOUDINARY_API_KEY,
+        cloud_name: CLOUDINARY_CLOUD_NAME,
+        timestamp
+      }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Error al generar firma' }));
+    }
+    return;
+  }
+
   let urlPath = req.url.split('?')[0];
 
   if (urlPath === '/') {

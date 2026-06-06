@@ -8353,9 +8353,10 @@ function onNoteFormatChange(format) {
 
   function processImageFile(file) {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      const timeoutId = setTimeout(() => reject(new Error('Tiempo de espera agotado al procesar imagen')), 15000);
+      const timeoutId = setTimeout(() => reject(new Error('Tiempo de espera agotado al subir imagen')), 60000);
 
+      // Redimensionar la imagen antes de subir a Cloudinary
+      const reader = new FileReader();
       reader.onload = function(e) {
         const img = new Image();
         img.onload = function() {
@@ -8367,28 +8368,55 @@ function onNoteFormatChange(format) {
             canvas.height = Math.max(1, Math.round(img.height * scale));
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            const compressed = canvas.toDataURL('image/jpeg', 0.82);
-            clearTimeout(timeoutId);
-            resolve(compressed);
+
+            canvas.toBlob(async function(blob) {
+              try {
+                // Obtener firma del servidor
+                const timestamp = Math.floor(Date.now() / 1000);
+                const signRes = await fetch('/api/cloudinary-sign', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ timestamp })
+                });
+                if (!signRes.ok) throw new Error('Error al obtener firma de Cloudinary');
+                const { signature, api_key, cloud_name } = await signRes.json();
+
+                // Subir a Cloudinary
+                const formData = new FormData();
+                formData.append('file', blob, 'imagen.jpg');
+                formData.append('api_key', api_key);
+                formData.append('timestamp', timestamp);
+                formData.append('signature', signature);
+
+                const uploadRes = await fetch(
+                  `https://api.cloudinary.com/v1_1/${cloud_name}/image/upload`,
+                  { method: 'POST', body: formData }
+                );
+                if (!uploadRes.ok) throw new Error('Error al subir imagen a Cloudinary');
+                const data = await uploadRes.json();
+
+                clearTimeout(timeoutId);
+                resolve(data.secure_url);
+              } catch (err) {
+                clearTimeout(timeoutId);
+                reject(err);
+              }
+            }, 'image/jpeg', 0.82);
           } catch (error) {
             clearTimeout(timeoutId);
             reject(error);
           }
         };
-
         img.onerror = function() {
           clearTimeout(timeoutId);
           reject(new Error('No se pudo cargar la imagen seleccionada'));
         };
-
         img.src = e.target.result;
       };
-
       reader.onerror = function() {
         clearTimeout(timeoutId);
         reject(new Error('No se pudo leer una de las imágenes'));
       };
-
       reader.readAsDataURL(file);
     });
   }
