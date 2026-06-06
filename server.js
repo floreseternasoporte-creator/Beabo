@@ -5,9 +5,9 @@ const crypto = require('crypto');
 
 const PORT = 5000;
 
-const CLOUDINARY_CLOUD_NAME = 'dwkutkyqd';
-const CLOUDINARY_API_KEY = '448394361211235';
-const CLOUDINARY_API_SECRET = 'UV4brna4meM0I5uZ_UG_U7pJz4Q';
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || 'dwkutkyqd';
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || '448394361211235';
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || 'UV4brna4meM0I5uZ_UG_U7pJz4Q';
 
 const mimeTypes = {
   '.html': 'text/html',

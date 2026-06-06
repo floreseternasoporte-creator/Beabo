@@ -2994,6 +2994,19 @@ body {
     <div id="chat-typing-indicator" class="hidden px-4 pb-1">
       <span class="text-xs text-[#8d7d75] italic" id="chat-typing-text">escribiendo...</span>
     </div>
+
+    <!-- MENSAJE ANCLADO BANNER -->
+    <div id="chat-pinned-banner" class="hidden border-b border-[#e8e1dc] bg-[#fdf8f5] px-4 py-2 cursor-pointer active:bg-[#f6ede6] transition" onclick="scrollToPinnedMessage()">
+      <div class="flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-[#8a4b33] shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M16 2a1 1 0 0 1 .894.553l1 2A1 1 0 0 1 17 6h-1v5.382l1.447.724A1 1 0 0 1 18 13v2a1 1 0 0 1-1 1h-4v5a1 1 0 0 1-2 0v-5H7a1 1 0 0 1-1-1v-2a1 1 0 0 1 .553-.894L8 11.382V6H7a1 1 0 0 1-.894-1.447l1-2A1 1 0 0 1 8 2h8z"/></svg>
+        <div class="min-w-0 flex-1">
+          <p class="text-[10px] font-bold text-[#8a4b33]">Mensaje anclado</p>
+          <p id="chat-pinned-text" class="text-xs text-[#2f1a14] truncate">...</p>
+        </div>
+        <button onclick="event.stopPropagation();unpinChatMessage()" class="w-6 h-6 rounded-full bg-[#e8e1dc] text-[#5f4b44] flex items-center justify-center shrink-0 text-xs active:scale-90 transition" aria-label="Desanclar">✕</button>
+      </div>
+    </div>
+
     <div id="chat-room-messages" class="flex-1 overflow-y-auto px-4 py-4 space-y-3"></div>
 
     <!-- Reply preview bar -->
@@ -3060,6 +3073,12 @@ body {
     <button onclick="triggerChatForward()" class="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-[#5f4b44] hover:bg-[#f8f4f1] active:bg-[#f1ece9] transition" aria-label="Reenviar">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 17l5-5-5-5" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 12H9a5 5 0 0 0-5 5v1" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Reenviar
+    </button>
+  </div>
+  <div class="border-b border-[#f0ebe8]">
+    <button onclick="togglePinChatMessage()" id="chat-pin-btn" class="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-[#5f4b44] hover:bg-[#f8f4f1] active:bg-[#f1ece9] transition" aria-label="Anclar mensaje">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M16 2a1 1 0 0 1 .894.553l1 2A1 1 0 0 1 17 6h-1v5.382l1.447.724A1 1 0 0 1 18 13v2a1 1 0 0 1-1 1h-4v5a1 1 0 0 1-2 0v-5H7a1 1 0 0 1-1-1v-2a1 1 0 0 1 .553-.894L8 11.382V6H7a1 1 0 0 1-.894-1.447l1-2A1 1 0 0 1 8 2h8z"/></svg>
+      <span id="chat-pin-btn-label">Anclar mensaje</span>
     </button>
   </div>
   <div id="chat-reaction-delete-row" class="hidden">
@@ -17529,6 +17548,7 @@ let chatTypingListener = null;
       subscribeChatTemporarySettings(currentChatRoomId);
       subscribeChatMessages(currentChatRoomId);
       subscribeChatTyping(currentChatRoomId);
+      subscribeConversationPinned(currentChatRoomId);
       setupChatTemporaryPullGesture();
       document.getElementById('chat-room-input')?.focus();
     });
@@ -17571,12 +17591,14 @@ let chatTypingListener = null;
     });
     subscribeChatMessages(groupId);
     subscribeChatTyping(groupId);
+    subscribeConversationPinned(groupId);
     document.getElementById('chat-room-input')?.focus();
   }
 
   function closeChatRoomView() {
     detachChatMessagesListener();
     detachChatTemporarySettingsListener();
+    detachConversationPinnedListener();
     currentChatRoomId = null;
     currentChatRecipient = null;
     currentChatIsGroup = false;
@@ -17972,6 +17994,7 @@ let chatTypingListener = null;
     if (uploadingEl) uploadingEl.classList.remove('hidden');
 
     let done = 0;
+    let failedCount = 0;
     const total = files.length;
     await Promise.all(files.map(async (file, fi) => {
       const entryId = newEntries[fi].id;
@@ -17983,6 +18006,7 @@ let chatTypingListener = null;
           chatPhotoAttachments[idx].uploading = false;
         }
       } catch (e) {
+        failedCount++;
         const idx = chatPhotoAttachments.findIndex(a => a.id === entryId);
         if (idx !== -1) chatPhotoAttachments.splice(idx, 1);
       }
@@ -17993,6 +18017,9 @@ let chatTypingListener = null;
 
     if (uploadingEl) uploadingEl.classList.add('hidden');
     _renderChatPhotoThumbnails();
+    if (failedCount > 0) {
+      alert(`❌ No se pudieron subir ${failedCount} foto${failedCount > 1 ? 's' : ''}. Verifica tu conexión e inténtalo de nuevo con fotos más pequeñas.`);
+    }
   }
 
   function clearChatPhotoAttachment() {
@@ -18169,6 +18196,8 @@ let chatTypingListener = null;
     if (!picker) return;
     const deleteRow = document.getElementById('chat-reaction-delete-row');
     if (deleteRow) deleteRow.classList.toggle('hidden', !mine);
+    const pinLabel = document.getElementById('chat-pin-btn-label');
+    if (pinLabel) pinLabel.textContent = (_chatCurrentPinnedMsgId === msgId) ? 'Desanclar mensaje' : 'Anclar mensaje';
     picker.classList.remove('hidden');
     const pickerWidth = 220;
     const pickerHeight = mine ? 126 : 88;
@@ -18287,6 +18316,90 @@ let chatTypingListener = null;
       firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).remove();
       firebase.database().ref('msgReactions/' + currentChatRoomId + '/' + msgId).remove();
     }).catch(() => {});
+  }
+
+  /* ── MENSAJES ANCLADOS ────────────────────────────────────────── */
+  let _chatPinnedListener = null;
+  let _chatCurrentPinnedMsgId = null;
+
+  function subscribeConversationPinned(conversationId) {
+    detachConversationPinnedListener();
+    const ref = firebase.database().ref('conversationPinned/' + conversationId);
+    const callback = snapshot => {
+      const data = snapshot.val();
+      _chatCurrentPinnedMsgId = data ? (data.msgId || null) : null;
+      renderChatPinnedBanner(data);
+    };
+    ref.on('value', callback);
+    _chatPinnedListener = { ref, callback };
+  }
+
+  function detachConversationPinnedListener() {
+    if (_chatPinnedListener) {
+      try { _chatPinnedListener.ref.off('value', _chatPinnedListener.callback); } catch (_) {}
+      _chatPinnedListener = null;
+    }
+    _chatCurrentPinnedMsgId = null;
+    const banner = document.getElementById('chat-pinned-banner');
+    if (banner) banner.classList.add('hidden');
+  }
+
+  function renderChatPinnedBanner(data) {
+    const banner = document.getElementById('chat-pinned-banner');
+    const textEl = document.getElementById('chat-pinned-text');
+    if (!banner || !textEl) return;
+    if (!data || !data.msgId) {
+      banner.classList.add('hidden');
+      return;
+    }
+    const preview = data.images ? '📷 Foto' : (data.text || 'Mensaje');
+    textEl.textContent = preview;
+    banner.classList.remove('hidden');
+  }
+
+  function togglePinChatMessage() {
+    const msgId = activeReactionMsgId || window._lastReactionMsgId;
+    hideChatReactionPicker();
+    if (!msgId || !currentChatRoomId) return;
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+
+    const pinnedRef = firebase.database().ref('conversationPinned/' + currentChatRoomId);
+
+    if (_chatCurrentPinnedMsgId === msgId) {
+      pinnedRef.remove().catch(() => {});
+      return;
+    }
+
+    firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).once('value').then(snap => {
+      const msg = snap.val();
+      if (!msg) return;
+      const senderName = msg.senderId === user.uid ? 'Tú' : (document.getElementById('chat-room-username')?.textContent || 'Usuario');
+      pinnedRef.set({
+        msgId,
+        text: msg.text || '',
+        images: msg.images || null,
+        senderName,
+        timestamp: Date.now(),
+        pinnedBy: user.uid
+      }).catch(() => {});
+    }).catch(() => {});
+  }
+
+  function unpinChatMessage() {
+    if (!currentChatRoomId) return;
+    firebase.database().ref('conversationPinned/' + currentChatRoomId).remove().catch(() => {});
+  }
+
+  function scrollToPinnedMessage() {
+    if (!_chatCurrentPinnedMsgId) return;
+    const el = document.querySelector('[data-msg-id="' + _chatCurrentPinnedMsgId + '"]');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.transition = 'background 0.3s';
+      el.style.background = 'rgba(138,75,51,0.12)';
+      setTimeout(() => { el.style.background = ''; }, 1200);
+    }
   }
 
   function setChatReply(context) {
