@@ -3039,6 +3039,8 @@ body {
           </svg>
         </label>
         <input id="chat-photo-input" type="file" accept="image/*" multiple class="hidden" onchange="handleChatPhotoAttachment(event)">
+        <button onclick="openStickerPanel()" class="w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0 text-lg leading-none" aria-label="Stickers">😊</button>
+        <button onclick="openGifPanel()" class="w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0 font-black text-xs tracking-tight" aria-label="GIF">GIF</button>
         <input id="chat-room-input" type="text" placeholder="Message..." class="flex-1 h-11 px-4 rounded-full border border-[#e8e1dc] focus:outline-none focus:ring-2 focus:ring-[#cdbeb7]" oninput="handleChatTyping(); updateChatToolbarMode()">
         <button id="chat-viewonce-btn" onclick="toggleChatViewOnce()" class="hidden w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0" aria-label="View once" title="View once">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -3109,6 +3111,32 @@ body {
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M17 8l4 4m0 0l-4 4m4-4H3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Delete for me
     </button>
+  </div>
+</div>
+
+<!-- STICKER PANEL -->
+<div id="chat-sticker-overlay" class="hidden fixed inset-0 z-[69]" onclick="closeStickerPanel()"></div>
+<div id="chat-sticker-panel" class="hidden fixed left-0 right-0 bottom-0 z-[70] bg-white rounded-t-3xl shadow-2xl border-t border-[#e8e1dc]" style="max-height:52vh;display:none">
+  <div class="flex items-center justify-between px-5 pt-4 pb-2">
+    <span class="text-sm font-bold text-[#2f1a14]">Stickers</span>
+    <button onclick="closeStickerPanel()" class="w-7 h-7 rounded-full bg-[#f1ece9] flex items-center justify-center text-[#5f4b44] text-xs font-bold active:scale-90 transition">✕</button>
+  </div>
+  <div id="sticker-category-tabs" class="flex gap-2 px-4 pb-2 overflow-x-auto scrollbar-none"></div>
+  <div id="sticker-grid" class="grid grid-cols-6 gap-1 px-3 pb-4 overflow-y-auto" style="max-height:calc(52vh - 90px)"></div>
+</div>
+
+<!-- GIF PANEL -->
+<div id="chat-gif-overlay" class="hidden fixed inset-0 z-[69]" onclick="closeGifPanel()"></div>
+<div id="chat-gif-panel" class="hidden fixed left-0 right-0 bottom-0 z-[70] bg-white rounded-t-3xl shadow-2xl border-t border-[#e8e1dc]" style="max-height:58vh;display:none">
+  <div class="flex items-center gap-3 px-4 pt-4 pb-3">
+    <div class="flex-1 flex items-center gap-2 bg-[#f1ece9] rounded-full px-3 h-10">
+      <svg class="w-4 h-4 text-[#8d7d75] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35" stroke-linecap="round"/></svg>
+      <input id="chat-gif-search-input" type="text" placeholder="Buscar GIFs..." class="flex-1 bg-transparent text-sm outline-none text-[#2f1a14] placeholder-[#b4a9a4]" oninput="handleGifSearch(this.value)">
+    </div>
+    <button onclick="closeGifPanel()" class="w-8 h-8 rounded-full bg-[#f1ece9] flex items-center justify-center text-[#5f4b44] text-xs font-bold shrink-0 active:scale-90 transition">✕</button>
+  </div>
+  <div id="gif-grid" class="grid grid-cols-2 gap-2 px-4 pb-4 overflow-y-auto" style="max-height:calc(58vh - 80px)">
+    <div class="col-span-2 flex items-center justify-center h-24 text-[#b4a9a4] text-sm">Buscando GIFs...</div>
   </div>
 </div>
 
@@ -17677,6 +17705,167 @@ let chatTypingListener = null;
     firebase.database().ref(`conversationReadAt/${conversationId}/${user.uid}`).set(Date.now());
   }
 
+  /* ══════════════════════════════════════════════════════════════
+     STICKERS
+  ══════════════════════════════════════════════════════════════ */
+  const STICKER_PACKS = {
+    '😀 Caras':   ['😀','😂','🥹','😍','🤩','😎','🥳','😭','😤','🤯','🥺','😏','😴','🤔','🤭','😇','🤗','🫠','😶','🤡','😆','😅','🤣','😊','😋'],
+    '👍 Gestos':  ['👍','👎','👏','🙌','🤝','🫶','✌️','🤞','🤙','💪','🙏','🤌','👌','🫰','🤘','👈','👉','👆','☝️','🫵'],
+    '🐶 Animales':['🐶','🐱','🐼','🐨','🦊','🐯','🦁','🐸','🐙','🦋','🐬','🦄','🐘','🦒','🐧','🦜','🐝','🐉','🦋','🐠','🦔','🦦','🐺','🦅','🐢'],
+    '🍕 Comida':  ['🍕','🍔','🌮','🍜','🍣','🍦','🎂','🍩','☕','🧋','🍓','🍑','🥑','🍰','🍫','🥐','🍿','🧁','🍭','🥤','🍷','🍺','🎃','🥨','🫐'],
+    '❤️ Amor':   ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💗','💖','💝','💘','💌','💋','🫀','💓','💞','🥰','😘','💍','💒','🌹','✨','🔥'],
+  };
+  let _activeStickerPack = Object.keys(STICKER_PACKS)[0];
+
+  function openStickerPanel() {
+    closeGifPanel();
+    const panel = document.getElementById('chat-sticker-panel');
+    const overlay = document.getElementById('chat-sticker-overlay');
+    if (!panel) return;
+    panel.style.display = 'block';
+    panel.classList.remove('hidden');
+    overlay?.classList.remove('hidden');
+    _renderStickerTabs();
+    _renderStickerGrid(_activeStickerPack);
+  }
+
+  function closeStickerPanel() {
+    const panel = document.getElementById('chat-sticker-panel');
+    const overlay = document.getElementById('chat-sticker-overlay');
+    panel?.classList.add('hidden');
+    if (panel) panel.style.display = 'none';
+    overlay?.classList.add('hidden');
+  }
+
+  function _renderStickerTabs() {
+    const tabs = document.getElementById('sticker-category-tabs');
+    if (!tabs) return;
+    tabs.innerHTML = Object.keys(STICKER_PACKS).map(name =>
+      `<button onclick="_renderStickerGrid('${name.replace(/'/g,"\\'")}');this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('bg-[#2f1a14]','text-white'));this.classList.add('bg-[#2f1a14]','text-white')"
+        class="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border border-[#e8e1dc] text-[#5f4b44] active:scale-95 transition ${name===_activeStickerPack?'bg-[#2f1a14] text-white':'bg-[#f8f4f1]'}">${name}</button>`
+    ).join('');
+  }
+
+  function _renderStickerGrid(packName) {
+    _activeStickerPack = packName;
+    const grid = document.getElementById('sticker-grid');
+    if (!grid) return;
+    const stickers = STICKER_PACKS[packName] || [];
+    grid.innerHTML = stickers.map(s =>
+      `<button onclick="sendSticker(this.textContent.trim())" class="text-3xl w-full aspect-square flex items-center justify-center rounded-2xl hover:bg-[#f1ece9] active:scale-90 transition leading-none">${s}</button>`
+    ).join('');
+  }
+
+  async function sendSticker(emoji) {
+    closeStickerPanel();
+    const user = firebase.auth().currentUser;
+    if (!user || !currentChatRoomId) return;
+    const payload = {
+      senderId: user.uid,
+      type: 'sticker',
+      sticker: emoji,
+      text: '',
+      timestamp: firebase.database.ServerValue.TIMESTAMP
+    };
+    if (currentChatIsGroup) {
+      try {
+        const snap = await firebase.database().ref('users/' + user.uid).once('value');
+        const d = snap.val() || {};
+        payload.senderName = d.username || d.displayName || 'Usuario';
+      } catch(_) { payload.senderName = 'Usuario'; }
+    }
+    firebase.database().ref('conversationMessages/' + currentChatRoomId).push(payload);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     GIF SEARCH (Tenor)
+  ══════════════════════════════════════════════════════════════ */
+  const _TENOR_KEY = 'LIVDSRZULELA';
+  let _gifSearchTimer = null;
+
+  function openGifPanel() {
+    closeStickerPanel();
+    const panel = document.getElementById('chat-gif-panel');
+    const overlay = document.getElementById('chat-gif-overlay');
+    if (!panel) return;
+    panel.style.display = 'block';
+    panel.classList.remove('hidden');
+    overlay?.classList.remove('hidden');
+    const input = document.getElementById('chat-gif-search-input');
+    if (input) input.value = '';
+    _fetchGifs('');
+    setTimeout(() => input?.focus(), 100);
+  }
+
+  function closeGifPanel() {
+    const panel = document.getElementById('chat-gif-panel');
+    const overlay = document.getElementById('chat-gif-overlay');
+    panel?.classList.add('hidden');
+    if (panel) panel.style.display = 'none';
+    overlay?.classList.add('hidden');
+  }
+
+  function handleGifSearch(query) {
+    clearTimeout(_gifSearchTimer);
+    _gifSearchTimer = setTimeout(() => _fetchGifs(query), 400);
+  }
+
+  async function _fetchGifs(query) {
+    const grid = document.getElementById('gif-grid');
+    if (!grid) return;
+    grid.innerHTML = `<div class="col-span-2 flex items-center justify-center h-24 text-[#b4a9a4] text-sm">Buscando GIFs...</div>`;
+    const q = encodeURIComponent(query || '');
+    const url = query
+      ? `https://api.tenor.com/v1/search?q=${q}&key=${_TENOR_KEY}&limit=20&media_filter=minimal&contentfilter=medium`
+      : `https://api.tenor.com/v1/trending?key=${_TENOR_KEY}&limit=20&media_filter=minimal&contentfilter=medium`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      const results = (data.results || []).map(r => {
+        const media = (r.media || [{}])[0];
+        return {
+          id: r.id,
+          url: media?.gif?.url || '',
+          preview: media?.tinygif?.url || media?.gif?.url || '',
+          dims: media?.tinygif?.dims || [200, 150],
+        };
+      }).filter(g => g.url);
+      if (!results.length) {
+        grid.innerHTML = `<div class="col-span-2 flex items-center justify-center h-24 text-[#b4a9a4] text-sm">No se encontraron GIFs</div>`;
+        return;
+      }
+      grid.innerHTML = results.map(g =>
+        `<button onclick="sendGif('${g.url.replace(/'/g,"\\'")}','${g.preview.replace(/'/g,"\\'")}') " class="rounded-2xl overflow-hidden active:scale-95 transition bg-[#f1ece9]" style="aspect-ratio:${g.dims[0]||4}/${g.dims[1]||3}">
+          <img src="${g.preview}" class="w-full h-full object-cover" loading="lazy" alt="GIF">
+        </button>`
+      ).join('');
+    } catch(e) {
+      grid.innerHTML = `<div class="col-span-2 flex items-center justify-center h-24 text-[#b4a9a4] text-sm">Error cargando GIFs</div>`;
+    }
+  }
+
+  async function sendGif(gifUrl, previewUrl) {
+    closeGifPanel();
+    const user = firebase.auth().currentUser;
+    if (!user || !currentChatRoomId) return;
+    const payload = {
+      senderId: user.uid,
+      type: 'gif',
+      gifUrl: gifUrl,
+      gifPreview: previewUrl || gifUrl,
+      text: '',
+      timestamp: firebase.database.ServerValue.TIMESTAMP
+    };
+    if (currentChatIsGroup) {
+      try {
+        const snap = await firebase.database().ref('users/' + user.uid).once('value');
+        const d = snap.val() || {};
+        payload.senderName = d.username || d.displayName || 'Usuario';
+      } catch(_) { payload.senderName = 'Usuario'; }
+    }
+    firebase.database().ref('conversationMessages/' + currentChatRoomId).push(payload);
+  }
+
   function detachReadReceiptListener() {
     if (_readReceiptListener?.ref && _readReceiptListener?.cb) {
       _readReceiptListener.ref.off('value', _readReceiptListener.cb);
@@ -18373,7 +18562,11 @@ let chatTypingListener = null;
         }
       })() : '';
       let content;
-      if (msg.type === 'voice' && msg.voiceUrl) {
+      if (msg.type === 'sticker' && msg.sticker) {
+        content = `<div class="text-5xl select-none leading-none p-1">${escapeHtml(msg.sticker)}</div>`;
+      } else if (msg.type === 'gif' && msg.gifUrl) {
+        content = `<img src="${escapeHtml(msg.gifUrl)}" class="rounded-2xl block" style="max-width:200px;max-height:200px;object-fit:cover;cursor:pointer" alt="GIF" onclick="window.open('${escapeHtml(msg.gifUrl)}','_blank')">`;
+      } else if (msg.type === 'voice' && msg.voiceUrl) {
         const vDur = msg.voiceDuration ? `${msg.voiceDuration}s` : '';
         const vAudioId = 'vaudio-' + resolvedId;
         content = `<div class="flex items-center gap-2" style="min-width:175px">
@@ -18415,7 +18608,7 @@ let chatTypingListener = null;
           <div class="flex items-end gap-2 max-w-[85%]">
             <img class="group-sender-avatar w-8 h-8 rounded-full object-cover border border-[#e8e1dc] shrink-0 cursor-pointer" src="https://via.placeholder.com/80" data-uid="${escapeHtml(senderId)}" alt="${escapeHtml(senderName)}">
             <div class="flex flex-col items-start min-w-0">
-              <div class="msg-bubble ${msgImages.length && !hasText && !replyBlock ? 'bg-transparent border-0 p-0' : 'bg-white text-[#2f1a14] border border-[#e8e1dc] px-4 py-2'} rounded-2xl select-none cursor-pointer" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
+              <div class="msg-bubble ${(msgImages.length && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : 'bg-white text-[#2f1a14] border border-[#e8e1dc] px-4 py-2'} rounded-2xl select-none cursor-pointer" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
                 ${replyBlock}${content}
               </div>
               ${timeStr ? `<span class="text-[10px] text-[#b4a9a4] px-1">${timeStr}</span>` : ''}
@@ -18444,7 +18637,7 @@ let chatTypingListener = null;
         wrapper.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
         if (resolvedId) wrapper.dataset.msgId = resolvedId;
         wrapper.innerHTML = `
-          <div class="msg-bubble ${msgImages.length && !hasText && !replyBlock ? 'bg-transparent border-0 p-0' : (mine ? 'bg-[#2f1a14] text-white px-4 py-2' : 'bg-white text-[#2f1a14] border border-[#e8e1dc] px-4 py-2')} rounded-2xl max-w-[78%] select-none cursor-pointer" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
+          <div class="msg-bubble ${(msgImages.length && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : (mine ? 'bg-[#2f1a14] text-white px-4 py-2' : 'bg-white text-[#2f1a14] border border-[#e8e1dc] px-4 py-2')} rounded-2xl max-w-[78%] select-none cursor-pointer" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
             ${replyBlock}${content}
           </div>
           <div id="reactions-${resolvedId}" class="flex flex-wrap gap-1 mt-0.5 ${mine ? 'justify-end' : 'justify-start'} px-1"></div>
