@@ -454,6 +454,9 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.cv-wave { transition: height 0.12s ease; }
+@keyframes cvWavePulse { 0%,100%{height:20%} 50%{height:90%} }
+
 .search-cat-chip.active {
   background-color: #fff;
   color: #2f1a14;
@@ -3008,8 +3011,9 @@ body {
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#8a7a71]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
           <div class="min-w-0">
-            <p id="chat-room-username" class="font-black text-base truncate">Usuario</p>
+            <p id="chat-room-username" class="font-black text-base truncate leading-tight">Usuario</p>
             <p id="chat-room-group-subtitle" class="hidden text-xs text-[#8d7d75] truncate"></p>
+            <p id="chat-room-status" class="hidden text-[11px] font-semibold truncate"></p>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -3056,7 +3060,46 @@ body {
       </div>
     </div>
 
-    <div class="border-t border-[#e8e1dc] bg-white px-4 py-3">
+    <!-- View-once indicator -->
+    <div id="chat-viewonce-bar" class="hidden border-t border-amber-200 bg-amber-50 px-4 py-1.5">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span class="text-[11px] font-bold text-amber-700">Ver una vez activado — el mensaje desaparece al verlo</span>
+        </div>
+        <button onclick="toggleChatViewOnce()" class="text-amber-600 text-xs font-bold active:scale-90">✕</button>
+      </div>
+    </div>
+
+    <!-- Voice recording bar -->
+    <div id="chat-voice-recording-bar" class="hidden border-t border-[#e8e1dc] bg-white px-4 py-3">
+      <div class="flex items-center gap-3">
+        <button onclick="cancelChatVoice()" class="w-10 h-10 rounded-full bg-[#f1ece9] text-red-500 flex items-center justify-center active:scale-90 transition" aria-label="Cancelar">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <div class="flex-1 flex items-center gap-1.5">
+          <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0"></div>
+          <div class="flex-1 flex items-center justify-center gap-0.5 h-7" id="chat-voice-waves">
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:30%"></div>
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:55%"></div>
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:80%"></div>
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:95%"></div>
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:80%"></div>
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:55%"></div>
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:30%"></div>
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:50%"></div>
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:70%"></div>
+            <div class="w-0.5 bg-[#2f1a14] rounded-full cv-wave" style="height:40%"></div>
+          </div>
+          <span id="chat-voice-timer" class="text-sm font-bold text-[#2f1a14] min-w-[38px] text-right">0:00</span>
+        </div>
+        <button onclick="sendChatVoice()" class="w-10 h-10 rounded-full bg-[#2f1a14] text-white flex items-center justify-center active:scale-90 transition" aria-label="Enviar">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path d="M12 19V5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 11l6-6 6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="chat-main-toolbar" class="border-t border-[#e8e1dc] bg-white px-4 py-3">
       <div id="chat-photo-preview-wrap" class="hidden mb-2">
         <div id="chat-photo-thumbnails" class="flex gap-2 overflow-x-auto pb-1 flex-wrap max-h-40"></div>
         <div id="chat-photo-uploading" class="hidden text-xs text-[#8d7d75] flex items-center gap-1.5 mt-1">
@@ -3065,7 +3108,7 @@ body {
         </div>
       </div>
       <div class="flex items-center gap-2">
-        <label for="chat-photo-input" class="w-10 h-10 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center cursor-pointer active:scale-95 transition" aria-label="Adjuntar foto">
+        <label for="chat-photo-input" class="w-10 h-10 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center cursor-pointer active:scale-95 transition shrink-0" aria-label="Adjuntar foto">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="3" y="4" width="18" height="16" rx="2.5"></rect>
             <circle cx="8.5" cy="9" r="1.5"></circle>
@@ -3073,15 +3116,18 @@ body {
           </svg>
         </label>
         <input id="chat-photo-input" type="file" accept="image/*" multiple class="hidden" onchange="handleChatPhotoAttachment(event)">
-        <button onclick="openChatCamera()" class="w-10 h-10 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition" aria-label="Cámara">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="13" r="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <input id="chat-room-input" type="text" placeholder="Escribe un mensaje..." class="flex-1 h-11 px-4 rounded-full border border-[#e8e1dc] focus:outline-none focus:ring-2 focus:ring-[#cdbeb7]" oninput="handleChatTyping(); updateChatToolbarMode()">
+        <button id="chat-viewonce-btn" onclick="toggleChatViewOnce()" class="w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0" aria-label="Ver una vez" title="Mensaje que desaparece al verse">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
-        <input id="chat-room-input" type="text" placeholder="Escribe un mensaje..." class="flex-1 h-11 px-4 rounded-full border border-[#e8e1dc] focus:outline-none focus:ring-2 focus:ring-[#cdbeb7]" oninput="handleChatTyping()">
-        <button onclick="sendChatMessage()" class="w-11 h-11 rounded-full bg-[#2f1a14] text-white flex items-center justify-center active:scale-95 transition" aria-label="Enviar mensaje">
+        <button id="chat-send-btn" onclick="sendChatMessage()" class="w-11 h-11 rounded-full bg-[#2f1a14] text-white flex items-center justify-center active:scale-95 transition shrink-0 hidden" aria-label="Enviar mensaje">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
             <path d="M12 19V5" stroke-linecap="round" stroke-linejoin="round"></path>
             <path d="M6 11l6-6 6 6" stroke-linecap="round" stroke-linejoin="round"></path>
           </svg>
+        </button>
+        <button id="chat-mic-btn" onclick="startChatVoice()" class="w-11 h-11 rounded-full bg-[#2f1a14] text-white flex items-center justify-center active:scale-95 transition shrink-0" aria-label="Mensaje de voz">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 0-3-3 3 3 0 0 0-3 3V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
       </div>
     </div>
@@ -8377,6 +8423,17 @@ function onNoteFormatChange(format) {
     document.getElementById('note-image-fullscreen-camera')?.click();
   }
 
+  /* ── Cloudinary: constantes + firma client-side ── */
+  const CLOUDINARY_CLOUD  = 'dwkutkyqd';
+  const CLOUDINARY_KEY    = '448394361211235';
+  const CLOUDINARY_SECRET = 'UV4brna4meM0I5uZ_UG_U7pJz4Q';
+
+  async function cloudinaryClientSign(timestamp) {
+    const str = `timestamp=${timestamp}${CLOUDINARY_SECRET}`;
+    const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   function processImageFile(file) {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => reject(new Error('Tiempo de espera agotado al subir imagen')), 60000);
@@ -8397,15 +8454,11 @@ function onNoteFormatChange(format) {
 
             canvas.toBlob(async function(blob) {
               try {
-                // Obtener firma del servidor
+                // Firma Cloudinary directamente en el cliente (sin servidor)
                 const timestamp = Math.floor(Date.now() / 1000);
-                const signRes = await fetch('/api/cloudinary-sign', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ timestamp })
-                });
-                if (!signRes.ok) throw new Error('Error al obtener firma de Cloudinary');
-                const { signature, api_key, cloud_name } = await signRes.json();
+                const signature = await cloudinaryClientSign(timestamp);
+                const api_key = CLOUDINARY_KEY;
+                const cloud_name = CLOUDINARY_CLOUD;
 
                 // Subir a Cloudinary
                 const formData = new FormData();
@@ -17374,6 +17427,255 @@ let chatTypingListener = null;
     document.getElementById('chat-contact-note-overlay')?.classList.add('hidden');
   }
 
+  /* ══════════════════════════════════════════════════════════════
+     TOOLBAR: alternar botón micrófono ↔ enviar
+  ══════════════════════════════════════════════════════════════ */
+  function updateChatToolbarMode() {
+    const hasText = !!(document.getElementById('chat-room-input')?.value.trim());
+    document.getElementById('chat-send-btn')?.classList.toggle('hidden', !hasText);
+    document.getElementById('chat-mic-btn')?.classList.toggle('hidden', hasText);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     PRESENCIA ONLINE (Activo ahora)
+  ══════════════════════════════════════════════════════════════ */
+  let _presenceListener = null;
+
+  function setUserOnlinePresence() {
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+    const ref = firebase.database().ref('userPresence/' + user.uid);
+    ref.set({ online: true, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+    ref.onDisconnect().update({ online: false, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+  }
+
+  function detachPresenceListener() {
+    if (_presenceListener?.ref && _presenceListener?.cb) {
+      _presenceListener.ref.off('value', _presenceListener.cb);
+    }
+    _presenceListener = null;
+  }
+
+  function subscribePresence(otherUid) {
+    detachPresenceListener();
+    const statusEl = document.getElementById('chat-room-status');
+    if (!statusEl || !otherUid) return;
+    const ref = firebase.database().ref('userPresence/' + otherUid);
+    const cb = snap => {
+      const data = snap.val();
+      if (!data) { statusEl.classList.add('hidden'); return; }
+      if (data.online) {
+        statusEl.textContent = 'Activo ahora';
+        statusEl.className = 'text-[11px] font-semibold truncate text-green-500';
+        statusEl.classList.remove('hidden');
+      } else {
+        const diff = Date.now() - Number(data.lastSeen || 0);
+        let label = '';
+        if (diff < 60000) label = 'Activo hace un momento';
+        else if (diff < 3600000) label = `Activo hace ${Math.floor(diff / 60000)} min`;
+        else if (diff < 86400000) label = `Activo hace ${Math.floor(diff / 3600000)}h`;
+        if (label) {
+          statusEl.textContent = label;
+          statusEl.className = 'text-[11px] font-semibold truncate text-[#8d7d75]';
+          statusEl.classList.remove('hidden');
+        } else {
+          statusEl.classList.add('hidden');
+        }
+      }
+    };
+    ref.on('value', cb);
+    _presenceListener = { ref, cb };
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     ACUSES DE LECTURA (Visto ✓✓)
+  ══════════════════════════════════════════════════════════════ */
+  let _readReceiptListener = null;
+
+  function markChatRoomRead(conversationId) {
+    const user = firebase.auth().currentUser;
+    if (!user || !conversationId) return;
+    firebase.database().ref(`conversationReadAt/${conversationId}/${user.uid}`).set(Date.now());
+  }
+
+  function detachReadReceiptListener() {
+    if (_readReceiptListener?.ref && _readReceiptListener?.cb) {
+      _readReceiptListener.ref.off('value', _readReceiptListener.cb);
+    }
+    _readReceiptListener = null;
+  }
+
+  function subscribeReadReceipts(conversationId, otherUid) {
+    detachReadReceiptListener();
+    if (!conversationId || !otherUid) return;
+    const ref = firebase.database().ref(`conversationReadAt/${conversationId}/${otherUid}`);
+    const cb = snap => { _renderReadReceipt(Number(snap.val() || 0)); };
+    ref.on('value', cb);
+    _readReceiptListener = { ref, cb };
+  }
+
+  function _renderReadReceipt(readAt) {
+    const container = document.getElementById('chat-room-messages');
+    if (!container) return;
+    container.querySelectorAll('.chat-seen-badge').forEach(el => el.remove());
+    if (!readAt) return;
+    const all = Array.from(container.querySelectorAll('[data-msg-id]'));
+    for (let i = all.length - 1; i >= 0; i--) {
+      if (all[i].classList.contains('items-end')) {
+        const badge = document.createElement('span');
+        badge.className = 'chat-seen-badge text-[10px] text-[#8d7d75] px-1 self-end';
+        badge.textContent = 'Visto ✓✓';
+        all[i].appendChild(badge);
+        break;
+      }
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     MENSAJES DE VOZ
+  ══════════════════════════════════════════════════════════════ */
+  let _chatMediaRecorder = null;
+  let _chatAudioChunks   = [];
+  let _chatVoiceTimer    = null;
+  let _chatVoiceSeconds  = 0;
+  let _chatVoiceStream   = null;
+  let _chatVoiceWaveInt  = null;
+
+  async function startChatVoice() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert('Tu dispositivo no soporta grabación de audio.');
+      return;
+    }
+    try {
+      _chatVoiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      _chatAudioChunks = [];
+      _chatMediaRecorder = new MediaRecorder(_chatVoiceStream);
+      _chatMediaRecorder.ondataavailable = e => { if (e.data.size > 0) _chatAudioChunks.push(e.data); };
+      _chatMediaRecorder.start();
+      document.getElementById('chat-main-toolbar')?.classList.add('hidden');
+      document.getElementById('chat-voice-recording-bar')?.classList.remove('hidden');
+      _chatVoiceSeconds = 0;
+      const timerEl = document.getElementById('chat-voice-timer');
+      if (timerEl) timerEl.textContent = '0:00';
+      _chatVoiceTimer = setInterval(() => {
+        _chatVoiceSeconds++;
+        const m = Math.floor(_chatVoiceSeconds / 60);
+        const s = String(_chatVoiceSeconds % 60).padStart(2, '0');
+        if (timerEl) timerEl.textContent = `${m}:${s}`;
+        if (_chatVoiceSeconds >= 120) sendChatVoice(); // max 2 min
+      }, 1000);
+      _chatVoiceWaveInt = setInterval(() => {
+        document.querySelectorAll('.cv-wave').forEach(el => {
+          el.style.height = Math.floor(15 + Math.random() * 80) + '%';
+        });
+      }, 120);
+    } catch (e) {
+      alert('No se pudo acceder al micrófono. Verifica los permisos.');
+    }
+  }
+
+  function cancelChatVoice() { _stopChatVoice(false); }
+  function sendChatVoice()   { _stopChatVoice(true); }
+
+  function _stopChatVoice(doSend) {
+    if (_chatVoiceTimer) { clearInterval(_chatVoiceTimer); _chatVoiceTimer = null; }
+    if (_chatVoiceWaveInt) { clearInterval(_chatVoiceWaveInt); _chatVoiceWaveInt = null; }
+    document.getElementById('chat-voice-recording-bar')?.classList.add('hidden');
+    document.getElementById('chat-main-toolbar')?.classList.remove('hidden');
+    if (!_chatMediaRecorder) return;
+    if (doSend && _chatAudioChunks.length > 0) {
+      const dur = _chatVoiceSeconds;
+      _chatMediaRecorder.onstop = async () => {
+        const blob = new Blob(_chatAudioChunks, { type: 'audio/webm' });
+        if (blob.size < 500) return;
+        _uploadAndSendVoice(blob, dur);
+      };
+    }
+    try { _chatMediaRecorder.stop(); } catch (_) {}
+    if (_chatVoiceStream) { _chatVoiceStream.getTracks().forEach(t => t.stop()); _chatVoiceStream = null; }
+    _chatMediaRecorder = null;
+    _chatAudioChunks = [];
+  }
+
+  async function _uploadAndSendVoice(blob, dur) {
+    const user = firebase.auth().currentUser;
+    if (!user || !currentChatRoomId) return;
+    try {
+      const timestamp = Math.floor(Date.now() / 1000);
+      const signature = await cloudinaryClientSign(timestamp);
+      const formData = new FormData();
+      formData.append('file', blob, 'voice.webm');
+      formData.append('api_key', CLOUDINARY_KEY);
+      formData.append('timestamp', timestamp);
+      formData.append('signature', signature);
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/video/upload`, {
+        method: 'POST', body: formData
+      });
+      const data = await res.json();
+      if (!data.secure_url) throw new Error('Upload failed');
+      const payload = {
+        senderId: user.uid,
+        senderName: user.displayName || user.email || 'Usuario',
+        type: 'voice',
+        voiceUrl: data.secure_url,
+        voiceDuration: dur || 0,
+        timestamp: Date.now()
+      };
+      await firebase.database().ref('conversationMessages/' + currentChatRoomId).push(payload);
+      const updTS = Date.now();
+      await firebase.database().ref('userConversations/' + user.uid + '/' + currentChatRoomId).update({ lastMessage: '🎙 Voz', updatedAt: updTS });
+      if (currentChatRecipient) {
+        await firebase.database().ref('userConversations/' + currentChatRecipient + '/' + currentChatRoomId).update({ lastMessage: '🎙 Voz', updatedAt: updTS, otherUid: user.uid });
+      }
+      chatConversationCache.loadedAt = 0;
+    } catch (e) {
+      alert('No se pudo enviar el mensaje de voz.');
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     MENSAJES VER UNA VEZ
+  ══════════════════════════════════════════════════════════════ */
+  let chatViewOnceActive = false;
+
+  function toggleChatViewOnce() {
+    chatViewOnceActive = !chatViewOnceActive;
+    const bar = document.getElementById('chat-viewonce-bar');
+    const btn = document.getElementById('chat-viewonce-btn');
+    if (bar) bar.classList.toggle('hidden', !chatViewOnceActive);
+    if (btn) {
+      btn.classList.toggle('bg-amber-100',   chatViewOnceActive);
+      btn.classList.toggle('text-amber-600', chatViewOnceActive);
+      btn.classList.toggle('bg-[#f1ece9]',   !chatViewOnceActive);
+      btn.classList.toggle('text-[#5f4b44]', !chatViewOnceActive);
+    }
+  }
+
+  function openViewOnceMessage(msgId, convoId, triggerEl) {
+    // Mostrar contenido real (en este caso el texto/imagen ya está en el DOM via el listener)
+    // Solo marcamos como visto y programamos eliminación
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+    const msgRef = firebase.database().ref('conversationMessages/' + convoId + '/' + msgId);
+    msgRef.once('value').then(snap => {
+      const msg = snap.val();
+      if (!msg) return;
+      // Mostrar contenido real por un momento
+      if (triggerEl) {
+        const bubble = triggerEl.closest('.msg-bubble');
+        if (bubble) {
+          const txt = msg.text || (msg.images ? '📷 Foto' : '');
+          bubble.innerHTML = `<p class="text-sm break-words">${escapeHtml(txt)}</p>`;
+          // Eliminar después de 5s
+          setTimeout(() => {
+            msgRef.remove();
+            if (bubble) bubble.innerHTML = '<p class="text-xs italic opacity-50">Mensaje visto · eliminado</p>';
+          }, 5000);
+        }
+      }
+    }).catch(() => {});
+  }
+
   function loadChatConversations() {
     const user = firebase.auth().currentUser;
     const container = document.getElementById('chat-conversations-list');
@@ -17570,6 +17872,7 @@ let chatTypingListener = null;
           <div class="flex items-center gap-3">
             <div class="relative shrink-0">
               <img src="${item.otherImage}" class="w-12 h-12 rounded-full object-cover border border-[#ece5e1]" alt="${escapeHtml(item.otherName)}">
+              <div id="presence-dot-${item.otherUid}" class="hidden absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-400 border-2 border-white"></div>
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex items-center justify-between gap-2">
@@ -17582,6 +17885,15 @@ let chatTypingListener = null;
         </button>
       `;
     }).join('');
+    // Cargar presencia para cada contacto DM
+    items.filter(i => !i.isGroup).forEach(item => {
+      firebase.database().ref('userPresence/' + item.otherUid + '/online').once('value').then(snap => {
+        if (snap.val() === true) {
+          const dot = document.getElementById('presence-dot-' + item.otherUid);
+          if (dot) dot.classList.remove('hidden');
+        }
+      }).catch(() => {});
+    });
   }
 
   function filterChatConversations() {
@@ -17681,10 +17993,16 @@ let chatTypingListener = null;
     if (groupAvatar) groupAvatar.classList.add('hidden');
     if (subtitle) subtitle.classList.add('hidden');
     loadChatRoomHeader(otherUid);
+    const statusEl = document.getElementById('chat-room-status');
+    if (statusEl) { statusEl.textContent = ''; statusEl.classList.add('hidden'); }
     ensureConversationExists(user.uid, otherUid).then(() => {
       subscribeChatMessages(currentChatRoomId);
       subscribeChatTyping(currentChatRoomId);
       subscribeConversationPinned(currentChatRoomId);
+      subscribePresence(otherUid);
+      subscribeReadReceipts(currentChatRoomId, otherUid);
+      markChatRoomRead(currentChatRoomId);
+      updateChatToolbarMode();
       document.getElementById('chat-room-input')?.focus();
     });
   }
@@ -17741,6 +18059,13 @@ let chatTypingListener = null;
     detachAllMsgReactionListeners();
     hideChatReactionPicker();
     clearChatReply();
+    detachPresenceListener();
+    detachReadReceiptListener();
+    cancelChatVoice();
+    if (typeof chatViewOnceActive !== 'undefined' && chatViewOnceActive) toggleChatViewOnce();
+    const _statusEl = document.getElementById('chat-room-status');
+    if (_statusEl) { _statusEl.textContent = ''; _statusEl.classList.add('hidden'); }
+    updateChatToolbarMode();
     // Resetear header UI al estado DM
     const userImg = document.getElementById('chat-room-user-image');
     const groupAvatar = document.getElementById('chat-room-group-avatar');
@@ -17845,9 +18170,28 @@ let chatTypingListener = null;
           return `<div class="grid grid-cols-2 gap-1 rounded-2xl overflow-hidden" style="max-width:240px">${shown.map((u, i) => i === 3 && extra > 0 ? `<div class="relative cursor-pointer" onclick="window.open('${u}','_blank')" style="aspect-ratio:1/1"><img src="${u}" class="w-full h-full object-cover" alt="Foto"><div class="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-bold text-lg">+${extra}</div></div>` : `<img src="${u}" class="w-full object-cover cursor-pointer" style="aspect-ratio:1/1" alt="Foto" onclick="window.open('${u}','_blank')">`).join('')}</div>`;
         }
       })() : '';
-      const content = msgImages.length
-        ? (hasText ? `<div class="flex flex-col gap-1">${imagesHtml}<p class="text-sm break-words">${escapeHtml(msg.text)}</p></div>` : imagesHtml)
-        : `<p class="text-sm break-words">${escapeHtml(msg.text || '')}</p>`;
+      let content;
+      if (msg.type === 'voice' && msg.voiceUrl) {
+        const vDur = msg.voiceDuration ? `${msg.voiceDuration}s` : '';
+        const vAudioId = 'vaudio-' + resolvedId;
+        content = `<div class="flex items-center gap-2" style="min-width:175px">
+          <button onclick="var a=document.getElementById('${vAudioId}');if(a.paused){a.play();this.innerHTML='⏸';}else{a.pause();this.innerHTML='▶';}" class="w-8 h-8 rounded-full ${mine?'bg-white/20':'bg-[#2f1a14]/10'} flex items-center justify-center text-base shrink-0 leading-none">▶</button>
+          <div class="flex-1 flex items-end gap-0.5 h-6">${[30,55,75,90,70,85,60,45,65,40].map(h=>`<div class="flex-1 rounded-full ${mine?'bg-white/50':'bg-[#2f1a14]/30'}" style="height:${h}%"></div>`).join('')}</div>
+          ${vDur?`<span class="text-[10px] shrink-0 ${mine?'text-white/60':'text-[#8d7d75]'}">${vDur}</span>`:''}
+          <audio id="${vAudioId}" src="${escapeHtml(msg.voiceUrl)}" preload="none"></audio>
+        </div>`;
+      } else if (msg.viewOnce) {
+        const currentUserId2 = firebase.auth().currentUser?.uid || '';
+        if (mine) {
+          content = `<div class="flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span class="text-xs italic text-white/70">Ver una vez</span></div>`;
+        } else {
+          content = `<div class="flex items-center gap-2 cursor-pointer select-none" onclick="openViewOnceMessage('${resolvedId}','${conversationId}',this)"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span class="text-sm font-bold">Ver (1 vez)</span></div>`;
+        }
+      } else {
+        content = msgImages.length
+          ? (hasText ? `<div class="flex flex-col gap-1">${imagesHtml}<p class="text-sm break-words">${escapeHtml(msg.text)}</p></div>` : imagesHtml)
+          : `<p class="text-sm break-words">${escapeHtml(msg.text || '')}</p>`;
+      }
       const timeStr = formatMsgTime(msg.timestamp);
 
       const replyBlock = msg.replyTo
@@ -17915,10 +18259,16 @@ let chatTypingListener = null;
           const rect = bubble.getBoundingClientRect();
           showChatReactionPicker(resolvedId, rect, mine);
         };
+        let _tapTime = 0;
         bubble.addEventListener('touchstart', () => { pressTimer = setTimeout(() => openPicker({ preventDefault: () => {} }), 500); }, { passive: true });
-        bubble.addEventListener('touchend', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
+        bubble.addEventListener('touchend', e => {
+          if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+          const now = Date.now();
+          if (now - _tapTime < 300) { e.preventDefault(); submitChatReaction('❤️'); }
+          _tapTime = now;
+        });
         bubble.addEventListener('touchmove', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
-        bubble.addEventListener('dblclick', openPicker);
+        bubble.addEventListener('dblclick', () => submitChatReaction('❤️'));
       }
       if (resolvedId) subscribeMsgReactions(conversationId, resolvedId);
       container.appendChild(wrapper);
@@ -18099,6 +18449,10 @@ let chatTypingListener = null;
     };
     if (!payload.images) delete payload.images;
     if (chatReplyContext) payload.replyTo = chatReplyContext;
+    if (typeof chatViewOnceActive !== 'undefined' && chatViewOnceActive) {
+      payload.viewOnce = true;
+      toggleChatViewOnce();
+    }
 
     const msgRef = firebase.database().ref('conversationMessages/' + currentChatRoomId).push();
     const messageId = msgRef.key;
@@ -18137,7 +18491,9 @@ let chatTypingListener = null;
     const conversationId = currentChatRoomId;
     const lastMessage = imageUrls.length ? '📷 Foto' : text;
     input.value = '';
+    updateChatToolbarMode();
     clearChatPhotoAttachment();
+    markChatRoomRead(conversationId);
     chatConversationCache.loadedAt = 0;
 
     // Añadir senderName al payload si es grupo
@@ -24695,6 +25051,7 @@ firebase.auth().onAuthStateChanged(user => {
   if (user) {
     // Esta lógica debería ir dentro de joinLiveStream, pero la ponemos aquí como referencia
     // En una implementación real, se añadiría el listener al entrar al live.
+    if (typeof setUserOnlinePresence === 'function') setUserOnlinePresence();
   }
 });
 
