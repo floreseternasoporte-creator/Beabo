@@ -1133,6 +1133,13 @@ body {
 }
 
 
+.chat-selected {
+  background: rgba(47, 26, 20, 0.08) !important;
+  border-radius: 12px;
+  outline: 2px solid rgba(47, 26, 20, 0.25);
+  outline-offset: 2px;
+}
+
 .sk-fading-circle {
   width: 26px;
   height: 26px;
@@ -2963,6 +2970,9 @@ body {
             </div>
           </button>
         </div>
+        <button onclick="openChatCamera()" class="w-10 h-10 rounded-full text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0" aria-label="Cámara">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
       </div>
     </div>
 
@@ -2980,6 +2990,13 @@ body {
         </div>
         <button onclick="event.stopPropagation();unpinChatMessage()" class="w-6 h-6 rounded-full bg-[#e8e1dc] text-[#5f4b44] flex items-center justify-center shrink-0 text-xs active:scale-90 transition" aria-label="Desanclar">✕</button>
       </div>
+    </div>
+
+    <!-- Barra de selección múltiple (aparece al mantener presionado) -->
+    <div id="chat-select-bar" class="hidden sticky top-0 z-20 bg-[#2f1a14] text-white px-4 py-3 flex items-center justify-between">
+      <button onclick="exitChatSelectMode()" class="text-sm font-semibold active:opacity-70 transition">Cancelar</button>
+      <span id="chat-select-count-label" class="text-sm font-bold">0 seleccionados</span>
+      <button onclick="deleteSelectedChatMessages()" id="chat-select-delete-btn" class="text-sm font-semibold text-red-300 active:opacity-70 transition">Eliminar</button>
     </div>
 
     <div id="chat-room-messages" class="flex-1 overflow-y-auto px-4 py-5 space-y-2"></div>
@@ -3015,21 +3032,23 @@ body {
         <div id="chat-photo-thumbnails" class="flex gap-2 overflow-x-auto pb-1 flex-wrap max-h-40"></div>
       </div>
       <div class="flex items-center gap-2">
-        <label for="chat-photo-input" class="w-10 h-10 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center cursor-pointer active:scale-95 transition shrink-0" aria-label="Adjuntar foto">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="16" rx="2.5"></rect>
-            <circle cx="8.5" cy="9" r="1.5"></circle>
-            <path d="M21 16l-5.2-5.2a1.5 1.5 0 0 0-2.1 0L6 18" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-        </label>
-        <input id="chat-photo-input" type="file" accept="image/*" multiple class="hidden" onchange="handleChatPhotoAttachment(event)">
-        <button onclick="openStickerPanel()" class="w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0 text-lg leading-none" aria-label="Stickers">😊</button>
-        <button onclick="openGifPanel()" class="w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0 font-black text-xs tracking-tight" aria-label="GIF">GIF</button>
         <input id="chat-room-input" type="text" placeholder="Mensaje..." class="flex-1 h-11 px-4 rounded-full border border-[#e8e1dc] focus:outline-none focus:ring-2 focus:ring-[#cdbeb7] text-[15px]" oninput="handleChatTyping(); updateChatToolbarMode()">
-        <button id="chat-viewonce-btn" onclick="toggleChatViewOnce()" class="hidden w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0" aria-label="View once" title="View once">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <button id="chat-send-btn" onclick="sendChatMessage()" class="w-11 h-11 rounded-full bg-[#2f1a14] text-white flex items-center justify-center active:scale-95 transition shrink-0" aria-label="Enviar mensaje">
+        <div id="chat-media-actions" class="flex items-center gap-1">
+          <label for="chat-photo-input" class="w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center cursor-pointer active:scale-95 transition shrink-0" aria-label="Adjuntar foto">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2.5"></rect>
+              <circle cx="8.5" cy="9" r="1.5"></circle>
+              <path d="M21 16l-5.2-5.2a1.5 1.5 0 0 0-2.1 0L6 18" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </label>
+          <input id="chat-photo-input" type="file" accept="image/*" multiple class="hidden" onchange="handleChatPhotoAttachment(event)">
+          <button onclick="openStickerPanel()" class="w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0 text-lg leading-none" aria-label="Stickers">😊</button>
+          <button onclick="openGifPanel()" class="w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0 font-black text-xs tracking-tight" aria-label="GIF">GIF</button>
+          <button id="chat-viewonce-btn" onclick="toggleChatViewOnce()" class="hidden w-9 h-9 rounded-full bg-[#f1ece9] text-[#5f4b44] flex items-center justify-center active:scale-95 transition shrink-0" aria-label="View once" title="View once">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <button id="chat-send-btn" onclick="sendChatMessage()" class="hidden w-11 h-11 rounded-full bg-[#2f1a14] text-white flex items-center justify-center active:scale-95 transition shrink-0" aria-label="Enviar mensaje">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
           </svg>
@@ -7392,6 +7411,12 @@ const KLIPY_GIFS = [
   });
 
   function selectGif(url) {
+    if (window.__gifPickerContext === 'chat') {
+      window.__gifPickerContext = 'post';
+      closeGifPicker();
+      if (typeof sendGif === 'function') sendGif(url, url);
+      return;
+    }
     if (window.__gifPickerContext === 'comment') {
       selectedCommentGif = url;
       const preview = document.getElementById('comment-gif-preview');
@@ -17456,9 +17481,11 @@ let chatTypingListener = null;
   function updateChatToolbarMode() {
     const input = document.getElementById('chat-room-input');
     const sendBtn = document.getElementById('chat-send-btn');
+    const mediaActions = document.getElementById('chat-media-actions');
     if (!input || !sendBtn) return;
-    const hasContent = input.value.trim().length > 0 || chatPhotoAttachments.length > 0;
-    sendBtn.classList.toggle('opacity-50', !hasContent);
+    const hasContent = input.value.trim().length > 0 || (typeof chatPhotoAttachments !== 'undefined' && chatPhotoAttachments.length > 0);
+    sendBtn.classList.toggle('hidden', !hasContent);
+    if (mediaActions) mediaActions.classList.toggle('hidden', hasContent);
   }
 
   /* ══════════════════════════════════════════════════════════════
@@ -17603,16 +17630,8 @@ let chatTypingListener = null;
 
   function openGifPanel() {
     closeStickerPanel();
-    const panel = document.getElementById('chat-gif-panel');
-    const overlay = document.getElementById('chat-gif-overlay');
-    if (!panel) return;
-    panel.style.display = 'block';
-    panel.classList.remove('hidden');
-    overlay?.classList.remove('hidden');
-    const input = document.getElementById('chat-gif-search-input');
-    if (input) input.value = '';
-    _fetchGifs('');
-    setTimeout(() => input?.focus(), 100);
+    window.__gifPickerContext = 'chat';
+    if (typeof openGifPicker === 'function') openGifPicker();
   }
 
   function closeGifPanel() {
@@ -18233,6 +18252,7 @@ let chatTypingListener = null;
   }
 
   function closeChatRoomView() {
+    exitChatSelectMode();
     detachChatMessagesListener();
     detachConversationPinnedListener();
     currentChatRoomId = null;
@@ -18341,17 +18361,13 @@ let chatTypingListener = null;
       ? firebase.database().ref('chatDeletedForMe/' + firebase.auth().currentUser.uid + '/' + conversationId)
       : null;
     let _deletedForMeIds = new Set();
-    if (_deletedForMeRef) {
-      _deletedForMeRef.once('value').then(s => {
-        const d = s.val() || {};
-        _deletedForMeIds = new Set(Object.keys(d));
-      }).catch(() => {});
-    }
 
     const renderMessageNode = (msg, msgId) => {
       const currentUserId = firebase.auth().currentUser?.uid || '';
       const mine = msg.senderId === currentUserId;
       const resolvedId = msgId || msg.id || '';
+      // Skip messages deleted for all
+      if (msg.deletedForAll) return;
       // Skip messages deleted for me
       if (resolvedId && _deletedForMeIds.has(resolvedId)) return;
       const msgImages = msg.images && msg.images.length ? msg.images : (msg.image ? [msg.image] : []);
@@ -18473,43 +18489,82 @@ let chatTypingListener = null;
         bubble.addEventListener('touchmove', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
         bubble.addEventListener('dblclick', () => submitChatReaction('me gusta'));
       }
+
+      // Long-press en el wrapper completo → activar selección múltiple
+      if (resolvedId) {
+        let _selectTimer = null;
+        wrapper.addEventListener('touchstart', () => {
+          _selectTimer = setTimeout(() => {
+            if (typeof enterChatSelectMode === 'function') enterChatSelectMode(resolvedId, wrapper);
+          }, 700);
+        }, { passive: true });
+        wrapper.addEventListener('touchend', () => { clearTimeout(_selectTimer); });
+        wrapper.addEventListener('touchmove', () => { clearTimeout(_selectTimer); });
+        wrapper.addEventListener('click', () => {
+          if (typeof chatSelectMode !== 'undefined' && chatSelectMode) {
+            if (typeof toggleChatMessageSelect === 'function') toggleChatMessageSelect(resolvedId, wrapper);
+          }
+        });
+      }
+
       if (resolvedId) subscribeMsgReactions(conversationId, resolvedId);
       container.appendChild(wrapper);
       container.scrollTop = container.scrollHeight;
     };
 
-    const cachedMessages = chatMessagesMemoryCache.get(conversationId) || [];
-    if (cachedMessages.length) {
-      const emptyState = document.getElementById('chat-room-empty-state');
-      if (emptyState) emptyState.remove();
-      cachedMessages.forEach(item => renderMessageNode(item, item.id));
-    }
-
-    const ref = firebase.database().ref('conversationMessages/' + conversationId).limitToLast(CHAT_MESSAGES_LIMIT);
-    const callback = snapshot => {
-      const emptyState = document.getElementById('chat-room-empty-state');
-      if (emptyState) emptyState.remove();
-      const msg = snapshot.val() || {};
-      const msgId = snapshot.key || '';
-      if (!msgId) return;
-
-      // Always remove optimistic (temp) render for this message when Firebase confirms it
-      const optEl = document.getElementById('opt-' + msgId);
-      if (optEl) optEl.remove();
-
-      const currentCache = chatMessagesMemoryCache.get(conversationId) || [];
-      if (currentCache.some(item => item.id === msgId)) {
-        // Was pre-cached (optimistic) — update cache with server data then re-render
-        const updatedCache = currentCache.map(item => item.id === msgId ? { id: msgId, ...msg } : item);
-        chatMessagesMemoryCache.set(conversationId, updatedCache);
-      } else {
-        const nextCache = [...currentCache, { id: msgId, ...msg }].slice(-CHAT_MESSAGES_LIMIT);
-        chatMessagesMemoryCache.set(conversationId, nextCache);
+    const _startChatListeners = () => {
+      const cachedMessages = chatMessagesMemoryCache.get(conversationId) || [];
+      if (cachedMessages.length) {
+        const emptyState = document.getElementById('chat-room-empty-state');
+        if (emptyState) emptyState.remove();
+        cachedMessages.forEach(item => renderMessageNode(item, item.id));
       }
-      renderMessageNode(msg, msgId);
+
+      const ref = firebase.database().ref('conversationMessages/' + conversationId).limitToLast(CHAT_MESSAGES_LIMIT);
+      const callback = snapshot => {
+        const emptyState = document.getElementById('chat-room-empty-state');
+        if (emptyState) emptyState.remove();
+        const msg = snapshot.val() || {};
+        const msgId = snapshot.key || '';
+        if (!msgId) return;
+
+        // Always remove optimistic (temp) render for this message when Firebase confirms it
+        const optEl = document.getElementById('opt-' + msgId);
+        if (optEl) optEl.remove();
+
+        const currentCache = chatMessagesMemoryCache.get(conversationId) || [];
+        if (currentCache.some(item => item.id === msgId)) {
+          const updatedCache = currentCache.map(item => item.id === msgId ? { id: msgId, ...msg } : item);
+          chatMessagesMemoryCache.set(conversationId, updatedCache);
+        } else {
+          const nextCache = [...currentCache, { id: msgId, ...msg }].slice(-CHAT_MESSAGES_LIMIT);
+          chatMessagesMemoryCache.set(conversationId, nextCache);
+        }
+        renderMessageNode(msg, msgId);
+      };
+      ref.on('child_added', callback);
+
+      // Escuchar cambios en tiempo real: borrar para todos
+      ref.on('child_changed', changedSnap => {
+        const changedMsg = changedSnap.val();
+        if (changedMsg?.deletedForAll) {
+          const el = container.querySelector('[data-msg-id="' + changedSnap.key + '"]')?.closest('.flex.flex-col');
+          if (el) el.remove();
+        }
+      });
+
+      chatMessagesListener = { ref, callback };
     };
-    ref.on('child_added', callback);
-    chatMessagesListener = { ref, callback };
+
+    if (_deletedForMeRef) {
+      _deletedForMeRef.once('value').then(s => {
+        const d = s.val() || {};
+        _deletedForMeIds = new Set(Object.keys(d));
+        _startChatListeners();
+      }).catch(() => _startChatListeners());
+    } else {
+      _startChatListeners();
+    }
   }
 
 
@@ -18934,6 +18989,71 @@ let chatTypingListener = null;
     }).catch(() => {});
   }
 
+  /* ── MULTI-SELECCIÓN DE MENSAJES ──────────────────────────── */
+  let chatSelectMode = false;
+  let chatSelectedMsgIds = new Set();
+
+  function enterChatSelectMode(msgId, wrapperEl) {
+    if (chatSelectMode) return;
+    chatSelectMode = true;
+    chatSelectedMsgIds = new Set();
+    document.getElementById('chat-select-bar')?.classList.remove('hidden');
+    if (msgId && wrapperEl) {
+      chatSelectedMsgIds.add(msgId);
+      wrapperEl.classList.add('chat-selected');
+    }
+    _updateChatSelectBar();
+  }
+
+  function exitChatSelectMode() {
+    chatSelectMode = false;
+    chatSelectedMsgIds.clear();
+    document.getElementById('chat-select-bar')?.classList.add('hidden');
+    document.querySelectorAll('.chat-selected').forEach(el => el.classList.remove('chat-selected'));
+  }
+
+  function toggleChatMessageSelect(msgId, wrapperEl) {
+    if (!chatSelectMode) return;
+    if (chatSelectedMsgIds.has(msgId)) {
+      chatSelectedMsgIds.delete(msgId);
+      wrapperEl?.classList.remove('chat-selected');
+    } else {
+      chatSelectedMsgIds.add(msgId);
+      wrapperEl?.classList.add('chat-selected');
+    }
+    _updateChatSelectBar();
+  }
+
+  function _updateChatSelectBar() {
+    const count = chatSelectedMsgIds.size;
+    const label = document.getElementById('chat-select-count-label');
+    if (label) label.textContent = count + (count === 1 ? ' seleccionado' : ' seleccionados');
+  }
+
+  async function deleteSelectedChatMessages() {
+    if (!chatSelectMode || chatSelectedMsgIds.size === 0 || !currentChatRoomId) return;
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+    const ids = Array.from(chatSelectedMsgIds);
+    for (const msgId of ids) {
+      try {
+        const snap = await firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).once('value');
+        const msg = snap.val();
+        if (msg && msg.senderId === user.uid) {
+          await firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).update({
+            deletedForAll: true, text: '', images: null, image: null, gifUrl: null, sticker: null, type: 'deleted'
+          }).catch(() => {});
+        } else {
+          await firebase.database().ref('chatDeletedForMe/' + user.uid + '/' + currentChatRoomId + '/' + msgId).set(true).catch(() => {});
+        }
+        const wrapper = document.querySelector('[data-msg-id="' + msgId + '"]')?.closest('.flex.flex-col');
+        if (wrapper) wrapper.remove();
+      } catch(_) {}
+    }
+    exitChatSelectMode();
+  }
+  /* ── FIN MULTI-SELECCIÓN ───────────────────────────────────── */
+
   function deleteChatMessage() { deleteChatMessageForAll(); }
 
   function deleteChatMessageForAll() {
@@ -18950,8 +19070,11 @@ let chatTypingListener = null;
       }
       const wrapper = document.querySelector('[data-msg-id="' + msgId + '"]')?.closest('.flex.flex-col');
       if (wrapper) wrapper.remove();
-      firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).remove();
-      firebase.database().ref('msgReactions/' + currentChatRoomId + '/' + msgId).remove();
+      // Marcar como borrado para todos — persiste en Firebase para que todos lo vean
+      firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).update({
+        deletedForAll: true, text: '', images: null, image: null, gifUrl: null, sticker: null, type: 'deleted'
+      }).catch(() => {});
+      firebase.database().ref('msgReactions/' + currentChatRoomId + '/' + msgId).remove().catch(() => {});
     }).catch(() => {});
   }
 
