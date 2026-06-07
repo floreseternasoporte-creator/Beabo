@@ -18133,7 +18133,8 @@ let chatTypingListener = null;
         `;
       }
       const safeUid = escapeHtml(item.otherUid);
-      const safeName = escapeHtml(item.otherName);
+      const safeName = escapeHtml(item.otherName || 'Usuario');
+      const safeImage = item.otherImage || 'https://via.placeholder.com/80';
       return `
         <div>
           <button onclick="openChatRoomFromInbox('${safeUid}')"
@@ -18141,7 +18142,7 @@ let chatTypingListener = null;
             ontouchend="_convLongEnd()" ontouchmove="_convLongEnd()"
             class="w-full text-left flex items-center gap-3 px-4 py-3 active:bg-[#f8f6f4] transition">
             <div class="relative shrink-0">
-              <img src="${item.otherImage}" class="w-14 h-14 rounded-full object-cover" alt="${safeName}">
+              <img src="${safeImage}" class="w-14 h-14 rounded-full object-cover" alt="${safeName}" onerror="this.src='https://via.placeholder.com/80'">
               <div id="presence-dot-${safeUid}" class="hidden absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-green-400 border-2 border-white"></div>
             </div>
             <div class="min-w-0 flex-1">
@@ -18241,6 +18242,7 @@ let chatTypingListener = null;
     }
     const filtered = allChatConversations.filter(item =>
       (item.otherName || '').toLowerCase().includes(query) ||
+      (item.groupName || '').toLowerCase().includes(query) ||
       (item.lastMessage || '').toLowerCase().includes(query)
     );
     renderChatConversations(filtered);
@@ -18466,6 +18468,9 @@ let chatTypingListener = null;
     if (chatMessagesListener?.ref && chatMessagesListener?.callback) {
       chatMessagesListener.ref.off('child_added', chatMessagesListener.callback);
     }
+    if (chatMessagesListener?.ref && chatMessagesListener?.changedCallback) {
+      chatMessagesListener.ref.off('child_changed', chatMessagesListener.changedCallback);
+    }
     chatMessagesListener = null;
   }
 
@@ -18477,7 +18482,7 @@ let chatTypingListener = null;
     const empty = document.createElement('div');
     empty.className = 'text-center text-[#8d7d75] text-sm py-8';
     empty.id = 'chat-room-empty-state';
-    empty.textContent = 'Say hi!';
+    empty.textContent = '¡Di hola! 👋';
     container.appendChild(empty);
 
     const formatMsgTime = ts => {
@@ -18650,7 +18655,8 @@ let chatTypingListener = null;
 
       if (resolvedId) subscribeMsgReactions(conversationId, resolvedId);
       container.appendChild(wrapper);
-      container.scrollTop = container.scrollHeight;
+      const _isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 200;
+      if (_isNearBottom) container.scrollTop = container.scrollHeight;
     };
 
     const _startChatListeners = () => {
@@ -18659,6 +18665,7 @@ let chatTypingListener = null;
         const emptyState = document.getElementById('chat-room-empty-state');
         if (emptyState) emptyState.remove();
         cachedMessages.forEach(item => renderMessageNode(item, item.id));
+        container.scrollTop = container.scrollHeight;
       }
 
       const ref = firebase.database().ref('conversationMessages/' + conversationId).limitToLast(CHAT_MESSAGES_LIMIT);
@@ -18686,7 +18693,7 @@ let chatTypingListener = null;
       ref.on('child_added', callback);
 
       // Escuchar cambios en tiempo real: borrar para todos → mostrar placeholder
-      ref.on('child_changed', changedSnap => {
+      const changedCallback = changedSnap => {
         const changedMsg = changedSnap.val();
         if (changedMsg?.deletedForAll) {
           const existingWrapper = container.querySelector('[data-msg-id="' + changedSnap.key + '"]');
@@ -18696,9 +18703,10 @@ let chatTypingListener = null;
             existingWrapper.innerHTML = `<div class="deleted-placeholder flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e8e1dc] text-[#b4a9a4] text-xs italic select-none" data-del-id="${changedSnap.key}"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-linecap="round"/></svg>${isMine ? 'Eliminaste este mensaje' : 'Mensaje eliminado'}</div>`;
           }
         }
-      });
+      };
+      ref.on('child_changed', changedCallback);
 
-      chatMessagesListener = { ref, callback };
+      chatMessagesListener = { ref, callback, changedCallback };
     };
 
     if (_deletedForMeRef) {
@@ -18949,12 +18957,13 @@ let chatTypingListener = null;
       const updates = {};
       const updatedAt = Date.now();
       if (currentChatIsGroup) {
-        const memberUids = Object.keys(currentGroupMembers || {});
+        const memberUids = Array.isArray(currentGroupMembers) ? currentGroupMembers : Object.keys(currentGroupMembers || {});
         memberUids.forEach(uid => {
           updates['userConversations/' + uid + '/' + conversationId + '/isGroup'] = true;
           updates['userConversations/' + uid + '/' + conversationId + '/groupId'] = conversationId;
           updates['userConversations/' + uid + '/' + conversationId + '/updatedAt'] = updatedAt;
-          updates['userConversations/' + uid + '/' + conversationId + '/lastMessage'] = lastMessage;
+          const prefix = uid === user.uid ? 'Tú' : (payload.senderName || 'Usuario');
+          updates['userConversations/' + uid + '/' + conversationId + '/lastMessage'] = prefix + ': ' + lastMessage;
         });
       } else {
         updates['conversations/' + conversationId + '/lastMessage'] = lastMessage;
@@ -19130,7 +19139,7 @@ let chatTypingListener = null;
       const msg = snap.val() || {};
       const user = firebase.auth().currentUser;
       const isMe = msg.senderId === user?.uid;
-      let senderName = isMe ? 'You' : (document.getElementById('chat-room-username')?.textContent || 'User');
+      let senderName = isMe ? 'Tú' : (document.getElementById('chat-room-username')?.textContent || 'Usuario');
       setChatReply({
         msgId,
         text: msg.text || '',
@@ -19298,7 +19307,7 @@ let chatTypingListener = null;
     firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).once('value').then(snap => {
       const msg = snap.val();
       if (!msg) return;
-      const senderName = msg.senderId === user.uid ? 'You' : (document.getElementById('chat-room-username')?.textContent || 'User');
+      const senderName = msg.senderId === user.uid ? 'Tú' : (document.getElementById('chat-room-username')?.textContent || 'Usuario');
       pinnedRef.set({
         msgId,
         text: msg.text || '',
@@ -19625,7 +19634,9 @@ let chatTypingListener = null;
   function handleChatTyping() {
     const user = firebase.auth().currentUser;
     if (!user || !currentChatRoomId) return;
-    firebase.database().ref('typing/' + currentChatRoomId + '/' + user.uid).set(Date.now());
+    const typingRef = firebase.database().ref('typing/' + currentChatRoomId + '/' + user.uid);
+    typingRef.set(Date.now());
+    typingRef.onDisconnect().remove();
     if (chatTypingTimer) clearTimeout(chatTypingTimer);
     chatTypingTimer = setTimeout(() => stopChatTyping(), 3000);
   }
