@@ -17536,8 +17536,15 @@ let chatTypingListener = null;
     const sendBtn = document.getElementById('chat-send-btn');
     const quickActions = document.getElementById('chat-quick-actions');
     if (!input || !sendBtn) return;
-    const hasContent = input.value.trim().length > 0 || (typeof chatPhotoAttachments !== 'undefined' && chatPhotoAttachments.length > 0);
+    const hasText = input.value.trim().length > 0;
+    const hasPhotos = typeof chatPhotoAttachments !== 'undefined' && chatPhotoAttachments.length > 0;
+    const photosUploading = hasPhotos && chatPhotoAttachments.some(item => item.uploading);
+    const hasContent = hasText || hasPhotos;
     sendBtn.classList.toggle('hidden', !hasContent);
+    sendBtn.disabled = photosUploading;
+    sendBtn.classList.toggle('opacity-50', photosUploading);
+    sendBtn.classList.toggle('cursor-not-allowed', photosUploading);
+    sendBtn.setAttribute('aria-label', photosUploading ? 'Esperando que termine la subida' : 'Enviar mensaje');
     if (quickActions) quickActions.classList.toggle('hidden', hasContent);
   }
 
@@ -17603,6 +17610,51 @@ let chatTypingListener = null;
     firebase.database().ref(`conversationReadAt/${conversationId}/${user.uid}`).set(Date.now());
   }
 
+  async function updateChatConversationPreview(lastMessage, payload = {}, options = {}) {
+    const user = firebase.auth().currentUser;
+    const conversationId = options.conversationId || currentChatRoomId;
+    if (!user || !conversationId) return;
+    const updatedAt = Date.now();
+    const updates = {};
+
+    const isGroupConversation = options.isGroup ?? currentChatIsGroup;
+    if (isGroupConversation) {
+      const groupMembersSource = options.groupMembers ?? currentGroupMembers;
+      let memberUids = Array.isArray(groupMembersSource) ? groupMembersSource : Object.keys(groupMembersSource || {});
+      if (!memberUids.length) {
+        try {
+          const groupSnap = await firebase.database().ref('groupChats/' + conversationId + '/members').once('value');
+          memberUids = Object.keys(groupSnap.val() || {});
+          currentGroupMembers = memberUids;
+        } catch (_) {}
+      }
+      memberUids.forEach(uid => {
+        updates['userConversations/' + uid + '/' + conversationId + '/isGroup'] = true;
+        updates['userConversations/' + uid + '/' + conversationId + '/groupId'] = conversationId;
+        updates['userConversations/' + uid + '/' + conversationId + '/updatedAt'] = updatedAt;
+        const prefix = uid === user.uid ? 'Tú' : (payload.senderName || 'Usuario');
+        updates['userConversations/' + uid + '/' + conversationId + '/lastMessage'] = prefix + ': ' + lastMessage;
+      });
+    } else {
+      const recipientId = options.recipientId || currentChatRecipient;
+      if (!recipientId) return;
+      updates['conversations/' + conversationId + '/lastMessage'] = lastMessage;
+      updates['conversations/' + conversationId + '/lastSenderId'] = user.uid;
+      updates['conversations/' + conversationId + '/updatedAt'] = updatedAt;
+      updates['userConversations/' + user.uid + '/' + conversationId + '/otherUid'] = recipientId;
+      updates['userConversations/' + user.uid + '/' + conversationId + '/updatedAt'] = updatedAt;
+      updates['userConversations/' + user.uid + '/' + conversationId + '/lastMessage'] = lastMessage;
+      updates['userConversations/' + recipientId + '/' + conversationId + '/otherUid'] = user.uid;
+      updates['userConversations/' + recipientId + '/' + conversationId + '/updatedAt'] = updatedAt;
+      updates['userConversations/' + recipientId + '/' + conversationId + '/lastMessage'] = lastMessage;
+    }
+
+    if (!Object.keys(updates).length) return;
+    chatConversationCache.loadedAt = 0;
+    try { localStorage.removeItem(CHAT_CONVERSATIONS_CACHE_KEY); } catch (_) {}
+    return firebase.database().ref().update(updates).catch(() => {});
+  }
+
   /* ══════════════════════════════════════════════════════════════
      STICKERS
   ══════════════════════════════════════════════════════════════ */
@@ -17658,6 +17710,10 @@ let chatTypingListener = null;
     closeStickerPanel();
     const user = firebase.auth().currentUser;
     if (!user || !currentChatRoomId) return;
+    const conversationId = currentChatRoomId;
+    const recipientId = currentChatRecipient;
+    const isGroup = currentChatIsGroup;
+    const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
     const payload = {
       senderId: user.uid,
       type: 'sticker',
@@ -17665,14 +17721,19 @@ let chatTypingListener = null;
       text: '',
       timestamp: firebase.database.ServerValue.TIMESTAMP
     };
-    if (currentChatIsGroup) {
+    if (isGroup) {
       try {
         const snap = await firebase.database().ref('users/' + user.uid).once('value');
         const d = snap.val() || {};
         payload.senderName = d.username || d.displayName || 'Usuario';
       } catch(_) { payload.senderName = 'Usuario'; }
     }
-    firebase.database().ref('conversationMessages/' + currentChatRoomId).push(payload);
+    try {
+      await firebase.database().ref('conversationMessages/' + conversationId).push(payload);
+      await updateChatConversationPreview(emoji || 'Sticker', payload, { conversationId, recipientId, isGroup, groupMembers });
+    } catch (_) {
+      alert('No se pudo enviar el sticker. Inténtalo de nuevo.');
+    }
   }
 
   /* ══════════════════════════════════════════════════════════════
@@ -17738,6 +17799,10 @@ let chatTypingListener = null;
     closeGifPanel();
     const user = firebase.auth().currentUser;
     if (!user || !currentChatRoomId) return;
+    const conversationId = currentChatRoomId;
+    const recipientId = currentChatRecipient;
+    const isGroup = currentChatIsGroup;
+    const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
     const payload = {
       senderId: user.uid,
       type: 'gif',
@@ -17746,14 +17811,19 @@ let chatTypingListener = null;
       text: '',
       timestamp: firebase.database.ServerValue.TIMESTAMP
     };
-    if (currentChatIsGroup) {
+    if (isGroup) {
       try {
         const snap = await firebase.database().ref('users/' + user.uid).once('value');
         const d = snap.val() || {};
         payload.senderName = d.username || d.displayName || 'Usuario';
       } catch(_) { payload.senderName = 'Usuario'; }
     }
-    firebase.database().ref('conversationMessages/' + currentChatRoomId).push(payload);
+    try {
+      await firebase.database().ref('conversationMessages/' + conversationId).push(payload);
+      await updateChatConversationPreview('GIF', payload, { conversationId, recipientId, isGroup, groupMembers });
+    } catch (_) {
+      alert('No se pudo enviar el GIF. Inténtalo de nuevo.');
+    }
   }
 
   function detachReadReceiptListener() {
@@ -17879,13 +17949,12 @@ let chatTypingListener = null;
         voiceDuration: dur || 0,
         timestamp: Date.now()
       };
-      await firebase.database().ref('conversationMessages/' + currentChatRoomId).push(payload);
-      const updTS = Date.now();
-      await firebase.database().ref('userConversations/' + user.uid + '/' + currentChatRoomId).update({ lastMessage: '🎤 Nota de voz', updatedAt: updTS });
-      if (currentChatRecipient) {
-        await firebase.database().ref('userConversations/' + currentChatRecipient + '/' + currentChatRoomId).update({ lastMessage: '🎤 Nota de voz', updatedAt: updTS, otherUid: user.uid });
-      }
-      chatConversationCache.loadedAt = 0;
+      const conversationId = currentChatRoomId;
+      const recipientId = currentChatRecipient;
+      const isGroup = currentChatIsGroup;
+      const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
+      await firebase.database().ref('conversationMessages/' + conversationId).push(payload);
+      await updateChatConversationPreview('🎤 Nota de voz', payload, { conversationId, recipientId, isGroup, groupMembers });
     } catch (e) {
       alert('No se pudo enviar el mensaje de voz.');
     }
@@ -18434,34 +18503,45 @@ let chatTypingListener = null;
   }
 
 
-  function ensureConversationExists(uidA, uidB) {
+  async function ensureConversationExists(uidA, uidB) {
     const conversationId = getDirectConversationId(uidA, uidB);
-    const convoRef = firebase.database().ref('conversations/' + conversationId);
-    return convoRef.once('value').then(snapshot => {
-      if (!snapshot.exists()) {
-        return convoRef.set({
-          participants: { [uidA]: true, [uidB]: true },
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          lastMessage: 'Nueva conversación'
-        });
-      }
-      return null;
-    }).then(() => {
-      const updates = {};
-      const updatedAt = Date.now();
+    const now = Date.now();
+    const [convoSnap, userASnap, userBSnap] = await Promise.all([
+      firebase.database().ref('conversations/' + conversationId).once('value'),
+      firebase.database().ref('userConversations/' + uidA + '/' + conversationId).once('value'),
+      firebase.database().ref('userConversations/' + uidB + '/' + conversationId).once('value')
+    ]);
+    const updates = {};
+
+    if (!convoSnap.exists()) {
+      updates['conversations/' + conversationId] = {
+        participants: { [uidA]: true, [uidB]: true },
+        createdAt: now,
+        updatedAt: now,
+        lastMessage: 'Nueva conversación'
+      };
+    }
+    if (!userASnap.exists()) {
       updates['userConversations/' + uidA + '/' + conversationId] = {
         otherUid: uidB,
-        updatedAt,
+        updatedAt: now,
         lastMessage: 'Nueva conversación'
       };
+    } else if (!userASnap.val()?.otherUid) {
+      updates['userConversations/' + uidA + '/' + conversationId + '/otherUid'] = uidB;
+    }
+    if (!userBSnap.exists()) {
       updates['userConversations/' + uidB + '/' + conversationId] = {
         otherUid: uidA,
-        updatedAt,
+        updatedAt: now,
         lastMessage: 'Nueva conversación'
       };
-      return firebase.database().ref().update(updates);
-    });
+    } else if (!userBSnap.val()?.otherUid) {
+      updates['userConversations/' + uidB + '/' + conversationId + '/otherUid'] = uidA;
+    }
+
+    if (!Object.keys(updates).length) return null;
+    return firebase.database().ref().update(updates);
   }
 
   function detachChatMessagesListener() {
@@ -18503,6 +18583,7 @@ let chatTypingListener = null;
       const currentUserId = firebase.auth().currentUser?.uid || '';
       const mine = msg.senderId === currentUserId;
       const resolvedId = msgId || msg.id || '';
+      if (resolvedId && container.querySelector('[data-msg-id="' + resolvedId + '"]')) return;
       // Show "Mensaje eliminado" placeholder for deleted messages
       if (msg.deletedForAll) {
         if (container.querySelector('.deleted-placeholder[data-del-id="' + resolvedId + '"]')) return;
@@ -18546,6 +18627,9 @@ let chatTypingListener = null;
         content = `<div class="text-5xl select-none leading-none p-1">${escapeHtml(msg.sticker)}</div>`;
       } else if (msg.type === 'gif' && msg.gifUrl) {
         content = `<img src="${escapeHtml(msg.gifUrl)}" class="rounded-2xl block" style="max-width:200px;max-height:200px;object-fit:cover;cursor:pointer" alt="GIF" onclick="window.open('${escapeHtml(msg.gifUrl)}','_blank')">`;
+      } else if (msg.type === 'voice' && msg.voiceUrl) {
+        const durationLabel = msg.voiceDuration ? `${Math.max(1, Math.round(msg.voiceDuration))}s` : '';
+        content = `<div class="flex items-center gap-2 min-w-[190px]"><audio controls preload="metadata" src="${escapeHtml(msg.voiceUrl)}" class="h-9 max-w-[210px]"></audio>${durationLabel ? `<span class="text-xs opacity-70 shrink-0">${durationLabel}</span>` : ''}</div>`;
       } else if (msg.viewOnce) {
         const currentUserId2 = firebase.auth().currentUser?.uid || '';
         if (mine) {
@@ -18582,6 +18666,7 @@ let chatTypingListener = null;
               <div class="msg-bubble ${(msgImages.length && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : 'bg-white text-[#2f1a14] border border-[#e8e1dc] px-4 py-2'} rounded-2xl select-none cursor-pointer" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
                 ${replyBlock}${content}
               </div>
+              <div id="reactions-${resolvedId}" class="flex flex-wrap gap-1 mt-0.5 justify-start px-1"></div>
               ${timeStr ? `<span class="text-xs text-[#b4a9a4] px-1">${timeStr}</span>` : ''}
             </div>
           </div>
@@ -18751,6 +18836,7 @@ let chatTypingListener = null;
       thumbnails.appendChild(div);
     });
     if (wrap) wrap.classList.toggle('hidden', chatPhotoAttachments.length === 0);
+    updateChatToolbarMode();
   }
 
   async function handleChatPhotoAttachment(event) {
@@ -18932,6 +19018,8 @@ let chatTypingListener = null;
     clearChatReply();
     const recipientId = currentChatRecipient;
     const conversationId = currentChatRoomId;
+    const isGroup = currentChatIsGroup;
+    const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
     const lastMessage = imageUrls.length ? '📷 Foto' : text;
     input.value = '';
     updateChatToolbarMode();
@@ -18940,7 +19028,7 @@ let chatTypingListener = null;
     chatConversationCache.loadedAt = 0;
 
     // Añadir senderName al payload si es grupo
-    if (currentChatIsGroup) {
+    if (isGroup) {
       try {
         const senderSnap = await firebase.database().ref('users/' + user.uid).once('value');
         const senderData = senderSnap.val() || {};
@@ -18954,29 +19042,12 @@ let chatTypingListener = null;
         const statusEl = sentEl.querySelector('.opt-send-status');
         if (statusEl) statusEl.innerHTML = `<svg class="w-3 h-3 text-[#8d7d75]" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       }
-      const updates = {};
-      const updatedAt = Date.now();
-      if (currentChatIsGroup) {
-        const memberUids = Array.isArray(currentGroupMembers) ? currentGroupMembers : Object.keys(currentGroupMembers || {});
-        memberUids.forEach(uid => {
-          updates['userConversations/' + uid + '/' + conversationId + '/isGroup'] = true;
-          updates['userConversations/' + uid + '/' + conversationId + '/groupId'] = conversationId;
-          updates['userConversations/' + uid + '/' + conversationId + '/updatedAt'] = updatedAt;
-          const prefix = uid === user.uid ? 'Tú' : (payload.senderName || 'Usuario');
-          updates['userConversations/' + uid + '/' + conversationId + '/lastMessage'] = prefix + ': ' + lastMessage;
-        });
-      } else {
-        updates['conversations/' + conversationId + '/lastMessage'] = lastMessage;
-        updates['conversations/' + conversationId + '/lastSenderId'] = user.uid;
-        updates['conversations/' + conversationId + '/updatedAt'] = updatedAt;
-        updates['userConversations/' + user.uid + '/' + conversationId + '/otherUid'] = recipientId;
-        updates['userConversations/' + user.uid + '/' + conversationId + '/updatedAt'] = updatedAt;
-        updates['userConversations/' + user.uid + '/' + conversationId + '/lastMessage'] = lastMessage;
-        updates['userConversations/' + recipientId + '/' + conversationId + '/otherUid'] = user.uid;
-        updates['userConversations/' + recipientId + '/' + conversationId + '/updatedAt'] = updatedAt;
-        updates['userConversations/' + recipientId + '/' + conversationId + '/lastMessage'] = lastMessage;
-      }
-      return firebase.database().ref().update(updates).catch(() => {});
+      return updateChatConversationPreview(lastMessage, payload, {
+        conversationId,
+        recipientId,
+        isGroup,
+        groupMembers
+      });
     }).catch(() => {
       alert('No se pudo enviar el mensaje. Inténtalo de nuevo.');
     });
