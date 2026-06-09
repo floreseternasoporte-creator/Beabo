@@ -17266,14 +17266,13 @@ let chatTypingListener = null;
   function searchUsersForGroupChat(query) {
     const results = document.getElementById('group-chat-search-results');
     if (!results) return;
-    if (!query || query.trim().length < 2) { results.innerHTML = ''; return; }
-    const q = query.toLowerCase().trim();
+    const q = (query || '').toLowerCase().trim();
+    if (q.length < 2) { results.innerHTML = ''; return; }
     results.innerHTML = '<div class="text-sm text-[#8d7d75] py-2 px-1">Buscando...</div>';
-    firebase.database().ref('users').orderByChild('username').startAt(q).endAt(q + '\uf8ff').limitToFirst(20).once('value').then(snap => {
-      const data = snap.val() || {};
-      const users = Object.entries(data).map(([uid, u]) => ({ uid, name: u.username || u.displayName || 'Usuario', image: u.profileImage || 'https://via.placeholder.com/80' }));
-      const me = firebase.auth().currentUser;
-      const filtered = users.filter(u => u.uid !== (me?.uid));
+    ensureChatUsersIndex().then(usersIndex => {
+      const filtered = usersIndex
+        .filter(u => (u.normalizedName || (u.name || '').toLowerCase()).includes(q))
+        .slice(0, 20);
       results.innerHTML = '';
       if (!filtered.length) { results.innerHTML = '<div class="text-sm text-[#8d7d75] py-2 px-1">Sin resultados</div>'; return; }
       filtered.forEach(u => {
@@ -17281,9 +17280,9 @@ let chatTypingListener = null;
         const item = document.createElement('button');
         item.type = 'button';
         item.className = 'w-full flex items-center gap-3 bg-white border border-[#e8e1dc] rounded-2xl px-4 py-3 text-left transition active:bg-[#f5f0ed]';
-        item.innerHTML = `<img src="${u.image}" class="w-10 h-10 rounded-full object-cover border border-[#e8e1dc]" alt="${u.name}"><span class="font-semibold text-[#2f1a14] flex-1">${u.name}</span>${alreadySelected ? '<span class="text-xs text-[#8d7d75]">Agregado</span>' : '<span class="text-xs font-semibold text-[#2f1a14] bg-[#f1ece9] px-3 py-1 rounded-full">Agregar</span>'}`;
+        item.innerHTML = `<img src="${escapeHtml(u.image || 'https://via.placeholder.com/80')}" class="w-10 h-10 rounded-full object-cover border border-[#e8e1dc]" alt="${escapeHtml(u.name || 'Usuario')}"><span class="font-semibold text-[#2f1a14] flex-1">${escapeHtml(u.name || 'Usuario')}</span>${alreadySelected ? '<span class="text-xs text-[#8d7d75]">Agregado</span>' : '<span class="text-xs font-semibold text-[#2f1a14] bg-[#f1ece9] px-3 py-1 rounded-full">Agregar</span>'}`;
         if (!alreadySelected) {
-          item.onclick = () => addUserToGroupChat(u);
+          item.onclick = () => addUserToGroupChat({ uid: u.uid, name: u.name || 'Usuario', image: u.image || 'https://via.placeholder.com/80' });
         }
         results.appendChild(item);
       });
@@ -18099,7 +18098,8 @@ let chatTypingListener = null;
     const profile = {
       uid,
       name: data.username || data.displayName || data.email || 'Usuario',
-      image: data.profileImage || 'https://via.placeholder.com/80'
+      image: data.profileImage || 'https://via.placeholder.com/80',
+      normalizedName: (data.username || data.displayName || data.email || '').toLowerCase()
     };
     chatUsersIndexCache.push(profile);
     return profile;
@@ -18358,16 +18358,16 @@ let chatTypingListener = null;
     list.innerHTML = `<div class="py-4 text-center text-[#8d7d75] text-sm">Buscando...</div>`;
     chatSearchDebounceTimer = setTimeout(() => {
       ensureChatUsersIndex().then(usersIndex => {
-      const users = usersIndex.filter(item => (item.normalizedName || '').includes(query));
+      const users = usersIndex.filter(item => (item.normalizedName || (item.name || '').toLowerCase()).includes(query));
       if (!users.length) {
         list.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-2xl p-5 text-center text-[#8d7d75]">No encontramos usuarios.</div>';
         return;
       }
       list.innerHTML = users.slice(0, 30).map((item, index) => `
-        <button onclick="openChatFromUserSelection('${item.uid}')" class="w-full text-left bg-white border border-[#e8e1dc] rounded-2xl p-3 transition animate-pulse" style="animation-delay:${index * 0.03}s;animation-duration:0.7s;">
+        <button onclick="openChatFromUserSelection('${escapeHtml(item.uid)}')" class="w-full text-left bg-white border border-[#e8e1dc] rounded-2xl p-3 transition animate-pulse" style="animation-delay:${index * 0.03}s;animation-duration:0.7s;">
           <div class="flex items-center gap-3">
-            <img src="${item.image}" class="w-12 h-12 rounded-full object-cover border border-[#ece5e1]" alt="${escapeHtml(item.name)}">
-            <p class="font-black text-[#2f1a14] truncate">${escapeHtml(item.name)}</p>
+            <img src="${escapeHtml(item.image || 'https://via.placeholder.com/80')}" class="w-12 h-12 rounded-full object-cover border border-[#ece5e1]" alt="${escapeHtml(item.name || 'Usuario')}">
+            <p class="font-black text-[#2f1a14] truncate">${escapeHtml(item.name || 'Usuario')}</p>
           </div>
         </button>
       `).join('');
@@ -19663,9 +19663,28 @@ let chatTypingListener = null;
     _fwdMsgData = null;
   }
 
+  function _getForwardConversationMeta(c) {
+    const isGroup = !!c.isGroup;
+    const name = isGroup ? (c.groupName || 'Grupo') : (c.otherName || c.displayName || c.username || 'Usuario');
+    const subtitle = isGroup ? 'Grupo' : (c.username ? '@' + c.username : 'Chat directo');
+    return {
+      id: c.id || c.convId || c.groupId || '',
+      otherUid: c.otherUid || '',
+      isGroup,
+      name,
+      subtitle,
+      image: isGroup ? '' : (c.otherImage || c.photoURL || '')
+    };
+  }
+
   function filterForwardList(q) {
     const lower = (q || '').toLowerCase().trim();
-    const filtered = lower ? _fwdAllConvs.filter(c => (c.username || '').toLowerCase().includes(lower) || (c.displayName || '').toLowerCase().includes(lower)) : _fwdAllConvs;
+    const filtered = lower
+      ? _fwdAllConvs.filter(c => {
+          const meta = _getForwardConversationMeta(c);
+          return meta.name.toLowerCase().includes(lower) || meta.subtitle.toLowerCase().includes(lower);
+        })
+      : _fwdAllConvs;
     renderForwardList(filtered);
   }
 
@@ -19674,11 +19693,17 @@ let chatTypingListener = null;
     if (!list) return;
     if (!convs.length) { list.innerHTML = '<p class="text-center text-[#8d7d75] text-sm py-6">No hay conversaciones</p>'; return; }
     list.innerHTML = convs.map(c => {
-      const name = c.displayName || c.username || 'Usuario';
-      const avatar = c.photoURL ? `<img src="${c.photoURL}" class="w-11 h-11 rounded-full object-cover" alt="${name}">` : `<div class="w-11 h-11 rounded-full bg-[#e8e1dc] flex items-center justify-center text-lg font-bold text-[#5f4b44]">${name[0]?.toUpperCase()}</div>`;
-      return `<button onclick="doForwardMessage('${c.convId}','${c.otherUid}')" class="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-[#f8f6f4] active:scale-98 transition text-left">
+      const meta = _getForwardConversationMeta(c);
+      const safeId = escapeHtml(meta.id);
+      const safeOtherUid = escapeHtml(meta.otherUid);
+      const safeName = escapeHtml(meta.name);
+      const safeSubtitle = escapeHtml(meta.subtitle);
+      const avatar = meta.image
+        ? `<img src="${escapeHtml(meta.image)}" class="w-11 h-11 rounded-full object-cover" alt="${safeName}">`
+        : `<div class="w-11 h-11 rounded-full bg-[#e8e1dc] flex items-center justify-center text-lg font-bold text-[#5f4b44]">${safeName[0]?.toUpperCase() || '?'}</div>`;
+      return `<button onclick="doForwardMessage('${safeId}','${safeOtherUid}')" class="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-[#f8f6f4] active:scale-98 transition text-left">
         ${avatar}
-        <div class="min-w-0"><p class="font-bold text-[#2f1a14] text-sm truncate">${name}</p><p class="text-xs text-[#8d7d75] truncate">@${c.username || ''}</p></div>
+        <div class="min-w-0"><p class="font-bold text-[#2f1a14] text-sm truncate">${safeName}</p><p class="text-xs text-[#8d7d75] truncate">${safeSubtitle}</p></div>
       </button>`;
     }).join('');
   }
@@ -19687,21 +19712,34 @@ let chatTypingListener = null;
     if (!_fwdMsgData) return;
     const user = firebase.auth().currentUser;
     if (!user) return;
+    const messageToForward = { ..._fwdMsgData };
+    if (_fwdMsgData.images) messageToForward.images = _fwdMsgData.images.slice();
+    const targetMeta = _fwdAllConvs.map(_getForwardConversationMeta).find(c => c.id === convId || c.otherUid === otherUid);
     closeChatForwardDialog();
     let targetConvId = convId;
-    if (!targetConvId) {
-      const ids = [user.uid, otherUid].sort();
-      targetConvId = ids[0] + '_' + ids[1];
-    }
+    if (!targetConvId && otherUid) targetConvId = getDirectConversationId(user.uid, otherUid);
+    if (!targetConvId) return;
     try {
       const msgRef = firebase.database().ref('conversationMessages/' + targetConvId).push();
       const payload = { senderId: user.uid, timestamp: Date.now(), forwarded: true };
-      if (_fwdMsgData.text) payload.text = _fwdMsgData.text;
-      if (_fwdMsgData.images && _fwdMsgData.images.length) payload.images = _fwdMsgData.images;
-      else if (_fwdMsgData.image) payload.image = _fwdMsgData.image;
+      if (messageToForward.text) payload.text = messageToForward.text;
+      if (messageToForward.images && messageToForward.images.length) payload.images = messageToForward.images;
+      else if (messageToForward.image) payload.image = messageToForward.image;
+      if (targetMeta?.isGroup) {
+        try {
+          const snap = await firebase.database().ref('users/' + user.uid).once('value');
+          const d = snap.val() || {};
+          payload.senderName = d.username || d.displayName || 'Usuario';
+        } catch (_) { payload.senderName = 'Usuario'; }
+      }
       await msgRef.set(payload);
-      const preview = (_fwdMsgData.images || _fwdMsgData.image) ? '📷 Foto' : (_fwdMsgData.text || '');
-      await firebase.database().ref('conversations/' + targetConvId).update({ lastMessage: preview, lastMessageTime: Date.now(), lastMessageSenderId: user.uid });
+      const preview = (payload.images || payload.image) ? '📷 Foto' : (payload.text || 'Mensaje reenviado');
+      await updateChatConversationPreview(preview, payload, {
+        conversationId: targetConvId,
+        recipientId: targetMeta?.isGroup ? null : (targetMeta?.otherUid || otherUid),
+        isGroup: !!targetMeta?.isGroup,
+        groupMembers: targetMeta?.isGroup ? [] : undefined
+      });
       _fwdMsgData = null;
     } catch(e) { alert('Error al reenviar. Intenta de nuevo.'); }
   }
