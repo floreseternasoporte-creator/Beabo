@@ -1815,7 +1815,7 @@ body {
       transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease;
       transform: translateY(100%);
       opacity: 0;
-      display: flex !important; /* Always flex but hidden via transform/opacity */
+      display: flex !important;
       pointer-events: none;
       visibility: hidden;
     }
@@ -1824,6 +1824,17 @@ body {
       opacity: 1;
       pointer-events: auto;
       visibility: visible;
+    }
+    #note-creation-fullscreen.dragging {
+      transition: none;
+    }
+    #creation-drag-handle {
+      width: 36px;
+      height: 4px;
+      background: #d6cec9;
+      border-radius: 99px;
+      margin: 0 auto 2px;
+      flex-shrink: 0;
     }
 
     /* SPLASH SCREEN ANIMATION */
@@ -3679,6 +3690,11 @@ body {
 <!-- Modal de creación de nota a pantalla completa -->
 <div id="note-creation-fullscreen" class="fixed inset-0 bg-[#f5f4f2] text-[#2f1a14] z-50 overflow-hidden">
   <div class="h-full w-full flex flex-col">
+
+    <!-- Drag handle (swipe down to close) -->
+    <div class="pt-2 pb-0 flex-shrink-0" id="creation-drag-zone">
+      <div id="creation-drag-handle"></div>
+    </div>
 
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 bg-[#f5f4f2] flex-shrink-0">
@@ -9357,12 +9373,77 @@ function onNoteFormatChange(format) {
   }
 
   function closeNoteCreationFullscreen() {
-    document.getElementById('note-creation-fullscreen').classList.remove('active');
+    const panel = document.getElementById('note-creation-fullscreen');
+    panel.classList.remove('active');
+    panel.classList.remove('dragging');
+    panel.style.transform = '';
+    panel.style.opacity = '';
     setBottomNavVisibility(true);
     clearStickerSelection('note-content-fullscreen');
     closeLocationSheet();
     closeNoteAudienceSelector();
   }
+
+  (function initCreationSwipeDown() {
+    const THRESHOLD = 130;
+    const panel = document.getElementById('note-creation-fullscreen');
+    const dragZone = document.getElementById('creation-drag-zone');
+    const scrollArea = panel ? panel.querySelector('.overflow-y-auto') : null;
+    let startY = 0, startX = 0, currentY = 0, dragging = false, locked = false;
+
+    function onTouchStart(e) {
+      if (!panel.classList.contains('active')) return;
+      const t = e.touches[0];
+      startY = t.clientY;
+      startX = t.clientX;
+      currentY = 0;
+      dragging = false;
+      locked = false;
+    }
+
+    function onTouchMove(e) {
+      if (!panel.classList.contains('active')) return;
+      const t = e.touches[0];
+      const dy = t.clientY - startY;
+      const dx = Math.abs(t.clientX - startX);
+
+      if (!dragging && !locked) {
+        if (Math.abs(dy) < 6 && dx < 6) return;
+        if (dx > Math.abs(dy)) { locked = true; return; }
+        const atTop = !scrollArea || scrollArea.scrollTop <= 0;
+        if (dy > 0 && atTop) {
+          dragging = true;
+          panel.classList.add('dragging');
+        } else {
+          locked = true;
+          return;
+        }
+      }
+      if (!dragging) return;
+      currentY = Math.max(0, dy);
+      const resistance = currentY > THRESHOLD ? THRESHOLD + (currentY - THRESHOLD) * 0.25 : currentY;
+      panel.style.transform = `translateY(${resistance}px)`;
+      panel.style.opacity = String(Math.max(0.5, 1 - resistance / (window.innerHeight * 0.6)));
+      if (e.cancelable) e.preventDefault();
+    }
+
+    function onTouchEnd() {
+      if (!dragging) return;
+      panel.classList.remove('dragging');
+      panel.style.transform = '';
+      panel.style.opacity = '';
+      dragging = false;
+      if (currentY >= THRESHOLD) {
+        closeNoteCreationFullscreen();
+      }
+    }
+
+    if (panel) {
+      panel.addEventListener('touchstart', onTouchStart, { passive: true });
+      panel.addEventListener('touchmove', onTouchMove, { passive: false });
+      panel.addEventListener('touchend', onTouchEnd, { passive: true });
+    }
+  })();
 
   function openPhotoSourceSelector() {
     pickNoteImageFromGallery();
