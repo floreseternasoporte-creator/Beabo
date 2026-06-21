@@ -2119,41 +2119,6 @@ body {
     });
     /*************** FIN NUEVAS FUNCIONES ***********************/
   </script>
-  <!-- Zendesk Widget -->
-  <script>
-    window.zESettings = {
-      webWidget: {
-        color: {
-          theme: '#3a241d',
-          launcher: '#3a241d',
-          launcherText: '#ffffff',
-          button: '#3a241d',
-          header: '#3a241d',
-          articleLinks: '#5f4b44',
-          resultLists: '#3a241d'
-        },
-        launcher: { label: { 'es': 'Soporte' }, mobile: { labelVisible: false } },
-        contactForm: { title: { 'es': 'Soporte Drex' } },
-        helpCenter: { title: { 'es': 'Centro de ayuda Drex' } },
-        chat: { title: { 'es': 'Soporte Drex' }, connectOnPageLoad: false }
-      }
-    };
-  </script>
-  <script id="ze-snippet" src="https://static.zdassets.com/ekr/snippet.js?key=151e62a3-d560-4332-82f1-72fc70930b5b"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      function _hideZendeskLauncher() {
-        if (typeof zE === 'undefined') { setTimeout(_hideZendeskLauncher, 800); return; }
-        try {
-          zE('messenger', 'hide');
-          zE('messenger:set', 'locale', 'es');
-        } catch(e) {
-          try { zE('webWidget', 'hide'); } catch(e2) {}
-        }
-      }
-      setTimeout(_hideZendeskLauncher, 1000);
-    });
-  </script>
 </head>
 
 <!-- MODAL DE NOTIFICACIONES -->
@@ -2296,7 +2261,50 @@ body {
   </div>
 </div>
 
-<!-- Soporte manejado por Zendesk Widget -->
+<!-- MODAL DE SOPORTE CON IA -->
+<div id="support-modal" class="fixed inset-0 bg-[#f5f4f2] z-[90] hidden flex flex-col">
+  <!-- Header -->
+  <div class="flex items-center px-4 py-3 bg-white border-b border-[#e8e1dc] flex-shrink-0">
+    <button onclick="closeSupportModal()" class="w-10 h-10 flex items-center justify-center rounded-full text-[#2f1a14] active:bg-[#e8e1dc] transition mr-2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </button>
+    <div class="flex items-center gap-3 flex-1">
+      <div class="relative">
+        <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" alt="Soporte" class="w-9 h-9 rounded-full object-cover">
+        <span class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></span>
+      </div>
+      <div>
+        <p class="font-bold text-[#2f1a14] text-sm leading-tight">Soporte Drex</p>
+        <p class="text-[11px] text-green-600 font-medium">En línea · IA activa</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mensajes -->
+  <div id="support-chat-messages" class="flex-1 overflow-y-auto px-4 py-4 space-y-4"></div>
+
+  <!-- Indicador de escritura -->
+  <div id="support-typing" class="hidden px-4 pb-2">
+    <div class="flex items-end gap-2">
+      <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" class="w-7 h-7 rounded-full object-cover flex-shrink-0">
+      <div class="bg-white border border-[#e8e1dc] rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm inline-flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 bg-[#b69f94] rounded-full animate-bounce" style="animation-delay:0s"></span>
+        <span class="w-1.5 h-1.5 bg-[#b69f94] rounded-full animate-bounce" style="animation-delay:0.15s"></span>
+        <span class="w-1.5 h-1.5 bg-[#b69f94] rounded-full animate-bounce" style="animation-delay:0.3s"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="px-4 py-3 bg-white border-t border-[#e8e1dc] flex-shrink-0">
+    <div class="flex items-end gap-2">
+      <textarea id="support-input" rows="1" placeholder="Escribe tu mensaje..." class="flex-1 resize-none bg-[#f5f4f2] border border-[#e8e1dc] rounded-2xl px-4 py-3 text-sm text-[#2f1a14] placeholder-[#b2a7a1] focus:outline-none focus:ring-2 focus:ring-[#3a241d] focus:border-transparent max-h-28 overflow-y-auto" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendSupportMessage();}" oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,112)+'px'"></textarea>
+      <button onclick="sendSupportMessage()" id="support-send-btn" class="w-10 h-10 bg-[#3a241d] text-white rounded-full flex items-center justify-center flex-shrink-0 hover:bg-[#5f4b44] active:scale-95 transition-all disabled:opacity-40">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
 
 <!-- SPINNER DE CERRAR SESIÓN -->
 <div id="signout-spinner" class="fixed inset-0 bg-white bg-opacity-75 flex items-center justify-center z-50 hidden">
@@ -15057,38 +15065,9 @@ function deleteComment(noteId, commentPath) {
           loadUserFrame(user.uid, 'profile-frame-desktop');
           hideSplashScreen();
 
-          // Identificar usuario en Zendesk automáticamente
+          // Guardar nombre para el chat de soporte
           if (data) {
-            const zdName = data.username || data.fullName || user.email || 'Usuario';
-            const zdEmail = user.email || '';
-            const zdPhone = data.phone || '';
-            window._drexZdName = zdName;
-            window._drexZdEmail = zdEmail;
-            function _zendeskIdentify() {
-              if (typeof zE === 'undefined') { setTimeout(_zendeskIdentify, 1500); return; }
-              try {
-                zE('messenger:set', 'locale', 'es');
-                zE('webWidget', 'identify', { name: zdName, email: zdEmail });
-                zE('webWidget', 'prefill', {
-                  name: { value: zdName, readOnly: true },
-                  email: { value: zdEmail, readOnly: true },
-                  phone: { value: zdPhone }
-                });
-                zE('webWidget', 'updateSettings', {
-                  webWidget: {
-                    chat: {
-                      offlineForm: {
-                        greeting: { 'es': `¡Hola ${zdName}! 👋 Bienvenido al soporte de Drex. ¿En qué podemos ayudarte hoy?` }
-                      }
-                    },
-                    contactForm: {
-                      greeting: { 'es': `¡Hola ${zdName}! ¿En qué podemos ayudarte hoy?` }
-                    }
-                  }
-                });
-              } catch(e) {}
-            }
-            _zendeskIdentify();
+            window._drexUserName = (data.username || data.fullName || '').replace(/<[^>]*>/g, '').trim() || null;
           }
         }
       });
@@ -15098,8 +15077,7 @@ function deleteComment(noteId, commentPath) {
       hideSplashScreen();
       authFormContainer.classList.remove('hidden');
       mainApp.classList.add('hidden');
-      // Cerrar sesión en Zendesk
-      try { if (typeof zE !== 'undefined') zE('messenger', 'logoutUser'); } catch(e) {}
+      window._drexUserName = null;
       submitButton.disabled = false;
       submitButton.textContent = isLogin ? translations[currentLanguage].btnIniciarSesion : 'Registrarse';
     }
@@ -15264,45 +15242,123 @@ function deleteComment(noteId, commentPath) {
         errorDisplay.classList.remove('hidden');
       });
   }
-  /*********************** SOPORTE - NUEVAS INTEGRACIONES PRÓXIMAMENTE **************************/
+  /*********************** SOPORTE CON IA **************************/
+  let _supportHistory = [];
+  let _supportBusy = false;
 
+  const _SUPPORT_SYSTEM = `Eres el asistente de soporte oficial de Drex, una red social moderna. Tu nombre es Baro.
+Ayudas a los usuarios con problemas de la plataforma: publicaciones, perfil, búsqueda, mensajes, comunidades, notificaciones, comentarios, seguridad, y errores técnicos.
+Responde SIEMPRE en español. Sé amable, claro y conciso. Máximo 3 oraciones por respuesta salvo que el usuario pida más detalle.
+Nunca inventes funciones que no existen. Si no puedes resolver algo dile al usuario que contacte al equipo en soporte@drex.app.
+Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes ayudar.`;
 
   function openSupportModal() {
-    if (typeof zE === 'undefined') return;
-    try {
-      const nombre = (window._drexZdName || '').replace(/<[^>]*>/g, '').trim() || null;
-      zE('webWidget', 'updateSettings', {
-        webWidget: {
-          chat: {
-            offlineForm: {
-              greeting: { 'es': nombre
-                ? `¡Hola ${nombre}! 👋 Bienvenido al soporte de Drex. ¿En qué podemos ayudarte hoy?`
-                : '¡Hola! 👋 Bienvenido al soporte de Drex. ¿En qué podemos ayudarte?' }
-            }
-          },
-          contactForm: {
-            greeting: { 'es': nombre
-              ? `¡Hola ${nombre}! ¿En qué podemos ayudarte hoy?`
-              : '¡Hola! ¿En qué podemos ayudarte hoy?' }
-          }
-        }
-      });
-    } catch(e) {}
-    try {
-      zE('messenger', 'show');
-      zE('messenger', 'open');
-    } catch(e) {
-      try { zE('webWidget', 'show'); zE('webWidget', 'open'); } catch(e2) {}
-    }
+    const modal = document.getElementById('support-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    if (_supportHistory.length === 0) _initSupportChat();
   }
+
   function closeSupportModal() {
-    if (typeof zE === 'undefined') return;
+    const modal = document.getElementById('support-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  function _initSupportChat() {
+    const container = document.getElementById('support-chat-messages');
+    if (!container) return;
+    container.innerHTML = '';
+    _supportHistory = [];
+    const nombre = window._drexUserName || null;
+    const saludo = nombre
+      ? `¡Hola ${nombre}! 👋 Soy Baro, el asistente de soporte de Drex. ¿En qué puedo ayudarte hoy?`
+      : '¡Hola! 👋 Soy Baro, el asistente de soporte de Drex. ¿En qué puedo ayudarte hoy?';
+    _appendAIBubble(saludo);
+    _supportHistory.push({ role: 'assistant', content: saludo });
+    setTimeout(() => {
+      const input = document.getElementById('support-input');
+      if (input) input.focus();
+    }, 300);
+  }
+
+  function _appendUserBubble(text) {
+    const container = document.getElementById('support-chat-messages');
+    if (!container) return;
+    const div = document.createElement('div');
+    div.className = 'flex justify-end';
+    div.innerHTML = `<div class="max-w-[78%] bg-[#3a241d] text-white rounded-2xl rounded-br-sm px-4 py-3 text-sm leading-relaxed shadow-sm">${escapeHtml(text)}</div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function _appendAIBubble(text) {
+    const container = document.getElementById('support-chat-messages');
+    if (!container) return;
+    const div = document.createElement('div');
+    div.className = 'flex items-end gap-2';
+    div.innerHTML = `
+      <img src="https://i.ibb.co/MD3Cdyhy/IMG-7701.png" class="w-7 h-7 rounded-full object-cover flex-shrink-0 mb-0.5">
+      <div class="max-w-[78%] bg-white border border-[#e8e1dc] rounded-2xl rounded-bl-sm px-4 py-3 text-sm text-[#2f1a14] leading-relaxed shadow-sm">${escapeHtml(text)}</div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function _showTyping() {
+    const el = document.getElementById('support-typing');
+    if (el) el.classList.remove('hidden');
+    const container = document.getElementById('support-chat-messages');
+    if (container) container.scrollTop = container.scrollHeight;
+  }
+
+  function _hideTyping() {
+    const el = document.getElementById('support-typing');
+    if (el) el.classList.add('hidden');
+  }
+
+  async function sendSupportMessage() {
+    if (_supportBusy) return;
+    const input = document.getElementById('support-input');
+    const btn = document.getElementById('support-send-btn');
+    const text = (input?.value || '').trim();
+    if (!text) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    _appendUserBubble(text);
+    _supportHistory.push({ role: 'user', content: text });
+    _supportBusy = true;
+    if (btn) btn.disabled = true;
+    _showTyping();
+
     try {
-      zE('messenger', 'close');
-      zE('messenger', 'hide');
-    } catch(e) {
-      try { zE('webWidget', 'close'); zE('webWidget', 'hide'); } catch(e2) {}
+      const res = await fetch('https://text.pollinations.ai/openai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'openai',
+          messages: [
+            { role: 'system', content: _SUPPORT_SYSTEM },
+            ..._supportHistory.slice(-10)
+          ],
+          seed: Math.floor(Math.random() * 9999)
+        })
+      });
+      const data = await res.json();
+      const reply = data?.choices?.[0]?.message?.content?.trim() || 'Lo siento, no pude procesar tu mensaje. Inténtalo de nuevo.';
+      _hideTyping();
+      _appendAIBubble(reply);
+      _supportHistory.push({ role: 'assistant', content: reply });
+    } catch (e) {
+      _hideTyping();
+      _appendAIBubble('Lo siento, tuve un problema de conexión. Verifica tu internet e intenta de nuevo.');
     }
+
+    _supportBusy = false;
+    if (btn) btn.disabled = false;
+    if (input) input.focus();
   }
 
   /*********************** NAVEGACIÓN Y MODALES **************************/
