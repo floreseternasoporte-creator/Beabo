@@ -11443,105 +11443,83 @@ function closePostReportResponse() {
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
 }
 
-function submitPostReport() {
+async function submitPostReport() {
   const user = firebase.auth().currentUser;
-  if (!user) {
-    alert('Debes iniciar sesión para reportar');
-    return;
-  }
+  if (!user) { alert('Debes iniciar sesión para reportar'); return; }
   if (!currentReportNoteId) return;
 
   const description = document.getElementById('post-report-description').value.trim();
-  if (!description) {
-    alert('Por favor describe brevemente el problema.');
-    return;
-  }
-  const reason = 'other';
-  const reasonLabel = description.substring(0, 40);
+  if (!description) { alert('Por favor describe brevemente el problema.'); return; }
 
   const submitBtn = document.getElementById('post-report-submit-btn');
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Enviando...';
+  submitBtn.textContent = 'Analizando...';
 
-  const reasonKeywords = { other: '' };
-
-  firebase.database().ref('communityNotes/' + currentReportNoteId).once('value').then(snapshot => {
+  try {
+    const snapshot = await firebase.database().ref('communityNotes/' + currentReportNoteId).once('value');
     const note = snapshot.val();
     if (!note) throw new Error('Publicación no encontrada');
+
     if (isPostOwnedByUser(note, user)) {
       currentReportNoteId = null;
       document.getElementById('post-report-fullscreen').classList.add('hidden');
       if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
       alert('No puedes reportar tu propia publicación.');
-      return Promise.resolve('self_report_blocked');
-    }
-
-    const algorithmInput = `${note.content || ''} ${reasonLabel} ${reasonKeywords[reason] || ''} ${description}`;
-    const autoDetails = evaluateContentModeration(algorithmInput);
-    const autoFlag = autoDetails.flagged;
-    const requiresHuman = ['sexual', 'violence', 'hate', 'self_harm', 'copyright'].includes(reason) || !autoFlag;
-    const reportId = firebase.database().ref().push().key;
-
-    const reportPayload = {
-      reportId,
-      noteId: currentReportNoteId,
-      reporter: user.uid,
-      reporterName: user.displayName || user.email || 'Usuario',
-      noteAuthorId: note.authorId || '',
-      reason,
-      reasonLabel,
-      description,
-      algorithmInput,
-      moderationCategories: autoDetails.categories,
-      moderationScore: autoDetails.score,
-      autoFlag,
-      requiresHuman,
-      status: requiresHuman ? 'pending_human_review' : 'auto_resolved',
-      timestamp: Date.now()
-    };
-
-    document.getElementById('post-report-fullscreen').classList.add('hidden');
-    document.getElementById('post-report-processing').classList.remove('hidden');
-
-    return firebase.database().ref('postReports/' + reportId).set(reportPayload).then(() => {
-      if (requiresHuman) {
-        return firebase.database().ref('postReportsHumanQueue/' + reportId).set({
-          ...reportPayload,
-          humanPriority: autoFlag ? 'high' : 'normal',
-          queuedAt: Date.now()
-        });
-      }
-      return Promise.resolve();
-    }).then(() => {
-      setTimeout(() => {
-        const statusMessage = requiresHuman
-          ? 'No pudimos tomar una medida automática con certeza. Tu reporte fue enviado al equipo humano y está en revisión.'
-          : 'Tu reporte fue procesado automáticamente y ya aplicamos las medidas correspondientes si fueron necesarias.';
-        addNotification(user.uid, statusMessage, 'moderation');
-      }, 15000);
-    });
-  }).then(result => {
-    if (result === 'self_report_blocked') {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Enviar reporte';
       return;
     }
-    setTimeout(() => {
-      document.getElementById('post-report-processing').classList.add('hidden');
-      document.getElementById('post-report-response').classList.remove('hidden');
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Enviar reporte';
-      currentReportNoteId = null;
-      if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
-    }, 1300);
-  }).catch(error => {
+
+    document.getElementById('post-report-fullscreen').classList.add('hidden');
+    document.getElementById('post-report-processing').classList.remove('hidden');
+
+    const reportId = firebase.database().ref().push().key;
+    const noteId = currentReportNoteId;
+    const contentText = note.content || '';
+    const noteAuthorId = note.authorId || note.userId || '';
+
+    // Guardar reporte en Firebase
+    await firebase.database().ref('postReports/' + reportId).set({
+      reportId, noteId, reporter: user.uid,
+      reporterName: user.displayName || user.email || 'Usuario',
+      noteAuthorId, description,
+      status: 'ai_reviewing', timestamp: Date.now()
+    });
+
+    // Analizar con IA
+    const verdict = await moderateWithAI(contentText, description);
+
+    let notifMsg;
+    if (verdict.flagged) {
+      // Eliminar publicación y sus comentarios
+      await Promise.all([
+        firebase.database().ref('communityNotes/' + noteId).remove(),
+        firebase.database().ref('postComments/' + noteId).remove()
+      ]);
+      await firebase.database().ref('postReports/' + reportId).update({ status: 'removed', aiVerdict: verdict.reason });
+      notifMsg = '✅ Tomamos medidas sobre el contenido que reportaste. ¡Gracias por proteger a la comunidad de Drex!';
+    } else {
+      await firebase.database().ref('postReports/' + reportId).update({ status: 'no_action', aiVerdict: verdict.reason });
+      notifMsg = 'ℹ️ Revisamos tu reporte. En esta ocasión no detectamos una infracción, pero lo tenemos registrado. ¡Gracias por ayudarnos!';
+    }
+
+    addNotification(user.uid, notifMsg, 'moderation');
+
+    document.getElementById('post-report-processing').classList.add('hidden');
+    document.getElementById('post-report-response').classList.remove('hidden');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Enviar reporte';
+    currentReportNoteId = null;
+    if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
+
+  } catch (error) {
     console.error('Error al enviar reporte de publicación:', error);
     document.getElementById('post-report-processing').classList.add('hidden');
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
     alert('No se pudo enviar el reporte. Inténtalo de nuevo.');
     submitBtn.disabled = false;
     submitBtn.textContent = 'Enviar reporte';
-  });
+  }
 }
 
 function openCommentReport(noteId, commentPath, commentText = '', commentAuthorId = '') {
@@ -11580,12 +11558,9 @@ function closeCommentReportFullscreen() {
   currentCommentReportTarget = null;
 }
 
-function submitCommentReport() {
+async function submitCommentReport() {
   const user = firebase.auth().currentUser;
-  if (!user) {
-    alert('Debes iniciar sesión para reportar');
-    return;
-  }
+  if (!user) { alert('Debes iniciar sesión para reportar'); return; }
   if (!currentCommentReportTarget) return;
 
   const { noteId, commentPath, commentText, commentAuthorId } = currentCommentReportTarget;
@@ -11595,76 +11570,65 @@ function submitCommentReport() {
   }
 
   const description = document.getElementById('comment-report-description').value.trim();
-  if (!description) {
-    alert('Por favor describe brevemente el problema.');
-    return;
-  }
-  const reason = 'other';
-  const reasonLabel = description.substring(0, 40);
+  if (!description) { alert('Por favor describe brevemente el problema.'); return; }
+
   const submitBtn = document.getElementById('comment-report-submit-btn');
-
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Enviando...';
+  submitBtn.textContent = 'Analizando...';
 
-  const reasonKeywords = { other: '' };
-
-  const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
-  commentRef.once('value').then(snapshot => {
+  try {
+    const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
+    const snapshot = await commentRef.once('value');
     const comment = snapshot.val();
     if (!comment) throw new Error('Comentario no encontrado');
 
-    const algorithmInput = `${comment.content || commentText || ''} ${reasonLabel} ${reasonKeywords[reason] || ''} ${description}`;
-    const autoDetails = evaluateContentModeration(algorithmInput);
-    const requiresHuman = ['harassment', 'hate', 'sexual', 'violence'].includes(reason) || !autoDetails.flagged;
+    const contentText = comment.content || commentText || '';
     const reportId = firebase.database().ref().push().key;
-    const safeVoteKey = commentPath.replace(/\//g, '__');
 
-    const reportPayload = {
-      reportId,
-      noteId,
-      commentPath,
-      commentKey: safeVoteKey,
+    document.getElementById('comment-report-fullscreen').classList.add('hidden');
+    document.getElementById('post-report-processing').classList.remove('hidden');
+    if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
+
+    // Guardar reporte
+    await firebase.database().ref('commentReports/' + reportId).set({
+      reportId, noteId, commentPath,
       reporter: user.uid,
       reporterName: user.displayName || user.email || 'Usuario',
       commentAuthorId: comment.authorId || commentAuthorId || '',
-      commentAuthorName: comment.authorName || 'Usuario',
-      commentText: comment.content || commentText || '',
-      reason,
-      reasonLabel,
+      commentText: contentText,
       description,
-      moderationCategories: autoDetails.categories,
-      moderationScore: autoDetails.score,
-      autoFlag: autoDetails.flagged,
-      requiresHuman,
-      status: requiresHuman ? 'pending_human_review' : 'auto_resolved',
-      timestamp: Date.now()
-    };
-
-    return firebase.database().ref('commentReports/' + reportId).set(reportPayload).then(() => {
-      if (requiresHuman) {
-        return firebase.database().ref('commentReportsHumanQueue/' + reportId).set({
-          ...reportPayload,
-          humanPriority: autoDetails.flagged ? 'high' : 'normal',
-          queuedAt: Date.now()
-        });
-      }
-      return Promise.resolve();
-    }).then(() => {
-      addNotification(user.uid, 'Tu reporte de comentario fue enviado y será revisado por el equipo.', 'moderation');
+      status: 'ai_reviewing', timestamp: Date.now()
     });
-  }).then(() => {
-    document.getElementById('comment-report-fullscreen').classList.add('hidden');
+
+    // Analizar con IA
+    const verdict = await moderateWithAI(contentText, description);
+
+    let notifMsg;
+    if (verdict.flagged) {
+      await commentRef.remove();
+      await firebase.database().ref('commentReports/' + reportId).update({ status: 'removed', aiVerdict: verdict.reason });
+      notifMsg = '✅ Tomamos medidas sobre el comentario que reportaste. ¡Gracias por proteger a la comunidad de Drex!';
+    } else {
+      await firebase.database().ref('commentReports/' + reportId).update({ status: 'no_action', aiVerdict: verdict.reason });
+      notifMsg = 'ℹ️ Revisamos tu reporte. En esta ocasión no detectamos una infracción, pero lo tenemos registrado. ¡Gracias por ayudarnos!';
+    }
+
+    addNotification(user.uid, notifMsg, 'moderation');
+
+    document.getElementById('post-report-processing').classList.add('hidden');
     document.getElementById('post-report-response').classList.remove('hidden');
     submitBtn.disabled = false;
     submitBtn.textContent = 'Enviar reporte';
     currentCommentReportTarget = null;
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
-  }).catch(error => {
+
+  } catch (error) {
     console.error('Error al enviar reporte de comentario:', error);
+    document.getElementById('post-report-processing').classList.add('hidden');
     alert('No se pudo enviar el reporte. Inténtalo de nuevo.');
     submitBtn.disabled = false;
     submitBtn.textContent = 'Enviar reporte';
-  });
+  }
 }
 
 function votePost(noteId, voteType) {
@@ -15242,6 +15206,51 @@ function deleteComment(noteId, commentPath) {
         errorDisplay.classList.remove('hidden');
       });
   }
+  /*********************** MODERACIÓN CON IA **************************/
+  const _MODERATION_SYSTEM = `Eres el moderador automático de Drex, una red social en español.
+Analiza el contenido reportado y determina si viola alguna de estas normas:
+1. Contenido sexual o pornográfico
+2. Violencia, amenazas o incitación al daño
+3. Odio, discriminación o acoso por cualquier motivo
+4. Spam o publicidad no deseada
+5. Información falsa con intención de daño
+6. Bullying o intimidación personal
+7. Contenido ilegal o peligroso
+8. Autolesiones o contenido relacionado con suicidio
+
+Responde ÚNICAMENTE con un JSON exacto, sin texto adicional:
+{"flagged": true, "reason": "descripción breve de la infracción en máximo 8 palabras"}
+o
+{"flagged": false, "reason": "sin infracciones detectadas"}`;
+
+  async function moderateWithAI(contentText, reportDescription) {
+    try {
+      const userMsg = `Contenido a moderar: "${String(contentText || '').slice(0, 800)}"\nMotivo del reporte: "${String(reportDescription || '').slice(0, 200)}"`;
+      const res = await fetch('https://text.pollinations.ai/openai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'openai',
+          messages: [
+            { role: 'system', content: _MODERATION_SYSTEM },
+            { role: 'user', content: userMsg }
+          ],
+          seed: Math.floor(Math.random() * 9999)
+        })
+      });
+      const data = await res.json();
+      const reply = (data?.choices?.[0]?.message?.content || '').trim();
+      const match = reply.match(/\{[\s\S]*\}/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        return { flagged: !!parsed.flagged, reason: String(parsed.reason || '') };
+      }
+      return { flagged: false, reason: 'sin infracciones detectadas' };
+    } catch (e) {
+      return { flagged: false, reason: 'error al analizar' };
+    }
+  }
+
   /*********************** SOPORTE CON IA **************************/
   let _supportHistory = [];
   let _supportBusy = false;
@@ -23072,7 +23081,7 @@ function renderPlacesList(places) {
     setTimeout(() => responseModal.classList.add('hidden'), 1400);
   }
 
-  document.getElementById('report-form').addEventListener('submit', function(e) {
+  document.getElementById('report-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     const user = firebase.auth().currentUser;
     if (!user || !currentViewedAuthorId) return;
@@ -23083,35 +23092,64 @@ function renderPlacesList(places) {
 
     const description = document.getElementById('report-description').value.trim();
     if (!description) { alert('Por favor describe brevemente el problema.'); return; }
-    const reason = description.substring(0, 40);
-    const reporterName = user.displayName || user.email || "Usuario";
-    const reportData = {
-      reporter: user.uid,
-      reporterName,
-      reportedUser: currentViewedAuthorId,
-      reportedName: "",
-      reason,
-      description,
-      timestamp: Date.now(),
-      status: "pending"
-    };
 
-    firebase.database().ref('reports').push(reportData).then((reportRef) => {
-      closeReportModal();
-      showQuickReportFeedback();
-      document.getElementById('report-description').value = '';
-      addNotification(user.uid, "Tu reporte fue enviado correctamente y será revisado por el equipo.");
+    const submitBtn = document.getElementById('btn-enviar-report');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Analizando...'; }
 
-      // Completar nombre reportado sin bloquear la UI.
-      return firebase.database().ref('users/' + currentViewedAuthorId + '/username').once('value').then((snap) => {
-        if (snap.exists()) {
-          return reportRef.update({ reportedName: snap.val() || '' });
-        }
+    const reportedUid = currentViewedAuthorId;
+
+    try {
+      // Obtener datos del perfil reportado
+      const userSnap = await firebase.database().ref('users/' + reportedUid).once('value');
+      const userData = userSnap.val() || {};
+      const reportedName = userData.username || userData.displayName || '';
+      const profileContent = [
+        userData.username || '',
+        userData.bio || userData.description || '',
+        userData.displayName || ''
+      ].join(' ');
+
+      // Guardar reporte
+      const reportRef = await firebase.database().ref('reports').push({
+        reporter: user.uid,
+        reporterName: user.displayName || user.email || 'Usuario',
+        reportedUser: reportedUid,
+        reportedName,
+        description,
+        status: 'ai_reviewing',
+        timestamp: Date.now()
       });
-    }).catch((error) => {
+
+      closeReportModal();
+      document.getElementById('report-description').value = '';
+
+      // Analizar con IA (bio + nombre + descripción del problema)
+      const verdict = await moderateWithAI(profileContent, description);
+
+      let notifMsg;
+      if (verdict.flagged) {
+        // Suspender el perfil (no borrar la cuenta, pero sí marcarlo)
+        await firebase.database().ref('users/' + reportedUid).update({
+          suspended: true,
+          suspendedAt: Date.now(),
+          suspendReason: verdict.reason
+        });
+        await reportRef.update({ status: 'suspended', aiVerdict: verdict.reason });
+        notifMsg = '✅ Tomamos medidas sobre el perfil que reportaste. ¡Gracias por proteger a la comunidad de Drex!';
+      } else {
+        await reportRef.update({ status: 'no_action', aiVerdict: verdict.reason });
+        notifMsg = 'ℹ️ Revisamos tu reporte. En esta ocasión no detectamos una infracción, pero lo tenemos registrado. ¡Gracias por ayudarnos!';
+      }
+
+      addNotification(user.uid, notifMsg, 'moderation');
+      showQuickReportFeedback();
+
+    } catch (error) {
       console.error("Error al enviar el reporte:", error);
       alert("No se pudo enviar el reporte. Inténtalo de nuevo.");
-    });
+    } finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Enviar reporte'; }
+    }
   });
   /*********************** EFECTO SKELETON **************************/
   function applySkeletonEffect() {
