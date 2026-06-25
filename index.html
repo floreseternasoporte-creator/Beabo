@@ -3317,17 +3317,6 @@ body {
       </div>
     </div>
 
-    <div id="chat-typing-indicator" class="hidden px-4 pb-1 pt-1">
-      <div class="flex items-center gap-2">
-        <div class="flex gap-1">
-          <span class="w-2 h-2 rounded-full bg-[#b4a9a4] animate-bounce" style="animation-delay: 0ms"></span>
-          <span class="w-2 h-2 rounded-full bg-[#b4a9a4] animate-bounce" style="animation-delay: 150ms"></span>
-          <span class="w-2 h-2 rounded-full bg-[#b4a9a4] animate-bounce" style="animation-delay: 300ms"></span>
-        </div>
-        <span class="text-xs text-[#8d7d75]" id="chat-typing-text">escribiendo...</span>
-      </div>
-    </div>
-
     <!-- MENSAJE ANCLADO BANNER -->
     <div id="chat-pinned-banner" class="hidden border-b border-[#e8e1dc] bg-[#fdf8f5] px-4 py-2 cursor-pointer active:bg-[#f6ede6] transition" onclick="scrollToPinnedMessage()">
       <div class="flex items-center gap-2">
@@ -3348,6 +3337,18 @@ body {
     </div>
 
     <div id="chat-room-messages" class="flex-1 overflow-y-auto px-4 py-5 space-y-3"></div>
+
+    <!-- Indicador "escribiendo..." - estilo TikTok -->
+    <div id="chat-typing-indicator" class="hidden px-4 pb-2 pt-1">
+      <div class="flex items-end gap-2">
+        <img id="chat-typing-avatar" src="https://via.placeholder.com/60" class="w-7 h-7 rounded-full object-cover border border-[#e8e1dc] shrink-0" alt="">
+        <div class="bg-[#f5f4f2] rounded-3xl px-4 py-2.5 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-[#b4a9a4]" style="animation: typing-bounce 1.4s infinite ease-in-out; animation-delay: 0ms"></span>
+          <span class="w-2 h-2 rounded-full bg-[#b4a9a4]" style="animation: typing-bounce 1.4s infinite ease-in-out; animation-delay: 200ms"></span>
+          <span class="w-2 h-2 rounded-full bg-[#b4a9a4]" style="animation: typing-bounce 1.4s infinite ease-in-out; animation-delay: 400ms"></span>
+        </div>
+      </div>
+    </div>
 
     <!-- Reply preview bar -->
     <div id="chat-reply-preview" class="hidden border-t border-[#e8e1dc] bg-[#f8f6f4] px-4 py-2">
@@ -19891,7 +19892,68 @@ let chatTypingListener = null;
         }
       })() : '';
       let content;
-      if (msg.type === 'sticker' && msg.sticker) {
+      if (msg.type === 'location' && msg.latitude && msg.longitude) {
+        // Mensaje de ubicación
+        const isLive = msg.locationType === 'live' && msg.isLive !== false;
+        const hasExpired = msg.expiresAt && Date.now() > msg.expiresAt;
+        const isActuallyLive = isLive && !hasExpired;
+        
+        const mapImg = `https://staticmap.openstreetmap.de/staticmap.php?center=${msg.latitude},${msg.longitude}&zoom=14&size=280x160&markers=${msg.latitude},${msg.longitude},red-pushpin`;
+        
+        // Calcular tiempo restante (si es en vivo y tiene expiración)
+        let remainingText = '';
+        if (isActuallyLive && msg.expiresAt) {
+          const remainingMs = msg.expiresAt - Date.now();
+          const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+          const remainingMins = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+          if (remainingHours > 0) {
+            remainingText = `${remainingHours}h ${remainingMins}m restantes`;
+          } else {
+            remainingText = `${remainingMins}m restantes`;
+          }
+        }
+        
+        const textColor = mine ? 'text-white' : 'text-[#2f1a14]';
+        const subTextColor = mine ? 'text-white/70' : 'text-[#8d7d75]';
+        
+        content = `
+          <div class="cursor-pointer min-w-[200px]" onclick="openChatLocationDetail({latitude:${msg.latitude},longitude:${msg.longitude},label:'${(msg.label||'Ubicación').replace(/'/g,"\\'")}',live:${isActuallyLive ? 'true' : 'false'},msgId:'${resolvedId}'})">
+            <div class="relative rounded-2xl overflow-hidden bg-[#f1ece9]" style="width:220px;height:140px">
+              <img src="${mapImg}" class="w-full h-full object-cover" alt="Mapa" onerror="this.style.opacity=0.3">
+              <div class="absolute inset-0 flex items-center justify-center">
+                <div class="w-10 h-10 rounded-full ${isActuallyLive ? 'bg-green-500' : 'bg-red-500'} flex items-center justify-center shadow-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                </div>
+              </div>
+              ${isActuallyLive ? `
+                <div class="absolute top-2 left-2 flex items-center gap-1 bg-green-500 text-white text-[10px] font-bold px-2 py-1 rounded-full">
+                  <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+                  EN VIVO
+                </div>
+              ` : ''}
+              ${hasExpired && msg.locationType === 'live' ? `
+                <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <span class="text-white text-xs font-semibold bg-black/60 px-3 py-1.5 rounded-full">Ubicación finalizada</span>
+                </div>
+              ` : ''}
+            </div>
+            <div class="mt-2">
+              <div class="flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0 ${subTextColor}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="10" r="3"/></svg>
+                <span class="text-[13px] font-semibold truncate ${textColor}">${msg.label || 'Ubicación'}</span>
+              </div>
+              ${remainingText ? `
+                <div class="text-[11px] text-green-500 mt-1 font-medium">⏱️ ${remainingText}</div>
+              ` : ''}
+              ${mine && isActuallyLive ? `
+                <button onclick="event.stopPropagation(); stopLiveLocation();" class="mt-2 w-full py-1.5 bg-red-500/20 text-red-400 text-[11px] font-semibold rounded-lg hover:bg-red-500/30 transition">
+                  Detener compartición
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      } else if (msg.type === 'sticker' && msg.sticker) {
         content = `<div class="text-5xl select-none leading-none p-1">${escapeHtml(msg.sticker)}</div>`;
       } else if (msg.type === 'gif' && msg.gifUrl) {
         content = `<img src="${escapeHtml(msg.gifUrl)}" class="rounded-2xl block" style="max-width:200px;max-height:200px;object-fit:cover;cursor:pointer" alt="GIF" onclick="window.open('${escapeHtml(msg.gifUrl)}','_blank')">`;
