@@ -2747,7 +2747,6 @@ body {
     </div>
 
   </div>
-</body>
 
 <!-- ══════════════════════════════════════════════════════════
      ONBOARDING OVERLAY — 3 pasos post-registro
@@ -11826,6 +11825,9 @@ async function submitCommentReport() {
   }
 }
 
+// Bloqueo para evitar doble-voto en posts
+const _postVoteLocks = new Set();
+
 function votePost(noteId, voteType) {
   const user = firebase.auth().currentUser;
   if (!user) {
@@ -11833,47 +11835,99 @@ function votePost(noteId, voteType) {
     return;
   }
 
+  // Evita doble-tap / doble-clic: mientras este post tiene un voto en
+  // vuelo, se ignoran nuevos clics para que no se desincronice el contador.
+  if (_postVoteLocks.has(noteId)) return;
+  _postVoteLocks.add(noteId);
+
   const upvoteBtn = document.getElementById('upvote-' + noteId);
   const scoreLabel = document.getElementById('score-' + noteId);
-
-  // UI optimista — reacciona al instante
-  const wasLiked = upvoteBtn ? upvoteBtn.classList.contains('active') : false;
-  const currentCount = parseInt((scoreLabel && scoreLabel.textContent) || '0') || 0;
-  const newCount = wasLiked ? Math.max(0, currentCount - 1) : currentCount + 1;
-  if (upvoteBtn) upvoteBtn.classList.toggle('active', !wasLiked);
-  if (scoreLabel) {
-    scoreLabel.textContent = formatVoteScore(newCount);
-    scoreLabel.classList.toggle('text-[#5f4b44]', newCount > 0);
-    scoreLabel.classList.toggle('text-[#8d7d75]', newCount === 0);
-  }
 
   const userVoteRef = firebase.database().ref('userVotes/' + user.uid + '/' + noteId);
   const noteRef = firebase.database().ref('communityNotes/' + noteId);
 
+  // UI optimista — reacciona al instante
+  const wasUpvoted = upvoteBtn ? upvoteBtn.classList.contains('active') : false;
+  const currentScore = parseInt((scoreLabel && scoreLabel.textContent) || '0', 10) || 0;
+  
+  let optimisticScore = currentScore;
+  let optimisticUpvoted = wasUpvoted;
+  
+  if (voteType === 'up') {
+    optimisticUpvoted = !wasUpvoted;
+    optimisticScore = wasUpvoted ? Math.max(0, currentScore - 1) : currentScore + 1;
+  }
+  // Nota: downvote UI se puede añadir después, la lógica ya lo soporta
+
+  if (upvoteBtn) upvoteBtn.classList.toggle('active', optimisticUpvoted);
+  if (scoreLabel) {
+    scoreLabel.textContent = formatVoteScore(optimisticScore);
+    scoreLabel.classList.toggle('text-[#5f4b44]', optimisticScore > 0);
+    scoreLabel.classList.toggle('text-[#8d7d75]', optimisticScore <= 0);
+  }
+
   userVoteRef.once('value').then(snapshot => {
     const currentVote = snapshot.val();
-    noteRef.transaction(note => {
-      if (note) {
-        const prevUpvotes = Number(note.upvotes || 0);
-        note.upvotes = currentVote === 'up' ? Math.max(0, prevUpvotes - 1) : prevUpvotes + 1;
+
+    return noteRef.transaction(note => {
+      if (!note) return note;
+
+      // Quitar el voto anterior (si había uno) antes de aplicar el nuevo,
+      // así upvotes/downvotes siempre quedan en un estado consistente sin
+      // importar qué tan rápido se vote.
+      if (currentVote === 'up') note.upvotes = Math.max(0, Number(note.upvotes || 0) - 1);
+      if (currentVote === 'down') note.downvotes = Math.max(0, Number(note.downvotes || 0) - 1);
+
+      if (currentVote !== voteType) {
+        if (voteType === 'up') note.upvotes = Number(note.upvotes || 0) + 1;
+        if (voteType === 'down') note.downvotes = Number(note.downvotes || 0) + 1;
       }
+
       return note;
     }).then(result => {
       const updatedNote = result && result.snapshot ? result.snapshot.val() : null;
-      if (updatedNote && scoreLabel) {
-        scoreLabel.textContent = formatVoteScore(updatedNote.upvotes || 0);
-        scoreLabel.classList.toggle('text-[#5f4b44]', (updatedNote.upvotes || 0) > 0);
-        scoreLabel.classList.toggle('text-[#8d7d75]', !(updatedNote.upvotes > 0));
+      const newVote = currentVote === voteType ? null : voteType;
+
+      // Sincronizar la UI con el valor real ya confirmado por Firebase
+      // (corrige cualquier pequeño desajuste que haya dejado el paso optimista).
+      if (updatedNote) {
+        const finalScore = Number(updatedNote.upvotes || 0) - Number(updatedNote.downvotes || 0);
+        if (upvoteBtn) upvoteBtn.classList.toggle('active', newVote === 'up');
+        if (scoreLabel) {
+          scoreLabel.textContent = formatVoteScore(finalScore);
+          scoreLabel.classList.toggle('text-[#5f4b44]', finalScore > 0);
+          scoreLabel.classList.toggle('text-[#8d7d75]', finalScore <= 0);
+        }
       }
-      if (updatedNote && !wasLiked && updatedNote.authorId && updatedNote.authorId !== user.uid) {
+
+      // Enviar notificación solo si es un upvote nuevo
+      if (
+        updatedNote &&
+        newVote === 'up' &&
+        currentVote !== 'up' &&
+        updatedNote.authorId &&
+        updatedNote.authorId !== user.uid
+      ) {
         firebase.database().ref('users/' + user.uid).once('value').then(s => {
           const uName = s.val()?.username || user.displayName || 'Alguien';
           addNotification(updatedNote.authorId, `A ${uName} le gustó tu publicación.`, 'vote', { actionType: 'post', actionId: noteId });
         });
       }
+
       refreshHistorialIfVisible();
+    }).finally(() => {
+      _postVoteLocks.delete(noteId);
     });
-    if (currentVote === 'up') userVoteRef.remove(); else userVoteRef.set('up');
+
+    // Actualizar el voto del usuario
+    if (newVote === null) {
+      userVoteRef.remove();
+    } else {
+      userVoteRef.set(newVote);
+    }
+  }).catch(err => {
+    console.error('Error al votar publicación:', err);
+    _postVoteLocks.delete(noteId);
   });
 }
 
@@ -23638,8 +23692,6 @@ function renderPlacesList(places) {
   </div>
 </div>
 
-</body>
-
 <style>
 :root {
   --brand-accent: #5f4b44;
@@ -27062,3 +27114,6 @@ firebase.auth().onAuthStateChanged(user => {
 //  FIN SISTEMA DE TRANSMISIÓN EN VIVO
 // ═══════════════════════════════════════════════════════════════════
 </script>
+
+</body>
+</html>
