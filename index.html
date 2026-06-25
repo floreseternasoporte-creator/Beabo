@@ -12800,6 +12800,25 @@ function loadCommentsInView(noteId) {
 }
 
 // Función para formatear timestamp de comentarios
+
+  function formatChatDateSeparator(timestamp) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const isToday = date.toDateString() === today.toDateString();
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+    
+    if (isToday) return 'Hoy';
+    if (isYesterday) return 'Ayer';
+    
+    // Para fechas más antiguas
+    const options = { weekday: 'long', day: 'numeric', month: 'long' };
+    return date.toLocaleDateString('es-ES', options);
+  }
+
 function formatRelativeTime(timestamp) {
   const now = Date.now();
   const ts = Number(timestamp) || now;
@@ -17557,6 +17576,7 @@ let _groupMsgSenderCache = new Map();
 let chatMessagesListener = null;
 let chatPhotoAttachments = []; // array of {localUrl, cloudUrl, uploading, id}
 let chatReplyContext = null;
+let _lastChatDateShown = null;
 let chatUsersIndexCache = [];
 let chatUsersIndexLoadedAt = 0;
 let chatSearchDebounceTimer = null;
@@ -19449,6 +19469,17 @@ let chatTypingListener = null;
       const mine = msg.senderId === currentUserId;
       const resolvedId = msgId || msg.id || '';
       if (resolvedId && container.querySelector('[data-msg-id="' + resolvedId + '"]')) return;
+      
+      // Separador de fecha (estilo TikTok)
+      const msgTimestamp = msg.timestamp || msg.createdAt || Date.now();
+      const msgDate = new Date(msgTimestamp).toDateString();
+      if (_lastChatDateShown !== msgDate) {
+        const dateSeparator = document.createElement('div');
+        dateSeparator.className = 'chat-date-separator w-full';
+        dateSeparator.innerHTML = '<span>' + formatChatDateSeparator(msgTimestamp) + '</span>';
+        container.appendChild(dateSeparator);
+        _lastChatDateShown = msgDate;
+      }
       // Show "Mensaje eliminado" placeholder for deleted messages
       if (msg.deletedForAll) {
         if (container.querySelector('.deleted-placeholder[data-del-id="' + resolvedId + '"]')) return;
@@ -19672,7 +19703,39 @@ let chatTypingListener = null;
       if (_isNearBottom) container.scrollTop = container.scrollHeight;
     };
 
-    const _startChatListeners = () => {
+    
+  // Botón de volver abajo (estilo TikTok)
+  function scrollChatToBottom() {
+    const container = document.getElementById('chat-room-messages');
+    if (container) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    }
+  }
+
+  function updateScrollBottomButton() {
+    const container = document.getElementById('chat-room-messages');
+    const btn = document.getElementById('chat-scroll-bottom-btn');
+    if (!container || !btn) return;
+    
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    btn.classList.toggle('hidden', isNearBottom);
+  }
+
+  // Inicializar listener de scroll cuando se abre el chat
+  function initChatScrollButton() {
+    const container = document.getElementById('chat-room-messages');
+    if (!container) return;
+    container.removeEventListener('scroll', updateScrollBottomButton);
+    container.addEventListener('scroll', updateScrollBottomButton);
+    updateScrollBottomButton();
+  }
+
+const _startChatListeners = () => {
+    // Resetear fecha del último separador
+    _lastChatDateShown = null;
+    // Inicializar botón de volver abajo
+    setTimeout(initChatScrollButton, 100);
+
       const cachedMessages = chatMessagesMemoryCache.get(conversationId) || [];
       if (cachedMessages.length) {
         const emptyState = document.getElementById('chat-room-empty-state');
@@ -24151,6 +24214,38 @@ body.theme-dark #new-chat-view,
 body.theme-dark #create-group-chat-view,
 
 /* Estilo TikTok para indicador de escribiendo */
+/* Botón de volver abajo */
+#chat-scroll-bottom-btn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Separadores de fecha */
+.chat-date-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 8px;
+}
+.chat-date-separator::before,
+.chat-date-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e8e1dc;
+}
+.chat-date-separator span {
+  font-size: 11px;
+  color: #8d7d75;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 @keyframes typing-bounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-4px); opacity: 1; }
