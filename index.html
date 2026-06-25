@@ -3380,9 +3380,8 @@ body {
       <div id="chat-quick-actions" class="flex items-center gap-2 overflow-x-auto pb-2" style="scrollbar-width:none;-webkit-overflow-scrolling:touch">
         <button onclick="sendQuickHeartMessage()" class="flex items-center justify-center w-9 h-9 rounded-full border border-[#e8e1dc] bg-white shrink-0 active:scale-90 transition text-lg leading-none" aria-label="Enviar corazón">❤️</button>
         <button onclick="openStickerPanel()" class="flex items-center gap-1.5 px-3 h-9 rounded-full border border-[#e8e1dc] bg-white shrink-0 active:scale-90 transition text-[#5f4b44] text-[13px] font-semibold whitespace-nowrap">😊 Stickers</button>
-        <button onclick="openGifPanel()" class="flex items-center gap-1.5 px-3 h-9 rounded-full border border-[#e8e1dc] bg-white shrink-0 active:scale-90 transition text-[#5f4b44] text-[13px] font-semibold whitespace-nowrap">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0 text-[#5f4b44]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M9 12H7v-1.5M7 12v1.5M13 10.5h-2v3h2M17 10.5v3M17 10.5h-1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          GIF
+        <button onclick="openGifPanel()" class="flex items-center gap-1.5 px-3 h-9 rounded-full border border-[#e8e1dc] bg-white shrink-0 active:scale-90 transition text-[#5f4b44] text-[13px] font-bold whitespace-nowrap">
+          <span class="text-[11px] font-black tracking-tighter bg-gradient-to-r from-purple-500 via-pink-500 to-orange-400 bg-clip-text text-transparent">GIF</span>
         </button>
         <label for="chat-photo-input" class="flex items-center gap-1.5 px-3 h-9 rounded-full border border-[#e8e1dc] bg-white shrink-0 active:scale-90 transition text-[#5f4b44] text-[13px] font-semibold whitespace-nowrap cursor-pointer">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9" r="1.5"/><path d="M21 16l-5.2-5.2a1.5 1.5 0 0 0-2.1 0L6 18" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -3484,8 +3483,8 @@ body {
     <span class="text-sm font-bold text-[#2f1a14]">Stickers</span>
     <button onclick="closeStickerPanel()" class="w-7 h-7 rounded-full bg-[#f1ece9] flex items-center justify-center text-[#5f4b44] text-xs font-bold active:scale-90 transition">✕</button>
   </div>
-  <div id="sticker-category-tabs" class="flex gap-2 px-4 pb-2 overflow-x-auto scrollbar-none"></div>
-  <div id="sticker-grid" class="grid grid-cols-6 gap-1 px-3 pb-4 overflow-y-auto" style="max-height:calc(52vh - 90px)"></div>
+  <div id="chat-sticker-tabs" class="flex gap-2 px-4 pb-2 overflow-x-auto scrollbar-none"></div>
+  <div id="chat-sticker-grid" class="grid grid-cols-6 gap-1 px-3 pb-4 overflow-y-auto" style="max-height:calc(52vh - 90px)"></div>
 </div>
 
 <!-- GIF PANEL -->
@@ -18312,17 +18311,76 @@ let chatTypingListener = null;
     if (typeof showToast === 'function') showToast('📍 Obteniendo ubicación...');
     navigator.geolocation.getCurrentPosition(pos => {
       const { latitude, longitude } = pos.coords;
-      const mapUrl = `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}&zoom=15`;
-      const text = `📍 Mi ubicación: ${mapUrl}`;
-      const input = document.getElementById('chat-room-input');
-      if (input) {
-        input.value = text;
-        handleChatTyping();
-        updateChatToolbarMode();
-      }
+      sendLocationMessage(latitude, longitude, 'Ubicación actual');
     }, () => {
       if (typeof showToast === 'function') showToast('No se pudo obtener la ubicación');
     });
+  }
+
+  // Enviar mensaje de ubicación
+  async function sendLocationMessage(lat, lng, label) {
+    const user = firebase.auth().currentUser;
+    if (!user || !currentChatRoomId) return;
+    const conversationId = currentChatRoomId;
+    const recipientId = currentChatRecipient;
+    const isGroup = currentChatIsGroup;
+    const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
+    
+    const payload = {
+      type: 'location',
+      latitude: lat,
+      longitude: lng,
+      label: label || 'Ubicación',
+      timestamp: Date.now(),
+      senderId: user.uid,
+      senderName: user.displayName || 'Usuario',
+    };
+
+    try {
+      const newRef = firebase.database().ref('conversationMessages/' + conversationId).push();
+      await newRef.set(payload);
+      
+      // Actualizar vista previa de la conversación
+      await updateChatConversationPreview('📍 Ubicación', payload, { conversationId, recipientId, isGroup, groupMembers });
+      
+      if (typeof showToast === 'function') showToast('📍 Ubicación enviada');
+    } catch (err) {
+      console.error('Error al enviar ubicación:', err);
+      if (typeof showToast === 'function') showToast('No se pudo enviar la ubicación');
+    }
+  }
+
+  // Abrir detalle de ubicación desde un mensaje del chat
+  function openChatLocationDetail(msg) {
+    if (!msg || !msg.latitude || !msg.longitude) return;
+    
+    // Usar la vista de detalle de ubicación existente
+    const view = document.getElementById('location-detail-view');
+    if (view) {
+      view.classList.remove('hidden');
+      
+      // Configurar la ubicación
+      activeLocationDetail = {
+        name: msg.label || 'Ubicación',
+        latitude: msg.latitude,
+        longitude: msg.longitude,
+      };
+      
+      // Inicializar el mapa si no está inicializado
+      if (typeof initLocationDetailMap === 'function') {
+        initLocationDetailMap();
+      }
+      
+      // Actualizar marcador
+      if (typeof updateLocationDetailUserMarker === 'function') {
+        updateLocationDetailUserMarker(msg.latitude, msg.longitude);
+      }
+      
+      // Sincronizar vista
+      if (typeof syncLocationDetailViewport === 'function') {
+        setTimeout(syncLocationDetailViewport, 100);
+      }
+    }
   }
 
   /* ══════════════════════════════════════════════════════════════
@@ -18571,7 +18629,7 @@ let chatTypingListener = null;
   }
 
   function _renderStickerTabs() {
-    const tabs = document.getElementById('sticker-category-tabs');
+    const tabs = document.getElementById('chat-sticker-tabs');
     if (!tabs) return;
     tabs.innerHTML = Object.keys(STICKER_PACKS).map(name =>
       `<button onclick="_renderStickerGrid('${name.replace(/'/g,"\\'")}');this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('bg-[#2f1a14]','text-white'));this.classList.add('bg-[#2f1a14]','text-white')"
@@ -18581,7 +18639,7 @@ let chatTypingListener = null;
 
   function _renderStickerGrid(packName) {
     _activeStickerPack = packName;
-    const grid = document.getElementById('sticker-grid');
+    const grid = document.getElementById('chat-sticker-grid');
     if (!grid) return;
     const stickers = STICKER_PACKS[packName] || [];
     grid.innerHTML = stickers.map(s =>
@@ -19559,7 +19617,7 @@ let chatTypingListener = null;
           <div class="flex items-end gap-2 max-w-[85%]">
             <img class="group-sender-avatar w-8 h-8 rounded-full object-cover border border-[#e8e1dc] shrink-0 cursor-pointer" src="https://via.placeholder.com/80" data-uid="${escapeHtml(senderId)}" alt="${escapeHtml(senderName)}">
             <div class="flex flex-col items-start min-w-0">
-              <div class="msg-bubble ${(msgImages.length && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : 'bg-[#f5f4f2] text-[#2f1a14] px-4 py-2.5'} rounded-3xl select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
+              <div class="msg-bubble ${(msgImages.length && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' || msg.type==='location' ? 'bg-transparent border-0 p-0' : 'bg-[#f5f4f2] text-[#2f1a14] px-4 py-2.5'} rounded-3xl select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
                 ${replyBlock}${content}
               </div>
               <div id="reactions-${resolvedId}" class="flex flex-wrap gap-1 mt-0.5 justify-start px-1"></div>
@@ -19589,7 +19647,7 @@ let chatTypingListener = null;
         wrapper.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
         if (resolvedId) wrapper.dataset.msgId = resolvedId;
         wrapper.innerHTML = `
-          <div class="msg-bubble ${(msgImages.length && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : (mine ? 'bg-[#2f1a14] text-white px-4 py-2.5' : 'bg-[#f5f4f2] text-[#2f1a14] px-4 py-2.5')} rounded-3xl max-w-[75%] select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
+          <div class="msg-bubble ${(msgImages.length && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' || msg.type==='location' ? 'bg-transparent border-0 p-0' : (mine ? 'bg-[#2f1a14] text-white px-4 py-2.5' : 'bg-[#f5f4f2] text-[#2f1a14] px-4 py-2.5')} rounded-3xl max-w-[75%] select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
             ${replyBlock}${content}
           </div>
           <div id="reactions-${resolvedId}" class="flex flex-wrap gap-1 mt-0.5 ${mine ? 'justify-end' : 'justify-start'} px-1"></div>
