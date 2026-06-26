@@ -3009,6 +3009,25 @@ body {
   <div class="flex-1 overflow-y-auto pb-20 px-0" id="scrollable-content">
     <section id="home-community-feed" class="mb-0">
 
+      <!-- Barra de pestañas estilo Douyin -->
+      <div id="douyin-feed-tabs" class="sticky top-0 z-20 bg-[#f5f4f2]/95 backdrop-blur-sm border-b border-[#e8e1dc]">
+        <div class="flex items-center justify-center gap-6 px-4 py-3">
+          <button class="feed-tab-btn active" data-tab="foryou" onclick="switchFeedTab('foryou')">
+            <span class="text-[15px] font-bold text-[#2f1a14]">Para ti</span>
+          </button>
+          <button class="feed-tab-btn" data-tab="following" onclick="switchFeedTab('following')">
+            <span class="text-[15px] font-medium text-[#8d7d75]">Siguiendo</span>
+          </button>
+          <button class="feed-tab-btn" data-tab="popular" onclick="switchFeedTab('popular')">
+            <span class="text-[15px] font-medium text-[#8d7d75]">Popular</span>
+          </button>
+          <button class="feed-tab-btn" data-tab="trending" onclick="switchFeedTab('trending')">
+            <span class="text-[15px] font-medium text-[#8d7d75]">Tendencias</span>
+          </button>
+        </div>
+        <!-- Indicador deslizante -->
+        <div id="feed-tab-indicator" class="h-[3px] bg-[#2f1a14] rounded-full transition-all duration-300 ease-out" style="width: 50px; margin-left: calc(50% - 115px);"></div>
+      </div>
 
       <div id="feed-pull-indicator" class="hidden py-1 text-center"></div><div id="notes-feed" class="space-y-0"></div>
     </section>
@@ -3065,6 +3084,29 @@ body {
   <style>
     .transition { transition: all 0.2s ease-in-out; }
     #bottom-nav.hide { transform: translateY(100%); }
+
+    /* ===== PESTAÑAS DE FEED ESTILO DOUYIN ===== */
+    .feed-tab-btn {
+      position: relative;
+      padding: 4px 0;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .feed-tab-btn:active {
+      transform: scale(0.95);
+    }
+    .feed-tab-btn.active span {
+      color: #2f1a14 !important;
+      font-weight: 700 !important;
+    }
+    .feed-tab-btn span {
+      transition: all 0.2s ease;
+    }
+
+    #feed-tab-indicator {
+      position: relative;
+      bottom: 0;
+    }
 
     /* ===== BARRA INFERIOR: ESTILOS SIMPLIFICADOS ===== */
     #bottom-nav { user-select: none; -webkit-user-select: none; }
@@ -10308,6 +10350,72 @@ function onNoteFormatChange(format) {
   }
 
   // 社区功能
+
+  // ===== PESTAÑAS DE FEED ESTILO DOUYIN =====
+  let currentFeedTab = 'foryou';
+
+  function switchFeedTab(tab) {
+    currentFeedTab = tab;
+    
+    // Actualizar estilos de botones
+    document.querySelectorAll('.feed-tab-btn').forEach(btn => {
+      const btnTab = btn.dataset.tab;
+      const span = btn.querySelector('span');
+      
+      if (btnTab === tab) {
+        btn.classList.add('active');
+        span.classList.remove('font-medium', 'text-[#8d7d75]');
+        span.classList.add('font-bold', 'text-[#2f1a14]');
+      } else {
+        btn.classList.remove('active');
+        span.classList.remove('font-bold', 'text-[#2f1a14]');
+        span.classList.add('font-medium', 'text-[#8d7d75]');
+      }
+    });
+
+    // Mover indicador
+    const indicator = document.getElementById('feed-tab-indicator');
+    const activeBtn = document.querySelector(`.feed-tab-btn[data-tab="${tab}"]`);
+    const tabsContainer = document.querySelector('#douyin-feed-tabs .flex');
+    
+    if (indicator && activeBtn && tabsContainer) {
+      const containerRect = tabsContainer.getBoundingClientRect();
+      const btnRect = activeBtn.getBoundingClientRect();
+      const btnWidth = btnRect.width;
+      const btnLeft = btnRect.left - containerRect.left;
+      const indicatorWidth = Math.min(btnWidth * 0.6, 40);
+      const indicatorLeft = btnLeft + (btnWidth - indicatorWidth) / 2;
+      
+      indicator.style.width = indicatorWidth + 'px';
+      indicator.style.marginLeft = indicatorLeft + 'px';
+    }
+
+    // Recargar feed según la pestaña
+    if (tab === 'foryou') {
+      // Para ti: todos los posts (predeterminado)
+      loadNotes(false);
+    } else if (tab === 'popular') {
+      // Popular: recargamos (en el futuro se puede ordenar por likes)
+      loadNotes(false);
+      // Mostrar un pequeño mensaje
+      showToast('Mostrando publicaciones populares');
+    } else if (tab === 'following') {
+      // Siguiendo: recargamos (en el futuro se puede filtrar por seguidos)
+      loadNotes(false);
+      showToast('Mostrando publicaciones de seguidos');
+    } else if (tab === 'trending') {
+      // Tendencias: recargamos
+      loadNotes(false);
+      showToast('Mostrando temas populares');
+    }
+  }
+
+  // Inicializar posición del indicador al cargar
+  function initFeedTabsIndicator() {
+    setTimeout(() => {
+      switchFeedTab('foryou');
+    }, 100);
+  }
 
   function switchCommunityTab(tab) {
     const feedTab = document.getElementById('feed-tab');
@@ -17678,6 +17786,8 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
   }
 
   function openHome() {
+    // Inicializar pestañas de feed estilo Douyin
+    initFeedTabsIndicator();
     document.getElementById('games-view')?.classList.add('hidden');
     document.getElementById('games-search-view')?.classList.add('hidden');
     document.getElementById('community-view').classList.add('hidden');
