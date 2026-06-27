@@ -4332,8 +4332,8 @@ body {
 </div>
 
 <!-- Selector de GIFs -->
-<div id="gif-picker-overlay" class="fixed inset-0 bg-black/40 hidden z-[90]" onclick="closeGifPicker()"></div>
-<div id="gif-picker-sheet" class="fixed inset-0 bg-[#f5f4f2] hidden z-[91] flex flex-col transition-transform duration-300 translate-y-full">
+<div id="gif-picker-overlay" class="fixed inset-0 bg-black/40 hidden z-[120]" onclick="closeGifPicker()"></div>
+<div id="gif-picker-sheet" class="fixed inset-0 bg-[#f5f4f2] hidden z-[121] flex flex-col transition-transform duration-300 translate-y-full">
   <div class="p-4 border-b border-[#e8e1dc] flex items-center gap-4">
     <button onclick="closeGifPicker()" class="text-[#6f5c54]">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -8209,9 +8209,17 @@ const KLIPY_GIFS = [
 
   function searchGifs(query) {
     const container = document.getElementById('gif-results-container');
-    container.innerHTML = `<div class="col-span-2 py-2 text-center">${getFadingCircleLoaderMarkup()}</div>`;
-
     const normalizedQuery = (query || 'trending').trim() || 'trending';
+    
+    // Mostrar caché inmediatamente si existe
+    const cached = getCachedGifUrls(normalizedQuery);
+    if (cached.length > 0) {
+      container.innerHTML = '';
+      renderGifCards(container, cached);
+    } else {
+      container.innerHTML = `<div class="col-span-2 py-2 text-center">${getFadingCircleLoaderMarkup()}</div>`;
+    }
+
     const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(normalizedQuery)}&key=${TENOR_API_KEY}&limit=24&media_filter=minimal`;
 
     fetch(url)
@@ -8225,12 +8233,16 @@ const KLIPY_GIFS = [
           renderGifCards(container, urls);
           saveGifCache(normalizedQuery, urls);
         } else {
-          container.innerHTML = '<div class="col-span-2 py-10 text-center text-[#9f918a] text-sm">No se encontraron GIFs</div>';
+          if (cached.length === 0) {
+            container.innerHTML = '<div class="col-span-2 py-10 text-center text-[#9f918a] text-sm">No se encontraron GIFs</div>';
+          }
         }
       })
       .catch(err => {
         console.error('Error fetching GIFs:', err);
-        renderGifErrorState(container, normalizedQuery);
+        if (cached.length === 0) {
+          renderGifErrorState(container, normalizedQuery);
+        }
       });
   }
 
