@@ -12423,6 +12423,7 @@ async function toggleRepost(noteId) {
 
 
 let currentPostId = null;
+let currentPostAuthorId = null;
 let replyTarget = null;
 let editingCommentTarget = null;
 let stickerTargetInputId = null;
@@ -12935,6 +12936,7 @@ function openCommentsView(noteId) {
     }
 
     const originalAuthorId = note.authorId || '';
+    currentPostAuthorId = originalAuthorId;
     const originalAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', originalAuthorId);
     document.getElementById('original-post').innerHTML = `
       <div class="flex items-start gap-3 mb-2">
@@ -13176,35 +13178,43 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   const replyCount = hasReplies ? countVisibleReplies(comment.replies) : 0;
   const isTopLevel = level === 0;
   const isPinned = currentPinnedCommentPath === commentPath;
+  const isOp = currentPostAuthorId && commentAuthorId === currentPostAuthorId;
+  
   const pinnedBadgeHtml = isPinned ? `
     <div class="mb-2 inline-flex items-center gap-1 rounded-full bg-[#fff7ed] border border-[#fed7aa] text-[#9a3412] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z" /></svg>
       Fijado por el autor
     </div>` : '';
 
+  const opBadgeHtml = isOp ? `
+    <span class="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[9px] font-black bg-[#3a241d] text-white uppercase tracking-wide">
+      OP
+    </span>` : '';
+
+  const threadColors = ['#e8e1dc', '#d8cec8', '#c8b8b0', '#b8a8a0', '#a89890'];
+  const threadColor = threadColors[Math.min(level, threadColors.length - 1)];
 
     const commentDiv = document.createElement('div');
 
   if (level > 0) {
-    commentDiv.className = 'pl-3 py-2';
-    commentDiv.style.marginLeft = '10px';
-    commentDiv.style.borderLeft = '2px solid #d8cec8';
+    commentDiv.className = 'pl-4 py-2 ml-2';
+    commentDiv.style.borderLeft = `2px solid ${threadColor}`;
     commentDiv.style.background = 'transparent';
   } else {
     commentDiv.className = isPinned
-      ? 'bg-white border border-[#fed7aa] rounded-2xl p-3 shadow-sm ring-1 ring-[#fff7ed]'
-      : 'bg-white border border-[#e8e1dc] rounded-2xl p-3';
+      ? 'bg-white border border-[#fed7aa] rounded-2xl p-4 shadow-sm ring-1 ring-[#fff7ed]'
+      : 'bg-white border border-[#e8e1dc] rounded-2xl p-4';
   }
 
   const threadLineHtml = isTopLevel && hasReplies ? `
     <button id="thread-line-${commentPath}" onclick="toggleThreadCollapse('${safeCommentPath}')" aria-label="Colapsar hilo"
-      class="absolute left-3.5 top-10 bottom-0 w-0.5 bg-[#e8e1dc] hover:bg-[#c8b8b0] active:bg-[#a89080] transition-colors rounded-full cursor-pointer" style="transform:translateX(-50%);min-height:16px;">
+      class="absolute left-4 top-11 bottom-0 w-0.5 bg-[#e8e1dc] hover:bg-[#c8b8b0] active:bg-[#a89080] transition-colors rounded-full cursor-pointer" style="transform:translateX(-50%);min-height:16px;">
     </button>` : '';
 
   commentDiv.innerHTML = `
     <div class="flex items-start gap-3 relative">
-      <div class="relative flex-shrink-0" style="width:2rem;">
-        <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
+      <div class="relative flex-shrink-0" style="width:${isTopLevel ? '2rem' : '1.75rem'};">
+        <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="${isTopLevel ? 'w-8 h-8' : 'w-7 h-7'} rounded-full overflow-hidden ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
           <img src="${safeAuthorImage}" class="w-full h-full object-cover">
         </button>
         ${getQuickFollowButtonMarkup(commentAuthorId, firebase.auth().currentUser?.uid || '')}
@@ -13212,8 +13222,9 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
       </div>
       <div class="flex-1 min-w-0">
         ${pinnedBadgeHtml}
-        <div class="flex items-center gap-2 mb-1">
+        <div class="flex items-center gap-2 mb-1 flex-wrap">
           <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${commentVerifiedIcon}</button>
+          ${opBadgeHtml}
           <span class="text-xs text-[#b2a7a1]">${formatRelativeTime(comment.timestamp)}</span>
           <span id="comment-edited-${commentPath}" class="text-[10px] text-[#b2a7a1] ${comment.editedAt ? '' : 'hidden'}">Editado</span>
         </div>
