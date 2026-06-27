@@ -13178,7 +13178,6 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
   const replyCount = hasReplies ? countVisibleReplies(comment.replies) : 0;
   const isTopLevel = level === 0;
   const isPinned = currentPinnedCommentPath === commentPath;
-  const isOp = currentPostAuthorId && commentAuthorId === currentPostAuthorId;
   
   const pinnedBadgeHtml = isPinned ? `
     <div class="mb-2 inline-flex items-center gap-1 rounded-full bg-[#fff7ed] border border-[#fed7aa] text-[#9a3412] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide">
@@ -13186,18 +13185,17 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
       Fijado por el autor
     </div>` : '';
 
-  const opBadgeHtml = isOp ? `
-    <span class="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[9px] font-black bg-[#3a241d] text-white uppercase tracking-wide">
-      OP
-    </span>` : '';
-
   const threadColors = ['#e8e1dc', '#d8cec8', '#c8b8b0', '#b8a8a0', '#a89890'];
   const threadColor = threadColors[Math.min(level, threadColors.length - 1)];
+  
+  // Limitar la profundidad máxima de indentación para evitar desbordamiento
+  const maxIndentLevel = 4;
+  const effectiveLevel = Math.min(level, maxIndentLevel);
 
     const commentDiv = document.createElement('div');
 
   if (level > 0) {
-    commentDiv.className = 'pl-4 py-2 ml-2';
+    commentDiv.className = `pl-3 py-1.5 ml-1`;
     commentDiv.style.borderLeft = `2px solid ${threadColor}`;
     commentDiv.style.background = 'transparent';
   } else {
@@ -13224,11 +13222,12 @@ function renderCommentModern(noteId, commentId, comment, container, level, paren
         ${pinnedBadgeHtml}
         <div class="flex items-center gap-2 mb-1 flex-wrap">
           <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#7a6962] hover:text-[#5f4b44] transition-colors text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${commentVerifiedIcon}</button>
-          ${opBadgeHtml}
           <span class="text-xs text-[#b2a7a1]">${formatRelativeTime(comment.timestamp)}</span>
           <span id="comment-edited-${commentPath}" class="text-[10px] text-[#b2a7a1] ${comment.editedAt ? '' : 'hidden'}">Editado</span>
         </div>
-        ${renderContentWithSticker(comment.content, 'text-sm text-[#2f1a14] mb-2 leading-relaxed')}
+        <div class="break-words">
+          ${renderContentWithSticker(comment.content, 'text-sm text-[#2f1a14] mb-2 leading-relaxed')}
+        </div>
         ${safeGifUrl ? `<div class="mb-2 rounded-xl overflow-hidden border border-[#e8e1dc]"><img src="${safeGifUrl}" class="w-full max-h-60 object-cover" loading="lazy"></div>` : ''}
 \n        <div class="flex items-center gap-4 text-xs text-[#8d7d75]">
           <div class="flex items-center gap-2">
@@ -13723,6 +13722,12 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
       </svg>
       <span>Copiar texto</span>
     </div>
+    <div class="comment-action-item" onclick="shareComment('${safeNoteId}', '${safeCommentPath}')">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+      </svg>
+      <span>Compartir comentario</span>
+    </div>
     <div class="comment-action-item save-comment-action" onclick="toggleSaveComment('${safeNoteId}', '${safeCommentPath}', '${safeCommentText}')">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z" />
@@ -13807,6 +13812,36 @@ function copyCommentText(text) {
     alert('Texto copiado al portapapeles');
   }).catch(err => {
     console.error('Error al copiar:', err);
+  });
+}
+
+// Compartir comentario (copiar enlace)
+function shareComment(noteId, commentPath) {
+  const baseUrl = window.location.origin + window.location.pathname;
+  const shareUrl = `${baseUrl}#post=${noteId}&comment=${encodeURIComponent(commentPath)}`;
+  
+  if (navigator.share) {
+    navigator.share({
+      title: 'Comentario en Beabo',
+      text: 'Mira este comentario',
+      url: shareUrl
+    }).catch(() => {
+      // Si falla el share nativo, copiamos al portapapeles
+      copyToClipboard(shareUrl);
+    });
+  } else {
+    copyToClipboard(shareUrl);
+  }
+  closeCommentActionsSheet();
+}
+
+// Función auxiliar para copiar al portapapeles
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    alert('¡Enlace copiado! Compártelo con quien quieras.');
+  }).catch(err => {
+    console.error('Error al copiar:', err);
+    alert('No se pudo copiar el enlace');
   });
 }
 
