@@ -12880,6 +12880,7 @@ function openCommentsView(noteId) {
     mainApp.classList.add('hidden');
   }
   commentsView?.classList.remove('hidden');
+  if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
 
   if (user) {
     firebase.database().ref('users/' + user.uid).once('value').then(snap => {
@@ -12956,6 +12957,7 @@ function openCommentsView(noteId) {
 // Cerrar vista de comentarios
 function closeCommentsView() {
   document.getElementById('comments-view').classList.add('hidden');
+  if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
   if (commentsOriginView === 'main') {
     document.getElementById('main-app').classList.remove('hidden');
   }
@@ -13696,6 +13698,12 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
       </svg>
       <span>Copiar texto</span>
     </div>
+    <div class="comment-action-item save-comment-action" onclick="toggleSaveComment('${safeNoteId}', '${safeCommentPath}', '${safeCommentText}')">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-4-7 4V5z" />
+      </svg>
+      <span class="save-comment-text">Guardar comentario</span>
+    </div>
     ${canEdit ? `
     <div class="comment-action-item" onclick="startCommentEdit('${safeNoteId}', '${safeCommentPath}', '${safeCommentText}')">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -13754,6 +13762,9 @@ function openCommentActionsSheet(noteId, commentPath, commentText, commentAuthor
   overlay.classList.add('active');
   sheet.classList.add('active');
   overlay.onclick = closeCommentActionsSheet;
+
+  // Actualizar estado de guardado
+  updateSaveCommentActionState(noteId, commentPath);
 }
 
 // Cerrar bottom sheet
@@ -13772,6 +13783,100 @@ function copyCommentText(text) {
   }).catch(err => {
     console.error('Error al copiar:', err);
   });
+}
+
+// ─── Guardar / Desguardar comentario ───────────────────────────────────────
+let _userSavedComments = null;
+
+function _getSavedCommentsRef() {
+  const user = firebase.auth().currentUser;
+  if (!user) return null;
+  return firebase.database().ref('savedComments/' + user.uid);
+}
+
+async function _loadUserSavedComments() {
+  const ref = _getSavedCommentsRef();
+  if (!ref) return {};
+  const snap = await ref.once('value');
+  _userSavedComments = snap.val() || {};
+  return _userSavedComments;
+}
+
+function _getCommentSaveKey(noteId, commentPath) {
+  // Crear una clave única combinando noteId y commentPath (reemplazando / por _)
+  return noteId + '__' + commentPath.replace(/\//g, '_');
+}
+
+async function toggleSaveComment(noteId, commentPath, commentText = '') {
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    alert('Debes iniciar sesión para guardar comentarios');
+    return;
+  }
+  if (!noteId || !commentPath) return;
+
+  const ref = _getSavedCommentsRef();
+  if (!ref) return;
+
+  const saveKey = _getCommentSaveKey(noteId, commentPath);
+  if (_userSavedComments === null) await _loadUserSavedComments();
+
+  const isSaved = Boolean(_userSavedComments[saveKey]);
+
+  if (isSaved) {
+    // Quitar de guardados
+    await ref.child(saveKey).remove();
+    delete _userSavedComments[saveKey];
+    showMiniToast('Eliminado de guardados');
+    // Actualizar texto en el actions sheet si está abierto
+    const saveTextEl = document.querySelector('.save-comment-text');
+    if (saveTextEl) saveTextEl.textContent = 'Guardar comentario';
+  } else {
+    // Guardar comentario
+    const commentRef = firebase.database().ref('postComments/' + noteId + '/' + commentPath);
+    let commentData = {};
+    try {
+      const commentSnap = await commentRef.once('value');
+      commentData = commentSnap.val() || {};
+    } catch (e) {
+      console.warn('No se pudo cargar el comentario completo:', e);
+    }
+
+    await ref.child(saveKey).set({
+      noteId: noteId,
+      commentPath: commentPath,
+      commentText: commentText || commentData.content || '',
+      authorId: commentData.authorId || '',
+      authorName: commentData.authorName || '',
+      savedAt: Date.now()
+    });
+    _userSavedComments[saveKey] = { savedAt: Date.now(), noteId, commentPath };
+    showMiniToast('Comentario guardado');
+    // Actualizar texto en el actions sheet si está abierto
+    const saveTextEl = document.querySelector('.save-comment-text');
+    if (saveTextEl) saveTextEl.textContent = 'Guardado';
+  }
+
+  closeCommentActionsSheet();
+}
+
+// Actualizar el estado del botón de guardar en el actions sheet
+async function updateSaveCommentActionState(noteId, commentPath) {
+  const user = firebase.auth().currentUser;
+  if (!user) return;
+  if (_userSavedComments === null) {
+    try {
+      await _loadUserSavedComments();
+    } catch (e) {
+      return;
+    }
+  }
+  const saveKey = _getCommentSaveKey(noteId, commentPath);
+  const isSaved = Boolean(_userSavedComments[saveKey]);
+  const saveTextEl = document.querySelector('.save-comment-text');
+  if (saveTextEl) {
+    saveTextEl.textContent = isSaved ? 'Guardado' : 'Guardar comentario';
+  }
 }
 
 // Fijar o desfijar un comentario principal al estilo Instagram
@@ -15462,6 +15567,7 @@ function deleteComment(noteId, commentPath) {
       setupBlockedAccountsListener(user.uid);
 
       _loadUserSavedPosts().catch(() => {});
+      _loadUserSavedComments().catch(() => {});
 
       firebase.database().ref('users/' + user.uid).once('value').then(snapshot => {
         const data = snapshot.val();
