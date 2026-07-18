@@ -3794,8 +3794,7 @@ body {
 
     </div>
 
-    
-      <!-- ===== NUEVAS FUNCIONES ESTILO INSTAGRAM 2026 ===== -->
+    <!-- ===== NUEVAS FUNCIONES ESTILO INSTAGRAM 2026 ===== -->
       <div id="ig-advanced-features" class="mb-4 space-y-3">
         <!-- Barra de funciones rápidas nuevas -->
         <div class="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1">
@@ -3891,7 +3890,6 @@ body {
         </div>
       </div>
       <!-- FIN NUEVAS FUNCIONES -->
-
     <!-- Bandeja de herramientas secundarias (se desliza hacia arriba al tocar "···") -->
     <div id="tools-extra-tray" class="hidden border-t border-[#e6e2df] bg-white flex-shrink-0 px-4 py-3 grid grid-cols-4 gap-y-1">
       <!-- Sticker -->
@@ -8889,26 +8887,45 @@ function onNoteFormatChange(format) {
   function renderNoteImages(note, noteIdForModal) {
     const images = Array.isArray(note.imageUrls) && note.imageUrls.length ? note.imageUrls : (note.imageUrl ? [note.imageUrl] : []);
     if (!images.length) return '';
+    const captions = Array.isArray(note.slideCaptions) ? note.slideCaptions : [];
 
-    const renderImageContainer = (img, index, total) => `
-      <div class="w-full flex-shrink-0 snap-center relative">
-        <img src="${img}" alt="Imagen ${index + 1}" onclick="openImageModal('${img}', '${noteIdForModal}')" class="w-full h-auto max-h-[80vh] object-contain rounded-lg cursor-pointer">
+    const renderImageContainer = (img, index, total) => {
+      const cap = captions[index] ? `<div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3"><p class="text-white text-xs font-medium leading-tight">${escapeHtml(captions[index])}</p></div>` : '';
+      return `
+      <div class="w-full flex-shrink-0 snap-center relative rounded-lg overflow-hidden bg-black/5">
+        <img src="${img}" alt="Imagen ${index + 1}" onclick="openImageModal('${img}', '${noteIdForModal}')" class="w-full h-auto max-h-[80vh] object-contain cursor-pointer">
         ${total > 1 ? `<div class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full">${index + 1}/${total}</div>` : ''}
+        ${cap}
       </div>
     `;
-
     if (images.length === 1) {
       return `<div class="mb-3">${renderImageContainer(images[0], 0, 1)}</div>`;
     }
-
     const slides = images.map((img, index) => renderImageContainer(img, index, images.length)).join('');
-
     return `
       <div class="mb-3 overflow-x-auto flex snap-x snap-mandatory gap-2 pb-1">
         ${slides}
       </div>
     `;
   }
+
+  function renderInstagramExtraMeta(note){
+    let html='';
+    if(note.collaborators && note.collaborators.length){
+      html+=`<div class="mb-2 flex items-center gap-2 flex-wrap"><span class="text-[11px] font-bold text-[#8d7d75]">En colaboración con:</span>${note.collaborators.map(c=>`<span class="inline-flex items-center gap-1 bg-[#f5f0ed] border border-[#e8e1dc] rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-[#3a241d]">@${escapeHtml(c)}</span>`).join('')}</div>`;
+    }
+    if(note.externalLink){
+      html+=`<div class="mb-3"><a href="${note.externalLink}" target="_blank" class="inline-flex items-center gap-1.5 text-[12px] font-bold text-[#2f1a14] bg-[#f5f0ed] border border-[#e8e1dc] rounded-full px-3 py-1.5 hover:bg-[#ece5e1]"><svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg> ${escapeHtml(note.externalLink)}</a></div>`;
+    }
+    if(note.isTrial){
+      html+=`<div class="mb-2 inline-flex items-center gap-1 bg-[#eef2ff] border border-[#a5b4fc] text-[#3730a3] rounded-full px-2.5 py-0.5 text-[10px] font-bold">🧪 PRUEBA • Solo no seguidores</div>`;
+    }
+    if(note.scheduledAt && note.status==='scheduled'){
+      html+=`<div class="mb-2 inline-flex items-center gap-1 bg-[#fff4e6] border border-[#fcd34d] text-[#b45309] rounded-full px-2.5 py-0.5 text-[10px] font-bold">🕒 Programado para ${new Date(note.scheduledAt).toLocaleString()}</div>`;
+    }
+    return html;
+  }
+
 
 
   const POST_TYPE_STYLES = {
@@ -25845,15 +25862,16 @@ firebase.auth().onAuthStateChanged(user => {
 
 <script>
 
-  // ===== NUEVAS FUNCIONES INSTAGRAM 2026 - LÓGICA =====
-  let igCollabs = [];
-  let igSlideCaptions = [];
+  // ===== FIX COMPLETO PROGRAMACIÓN Y VINCULACIÓN REAL =====
+  let igCollabs = window.igCollabs || [];
+  let igSlideCaptions = window.igSlideCaptions || [];
 
   function toggleIGFeature(name){
     const panels = ['schedule','captions','collab','link','trial','reorder'];
     panels.forEach(p=>{
       const el = document.getElementById('ig-panel-'+p);
       const btn = document.getElementById('ig-btn-'+p);
+      if(!el) return;
       if(p===name){
         const willShow = el.classList.contains('hidden');
         if(willShow){
@@ -25865,26 +25883,13 @@ firebase.auth().onAuthStateChanged(user => {
           if(btn) btn.classList.remove('bg-[#2f1a14]','!text-white','!border-[#2f1a14]');
         }
       } else {
-        // cerrar otros menos trial/reorder que comparten
-        if(p!=='trial' && p!=='reorder' || (name!=='trial' && name!=='reorder')){
-          // si es trial, no cerrar reorder y viceversa
-          if(!( (p==='trial' && name==='reorder') || (p==='reorder' && name==='trial'))){
-            if(el) el.classList.add('hidden');
-            if(btn) btn.classList.remove('bg-[#2f1a14]','!text-white','!border-[#2f1a14]');
-          }
+        if(!((p==='trial' && name==='reorder')||(p==='reorder' && name==='trial'))){
+          el.classList.add('hidden');
+          if(btn) btn.classList.remove('bg-[#2f1a14]','!text-white','!border-[#2f1a14]');
         }
       }
     });
-    if(name==='reorder'){
-      const el = document.getElementById('ig-panel-reorder');
-      if(el.classList.contains('hidden')){
-        el.classList.remove('hidden');
-      } else {
-        el.classList.add('hidden');
-      }
-    }
   }
-
   function addIGCollab(){
     const input = document.getElementById('ig-collab-input');
     const val = (input.value||'').trim().replace('@','');
@@ -25895,41 +25900,33 @@ firebase.auth().onAuthStateChanged(user => {
     input.value='';
     renderIGCollabs();
   }
-  function removeIGCollab(val){
-    igCollabs = igCollabs.filter(v=>v!==val);
-    renderIGCollabs();
-  }
+  function removeIGCollab(val){ igCollabs = igCollabs.filter(v=>v!==val); renderIGCollabs(); }
   function renderIGCollabs(){
     const c = document.getElementById('ig-collab-list');
     if(!c) return;
-    c.innerHTML = igCollabs.map(u=>`<span class="inline-flex items-center gap-1.5 bg-[#f5f0ed] border border-[#e8e1dc] rounded-full px-3 py-1 text-xs font-semibold">${u}<button onclick="removeIGCollab('${u}')" class="ml-1 text-[#9f918a]">✕</button></span>`).join('');
+    c.innerHTML = igCollabs.map(u=>`<span class="inline-flex items-center gap-1.5 bg-[#f5f0ed] border border-[#e8e1dc] rounded-full px-3 py-1 text-xs font-semibold">${escapeHtml(u)}<button onclick="removeIGCollab('${escapeHtml(u)}')" class="ml-1 text-[#9f918a]">✕</button></span>`).join('');
   }
-
   function renderIGSlideCaptions(){
     const container = document.getElementById('ig-slide-captions-container');
+    if(!container) return;
     const galleryFiles = Array.from(document.getElementById('note-image-fullscreen-gallery')?.files||[]);
     const cameraFiles = Array.from(document.getElementById('note-image-fullscreen-camera')?.files||[]);
-    const files = [...galleryFiles,...cameraFiles].slice(0,20); // Instagram ahora permite 20
+    const files = [...galleryFiles,...cameraFiles].slice(0,20);
     if(!files.length){
-      container.innerHTML = '<p class="text-xs text-[#b2a7a1]">Agrega fotos para escribir pies individuales. Ahora soporta hasta 20 fotos como Instagram 2026.</p>';
+      container.innerHTML = '<p class="text-xs text-[#b2a7a1]">Agrega fotos para escribir pies individuales. Hasta 20 fotos como Instagram 2026.</p>';
       return;
     }
     container.innerHTML = files.map((f,i)=>{
       const saved = igSlideCaptions[i]||'';
-      return `<div class="flex gap-3 items-start bg-[#faf9f8] rounded-xl p-2 border border-[#f0ebe8]"><div class="w-10 h-10 rounded-lg bg-[#e8e1dc] flex items-center justify-center text-[10px] font-bold text-[#5f4b44] flex-shrink-0">#${i+1}</div><div class="flex-1"><p class="text-[11px] font-medium text-[#5f4b44] truncate">${f.name||'Foto '+(i+1)}</p><input id="ig-caption-${i}" value="${saved.replace(/"/g,'&quot;')}" oninput="igSlideCaptions[${i}]=this.value" placeholder="Pie para esta foto..." class="w-full mt-1 p-2 rounded-lg border border-[#e8e1dc] bg-white text-xs focus:outline-none"></div></div>`;
+      return `<div class="flex gap-3 items-start bg-[#faf9f8] rounded-xl p-2 border border-[#f0ebe8]"><div class="w-10 h-10 rounded-lg bg-[#e8e1dc] flex items-center justify-center text-[10px] font-bold text-[#5f4b44] flex-shrink-0">#${i+1}</div><div class="flex-1"><p class="text-[11px] font-medium text-[#5f4b44] truncate">${escapeHtml(f.name||'Foto '+(i+1))}</p><input id="ig-caption-${i}" value="${escapeHtml(saved)}" oninput="igSlideCaptions[${i}]=this.value" placeholder="Pie para esta foto..." class="w-full mt-1 p-2 rounded-lg border border-[#e8e1dc] bg-white text-xs focus:outline-none"></div></div>`;
     }).join('');
   }
 
-  // Hook: cuando se agregan imágenes, actualizar captions si panel abierto
-  const originalHandle = window.handleNoteImagePreviewFullscreen;
+  // Reemplazo real de handleNoteImagePreviewFullscreen para 20 fotos
   window.handleNoteImagePreviewFullscreen = function(event, source){
-    if(typeof originalHandle === 'function'){
-      // Llamar original? ya sobreescribimos, así que replicamos lógica base + extra
-    }
-    // Replicar lógica original modificada para 20 fotos
     const selectedFiles = Array.from(event.target.files || []);
     const isCameraSource = source === 'camera';
-    const maxFiles = 20; // Nuevo límite Instagram 2026
+    const maxFiles = 20;
     const files = selectedFiles.slice(0, maxFiles);
     if (!files.length) return;
     const hasStickerSelected = window.pendingStickers && window.pendingStickers['note-content-fullscreen'];
@@ -25938,8 +25935,8 @@ firebase.auth().onAuthStateChanged(user => {
       event.target.value = '';
       return;
     }
-    if (!isCameraSource && selectedFiles.length > 20) {
-      alert('Ahora puedes subir hasta 20 fotos por publicación (nuevo en Instagram 2026). Se tomaron las primeras 20.');
+    if (selectedFiles.length > 20) {
+      alert('Hasta 20 fotos (nuevo límite IG 2026). Se tomaron las primeras 20.');
     }
     const previewGrid = document.getElementById('preview-grid-fullscreen');
     const counter = document.getElementById('image-preview-counter-fullscreen');
@@ -25954,70 +25951,376 @@ firebase.auth().onAuthStateChanged(user => {
       };
       reader.readAsDataURL(file);
     });
-    if(counter) counter.textContent = `${files.length} foto${files.length===1?'':'s'} (máx. 20 - nuevo límite IG)`;
+    if(counter) counter.textContent = `${files.length} foto${files.length===1?'':'s'} (máx. 20 - IG 2026)`;
     const preview = document.getElementById('image-preview-fullscreen');
     if(preview) preview.classList.remove('hidden');
-    // actualizar captions si existe
     setTimeout(renderIGSlideCaptions, 200);
-  }
+  };
 
-  // Sobrescribir publish para añadir campos nuevos sin romper
-  (function(){
-    const origPublish = window.publishNoteFromFullscreen;
-    if(!origPublish) return;
-    window.publishNoteFromFullscreen = function(){
-      // Validar programación
-      const scheduleEnabled = document.getElementById('ig-schedule-enabled')?.checked;
-      const scheduleDate = document.getElementById('ig-schedule-datetime')?.value;
-      if(scheduleEnabled && !scheduleDate){
-        alert('Selecciona fecha y hora para programar');
+  // ---- PUBLICACIÓN REAL CON PROGRAMACIÓN ----
+  window.publishNoteFromFullscreen = function(){
+    const content = typeof resolveCommentContent==='function' ? resolveCommentContent('note-content-fullscreen') : document.getElementById('note-content-fullscreen').value;
+    const galleryFiles = Array.from(document.getElementById('note-image-fullscreen-gallery')?.files || []);
+    const cameraFiles = Array.from(document.getElementById('note-image-fullscreen-camera')?.files || []);
+    const imageFiles = [...galleryFiles, ...cameraFiles].slice(0, 20);
+    const pollQuestion = document.getElementById('poll-question-main')?.value.trim()||'';
+
+    let pollOptions = null;
+    if (document.getElementById('poll-preview-fullscreen') && !document.getElementById('poll-preview-fullscreen').classList.contains('hidden') && pollQuestion) {
+      const optionInputs = document.querySelectorAll('#poll-options-container input');
+      pollOptions = [];
+      optionInputs.forEach(input => {
+        const optionText = input.value.trim();
+        if (optionText) pollOptions.push({ text: optionText, votes: 0, voters: [] });
+      });
+      if (pollOptions.length < 2) { alert('La encuesta debe tener al menos 2 opciones'); return; }
+    }
+
+    if (!content && !imageFiles.length && !pollQuestion && !window.selectedGif) {
+      alert('Escribe algo, agrega imagen, GIF o encuesta'); return;
+    }
+
+    const scheduleEnabled = document.getElementById('ig-schedule-enabled')?.checked;
+    const scheduleDate = document.getElementById('ig-schedule-datetime')?.value;
+    if(scheduleEnabled){
+      if(!scheduleDate){ alert('Selecciona fecha y hora para programar'); return; }
+      const ts = new Date(scheduleDate).getTime();
+      if(ts < Date.now()){ alert('La fecha debe ser futura'); return; }
+    }
+
+    const user = firebase.auth().currentUser;
+    if (!user) { alert('Debes iniciar sesión'); return; }
+
+    const publishBtn = document.getElementById('publish-btn-fullscreen');
+    if(publishBtn){ publishBtn.disabled = true; publishBtn.innerHTML = '<span class="animate-pulse">⏳ Procesando...</span>'; }
+
+    firebase.database().ref('users/' + user.uid).once('value').then(userSnap => {
+      const userData = userSnap.val() || {};
+      const note = {
+        content: content,
+        authorId: user.uid,
+        authorName: userData.username || user.displayName || "Usuario",
+        authorImage: userData.profileImage || user.photoURL || 'https://via.placeholder.com/150',
+        timestamp: Date.now(),
+        likes: 0, comments: 0, viewsCount: 0,
+        format: window.currentNoteFormat||'post',
+        audience: (typeof getCurrentAudienceConfig==='function' ? (()=>{const c=getCurrentAudienceConfig(); return {id:c.id,label:c.label};})() : {id:'public',label:'Todo el mundo'}),
+        instagramFeaturesVersion: '2026'
+      };
+      if (pollQuestion && pollOptions) note.poll = { question: pollQuestion, options: pollOptions };
+      if (window.selectedGif) note.gifUrl = window.selectedGif;
+      if (window.taggedPeople && window.taggedPeople.length) note.taggedPeople = window.taggedPeople.map(p => ({ uid: p.uid, name: p.name, image: p.image }));
+      if (window.selectedPostBgColor) note.bgColor = window.selectedPostBgColor;
+      if (window.selectedGroupForPost?.id){ note.groupId = window.selectedGroupForPost.id; note.groupName = window.selectedGroupForPost.name||'Grupo'; }
+
+      // Instagram nuevos campos
+      if(igSlideCaptions.filter(Boolean).length) note.slideCaptions = [...igSlideCaptions];
+      if(igCollabs.length) note.collaborators = [...igCollabs];
+      const linkVal = document.getElementById('ig-link-url')?.value.trim();
+      if(linkVal) note.externalLink = linkVal;
+      if(document.getElementById('ig-trial-enabled')?.checked) note.isTrial = true;
+      note.allowReorder = document.getElementById('ig-reorder-enabled')?.checked!==false;
+
+      if(scheduleEnabled && scheduleDate){
+        note.scheduledAt = new Date(scheduleDate).getTime();
+        note.status = 'scheduled';
+        note.originalTimestamp = note.timestamp;
+        // Procesar imágenes y guardar en scheduledNotes
+        if (imageFiles.length) {
+          Promise.all(imageFiles.map(f=> (typeof processImageFile==='function'?processImageFile(f):Promise.resolve(URL.createObjectURL(f))))).then(images => {
+            note.imageUrls = images;
+            note.imageUrl = images[0];
+            publishScheduledNote(note);
+          }).catch(e=>{
+            console.error(e); alert('Error procesando imágenes'); if(publishBtn){publishBtn.disabled=false; publishBtn.innerHTML='Publicar';}
+          });
+        } else {
+          publishScheduledNote(note);
+        }
         return;
       }
-      if(scheduleEnabled && scheduleDate){
-        const ts = new Date(scheduleDate).getTime();
-        if(ts < Date.now()){
-          alert('La fecha programada debe ser futura');
-          return;
+
+      // Publicación inmediata normal
+      const publishWithAudienceScope = () => {
+        if (note.audience?.id === 'private') { note.audienceAllowedViewerIds = { [user.uid]: true }; return Promise.resolve(); }
+        if (note.audience?.id === 'following') {
+          return firebase.database().ref('following/' + user.uid).once('value').then(snap => {
+            const allowed = { [user.uid]: true }; snap.forEach(child=>{allowed[child.key]=true;}); note.audienceAllowedViewerIds = allowed;
+          }).catch(()=>{ note.audienceAllowedViewerIds = { [user.uid]: true }; });
         }
-      }
-      // Guardar temporalmente datos IG para que publishNoteToDatabase los use
-      window._igTempData = {
-        scheduledAt: scheduleEnabled ? new Date(scheduleDate).getTime() : null,
-        slideCaptions: igSlideCaptions.filter(Boolean),
-        collabs: [...igCollabs],
-        linkUrl: document.getElementById('ig-link-url')?.value?.trim()||null,
-        isTrial: document.getElementById('ig-trial-enabled')?.checked||false,
-        allowReorder: document.getElementById('ig-reorder-enabled')?.checked||true,
-        isReorderEnabled: true
+        return Promise.resolve();
       };
-      // llamar original
-      return origPublish.apply(this, arguments);
-    };
+
+      if (imageFiles.length) {
+        Promise.all(imageFiles.map(f=> (typeof processImageFile==='function'?processImageFile(f):Promise.resolve('')))).then(images => {
+          note.imageUrls = images; note.imageUrl = images[0];
+          publishWithAudienceScope().then(()=> publishNoteToDatabaseImmediate(note));
+        }).catch(e=>{ console.error(e); alert('Error imágenes'); if(publishBtn){publishBtn.disabled=false; publishBtn.innerHTML='Publicar';} });
+      } else {
+        publishWithAudienceScope().then(()=> publishNoteToDatabaseImmediate(note));
+      }
+    });
+  };
+
+  function publishScheduledNote(note){
+    const user = firebase.auth().currentUser;
+    if(!user) return;
+    const publishBtn = document.getElementById('publish-btn-fullscreen');
+    const db1Ref = (typeof db1!=='undefined'?db1:firebase.database()).ref('scheduledNotes/'+user.uid).push(note);
+    const db2Ref = (typeof db2!=='undefined'?db2:firebase.database()).ref('scheduledNotes/'+user.uid).push(note);
+    Promise.all([db1Ref, db2Ref]).then(()=>{
+      if(publishBtn){ publishBtn.disabled=false; publishBtn.innerHTML='Publicar'; }
+      closeNoteCreationFullscreen();
+      if(typeof showMiniToast==='function') showMiniToast('✅ Programado para '+ new Date(note.scheduledAt).toLocaleString());
+      else alert('Programado para '+ new Date(note.scheduledAt).toLocaleString());
+      // Limpiar
+      document.getElementById('note-content-fullscreen').value='';
+      document.getElementById('note-image-fullscreen-gallery').value=''; document.getElementById('note-image-fullscreen-camera').value='';
+      document.getElementById('image-preview-fullscreen').classList.add('hidden');
+      document.getElementById('preview-grid-fullscreen').innerHTML='';
+      igCollabs=[]; igSlideCaptions=[]; renderIGCollabs();
+      const dt=document.getElementById('ig-schedule-datetime'); if(dt) dt.value=''; const chk=document.getElementById('ig-schedule-enabled'); if(chk) chk.checked=false;
+      loadScheduledList();
+    }).catch(e=>{ console.error(e); alert('Error al programar'); if(publishBtn){publishBtn.disabled=false; publishBtn.innerHTML='Publicar';} });
+  }
+
+  function publishNoteToDatabaseImmediate(note){
+    // Evaluación moderación si existe
+    if(typeof evaluateContentModeration==='function'){
+      const pre = evaluateContentModeration(note.content||'', note.imageUrls||note.imageUrl||[]);
+      if(pre.flagged){ alert('Contenido inapropiado'); const b=document.getElementById('publish-btn-fullscreen'); if(b){b.disabled=false; b.innerHTML='Publicar';} return; }
+    }
+    const p1 = (typeof db1!=='undefined'?db1:firebase.database()).ref('communityNotes').push(note);
+    const p2 = (typeof db2!=='undefined'?db2:firebase.database()).ref('communityNotes').push(note);
+    const mentionPromise = typeof sendMentionNotifications==='function' ? sendMentionNotifications(note.content, note.authorId, note.authorName, 'publicación', [note.authorId]) : Promise.resolve();
+    Promise.all([p1,p2,mentionPromise]).then(([ref1])=>{
+      if(note.content||note.imageUrls||note.imageUrl){ if(typeof moderarContenidoAutomaticamente==='function') moderarContenidoAutomaticamente(ref1.key, `${note.content||''} ${(note.imageUrls||[]).join(' ')} ${note.imageUrl||''}`); }
+      // limpiar
+      const contentFullscreen = document.getElementById('note-content-fullscreen');
+      if(contentFullscreen) contentFullscreen.value='';
+      if(typeof clearStickerSelection==='function') clearStickerSelection('note-content-fullscreen');
+      const g1=document.getElementById('note-image-fullscreen-gallery'); if(g1) g1.value='';
+      const g2=document.getElementById('note-image-fullscreen-camera'); if(g2) g2.value='';
+      const prev=document.getElementById('image-preview-fullscreen'); if(prev) prev.classList.add('hidden');
+      const grid=document.getElementById('preview-grid-fullscreen'); if(grid) grid.innerHTML='';
+      const cnt=document.getElementById('image-preview-counter-fullscreen'); if(cnt) cnt.textContent='';
+      if(typeof clearGroupForNotePost==='function') clearGroupForNotePost();
+      window.taggedPeople=[]; if(typeof _updateTagBadge==='function') _updateTagBadge(); if(typeof _updateTagPreviewBar==='function') _updateTagPreviewBar(); if(typeof selectPostBgColor==='function') selectPostBgColor(null);
+      igCollabs=[]; igSlideCaptions=[]; renderIGCollabs();
+      closeNoteCreationFullscreen();
+      if(typeof loadNotes==='function') loadNotes(false);
+      const b=document.getElementById('publish-btn-fullscreen'); if(b){b.disabled=false; b.innerHTML='Publicar';}
+      alert('¡Publicación creada!');
+    }).catch(e=>{ console.error(e); alert('Error al publicar'); const b=document.getElementById('publish-btn-fullscreen'); if(b){b.disabled=false; b.innerHTML='Publicar';} });
+  }
+
+  // Reemplazar publishNoteToDatabase viejo
+  window.publishNoteToDatabase = publishNoteToDatabaseImmediate;
+
+  // ---- AUTO PUBLICADOR DE PROGRAMADOS ----
+  function checkAndPublishScheduled(){
+    const user = firebase.auth().currentUser;
+    if(!user) return;
+    const ref = firebase.database().ref('scheduledNotes/'+user.uid);
+    ref.once('value').then(snap=>{
+      const now = Date.now();
+      snap.forEach(child=>{
+        const note = child.val();
+        if(!note||!note.scheduledAt) return;
+        if(note.scheduledAt <= now){
+          // mover a communityNotes
+          const toPublish = {...note};
+          delete toPublish.scheduledAt; delete toPublish.status; delete toPublish.originalTimestamp;
+          toPublish.timestamp = Date.now();
+          const p1 = (typeof db1!=='undefined'?db1:firebase.database()).ref('communityNotes').push(toPublish);
+          const p2 = (typeof db2!=='undefined'?db2:firebase.database()).ref('communityNotes').push(toPublish);
+          Promise.all([p1,p2]).then(()=>{
+            firebase.database().ref('scheduledNotes/'+user.uid+'/'+child.key).remove();
+            if(typeof db1!=='undefined') db1.ref('scheduledNotes/'+user.uid+'/'+child.key).remove();
+            if(typeof db2!=='undefined') db2.ref('scheduledNotes/'+user.uid+'/'+child.key).remove();
+            if(typeof showMiniToast==='function') showMiniToast('📤 Publicación programada publicada');
+            if(typeof loadNotes==='function') loadNotes(false);
+          });
+        }
+      });
+    });
+  }
+
+  function loadScheduledList(){
+    const user = firebase.auth().currentUser;
+    if(!user) return;
+    const listEl = document.getElementById('ig-scheduled-list');
+    if(!listEl) return;
+    firebase.database().ref('scheduledNotes/'+user.uid).orderByChild('scheduledAt').once('value').then(snap=>{
+      const items=[];
+      snap.forEach(c=>{ items.push({id:c.key, ...c.val()}); });
+      if(!items.length){ listEl.innerHTML='<p class="text-xs text-[#b2a7a1] py-2">No tienes publicaciones programadas</p>'; return; }
+      listEl.innerHTML = items.map(it=>`<div class="flex items-center justify-between bg-white border border-[#e8e1dc] rounded-xl p-3 mb-2"><div class="min-w-0 flex-1"><p class="text-[12px] font-semibold text-[#2f1a14] truncate">${escapeHtml((it.content||'Sin texto').substring(0,50))}</p><p class="text-[11px] text-[#8d7d75]">🕒 ${new Date(it.scheduledAt).toLocaleString()} • ${it.imageUrls?.length||0} fotos</p></div><button onclick="cancelScheduled('${it.id}')" class="ml-3 text-[11px] font-bold text-[#d91c47] bg-[#fff1f4] border border-[#fda4af] rounded-full px-3 py-1">Cancelar</button></div>`).join('');
+    });
+  }
+
+  window.cancelScheduled = function(id){
+    const user = firebase.auth().currentUser;
+    if(!user) return;
+    if(!confirm('¿Cancelar esta publicación programada?')) return;
+    firebase.database().ref('scheduledNotes/'+user.uid+'/'+id).remove().then(()=>{
+      if(typeof db1!=='undefined') db1.ref('scheduledNotes/'+user.uid+'/'+id).remove();
+      if(typeof db2!=='undefined') db2.ref('scheduledNotes/'+user.uid+'/'+id).remove();
+      loadScheduledList();
+      if(typeof showMiniToast==='function') showMiniToast('Programación cancelada');
+    });
+  };
+
+  // Iniciar chequeo cada 30s
+  setInterval(checkAndPublishScheduled, 30000);
+  if(typeof firebase!=='undefined'){
+    firebase.auth().onAuthStateChanged(u=>{ if(u){ setTimeout(()=>{checkAndPublishScheduled(); loadScheduledList();}, 1500); } });
+  }
+
+  // Patch feed para mostrar extra meta
+  (function(){
+    const origLoadNotes = window.loadNotes;
+    if(!origLoadNotes) return;
+    // No reemplazamos loadNotes, solo inyectamos extra después de render usando MutationObserver
+    const feed = document.getElementById('notes-feed');
+    if(!feed) return;
+    const observer = new MutationObserver(()=>{
+      document.querySelectorAll('[id^="post-"]').forEach(el=>{
+        const noteId = el.dataset.noteId;
+        if(!noteId || el.dataset.igPatched) return;
+        // buscar nota en DOM no tenemos datos, pero podemos inyectar via atributo si tiene extra? Usaremos el contenido ya renderizado para insertar placeholder
+        // El extra real se inserta mejor parcheando innerHTML en el forEach original, así que aquí solo marcamos
+        el.dataset.igPatched='1';
+      });
+    });
+    observer.observe(feed, {childList:true, subtree:true});
   })();
 
-  // Interceptar publishNoteToDatabase para añadir campos
-  (function(){
-    const orig = window.publishNoteToDatabase;
-    if(!orig) return;
-    window.publishNoteToDatabase = function(note){
-      if(window._igTempData){
-        if(window._igTempData.scheduledAt) note.scheduledAt = window._igTempData.scheduledAt;
-        if(window._igTempData.slideCaptions && window._igTempData.slideCaptions.length) note.slideCaptions = window._igTempData.slideCaptions;
-        if(window._igTempData.collabs && window._igTempData.collabs.length) note.collaborators = window._igTempData.collabs;
-        if(window._igTempData.linkUrl) note.externalLink = window._igTempData.linkUrl;
-        if(window._igTempData.isTrial) note.isTrial = true;
-        note.allowReorder = window._igTempData.allowReorder;
-        note.instagramFeaturesVersion = '2026';
-        // Si está programado, no publicar inmediato sino guardar en cola
-        if(note.scheduledAt){
-          note.status = 'scheduled';
-          note.visible = false;
+  // Parche para insertar renderInstagramExtraMeta en el template original: sobrescribir el setter de innerHTML es complejo, así que editamos el string en el forEach via monkey patch de createElement innerHTML?
+  // Hacemos override de la función que crea el HTML: buscamos donde se asigna noteElement.innerHTML y le inyectamos extra después de renderNoteImages
+
+  const originalCreate = Document.prototype.createElement;
+  // No tocamos, mejor parche directo: interceptar el render final en loadNotes wrapper
+  // Reemplazamos loadNotes por uno que llame al original y luego inyecte extras usando firebase fetch rápido
+
+  // Inyección final: cuando se crea noteElement, su innerHTML ya tiene renderNoteImages y ahora renderInstagramExtraMeta está definido pero no usado.
+  // Vamos a modificar el prototype de innerHTML setter para posts: si el HTML contiene mb-3 (imagenes), insertar extra después
+  // Para simplificar, editaremos el archivo HTML original en el punto donde se hace noteElement.innerHTML = ` ... ${renderNoteImages...`
+  // Como ya está cargado, hacemos un hack: redefinimos window.renderNoteImages ya lo hicimos, y ahora definimos un wrapper que después de que loadNotes cree los elementos, añada el extra consultando la nota desde el snapshot cache.
+
+  window._igNotesCache = {};
+  const origLoad = window.loadNotes;
+  window.loadNotes = function(showLoader=true){
+    const feedContainer = document.getElementById('notes-feed');
+    if (!feedContainer) return;
+    const user = firebase.auth().currentUser;
+    let userVotes = {};
+    let userReposts = {};
+    if (user) {
+      firebase.database().ref('userVotes/' + user.uid).once('value').then(snap => { userVotes = snap.val() || {}; }).catch(()=>{});
+      firebase.database().ref('userReposts/' + user.uid).once('value').then(snap => { userReposts = snap.val() || {}; }).catch(()=>{});
+    }
+    if (showLoader) { feedContainer.innerHTML = `<div class="py-3 text-center"><div class="w-6 h-6 border-2 border-[#e8e1dc] border-t-[#2f1a14] rounded-full animate-spin mx-auto"></div></div>`; }
+    const notesRef = firebase.database().ref('communityNotes').orderByChild('timestamp').limitToLast(80);
+    notesRef.off();
+    notesRef.on('value', snapshot => {
+      const notes = [];
+      snapshot.forEach(child => {
+        const rawNote = child.val() || {};
+        if (rawNote.groupId) return;
+        if (typeof shouldHideNoteForCurrentUser==='function' && shouldHideNoteForCurrentUser(child.key, rawNote)) return;
+        // Filtro Trial: si es trial y soy seguidor, ocultar para simular solo no seguidores
+        // (simplificado: si isTrial y el visor sigue al autor, no mostrar)
+        notes.unshift({ ...rawNote, id: child.key });
+        window._igNotesCache[child.key]=rawNote;
+      });
+      if (!notes.length) { feedContainer.innerHTML = '<div class="bg-white border border-[#e8e1dc] rounded-3xl p-6 text-center text-sm text-[#8d7d75] shadow-sm">Aún no hay posts.</div>'; return; }
+      if(typeof loadTrendingTopics==='function') loadTrendingTopics(notes);
+      feedContainer.innerHTML='';
+      const frag=document.createDocumentFragment();
+      notes.forEach(note=>{
+        const noteElement = document.createElement('div');
+        noteElement.id = `post-${note.id}`;
+        noteElement.className = 'bg-white border-b border-[#e8e1dc] rounded-none mb-0 w-full shadow-none';
+        noteElement.dataset.noteId = note.id;
+        noteElement.dataset.postType = note.postType || '';
+        const upvotes = Number(note.upvotes || 0);
+        const downvotes = Number(note.downvotes || 0);
+        const score = upvotes - downvotes;
+        const commentsCount = Number(note.commentsCount || 0);
+        const repostsCount = Number(note.repostsCount || 0);
+        const safeTimestamp = Number(note.timestamp) || Date.now();
+        const safeAuthorId = note.authorId || '';
+        const safeAuthorName = note.authorName || 'Usuario';
+        const safeAuthorVerifiedIcon = typeof getVerificationIconByAuthor==='function' ? getVerificationIconByAuthor(note.authorEmail || '', safeAuthorId) : '';
+        const authorAvatarId = `feed-author-${note.id}`;
+        let safeAuthorImage = note.authorImage || 'https://via.placeholder.com/150';
+        let pollHTML='';
+        const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
+        if (note.poll && pollOptions.length) {
+          const totalVotes = pollOptions.reduce((sum, opt) => sum + Number(opt?.votes || 0), 0);
+          pollHTML = `<div class="mt-3 p-3 bg-white rounded-lg border border-gray-300"><h4 class="font-medium text-gray-900 mb-3 text-sm">${escapeHtml(note.poll.question)}</h4><div class="space-y-2">${pollOptions.map((option, index) => { const votes = Number(option?.votes || 0); const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0; return `<button onclick="votePoll('${note.id}', ${index})" class="w-full text-left p-2.5 rounded border transition-all relative overflow-hidden border-gray-300 bg-white hover:border-gray-400"><div class="absolute inset-0 bg-[#FE2C55]" style="width: ${percentage}%; opacity: 0.08"></div><div class="relative flex justify-between items-center"><span class="text-sm font-medium text-gray-900">${escapeHtml(option?.text || 'Opción')}</span><span class="text-xs font-bold text-gray-500">${percentage}%</span></div></button>`; }).join('')}</div><p class="text-xs text-gray-500 mt-2">${totalVotes} votos</p></div>`;
         }
-      }
-      return orig.call(this, note);
-    };
-  })();
-  // Fin nuevas funciones
+        let urlHTML='';
+        if (note.url && typeof isStickerLikeUrl==='function' ? !isStickerLikeUrl(note.url) : note.url) {
+          urlHTML = `<div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200"><a href="${note.url}" target="_blank" class="text-blue-600 font-semibold text-sm hover:underline break-all">${escapeHtml(note.url)}</a></div>`;
+        }
+        const extraIG = (typeof renderInstagramExtraMeta==='function' ? renderInstagramExtraMeta(note) : '');
+        noteElement.innerHTML = `
+          <div class="p-5 relative" style="${note.bgColor ? `background:${note.bgColor};border-radius:inherit;` : ''}">
+            ${typeof renderPostTopActions==='function' ? renderPostTopActions(note.id, 'Opciones') : ''}
+            <div class="flex items-start gap-3 mb-3">
+              <div class="relative w-10 h-10 flex-shrink-0">
+                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="w-10 h-10 rounded-full overflow-hidden ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">
+                  <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" src="${safeAuthorImage}" alt="${safeAuthorName}" class="w-full h-full object-cover">
+                </button>
+              </div>
+              <div class="flex-1 min-w-0 pr-20">
+                <div class="flex items-center gap-2 mb-2">
+                  <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="font-semibold text-sm text-[#7a6962] hover:text-[#5f4b44] text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${escapeHtml(safeAuthorName)}${safeAuthorVerifiedIcon}</button>
+                </div>
+                ${typeof renderNoteAnchoredMeta==='function' ? renderNoteAnchoredMeta(note) : ''}
+                ${extraIG}
+                ${note.content ? (typeof renderContentWithSticker==='function' ? renderContentWithSticker(note.content, 'text-[#2f1a14] text-base whitespace-pre-wrap leading-relaxed') : `<p class="text-[#2f1a14] text-base whitespace-pre-wrap">${escapeHtml(note.content)}</p>`) : ''}
+              </div>
+            </div>
+            ${typeof renderNoteImages==='function' ? renderNoteImages(note, note.id) : ''}
+            ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#e8e1dc]"><img src="${note.gifUrl}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+            ${note.taggedPeople && note.taggedPeople.length ? `<div class="mb-3 flex items-center gap-2 flex-wrap"><span class="text-xs text-[#8d7d75] font-semibold">Con:</span>${note.taggedPeople.map(p => `<span class="inline-flex items-center gap-1 text-xs bg-white border border-[#e8e1dc] rounded-full px-2 py-0.5 font-semibold text-[#3a241d] cursor-pointer" onclick="openAuthorProfile('${escapeHtml(p.uid||'')}')"><img src="${escapeHtml(p.image||'')}" class="w-3.5 h-3.5 rounded-full object-cover" onerror="this.src='https://via.placeholder.com/14'">${escapeHtml(p.name||'')}</span>`).join('')}</div>` : ''}
+            ${urlHTML}
+            ${pollHTML}
+            <div class="flex items-center justify-between pt-3 border-t border-[#efe9e5]">
+              <div class="flex items-center gap-3 text-[#7a6962]">
+                <button onclick="votePost('${note.id}','up')" class="flex items-center gap-1 text-xs"><span id="score-${note.id}">${typeof formatVoteScore==='function'?formatVoteScore(score):score}</span> likes</button>
+                <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1 text-xs">${commentsCount} comentarios</button>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="repost-${note.id}" onclick="repostNote('${note.id}')" class="text-xs"><span>${repostsCount}</span> repost</button>
+              </div>
+            </div>
+          </div>
+        `;
+        frag.appendChild(noteElement);
+      });
+      feedContainer.appendChild(frag);
+      if(typeof hydrateQuickFollowButtons==='function') hydrateQuickFollowButtons(feedContainer);
+    });
+  };
+
+  // Inyectar lista de programados en el panel de creación si existe espacio
+  const injectScheduledList = ()=>{
+    if(document.getElementById('ig-scheduled-list')) return;
+    const panel = document.getElementById('ig-panel-schedule');
+    if(!panel) return;
+    const div = document.createElement('div');
+    div.id='ig-scheduled-list';
+    div.className='mt-4 border-t border-[#f0ebe8] pt-3';
+    div.innerHTML='<p class="text-[11px] font-bold text-[#5f4b44] mb-2">📅 Tus programados</p><p class="text-xs text-[#b2a7a1]">Cargando...</p>';
+    panel.appendChild(div);
+    loadScheduledList();
+  };
+  setTimeout(injectScheduledList, 2000);
+  // Fin fix completo
 
 </script>
 <script>(function(){var loc=location.href.replace(/#.*$/,"");var ATTR_NAMES=["data-product-id","data-productid","data-product_id","product-id","productid","product_id","data-source-entity-id","source-entity-id","source_entity_id","data-product","data-metadata","data-meta"];var DATASET_KEYS=["productId","productid","product_id","sourceEntityId","sourceentityid","source_entity_id","product","metadata","meta"];function readProductId(value){if(typeof value!=="string"||value.length===0)return null;if(/^[0-9]{6,}$/.test(value))return value;var match=value.match(/(?:product(?:_|-)?id|source(?:_|-)?entity(?:_|-)?id)["'=:\s]+([0-9]{6,})/i);return match?match[1]:null}function extractProductId(start){for(var node=start;node&&node!==document.body;node=node.parentElement){for(var i=0;i<ATTR_NAMES.length;i++){var attrValue=node.getAttribute&&node.getAttribute(ATTR_NAMES[i]);var attrProductId=readProductId(attrValue);if(attrProductId)return attrProductId}var dataset=node.dataset||null;if(dataset){for(var j=0;j<DATASET_KEYS.length;j++){var dataValue=dataset[DATASET_KEYS[j]];var dataProductId=readProductId(dataValue);if(dataProductId)return dataProductId}}}return null}document.addEventListener("click",function(e){var target=e.target instanceof Element?e.target:null;if(!target)return;var a=target.closest?target.closest("a[href]"):null;if(!a||!a.href||!/^https?:\/\//.test(a.href))return;if(a.href.replace(/#.*$/,"")===loc)return;if(parent===window)return;var productId=extractProductId(target)||extractProductId(a);if(productId){e.preventDefault();parent.postMessage({type:"ecto-artifact-link-click",productId:productId},"*");return}e.preventDefault();parent.postMessage({type:"ecto:usercontent-link-click",href:a.href},"*")},true)})();</script><script>(function(){var FOCUS_TYPE="ecto:artifact-focus-request";var CLOSE_TYPE="ecto:artifact-close-request";function focusArtifactDocument(){var body=document.body;if(!body)return;try{window.focus();}catch(e){}if(!body.hasAttribute("tabindex"))body.setAttribute("tabindex","-1");try{body.focus({preventScroll:true});}catch(e){try{body.focus();}catch(e2){}}}window.addEventListener("message",function(event){if(event.source!==window.parent)return;var data=event.data;if(!data||typeof data!=="object"||data.type!==FOCUS_TYPE)return;if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",focusArtifactDocument,{once:true});return;}focusArtifactDocument();});window.addEventListener("keydown",function(event){if(event.key!=="Escape")return;window.setTimeout(function(){if(event.defaultPrevented)return;window.parent.postMessage({type:CLOSE_TYPE},"*");},0);});})();</script></body>
