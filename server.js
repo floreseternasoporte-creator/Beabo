@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { performance } = require('perf_hooks');
 
 const PORT = 5000;
 
@@ -26,6 +27,11 @@ const mimeTypes = {
   '.ttf': 'font/ttf',
 };
 
+let activeSockets = 0;
+let totalRequests = 0;
+let pulseRequests = 0;
+let lastPulseAt = Date.now();
+
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -39,6 +45,8 @@ function parseBody(req) {
 }
 
 const server = http.createServer(async (req, res) => {
+  totalRequests += 1;
+  pulseRequests += 1;
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -68,6 +76,52 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Error al generar firma' }));
     }
+    return;
+  }
+
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/neuro/telemetry') {
+    const startedAt = process.hrtime.bigint();
+    const memory = process.memoryUsage();
+    const now = Date.now();
+    const intervalSeconds = Math.max((now - lastPulseAt) / 1000, 0.001);
+    const requestRate = pulseRequests / intervalSeconds;
+    const eventLoop = typeof performance.eventLoopUtilization === 'function'
+      ? performance.eventLoopUtilization().utilization
+      : null;
+
+    pulseRequests = 0;
+    lastPulseAt = now;
+
+    const responseTimeMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    const payload = {
+      source: 'node-runtime',
+      scope: 'server-runtime',
+      generatedAt: new Date(now).toISOString(),
+      telemetry: {
+        neuralLoad: Number(((memory.heapUsed / Math.max(memory.heapTotal, 1)) * 100).toFixed(1)),
+        signalVelocity: Number(requestRate.toFixed(2)),
+        activeSynapses: totalRequests,
+        uplinkLatency: Number(responseTimeMs.toFixed(2)),
+        queueDepth: activeSockets,
+        memoryFlux: Number((memory.rss / 1024 / 1024).toFixed(1)),
+        coreTemp: 'n/a',
+        openStreams: activeSockets,
+        pulseRate: Number(requestRate.toFixed(2)),
+        driftIndex: eventLoop === null ? 'n/a' : Number(eventLoop.toFixed(3))
+      },
+      runtime: {
+        uptimeSeconds: Number(process.uptime().toFixed(1)),
+        heapUsedBytes: memory.heapUsed,
+        rssBytes: memory.rss,
+        activeSockets
+      }
+    };
+
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store'
+    });
+    res.end(JSON.stringify(payload));
     return;
   }
 
@@ -101,6 +155,13 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': contentType });
       res.end(data);
     });
+  });
+});
+
+server.on('connection', (socket) => {
+  activeSockets += 1;
+  socket.once('close', () => {
+    activeSockets = Math.max(0, activeSockets - 1);
   });
 });
 
