@@ -451,7 +451,6 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-.cv-wave { transition: height 0.12s ease; }
 @keyframes cvWavePulse { 0%,100%{height:20%} 50%{height:90%} }
 
 .search-cat-chip.active {
@@ -3100,7 +3099,19 @@ body {
         <button onclick="openGifPanel()" class="flex items-center gap-1.5 px-3 h-9 rounded-full border border-[#e8e1dc] bg-white shrink-0 active:scale-90 transition text-[#5f4b44] text-[13px] font-bold whitespace-nowrap">
           <span class="text-[11px] font-black tracking-tighter bg-gradient-to-r from-purple-500 via-pink-500 to-orange-400 bg-clip-text text-transparent">GIF</span>
         </button>
-
+        <!-- Temporizador de autodestrucción -->
+        <button id="chat-timer-btn" onclick="openChatTimerPicker()" class="flex items-center gap-1 px-3 h-9 rounded-full border border-[#e8e1dc] bg-white shrink-0 active:scale-90 transition text-[#5f4b44] text-[11px] font-bold whitespace-nowrap" aria-label="Mensaje con temporizador">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5" stroke-linecap="round"/><path d="M9 3h6" stroke-linecap="round"/><path d="M12 3v2"/></svg>
+          <span id="chat-timer-label">Temporizador</span>
+        </button>
+      </div>
+      <!-- Panel selector de temporizador -->
+      <div id="chat-timer-picker" class="hidden mb-2 flex items-center gap-2 px-1">
+        <span class="text-[11px] text-[#8d7d75] font-semibold shrink-0">Desaparece en:</span>
+        <button onclick="setChatTimer(10)" class="chat-timer-opt px-3 py-1 rounded-full border border-[#e8e1dc] text-[12px] font-bold text-[#5f4b44] bg-white active:scale-90 transition" data-secs="10">10s</button>
+        <button onclick="setChatTimer(60)" class="chat-timer-opt px-3 py-1 rounded-full border border-[#e8e1dc] text-[12px] font-bold text-[#5f4b44] bg-white active:scale-90 transition" data-secs="60">1 min</button>
+        <button onclick="setChatTimer(3600)" class="chat-timer-opt px-3 py-1 rounded-full border border-[#e8e1dc] text-[12px] font-bold text-[#5f4b44] bg-white active:scale-90 transition" data-secs="3600">1 hora</button>
+        <button onclick="setChatTimer(0)" class="px-3 py-1 rounded-full border border-[#e8e1dc] text-[12px] font-bold text-[#8d7d75] bg-white active:scale-90 transition">✕</button>
       </div>
       <!-- Preview fotos adjuntas -->
       <div id="chat-photo-preview-wrap" class="hidden mb-2">
@@ -3180,6 +3191,12 @@ body {
       <span id="chat-pin-btn-label">Anclar mensaje</span>
     </button>
   </div>
+  <div id="chat-edit-btn-row" class="hidden border-b border-[#f0ebe8]">
+    <button onclick="triggerEditChatMessage()" class="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-[#5f4b44] hover:bg-[#f8f4f1] active:bg-[#f1ece9] transition" aria-label="Editar mensaje">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Editar
+    </button>
+  </div>
   <div class="border-b border-[#f0ebe8]">
     <button onclick="copyChatMessageText()" class="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-[#5f4b44] hover:bg-[#f8f4f1] active:bg-[#f1ece9] transition" aria-label="Copiar texto">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -3195,6 +3212,18 @@ body {
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M17 8l4 4m0 0l-4 4m4-4H3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Eliminar para mí
     </button>
+  </div>
+</div>
+
+<!-- MODAL EDITAR MENSAJE -->
+<div id="chat-edit-modal" class="fixed inset-0 bg-black/50 hidden z-[97] flex items-end justify-center p-4" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-5">
+    <p class="text-sm font-bold text-[#2f1a14] mb-3">Editar mensaje</p>
+    <textarea id="chat-edit-input" rows="3" class="w-full border border-[#e8e1dc] rounded-2xl px-4 py-3 text-sm text-[#2f1a14] bg-[#f8f6f4] focus:outline-none focus:ring-2 focus:ring-[#3a241d] resize-none" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();saveEditedChatMessage();}"></textarea>
+    <div class="flex gap-3 mt-3">
+      <button onclick="document.getElementById('chat-edit-modal').classList.add('hidden')" class="flex-1 py-2.5 rounded-2xl border border-[#e8e1dc] text-sm font-semibold text-[#5f4b44] active:bg-[#f1ece9] transition">Cancelar</button>
+      <button onclick="saveEditedChatMessage()" class="flex-1 py-2.5 rounded-2xl bg-[#2f1a14] text-white text-sm font-semibold active:scale-95 transition">Guardar</button>
+    </div>
   </div>
 </div>
 
@@ -3815,6 +3844,14 @@ body {
             </div>
           </div>
           <span class="text-[10px] font-semibold text-[#7a6962]">Fondo</span>
+        </button>
+
+        <!-- Contenido sensible -->
+        <button id="tool-sensitive" onclick="toggleSensitiveContent()" class="flex-shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-2xl active:bg-[#ece5e1] transition" style="scroll-snap-align: start;">
+          <div id="tool-sensitive-circle" class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#5f4b44]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+          </div>
+          <span class="text-[10px] font-semibold text-[#7a6962]">Sensible</span>
         </button>
 
         <!-- Baro AI -->
@@ -4918,15 +4955,7 @@ body {
   <!-- Input de chat -->
   <div class="sticky bottom-0 bg-white border-t border-[#e8e1dc] px-4 py-3 max-w-3xl mx-auto w-full">
     <div class="flex items-center gap-2 bg-[#f0f0f0] rounded-[2rem] px-3 py-2.5">
-      <!-- Botón de micrófono -->
-      <button id="baro-mic-btn" onclick="startBaroVoiceRecording()" class="flex-shrink-0 text-[#1e252b] bg-white/90 border border-[#d7dde3] shadow-sm flex items-center justify-center w-10 h-10 hover:bg-white rounded-full transition" aria-label="Grabar voz" title="Grabar voz">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 1 1-6 0V6a3 3 0 0 1 3-3Z"/>
-          <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
-          <path d="M12 18v3"/>
-          <path d="M8 21h8"/>
-        </svg>
-      </button>
+
       
       <input id="baro-chat-input" type="text" placeholder="Escribe tu mensaje..." class="flex-1 bg-transparent border-0 text-[1rem] text-[#1e252b] placeholder:text-[#7a8a99] focus:outline-none px-1">
       
@@ -8555,6 +8584,12 @@ function onNoteFormatChange(format) {
         note.groupName = selectedGroupForPost.name || 'Grupo';
       }
 
+      if (_noteIsAdultContent) {
+        note.isAdultContent = true;
+        _noteIsAdultContent = false;
+        _updateSensitiveToolUI();
+      }
+
       const publishWithAudienceScope = () => {
         if (note.audience?.id === 'private') {
           note.audienceAllowedViewerIds = { [user.uid]: true };
@@ -8866,6 +8901,30 @@ function onNoteFormatChange(format) {
     const enabled = getAdultContentPreference();
     if (toggle) toggle.checked = enabled;
     if (label) label.textContent = enabled ? 'Activado' : 'Desactivado';
+  }
+
+  let _noteIsAdultContent = false;
+
+  function toggleSensitiveContent() {
+    _noteIsAdultContent = !_noteIsAdultContent;
+    _updateSensitiveToolUI();
+  }
+
+  function _updateSensitiveToolUI() {
+    const circle = document.getElementById('tool-sensitive-circle');
+    const btn = document.getElementById('tool-sensitive');
+    if (!circle) return;
+    if (_noteIsAdultContent) {
+      circle.classList.add('bg-[#2f1a14]');
+      circle.classList.remove('bg-white');
+      circle.querySelector('svg')?.classList.replace('text-[#5f4b44]', 'text-white');
+      btn.classList.add('bg-[#ece5e1]');
+    } else {
+      circle.classList.remove('bg-[#2f1a14]');
+      circle.classList.add('bg-white');
+      circle.querySelector('svg')?.classList.replace('text-white', 'text-[#5f4b44]');
+      btn.classList.remove('bg-[#ece5e1]');
+    }
   }
 
   function normalizeForMatch(value) {
@@ -17332,104 +17391,56 @@ let chatTypingListener = null;
   }
 
   /* ══════════════════════════════════════════════════════════════
-     MENSAJES DE VOZ
+     TEMPORIZADOR DE AUTODESTRUCCIÓN
   ══════════════════════════════════════════════════════════════ */
-  let _chatMediaRecorder = null;
-  let _chatAudioChunks   = [];
-  let _chatVoiceTimer    = null;
-  let _chatVoiceSeconds  = 0;
-  let _chatVoiceStream   = null;
-  let _chatVoiceWaveInt  = null;
+  let _chatTimerSecs = 0;
+  const _msgCountdownIntervals = {};
 
-  async function startChatVoice() {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      alert('Tu dispositivo no soporta grabación de audio.');
-      return;
-    }
-    try {
-      _chatVoiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      _chatAudioChunks = [];
-      _chatMediaRecorder = new MediaRecorder(_chatVoiceStream);
-      _chatMediaRecorder.ondataavailable = e => { if (e.data.size > 0) _chatAudioChunks.push(e.data); };
-      _chatMediaRecorder.start();
-      document.getElementById('chat-main-toolbar')?.classList.add('hidden');
-      document.getElementById('chat-voice-recording-bar')?.classList.remove('hidden');
-      _chatVoiceSeconds = 0;
-      const timerEl = document.getElementById('chat-voice-timer');
-      if (timerEl) timerEl.textContent = '0:00';
-      _chatVoiceTimer = setInterval(() => {
-        _chatVoiceSeconds++;
-        const m = Math.floor(_chatVoiceSeconds / 60);
-        const s = String(_chatVoiceSeconds % 60).padStart(2, '0');
-        if (timerEl) timerEl.textContent = `${m}:${s}`;
-        if (_chatVoiceSeconds >= 120) sendChatVoice(); // max 2 min
-      }, 1000);
-      _chatVoiceWaveInt = setInterval(() => {
-        document.querySelectorAll('.cv-wave').forEach(el => {
-          el.style.height = Math.floor(15 + Math.random() * 80) + '%';
-        });
-      }, 120);
-    } catch (e) {
-      alert('No se pudo acceder al micrófono. Verifica los permisos.');
+  function openChatTimerPicker() {
+    document.getElementById('chat-timer-picker')?.classList.toggle('hidden');
+  }
+
+  function setChatTimer(secs) {
+    _chatTimerSecs = secs;
+    const label = document.getElementById('chat-timer-label');
+    const btn = document.getElementById('chat-timer-btn');
+    const picker = document.getElementById('chat-timer-picker');
+    document.querySelectorAll('.chat-timer-opt').forEach(b => {
+      b.classList.toggle('bg-[#2f1a14]', parseInt(b.dataset.secs) === secs);
+      b.classList.toggle('text-white', parseInt(b.dataset.secs) === secs);
+      b.classList.toggle('border-[#2f1a14]', parseInt(b.dataset.secs) === secs);
+    });
+    if (secs === 0) {
+      if (label) label.textContent = 'Temporizador';
+      if (btn) { btn.classList.remove('bg-[#2f1a14]','text-white','border-[#2f1a14]'); btn.classList.add('border-[#e8e1dc]','text-[#5f4b44]'); }
+      if (picker) picker.classList.add('hidden');
+    } else {
+      const txt = secs >= 3600 ? (secs/3600)+'h' : secs >= 60 ? (secs/60)+'min' : secs+'s';
+      if (label) label.textContent = txt;
+      if (btn) { btn.classList.add('bg-[#2f1a14]','text-white','border-[#2f1a14]'); btn.classList.remove('border-[#e8e1dc]','text-[#5f4b44]'); }
     }
   }
 
-  function cancelChatVoice() { _stopChatVoice(false); }
-  function sendChatVoice()   { _stopChatVoice(true); }
-
-  function _stopChatVoice(doSend) {
-    if (_chatVoiceTimer) { clearInterval(_chatVoiceTimer); _chatVoiceTimer = null; }
-    if (_chatVoiceWaveInt) { clearInterval(_chatVoiceWaveInt); _chatVoiceWaveInt = null; }
-    document.getElementById('chat-voice-recording-bar')?.classList.add('hidden');
-    document.getElementById('chat-main-toolbar')?.classList.remove('hidden');
-    if (!_chatMediaRecorder) return;
-    if (doSend && _chatAudioChunks.length > 0) {
-      const dur = _chatVoiceSeconds;
-      _chatMediaRecorder.onstop = async () => {
-        const blob = new Blob(_chatAudioChunks, { type: 'audio/webm' });
-        if (blob.size < 500) return;
-        _uploadAndSendVoice(blob, dur);
-      };
-    }
-    try { _chatMediaRecorder.stop(); } catch (_) {}
-    if (_chatVoiceStream) { _chatVoiceStream.getTracks().forEach(t => t.stop()); _chatVoiceStream = null; }
-    _chatMediaRecorder = null;
-    _chatAudioChunks = [];
-  }
-
-  async function _uploadAndSendVoice(blob, dur) {
-    const user = firebase.auth().currentUser;
-    if (!user || !currentChatRoomId) return;
-    try {
-      const timestamp = Math.floor(Date.now() / 1000);
-      const signature = await cloudinaryClientSign(timestamp);
-      const formData = new FormData();
-      formData.append('file', blob, 'voice.webm');
-      formData.append('api_key', CLOUDINARY_KEY);
-      formData.append('timestamp', timestamp);
-      formData.append('signature', signature);
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/video/upload`, {
-        method: 'POST', body: formData
-      });
-      const data = await res.json();
-      if (!data.secure_url) throw new Error('Upload failed');
-      const payload = {
-        senderId: user.uid,
-        senderName: user.displayName || user.email || 'Usuario',
-        type: 'voice',
-        voiceUrl: data.secure_url,
-        voiceDuration: dur || 0,
-        timestamp: Date.now()
-      };
-      const conversationId = currentChatRoomId;
-      const recipientId = currentChatRecipient;
-      const isGroup = currentChatIsGroup;
-      const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
-      await firebase.database().ref('conversationMessages/' + conversationId).push(payload);
-      await updateChatConversationPreview('🎤 Nota de voz', payload, { conversationId, recipientId, isGroup, groupMembers });
-    } catch (e) {
-      alert('No se pudo enviar el mensaje de voz.');
-    }
+  function _startMsgCountdown(msgId, destroyAt, conversationId) {
+    if (_msgCountdownIntervals[msgId]) return;
+    _msgCountdownIntervals[msgId] = setInterval(() => {
+      const secsLeft = Math.ceil((destroyAt - Date.now()) / 1000);
+      const el = document.getElementById('timer-' + msgId);
+      if (secsLeft <= 0) {
+        clearInterval(_msgCountdownIntervals[msgId]);
+        delete _msgCountdownIntervals[msgId];
+        // Remove from DB
+        if (conversationId) firebase.database().ref('conversationMessages/' + conversationId + '/' + msgId).remove().catch(() => {});
+        // Remove from UI
+        const bubble = el?.closest('[data-msg-id]');
+        if (bubble) bubble.remove();
+        return;
+      }
+      if (el) {
+        const label = secsLeft >= 3600 ? Math.ceil(secsLeft/3600)+'h' : secsLeft >= 60 ? Math.ceil(secsLeft/60)+'min' : secsLeft+'s';
+        el.textContent = label;
+      }
+    }, 1000);
   }
 
   /* ══════════════════════════════════════════════════════════════
@@ -17945,7 +17956,6 @@ let chatTypingListener = null;
     clearChatReply();
     detachPresenceListener();
     detachReadReceiptListener();
-    cancelChatVoice();
     if (typeof chatViewOnceActive !== 'undefined' && chatViewOnceActive) toggleChatViewOnce();
     const _statusEl = document.getElementById('chat-room-status');
     if (_statusEl) { _statusEl.textContent = ''; _statusEl.classList.add('hidden'); }
@@ -18108,13 +18118,21 @@ let chatTypingListener = null;
         }
       })() : '';
       let content;
-      if (msg.type === 'sticker' && msg.sticker) {
+      if (msg.autoDestroyAt && msg.autoDestroyAt > Date.now()) {
+        const secsLeft = Math.ceil((msg.autoDestroyAt - Date.now()) / 1000);
+        const label = secsLeft >= 3600 ? Math.ceil(secsLeft/3600)+'h' : secsLeft >= 60 ? Math.ceil(secsLeft/60)+'min' : secsLeft+'s';
+        const innerContent = msg.images?.length
+          ? `<img src="${escapeHtml(msg.images[0])}" class="rounded-2xl block" style="max-width:200px;max-height:200px;object-fit:cover" alt="Foto">`
+          : `<p class="text-[15px] leading-snug break-words">${escapeHtml(msg.text || '')}</p>`;
+        content = `<div class="relative">${innerContent}<div class="flex items-center gap-1 mt-1 opacity-70"><svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5" stroke-linecap="round"/></svg><span class="text-[10px] font-bold" id="timer-${resolvedId}">${label}</span></div></div>`;
+        setTimeout(() => _startMsgCountdown(resolvedId, msg.autoDestroyAt, conversationId), 100);
+      } else if (msg.autoDestroyAt && msg.autoDestroyAt <= Date.now()) {
+        content = `<p class="text-[13px] italic opacity-50">Mensaje eliminado</p>`;
+      } else if (msg.type === 'sticker' && msg.sticker) {
         content = `<div class="text-5xl select-none leading-none p-1">${escapeHtml(msg.sticker)}</div>`;
       } else if (msg.type === 'gif' && msg.gifUrl) {
         content = `<img src="${escapeHtml(msg.gifUrl)}" class="rounded-2xl block" style="max-width:200px;max-height:200px;object-fit:cover;cursor:pointer" alt="GIF" onclick="window.open('${escapeHtml(msg.gifUrl)}','_blank')">`;
-      } else if (msg.type === 'voice' && msg.voiceUrl) {
-        const durationLabel = msg.voiceDuration ? `${Math.max(1, Math.round(msg.voiceDuration))}s` : '';
-        content = `<div class="flex items-center gap-2 min-w-[190px]"><audio controls preload="metadata" src="${escapeHtml(msg.voiceUrl)}" class="h-9 max-w-[210px]"></audio>${durationLabel ? `<span class="text-xs opacity-70 shrink-0">${durationLabel}</span>` : ''}</div>`;
+
       } else if (msg.viewOnce) {
         const currentUserId2 = firebase.auth().currentUser?.uid || '';
         if (mine) {
@@ -18152,7 +18170,7 @@ let chatTypingListener = null;
                 ${replyBlock}${content}
               </div>
               <div id="reactions-${resolvedId}" class="flex flex-wrap gap-1 mt-0.5 justify-start px-1"></div>
-              ${timeStr ? `<span class="text-xs text-[#b4a9a4] px-1">${timeStr}</span>` : ''}
+              ${timeStr ? `<span class="text-xs text-[#b4a9a4] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">Editado</span>' : ''}</span>` : ''}
             </div>
           </div>
         `;
@@ -18182,7 +18200,7 @@ let chatTypingListener = null;
             ${replyBlock}${content}
           </div>
           <div id="reactions-${resolvedId}" class="flex flex-wrap gap-1 mt-0.5 ${mine ? 'justify-end' : 'justify-start'} px-1"></div>
-          ${timeStr ? `<span class="text-xs text-[#b4a9a4] px-1">${timeStr}</span>` : ''}
+          ${timeStr ? `<span class="text-xs text-[#b4a9a4] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">Editado</span>' : ''}</span>` : ''}
         `;
       }
 
@@ -18545,6 +18563,10 @@ const _startChatListeners = () => {
       payload.viewOnce = true;
       toggleChatViewOnce();
     }
+    if (_chatTimerSecs > 0) {
+      payload.autoDestroyAt = Date.now() + _chatTimerSecs * 1000;
+      setChatTimer(0);
+    }
 
     const msgRef = firebase.database().ref('conversationMessages/' + currentChatRoomId).push();
     const messageId = msgRef.key;
@@ -18648,6 +18670,39 @@ const _startChatListeners = () => {
   let activeReactionMsgId = null;
   let msgReactionListeners = new Map();
 
+  function triggerEditChatMessage() {
+    const msgId = activeReactionMsgId || window._lastReactionMsgId;
+    hideChatReactionPicker();
+    if (!msgId || !currentChatRoomId) return;
+    firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).once('value').then(snap => {
+      const msg = snap.val();
+      if (!msg || !msg.text) return;
+      const modal = document.getElementById('chat-edit-modal');
+      const input = document.getElementById('chat-edit-input');
+      if (!modal || !input) return;
+      input.value = msg.text;
+      modal.dataset.msgId = msgId;
+      modal.classList.remove('hidden');
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+  }
+
+  function saveEditedChatMessage() {
+    const modal = document.getElementById('chat-edit-modal');
+    const input = document.getElementById('chat-edit-input');
+    if (!modal || !input) return;
+    const msgId = modal.dataset.msgId;
+    const newText = input.value.trim();
+    if (!msgId || !newText || !currentChatRoomId) return;
+    firebase.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).update({
+      text: newText,
+      editedAt: Date.now()
+    }).then(() => {
+      modal.classList.add('hidden');
+    }).catch(() => alert('No se pudo editar el mensaje.'));
+  }
+
   function copyChatMessageText() {
     const msgId = activeReactionMsgId || window._lastReactionMsgId;
     hideChatReactionPicker();
@@ -18680,10 +18735,13 @@ const _startChatListeners = () => {
   function showChatReactionPicker(msgId, rect, mine) {
     activeReactionMsgId = msgId;
     window._lastReactionMsgId = msgId;
+    window._reactionMine = mine;
     const picker = document.getElementById('chat-reaction-picker');
     if (!picker) return;
     const deleteRow = document.getElementById('chat-reaction-delete-row');
     if (deleteRow) deleteRow.classList.toggle('hidden', !mine);
+    const editRow = document.getElementById('chat-edit-btn-row');
+    if (editRow) editRow.classList.toggle('hidden', !mine);
     const pinLabel = document.getElementById('chat-pin-btn-label');
     if (pinLabel) pinLabel.textContent = (_chatCurrentPinnedMsgId === msgId) ? 'Desanclar mensaje' : 'Anclar mensaje';
     picker.classList.remove('hidden');
