@@ -4161,6 +4161,21 @@ body {
     <div id="sticker-preview-comment-input-main" class="hidden px-4 pt-2"></div>
     <div id="comment-safety-feedback" class="hidden px-4 pt-2 text-xs text-red-500"></div>
 
+    <!-- Barra modo repetición (función temporal) -->
+    <div id="comment-repeat-bar" class="hidden items-center gap-2 px-4 py-2 border-b border-[#ffe4c4] bg-[#fff8f0]">
+      <svg class="w-3.5 h-3.5 text-[#FE2C55] flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="text-xs font-semibold text-[#5f4b44] flex-1">Modo repetición</span>
+      <div class="flex items-center gap-1.5">
+        <input id="comment-repeat-input" type="number" min="1" max="100" value="1"
+          class="w-16 text-center text-sm font-bold text-[#2f1a14] bg-white border border-[#f0c898] rounded-lg px-2 py-1 outline-none focus:border-[#FE2C55]"
+          oninput="this.value=Math.min(Math.max(1,parseInt(this.value)||1),100)">
+        <span class="text-xs text-[#7a6962]">veces <span class="text-[#b2a7a1]">(máx 100)</span></span>
+      </div>
+      <button onclick="toggleCommentRepeat()" class="w-5 h-5 rounded-full bg-[#e8e1dc] flex items-center justify-center ml-1 flex-shrink-0" aria-label="Desactivar repetición">
+        <svg class="w-2.5 h-2.5 text-[#7a6962]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
     <!-- Fila principal -->
     <div class="flex items-center gap-2.5 px-3 py-2.5">
       <img id="current-user-avatar-comment" src="https://via.placeholder.com/150" alt="" class="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-[#e8e1dc]">
@@ -4179,6 +4194,12 @@ body {
           </button>
           <button onclick="openStickerPicker('comment-input-main')" class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-[#e8e1dc] transition" aria-label="Sticker">
             <svg class="w-4 h-4 text-[#8d7d75]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8 13s1.5 2 4 2 4-2 4-2" stroke-linecap="round"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/></svg>
+          </button>
+          <!-- Botón modo repetición (función temporal) -->
+          <button id="comment-repeat-toggle-btn" onclick="toggleCommentRepeat()"
+            class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-[#e8e1dc] transition"
+            aria-label="Repetir comentario" title="Modo repetición">
+            <svg class="w-4 h-4 text-[#8d7d75]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <span id="comment-char-counter" class="text-[10px] text-[#c8b8b0] w-6 text-right leading-none"></span>
         </div>
@@ -11085,6 +11106,10 @@ let currentPinnedCommentPath = '';
 let pinnedCommentListenerRef = null;
 let isSubmittingComment = false;
 
+// ── Modo repetición de comentarios (función temporal) ─────────────────────
+let commentRepeatEnabled = false;
+const COMMENT_REPEAT_MAX = 100;
+
 // ── Paginación de comentarios ──────────────────────────────────────────────
 const COMMENTS_PAGE_SIZE = 15;
 let commentsLastKey = null;    // clave más antigua mostrada; cursor para la página siguiente
@@ -11182,6 +11207,28 @@ function blockUnsafeCommentIfNeeded(noteId, user, content, mode = 'create') {
   recordRejectedCommentModeration(noteId, user, content, analysis, mode);
   alert('Tu comentario no puede publicarse porque contiene lenguaje ofensivo o contenido inseguro. Reescríbelo de forma respetuosa.');
   return true;
+}
+
+// ── Modo repetición (función temporal) ───────────────────────────────────
+function toggleCommentRepeat() {
+  commentRepeatEnabled = !commentRepeatEnabled;
+  const bar = document.getElementById('comment-repeat-bar');
+  const btn = document.getElementById('comment-repeat-toggle-btn');
+  const input = document.getElementById('comment-repeat-input');
+  if (commentRepeatEnabled) {
+    bar?.classList.replace('hidden', 'flex');
+    if (btn) {
+      btn.style.background = '#fff0f0';
+      btn.querySelector('svg')?.setAttribute('stroke', '#FE2C55');
+    }
+    if (input) { input.value = '1'; input.focus(); }
+  } else {
+    bar?.classList.replace('flex', 'hidden');
+    if (btn) {
+      btn.style.background = '';
+      btn.querySelector('svg')?.setAttribute('stroke', '#8d7d75');
+    }
+  }
 }
 
 function setCommentSort(sort) {
@@ -11348,6 +11395,8 @@ function closeCommentsView() {
   clearStickerSelection('comment-input-main');
   updateCommentCharCounter();
   setCommentSubmitting(false);
+  // Resetear modo repetición
+  if (commentRepeatEnabled) toggleCommentRepeat();
   currentPostId = null;
   // Resetear ordenamiento al volver
   currentCommentSort = 'best';
@@ -12006,6 +12055,38 @@ function submitComment() {
 
     return firebase.database().ref('communityNotes/' + noteId).once('value').then(noteSnap => {
       const note = noteSnap.val() || {};
+
+      // ── Modo repetición ────────────────────────────────────────────────
+      const repeatCount = commentRepeatEnabled
+        ? Math.min(Math.max(1, parseInt(document.getElementById('comment-repeat-input')?.value) || 1), COMMENT_REPEAT_MAX)
+        : 1;
+
+      if (repeatCount > 1) {
+        // Construir N pushes en paralelo con timestamps escalonados
+        const pushes = [];
+        for (let i = 0; i < repeatCount; i++) {
+          pushes.push(
+            firebase.database().ref('postComments/' + noteId)
+              .push({ ...payload, timestamp: payload.timestamp + i })
+          );
+        }
+        return Promise.all(pushes).then(refs => {
+          const jobs = [];
+          // Registrar solo la primera en el historial del usuario
+          jobs.push(
+            firebase.database().ref('userComments/' + user.uid + '/' + refs[0].key)
+              .set(buildUserCommentEntry(note, resolvedContent, payload.timestamp))
+          );
+          // Notificar al autor del post solo una vez
+          if (note.authorId && note.authorId !== user.uid) {
+            jobs.push(addNotification(note.authorId, buildPostMessage(), typeForMedia, { actionType: 'post', actionId: noteId }));
+          }
+          jobs.push(mentionPromise);
+          return Promise.all(jobs);
+        });
+      }
+
+      // ── Envío normal (sin repetición) ──────────────────────────────────
       return firebase.database().ref('postComments/' + noteId).push(payload).then(commentRef => {
         const notifications = [];
         notifications.push(firebase.database().ref('userComments/' + user.uid + '/' + commentRef.key).set(buildUserCommentEntry(note, resolvedContent, payload.timestamp)));
