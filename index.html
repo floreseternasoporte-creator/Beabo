@@ -4116,6 +4116,18 @@ body {
     <div id="original-post" class="px-4 pt-4 pb-3 border-b border-[#e8e1dc]"></div>
     <!-- Lista de comentarios -->
     <div id="comments-list-view" class="px-4 py-3 space-y-1"></div>
+
+    <!-- Cargar más comentarios -->
+    <div id="comments-load-more-area" class="hidden px-4 pb-5">
+      <button id="comments-load-more-btn" onclick="loadMoreComments()"
+        class="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-[#e8e1dc] bg-white text-sm font-semibold text-[#5f4b44] hover:bg-[#f5f4f2] active:scale-[0.98] transition-all">
+        <svg id="comments-load-more-spinner" class="hidden w-4 h-4 animate-spin text-[#5f4b44]" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+        </svg>
+        <span id="comments-load-more-label">Cargar más comentarios</span>
+      </button>
+    </div>
   </div>
 
   <!-- Zona de input estilo app china -->
@@ -11073,6 +11085,12 @@ let currentPinnedCommentPath = '';
 let pinnedCommentListenerRef = null;
 let isSubmittingComment = false;
 
+// ── Paginación de comentarios ──────────────────────────────────────────────
+const COMMENTS_PAGE_SIZE = 15;
+let commentsLastKey = null;    // clave más antigua mostrada; cursor para la página siguiente
+let commentsHasMore = false;   // ¿existen comentarios más antiguos sin cargar?
+let commentsLoadedEntries = []; // pares [key, value] de comentarios de nivel raíz cargados
+
 function updateCommentCharCounter() {
   const input = document.getElementById('comment-input-main');
   const counter = document.getElementById('comment-char-counter');
@@ -11177,6 +11195,9 @@ function sortCommentEntries(entries) {
   if (currentCommentSort === 'new') {
     return entries.sort((a, b) => (b[1].timestamp || 0) - (a[1].timestamp || 0));
   }
+  if (currentCommentSort === 'old') {
+    return entries.sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
+  }
   if (currentCommentSort === 'top') {
     return entries.sort((a, b) => ((b[1].upvotes || 0)) - ((a[1].upvotes || 0)));
   }
@@ -11186,6 +11207,11 @@ function sortCommentEntries(entries) {
     const scoreA = (a[1].upvotes || 0) - (a[1].downvotes || 0);
     return scoreB - scoreA;
   });
+}
+
+function changeCommentSort() {
+  const sel = document.getElementById('comment-sort-select');
+  if (sel) setCommentSort(sel.value);
 }
 
 // Abrir vista de comentarios
@@ -11425,69 +11451,191 @@ function closeContinueThread() {
 function loadCommentsInView(noteId) {
   const commentsList = document.getElementById('comments-list-view');
 
-  const skeletonHTML = '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>' +
+  // Resetear estado de paginación
+  commentsLastKey = null;
+  commentsHasMore = false;
+  commentsLoadedEntries = [];
+
+  const skeletonHTML =
+    '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>' +
     '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>' +
     '<div class="comment-skeleton"><div class="comment-skeleton-avatar"></div><div class="comment-skeleton-content flex-1"><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div><div class="comment-skeleton-line"></div></div></div>';
   commentsList.innerHTML = skeletonHTML;
 
-  if (commentsListenerRef) commentsListenerRef.off();
-  if (pinnedCommentListenerRef) pinnedCommentListenerRef.off();
+  // Ocultar botón "Cargar más" mientras cargamos
+  const loadMoreArea = document.getElementById('comments-load-more-area');
+  if (loadMoreArea) loadMoreArea.classList.add('hidden');
 
-  let latestCommentsSnapshot = null;
+  // Desconectar listeners anteriores
+  if (commentsListenerRef) { commentsListenerRef.off(); commentsListenerRef = null; }
+  if (pinnedCommentListenerRef) { pinnedCommentListenerRef.off(); }
 
-  const renderCommentsSnapshot = snapshot => {
-    if (!snapshot) return;
-    commentsList.innerHTML = '';
-    let totalCount = 0;
-
-    const entries = [];
-    snapshot.forEach(child => {
-      const comment = child.val();
-      if (isAccountBlockedForCurrentUser(comment?.authorId || '')) return;
-      entries.push([child.key, comment]);
-    });
-
-    const sorted = sortCommentEntries(entries);
-    if (currentPinnedCommentPath && !currentPinnedCommentPath.includes('/replies/')) {
-      sorted.sort((a, b) => {
-        if (a[0] === currentPinnedCommentPath) return -1;
-        if (b[0] === currentPinnedCommentPath) return 1;
-        return 0;
-      });
-    }
-
-    sorted.forEach(([commentId, comment]) => {
-      totalCount++;
-      if (comment.replies) {
-        totalCount += countVisibleReplies(comment.replies);
-      }
-      renderCommentModern(noteId, commentId, comment, commentsList, 0);
-    });
-
-    if (!totalCount) {
-      commentsList.innerHTML = `
-        <div class="bg-white border border-[#e8e1dc] rounded-2xl p-6 text-center text-[#7a6962]">
-          <p class="font-semibold text-[#5f4b44]">Todavía no hay comentarios</p>
-          <p class="text-sm mt-1">Sé el primero en opinar.</p>
-        </div>
-      `;
-    }
-
-    const countEl = document.getElementById('comments-count-header');
-    if (countEl) countEl.textContent = totalCount + (totalCount === 1 ? ' comentario' : ' comentarios');
-  };
-
+  // Escuchar cambios del comentario fijado
   pinnedCommentListenerRef = firebase.database().ref('communityNotes/' + noteId + '/pinnedCommentPath');
-  pinnedCommentListenerRef.on('value', snapshot => {
-    currentPinnedCommentPath = snapshot.val() || '';
-    renderCommentsSnapshot(latestCommentsSnapshot);
+  pinnedCommentListenerRef.on('value', snap => {
+    currentPinnedCommentPath = snap.val() || '';
+    if (commentsLoadedEntries.length > 0 || commentsList.innerHTML !== skeletonHTML) {
+      _renderLoadedComments(noteId);
+    }
   });
 
-  commentsListenerRef = firebase.database().ref('postComments/' + noteId);
-  commentsListenerRef.on('value', snapshot => {
-    latestCommentsSnapshot = snapshot;
-    renderCommentsSnapshot(snapshot);
+  // Cargar primer lote: los PAGE_SIZE comentarios más recientes
+  firebase.database().ref('postComments/' + noteId)
+    .orderByKey()
+    .limitToLast(COMMENTS_PAGE_SIZE + 1)
+    .once('value')
+    .then(snapshot => {
+      const allEntries = [];
+      snapshot.forEach(child => { allEntries.push([child.key, child.val()]); });
+      // allEntries está en orden ascendente de clave (más antiguo primero)
+
+      if (allEntries.length > COMMENTS_PAGE_SIZE) {
+        // Hay más comentarios más antiguos.
+        // allEntries[0] es el "desbordamiento" que confirma que existen más entradas previas.
+        // Mostramos allEntries[1..PAGE_SIZE]; el cursor queda en allEntries[1] (el más antiguo mostrado).
+        commentsHasMore = true;
+        commentsLastKey = allEntries[1][0];
+        const toShow = allEntries.slice(1);
+        commentsLoadedEntries = toShow.filter(([, c]) => !isAccountBlockedForCurrentUser(c?.authorId || ''));
+      } else {
+        commentsHasMore = false;
+        commentsLastKey = allEntries.length > 0 ? allEntries[0][0] : null;
+        commentsLoadedEntries = allEntries.filter(([, c]) => !isAccountBlockedForCurrentUser(c?.authorId || ''));
+      }
+
+      _renderLoadedComments(noteId);
+      _updateLoadMoreArea();
+    })
+    .catch(() => {
+      // Mostrar estado de error en lugar de dejar el skeleton indefinidamente
+      const commentsList = document.getElementById('comments-list-view');
+      if (commentsList) {
+        commentsList.innerHTML = `
+          <div class="bg-white border border-[#e8e1dc] rounded-2xl p-6 text-center text-[#7a6962]">
+            <p class="font-semibold text-[#5f4b44]">No se pudieron cargar los comentarios</p>
+            <p class="text-sm mt-1">Verifica tu conexión e inténtalo de nuevo.</p>
+          </div>
+        `;
+      }
+      const loadMoreArea = document.getElementById('comments-load-more-area');
+      if (loadMoreArea) loadMoreArea.classList.add('hidden');
+    });
+}
+
+// ── Renderiza todos los comentarios cargados hasta ahora ──────────────────
+function _renderLoadedComments(noteId) {
+  const commentsList = document.getElementById('comments-list-view');
+  if (!commentsList) return;
+
+  commentsList.innerHTML = '';
+  let totalCount = 0;
+
+  const entries = commentsLoadedEntries.slice(); // copia para no mutar el array fuente
+  const sorted = sortCommentEntries(entries);
+
+  // Fijar comentario anclado al tope (solo nivel raíz)
+  if (currentPinnedCommentPath && !currentPinnedCommentPath.includes('/replies/')) {
+    sorted.sort((a, b) => {
+      if (a[0] === currentPinnedCommentPath) return -1;
+      if (b[0] === currentPinnedCommentPath) return 1;
+      return 0;
+    });
+  }
+
+  sorted.forEach(([commentId, comment]) => {
+    totalCount++;
+    if (comment.replies) totalCount += countVisibleReplies(comment.replies);
+    renderCommentModern(noteId, commentId, comment, commentsList, 0);
   });
+
+  if (!totalCount && !commentsHasMore) {
+    commentsList.innerHTML = `
+      <div class="bg-white border border-[#e8e1dc] rounded-2xl p-6 text-center text-[#7a6962]">
+        <p class="font-semibold text-[#5f4b44]">Todavía no hay comentarios</p>
+        <p class="text-sm mt-1">Sé el primero en opinar.</p>
+      </div>
+    `;
+  }
+
+  const countEl = document.getElementById('comments-count-header');
+  if (countEl) {
+    const plus = commentsHasMore ? '+' : '';
+    countEl.textContent = totalCount + plus + (totalCount === 1 && !commentsHasMore ? ' comentario' : ' comentarios');
+  }
+}
+
+// ── Mostrar/ocultar y resetear el botón "Cargar más" ─────────────────────
+function _updateLoadMoreArea() {
+  const area   = document.getElementById('comments-load-more-area');
+  const btn    = document.getElementById('comments-load-more-btn');
+  const label  = document.getElementById('comments-load-more-label');
+  const spinner = document.getElementById('comments-load-more-spinner');
+  if (!area) return;
+  if (commentsHasMore) {
+    area.classList.remove('hidden');
+    if (btn)    btn.disabled = false;
+    if (label)  label.textContent = 'Cargar más comentarios';
+    if (spinner) spinner.classList.add('hidden');
+  } else {
+    area.classList.add('hidden');
+  }
+}
+
+// ── Cargar la siguiente página de comentarios ─────────────────────────────
+function loadMoreComments() {
+  if (!currentPostId || !commentsHasMore || !commentsLastKey) return;
+
+  const btn    = document.getElementById('comments-load-more-btn');
+  const label  = document.getElementById('comments-load-more-label');
+  const spinner = document.getElementById('comments-load-more-spinner');
+  if (btn)    btn.disabled = true;
+  if (label)  label.textContent = 'Cargando…';
+  if (spinner) spinner.classList.remove('hidden');
+
+  const noteId = currentPostId;
+
+  // RTDB compat no expone endBefore(); usamos endAt() (inclusivo) y
+  // excluimos la clave límite en el cliente.  Pedimos PAGE_SIZE + 2 para
+  // que, tras quitar la clave límite, queden hasta PAGE_SIZE + 1 entradas
+  // con las que detectar si todavía hay más.
+  const cursorKey = commentsLastKey;
+  firebase.database().ref('postComments/' + noteId)
+    .orderByKey()
+    .endAt(cursorKey)
+    .limitToLast(COMMENTS_PAGE_SIZE + 2)
+    .once('value')
+    .then(snapshot => {
+      // Filtrar la clave límite (ya está en pantalla) — las restantes son estrictamente más antiguas
+      const allEntries = [];
+      snapshot.forEach(child => {
+        if (child.key !== cursorKey) allEntries.push([child.key, child.val()]);
+      });
+      // allEntries en orden ascendente (más antiguo primero), máx. PAGE_SIZE + 1
+
+      let newEntries;
+      if (allEntries.length > COMMENTS_PAGE_SIZE) {
+        // allEntries[0] es el desbordamiento → hay más entradas previas
+        commentsHasMore = true;
+        commentsLastKey = allEntries[1][0]; // más antiguo que vamos a mostrar
+        newEntries = allEntries.slice(1);   // PAGE_SIZE entradas
+      } else {
+        commentsHasMore = false;
+        commentsLastKey = allEntries.length > 0 ? allEntries[0][0] : null;
+        newEntries = allEntries;
+      }
+
+      const filtered = newEntries.filter(([, c]) => !isAccountBlockedForCurrentUser(c?.authorId || ''));
+      commentsLoadedEntries = [...commentsLoadedEntries, ...filtered];
+
+      _renderLoadedComments(noteId);
+      _updateLoadMoreArea();
+    })
+    .catch(() => {
+      // Restaurar botón en caso de error de red
+      if (btn)    btn.disabled = false;
+      if (label)  label.textContent = 'Cargar más comentarios';
+      if (spinner) spinner.classList.add('hidden');
+    });
 }
 
 // Función para formatear timestamp de comentarios
@@ -11852,6 +12000,7 @@ function submitComment() {
         clearCommentInput();
         clearReplyTarget();
         refreshHistorialIfVisible();
+        loadCommentsInView(noteId);
       });
     }
 
@@ -11870,6 +12019,7 @@ function submitComment() {
       updateCommentsCount(noteId);
       clearCommentInput();
       refreshHistorialIfVisible();
+      loadCommentsInView(noteId);
     });
   }).catch(error => {
     console.error(targetReply ? 'Error al enviar respuesta:' : 'Error al comentar:', error);
