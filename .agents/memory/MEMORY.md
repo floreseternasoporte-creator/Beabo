@@ -1,1 +1,0 @@
-- [Neuro observatory telemetry](neuro-observatory.md) — keep live runtime readings explicitly labeled separately from local/demo projections.
