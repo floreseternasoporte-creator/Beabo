@@ -3423,13 +3423,6 @@ body {
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.1" d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-4v-6a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v6H4a1 1 0 0 1-1-1v-9.5Z" />
         </svg>
       </button>
-      <!-- Botón Match -->
-      <button id="nav-btn-1" data-nav-index="1" onclick="openMatchView()" class="nav-btn p-2 flex items-center justify-center text-gray-400 transition-all duration-300 active:scale-90 relative" aria-label="Match">
-        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.1" d="M12 21s-6.716-4.35-9.428-8.06C.55 10.2 1.02 6.6 3.86 5.02c2.2-1.22 4.86-.62 6.4 1.24L12 8.1l1.74-1.84c1.54-1.86 4.2-2.46 6.4-1.24 2.84 1.58 3.31 5.18 1.29 7.92C18.716 16.65 12 21 12 21Z"/>
-        </svg>
-        <span id="match-unread-badge" class="hidden absolute -top-1 -right-0.5 bg-[#1c2b4a] text-white text-[9px] font-black min-w-[1.1rem] h-[1.1rem] px-1 rounded-full flex items-center justify-center leading-none pointer-events-none">0</span>
-      </button>
       <!-- Botón Chat -->
       <button id="nav-btn-2" data-nav-index="2" onclick="openChatInboxView()" class="nav-btn p-2 flex items-center justify-center text-gray-400 transition-all duration-300 active:scale-90 relative" aria-label="Chat">
         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -6634,8 +6627,9 @@ body {
   </div>
 </div>
 
+<template id="removed-match-feature" aria-hidden="true">
 <!-- ============================= -->
-<!-- MATCH VIEW                    -->
+<!-- MATCH VIEW (deshabilitado)     -->
 <!-- ============================= -->
 <div id="match-view" class="fixed inset-0 bg-[#f0f4f9] hidden z-[70] flex flex-col overflow-hidden">
   <!-- Cabecera de descubrimiento -->
@@ -6785,6 +6779,8 @@ body {
     </div>
   </div>
 </div>
+
+</template>
 
 <div id="baro-view" class="fixed inset-0 bg-[#f0f4f9] text-[#1e252b] hidden z-[70] overflow-y-auto">
   <div class="max-w-3xl mx-auto px-4 pt-4 pb-24">
@@ -8367,8 +8363,6 @@ function saveNote() {
           <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
         </label>
       </div>
-      <div class="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#dce1e5] shadow-sm"><div class="flex items-center gap-3"><div class="w-10 h-10 bg-[#eef2f7] rounded-xl flex items-center justify-center text-[#5c6974]"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s-6.7-4.3-9.4-8C.6 10.2 1 6.6 3.9 5c2.2-1.2 4.9-.6 6.4 1.2L12 8.1l1.7-1.8c1.6-1.8 4.2-2.4 6.4-1.2 2.9 1.6 3.3 5.2 1.3 8-2.7 3.7-9.4 8-9.4 8Z"/></svg></div><div class="text-left"><p class="font-bold text-[#1c2b4a]">Mostrarme en Match</p><p class="text-sm text-[#6b7280]">Permite que tu perfil aparezca en descubrimiento.</p></div></div><label class="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-2"><input type="checkbox" id="match-discovery-toggle" class="sr-only peer" onchange="toggleMatchDiscovery(this)"><div class="w-11 h-6 bg-[#dce1e5] rounded-full peer peer-checked:bg-[#1c2b4a] transition-colors"></div><div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div></label></div>
-
       <button id="follow-requests-nav-entry" onclick="openFollowRequestsView()" class="hidden w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-[#dce1e5] shadow-sm active:scale-95 transition-all">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 bg-[#eef2f7] rounded-xl flex items-center justify-center text-[#5c6974]">
@@ -12509,20 +12503,6 @@ async function respondToFollowRequest(requesterUid, accept) {
   }
   if (typeof updateFollowRequestsCountLabel === 'function') updateFollowRequestsCountLabel();
   showMiniToast(accept ? 'Solicitud aceptada' : 'Solicitud rechazada');
-}
-
-async function toggleMatchDiscovery(checkboxEl) {
-  const user = firebase.auth().currentUser;
-  if (!user) return;
-  const enabled = Boolean(checkboxEl?.checked);
-  try {
-    await firebase.database().ref('users/' + user.uid + '/matchDiscoveryEnabled').set(enabled);
-    if (typeof recordSecurityEvent === 'function') await recordSecurityEvent('Visibilidad de Match', enabled ? 'Tu perfil volvió a aparecer en Match.' : 'Tu perfil dejó de aparecer en Match.');
-    showMiniToast(enabled ? 'Tu perfil puede aparecer en Match' : 'Tu perfil ya no aparecerá en Match');
-  } catch (_) {
-    if (checkboxEl) checkboxEl.checked = !enabled;
-    alert('No se pudo actualizar la visibilidad en Match.');
-  }
 }
 
 async function toggleAccountPrivacy(checkboxEl) {
@@ -18906,6 +18886,12 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
 
   function closeAllSettingsSubViews() {
     [
+      'security-center-view',
+      'screentime-view',
+      'notification-settings-view',
+      'theme-config-view',
+      'cache-config-view',
+      'data-usage-config-view',
       'account-config-view',
       'profile-config-view',
       'name-config-view',
@@ -18920,10 +18906,18 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
       'cache-config-view',
       'data-usage-config-view',
       'privacy-config-view',
+      'follow-requests-view',
+      'phone-config-view',
+      'direct-messages-config-view',
       'blocked-accounts-view',
+      'deactivate-delete-account-view',
+      'deactivate-confirmation-view',
+      'delete-reason-view',
+      'delete-confirmation-view',
       'update-photo-view',
       'chat-privacy-settings-view',
-      'app-language-settings-view'
+      'app-language-settings-view',
+      'translations-config-view'
     ].forEach(id => {
       const el = document.getElementById(id);
       if (el) {
@@ -19610,8 +19604,6 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
       firebase.database().ref('users/' + user.uid).once('value').then(snap => {
         const data = snap.val() || {};
         toggle.checked = Boolean(data.isPrivate);
-        const matchDiscoveryToggle = document.getElementById('match-discovery-toggle');
-        if (matchDiscoveryToggle) matchDiscoveryToggle.checked = data.matchDiscoveryEnabled !== false;
         const isMinorRestricted = data.accountTier === 'minor_restricted';
         const isParentForced = Boolean(data.parentalControls && data.parentalControls.forcePrivate);
         toggle.disabled = isMinorRestricted || isParentForced;
@@ -20916,6 +20908,8 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
   /* ===============  MATCH (estilo Tinder)  ================ */
   /* ======================================================= */
 
+  // La funcionalidad Match fue retirada de la plataforma.
+  if (false) {
   const MATCH_CARD_STACK_SIZE = 3; // cuántas tarjetas se ven apiladas a la vez
   let matchDeck = [];              // cola de perfiles pendientes por mostrar
   let matchDeckIndex = 0;
@@ -21695,6 +21689,7 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
   }
 
   // Nota: escapeHtml ya está definido más abajo en el archivo (usa escapeHTML internamente)
+  }
 
 let activeCommunityId = null;
 let communitiesCache = [];
