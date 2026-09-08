@@ -1746,32 +1746,63 @@ body {
     .post-instagram-card .feed-post-media + .feed-post-media {
       margin-top: 0 !important;
     }
-    /* Carrusel multimedia del feed: dos fotos visibles como en la referencia,
-       con desplazamiento horizontal para el resto de la publicación. */
+    /* Carrusel multimedia del feed estilo Threads: compacto, uniforme y bien
+       estructurado. Todas las diapositivas comparten el mismo tamano fijo
+       (aspect-ratio 4/5 + cover) para que no se distorsionen, con bordes
+       redondeados, altura contenida y contador "1 / N". */
+    .post-instagram-card .feed-carousel-wrap {
+      margin: 0 16px 12px !important;
+      border-radius: 14px;
+    }
+    .post-instagram-card .feed-post-media--single {
+      margin: 0 16px 12px !important;
+    }
     .post-instagram-card .feed-post-carousel {
       display: flex !important;
       overflow-x: auto !important;
       scroll-snap-type: x mandatory;
       gap: 0 !important;
+      margin: 0 !important;
       padding: 0 !important;
+      border-radius: 14px !important;
       scrollbar-width: none;
     }
     .post-instagram-card .feed-post-carousel::-webkit-scrollbar { display: none; }
     .post-instagram-card .feed-post-carousel .feed-post-carousel-slide {
       width: 100% !important;
       min-width: 100% !important;
-      height: auto !important;
-      max-height: 80vh;
+      aspect-ratio: 4 / 5;
+      max-height: 480px;
       overflow: hidden;
-      border-radius: 0;
+      border-radius: 14px !important;
       background: #eef2f7;
+      flex-shrink: 0;
+      scroll-snap-align: center;
     }
     .post-instagram-card .feed-post-carousel .feed-post-carousel-slide img {
       width: 100% !important;
-      height: auto !important;
-      max-height: 80vh;
-      object-fit: contain;
-      border-radius: 0 !important;
+      height: 100% !important;
+      max-height: none !important;
+      object-fit: cover;
+      border-radius: 14px !important;
+      display: block;
+    }
+    .post-instagram-card .feed-carousel-count {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,.55);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      padding: 6px 10px;
+      border-radius: 999px;
+      pointer-events: none;
+      z-index: 2;
+    }
+    body.theme-dark .post-instagram-card .feed-post-carousel .feed-post-carousel-slide {
+      background: #141a26;
     }
     /* El asistente antiguo no forma parte de la experiencia actual. */
     #baro-assist-overlay,
@@ -10597,16 +10628,40 @@ function onNoteFormatChange(format) {
     };
 
     if (images.length === 1) {
-      return `<div class="feed-post-media mb-3">${renderImageContainer(images[0], 0, 1)}</div>`;
+      const singleExtra = isCarrete ? '' : ' feed-post-media--single';
+      return `<div class="feed-post-media${singleExtra} mb-3">${renderImageContainer(images[0], 0, 1)}</div>`;
     }
 
     const slides = images.map((img, index) => renderImageContainer(img, index, images.length)).join('');
 
     return `
-      <div class="feed-post-carousel feed-post-media mb-3 overflow-x-auto flex snap-x snap-mandatory gap-2 pb-1">
-        ${slides}
+      <div class="feed-carousel-wrap relative mb-3" data-feed-carousel-wrap>
+        <div class="feed-post-carousel feed-post-media overflow-x-auto flex snap-x snap-mandatory" data-feed-carousel>
+          ${slides}
+        </div>
+        <span class="feed-carousel-count" data-feed-carousel-count>1 / ${images.length}</span>
       </div>
     `;
+  }
+
+  // Contador "1 / N" del carrusel del feed: un solo listener delegado con
+  // capture (los eventos scroll no burbujean). Cada diapositiva mide el 100%
+  // del carrusel, asi el indice es scrollLeft / ancho de diapositiva.
+  if (!window.__beaboFeedCarouselCount) {
+    window.__beaboFeedCarouselCount = true;
+    document.addEventListener('scroll', (e) => {
+      const car = e.target && e.target.closest ? e.target.closest('[data-feed-carousel]') : null;
+      if (!car) return;
+      const slide = car.querySelector('.feed-post-carousel-slide');
+      const w = slide ? slide.getBoundingClientRect().width : 0;
+      if (!w) return;
+      const total = car.querySelectorAll('.feed-post-carousel-slide').length;
+      if (!total) return;
+      const idx = Math.max(0, Math.min(total - 1, Math.round(car.scrollLeft / w)));
+      const wrap = car.closest('[data-feed-carousel-wrap]');
+      const badge = wrap ? wrap.querySelector('[data-feed-carousel-count]') : null;
+      if (badge) badge.textContent = (idx + 1) + ' / ' + total;
+    }, true);
   }
 
   // ======= VIDEO EMBEBIDO EN EL FEED (posts de tipo video, estilo Instagram) =======
