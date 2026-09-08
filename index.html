@@ -4489,7 +4489,6 @@ body {
           </button>
         </div>
         <div class="flex items-center gap-1 shrink-0">
-          <button type="button" onclick="toggleChatMuted()" id="chat-mute-btn" class="msg-head-btn" aria-label="Silenciar chat" title="Silenciar chat"><svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg></button>
           <button type="button" onclick="openChatRoomInfo()" class="msg-head-btn" aria-label="Info del chat" title="Info del chat"><svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 11v5"/><circle cx="12" cy="8" r="1.1" fill="currentColor" stroke="none"/></svg></button>
         </div>
 
@@ -22061,13 +22060,6 @@ let chatTypingListener = null;
     try { const draft = localStorage.getItem(key) || ''; input.value = draft; updateChatToolbarMode(); } catch (e) {}
   }
   function clearChatDraft() { const key = getChatDraftKey(); if (key) { try { localStorage.removeItem(key); } catch (e) {} } }
-  function toggleChatMuted() {
-    if (!currentChatRoomId) return; const key = 'drex_chat_muted_' + currentChatRoomId; let muted = false;
-    try { muted = localStorage.getItem(key) === '1'; muted = !muted; muted ? localStorage.setItem(key, '1') : localStorage.removeItem(key); } catch (e) {}
-    const btn = document.getElementById('chat-mute-btn'); btn?.classList.toggle('active', muted); btn?.setAttribute('aria-label', muted ? 'Activar notificaciones del chat' : 'Silenciar chat');
-    if (typeof showMiniToast === 'function') showMiniToast(muted ? 'Chat silenciado en este dispositivo' : 'Notificaciones activadas');
-  }
-  function syncChatMutedButton() { const btn = document.getElementById('chat-mute-btn'); if (!btn || !currentChatRoomId) return; let muted = false; try { muted = localStorage.getItem('drex_chat_muted_' + currentChatRoomId) === '1'; } catch (e) {} btn.classList.toggle('active', muted); btn.setAttribute('aria-label', muted ? 'Activar notificaciones del chat' : 'Silenciar chat'); }
   function openChatSearchFromInfo() {
     closeChatRoomInfo();
     const panel = document.getElementById('chat-message-search-panel');
@@ -23170,7 +23162,6 @@ let chatTypingListener = null;
     currentChatRoomId = getDirectConversationId(user.uid, otherUid);
     currentChatRecipient = otherUid;
     restoreChatDraft();
-    syncChatMutedButton();
     clearChatPhotoAttachment();
     markChatConversationRead(currentChatRoomId);
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
@@ -23208,7 +23199,6 @@ let chatTypingListener = null;
     currentChatRoomId = groupId;
     currentChatRecipient = null;
     restoreChatDraft();
-    syncChatMutedButton();
     currentGroupMembers = [];
     currentGroupCreatedBy = null;
     currentGroupAdmins = [];
@@ -23867,6 +23857,10 @@ const _startChatListeners = () => {
         if (dmPermission === 'friends' && !areFriends) { alert('Solo los amigos pueden escribir a esta persona.'); return; }
         sendChatMessageInternal();
       });
+    }).catch(() => {
+      // Si no se pudo verificar el permiso (red), intentar enviar de todos modos;
+      // las reglas de Firebase son las que realmente autorizan la escritura.
+      sendChatMessageInternal();
     });
   }
 
@@ -23913,7 +23907,7 @@ const _startChatListeners = () => {
       timestamp: sentAt,
     };
     if (!payload.images) delete payload.images;
-    if (chatReplyContext) payload.replyTo = chatReplyContext;
+    if (replyCtx) payload.replyTo = replyCtx;
     if (typeof chatViewOnceActive !== 'undefined' && chatViewOnceActive) {
       payload.viewOnce = true;
       toggleChatViewOnce();
@@ -23972,6 +23966,7 @@ const _startChatListeners = () => {
       container.scrollTop = container.scrollHeight;
     }
 
+    const replyCtx = chatReplyContext;
     clearChatReply();
     const recipientId = currentChatRecipient;
     const conversationId = currentChatRoomId;
@@ -24024,14 +24019,22 @@ const _startChatListeners = () => {
           }
         })();
       }
-      return updateChatConversationPreview(lastMessage, payload, {
+      updateChatConversationPreview(lastMessage, payload, {
         conversationId,
         recipientId,
         isGroup,
         groupMembers
-      });
-    }).catch(() => {
-      alert('No se pudo enviar el mensaje. Inténtalo de nuevo.');
+      }).catch(() => {});
+    }).catch((err) => {
+      console.error('Error al enviar mensaje:', err);
+      // Quitar la burbuja optimista atascada y devolver el texto al campo para no perderlo
+      document.getElementById(tempMsgId)?.remove();
+      const inputEl = document.getElementById('chat-room-input');
+      if (inputEl && !inputEl.value && text) { inputEl.value = text; updateChatToolbarMode(); }
+      const code = err && err.code;
+      alert(code === 'PERMISSION_DENIED'
+        ? 'No tienes permiso para enviar mensajes en este chat.'
+        : 'No se pudo enviar el mensaje. Inténtalo de nuevo.');
     });
   }
 
