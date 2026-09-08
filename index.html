@@ -1804,6 +1804,18 @@ body {
     body.theme-dark .post-instagram-card .feed-post-carousel .feed-post-carousel-slide {
       background: #141a26;
     }
+    /* Video embebido del feed: mismo marco compacto y redondeado que las fotos */
+    .post-instagram-card .feed-post-video {
+      margin: 0 16px 12px !important;
+      border-radius: 14px !important;
+      background: #000 !important;
+    }
+    .post-instagram-card .feed-post-video video {
+      border-radius: 14px !important;
+    }
+    /* El chrome del visor no debe bloquear los gestos sobre la foto */
+    #image-modal-topbar, #image-modal-dots { pointer-events: none; }
+    #image-modal-topbar button { pointer-events: auto; }
     /* El asistente antiguo no forma parte de la experiencia actual. */
     #baro-assist-overlay,
     #baro-assist-sheet,
@@ -6262,26 +6274,28 @@ button[id^="comment-upvote-"]:active {
   </div>
 </div>
 
-<!-- MODAL DE IMAGEN EXPANDIDA -->
-<div id="image-modal" class="fixed inset-0 bg-black hidden z-[91]">
-  <div class="h-full flex flex-col">
-    <!-- Botón cerrar arriba -->
-    <div class="p-4 flex justify-end flex-shrink-0">
-      <button onclick="closeImageModal()" class="text-white hover:text-gray-300 transition-colors">
-        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
+<!-- MODAL DE IMAGEN EXPANDIDA (estilo Threads: negro puro, chrome mínimo, swipe + pinch) -->
+<div id="image-modal" class="fixed inset-0 bg-black hidden z-[91]" style="touch-action:none">
+  <!-- Barra superior: cerrar + contador -->
+  <div id="image-modal-topbar" class="absolute top-0 left-0 right-0 z-20 transition-opacity duration-200">
+    <div class="flex items-center justify-between px-4 pt-12 pb-6" style="background:linear-gradient(to bottom, rgba(0,0,0,.55), rgba(0,0,0,0))">
+      <button onclick="closeImageModal()" aria-label="Cerrar" class="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white active:scale-95 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round"/></svg>
       </button>
+      <span id="image-modal-count" class="text-white text-sm font-bold bg-white/10 rounded-full px-3 py-1.5">1 / 1</span>
+      <span class="w-10 shrink-0"></span>
     </div>
-
-    <!-- Imagen centrada -->
-    <div class="flex-1 flex items-center justify-center p-4" onclick="closeImageModal()">
-      <img id="modal-image" src="" class="max-w-full max-h-full object-contain" onclick="event.stopPropagation()">
-    </div>
-
-    <!-- Controles abajo -->
-    <div id="modal-controls" class="bg-black bg-opacity-70 p-6 flex-shrink-0"></div>
   </div>
+
+  <!-- Escenario: swipe horizontal, pinch-to-zoom, doble tap, deslizar abajo para cerrar -->
+  <div id="image-modal-stage" class="absolute inset-0 overflow-hidden">
+    <div class="w-full h-full flex items-center justify-center">
+      <img id="modal-image" src="" alt="Foto" draggable="false" class="max-w-full max-h-full object-contain select-none" style="touch-action:none">
+    </div>
+  </div>
+
+  <!-- Puntos de página -->
+  <div id="image-modal-dots" class="absolute bottom-10 left-0 right-0 z-20 flex justify-center gap-1.5 pointer-events-none transition-opacity duration-200"></div>
 </div>
 
 <!-- Vista de Búsqueda - Estilo rediseñado y organizado -->
@@ -10673,9 +10687,9 @@ function onNoteFormatChange(format) {
     if (!note || !note.videoUrl) return '';
     const videoId = 'feedvid_' + Math.random().toString(36).slice(2, 9);
     return `
-      <div class="feed-post-media mb-3 relative overflow-hidden bg-black" style="max-height:80vh;">
-        <video id="${videoId}" class="feed-inline-video w-full h-auto max-h-[80vh] object-contain" src="${note.videoUrl}" playsinline loop muted preload="auto" webkit-playsinline style="display:block;"></video>
-        <div class="video-center-play" data-center-play>
+      <div class="feed-post-media feed-post-video mb-3 relative overflow-hidden bg-black" style="max-height:480px;">
+        <video id="${videoId}" class="feed-inline-video w-full h-auto object-contain" src="${escapeHtml(note.videoUrl)}" playsinline webkit-playsinline loop muted preload="metadata" style="display:block;max-height:480px;background:#000;"></video>
+        <div class="video-center-play show" data-center-play>
           <svg class="h-8 w-8" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
         </div>
         <button class="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-black/45 backdrop-blur flex items-center justify-center text-white" data-feed-video-mute aria-label="Silenciar">
@@ -10698,61 +10712,87 @@ function onNoteFormatChange(format) {
     });
   }
 
-  // Enlaza tap-to-pause + autoplay al entrar en pantalla para un video embebido del feed - ESTILO INSTAGRAM
+  // Reproductor embebido del feed: tap para pausar/reanudar + autoplay al
+  // entrar en pantalla. Versión robusta:
+  // - `muted` se fija como PROPIEDAD antes de cualquier play() (requisito iOS)
+  // - si el medio aún no está listo, se espera a 'canplay' en vez de fallar
+  // - manejo correcto de la promesa de play() y mensaje visible si el video no carga
   function initFeedInlineVideo(videoElId) {
     const videoEl = document.getElementById(videoElId);
     if (!videoEl || videoEl.dataset.feedBound) return;
     videoEl.dataset.feedBound = '1';
+
+    videoEl.muted = (typeof videosGlobalMuted !== 'undefined') ? videosGlobalMuted : true;
     videoEl.playsInline = true;
+    videoEl.setAttribute('playsinline', '');
     videoEl.setAttribute('webkit-playsinline', 'true');
-    // Usar preferencia global de mute (Instagram recuerda si desmuteaste)
-    if (typeof videosGlobalMuted !== 'undefined') {
-      videoEl.muted = videosGlobalMuted;
-    } else {
-      videoEl.muted = true;
-    }
 
     const wrap = videoEl.closest('.feed-post-media') || videoEl.parentElement;
-    const centerPlay = wrap?.querySelector('[data-center-play]');
-    const muteBtn = wrap?.querySelector('[data-feed-video-mute]');
-    const muteIcon = muteBtn?.querySelector('.feed-video-mute-icon');
+    const centerPlay = wrap ? wrap.querySelector('[data-center-play]') : null;
+    const muteBtn = wrap ? wrap.querySelector('[data-feed-video-mute]') : null;
+    const muteIcon = muteBtn ? muteBtn.querySelector('.feed-video-mute-icon') : null;
 
-    // Inicializar icono
-    if (typeof updateVideoMuteIcon === 'function' && muteIcon) {
-      updateVideoMuteIcon(videoEl, muteIcon);
-    }
+    const syncIcon = () => {
+      if (typeof updateVideoMuteIcon === 'function' && muteIcon) updateVideoMuteIcon(videoEl, muteIcon);
+      else if (muteIcon) muteIcon.style.opacity = videoEl.muted ? '0.5' : '1';
+    };
+    const showCenter = (show) => { if (centerPlay) centerPlay.classList.toggle('show', !!show); };
+    syncIcon();
 
-    videoEl.addEventListener('click', () => {
-      if (videoEl.paused) {
+    let playQueued = false;
+    const tryPlay = () => {
+      if (!videoEl.isConnected) return;
+      if (!videoEl.paused) { playQueued = false; showCenter(false); return; }
+      if (videoEl.readyState >= 2) {
         const p = videoEl.play();
-        if (p && p.catch) {
-          p.then(()=> centerPlay?.classList.remove('show')).catch(()=>{
+        if (p && typeof p.catch === 'function') {
+          p.then(() => { playQueued = false; showCenter(false); }).catch(() => {
+            // La política de autoplay exige silencio: forzar mute y reintentar una vez
             videoEl.muted = true;
             if (typeof videosGlobalMuted !== 'undefined') videosGlobalMuted = true;
-            videoEl.play().catch(()=>{}).then && centerPlay?.classList.remove('show');
-            if (typeof updateVideoMuteIcon === 'function' && muteIcon) updateVideoMuteIcon(videoEl, muteIcon);
+            syncIcon();
+            const p2 = videoEl.play();
+            if (p2 && typeof p2.catch === 'function') {
+              p2.then(() => { playQueued = false; showCenter(false); })
+                .catch(() => { playQueued = false; showCenter(true); });
+            } else { playQueued = false; showCenter(false); }
           });
-        } else {
-          centerPlay?.classList.remove('show');
-        }
-      } else {
-        videoEl.pause();
-        centerPlay?.classList.add('show');
+        } else { playQueued = false; showCenter(false); }
+      } else if (!playQueued) {
+        playQueued = true;
+        showCenter(true);
+        videoEl.addEventListener('canplay', function onCanPlay() {
+          videoEl.removeEventListener('canplay', onCanPlay);
+          if (playQueued) tryPlay();
+        });
+        try { videoEl.load(); } catch (_) {}
       }
+    };
+    const onHidden = () => { playQueued = false; showCenter(false); };
+    videoEl._feedVideoCtl = { tryPlay, showCenter, onHidden };
+
+    videoEl.addEventListener('click', () => {
+      if (videoEl.paused) { tryPlay(); }
+      else { playQueued = false; videoEl.pause(); showCenter(true); }
     });
 
-    muteBtn?.addEventListener('click', (e) => {
+    if (muteBtn) muteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       videoEl.muted = !videoEl.muted;
       if (typeof videosGlobalMuted !== 'undefined') videosGlobalMuted = videoEl.muted;
-      if (typeof updateVideoMuteIcon === 'function' && muteIcon) {
-        updateVideoMuteIcon(videoEl, muteIcon);
-      } else {
-        const icon = muteBtn.querySelector('.feed-video-mute-icon');
-        if (icon) icon.style.opacity = videoEl.muted ? '0.5' : '1';
-      }
-      if (!videoEl.muted && videoEl.paused) {
-        videoEl.play().catch(()=>{}).then && centerPlay?.classList.remove('show');
+      syncIcon();
+      if (!videoEl.muted && videoEl.paused) tryPlay();
+    });
+
+    videoEl.addEventListener('error', () => {
+      playQueued = false;
+      showCenter(false);
+      if (wrap && !wrap.querySelector('[data-video-error]')) {
+        const err = document.createElement('div');
+        err.setAttribute('data-video-error', '1');
+        err.className = 'absolute inset-0 flex items-center justify-center text-white/70 text-xs font-semibold px-6 text-center';
+        err.textContent = 'No se pudo cargar el video';
+        wrap.appendChild(err);
       }
     });
 
@@ -10760,29 +10800,18 @@ function onNoteFormatChange(format) {
       window._feedInlineVideoObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
           const v = entry.target;
-          const w = v.closest('div');
-          const cp = w?.querySelector('[data-center-play]');
-          const mb = w?.querySelector('[data-feed-video-mute]');
-          const mi = mb?.querySelector('.feed-video-mute-icon');
-          // Respetar mute global
+          if (!(v instanceof HTMLVideoElement)) return;
+          const ctl = v._feedVideoCtl;
           if (typeof videosGlobalMuted !== 'undefined') v.muted = videosGlobalMuted;
+          const w = v.closest('.feed-post-media');
+          const mi = w ? w.querySelector('[data-feed-video-mute] .feed-video-mute-icon') : null;
           if (typeof updateVideoMuteIcon === 'function' && mi) updateVideoMuteIcon(v, mi);
-          
-          if (entry.isIntersecting && entry.intersectionRatio > 0.35) {
-            const pp = v.play();
-            if (pp && pp.catch) {
-              pp.then(()=> cp?.classList.remove('show')).catch(()=>{
-                v.muted = true;
-                if (typeof videosGlobalMuted !== 'undefined') videosGlobalMuted = true;
-                v.play().catch(()=>{}).then && cp?.classList.remove('show');
-                if (typeof updateVideoMuteIcon === 'function' && mi) updateVideoMuteIcon(v, mi);
-              });
-            } else {
-              cp?.classList.remove('show');
-            }
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.35) {
+            if (ctl) ctl.tryPlay();
+            else { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
           } else {
+            if (ctl) ctl.onHidden();
             v.pause();
-            cp?.classList.remove('show');
           }
         });
       }, { threshold: [0, 0.35, 0.6, 1] });
@@ -10790,12 +10819,13 @@ function onNoteFormatChange(format) {
     window._feedInlineVideoObserver.observe(videoEl);
   }
 
-  // ======= VISOR DE IMAGEN A PANTALLA COMPLETA (FEED) =======
-  // El modal "image-modal" ya existía en el HTML (con su botón cerrar y
-  // closeImageModal ya definido más abajo), pero nunca tuvo la función
-  // "openImageModal" que lo abriera: tocar una foto del feed no hacía nada.
+  // ======= VISOR DE IMAGEN A PANTALLA COMPLETA (FEED, estilo Threads) =======
+  // Negro puro, chrome mínimo (X + contador + puntos), swipe horizontal entre
+  // fotos, pinch-to-zoom / doble tap, tap para mostrar-ocultar el chrome,
+  // deslizar hacia abajo para cerrar y flechas/Esc en escritorio.
   let _feedImageModalPhotos = [];
   let _feedImageModalIndex = 0;
+  let _feedImageModalZoom = 1;
 
   function openImageModal(imageUrl, noteId) {
     // Si el post tiene varias imágenes, permitimos navegar entre todas.
@@ -10803,44 +10833,133 @@ function onNoteFormatChange(format) {
     const allImgs = postEl ? Array.from(postEl.querySelectorAll('img[alt^="Imagen "]')).map(img => img.getAttribute('src')) : [];
     _feedImageModalPhotos = allImgs.length ? allImgs : [imageUrl];
     _feedImageModalIndex = Math.max(0, _feedImageModalPhotos.indexOf(imageUrl));
-
+    _feedImageModalZoom = 1;
     const modal = document.getElementById('image-modal');
     if (!modal) return;
     modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
     _renderFeedImageModal();
+    _bindFeedImageModalGestures();
   }
 
-  function _prevFeedImageModalPhoto() {
-    if (_feedImageModalIndex > 0) { _feedImageModalIndex--; _renderFeedImageModal(); }
-  }
-
-  function _nextFeedImageModalPhoto() {
-    if (_feedImageModalIndex < _feedImageModalPhotos.length - 1) { _feedImageModalIndex++; _renderFeedImageModal(); }
+  function _feedImageModalNav(dir) {
+    const n = _feedImageModalIndex + dir;
+    if (n < 0 || n >= _feedImageModalPhotos.length) return;
+    _feedImageModalIndex = n;
+    _feedImageModalZoom = 1;
+    _renderFeedImageModal();
   }
 
   function _renderFeedImageModal() {
     const img = document.getElementById('modal-image');
-    const controls = document.getElementById('modal-controls');
-    if (img) { img.style.display = ''; img.src = _feedImageModalPhotos[_feedImageModalIndex] || ''; }
-    if (controls) {
-      if (_feedImageModalPhotos.length > 1) {
-        controls.innerHTML = `
-          <div class="flex items-center justify-between max-w-md mx-auto">
-            <button onclick="event.stopPropagation();_prevFeedImageModalPhoto()" class="w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center disabled:opacity-30" ${_feedImageModalIndex === 0 ? 'disabled' : ''} aria-label="Anterior">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <span class="text-white text-sm font-bold">${_feedImageModalIndex + 1} / ${_feedImageModalPhotos.length}</span>
-            <button onclick="event.stopPropagation();_nextFeedImageModalPhoto()" class="w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center disabled:opacity-30" ${_feedImageModalIndex === _feedImageModalPhotos.length - 1 ? 'disabled' : ''} aria-label="Siguiente">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </div>`;
-      } else {
-        controls.innerHTML = '';
-      }
+    const count = document.getElementById('image-modal-count');
+    const dots = document.getElementById('image-modal-dots');
+    if (img) { img.style.transform = ''; img.src = _feedImageModalPhotos[_feedImageModalIndex] || ''; }
+    const total = _feedImageModalPhotos.length;
+    if (count) {
+      count.textContent = (_feedImageModalIndex + 1) + ' / ' + total;
+      count.style.display = total > 1 ? '' : 'none';
     }
+    if (dots) {
+      dots.innerHTML = total > 1
+        ? _feedImageModalPhotos.map((_, i) => `<span class="w-1.5 h-1.5 rounded-full ${i === _feedImageModalIndex ? 'bg-white' : 'bg-white/40'}"></span>`).join('')
+        : '';
+    }
+    _setFeedImageModalChrome(true);
   }
 
+  function _setFeedImageModalChrome(visible) {
+    ['image-modal-topbar', 'image-modal-dots'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.opacity = visible ? '1' : '0';
+    });
+  }
+
+  function _toggleFeedImageModalChrome() {
+    const bar = document.getElementById('image-modal-topbar');
+    _setFeedImageModalChrome(!bar || bar.style.opacity === '0');
+  }
+
+  function _bindFeedImageModalGestures() {
+    const stage = document.getElementById('image-modal-stage');
+    const img = document.getElementById('modal-image');
+    if (!stage || !img || stage.dataset.gesturesBound) return;
+    stage.dataset.gesturesBound = '1';
+
+    const pointers = new Map();
+    let mode = null; // 'touch' | 'pinch'
+    let startX = 0, startY = 0, moved = false;
+    let pinchStart = 0, zoomStart = 1;
+    let lastTap = 0;
+
+    const applyZoom = () => { img.style.transform = _feedImageModalZoom > 1 ? `scale(${_feedImageModalZoom})` : ''; };
+
+    stage.addEventListener('pointerdown', (e) => {
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 1) { mode = 'touch'; startX = e.clientX; startY = e.clientY; moved = false; }
+      else if (pointers.size === 2) {
+        mode = 'pinch'; moved = true;
+        const p = [...pointers.values()];
+        pinchStart = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+        zoomStart = _feedImageModalZoom;
+      }
+      try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    stage.addEventListener('pointermove', (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (mode === 'pinch' && pointers.size >= 2) {
+        const p = [...pointers.values()];
+        const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+        _feedImageModalZoom = Math.max(1, Math.min(4, zoomStart * d / pinchStart));
+        applyZoom();
+      } else if (mode === 'touch') {
+        if (Math.abs(e.clientX - startX) > 12 || Math.abs(e.clientY - startY) > 12) moved = true;
+      }
+    });
+
+    const onUp = (e) => {
+      const wasMode = mode, sx = startX, sy = startY, wasMoved = moved;
+      pointers.delete(e.pointerId);
+      if (pointers.size === 0) {
+        if (wasMode === 'touch' && !wasMoved) {
+          const now = Date.now();
+          if (now - lastTap < 300) {
+            // Doble tap: alterna zoom 2x y revierte el toggle de chrome del primer tap
+            _feedImageModalZoom = _feedImageModalZoom > 1 ? 1 : 2;
+            applyZoom();
+            _toggleFeedImageModalChrome();
+            lastTap = 0;
+          } else {
+            lastTap = now;
+            _toggleFeedImageModalChrome();
+          }
+        } else if (wasMode === 'touch' && wasMoved && _feedImageModalZoom === 1) {
+          const dx = e.clientX - sx, dy = e.clientY - sy;
+          if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+            _feedImageModalNav(dx < 0 ? 1 : -1);
+          } else if (dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.4) {
+            closeImageModal();
+          }
+        }
+        mode = null;
+      } else if (pointers.size === 1) {
+        const p = [...pointers.values()][0];
+        mode = 'touch'; startX = p.x; startY = p.y; moved = true;
+      }
+    };
+    stage.addEventListener('pointerup', onUp);
+    stage.addEventListener('pointercancel', onUp);
+
+    document.addEventListener('keydown', (e) => {
+      const modal = document.getElementById('image-modal');
+      if (!modal || modal.classList.contains('hidden')) return;
+      if (e.key === 'Escape') closeImageModal();
+      else if (e.key === 'ArrowRight') _feedImageModalNav(1);
+      else if (e.key === 'ArrowLeft') _feedImageModalNav(-1);
+    });
+  }
 
   const POST_TYPE_STYLES = {
     debate:   { label: 'Debate',   bg: '#fff4e6', color: '#b45309', border: '#fcd34d' },
@@ -11426,6 +11545,9 @@ function onNoteFormatChange(format) {
 // Cerrar modal de imagen
 function closeImageModal() {
   document.getElementById('image-modal')?.classList.add('hidden');
+  const _mi = document.getElementById('modal-image');
+  if (_mi) { _mi.style.transform = ''; _mi.src = ''; }
+  try { _feedImageModalZoom = 1; } catch (_) {}
   document.body.style.overflow = '';
 }
 
@@ -33956,6 +34078,7 @@ function initSleepModeView() {
         if (repostBtn && hasReposted) repostBtn.classList.add('active');
       }).catch(() => {});
       if (typeof hydrateSaveButtons === 'function') hydrateSaveButtons(body);
+      if (typeof hydrateFeedInlineVideos === 'function') hydrateFeedInlineVideos(body);
     }
   }
 
@@ -33967,6 +34090,12 @@ function initSleepModeView() {
 
     _currentPermalinkNoteId = null;
     view.classList.add('hidden');
+    if (window._feedInlineVideoObserver) {
+      view.querySelectorAll('video.feed-inline-video').forEach(v => {
+        window._feedInlineVideoObserver.unobserve(v);
+        v.pause();
+      });
+    }
     document.getElementById('main-app')?.classList.remove('hidden');
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
     if (!options.skipHistory && location.hash.startsWith('#post-')) {
