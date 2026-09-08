@@ -18326,6 +18326,13 @@ function deleteComment(noteId, commentPath) {
       clearNotificationsBadge();
       clearChatUnreadBadge();
       hideSplashScreen();
+      // switchToAccount() prepara el formulario inmediatamente después de
+      // signOut(). No debemos devolverlo al menú general de login durante
+      // esa transición.
+      if (preserveAccountSwitchAuthStep) {
+        preserveAccountSwitchAuthStep = false;
+        return;
+      }
       authFormContainer.classList.remove('hidden');
       mainApp.classList.add('hidden');
       window._drexUserName = null;
@@ -18458,6 +18465,10 @@ function deleteComment(noteId, commentPath) {
 
   /*********************** SELECTOR DE CUENTAS (estilo Instagram) **************************/
   const REMEMBERED_ACCOUNTS_KEY = 'drex_remembered_accounts';
+  // Evita que el observador de Firebase reemplace el paso de contraseña
+  // mientras se prepara un cambio de cuenta.
+  let preserveAccountSwitchAuthStep = false;
+  let accountSwitchInProgress = false;
 
   function getRememberedAccounts() {
     try {
@@ -18563,7 +18574,15 @@ function deleteComment(noteId, commentPath) {
   // en la pantalla de contraseña para que el usuario solo tenga que escribirla.
   function switchToAccount(uid) {
     const account = getRememberedAccounts().find(a => a.uid === uid);
-    if (!account) return;
+    if (!account || accountSwitchInProgress) return;
+    if (firebase.auth().currentUser?.uid === account.uid) {
+      closeAccountSwitcher();
+      return;
+    }
+
+    accountSwitchInProgress = true;
+    preserveAccountSwitchAuthStep = true;
+    closeAccountSwitcher();
     const spinner = document.getElementById('signout-spinner');
     if (spinner) spinner.style.display = 'flex';
     firebase.auth().signOut().then(() => {
@@ -18604,12 +18623,16 @@ function deleteComment(noteId, commentPath) {
         showAuthSection(document.getElementById('password-step'));
         const pwdInput = document.getElementById('passwordInput');
         if (pwdInput) { pwdInput.value = ''; pwdInput.focus(); }
+        accountSwitchInProgress = false;
       } catch (e) {
         console.error('Error al precargar cuenta para cambio rápido:', e);
         showAuthSection(document.getElementById('login-options'));
+        accountSwitchInProgress = false;
       }
     }).catch(error => {
       if (spinner) spinner.style.display = 'none';
+      preserveAccountSwitchAuthStep = false;
+      accountSwitchInProgress = false;
       console.error('Error al cambiar de cuenta:', error);
       alert('No se pudo cambiar de cuenta. Inténtalo de nuevo.');
     });
