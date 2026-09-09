@@ -7678,26 +7678,40 @@ function saveNote() {
     </div>
   </div>
 
-  <div id="cache-config-view" class="fixed inset-0 bg-[#f0f4f9] z-[120] hidden flex flex-col">
-    <div class="flex items-center justify-between p-4 border-b border-[#dce1e5] bg-white">
-      <button onclick="closeCacheConfigView()" class="text-[#5c6974] p-1">
+  <div id="cache-config-view" class="fixed inset-0 bg-[#f0f4f9] z-[120] hidden flex-col">
+    <div class="flex items-center gap-2 px-3 py-3 border-b border-[#dce1e5] bg-white shrink-0">
+      <button onclick="closeCacheConfigView()" class="text-[#5c6974] p-1 active:scale-90 transition-transform" aria-label="Volver">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <h2 class="text-xl font-black text-[#1c2b4a] absolute left-1/2 -translate-x-1/2">Caché</h2>
-      <div class="w-9"></div>
+      <h2 class="flex-1 text-center text-lg font-extrabold text-[#1c2b4a]">Caché</h2>
+      <div class="w-9 shrink-0"></div>
     </div>
-    <div class="flex-1 overflow-y-auto p-6 space-y-5">
-      <div class="bg-white border border-[#dce1e5] rounded-3xl p-5 shadow-sm">
-        <p class="text-sm text-[#606d77] leading-relaxed">Aquí puedes eliminar en tiempo real el caché acumulado de la plataforma para acelerar la app cuando notes lentitud.</p>
-        <p id="cache-usage-text" class="mt-3 text-sm font-semibold text-[#1c2b4a]">Uso de caché estimado: 0 KB</p>
+    <div class="flex-1 overflow-y-auto px-4 py-5 space-y-4">
+      <div class="bg-white rounded-3xl p-5 shadow-sm">
+        <div class="flex items-center gap-3.5">
+          <span class="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0" style="background:#ffe9e9;color:#e11d48">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          </span>
+          <div class="flex-1 min-w-0">
+            <p class="text-[15px] font-bold text-[#1c2b4a]">Almacenamiento temporal</p>
+            <p class="text-[13px] text-[#7b8794] mt-0.5 leading-snug">Datos temporales guardados en este dispositivo. Liberarlos puede acelerar la app.</p>
+          </div>
+        </div>
+        <p id="cache-usage-big" class="mt-4 text-4xl font-black text-[#1c2b4a]">0 KB</p>
+        <p class="text-xs text-[#7b8794] mt-1">Uso estimado de caché</p>
       </div>
 
-      <button id="clear-cache-btn" onclick="clearRealtimeCache()" class="w-full bg-[#0084FF] text-white py-4 rounded-2xl font-bold active:scale-95 transition-all">
-        Eliminar caché acumulado ahora
+      <div class="bg-white rounded-3xl shadow-sm overflow-hidden">
+        <p class="px-5 pt-4 pb-2 text-[13px] font-bold text-[#1c2b4a]">Desglose por categoría</p>
+        <div id="cache-breakdown-list" class="pb-1"></div>
+      </div>
+
+      <button id="clear-cache-btn" onclick="clearRealtimeCache()" class="w-full bg-[#e11d48] text-white py-4 rounded-2xl font-bold active:scale-95 transition-all shadow-sm">
+        Liberar caché ahora
       </button>
 
-      <div class="bg-white border border-[#dce1e5] rounded-3xl p-4 text-xs text-[#6b7280]">
-        Se conservarán tus datos de cuenta y sesión. Solo se limpia información temporal (historiales/caché local).
+      <div class="bg-white rounded-3xl p-4 text-xs text-[#6b7280] shadow-sm leading-relaxed">
+        Se conservarán tus datos de cuenta y sesión. Solo se limpia información temporal (historiales y caché local).
       </div>
     </div>
   </div>
@@ -15295,6 +15309,18 @@ function deleteComment(noteId, commentPath) {
 "Buscar por ID":"Search by ID",
 "COMPARTIR PARA RECLAMAR":"SHARE TO CLAIM",
 "Caché":"Cache",
+"Almacenamiento temporal":"Temporary storage",
+"Datos temporales guardados en este dispositivo.":"Temporary data stored on this device.",
+"Uso estimado de caché":"Estimated cache usage",
+"Desglose por categoría":"Breakdown by category",
+"Chats":"Chats",
+"Detección":"Detection",
+"Otros":"Other",
+"Liberar caché ahora":"Free cache now",
+"Sin caché acumulado por ahora":"No accumulated cache for now",
+"Limpiando caché...":"Cleaning cache...",
+"Caché eliminado en tiempo real correctamente.":"Cache cleared successfully in real time.",
+"Uso de caché estimado: 0 KB":"Estimated cache usage: 0 KB",
 "Cambia los menús y controles de Drex.":"Change Drex menus and controls.",
 "Cambiar":"Change",
 "Cambiar de cuenta":"Switch account",
@@ -19131,13 +19157,46 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   }
 
+  function getCacheGroups() {
+    const groups = [
+      { id: 'chats', label: 'Chats', bytes: 0, keys: 0 },
+      { id: 'detect', label: 'Detecci\u00f3n', bytes: 0, keys: 0 },
+      { id: 'other', label: 'Otros', bytes: 0, keys: 0 }
+    ];
+    getClearableCacheKeys().forEach(key => {
+      let size = 0;
+      try { size = key.length + (localStorage.getItem(key) || '').length; } catch (_) {}
+      const nl = (key || '').toLowerCase();
+      let g = groups[2];
+      if (key === CHAT_USERS_CACHE_KEY || key === CHAT_CONVERSATIONS_CACHE_KEY) g = groups[0];
+      else if (key.indexOf('detect_') === 0) g = groups[1];
+      g.bytes += size; g.keys += 1;
+    });
+    return groups.filter(g => g.keys > 0);
+  }
+
   function refreshCacheUsageUI() {
     const usage = estimateCacheUsageBytes();
-    const usageLabel = document.getElementById('cache-usage-text');
+    const bigLabel = document.getElementById('cache-usage-big');
     const previewLabel = document.getElementById('cache-storage-preview');
-    const message = `Uso estimado: ${formatCacheSize(usage)}`;
-    if (usageLabel) usageLabel.textContent = `Uso de caché estimado: ${formatCacheSize(usage)}`;
-    if (previewLabel) previewLabel.textContent = message;
+    if (bigLabel) bigLabel.textContent = formatCacheSize(usage);
+    if (previewLabel) previewLabel.textContent = `Uso estimado: ${formatCacheSize(usage)}`;
+    const list = document.getElementById('cache-breakdown-list');
+    if (list) {
+      const groups = getCacheGroups();
+      if (!groups.length) {
+        list.innerHTML = '<p class="px-5 py-4 text-sm text-[#7b8794]">Sin cach\u00e9 acumulado por ahora.</p>';
+      } else {
+        list.innerHTML = groups.map(g => `
+          <div class="flex items-center gap-3 px-5 py-3 border-t border-[#f0f3f7]">
+            <div class="flex-1 min-w-0">
+              <p class="text-[14px] font-semibold text-[#1c2b4a]">${g.label}</p>
+              <p class="text-xs text-[#7b8794]">${g.keys} ${g.keys === 1 ? 'elemento' : 'elementos'}</p>
+            </div>
+            <p class="text-[14px] font-bold text-[#1c2b4a]">${formatCacheSize(g.bytes)}</p>
+          </div>`).join('');
+      }
+    }
   }
 
   function openCacheConfigView() {
@@ -19145,7 +19204,6 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
     if (!view) return;
     view.classList.remove('hidden');
     view.style.display = 'flex';
-    view.style.zIndex = '120';
     refreshCacheUsageUI();
   }
 
@@ -19183,7 +19241,7 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
     refreshCacheUsageUI();
     if (button) {
       button.disabled = false;
-      button.textContent = 'Eliminar caché acumulado ahora';
+      button.textContent = 'Liberar cach\u00e9 ahora';
     }
     showSaveSuccessAnimation();
     alert('Caché eliminado en tiempo real correctamente.');
@@ -19765,14 +19823,6 @@ Si el usuario saluda, responde con un saludo cálido y pregunta en qué puedes a
 
   function closePhoneConfigView() {
     const view = document.getElementById('phone-config-view');
-    if (view) {
-      view.classList.add('hidden');
-      view.style.display = 'none';
-    }
-  }
-
-  function closeCacheConfigView() {
-    const view = document.getElementById('cache-config-view');
     if (view) {
       view.classList.add('hidden');
       view.style.display = 'none';
