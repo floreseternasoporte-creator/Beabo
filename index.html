@@ -5760,7 +5760,7 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
       <div class="flex items-center gap-2 mb-1.5">
         <span id="fiesta-room-lang" class="text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full bg-white/15 text-white/90"></span>
       </div>
-      <p id="fiesta-room-title" class="font-extrabold text-[17px] truncate leading-tight"></p>
+      <p id="fiesta-room-title" onclick="fiestaDebugDump()" class="font-extrabold text-[17px] truncate leading-tight"></p>
       <p id="fiesta-room-sub" class="text-xs text-white/60 truncate mt-0.5"></p>
     </div>
     <button onclick="leaveFiesta()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center active:bg-white/20 transition shrink-0" aria-label="Cerrar">
@@ -32865,6 +32865,10 @@ let fiestaPCs = {};
 let fiestaMembers = {};
 let fiestaRefs = {};
 let fiestaAmHost = false;
+const FIESTA_BUILD = '2026-09-09-D';
+const FIESTA_DEBUG = true;
+function fiestaDbg(t) { if (FIESTA_DEBUG && typeof showMiniToast === 'function') showMiniToast(t); }
+function fiestaPeerName(uid) { return (fiestaMembers[uid] || {}).name || 'alguien'; }
 let fiestaPeerDownSince = {};
 
 function openFiestaSection() {
@@ -33126,6 +33130,14 @@ function fiestaPaintControls() {
   }
 }
 
+function fiestaDebugDump() {
+  const lines = ['Build: ' + FIESTA_BUILD, 'Rol: ' + fiestaMyRole, 'Mic: ' + (fiestaLocalStream ? 'listo' : 'SIN MICRO'), 'Pares: ' + Object.keys(fiestaPCs).length];
+  Object.entries(fiestaPCs).forEach(([uid, pc]) => {
+    lines.push(fiestaPeerName(uid) + ': pc=' + pc.connectionState + ' ice=' + pc.iceConnectionState + ' sig=' + pc.signalingState + ' cand=' + (pc._candsSent || 0) + '/' + (pc._candsRecv || 0) + ' audio=' + (pc._gotAudio ? 'SI' : 'NO'));
+  });
+  alert(lines.join('\n'));
+}
+
 function fiestaToggleReactions() { document.getElementById('fiesta-reaction-picker')?.classList.toggle('hidden'); }
 function fiestaSendReaction(emoji) { if (!fiestaCur || !fiestaMyUid || !emoji) return; document.getElementById('fiesta-reaction-picker')?.classList.add('hidden'); fiestaShowReaction(emoji); firebase.database().ref('fiestaReactions/' + fiestaCur.id).push({ e: emoji, from: fiestaMyUid, at: Date.now() }).catch(() => {}); }
 function fiestaShowReaction(emoji) { const layer = document.getElementById('fiesta-reactions-layer'); if (!layer) return; const el = document.createElement('div'); el.textContent = emoji; el.className = 'fiesta-reaction-float'; el.style.left = (28 + Math.random() * 44) + '%'; layer.appendChild(el); setTimeout(() => el.remove(), 2700); }
@@ -33147,6 +33159,7 @@ async function fiestaEnsureMic() {
   try {
     fiestaLocalStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     fiestaLocalStream.getAudioTracks().forEach(t => { t.enabled = !fiestaMuted; });
+    fiestaDbg('Microfono listo');
     // Agregar mi audio a los pares ya conectados
     Object.values(fiestaPCs).forEach(pc => {
       fiestaLocalStream.getTracks().forEach(t => pc.addTrack(t, fiestaLocalStream));
@@ -33176,19 +33189,21 @@ function fiestaSendSignal(toUid, payload) {
 function fiestaSetupPC(uid, pc) {
   fiestaPCs[uid] = pc;
   pc._pendingCands = [];
+  pc._candsSent = 0; pc._candsRecv = 0; pc._gotAudio = false;
   if (fiestaLocalStream && fiestaMyRole === 'speaker') {
     fiestaLocalStream.getTracks().forEach(t => pc.addTrack(t, fiestaLocalStream));
   }
-  pc.onicecandidate = e => { if (e.candidate) fiestaSendSignal(uid, { type: 'candidate', candidate: e.candidate.toJSON() }); };
+  pc.onicecandidate = e => { if (e.candidate) { pc._candsSent++; fiestaSendSignal(uid, { type: 'candidate', candidate: e.candidate.toJSON() }); } };
   pc.onnegotiationneeded = async () => { try { if (pc.signalingState !== 'stable') return; const offer = await pc.createOffer(); await pc.setLocalDescription(offer); fiestaSendSignal(uid, { type: 'offer', sdp: pc.localDescription }); } catch (_) {} };
-  pc.ontrack = e => fiestaAttachAudio(uid, e.streams[0]);
+  pc.ontrack = e => { pc._gotAudio = true; fiestaDbg('Recibiendo audio de ' + fiestaPeerName(uid)); fiestaAttachAudio(uid, e.streams[0]); };
   pc.onconnectionstatechange = () => {
-    const st = pc.connectionState; if (st === 'disconnected') fiestaPeerDownSince[uid] = Date.now(); else delete fiestaPeerDownSince[uid]; if (st === 'failed') fiestaHealPeer(uid); else if (st === 'closed') fiestaDropPeer(uid);
+    const st = pc.connectionState; if (st === 'disconnected') fiestaPeerDownSince[uid] = Date.now(); else delete fiestaPeerDownSince[uid]; if (st === 'connected') fiestaDbg('Conectado con ' + fiestaPeerName(uid)); else if (st === 'failed') { fiestaDbg('Fallo conexion con ' + fiestaPeerName(uid)); fiestaHealPeer(uid); } else if (st === 'closed') fiestaDropPeer(uid);
   };
 }
 
 async function fiestaCallPeer(uid) {
   if (fiestaPCs[uid] || !fiestaCur) return;
+  fiestaDbg('Llamando a ' + fiestaPeerName(uid) + '...');
   try {
     const pc = new RTCPeerConnection(FIESTA_ICE);
     fiestaSetupPC(uid, pc);
@@ -33205,6 +33220,7 @@ async function fiestaOnSignal(key, msg) {
   const from = msg.from;
   try {
     if (msg.type === 'offer') {
+      fiestaDbg('Oferta recibida de ' + fiestaPeerName(from));
       let pc = fiestaPCs[from];
       if (!pc) { pc = new RTCPeerConnection(FIESTA_ICE); fiestaSetupPC(from, pc); }
       if (pc.signalingState !== 'stable') {
@@ -33217,6 +33233,7 @@ async function fiestaOnSignal(key, msg) {
       await pc.setLocalDescription(ans);
       fiestaSendSignal(from, { type: 'answer', sdp: pc.localDescription });
     } else if (msg.type === 'answer') {
+      fiestaDbg('Respuesta recibida de ' + fiestaPeerName(from));
       const pc = fiestaPCs[from];
       if (pc && !pc.remoteDescription) { await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)); await fiestaFlushCandidates(pc); }
     } else if (msg.type === 'candidate') {
@@ -33228,6 +33245,7 @@ async function fiestaOnSignal(key, msg) {
 }
 
 async function fiestaAddCandidate(pc, cand) {
+  pc._candsRecv++;
   if (pc.remoteDescription) { try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (_) {} }
   else pc._pendingCands.push(cand);
 }
