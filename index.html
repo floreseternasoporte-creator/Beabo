@@ -5746,6 +5746,14 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
 </div>
 
 <!-- Sala de fiesta (llamada de voz grupal) -->
+<style>
+.fiesta-reaction-float { position: absolute; bottom: 130px; font-size: 2.4rem; line-height: 1; animation: fiesta-float-up 2.6s ease-out forwards; pointer-events: none; }
+@keyframes fiesta-float-up {
+  0% { transform: translateY(0) scale(.5); opacity: 0; }
+  15% { opacity: 1; transform: translateY(-40px) scale(1.2); }
+  100% { transform: translateY(-240px) scale(1); opacity: 0; }
+}
+</style>
 <div id="fiesta-room-view" class="fixed inset-0 z-[60] hidden flex-col text-white" style="background: linear-gradient(165deg, #1c2547 0%, #111736 55%, #0a0e22 100%);">
   <div class="flex items-center gap-3 px-4 pt-5 pb-3">
     <div class="flex-1 min-w-0">
@@ -5772,11 +5780,23 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
     <div class="flex items-center justify-center gap-5">
       <button id="fiesta-mute-btn" onclick="fiestaToggleMute()" class="w-14 h-14 rounded-full bg-white/15 items-center justify-center active:scale-95 transition shadow-lg hidden" aria-label="Silenciar micrófono"></button>
       <button id="fiesta-speak-btn" onclick="fiestaWantToSpeak()" class="w-14 h-14 rounded-full bg-[#0084FF] items-center justify-center active:scale-95 transition shadow-lg shadow-blue-500/30 hidden text-2xl leading-none" aria-label="Quiero hablar">✋️</button>
+      <div class="relative">
+        <button id="fiesta-react-btn" onclick="fiestaToggleReactions()" class="w-14 h-14 rounded-full bg-white/15 flex items-center justify-center active:scale-95 transition text-2xl leading-none" aria-label="Reaccionar">😍</button>
+        <div id="fiesta-reaction-picker" class="hidden absolute bottom-16 left-1/2 -translate-x-1/2 bg-white rounded-full pl-3 pr-3 py-2 flex items-center gap-1 shadow-xl z-20">
+          <button onclick="fiestaSendReaction('❤️')" class="text-2xl leading-none p-1 active:scale-125 transition">❤️</button>
+          <button onclick="fiestaSendReaction('👏')" class="text-2xl leading-none p-1 active:scale-125 transition">👏</button>
+          <button onclick="fiestaSendReaction('😂')" class="text-2xl leading-none p-1 active:scale-125 transition">😂</button>
+          <button onclick="fiestaSendReaction('🎉')" class="text-2xl leading-none p-1 active:scale-125 transition">🎉</button>
+          <button onclick="fiestaSendReaction('🔥')" class="text-2xl leading-none p-1 active:scale-125 transition">🔥</button>
+          <button onclick="fiestaSendReaction('👍')" class="text-2xl leading-none p-1 active:scale-125 transition">👍</button>
+        </div>
+      </div>
       <button onclick="leaveFiesta()" class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center active:scale-95 transition shadow-lg shadow-red-500/40" aria-label="Colgar">
         <svg class="w-7 h-7 text-white" style="transform: rotate(135deg)" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
       </button>
     </div>
   </div>
+  <div id="fiesta-reactions-layer" class="absolute inset-0 pointer-events-none overflow-hidden z-10"></div>
   <div id="fiesta-remote-audios" class="hidden"></div>
 </div>
 
@@ -32832,7 +32852,7 @@ document.addEventListener('input', function(e){
    - Crear fiesta: titulo, idioma, descripcion, max. hablantes, ahora o programada
    - Unirse como oyente o hablante; malla WebRTC de audio con senalizacion en Firebase
    ===================================================================== */
-const FIESTA_ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const FIESTA_ICE = { iceServers: [ { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302', 'stun:stun3.l.google.com:19302', 'stun:stun4.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' } ], iceCandidatePoolSize: 10 };
 let fiestaCur = null;
 let fiestaMyUid = null;
 let fiestaMyRole = 'listener';
@@ -32842,6 +32862,7 @@ let fiestaPCs = {};
 let fiestaMembers = {};
 let fiestaRefs = {};
 let fiestaAmHost = false;
+let fiestaPeerDownSince = {};
 
 function openFiestaSection() {
   document.getElementById('creator-hub-view')?.classList.add('hidden');
@@ -33039,6 +33060,10 @@ function fiestaWatchRoom() {
   });
   fiestaRefs.inbox = firebase.database().ref('fiestaSignals/' + id + '/' + fiestaMyUid);
   fiestaRefs.inbox.on('child_added', snap => fiestaOnSignal(snap.key, snap.val()));
+  fiestaRefs.reactions = firebase.database().ref('fiestaReactions/' + id).limitToLast(30);
+  fiestaRefs.reactions.on('child_added', snap => { const r = snap.val() || {}; if (!r.e || r.from === fiestaMyUid) return; if (r.at && Date.now() - r.at > 20000) return; fiestaShowReaction(r.e); });
+  if (fiestaRefs.heal) clearInterval(fiestaRefs.heal);
+  fiestaRefs.heal = setInterval(() => { if (!fiestaCur) return; const now = Date.now(); Object.keys(fiestaPeerDownSince).forEach(uid => { if (now - fiestaPeerDownSince[uid] > 15000 && fiestaMyUid < uid) fiestaHealPeer(uid); }); fiestaSyncPeers(); }, 12000);
 }
 
 function renderFiestaRoom() {
@@ -33096,6 +33121,10 @@ function fiestaPaintControls() {
   }
 }
 
+function fiestaToggleReactions() { document.getElementById('fiesta-reaction-picker')?.classList.toggle('hidden'); }
+function fiestaSendReaction(emoji) { if (!fiestaCur || !fiestaMyUid || !emoji) return; document.getElementById('fiesta-reaction-picker')?.classList.add('hidden'); fiestaShowReaction(emoji); firebase.database().ref('fiestaReactions/' + fiestaCur.id).push({ e: emoji, from: fiestaMyUid, at: Date.now() }).catch(() => {}); }
+function fiestaShowReaction(emoji) { const layer = document.getElementById('fiesta-reactions-layer'); if (!layer) return; const el = document.createElement('div'); el.textContent = emoji; el.className = 'fiesta-reaction-float'; el.style.left = (28 + Math.random() * 44) + '%'; layer.appendChild(el); setTimeout(() => el.remove(), 2700); }
+
 async function fiestaWantToSpeak() {
   if (!fiestaCur || fiestaMyRole === 'speaker') return;
   const speakers = Object.values(fiestaMembers).filter(m => m.role === 'speaker').length;
@@ -33111,7 +33140,7 @@ async function fiestaWantToSpeak() {
 async function fiestaEnsureMic() {
   if (fiestaLocalStream) return true;
   try {
-    fiestaLocalStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    fiestaLocalStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     fiestaLocalStream.getAudioTracks().forEach(t => { t.enabled = !fiestaMuted; });
     // Agregar mi audio a los pares ya conectados
     Object.values(fiestaPCs).forEach(pc => {
@@ -33147,7 +33176,7 @@ function fiestaSetupPC(uid, pc) {
   pc.onicecandidate = e => { if (e.candidate) fiestaSendSignal(uid, { type: 'candidate', candidate: e.candidate.toJSON() }); };
   pc.ontrack = e => fiestaAttachAudio(uid, e.streams[0]);
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') fiestaDropPeer(uid);
+    const st = pc.connectionState; if (st === 'disconnected') fiestaPeerDownSince[uid] = Date.now(); else delete fiestaPeerDownSince[uid]; if (st === 'failed') fiestaHealPeer(uid); else if (st === 'closed') fiestaDropPeer(uid);
   };
 }
 
@@ -33186,6 +33215,8 @@ async function fiestaOnSignal(key, msg) {
   done();
 }
 
+function fiestaHealPeer(uid) { delete fiestaPeerDownSince[uid]; fiestaDropPeer(uid); if (fiestaCur && fiestaMyUid && fiestaMyUid < uid) { setTimeout(() => { if (fiestaCur && fiestaMyUid && !fiestaPCs[uid]) fiestaCallPeer(uid); }, 1500); } }
+
 function fiestaSyncPeers() {
   if (!fiestaCur || !fiestaMyUid) return;
   const me = fiestaMembers[fiestaMyUid];
@@ -33197,7 +33228,7 @@ function fiestaSyncPeers() {
     if (me.role === 'speaker' || other.role === 'speaker') need[uid] = true;
   });
   Object.keys(need).forEach(uid => {
-    if (!fiestaPCs[uid] && fiestaMyUid < uid) fiestaCallPeer(uid);
+    const pc0 = fiestaPCs[uid]; const bad = pc0 && (pc0.connectionState === 'failed' || pc0.connectionState === 'closed'); if ((!pc0 || bad) && fiestaMyUid < uid) { if (bad) fiestaDropPeer(uid); fiestaCallPeer(uid); }
   });
   Object.keys(fiestaPCs).forEach(uid => { if (!need[uid]) fiestaDropPeer(uid); });
 }
@@ -33222,6 +33253,7 @@ function fiestaDropPeer(uid) {
 }
 
 function fiestaFullCleanup() {
+  if (fiestaRefs.heal) { clearInterval(fiestaRefs.heal); delete fiestaRefs.heal; }
   Object.keys(fiestaPCs).forEach(fiestaDropPeer);
   if (fiestaLocalStream) { fiestaLocalStream.getTracks().forEach(t => t.stop()); fiestaLocalStream = null; }
   Object.values(fiestaRefs).forEach(r => { try { r.off(); } catch (_) {} });
@@ -33238,7 +33270,7 @@ async function leaveFiesta(silent) {
     await mRef.remove().catch(() => {});
     await firebase.database().ref('fiestaSignals/' + id + '/' + uid).remove().catch(() => {});
   }
-  fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener';
+  fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener'; fiestaPeerDownSince = {};
   fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false;
   const v = document.getElementById('fiesta-room-view');
   v.classList.add('hidden'); v.classList.remove('flex');
