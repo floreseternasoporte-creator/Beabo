@@ -3151,6 +3151,33 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
   <img src="https://ideogram.ai/assets/image/lossless/response/0-Re3lMzQ6mmstIxlRxb4Q" alt="Usuario bloqueado">
 </div>
 
+<!-- MODAL DE CONFIRMACIÓN DE BLOQUEO -->
+<div id="block-confirm-modal" class="fixed inset-0 bg-black/50 hidden z-[400] items-center justify-center p-4">
+  <div class="w-full max-w-sm bg-white rounded-3xl p-6 text-center">
+    <div class="w-14 h-14 rounded-full bg-red-100 text-[#e11d48] mx-auto flex items-center justify-center mb-3">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4" stroke-linecap="round"/></svg>
+    </div>
+    <h3 class="text-lg font-bold text-[#1c2b4a] mb-1">¿Bloquear a <span id="block-confirm-username">este usuario</span>?</h3>
+    <p class="text-sm text-[#5c6974] mb-5">No podrá ver tu perfil ni enviarte mensajes. Podrás desbloquearlo cuando quieras.</p>
+    <div class="flex gap-3">
+      <button onclick="closeBlockConfirmModal()" class="flex-1 py-2.5 rounded-xl bg-[#eef2f7] text-[#1c2b4a] font-bold text-sm active:scale-95 transition">Cancelar</button>
+      <button onclick="confirmBlockProceed()" class="flex-1 py-2.5 rounded-xl bg-[#e11d48] text-white font-bold text-sm active:scale-95 transition">Bloquear</button>
+    </div>
+  </div>
+</div>
+
+<!-- PANTALLA COMPLETA: USUARIO BLOQUEADO -->
+<div id="blocked-user-screen" class="fixed inset-0 hidden z-[400] bg-[#f0f4f9] flex-col items-center justify-center text-center px-8">
+  <div class="w-20 h-20 rounded-full bg-[#eef2f7] text-[#5c6974] flex items-center justify-center mb-4">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4" stroke-linecap="round"/></svg>
+  </div>
+  <img id="blocked-screen-avatar" class="w-16 h-16 rounded-full object-cover mb-3 hidden" alt="">
+  <h3 class="text-xl font-black text-[#1c2b4a]">Bloqueaste a <span id="blocked-screen-username">este usuario</span></h3>
+  <p class="text-sm text-[#5c6974] mt-2 mb-6 max-w-xs">No verás su perfil ni sus mensajes hasta que lo desbloquees.</p>
+  <button onclick="unblockFromBlockedScreen()" class="w-full max-w-xs py-3 rounded-2xl bg-[#0084FF] text-white font-bold text-sm mb-3 active:scale-[.98] transition">Desbloquear</button>
+  <button onclick="closeBlockedUserScreen()" class="w-full max-w-xs py-3 rounded-2xl bg-white border border-[#dce1e5] text-[#1c2b4a] font-bold text-sm active:scale-[.98] transition">Volver</button>
+</div>
+
 <!-- MODAL DE LISTA DE SEGUIDORES -->
 <div id="followers-modal" class="fixed inset-0 overflow-y-auto z-[150] hidden bg-white">
   <div class="max-w-2xl mx-auto min-h-full">
@@ -11778,14 +11805,16 @@ function blockUserFromUserActions() {
   const targetId = currentPostOptionsAuthorId;
   if (!user || !targetId) return;
   const uname = currentPostOptionsAuthorData?.username || 'este usuario';
-  if (!confirm('¿Bloquear a @' + uname + '? No podrá ver tu perfil ni enviarte mensajes.')) return;
-  const blockPayload = { blockedAt: Date.now(), username: uname };
-  firebase.database().ref('blocks/' + user.uid + '/' + targetId).set(blockPayload).then(() => {
-    // También ocultar sus posts del feed
-    document.querySelectorAll('[data-author-id="' + targetId + '"]').forEach(el => { el.style.display = 'none'; });
-    showMiniToast('@' + uname + ' bloqueado');
-    closeUserActionsSheet();
-  }).catch(() => showMiniToast('Error al bloquear'));
+  askBlockConfirmation(uname, () => {
+    const blockPayload = { blockedAt: Date.now(), username: uname };
+    firebase.database().ref('blocks/' + user.uid + '/' + targetId).set(blockPayload).then(() => {
+      try { blockedAccountsSet.add(targetId); } catch (_) {}
+      // También ocultar sus posts del feed
+      document.querySelectorAll('[data-author-id="' + targetId + '"]').forEach(el => { el.style.display = 'none'; });
+      showMiniToast('@' + uname + ' bloqueado');
+      closeUserActionsSheet();
+    }).catch(() => showMiniToast('Error al bloquear'));
+  });
 }
 // ── FIN SELECTOR DE ACCIONES DE USUARIO ──────────────────────────────────────
 
@@ -15598,6 +15627,15 @@ function deleteComment(noteId, commentPath) {
 "Eventos recientes de esta cuenta.":"Recent events for this account.",
 "Explorando perfiles":"Browsing profiles",
 "Explorar":"Explore",
+"Usuario bloqueado":"User blocked",
+"No se pudo desbloquear. Intenta de nuevo.":"Couldn\'t unblock. Try again.",
+"Usuario desbloqueado":"User unblocked",
+"Desbloquear":"Unblock",
+"No verás su perfil ni sus mensajes hasta que lo desbloquees.":"You won\'t see their profile or messages until you unblock them.",
+"Bloqueaste a":"You blocked",
+"No podrá ver tu perfil ni enviarte mensajes. Podrás desbloquearlo cuando quieras.":"They won\'t be able to see your profile or message you. You can unblock them anytime.",
+"este usuario":"this user",
+"¿Bloquear a":"Block",
 "Anteriores":"Older",
 "Hoy":"Today",
 "Cuando alguien interactúe contigo, lo verás aquí.":"When someone interacts with you, you'll see it here.",
@@ -23472,6 +23510,11 @@ let chatTypingListener = null;
   function openChatRoomFromInbox(otherUid) {
     const user = firebase.auth().currentUser;
     if (!user || !otherUid) return;
+    // Si lo tienes bloqueado: pantalla completa en vez del chat
+    if (typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(otherUid)) {
+      showBlockedUserScreen(otherUid, 'chat');
+      return;
+    }
     currentChatIsGroup = false;
     currentGroupMembers = [];
     currentChatRoomId = getDirectConversationId(user.uid, otherUid);
@@ -25446,16 +25489,19 @@ const _startChatListeners = () => {
   function blockUserFromChat() {
     const user = firebase.auth().currentUser;
     if (!user || !currentChatRecipient) return;
-    if (!confirm('¿Bloquear a este usuario? Ya no podrán enviarte mensajes.')) return;
-    firebase.database().ref('blocks/' + user.uid + '/' + currentChatRecipient).set({ blockedAt: Date.now() })
-      .then(() => {
-        closeChatOptionsPanel();
-        closeChatRoomInfo();
-        closeChatRoomView();
-        alert('Usuario bloqueado correctamente.');
-      }).catch(() => {
-        alert('No se pudo bloquear al usuario. Intenta de nuevo.');
-      });
+    const chatName = (document.getElementById('chat-room-username')?.textContent || '').trim() || 'este usuario';
+    askBlockConfirmation(chatName, () => {
+      firebase.database().ref('blocks/' + user.uid + '/' + currentChatRecipient).set({ blockedAt: Date.now() })
+        .then(() => {
+          try { blockedAccountsSet.add(currentChatRecipient); } catch (_) {}
+          closeChatOptionsPanel();
+          closeChatRoomInfo();
+          closeChatRoomView();
+          showMiniToast('Usuario bloqueado');
+        }).catch(() => {
+          alert('No se pudo bloquear al usuario. Intenta de nuevo.');
+        });
+    });
   }
 
   function reportUserFromChat() {
@@ -27762,6 +27808,12 @@ function renderAccountsList(accounts) {
 
     currentViewedAuthorId = authorId;
     authorProfileOrigin = origin || 'main';
+    // Si lo tienes bloqueado: pantalla completa en vez del perfil (sin cartel "Bloqueado")
+    if (currentUser && typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(authorId)) {
+      currentViewedAuthorId = null;
+      showBlockedUserScreen(authorId, 'profile');
+      return;
+    }
     setAuthorProfileVisibility(true);
 
     const addNoteBtn = document.getElementById('add-note-btn');
@@ -27861,6 +27913,7 @@ function renderAccountsList(accounts) {
         authorHandleNode.textContent = `@${authorData.username || 'autor'}`;
       }
       const usernameForCopy = authorData.username || 'autor';
+      _currentAuthorUsername = usernameForCopy;
       if (authorNameNode) {
         authorNameNode.onclick = () => copyAuthorUsername(usernameForCopy, authorNameNode);
       }
@@ -27915,16 +27968,6 @@ function renderAccountsList(accounts) {
       });
     });
 
-    if (currentUser) {
-      firebase.database().ref('blocks/' + currentUser.uid + '/' + authorId).once('value').then(blockSnap => {
-        if (currentViewedAuthorId !== authorId || !blockButton) return;
-        if (blockSnap.exists()) {
-          blockButton.disabled = true;
-          blockButton.classList.add('opacity-60', 'cursor-not-allowed');
-          blockButton.innerHTML = 'Bloqueado';
-        }
-      });
-    }
 
     updateFollowIcon();
 
@@ -28379,6 +28422,66 @@ function renderAccountsList(accounts) {
   }
 </script>
 <script>
+  // Confirmación de bloqueo reutilizable en toda la plataforma
+  let _blockConfirmCallback = null;
+  function askBlockConfirmation(username, onConfirm) {
+    _blockConfirmCallback = (typeof onConfirm === 'function') ? onConfirm : null;
+    const nameEl = document.getElementById('block-confirm-username');
+    if (nameEl) nameEl.textContent = username ? '@' + String(username).replace(/^@/, '') : 'este usuario';
+    const modal = document.getElementById('block-confirm-modal');
+    if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
+  }
+  function closeBlockConfirmModal() {
+    const modal = document.getElementById('block-confirm-modal');
+    if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+    _blockConfirmCallback = null;
+  }
+  function confirmBlockProceed() {
+    const cb = _blockConfirmCallback;
+    closeBlockConfirmModal();
+    if (cb) cb();
+  }
+
+  // Pantalla completa de usuario bloqueado (perfil, chat y demás secciones)
+  let _blockedScreenUid = null;
+  let _blockedScreenOrigin = null;
+  function showBlockedUserScreen(uid, origin) {
+    _blockedScreenUid = uid;
+    _blockedScreenOrigin = origin || null;
+    const screen = document.getElementById('blocked-user-screen');
+    const nameEl = document.getElementById('blocked-screen-username');
+    const avatarEl = document.getElementById('blocked-screen-avatar');
+    if (nameEl) nameEl.textContent = 'este usuario';
+    if (avatarEl) avatarEl.classList.add('hidden');
+    if (screen) { screen.classList.remove('hidden'); screen.classList.add('flex'); }
+    firebase.database().ref('users/' + uid).once('value').then(snap => {
+      if (_blockedScreenUid !== uid) return;
+      const d = snap.val() || {};
+      if (nameEl && d.username) nameEl.textContent = '@' + d.username;
+      if (avatarEl && d.profileImage) { avatarEl.src = d.profileImage; avatarEl.classList.remove('hidden'); }
+    }).catch(() => {});
+  }
+  function closeBlockedUserScreen() {
+    const screen = document.getElementById('blocked-user-screen');
+    if (screen) { screen.classList.add('hidden'); screen.classList.remove('flex'); }
+    _blockedScreenUid = null;
+    _blockedScreenOrigin = null;
+  }
+  function unblockFromBlockedScreen() {
+    const user = firebase.auth().currentUser;
+    const uid = _blockedScreenUid;
+    const origin = _blockedScreenOrigin;
+    if (!user || !uid) return;
+    firebase.database().ref('blocks/' + user.uid + '/' + uid).remove().then(() => {
+      try { blockedAccountsSet.delete(uid); } catch (_) {}
+      closeBlockedUserScreen();
+      showMiniToast('Usuario desbloqueado');
+      if (typeof loadNotes === 'function') loadNotes(false);
+      if (origin === 'profile' && typeof openAuthorProfile === 'function') openAuthorProfile(uid);
+    }).catch(() => alert('No se pudo desbloquear. Intenta de nuevo.'));
+  }
+
+  let _currentAuthorUsername = '';
   function blockAuthor() {
     const currentUser = firebase.auth().currentUser;
     if (!currentUser) {
@@ -28393,6 +28496,12 @@ function renderAccountsList(accounts) {
       alert('No puedes bloquear tu propia cuenta.');
       return;
     }
+    askBlockConfirmation(_currentAuthorUsername || 'este usuario', doBlockAuthor);
+  }
+
+  async function doBlockAuthor() {
+    const currentUser = firebase.auth().currentUser;
+    if (!currentUser || !currentViewedAuthorId) return;
 
     const targetId = currentViewedAuthorId;
     const blockButton = document.getElementById('block-button');
