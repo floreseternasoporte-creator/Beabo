@@ -45,8 +45,7 @@ messaging.onBackgroundMessage(function(payload) {
 });
 
 // Manejar clic en la notificación
-self.addEventListener('notificationclick', function(event) {
-  event.notification.close();
+self.addEventListener('notificationclick', function(event) {  event.notification.close();
 
   if (event.action === 'open' || !event.action) {
     event.waitUntil(
@@ -63,4 +62,9 @@ self.addEventListener('notificationclick', function(event) {
       })
     );
   }
+});
+
+// Fetch handler mínimo para criterios PWA/TWA: pasa la petición a la red sin alterar nada
+self.addEventListener('fetch', function(event) {
+  event.respondWith(fetch(event.request));
 });
