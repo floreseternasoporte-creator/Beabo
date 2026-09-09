@@ -668,6 +668,9 @@ body.theme-dark .search-cat-chip.active {
   height: 20px;
 }\n
 /* Notificaciones (estilo plataforma) */
+.notif-ig-unread { background-color: #e9f2ff; }
+body.theme-dark .notif-ig-unread { background-color: #1c2942 !important; }
+body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
 .notification-item {
   display: flex;
   align-items: flex-start;
@@ -3090,7 +3093,7 @@ body.theme-dark .search-cat-chip.active {
   <!-- Contenido scrollable -->
   <div class="flex-1 overflow-y-auto" style="-webkit-overflow-scrolling: touch;">
     <!-- Panel Notificaciones -->
-    <div id="notif-panel-notif" class="p-5">
+    <div id="notif-panel-notif" class="px-3 py-4">
       <div id="notifications-list" class="space-y-3"></div>
     </div>
     <!-- Panel Menciones -->
@@ -15591,6 +15594,10 @@ function deleteComment(noteId, commentPath) {
 "Eventos recientes de esta cuenta.":"Recent events for this account.",
 "Explorando perfiles":"Browsing profiles",
 "Explorar":"Explore",
+"Anteriores":"Older",
+"Hoy":"Today",
+"Cuando alguien interactúe contigo, lo verás aquí.":"When someone interacts with you, you'll see it here.",
+"Sin actividad por ahora":"No activity for now",
 "Debates":"Debates",
 "Opiniones":"Opinions",
 "Preguntas":"Questions",
@@ -16141,6 +16148,29 @@ function deleteComment(noteId, commentPath) {
     hideSplashScreen(true);
   });
   /*********************** NOTIFICACIONES **************************/
+  // Info del usuario actual (actor) para mostrar avatar + nombre estilo Instagram.
+  let _notifActorCache = null;
+  let _notifActorPromise = null;
+  function getNotifActorInfo() {
+    if (_notifActorCache) return Promise.resolve(_notifActorCache);
+    if (_notifActorPromise) return _notifActorPromise;
+    const user = firebase.auth().currentUser;
+    if (!user) return Promise.resolve(null);
+    _notifActorPromise = firebase.database().ref('users/' + user.uid).once('value').then(snap => {
+      const d = snap.val() || {};
+      _notifActorCache = {
+        id: user.uid,
+        name: d.username || user.displayName || 'Alguien',
+        image: d.profileImage || user.photoURL || ''
+      };
+      return _notifActorCache;
+    }).catch(() => {
+      _notifActorCache = { id: user.uid, name: user.displayName || 'Alguien', image: user.photoURL || '' };
+      return _notifActorCache;
+    });
+    return _notifActorPromise;
+  }
+
   async function addNotification(userId, message, type = 'info', meta = {}) {
     const notificationsRef = firebase.database().ref('notifications/' + userId);
     const newNotificationRef = notificationsRef.push();
@@ -16152,8 +16182,19 @@ function deleteComment(noteId, commentPath) {
       notificationId: newNotificationRef.key,
       ...meta
     };
-    
+
     newNotificationRef.set(notificationData);
+
+    // Adjuntar avatar y nombre del actor (quien generó la notificación) para
+    // renderizar estilo Instagram. No se adjunta en notificaciones del sistema.
+    try {
+      const me = firebase.auth().currentUser;
+      if (me && me.uid !== userId && !meta.actorId && !meta.system) {
+        getNotifActorInfo().then(info => {
+          if (info) newNotificationRef.update({ actorId: info.id, actorName: info.name, actorImage: info.image }).catch(() => {});
+        });
+      }
+    } catch (_) {}
 
 
     // Handle notifications for both mobile and desktop
@@ -16380,65 +16421,123 @@ function deleteComment(noteId, commentPath) {
     const notificationsList = document.getElementById('notifications-list');
     if (!notificationsList) return;
 
-    const items = getLocalNotifications(userId);
+    const items = getLocalNotifications(userId).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     notificationsList.innerHTML = "";
 
     if (items.length === 0) {
-      notificationsList.innerHTML = '<p class="text-gray-500 text-sm">No tienes notificaciones por ahora.</p>';
+      notificationsList.innerHTML = `
+        <div class="py-12 text-center">
+          <div class="w-16 h-16 mx-auto rounded-full bg-[#eef2f7] flex items-center justify-center text-[#b6c0d1] mb-3">
+            <i class="fas fa-bell text-2xl"></i>
+          </div>
+          <p class="text-sm font-bold text-[#1c2b4a]">Sin actividad por ahora</p>
+          <p class="text-xs text-[#7b878f] mt-1 px-6">Cuando alguien interact\u00fae contigo, lo ver\u00e1s aqu\u00ed.</p>
+        </div>`;
       return;
     }
 
-    items.forEach(notification => {
-      const container = document.createElement('div');
-      container.className = 'notification-container mb-2';
-      
-      const iconMap = {
-        follow: 'user-plus',
-        like: 'thumbs-up',
-        comment: 'comment',
-        reply: 'reply',
-        gif: 'file-image',
-        sticker: 'face-smile',
-        vote: 'thumbs-up',
-        message: 'envelope',
-        moderation: 'shield-alt',
-        mention: 'at',
-        repost: 'retweet',
-        support_response: 'headset',
-        match: 'heart',
-        info: 'info-circle'
-      };
+    // Icono y color por tipo de notificación (estilo Instagram)
+    const typeStyle = {
+      like:      { icon: 'fa-heart',       color: '#e11d48' },
+      vote:      { icon: 'fa-heart',       color: '#e11d48' },
+      match:     { icon: 'fa-heart',       color: '#e11d48' },
+      follow:    { icon: 'fa-user-plus',   color: '#0084FF' },
+      follow_request: { icon: 'fa-user-clock', color: '#0084FF' },
+      comment:   { icon: 'fa-comment',     color: '#5c6974' },
+      reply:     { icon: 'fa-reply',       color: '#5c6974' },
+      gif:       { icon: 'fa-image',       color: '#8b5cf6' },
+      sticker:   { icon: 'fa-face-smile',  color: '#f59e0b' },
+      message:   { icon: 'fa-envelope',    color: '#0084FF' },
+      mention:   { icon: 'fa-at',          color: '#8b5cf6' },
+      repost:    { icon: 'fa-retweet',     color: '#16a34a' },
+      moderation:{ icon: 'fa-shield-alt',  color: '#f59e0b' },
+      support_response: { icon: 'fa-headset', color: '#0084FF' },
+      info:      { icon: 'fa-circle-info', color: '#5c6974' }
+    };
 
-      const hasNav = !!(notification.actionType);
-      container.innerHTML = `
-        <div class="notification-item ${notification.type || 'info'} cursor-pointer bg-white p-4 flex items-start gap-3 border border-[#dce1e5] rounded-xl shadow-sm ${hasNav ? 'hover:bg-[#f0f4f9] active:scale-[0.99] transition-all' : ''}">
-          <i class="fas fa-${iconMap[notification.type || 'info'] || 'info-circle'} mt-0.5 text-[#24324c]"></i>
-          <div class="flex-1 min-w-0">
-            <div class="notification-message break-words text-sm text-gray-800">${notification.message || 'Notificación'}</div>
-            <div class="notification-time text-[10px] text-gray-400 mt-1">${notification.timestamp ? formatRelativeTime(notification.timestamp) : ''}${''}</div>
-          </div>
-          ${!notification.read ? '<span class="unread-dot w-2 h-2 bg-[#24324c] rounded-full mt-2 flex-shrink-0"></span>' : ''}
-        </div>
-      `;
+    const esc = (t) => String(t == null ? '' : t)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-      const item = container.querySelector('.notification-item');
-
-      item.addEventListener('click', () => {
-        if (!notification.read) {
-          let localNotes = getLocalNotifications(userId);
-          const idx = localNotes.findIndex(ln => ln.notificationId === notification.notificationId);
-          if (idx !== -1) {
-            localNotes[idx].read = true;
-            saveLocalNotifications(userId, localNotes);
-          }
-          firebase.database().ref('notifications/' + userId + '/' + notification.notificationId).update({ read: true }).catch(() => {});
-          updateBadgeCount(userId);
-        }
-        handleNotificationNavigation(notification);
-      });
-
-      notificationsList.appendChild(container);
+    // Agrupar por fecha: Hoy / Últimos 7 días / Anteriores
+    const now = Date.now(), DAY = 86400000;
+    const groups = [
+      { label: 'Hoy', items: [] },
+      { label: '\u00daltimos 7 d\u00edas', items: [] },
+      { label: 'Anteriores', items: [] }
+    ];
+    items.forEach(n => {
+      const age = now - (n.timestamp || 0);
+      (age < DAY ? groups[0] : age < 7 * DAY ? groups[1] : groups[2]).items.push(n);
     });
+
+    const frag = document.createDocumentFragment();
+
+    groups.forEach((g, gi) => {
+      if (!g.items.length) return;
+      const head = document.createElement('p');
+      head.className = 'text-[13px] font-bold text-[#1c2b4a] px-1 mb-1' + (gi > 0 ? ' mt-5' : '');
+      head.textContent = g.label;
+      frag.appendChild(head);
+
+      g.items.forEach(notification => {
+        const ts = typeStyle[notification.type] || typeStyle.info;
+        const hasNav = !!(notification.actionType);
+
+        // Avatar circular del actor (foto) o icono del tipo si es del sistema
+        let avatarHTML;
+        if (notification.actorImage) {
+          avatarHTML = `<img src="${esc(notification.actorImage)}" class="w-11 h-11 rounded-full object-cover bg-[#eef2f7]" alt="" onerror="this.style.display='none'">`;
+        } else if (notification.actorName) {
+          const initial = esc(notification.actorName.trim().charAt(0).toUpperCase() || '?');
+          avatarHTML = `<span class="w-11 h-11 rounded-full bg-[#24324c] text-white flex items-center justify-center text-base font-bold">${initial}</span>`;
+        } else {
+          avatarHTML = `<span class="w-11 h-11 rounded-full flex items-center justify-center text-white text-base" style="background:${ts.color}"><i class="fas ${ts.icon}"></i></span>`;
+        }
+
+        // Nombre de usuario en negrita al lado del texto, estilo Instagram
+        let msg = notification.message || 'Notificaci\u00f3n';
+        let nameHTML = '';
+        const aName = notification.actorName || '';
+        if (aName && msg.indexOf(aName) === 0) {
+          msg = msg.slice(aName.length).replace(/^\s+/, '');
+          nameHTML = `<span class="font-bold">${esc(aName)}</span> `;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'notif-ig-row flex items-center gap-3 px-3 py-2.5 rounded-2xl cursor-pointer active:scale-[0.99] transition' + (!notification.read ? ' notif-ig-unread' : '') + (hasNav ? ' hover:bg-[#f0f4f9]' : '');
+        row.innerHTML = `
+          <div class="relative shrink-0">
+            ${avatarHTML}
+            <span class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-white border border-[#e7ecf3] flex items-center justify-center shadow-sm">
+              <i class="fas ${ts.icon} text-[10px]" style="color:${ts.color}"></i>
+            </span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="notif-ig-text text-[13px] text-[#1c2b4a] leading-snug break-words">${nameHTML}${esc(msg)}</p>
+            <p class="text-[11px] text-[#7b878f] mt-0.5">${notification.timestamp ? formatRelativeTime(notification.timestamp) : ''}</p>
+          </div>
+          ${!notification.read ? '<span class="w-2 h-2 bg-[#0084FF] rounded-full shrink-0"></span>' : ''}`;
+
+        row.addEventListener('click', () => {
+          if (!notification.read) {
+            let localNotes = getLocalNotifications(userId);
+            const idx = localNotes.findIndex(ln => ln.notificationId === notification.notificationId);
+            if (idx !== -1) {
+              localNotes[idx].read = true;
+              saveLocalNotifications(userId, localNotes);
+            }
+            firebase.database().ref('notifications/' + userId + '/' + notification.notificationId).update({ read: true }).catch(() => {});
+            updateBadgeCount(userId);
+          }
+          handleNotificationNavigation(notification);
+        });
+
+        frag.appendChild(row);
+      });
+    });
+
+    notificationsList.appendChild(frag);
   }
 
   function handleNotificationNavigation(notification) {
