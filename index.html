@@ -5748,6 +5748,8 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
 <!-- Sala de fiesta (llamada de voz grupal) -->
 <style>
 .fiesta-reaction-float { position: absolute; bottom: 130px; font-size: 2.4rem; line-height: 1; animation: fiesta-float-up 2.6s ease-out forwards; pointer-events: none; }
+.fiesta-speaking { box-shadow: 0 0 0 3px #4ade80, 0 0 18px rgba(74,222,128,.75) !important; border-radius: 9999px; }
+#fiesta-mute-btn.fiesta-mic-live { box-shadow: 0 0 0 4px rgba(168,85,247,.55), 0 0 22px rgba(168,85,247,.85); }
 @keyframes fiesta-float-up {
   0% { transform: translateY(0) scale(.5); opacity: 0; }
   15% { opacity: 1; transform: translateY(-40px) scale(1.2); }
@@ -5762,6 +5764,7 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
       </div>
       <p id="fiesta-room-title" onclick="fiestaDebugDump()" class="font-extrabold text-[17px] truncate leading-tight"></p>
       <p id="fiesta-room-sub" class="text-xs text-white/60 truncate mt-0.5"></p>
+      <p id="fiesta-conn-status" class="text-[11px] font-bold text-white/50 truncate mt-0.5">Conectando&hellip;</p>
     </div>
     <button onclick="leaveFiesta()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center active:bg-white/20 transition shrink-0" aria-label="Cerrar">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -5791,13 +5794,14 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
           <button onclick="fiestaSendReaction('👍')" class="text-2xl leading-none p-1 active:scale-125 transition">👍</button>
         </div>
       </div>
+      <p id="fiesta-build-tag" class="text-center text-[10px] text-white/30 mt-3"></p>
       <button onclick="leaveFiesta()" class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center active:scale-95 transition shadow-lg shadow-red-500/40" aria-label="Colgar">
         <svg class="w-7 h-7 text-white" style="transform: rotate(135deg)" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
       </button>
     </div>
   </div>
   <div id="fiesta-reactions-layer" class="absolute inset-0 pointer-events-none overflow-hidden z-10"></div>
-  <div id="fiesta-remote-audios" class="hidden"></div>
+  <div id="fiesta-remote-audios" aria-hidden="true" style="position:fixed;left:-9999px;top:0;width:4px;height:4px;opacity:0.01;pointer-events:none;"></div>
 </div>
 
 <div id="note-creation-fullscreen" class="fixed inset-0 bg-[#f0f4f9] text-[#1c2b4a] z-50 overflow-hidden">
@@ -32865,12 +32869,63 @@ let fiestaPCs = {};
 let fiestaMembers = {};
 let fiestaRefs = {};
 let fiestaAmHost = false;
-const FIESTA_BUILD = '2026-09-09-D';
+const FIESTA_BUILD = '2026-09-09-E';
 const FIESTA_DEBUG = true;
 function fiestaDbg(t) { if (FIESTA_DEBUG && typeof showMiniToast === 'function') showMiniToast(t); }
 function fiestaPeerName(uid) { return (fiestaMembers[uid] || {}).name || 'alguien'; }
 let fiestaUnlockArmed = false;
+let fiestaAudioCtx = null, fiestaMicMon = null, fiestaPeerMons = {}, fiestaLevelRAF = 0;
+function fiestaLevelCtx() {
+  if (fiestaAudioCtx) return fiestaAudioCtx;
+  try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) fiestaAudioCtx = new AC(); } catch (_) {}
+  return fiestaAudioCtx;
+}
+function fiestaMonitorStream(stream, onLevel) {
+  const ctx = fiestaLevelCtx(); if (!ctx || !stream) return null;
+  try {
+    const src = ctx.createMediaStreamSource(stream);
+    const an = ctx.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = 0.35;
+    src.connect(an);
+    return { src, an, data: new Uint8Array(an.frequencyBinCount), onLevel };
+  } catch (_) { return null; }
+}
+function fiestaLevelTick() {
+  fiestaLevelRAF = requestAnimationFrame(fiestaLevelTick);
+  const proc = mon => {
+    if (!mon) return;
+    try {
+      mon.an.getByteTimeDomainData(mon.data);
+      let peak = 0;
+      for (let i = 0; i < mon.data.length; i += 2) { const v = Math.abs(mon.data[i] - 128); if (v > peak) peak = v; }
+      mon.onLevel(peak > 14);
+    } catch (_) {}
+  };
+  proc(fiestaMicMon);
+  Object.keys(fiestaPeerMons).forEach(k => proc(fiestaPeerMons[k]));
+}
+function fiestaStartLevels() { if (!fiestaLevelRAF) fiestaLevelTick(); }
+function fiestaStopLevels() {
+  if (fiestaLevelRAF) cancelAnimationFrame(fiestaLevelRAF);
+  fiestaLevelRAF = 0; fiestaMicMon = null; fiestaPeerMons = {};
+  document.getElementById('fiesta-mute-btn')?.classList.remove('fiesta-mic-live');
+  document.querySelectorAll('.fiesta-speaking').forEach(e => e.classList.remove('fiesta-speaking'));
+}
+function fiestaUpdateStatus() {
+  const el = document.getElementById('fiesta-conn-status'); if (!el || !fiestaCur) return;
+  const pcs = Object.values(fiestaPCs);
+  let txt = 'Esperando a otros…', cls = 'text-white/50';
+  if (pcs.length) {
+    const st = pcs.map(x => x.connectionState);
+    if (st.some(x => x === 'failed')) { txt = 'Reconectando audio…'; cls = 'text-amber-300'; }
+    else if (st.some(x => x === 'disconnected')) { txt = 'Conexión inestable…'; cls = 'text-amber-300'; }
+    else if (st.every(x => x === 'connected' || x === 'completed')) { txt = 'En línea · audio activo'; cls = 'text-emerald-300'; }
+    else { txt = 'Conectando audio…'; cls = 'text-white/50'; }
+  } else if (fiestaMyRole !== 'speaker') txt = 'Escuchando…';
+  el.textContent = txt;
+  el.className = 'text-[11px] font-bold truncate mt-0.5 ' + cls;
+}
 function fiestaUnlockAudio() {
+  if (fiestaAudioCtx && fiestaAudioCtx.state === 'suspended') fiestaAudioCtx.resume().catch(() => {});
   document.querySelectorAll('#fiesta-remote-audios audio').forEach(a => { a.play().catch(() => {}); });
 }
 function fiestaArmAudioUnlock() {
@@ -33049,6 +33104,9 @@ function fiestaShowRoom() {
   v.classList.add('flex');
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
   fiestaArmAudioUnlock();
+  fiestaLevelCtx();
+  document.getElementById('fiesta-build-tag').textContent = 'v' + FIESTA_BUILD;
+  fiestaUpdateStatus();
   document.getElementById('fiesta-room-title').textContent = fiestaCur.data.title;
   document.getElementById('fiesta-room-sub').textContent = 'por ' + fiestaCur.data.hostName;
   document.getElementById('fiesta-room-lang').textContent = fiestaCur.data.languageName || '';
@@ -33086,6 +33144,7 @@ function fiestaWatchRoom() {
   fiestaRefs.reactions = firebase.database().ref('fiestaReactions/' + id).limitToLast(30);
   fiestaRefs.reactions.on('child_added', snap => { const r = snap.val() || {}; if (!r.e || r.from === fiestaMyUid) return; if (r.at && Date.now() - r.at > 20000) return; fiestaShowReaction(r.e); });
   if (fiestaRefs.heal) clearInterval(fiestaRefs.heal);
+  fiestaRefs.status = setInterval(fiestaUpdateStatus, 2500);
   fiestaRefs.heal = setInterval(() => { if (!fiestaCur) return; const now = Date.now(); Object.keys(fiestaPeerDownSince).forEach(uid => { if (now - fiestaPeerDownSince[uid] > 15000 && fiestaMyUid < uid) fiestaHealPeer(uid); }); fiestaSyncPeers(); }, 12000);
 }
 
@@ -33099,11 +33158,11 @@ function renderFiestaRoom() {
 
   spEl.innerHTML = speakers.map(([uid, m]) => `
     <div class="flex flex-col items-center gap-2">
-      <div class="relative">
+      <div class="relative" id="fiesta-spk-${uid}">
         <div class="w-20 h-20 rounded-full p-[3px]" style="background: ${m.muted ? 'rgba(255,255,255,.15)' : 'linear-gradient(135deg,#a855f7,#ec4899)'}">
           <img src="${esc(m.photo) || 'https://via.placeholder.com/150'}" class="w-full h-full rounded-full object-cover ${m.muted ? 'opacity-60' : ''}">
         </div>
-        ${m.muted ? '<span class="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-red-500 border-2 border-[#141a38] flex items-center justify-center"><svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M5 5l14 14M9 5v4a3 3 0 005.12 2.12M15 5v4a3 3 0 01-5.12 2.12M12 19v2"/></svg></span>' : ''}
+        ${m.muted ? '<span class="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-white/20 border-2 border-[#141a38] flex items-center justify-center"><svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path stroke-linecap="round" d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="4" y1="4" x2="20" y2="20" stroke-linecap="round"/></svg></span>' : ''}
         ${fiestaCur.data.hostId === uid ? '<span class="absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full bg-amber-400 border-2 border-[#141a38] flex items-center justify-center text-sm leading-none">👑</span>' : ''}
       </div>
       <p class="text-[11px] font-bold truncate max-w-[84px] text-white/90">${esc(m.name)}${uid === fiestaMyUid ? ' (tú)' : ''}</p>
@@ -33124,7 +33183,7 @@ function fiestaPaintControls() {
   const actionRow = document.getElementById('fiesta-action-row');
   const isSpeaker = fiestaMyRole === 'speaker';
   const MIC_ON = '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 19v4M8 23h8"/></svg>';
-  const MIC_OFF = '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+  const MIC_OFF = '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 19v4M8 23h8"/><line x1="4" y1="4" x2="20" y2="20" stroke-linecap="round"/></svg>';
   if (muteBtn) {
     muteBtn.classList.toggle('hidden', !isSpeaker);
     muteBtn.classList.toggle('flex', isSpeaker);
@@ -33174,6 +33233,10 @@ async function fiestaEnsureMic() {
     fiestaLocalStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     fiestaLocalStream.getAudioTracks().forEach(t => { t.enabled = !fiestaMuted; });
     fiestaDbg('Microfono listo');
+    fiestaMicMon = fiestaMonitorStream(fiestaLocalStream, live => {
+      document.getElementById('fiesta-mute-btn')?.classList.toggle('fiesta-mic-live', live && !fiestaMuted);
+    });
+    fiestaStartLevels();
     // Agregar mi audio a los pares ya conectados
     Object.values(fiestaPCs).forEach(pc => {
       fiestaLocalStream.getTracks().forEach(t => pc.addTrack(t, fiestaLocalStream));
@@ -33211,7 +33274,7 @@ function fiestaSetupPC(uid, pc) {
   pc.onnegotiationneeded = async () => { try { if (pc.signalingState !== 'stable') return; const offer = await pc.createOffer(); await pc.setLocalDescription(offer); fiestaSendSignal(uid, { type: 'offer', sdp: pc.localDescription }); } catch (_) {} };
   pc.ontrack = e => { pc._gotAudio = true; fiestaDbg('Recibiendo audio de ' + fiestaPeerName(uid)); fiestaAttachAudio(uid, e.streams[0]); };
   pc.onconnectionstatechange = () => {
-    const st = pc.connectionState; if (st === 'disconnected') fiestaPeerDownSince[uid] = Date.now(); else delete fiestaPeerDownSince[uid]; if (st === 'connected') fiestaDbg('Conectado con ' + fiestaPeerName(uid)); else if (st === 'failed') { fiestaDbg('Fallo conexion con ' + fiestaPeerName(uid)); fiestaHealPeer(uid); } else if (st === 'closed') fiestaDropPeer(uid);
+    const st = pc.connectionState; if (st === 'disconnected') fiestaPeerDownSince[uid] = Date.now(); else delete fiestaPeerDownSince[uid]; if (st === 'connected') fiestaDbg('Conectado con ' + fiestaPeerName(uid)); else if (st === 'failed') { fiestaDbg('Fallo conexion con ' + fiestaPeerName(uid)); fiestaHealPeer(uid); } else if (st === 'closed') fiestaDropPeer(uid); fiestaUpdateStatus();
   };
 }
 
@@ -33301,9 +33364,17 @@ function fiestaAttachAudio(uid, stream) {
   el.muted = false;
   el.srcObject = stream;
   el.play().catch(() => {});
+  try { if (fiestaPeerMons[uid]) fiestaPeerMons[uid].src.disconnect(); } catch (_) {}
+  fiestaPeerMons[uid] = fiestaMonitorStream(stream, live => {
+    const w = document.getElementById('fiesta-spk-' + uid);
+    if (w) w.classList.toggle('fiesta-speaking', live);
+  });
+  fiestaStartLevels();
 }
 
 function fiestaDropPeer(uid) {
+  const mon = fiestaPeerMons[uid];
+  if (mon) { try { mon.src.disconnect(); } catch (_) {} delete fiestaPeerMons[uid]; }
   const pc = fiestaPCs[uid];
   if (pc) { try { pc.close(); } catch (_) {} }
   delete fiestaPCs[uid];
@@ -33312,6 +33383,8 @@ function fiestaDropPeer(uid) {
 
 function fiestaFullCleanup() {
   fiestaDisarmAudioUnlock();
+  fiestaStopLevels();
+  if (fiestaRefs.status) { clearInterval(fiestaRefs.status); delete fiestaRefs.status; }
   if (fiestaRefs.heal) { clearInterval(fiestaRefs.heal); delete fiestaRefs.heal; }
   Object.keys(fiestaPCs).forEach(fiestaDropPeer);
   if (fiestaLocalStream) { fiestaLocalStream.getTracks().forEach(t => t.stop()); fiestaLocalStream = null; }
