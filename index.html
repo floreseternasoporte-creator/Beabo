@@ -32852,7 +32852,10 @@ document.addEventListener('input', function(e){
    - Crear fiesta: titulo, idioma, descripcion, max. hablantes, ahora o programada
    - Unirse como oyente o hablante; malla WebRTC de audio con senalizacion en Firebase
    ===================================================================== */
-const FIESTA_ICE = { iceServers: [ { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302', 'stun:stun3.l.google.com:19302', 'stun:stun4.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' } ], iceCandidatePoolSize: 10 };
+const FIESTA_ICE = { iceServers: [ { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302', 'stun:stun3.l.google.com:19302', 'stun:stun4.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
+    { urls: 'turns:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' } ], iceCandidatePoolSize: 10 };
 let fiestaCur = null;
 let fiestaMyUid = null;
 let fiestaMyRole = 'listener';
@@ -33172,6 +33175,7 @@ function fiestaSendSignal(toUid, payload) {
 
 function fiestaSetupPC(uid, pc) {
   fiestaPCs[uid] = pc;
+  pc._pendingCands = [];
   if (fiestaLocalStream && fiestaMyRole === 'speaker') {
     fiestaLocalStream.getTracks().forEach(t => pc.addTrack(t, fiestaLocalStream));
   }
@@ -33208,21 +33212,33 @@ async function fiestaOnSignal(key, msg) {
         try { await pc.setLocalDescription({ type: 'rollback' }); } catch (_) {}
       }
       await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      await fiestaFlushCandidates(pc);
       const ans = await pc.createAnswer();
       await pc.setLocalDescription(ans);
       fiestaSendSignal(from, { type: 'answer', sdp: pc.localDescription });
     } else if (msg.type === 'answer') {
       const pc = fiestaPCs[from];
-      if (pc && !pc.remoteDescription) await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      if (pc && !pc.remoteDescription) { await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp)); await fiestaFlushCandidates(pc); }
     } else if (msg.type === 'candidate') {
       const pc = fiestaPCs[from];
-      if (pc && msg.candidate) { try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch (_) {} }
+      if (pc && msg.candidate) await fiestaAddCandidate(pc, msg.candidate);
     }
   } catch (e) {}
   done();
 }
 
-function fiestaHealPeer(uid) { delete fiestaPeerDownSince[uid]; fiestaDropPeer(uid); if (fiestaCur && fiestaMyUid && fiestaMyUid < uid) { setTimeout(() => { if (fiestaCur && fiestaMyUid && !fiestaPCs[uid]) fiestaCallPeer(uid); }, 1500); } }
+async function fiestaAddCandidate(pc, cand) {
+  if (pc.remoteDescription) { try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (_) {} }
+  else pc._pendingCands.push(cand);
+}
+
+async function fiestaFlushCandidates(pc) {
+  if (!pc._pendingCands || !pc._pendingCands.length) return;
+  const q = pc._pendingCands; pc._pendingCands = [];
+  for (const cand of q) { try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (_) {} }
+}
+
+function fiestaHealPeer(uid) { delete fiestaPeerDownSince[uid]; fiestaDropPeer(uid); if (typeof showMiniToast === 'function') showMiniToast('Reconectando audio...'); if (fiestaCur && fiestaMyUid && fiestaMyUid < uid) { setTimeout(() => { if (fiestaCur && fiestaMyUid && !fiestaPCs[uid]) fiestaCallPeer(uid); }, 1500); } }
 
 function fiestaSyncPeers() {
   if (!fiestaCur || !fiestaMyUid) return;
