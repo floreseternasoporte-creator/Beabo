@@ -33027,6 +33027,7 @@ function fiestaShowRoom() {
   v.classList.remove('hidden');
   v.classList.add('flex');
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
+  document.addEventListener('pointerdown', () => { document.querySelectorAll('#fiesta-remote-audios audio').forEach(a => a.play().catch(() => {})); }, { once: true });
   document.getElementById('fiesta-room-title').textContent = fiestaCur.data.title;
   document.getElementById('fiesta-room-sub').textContent = 'por ' + fiestaCur.data.hostName;
   document.getElementById('fiesta-room-lang').textContent = fiestaCur.data.languageName || '';
@@ -33102,11 +33103,11 @@ function fiestaPaintControls() {
   const actionRow = document.getElementById('fiesta-action-row');
   const isSpeaker = fiestaMyRole === 'speaker';
   const MIC_ON = '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 19v4M8 23h8"/></svg>';
-  const MIC_OFF = '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5v4a3 3 0 0 0 5.12 2.12M15 5v4a3 3 0 0 1-5.12 2.12"/><path stroke-linecap="round" stroke-linejoin="round" d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 19v4M8 23h8"/><path stroke-linecap="round" d="M3 3l18 18"/></svg>';
+  const MIC_OFF = '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
   if (muteBtn) {
     muteBtn.classList.toggle('hidden', !isSpeaker);
     muteBtn.classList.toggle('flex', isSpeaker);
-    muteBtn.style.background = fiestaMuted ? '#ef4444' : '';
+    
     muteBtn.innerHTML = fiestaMuted ? MIC_OFF : MIC_ON;
   }
   const showSpeak = !isSpeaker;
@@ -33175,6 +33176,7 @@ function fiestaSetupPC(uid, pc) {
     fiestaLocalStream.getTracks().forEach(t => pc.addTrack(t, fiestaLocalStream));
   }
   pc.onicecandidate = e => { if (e.candidate) fiestaSendSignal(uid, { type: 'candidate', candidate: e.candidate.toJSON() }); };
+  pc.onnegotiationneeded = async () => { try { if (pc.signalingState !== 'stable') return; const offer = await pc.createOffer(); await pc.setLocalDescription(offer); fiestaSendSignal(uid, { type: 'offer', sdp: pc.localDescription }); } catch (_) {} };
   pc.ontrack = e => fiestaAttachAudio(uid, e.streams[0]);
   pc.onconnectionstatechange = () => {
     const st = pc.connectionState; if (st === 'disconnected') fiestaPeerDownSince[uid] = Date.now(); else delete fiestaPeerDownSince[uid]; if (st === 'failed') fiestaHealPeer(uid); else if (st === 'closed') fiestaDropPeer(uid);
@@ -33201,6 +33203,10 @@ async function fiestaOnSignal(key, msg) {
     if (msg.type === 'offer') {
       let pc = fiestaPCs[from];
       if (!pc) { pc = new RTCPeerConnection(FIESTA_ICE); fiestaSetupPC(from, pc); }
+      if (pc.signalingState !== 'stable') {
+        if (!(fiestaMyUid > from)) { done(); return; }
+        try { await pc.setLocalDescription({ type: 'rollback' }); } catch (_) {}
+      }
       await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
       const ans = await pc.createAnswer();
       await pc.setLocalDescription(ans);
@@ -33240,6 +33246,7 @@ function fiestaAttachAudio(uid, stream) {
     el = document.createElement('audio');
     el.id = 'fiesta-audio-' + uid;
     el.autoplay = true;
+    el.playsInline = true;
     document.getElementById('fiesta-remote-audios')?.appendChild(el);
   }
   el.srcObject = stream;
