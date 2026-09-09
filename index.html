@@ -32869,6 +32869,20 @@ const FIESTA_BUILD = '2026-09-09-D';
 const FIESTA_DEBUG = true;
 function fiestaDbg(t) { if (FIESTA_DEBUG && typeof showMiniToast === 'function') showMiniToast(t); }
 function fiestaPeerName(uid) { return (fiestaMembers[uid] || {}).name || 'alguien'; }
+let fiestaUnlockArmed = false;
+function fiestaUnlockAudio() {
+  document.querySelectorAll('#fiesta-remote-audios audio').forEach(a => { a.play().catch(() => {}); });
+}
+function fiestaArmAudioUnlock() {
+  if (fiestaUnlockArmed) return;
+  fiestaUnlockArmed = true;
+  ['touchstart', 'pointerdown'].forEach(ev => document.addEventListener(ev, fiestaUnlockAudio));
+}
+function fiestaDisarmAudioUnlock() {
+  if (!fiestaUnlockArmed) return;
+  fiestaUnlockArmed = false;
+  ['touchstart', 'pointerdown'].forEach(ev => document.removeEventListener(ev, fiestaUnlockAudio));
+}
 let fiestaPeerDownSince = {};
 
 function openFiestaSection() {
@@ -33034,7 +33048,7 @@ function fiestaShowRoom() {
   v.classList.remove('hidden');
   v.classList.add('flex');
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
-  document.addEventListener('pointerdown', () => { document.querySelectorAll('#fiesta-remote-audios audio').forEach(a => a.play().catch(() => {})); }, { once: true });
+  fiestaArmAudioUnlock();
   document.getElementById('fiesta-room-title').textContent = fiestaCur.data.title;
   document.getElementById('fiesta-room-sub').textContent = 'por ' + fiestaCur.data.hostName;
   document.getElementById('fiesta-room-lang').textContent = fiestaCur.data.languageName || '';
@@ -33281,8 +33295,10 @@ function fiestaAttachAudio(uid, stream) {
     el.id = 'fiesta-audio-' + uid;
     el.autoplay = true;
     el.playsInline = true;
+    el.muted = false;
     document.getElementById('fiesta-remote-audios')?.appendChild(el);
   }
+  el.muted = false;
   el.srcObject = stream;
   el.play().catch(() => {});
 }
@@ -33295,6 +33311,7 @@ function fiestaDropPeer(uid) {
 }
 
 function fiestaFullCleanup() {
+  fiestaDisarmAudioUnlock();
   if (fiestaRefs.heal) { clearInterval(fiestaRefs.heal); delete fiestaRefs.heal; }
   Object.keys(fiestaPCs).forEach(fiestaDropPeer);
   if (fiestaLocalStream) { fiestaLocalStream.getTracks().forEach(t => t.stop()); fiestaLocalStream = null; }
