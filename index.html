@@ -16288,7 +16288,15 @@ function deleteComment(noteId, commentPath) {
             } else {
               // Actualizar estado de lectura si cambió en Firebase
               const idx = localNotes.findIndex(ln => ln.notificationId === n.notificationId);
-              if (idx !== -1) localNotes[idx].read = n.read;
+              if (idx !== -1) {
+                localNotes[idx].read = n.read;
+                // Copiar datos del actor (avatar/nombre) cuando lleguen a Firebase
+                if (n.actorId && !localNotes[idx].actorId) {
+                  localNotes[idx].actorId = n.actorId;
+                  localNotes[idx].actorName = n.actorName || '';
+                  localNotes[idx].actorImage = n.actorImage || '';
+                }
+              }
             }
           }
         });
@@ -16416,6 +16424,74 @@ function deleteComment(noteId, commentPath) {
     renderNotificationsList(currentUser.uid);
   }
 
+  // Caché de perfiles para resolver el actor de notificaciones antiguas
+  const _notifProfileCache = {};
+
+  function resolveNotifActorUid(n) {
+    if (n.actorId) return n.actorId;
+    // En follow / follow_request / match, actionId es el uid de quien actuó
+    if (n.actionType === 'profile' && n.actionId) return n.actionId;
+    return null;
+  }
+
+  function paintNotifName(rowEl, actorName, message) {
+    const nameEl = rowEl.querySelector('.notif-name');
+    const msgEl = rowEl.querySelector('.notif-msg');
+    if (!nameEl || !msgEl) return;
+    let msg = message || 'Notificaci\u00f3n';
+    let name = '';
+    if (actorName && msg.indexOf(actorName) === 0) {
+      msg = msg.slice(actorName.length).replace(/^\s+/, '');
+      name = actorName;
+    }
+    nameEl.textContent = name ? name + ' ' : '';
+    msgEl.textContent = msg;
+  }
+
+  function hydrateNotifActor(userId, notification, rowEl) {
+    const uid = resolveNotifActorUid(notification);
+    if (!uid) return;
+    const apply = (info) => {
+      if (!info) return;
+      notification.actorId = uid;
+      notification.actorName = info.name;
+      notification.actorImage = info.image;
+      const wrap = rowEl.querySelector('.notif-avatar-wrap');
+      const badgeEl = wrap ? wrap.querySelector(':scope > span.absolute') : null;
+      const badgeHTML = badgeEl ? badgeEl.outerHTML : '';
+      if (wrap && info.image) {
+        const safe = String(info.image).replace(/"/g, '&quot;');
+        wrap.innerHTML = `<img src="${safe}" class="w-11 h-11 rounded-full object-cover bg-[#eef2f7]" alt="" onerror="this.style.display='none'">` + badgeHTML;
+      } else if (wrap && info.name) {
+        const initial = info.name.trim().charAt(0).toUpperCase() || '?';
+        wrap.innerHTML = `<span class="w-11 h-11 rounded-full bg-[#24324c] text-white flex items-center justify-center text-base font-bold">${initial}</span>` + badgeHTML;
+      }
+      paintNotifName(rowEl, info.name, notification.message);
+      // Persistir para que no se vuelva a buscar
+      try {
+        const local = getLocalNotifications(userId);
+        const it = local.find(x => x.notificationId === notification.notificationId);
+        if (it) {
+          it.actorId = uid; it.actorName = info.name; it.actorImage = info.image;
+          saveLocalNotifications(userId, local);
+        }
+      } catch (_) {}
+      try {
+        firebase.database().ref('notifications/' + userId + '/' + notification.notificationId)
+          .update({ actorId: uid, actorName: info.name, actorImage: info.image }).catch(() => {});
+      } catch (_) {}
+    };
+    if (_notifProfileCache[uid]) { apply(_notifProfileCache[uid]); return; }
+    try {
+      firebase.database().ref('users/' + uid).once('value').then(snap => {
+        const d = snap.val() || {};
+        const info = { name: d.username || d.displayName || 'Alguien', image: d.profileImage || d.photoURL || '' };
+        _notifProfileCache[uid] = info;
+        if (rowEl.isConnected) apply(info);
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function renderNotificationsList(userId) {
     const notificationsList = document.getElementById('notifications-list');
     if (!notificationsList) return;
@@ -16454,10 +16530,6 @@ function deleteComment(noteId, commentPath) {
       info:      { icon: 'fa-circle-info', color: '#5c6974' }
     };
 
-    const esc = (t) => String(t == null ? '' : t)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-
     // Agrupar por fecha: Hoy / Últimos 7 días / Anteriores
     const now = Date.now(), DAY = 86400000;
     const groups = [
@@ -16483,40 +16555,40 @@ function deleteComment(noteId, commentPath) {
         const ts = typeStyle[notification.type] || typeStyle.info;
         const hasNav = !!(notification.actionType);
 
-        // Avatar circular del actor (foto) o icono del tipo si es del sistema
+        // Avatar: foto del actor; si aún no hay datos, inicial o genérico
+        // (se resuelve en segundo plano y se actualiza la fila sola).
         let avatarHTML;
+        const escAttr = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
         if (notification.actorImage) {
-          avatarHTML = `<img src="${esc(notification.actorImage)}" class="w-11 h-11 rounded-full object-cover bg-[#eef2f7]" alt="" onerror="this.style.display='none'">`;
+          avatarHTML = `<img src="${escAttr(notification.actorImage)}" class="w-11 h-11 rounded-full object-cover bg-[#eef2f7]" alt="" onerror="this.style.display='none'">`;
         } else if (notification.actorName) {
-          const initial = esc(notification.actorName.trim().charAt(0).toUpperCase() || '?');
+          const initial = notification.actorName.trim().charAt(0).toUpperCase() || '?';
           avatarHTML = `<span class="w-11 h-11 rounded-full bg-[#24324c] text-white flex items-center justify-center text-base font-bold">${initial}</span>`;
         } else {
-          avatarHTML = `<span class="w-11 h-11 rounded-full flex items-center justify-center text-white text-base" style="background:${ts.color}"><i class="fas ${ts.icon}"></i></span>`;
-        }
-
-        // Nombre de usuario en negrita al lado del texto, estilo Instagram
-        let msg = notification.message || 'Notificaci\u00f3n';
-        let nameHTML = '';
-        const aName = notification.actorName || '';
-        if (aName && msg.indexOf(aName) === 0) {
-          msg = msg.slice(aName.length).replace(/^\s+/, '');
-          nameHTML = `<span class="font-bold">${esc(aName)}</span> `;
+          avatarHTML = `<span class="w-11 h-11 rounded-full bg-[#eef2f7] text-[#8fa2c7] flex items-center justify-center"><i class="fas fa-user text-lg"></i></span>`;
         }
 
         const row = document.createElement('div');
         row.className = 'notif-ig-row flex items-center gap-3 px-3 py-2.5 rounded-2xl cursor-pointer active:scale-[0.99] transition' + (!notification.read ? ' notif-ig-unread' : '') + (hasNav ? ' hover:bg-[#f0f4f9]' : '');
         row.innerHTML = `
-          <div class="relative shrink-0">
+          <div class="notif-avatar-wrap relative shrink-0">
             ${avatarHTML}
             <span class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-white border border-[#e7ecf3] flex items-center justify-center shadow-sm">
               <i class="fas ${ts.icon} text-[10px]" style="color:${ts.color}"></i>
             </span>
           </div>
           <div class="flex-1 min-w-0">
-            <p class="notif-ig-text text-[13px] text-[#1c2b4a] leading-snug break-words">${nameHTML}${esc(msg)}</p>
+            <p class="notif-ig-text text-[13px] text-[#1c2b4a] leading-snug break-words"><span class="notif-name font-bold"></span><span class="notif-msg"></span></p>
             <p class="text-[11px] text-[#7b878f] mt-0.5">${notification.timestamp ? formatRelativeTime(notification.timestamp) : ''}</p>
           </div>
           ${!notification.read ? '<span class="w-2 h-2 bg-[#0084FF] rounded-full shrink-0"></span>' : ''}`;
+
+        paintNotifName(row, notification.actorName, notification.message);
+
+        // Si falta la foto, buscar el perfil del actor y actualizar la fila
+        if (!notification.actorImage && resolveNotifActorUid(notification)) {
+          hydrateNotifActor(userId, notification, row);
+        }
 
         row.addEventListener('click', () => {
           if (!notification.read) {
