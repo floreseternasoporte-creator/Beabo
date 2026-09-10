@@ -10580,6 +10580,15 @@ function saveNote() {
           }
       });
 
+      // A15: quitar del DOM las tarjetas de posts que ya no existen en el
+      // snapshot (borrados por el autor u otro dispositivo).
+      try {
+        const liveIds = new Set(notes.map(n => 'post-' + n.id));
+        feedContainer.querySelectorAll(':scope > div[id^="post-"]').forEach(el => {
+          if (!liveIds.has(el.id)) el.remove();
+        });
+      } catch (_) {}
+
       if (myGeneration !== _notesFeedGeneration) return;
       if (feedFragment.children.length > 0) {
           if (feedContainer.querySelector(':scope > .feed-empty-state')) {
@@ -21048,16 +21057,21 @@ o
   function saveProfileField(partialUpdates, validateUsername = false) {
     const user = DrexCloud.auth().currentUser;
     if (!user) return Promise.resolve(false);
-    return DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
+    return DrexCloud.database().ref('users/' + user.uid).once('value').then(async snapshot => {
       const userData = snapshot.val() || {};
       const updates = { ...partialUpdates };
 
       if (validateUsername) {
-        const nextUsername = (updates.username || "").trim();
+        const nextUsername = (updates.username || "").trim().replace(/\s+/g, '').toLowerCase();
         if (!nextUsername) {
           alert("El nombre de usuario no puede estar vacío.");
           return false;
         }
+        if (!/^[a-z0-9._]+$/.test(nextUsername) || nextUsername.length < 3) {
+          alert("El nombre de usuario solo puede tener letras, números, puntos y guiones bajos (mínimo 3 caracteres).");
+          return false;
+        }
+        updates.username = nextUsername;
         const lastUsernameChange = userData.lastUsernameChange || 0;
         const timeSinceLastChange = Date.now() - lastUsernameChange;
         const USERNAME_CHANGE_COOLDOWN = 7 * 24 * 60 * 60 * 1000;
@@ -21068,6 +21082,18 @@ o
         }
         if (nextUsername !== userData.username) {
           updates.lastUsernameChange = Date.now();
+          // A10: reserva atómica del nuevo username (igual que en el registro):
+          // si ya está tomado por otro usuario, se rechaza el cambio.
+          const claim = await DrexCloud.database().ref('usernames/' + nextUsername)
+            .transaction(cur => (cur === null || cur === user.uid ? user.uid : undefined));
+          if (!claim.committed) {
+            alert("Ese nombre de usuario ya está en uso. Prueba otro.");
+            return false;
+          }
+          // Liberar la reserva anterior para no dejar el índice huérfano.
+          if (userData.username && userData.username !== nextUsername) {
+            await DrexCloud.database().ref('usernames/' + String(userData.username).toLowerCase()).remove().catch(() => {});
+          }
         }
       }
 
@@ -24474,9 +24500,20 @@ const _startChatListeners = () => {
     const ref = DrexCloud.database().ref('users/' + user.uid);
     return ref.once('value').then(snapshot => {
       const existing = snapshot.val() || {};
+      // C4: el username temporal se sanitiza (solo [a-z0-9._], minúsculas) y se
+      // hace único por usuario con un sufijo de su uid. No se escribe en el
+      // índice usernames/ (la reserva real ocurre en el flujo de registro con
+      // transacción atómica). Si ya hay username, se respeta.
+      let fallbackUsername = existing.username || '';
+      if (!fallbackUsername) {
+        const raw = user.displayName || (user.email ? user.email.split('@')[0] : 'usuario');
+        const clean = String(raw).toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 20) || 'usuario';
+        const suffix = String(user.uid).replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase() || 'x';
+        fallbackUsername = clean + '_' + suffix;
+      }
       const updates = {
         email: existing.email || user.email || '',
-        username: existing.username || user.displayName || (user.email ? user.email.split('@')[0] : 'Usuario'),
+        username: fallbackUsername,
         profileImage: existing.profileImage || user.photoURL || '',
         lastChatLoginAt: Date.now()
       };
@@ -26580,6 +26617,9 @@ function renderAccountsList(accounts) {
     const blockPayload = { blockedAt: Date.now(), by: currentUser.uid };
     DrexCloud.database().ref('blocks/' + currentUser.uid + '/' + targetId).set(blockPayload).then(() => {
       blockedAccountsSet.add(targetId);
+      // A12: romper el seguimiento en ambas direcciones (igual que al
+      // bloquear desde opciones o desde el chat).
+      breakFollowRelationsOnBlock(currentUser.uid, targetId);
       closeAuthorProfile();
       loadNotes(false);
       performRealTimeSearch();
