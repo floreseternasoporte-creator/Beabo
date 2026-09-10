@@ -1048,12 +1048,76 @@
   /* ============================== DrexCloud ============================== */
 
   var databaseSingleton = null;
+  var SUPPORT_TABLE = 'drex-support-tickets';
+
+  // ---- Soporte con IA: tickets que responde automáticamente Bedrock ----
+  function supportDoc() { return getDocClient(); }
+  function supportUser() {
+    var u = null;
+    try { u = getAuth().currentUser; } catch (e) {}
+    return u || {};
+  }
+  var supportApi = {
+    // Crea un ticket; la lambda de Bedrock responde en unos segundos.
+    createTicket: function (subject, message) {
+      var u = supportUser();
+      if (!u.uid) return Promise.reject(new Error('auth/no-user'));
+      var now = new Date().toISOString();
+      var item = {
+        ticketId: newPushId(),
+        userId: u.uid,
+        userEmail: u.email || '',
+        subject: String(subject || '').slice(0, 120),
+        messages: [{ from: 'user', text: String(message || '').slice(0, 4000), at: now }],
+        status: 'open',
+        createdAt: now,
+        updatedAt: now
+      };
+      return supportDoc().put({ TableName: SUPPORT_TABLE, Item: item }).promise().then(function () { return item; });
+    },
+    // Tickets del usuario actual, más recientes primero.
+    listMyTickets: function () {
+      var u = supportUser();
+      if (!u.uid) return Promise.reject(new Error('auth/no-user'));
+      return supportDoc().query({
+        TableName: SUPPORT_TABLE,
+        IndexName: 'byUser',
+        KeyConditionExpression: 'userId = :u',
+        ExpressionAttributeValues: { ':u': u.uid },
+        ScanIndexForward: false,
+        Limit: 25
+      }).promise().then(function (r) { return r.Items || []; });
+    },
+    // El usuario agrega un mensaje a su ticket; la IA vuelve a responder.
+    replyToTicket: function (ticketId, message) {
+      var u = supportUser();
+      if (!u.uid) return Promise.reject(new Error('auth/no-user'));
+      var now = new Date().toISOString();
+      return supportDoc().update({
+        TableName: SUPPORT_TABLE,
+        Key: { ticketId: ticketId },
+        UpdateExpression: 'SET #m = list_append(if_not_exists(#m, :empty), :nm), #s = :open, updatedAt = :now',
+        ConditionExpression: 'userId = :u',
+        ExpressionAttributeNames: { '#m': 'messages', '#s': 'status' },
+        ExpressionAttributeValues: {
+          ':empty': [],
+          ':nm': [{ from: 'user', text: String(message || '').slice(0, 4000), at: now }],
+          ':open': 'open',
+          ':now': now,
+          ':u': u.uid
+        },
+        ReturnValues: 'ALL_NEW'
+      }).promise().then(function (r) { return r.Attributes; });
+    }
+  };
+
   var DrexCloud = {
     database: function () {
       if (!databaseSingleton) databaseSingleton = createDatabase();
       return databaseSingleton;
     },
     auth: getAuth,
+    support: supportApi,
     // Inicialización opcional por compatibilidad (la config vive arriba)
     initializeApp: function () { return {}; }
   };

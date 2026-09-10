@@ -3226,9 +3226,20 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
       <div id="help-topics" class="grid grid-cols-2 gap-3"></div>
       <div class="mt-5 bg-white border border-[#dce1e5] rounded-2xl p-4">
         <p class="font-bold text-[#1c2b4a] text-sm mb-1">¿Necesitas más ayuda?</p>
-        <p class="text-[13px] text-[#7b8794] mb-3">Escríbenos y te responderemos lo antes posible.</p>
-        <a href="mailto:soporte@drex.app" class="block text-center w-full py-2.5 rounded-xl bg-[#24324c] text-white font-bold text-sm active:scale-[.98] transition">Contactar por correo</a>
-        <p class="text-center text-xs text-[#8fa2c7] mt-2">soporte@drex.app</p>
+        <p class="text-[13px] text-[#7b8794] mb-3">Escríbenos y nuestra IA de soporte te responderá en segundos.</p>
+        <input id="support-subject" type="text" maxlength="120" placeholder="Asunto"
+          class="w-full mb-2 px-3 py-2.5 rounded-xl border border-[#dce1e5] text-sm text-[#1c2b4a] placeholder-[#8fa2c7] focus:outline-none focus:border-[#24324c]">
+        <textarea id="support-message" rows="3" maxlength="4000" placeholder="Describe tu problema…"
+          class="w-full mb-2 px-3 py-2.5 rounded-xl border border-[#dce1e5] text-sm text-[#1c2b4a] placeholder-[#8fa2c7] focus:outline-none focus:border-[#24324c] resize-none"></textarea>
+        <button onclick="sendSupportTicket()" id="support-send-btn"
+          class="block text-center w-full py-2.5 rounded-xl bg-[#24324c] text-white font-bold text-sm active:scale-[.98] transition">Enviar mensaje</button>
+        <p id="support-form-msg" class="text-center text-xs mt-2 hidden"></p>
+        <div class="mt-4">
+          <p class="font-bold text-[#1c2b4a] text-sm mb-2">Mis mensajes</p>
+          <div id="support-tickets" class="space-y-2">
+            <p class="text-xs text-[#8fa2c7]">Sin mensajes todavía.</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -15550,6 +15561,18 @@ function deleteComment(noteId, commentPath) {
 "No podrá ver tu perfil ni enviarte mensajes. Podrás desbloquearlo cuando quieras.":"They won\'t be able to see your profile or message you. You can unblock them anytime.",
 "este usuario":"this user",
 "¿Bloquear a":"Block",
+"¿Necesitas más ayuda?":"Need more help?",
+"Asunto":"Subject",
+"Describe tu problema…":"Describe your issue…",
+"Enviando…":"Sending…",
+"Enviar mensaje":"Send message",
+"Escríbenos y nuestra IA de soporte te responderá en segundos.":"Write to us and our AI support will reply in seconds.",
+"Mis mensajes":"My messages",
+"No se pudo enviar. Inténtalo de nuevo.":"Couldn't send it. Try again.",
+"Nuestra IA está preparando tu respuesta…":"Our AI is preparing your reply…",
+"Responder…":"Reply…",
+"Sin mensajes todavía.":"No messages yet.",
+"Tu mensaje fue enviado. Te responderemos aquí mismo en unos segundos.":"Your message was sent. We'll reply right here in a few seconds.",
 "Anteriores":"Older",
 "Hoy":"Today",
 "Cuando alguien interactúe contigo, lo verás aquí.":"When someone interacts with you, you'll see it here.",
@@ -18656,6 +18679,76 @@ o
         <span class="block font-bold text-[#1c2b4a] text-sm leading-tight">${escapeHtml(_helpText(topic.title))}</span>
         <span class="block text-xs text-[#8fa2c7] mt-1">${topic.articles.length} artículos</span>
       </button>`).join('');
+    loadSupportTickets();
+  }
+
+  // ---- Soporte con IA: tickets que responde Bedrock ----
+  var _supportPollTimer = null;
+  function sendSupportTicket() {
+    const subj = document.getElementById('support-subject');
+    const msg = document.getElementById('support-message');
+    const btn = document.getElementById('support-send-btn');
+    const out = document.getElementById('support-form-msg');
+    const text = (msg.value || '').trim();
+    const showMsg = (t, ok) => {
+      out.textContent = t;
+      out.classList.remove('hidden');
+      out.className = 'text-center text-xs mt-2 ' + (ok ? 'text-green-600' : 'text-red-500');
+    };
+    if (!text) { showMsg('Describe tu problema…', false); return; }
+    if (!window.DrexCloud || !DrexCloud.support) { showMsg('No se pudo enviar. Inténtalo de nuevo.', false); return; }
+    btn.disabled = true;
+    const oldLabel = btn.textContent;
+    btn.textContent = 'Enviando…';
+    DrexCloud.support.createTicket((subj.value || '').trim(), text).then(() => {
+      subj.value = ''; msg.value = '';
+      showMsg('Tu mensaje fue enviado. Te responderemos aquí mismo en unos segundos.', true);
+      loadSupportTickets();
+    }).catch(() => {
+      showMsg('No se pudo enviar. Inténtalo de nuevo.', false);
+    }).finally(() => { btn.disabled = false; btn.textContent = oldLabel; });
+  }
+
+  function loadSupportTickets() {
+    const box = document.getElementById('support-tickets');
+    if (!box || !window.DrexCloud || !DrexCloud.support) return;
+    if (_supportPollTimer) { clearTimeout(_supportPollTimer); _supportPollTimer = null; }
+    DrexCloud.support.listMyTickets().then(tickets => {
+      if (!tickets.length) { box.innerHTML = '<p class="text-xs text-[#8fa2c7]">Sin mensajes todavía.</p>'; return; }
+      box.innerHTML = tickets.map(supportTicketCard).join('');
+      if (tickets.some(t => t.status === 'open')) {
+        _supportPollTimer = setTimeout(loadSupportTickets, 5000);
+      }
+    }).catch(() => {});
+  }
+
+  function supportTicketCard(t) {
+    const msgs = (t.messages || []).map(m => `
+      <div class="${m.from === 'user' ? 'text-right' : 'text-left'}">
+        <span class="inline-block px-3 py-2 rounded-2xl text-[13px] leading-snug ${m.from === 'user' ? 'bg-[#24324c] text-white' : 'bg-[#eef2f7] text-[#1c2b4a]'}">${escapeHtml(m.text || '')}</span>
+      </div>`).join('');
+    return `
+      <div class="border border-[#dce1e5] rounded-2xl p-3">
+        <p class="font-bold text-[13px] text-[#1c2b4a]">${escapeHtml(t.subject || 'Soporte')}</p>
+        <div class="space-y-1.5 mt-2">${msgs}</div>
+        ${t.status === 'open' ? '<p class="text-xs text-[#8fa2c7] mt-2">Nuestra IA está preparando tu respuesta…</p>' : ''}
+        <div class="flex gap-2 mt-2">
+          <input id="reply-${t.ticketId}" type="text" maxlength="4000" placeholder="Responder…"
+            class="flex-1 min-w-0 px-3 py-2 rounded-xl border border-[#dce1e5] text-[13px] text-[#1c2b4a] placeholder-[#8fa2c7] focus:outline-none focus:border-[#24324c]">
+          <button onclick="sendTicketReply('${t.ticketId}')"
+            class="px-3 py-2 rounded-xl bg-[#24324c] text-white text-[13px] font-bold active:scale-[.97] transition shrink-0">Responder</button>
+        </div>
+      </div>`;
+  }
+
+  function sendTicketReply(ticketId) {
+    const inp = document.getElementById('reply-' + ticketId);
+    const text = (inp.value || '').trim();
+    if (!text || !window.DrexCloud || !DrexCloud.support) return;
+    inp.value = '';
+    DrexCloud.support.replyToTicket(ticketId, text)
+      .then(() => setTimeout(loadSupportTickets, 4000))
+      .catch(() => {});
   }
 
   function openHelpTopic(topicId) {
