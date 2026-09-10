@@ -1049,33 +1049,36 @@
 
   var databaseSingleton = null;
   var SUPPORT_TABLE = 'drex-support-tickets';
+  var SUPPORT_OWNER_EMAIL = 'zam.contact@yahoo.com';
 
-  // ---- Soporte con IA: tickets que responde automáticamente Bedrock ----
+  // ---- Soporte estilo Instagram: el usuario envia su solicitud, el equipo
+  // la revisa y responde; el usuario ve el estado: Recibida / En revision / Resuelta.
   function supportDoc() { return getDocClient(); }
   function supportUser() {
     var u = null;
     try { u = getAuth().currentUser; } catch (e) {}
     return u || {};
   }
+  function supportNow() { return new Date().toISOString(); }
   var supportApi = {
-    // Crea un ticket; la lambda de Bedrock responde en unos segundos.
+    // Crea una solicitud de soporte; el equipo la revisa y responde.
     createTicket: function (subject, message) {
       var u = supportUser();
       if (!u.uid) return Promise.reject(new Error('auth/no-user'));
-      var now = new Date().toISOString();
+      var now = supportNow();
       var item = {
         ticketId: newPushId(),
         userId: u.uid,
         userEmail: u.email || '',
         subject: String(subject || '').slice(0, 120),
         messages: [{ from: 'user', text: String(message || '').slice(0, 4000), at: now }],
-        status: 'open',
+        status: 'received',
         createdAt: now,
         updatedAt: now
       };
       return supportDoc().put({ TableName: SUPPORT_TABLE, Item: item }).promise().then(function () { return item; });
     },
-    // Tickets del usuario actual, más recientes primero.
+    // Solicitudes del usuario actual, más recientes primero.
     listMyTickets: function () {
       var u = supportUser();
       if (!u.uid) return Promise.reject(new Error('auth/no-user'));
@@ -1088,24 +1091,70 @@
         Limit: 25
       }).promise().then(function (r) { return r.Items || []; });
     },
-    // El usuario agrega un mensaje a su ticket; la IA vuelve a responder.
+    // El usuario agrega un mensaje a su solicitud (la reabre como Recibida).
     replyToTicket: function (ticketId, message) {
       var u = supportUser();
       if (!u.uid) return Promise.reject(new Error('auth/no-user'));
-      var now = new Date().toISOString();
+      var now = supportNow();
       return supportDoc().update({
         TableName: SUPPORT_TABLE,
         Key: { ticketId: ticketId },
-        UpdateExpression: 'SET #m = list_append(if_not_exists(#m, :empty), :nm), #s = :open, updatedAt = :now',
+        UpdateExpression: 'SET #m = list_append(if_not_exists(#m, :empty), :nm), #s = :st, updatedAt = :now',
         ConditionExpression: 'userId = :u',
         ExpressionAttributeNames: { '#m': 'messages', '#s': 'status' },
         ExpressionAttributeValues: {
           ':empty': [],
           ':nm': [{ from: 'user', text: String(message || '').slice(0, 4000), at: now }],
-          ':open': 'open',
+          ':st': 'received',
           ':now': now,
           ':u': u.uid
         },
+        ReturnValues: 'ALL_NEW'
+      }).promise().then(function (r) { return r.Attributes; });
+    },
+    // ---- Lado del equipo (solo el dueno ve esta seccion en la app) ----
+    isOwner: function () {
+      var u = supportUser();
+      return String(u.email || '').toLowerCase() === SUPPORT_OWNER_EMAIL;
+    },
+    adminListTickets: function () {
+      if (!this.isOwner()) return Promise.reject(new Error('auth/not-owner'));
+      return supportDoc().scan({ TableName: SUPPORT_TABLE, Limit: 50 }).promise()
+        .then(function (r) {
+          return (r.Items || []).sort(function (a, b) {
+            return String(b.updatedAt || '') < String(a.updatedAt || '') ? -1 : 1;
+          });
+        });
+    },
+    // El equipo responde: agrega mensaje from=team y marca En revision.
+    adminReply: function (ticketId, message) {
+      if (!this.isOwner()) return Promise.reject(new Error('auth/not-owner'));
+      var now = supportNow();
+      return supportDoc().update({
+        TableName: SUPPORT_TABLE,
+        Key: { ticketId: ticketId },
+        UpdateExpression: 'SET #m = list_append(if_not_exists(#m, :empty), :nm), #s = :st, updatedAt = :now',
+        ExpressionAttributeNames: { '#m': 'messages', '#s': 'status' },
+        ExpressionAttributeValues: {
+          ':empty': [],
+          ':nm': [{ from: 'team', text: String(message || '').slice(0, 4000), at: now }],
+          ':st': 'reviewing',
+          ':now': now
+        },
+        ReturnValues: 'ALL_NEW'
+      }).promise().then(function (r) { return r.Attributes; });
+    },
+    adminSetStatus: function (ticketId, status) {
+      if (!this.isOwner()) return Promise.reject(new Error('auth/not-owner'));
+      if (['received', 'reviewing', 'resolved'].indexOf(status) < 0) {
+        return Promise.reject(new Error('support/bad-status'));
+      }
+      return supportDoc().update({
+        TableName: SUPPORT_TABLE,
+        Key: { ticketId: ticketId },
+        UpdateExpression: 'SET #s = :st, updatedAt = :now',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':st': status, ':now': supportNow() },
         ReturnValues: 'ALL_NEW'
       }).promise().then(function (r) { return r.Attributes; });
     }

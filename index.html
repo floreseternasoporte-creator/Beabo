@@ -3226,7 +3226,7 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
       <div id="help-topics" class="grid grid-cols-2 gap-3"></div>
       <div class="mt-5 bg-white border border-[#dce1e5] rounded-2xl p-4">
         <p class="font-bold text-[#1c2b4a] text-sm mb-1">¿Necesitas más ayuda?</p>
-        <p class="text-[13px] text-[#7b8794] mb-3">Escríbenos y nuestra IA de soporte te responderá en segundos.</p>
+        <p class="text-[13px] text-[#7b8794] mb-3">Escríbenos y nuestro equipo de soporte lo revisará.</p>
         <input id="support-subject" type="text" maxlength="120" placeholder="Asunto"
           class="w-full mb-2 px-3 py-2.5 rounded-xl border border-[#dce1e5] text-sm text-[#1c2b4a] placeholder-[#8fa2c7] focus:outline-none focus:border-[#24324c]">
         <textarea id="support-message" rows="3" maxlength="4000" placeholder="Describe tu problema…"
@@ -3235,10 +3235,14 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
           class="block text-center w-full py-2.5 rounded-xl bg-[#24324c] text-white font-bold text-sm active:scale-[.98] transition">Enviar mensaje</button>
         <p id="support-form-msg" class="text-center text-xs mt-2 hidden"></p>
         <div class="mt-4">
-          <p class="font-bold text-[#1c2b4a] text-sm mb-2">Mis mensajes</p>
+          <p class="font-bold text-[#1c2b4a] text-sm mb-2">Mis solicitudes</p>
           <div id="support-tickets" class="space-y-2">
-            <p class="text-xs text-[#8fa2c7]">Sin mensajes todavía.</p>
+            <p class="text-xs text-[#8fa2c7]">Sin solicitudes todavía.</p>
           </div>
+        </div>
+        <div id="support-admin-wrap" class="mt-4 hidden">
+          <p class="font-bold text-[#1c2b4a] text-sm mb-2">Solicitudes de soporte</p>
+          <div id="support-admin-tickets" class="space-y-2"></div>
         </div>
       </div>
     </div>
@@ -15562,6 +15566,16 @@ function deleteComment(noteId, commentPath) {
 "este usuario":"this user",
 "¿Bloquear a":"Block",
 "¿Necesitas más ayuda?":"Need more help?",
+"En revisión":"In review",
+"Equipo Drex":"Drex team",
+"Escríbenos y nuestro equipo de soporte lo revisará.":"Write to us and our support team will review it.",
+"Mis solicitudes":"My requests",
+"Recibida":"Received",
+"Recibimos tu mensaje. Lo revisaremos y te responderemos aquí.":"We received your message. We'll review it and reply here.",
+"Responder como equipo…":"Reply as the team…",
+"Resuelta":"Resolved",
+"Sin solicitudes todavía.":"No requests yet.",
+"Solicitudes de soporte":"Support requests",
 "Asunto":"Subject",
 "Describe tu problema…":"Describe your issue…",
 "Enviando…":"Sending…",
@@ -18682,8 +18696,17 @@ o
     loadSupportTickets();
   }
 
-  // ---- Soporte con IA: tickets que responde Bedrock ----
+  // ---- Soporte estilo Instagram: solicitudes con estado ----
   var _supportPollTimer = null;
+  function supportStatusChip(status) {
+    var map = {
+      received: ['Recibida', 'background:#eef2f7;color:#5c6974'],
+      reviewing: ['En revisión', 'background:#fef3e2;color:#b45309'],
+      resolved: ['Resuelta', 'background:#e6f7ed;color:#15803d']
+    };
+    var m = map[status] || map.received;
+    return '<span class="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold" style="' + m[1] + '">' + m[0] + '</span>';
+  }
   function sendSupportTicket() {
     const subj = document.getElementById('support-subject');
     const msg = document.getElementById('support-message');
@@ -18702,7 +18725,7 @@ o
     btn.textContent = 'Enviando…';
     DrexCloud.support.createTicket((subj.value || '').trim(), text).then(() => {
       subj.value = ''; msg.value = '';
-      showMsg('Tu mensaje fue enviado. Te responderemos aquí mismo en unos segundos.', true);
+      showMsg('Recibimos tu mensaje. Lo revisaremos y te responderemos aquí.', true);
       loadSupportTickets();
     }).catch(() => {
       showMsg('No se pudo enviar. Inténtalo de nuevo.', false);
@@ -18714,24 +18737,30 @@ o
     if (!box || !window.DrexCloud || !DrexCloud.support) return;
     if (_supportPollTimer) { clearTimeout(_supportPollTimer); _supportPollTimer = null; }
     DrexCloud.support.listMyTickets().then(tickets => {
-      if (!tickets.length) { box.innerHTML = '<p class="text-xs text-[#8fa2c7]">Sin mensajes todavía.</p>'; return; }
-      box.innerHTML = tickets.map(supportTicketCard).join('');
-      if (tickets.some(t => t.status === 'open')) {
-        _supportPollTimer = setTimeout(loadSupportTickets, 5000);
+      if (!tickets.length) { box.innerHTML = '<p class="text-xs text-[#8fa2c7]">Sin solicitudes todavía.</p>'; }
+      else { box.innerHTML = tickets.map(supportTicketCard).join(''); }
+      if (tickets.some(t => t.status !== 'resolved')) {
+        _supportPollTimer = setTimeout(loadSupportTickets, 15000);
       }
     }).catch(() => {});
+    loadAdminTickets();
   }
 
   function supportTicketCard(t) {
-    const msgs = (t.messages || []).map(m => `
-      <div class="${m.from === 'user' ? 'text-right' : 'text-left'}">
-        <span class="inline-block px-3 py-2 rounded-2xl text-[13px] leading-snug ${m.from === 'user' ? 'bg-[#24324c] text-white' : 'bg-[#eef2f7] text-[#1c2b4a]'}">${escapeHtml(m.text || '')}</span>
-      </div>`).join('');
+    const msgs = (t.messages || []).map(m => {
+      const mine = m.from === 'user';
+      return `
+      <div class="${mine ? 'text-right' : 'text-left'}">
+        <span class="inline-block px-3 py-2 rounded-2xl text-[13px] leading-snug ${mine ? 'bg-[#24324c] text-white' : 'bg-[#eef2f7] text-[#1c2b4a]'}">${escapeHtml(m.text || '')}</span>
+      </div>`;
+    }).join('');
     return `
       <div class="border border-[#dce1e5] rounded-2xl p-3">
-        <p class="font-bold text-[13px] text-[#1c2b4a]">${escapeHtml(t.subject || 'Soporte')}</p>
+        <div class="flex items-center justify-between gap-2">
+          <p class="font-bold text-[13px] text-[#1c2b4a]">${escapeHtml(t.subject || 'Soporte')}</p>
+          ${supportStatusChip(t.status)}
+        </div>
         <div class="space-y-1.5 mt-2">${msgs}</div>
-        ${t.status === 'open' ? '<p class="text-xs text-[#8fa2c7] mt-2">Nuestra IA está preparando tu respuesta…</p>' : ''}
         <div class="flex gap-2 mt-2">
           <input id="reply-${t.ticketId}" type="text" maxlength="4000" placeholder="Responder…"
             class="flex-1 min-w-0 px-3 py-2 rounded-xl border border-[#dce1e5] text-[13px] text-[#1c2b4a] placeholder-[#8fa2c7] focus:outline-none focus:border-[#24324c]">
@@ -18747,7 +18776,69 @@ o
     if (!text || !window.DrexCloud || !DrexCloud.support) return;
     inp.value = '';
     DrexCloud.support.replyToTicket(ticketId, text)
-      .then(() => setTimeout(loadSupportTickets, 4000))
+      .then(() => setTimeout(loadSupportTickets, 3000))
+      .catch(() => {});
+  }
+
+  // ---- Panel del equipo (solo visible para el dueño) ----
+  function loadAdminTickets() {
+    const wrap = document.getElementById('support-admin-wrap');
+    const box = document.getElementById('support-admin-tickets');
+    if (!wrap || !box || !window.DrexCloud || !DrexCloud.support) return;
+    let isOwner = false;
+    try { isOwner = DrexCloud.support.isOwner(); } catch (e) {}
+    if (!isOwner) { wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    DrexCloud.support.adminListTickets().then(tickets => {
+      if (!tickets.length) { box.innerHTML = '<p class="text-xs text-[#8fa2c7]">Sin solicitudes todavía.</p>'; return; }
+      box.innerHTML = tickets.map(adminTicketCard).join('');
+    }).catch(() => {});
+  }
+
+  function adminTicketCard(t) {
+    const msgs = (t.messages || []).map(m => {
+      const label = m.from === 'team' ? 'Equipo Drex' : (m.from === 'user' ? 'Usuario' : m.from);
+      return `<p class="text-[13px] leading-snug"><span class="font-bold text-[#1c2b4a]">${escapeHtml(label)}:</span>
+        <span class="text-[#3c4a5e]">${escapeHtml(m.text || '')}</span></p>`;
+    }).join('');
+    return `
+      <div class="border border-[#dce1e5] rounded-2xl p-3 bg-[#fafbfd]">
+        <div class="flex items-center justify-between gap-2">
+          <p class="font-bold text-[13px] text-[#1c2b4a]">${escapeHtml(t.subject || 'Soporte')}</p>
+          ${supportStatusChip(t.status)}
+        </div>
+        <p class="text-xs text-[#8fa2c7] mt-0.5">${escapeHtml(t.userEmail || t.userId || '')}</p>
+        <div class="space-y-1 mt-2">${msgs}</div>
+        <div class="flex gap-2 mt-2">
+          <button onclick="setTicketStatus('${t.ticketId}','reviewing')"
+            class="px-2.5 py-1.5 rounded-xl text-[12px] font-bold bg-[#fef3e2] text-[#b45309] active:scale-[.97] transition">En revisión</button>
+          <button onclick="setTicketStatus('${t.ticketId}','resolved')"
+            class="px-2.5 py-1.5 rounded-xl text-[12px] font-bold bg-[#e6f7ed] text-[#15803d] active:scale-[.97] transition">Resuelta</button>
+        </div>
+        <div class="flex gap-2 mt-2">
+          <input id="admin-reply-${t.ticketId}" type="text" maxlength="4000" placeholder="Responder como equipo…"
+            class="flex-1 min-w-0 px-3 py-2 rounded-xl border border-[#dce1e5] text-[13px] text-[#1c2b4a] placeholder-[#8fa2c7] focus:outline-none focus:border-[#24324c]">
+          <button onclick="sendAdminReply('${t.ticketId}')"
+            class="px-3 py-2 rounded-xl bg-[#24324c] text-white text-[13px] font-bold active:scale-[.97] transition shrink-0">Enviar</button>
+        </div>
+      </div>`;
+  }
+
+  function sendAdminReply(ticketId) {
+    const inp = document.getElementById('admin-reply-' + ticketId);
+    const text = (inp.value || '').trim();
+    if (!text || !window.DrexCloud || !DrexCloud.support) return;
+    inp.disabled = true;
+    DrexCloud.support.adminReply(ticketId, text)
+      .then(() => { inp.value = ''; loadAdminTickets(); setTimeout(loadSupportTickets, 2000); })
+      .catch(() => {})
+      .finally(() => { inp.disabled = false; });
+  }
+
+  function setTicketStatus(ticketId, status) {
+    if (!window.DrexCloud || !DrexCloud.support) return;
+    DrexCloud.support.adminSetStatus(ticketId, status)
+      .then(() => loadAdminTickets())
       .catch(() => {});
   }
 
