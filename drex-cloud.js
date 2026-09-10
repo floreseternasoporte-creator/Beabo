@@ -1,8 +1,6 @@
-/* ============================================================================
- * DrexCloud — adaptador de backend AWS para Drex (antes Beabo)
- * ----------------------------------------------------------------------------
- * Adaptador de backend AWS para Drex. Expone una API compatible con la que
- * usaba el proveedor anterior, para no reescribir la app:
+/* DrexCloud — adaptador de backend AWS para Drex.
+ *
+ * Expone la misma API que usaba el proveedor anterior, para no reescribir la app:
  *   DrexCloud.database()  -> base de datos sobre DynamoDB (tabla drex-kv)
  *   DrexCloud.auth()      -> autenticación con Amazon Cognito
  *
@@ -11,18 +9,14 @@
  *   atributo "v" = valor de la hoja serializado en JSON.
  *   Ej: ref('users/abc/name').set('Zed') -> pk='users', sk='abc/name', v='"Zed"'
  *
- * PENDIENTES DOCUMENTADOS (los resuelve el backend, no este archivo):
- *  1. Verificación de email por código: el User Pool debe exigir verificación
- *     (SIN lambda PreSignUp de autoconfirmación) y usar la plantilla de correo
- *     personalizada de Drex (ver ~/workspace/beabo-aws/verify-email-template.md).
- *     Flujo en app: createUser -> { needsConfirmation: true } -> pantalla de
- *     código -> confirmRegistration -> signIn. Login sin confirmar ->
- *     error auth/needs-confirmation -> pantalla de código.
- *  2. Login social (Google/Facebook/X): falta configurar los OAuth client IDs
- *     en Cognito. signInWithPopup muestra un aviso amable y no rompe el flujo.
- *  3. Recuperación de contraseña: puente temporal con prompt() para el código
- *     y la nueva contraseña hasta tener UI propia.
- * ========================================================================== */
+ * NOTA: la verificación de email por código la resuelve el backend, no este
+ * archivo: el User Pool debe exigir verificación (sin lambda PreSignUp de
+ * autoconfirmación) y usar la plantilla de correo de Drex
+ * (ver ~/workspace/beabo-aws/verify-email-template.md).
+ * Flujo en app: createUser -> { needsConfirmation: true } -> pantalla de
+ * código -> confirmRegistration -> signIn. Login sin confirmar ->
+ * error auth/needs-confirmation -> pantalla de código.
+ */
 (function (global) {
   'use strict';
 
@@ -39,7 +33,7 @@
   };
   var IDP_ISSUER = 'cognito-idp.us-east-1.amazonaws.com/us-east-1_kDSYEBsnY';
 
-  /* ============================ utilidades ============================ */
+  // utilidades
 
   function normalizePath(path) {
     path = String(path == null ? '' : path).trim();
@@ -80,7 +74,7 @@
     return id;
   }
 
-  /* ==================== aplanado / reconstrucción ==================== */
+  // aplanado / reconstrucción
 
   // Marcador de "ahora mismo" (equivale al TIMESTAMP del proveedor anterior)
   var TIMESTAMP_SENTINEL = { '.sv': 'timestamp' };
@@ -138,7 +132,7 @@
     return result;
   }
 
-  /* ===================== cliente DynamoDB (perezoso) ===================== */
+  // cliente DynamoDB (perezoso)
 
   var _docClient = null; // inyectable en pruebas
   var _awsCredentials = null;
@@ -154,7 +148,6 @@
     return AWS;
   }
 
-  // Credenciales: con sesión de Cognito si hay login, si no identidad anónima
   function currentCredentials() {
     var AWS = ensureAwsConfigured();
     if (_awsCredentials) return _awsCredentials;
@@ -270,7 +263,7 @@
     });
   }
 
-  /* ============================ DataSnapshot ============================ */
+  // DataSnapshot
 
   function DataSnapshot(value, key) {
     this._value = value === undefined ? null : value;
@@ -302,7 +295,7 @@
     return Object.keys(this._value).length;
   };
 
-  /* ===================== consultas del lado cliente ===================== */
+  // consultas del lado cliente
 
   function typeRank(v) {
     if (v === null || v === undefined) return 0;
@@ -362,7 +355,7 @@
     return out;
   }
 
-  /* ===================== oyentes (polling + eco local) ===================== */
+  // oyentes (polling + eco local)
 
   var listeners = [];
   var pollTimer = null;
@@ -433,12 +426,10 @@
     }).catch(function () { /* el próximo ciclo reintenta */ });
   }
 
-  function fireIfChanged(l) { return fireListener(l); }
-
   function ensurePolling() {
     if (!pollTimer && listeners.length) {
       pollTimer = setInterval(function () {
-        listeners.slice().forEach(function (l) { fireIfChanged(l); });
+        listeners.slice().forEach(function (l) { fireListener(l); });
       }, 3000);
     }
   }
@@ -451,12 +442,12 @@
     listeners.forEach(function (l) {
       if (pathsOverlap(l.ref._segs, changedSegs)) {
         if (l._deb) clearTimeout(l._deb);
-        l._deb = setTimeout(function () { l._deb = null; fireIfChanged(l); }, 120);
+        l._deb = setTimeout(function () { l._deb = null; fireListener(l); }, 120);
       }
     });
   }
 
-  /* ================================ Ref ================================ */
+  // Ref
 
   function Ref(segs, query) {
     this._segs = segs;
@@ -555,7 +546,6 @@
     return readRefValue(this);
   };
 
-  // Alias de lectura única
   Ref.prototype.get = function () { return this.once('value'); };
 
   Ref.prototype.on = function (eventType, cb) {
@@ -663,7 +653,7 @@
     return database;
   }
 
-  /* ============================ autenticación ============================ */
+  // autenticación
 
   function cognitoLib() {
     return (typeof global.AmazonCognitoIdentity !== 'undefined') ? global.AmazonCognitoIdentity : null;
@@ -966,7 +956,6 @@
     });
   }
 
-  // Reenvía el código de verificación al correo.
   function resendConfirmation(email) {
     getAuth();
     var C = cognitoLib();
@@ -981,8 +970,8 @@
   }
 
   // Cognito envía un CÓDIGO de 6 dígitos por correo (no un enlace).
-  // Esta función solo envía el código; la pantalla de la app pide el PIN
-  // y la nueva contraseña en su propia sección estilo Instagram.
+  // Esta función solo envía el código; la app pide el PIN y la nueva
+  // contraseña en su propia sección (login y Ajustes).
   function sendPasswordResetEmail(email) {
     getAuth();
     var C = cognitoLib();
@@ -997,7 +986,6 @@
     });
   }
 
-  // Confirma el PIN de recuperación y fija la nueva contraseña.
   function confirmPasswordReset(email, code, newPassword) {
     getAuth();
     var C = cognitoLib();
@@ -1025,7 +1013,7 @@
     });
   }
 
-  // ---- Login social real via Cognito OAuth (Google / Facebook) ----
+  // Login social real via Cognito OAuth (Google / Facebook)
   // Redirige a Cognito, que hace el baile OAuth con el proveedor y regresa
   // con ?code= ; aquí se canjea por tokens y se abre la sesión.
   var SOCIAL_IDP = { Google: 'Google', Facebook: 'Facebook' };
@@ -1152,7 +1140,6 @@
     return Promise.reject(err);
   }
 
-  // Restaura la sesión guardada al cargar (si existe)
   function restoreSession() {
     try {
       getAuth();
@@ -1168,13 +1155,13 @@
     } catch (e) { /* inicio sin sesión */ }
   }
 
-  /* ============================== DrexCloud ============================== */
+  // DrexCloud
 
   var databaseSingleton = null;
   var SUPPORT_TABLE = 'drex-support-tickets';
   var SUPPORT_OWNER_EMAIL = 'zam.contact@yahoo.com';
 
-  // ---- Soporte estilo Instagram: el usuario envia su solicitud, el equipo
+  // Soporte estilo Instagram: el usuario envia su solicitud, el equipo
   // la revisa y responde; el usuario ve el estado: Recibida / En revision / Resuelta.
   function supportDoc() { return getDocClient(); }
   function supportUser() {
@@ -1235,7 +1222,7 @@
         ReturnValues: 'ALL_NEW'
       }).promise().then(function (r) { return r.Attributes; });
     },
-    // ---- Lado del equipo (solo el dueno ve esta seccion en la app) ----
+    // Lado del equipo (solo el dueno ve esta seccion en la app)
     isOwner: function () {
       var u = supportUser();
       return String(u.email || '').toLowerCase() === SUPPORT_OWNER_EMAIL;
@@ -1317,7 +1304,7 @@
     }
   }
 
-  /* -------- exportaciones solo para pruebas en node -------- */
+  // exportaciones solo para pruebas en node
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       DrexCloud: DrexCloud,
