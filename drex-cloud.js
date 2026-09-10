@@ -31,7 +31,11 @@
     userPoolId: 'us-east-1_kDSYEBsnY',
     userPoolClientId: '7cm12q14tm12u8b3bnn6ksjqni',
     identityPoolId: 'us-east-1:92871635-d775-42e5-b161-8de1171d271a',
-    tableName: 'drex-kv'
+    tableName: 'drex-kv',
+    // Login social via Cognito OAuth (se activa al desplegar el dominio + IdPs)
+    oauthDomain: 'drex-voz-auth.auth.us-east-1.amazoncognito.com',
+    oauthRedirectUri: 'https://drex.glamworksapps.workers.dev/',
+    oauthScope: 'email openid profile'
   };
   var IDP_ISSUER = 'cognito-idp.us-east-1.amazonaws.com/us-east-1_kDSYEBsnY';
 
@@ -1017,12 +1021,127 @@
     });
   }
 
-  // Login social no configurado en Cognito todavía: aviso amable sin romper el flujo
+  // ---- Login social real via Cognito OAuth (Google / Facebook) ----
+  // Redirige a Cognito, que hace el baile OAuth con el proveedor y regresa
+  // con ?code= ; aquí se canjea por tokens y se abre la sesión.
+  var SOCIAL_IDP = { Google: 'Google', Facebook: 'Facebook' };
+
+  function oauthAvailable() {
+    return !!(AWS_CONFIG.oauthDomain && AWS_CONFIG.oauthRedirectUri && AWS_CONFIG.userPoolClientId);
+  }
+
+  function federatedSignIn(providerName) {
+    getAuth();
+    if (!oauthAvailable()) {
+      var err = new Error('El login social aún no está activado en el servidor.');
+      err.code = 'auth/operation-not-allowed';
+      return Promise.reject(err);
+    }
+    var url = 'https://' + AWS_CONFIG.oauthDomain + '/oauth2/authorize'
+      + '?identity_provider=' + encodeURIComponent(providerName)
+      + '&redirect_uri=' + encodeURIComponent(AWS_CONFIG.oauthRedirectUri)
+      + '&response_type=code'
+      + '&client_id=' + encodeURIComponent(AWS_CONFIG.userPoolClientId)
+      + '&scope=' + encodeURIComponent(AWS_CONFIG.oauthScope || 'email openid profile');
+    try { global.location.assign(url); }
+    catch (e) { global.location.href = url; }
+    return new Promise(function () {}); // la página navega fuera
+  }
+
+  function base64UrlDecode(s) {
+    s = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    // atob maneja UTF-8 mal; los claims que leemos son ASCII
+    return global.atob(s);
+  }
+
+  function exchangeCodeForSession(code) {
+    var C = cognitoLib();
+    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    var body = 'grant_type=authorization_code'
+      + '&client_id=' + encodeURIComponent(AWS_CONFIG.userPoolClientId)
+      + '&code=' + encodeURIComponent(code)
+      + '&redirect_uri=' + encodeURIComponent(AWS_CONFIG.oauthRedirectUri);
+    return global.fetch('https://' + AWS_CONFIG.oauthDomain + '/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body
+    }).then(function (resp) { return resp.json(); }).then(function (tok) {
+      if (!tok || !tok.id_token) throw new Error('oauth/token-failed');
+      var payload;
+      try { payload = JSON.parse(base64UrlDecode(String(tok.id_token).split('.')[1])); }
+      catch (e) { throw new Error('oauth/bad-token'); }
+      var username = payload['cognito:username'] || payload.sub;
+      if (!username) throw new Error('oauth/no-username');
+      var cu = new C.CognitoUser({ Username: username, Pool: getUserPool() });
+      var session = new C.CognitoUserSession({
+        IdToken: new C.CognitoIdToken({ IdToken: tok.id_token }),
+        AccessToken: new C.CognitoAccessToken({ AccessToken: tok.access_token }),
+        RefreshToken: new C.CognitoRefreshToken({ RefreshToken: tok.refresh_token })
+      });
+      cu.setSignInUserSession(session);
+      return establishSession(cu, session).then(function (user) { return { user: user }; });
+    });
+  }
+
+  // Procesa el regreso del login social (?code= o ?error=)
+  function handleOAuthRedirect() {
+    try {
+      var loc = global.location;
+      if (!loc || !loc.search) return;
+      var qs = String(loc.search);
+      var mErr = /[?&]error(?:_description)?=([^&]*)/.exec(qs);
+      var mCode = /[?&]code=([^&]+)/.exec(qs);
+      if (!mErr && !mCode) return;
+      // Limpiar la URL para no reprocesar
+      try {
+        var clean = loc.pathname + loc.hash;
+        global.history.replaceState(null, '', clean);
+      } catch (e) {}
+      if (mErr) {
+        var desc = '';
+        try { desc = decodeURIComponent(/error_description=([^&]*)/.exec(qs)[1]).replace(/\+/g, ' '); } catch (e) {}
+        var msg = 'No se pudo entrar con esa cuenta.';
+        if (/already/i.test(desc)) msg = 'Ese correo ya tiene una cuenta en Drex. Entra con tu correo y contraseña.';
+        notifyAuthError(msg);
+        return;
+      }
+      var code = decodeURIComponent(mCode[1]);
+      notifyAuthPending();
+      getAuth();
+      exchangeCodeForSession(code).then(function () {
+        // establishSession ya notificó a los listeners
+      }, function (err) {
+        notifyAuthError('No se pudo completar el inicio de sesión. Intenta de nuevo.');
+      });
+    } catch (e) { /* sin login social pendiente */ }
+  }
+
+  var authPendingListeners = [];
+  function notifyAuthPending() {
+    // Avisa a la app que hay un login social en curso (puede mostrar spinner)
+    try {
+      if (global.document) {
+        global.document.dispatchEvent(new global.CustomEvent('drex:oauth-pending'));
+      }
+    } catch (e) {}
+  }
+  function notifyAuthError(msg) {
+    try {
+      if (global.document) {
+        global.document.dispatchEvent(new global.CustomEvent('drex:oauth-error', { detail: { message: msg } }));
+      }
+    } catch (e) {}
+    if (typeof global.alert === 'function') { try { global.alert(msg); } catch (e) {} }
+  }
+
+  // Login social: Google y Facebook van por Cognito; otros siguen pendientes
   var SOCIAL_NAMES = { GoogleAuthProvider: 'Google', FacebookAuthProvider: 'Facebook', TwitterAuthProvider: 'X (Twitter)' };
   function signInWithPopup(provider) {
     getAuth();
     var name = (provider && (provider._socialName || SOCIAL_NAMES[provider.constructor && provider.constructor.name])) || 'esta red social';
-    var msg = 'El inicio con ' + name + ' estará disponible próximamente en Drex. Usa tu correo por ahora.';
+    if (SOCIAL_IDP[name]) return federatedSignIn(SOCIAL_IDP[name]);
+    var msg = 'El inicio con ' + name + ' estará disponible próximamente en Drex. Usa tu correo, Google o Facebook por ahora.';
     if (typeof global.alert === 'function') { try { global.alert(msg); } catch (e) {} }
     var err = new Error(msg);
     err.code = 'auth/operation-not-allowed';
@@ -1185,12 +1304,12 @@
 
   global.DrexCloud = DrexCloud;
 
-  // Solo en navegador: restaurar sesión al cargar
+  // Solo en navegador: procesar regreso del login social y restaurar sesión
   if (typeof global.window !== 'undefined' && typeof global.document !== 'undefined') {
     if (global.document.readyState === 'complete' || global.document.readyState === 'interactive') {
-      setTimeout(restoreSession, 0);
+      setTimeout(function () { handleOAuthRedirect(); restoreSession(); }, 0);
     } else {
-      global.document.addEventListener('DOMContentLoaded', function () { setTimeout(restoreSession, 0); });
+      global.document.addEventListener('DOMContentLoaded', function () { setTimeout(function () { handleOAuthRedirect(); restoreSession(); }, 0); });
     }
   }
 
