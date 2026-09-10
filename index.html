@@ -12238,7 +12238,7 @@ function saveNote() {
         });
 
         if (typeof addNotification === 'function' && otherUid !== user.uid) {
-          addNotification(otherUid, lastMsgLabel, 'message', { actionType: 'chat', actionId: conversationId });
+          addNotification(otherUid, lastMsgLabel, 'message', { actionType: 'chat', actionId: user.uid });
         }
       }));
 
@@ -12839,6 +12839,25 @@ function saveNote() {
     setTimeout(() => openAuthorProfile(authorId, 'comments'), 20);
   }
 
+  // Pinta un mensaje de error con boton Reintentar dentro de un contenedor
+  // cuando una lectura de red falla y la vista quedaria en "Cargando..." eterno.
+  window.paintLoadError = function(node, message, retryFn) {
+    if (!node) return;
+    node.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'text-align:center;padding:24px 16px;';
+    const msg = document.createElement('p');
+    msg.style.cssText = 'font-size:13px;color:#7b878f;margin-bottom:10px;';
+    msg.textContent = message;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Reintentar';
+    btn.style.cssText = 'padding:7px 20px;border-radius:9999px;background:#3897f0;color:#fff;font-weight:600;font-size:13px;';
+    btn.addEventListener('click', retryFn);
+    wrap.append(msg, btn);
+    node.appendChild(wrap);
+  };
+
   function openCommentsView(noteId) {
     currentPostId = noteId;
     const user = DrexCloud.auth().currentUser;
@@ -12943,6 +12962,8 @@ function saveNote() {
       </div>
       <p class="text-xs text-[#b6c0d1] mt-2">${formatRelativeTime(note.timestamp)}</p>
     `;
+    }).catch(() => {
+      window.paintLoadError(document.getElementById('original-post'), 'No se pudo cargar la publicación. Revisa tu conexión.', () => openCommentsView(noteId));
     });
 
     loadCommentsInView(noteId);
@@ -13772,7 +13793,10 @@ function saveNote() {
       : Promise.resolve();
 
       updateCommentEditedBadge(commentPath, editedAt);
-      return syncHistory.then(() => refreshHistorialIfVisible());
+      return syncHistory.then(() => {
+        if (typeof loadCommentsInView === 'function') loadCommentsInView(noteId);
+        return refreshHistorialIfVisible();
+      });
     });
   }
 
@@ -14180,6 +14204,7 @@ function saveNote() {
     }).then(() => {
       closeCommentActionsSheet();
       updateCommentsCount(noteId);
+      if (typeof loadCommentsInView === 'function') loadCommentsInView(noteId);
     }).catch(error => {
       console.error('Error al eliminar comentario:', error);
       alert(error.message || 'No se pudo eliminar el comentario.');
@@ -14375,6 +14400,13 @@ function saveNote() {
 
   const APP_LANGUAGE_STORAGE_KEY = 'drex_app_language_v1';
   const APP_ENGLISH_TEXT = {
+"No se pudo cargar tu perfil. Revisa tu conexión e inténtalo de nuevo.":"We couldn't load your profile. Check your connection and try again.",
+"Reintentar":"Retry",
+"No se pudo cargar este perfil. Revisa tu conexión.":"We couldn't load this profile. Check your connection.",
+"No se pudo cargar la publicación. Revisa tu conexión.":"We couldn't load the post. Check your connection.",
+"No se pudieron cargar los seguidores. Revisa tu conexión.":"Couldn't load the followers. Check your connection.",
+"No se pudieron cargar los seguidos. Revisa tu conexión.":"Couldn't load the following list. Check your connection.",
+"No se pudo cargar esta sección. Revisa tu conexión.":"We couldn't load this section. Check your connection.",
 "\"La verdadera innovación ocurre cuando la tecnología deja de ser una herramienta y se convierte en":"\"La verdadera innovación ocurre cuando la tecnología deja de ser una herramienta y se convierte en",
 "(opcional)":"(optional)",
 "+ Agregar opción (máx. 3)":"+ Add option (max 3)",
@@ -15095,9 +15127,536 @@ function saveNote() {
 "Describe a tu mejor amigo":"Describe your best friend",
 "¿Cuáles son tus planes para este año?":"What are your plans for this year?",
 "Describe tu comida favorita":"Describe your favorite food",
-"¿Cómo es un día normal para ti?":"What is a normal day like for you?"
+"¿Cómo es un día normal para ti?":"What is a normal day like for you?",
+"1 semana":"1 week",
+"Acoso, insultos o ataques personales":"Harassment, insults or personal attacks",
+"Activo ahora":"Active now",
+"Activo ·":"Active ·",
+"Actualizado":"Updated",
+"Actualizando…":"Updating…",
+"Agrega al menos una persona":"Add at least one person",
+"Agregando...":"Adding...",
+"Agregar":"Add",
+"Agregar nota temporal":"Add temporary note",
+"Agregar participante":"Add participant",
+"Agregar personas":"Add people",
+"Ajustes de cuenta":"Account settings",
+"Al publicar contenido en Drex, usted nos otorga una licencia mundial, no exclusiva y libre de regalías para usar, copiar, reproducir, procesar y mostrar dicho contenido en relación con la prestación de nuestros servicios. Usted conserva la propiedad de su contenido original.":"By posting content on Drex, you grant us a worldwide, non-exclusive, royalty-free license to use, copy, reproduce, process and display such content in connection with providing our services. You retain ownership of your original content.",
+"Alerta de seguridad activada.":"Security alert enabled.",
+"Alerta de seguridad desactivada.":"Security alert disabled.",
+"Alguien está escribiendo...":"Someone is typing...",
+"Amenazas, violencia o autolesión":"Threats, violence or self-harm",
+"Analizando...":"Analyzing...",
+"Atardecer":"Sunset",
+"Autor desconocido":"Unknown author",
+"Avisar sobre cambios importantes":"Notify about important changes",
+"Aviso cada 20 min sin parar":"Notify every 20 min nonstop",
+"Azərbaycan (Azerbaiyano)":"Azərbaycan (Azerbaijani)",
+"Año Nuevo":"New Year",
+"Bahasa Indonesia (Indonesio)":"Bahasa Indonesia (Indonesian)",
+"Bahasa Melayu (Malayo)":"Bahasa Melayu (Malay)",
+"Basa Jawa (Javanés)":"Basa Jawa (Javanese)",
+"Basa Sunda (Sundanés)":"Basa Sunda (Sundanese)",
+"Bengalí":"Bengali",
+"Bienestar y soporte":"Wellbeing and support",
+"Bloqueados":"Blocked",
+"Borrador recuperado":"Draft recovered",
+"Bosanski (Bosnio)":"Bosanski (Bosnian)",
+"Bosque":"Forest",
+"Bucle: OFF":"Loop: OFF",
+"Buscando resultados...":"Searching for results...",
+"Calculando Mbps":"Calculating Mbps",
+"Caracteres":"Characters",
+"Cargando comentarios…":"Loading comments…",
+"Cargando perfil...":"Loading profile...",
+"Cargando…":"Loading…",
+"Carpeta creada":"Folder created",
+"Carpeta eliminada":"Folder deleted",
+"Carpeta renombrada":"Folder renamed",
+"Català (Catalán)":"Català (Catalan)",
+"Celebraciones":"Celebrations",
+"Cerrar":"Close",
+"Cerrar otras":"Close others",
+"Chat del grupo vaciado":"Group chat cleared",
+"Chino mandarín":"Mandarin Chinese",
+"Comentar":"Comment",
+"Comentario guardado":"Comment saved",
+"Comentario listo. Mantén una conversación respetuosa.":"Comment ready. Keep the conversation respectful.",
+"Como usuario de Drex, usted acepta no utilizar la plataforma para ningún propósito ilegal o prohibido por estos términos. Usted es el único responsable de su conducta y de cualquier contenido que publique.":"As a Drex user, you agree not to use the platform for any unlawful purpose or one prohibited by these terms. You are solely responsible for your conduct and for any content you post.",
+"Compartir enlace":"Share link",
+"Compartir por chat":"Share via chat",
+"Compartir publicación":"Share post",
+"Comunidad":"Community",
+"Conducta y Responsabilidades":"Conduct and Responsibilities",
+"Conectando…":"Connecting…",
+"Configura tus idiomas":"Set up your languages",
+"Contador de hoy reiniciado":"Today's counter reset",
+"Contamos con procedimientos para tratar cualquier sospecha de violación de datos personales y le notificaremos a usted y a cualquier regulador aplicable sobre una violación cuando estemos legalmente obligados a hacerlo.":"We have procedures in place to deal with any suspected personal data breach and will notify you and any applicable regulator of a breach where we are legally required to do so.",
+"Contenido sexual o desnudez":"Sexual content or nudity",
+"Continuar":"Continue",
+"Contraseña actualizada":"Password updated",
+"Contraseña cambiada":"Password changed",
+"Control parental":"Parental controls",
+"Controles para Funciones de No Rastrear":"Do Not Track controls",
+"Conversaciones marcadas como leídas":"Conversations marked as read",
+"Copia o envía el enlace fuera de Drex":"Copy or send the link outside Drex",
+"Copiado":"Copied",
+"Corrección enviada.":"Correction sent.",
+"Crea una llamada grupal en vivo para practicar idiomas hablando con otros usuarios.":"Create a live group call to practice languages by speaking with other users.",
+"Crear cuenta":"Create account",
+"Crear fiesta":"Create party",
+"Creemos que la tecnología más avanzada es aquella que no se nota. Diseñamos sistemas limpios y silenciosos que resuelven problemas complejos sin añadir fricción visual ni cognitiva al usuario.":"We believe the most advanced technology is the one you don't notice. We design clean, silent systems that solve complex problems without adding visual or cognitive friction for the user.",
+"Cuando alguien comenta en tu post":"When someone comments on your post",
+"Cuando alguien que sigues publica":"When someone you follow posts",
+"Cuando alguien te menciona con @":"When someone mentions you with @",
+"Cuando no tengamos una necesidad comercial legítima continua para procesar su información personal, la eliminaremos o la anonimizaremos, o, si esto no es posible (por ejemplo, porque su información personal se ha almacenado en archivos de respaldo), la almacenaremos de forma segura y la aislaremos de cualquier procesamiento posterior hasta que sea posible eliminarla.":"When we have no ongoing legitimate business need to process your personal information, we will delete or anonymize it, or, if this is not possible (for example, because your personal information has been stored in backup archives), we will securely store it and isolate it from any further processing until deletion is possible.",
+"Cuando visita nuestra aplicación móvil y utiliza nuestros servicios, nos confía su información personal. Nos tomamos su privacidad muy en serio. En este aviso de privacidad, describimos nuestra política de privacidad. Buscamos explicarle de la manera más clara posible qué información recopilamos, cómo la usamos y qué derechos tiene en relación con ella. Esperamos que se tome un tiempo para leerlo detenidamente, ya que es importante. Si hay algún término en esta política de privacidad con el que no está de acuerdo, interrumpa el uso de nuestras aplicaciones y nuestros servicios.":"When you visit our mobile app and use our services, you trust us with your personal information. We take your privacy very seriously. In this privacy notice, we describe our privacy policy. We seek to explain to you as clearly as possible what information we collect, how we use it, and what rights you have regarding it. We hope you take the time to read it carefully, as it is important. If there is any term in this privacy policy that you do not agree with, please discontinue use of our apps and services.",
+"Cuenta vinculada correctamente":"Account linked successfully",
+"Cupón 10% OFF":"10% OFF coupon",
+"Cupón 20% OFF":"20% OFF coupon",
+"Cupón 35% OFF":"35% OFF coupon",
+"Cymraeg (Galés)":"Cymraeg (Welsh)",
+"Código incorrecto.":"Incorrect code.",
+"Código incorrecto. Revisa e inténtalo de nuevo.":"Incorrect code. Check it and try again.",
+"Código incorrecto. Revisa la hora de tu celular e inténtalo de nuevo.":"Incorrect code. Check your phone's time and try again.",
+"Dansk (Danés)":"Dansk (Danish)",
+"Datos descargados":"Data downloaded",
+"Datos locales de chat eliminados":"Local chat data deleted",
+"Datos temporales guardados en este dispositivo. Liberarlos puede acelerar la app.":"Temporary data stored on this device. Clearing it may speed up the app.",
+"Debate":"Debate",
+"Debes tener al menos 13 años para crear una cuenta en Drex.":"You must be at least 13 years old to create a Drex account.",
+"Demasiados intentos. Espera un momento e inténtalo de nuevo.":"Too many attempts. Wait a moment and try again.",
+"Desactivada":"Disabled",
+"Desactivado":"Disabled",
+"Descripción":"Description",
+"Desierto":"Desert",
+"Detalles":"Details",
+"Deutsch (Alemán)":"Deutsch (German)",
+"Dulce":"Sweet",
+"Débil":"Weak",
+"Eesti (Estonio)":"Eesti (Estonian)",
+"Ejercicio eliminado.":"Exercise deleted.",
+"Ejercicio publicado.":"Exercise published.",
+"Ejercicios de la comunidad":"Community exercises",
+"El creador del grupo siempre es administrador":"The group creator is always an admin",
+"El código no es válido. Revísalo e inténtalo de nuevo.":"The code is not valid. Check it and try again.",
+"El código venció. Pide uno nuevo con \"Reenviar código\".":"The code expired. Request a new one with \"Resend code\".",
+"El formato del correo no es válido.":"The email format is not valid.",
+"El nombre de usuario debe tener al menos 3 caracteres.":"The username must be at least 3 characters long.",
+"El núcleo de investigación. Aquí desarrollamos inteligencia artificial, interfaces espaciales y la arquitectura descentralizada que sustentará los productos de la próxima década.":"The research core. Here we develop artificial intelligence, spatial interfaces and the decentralized architecture that will underpin the products of the next decade.",
+"Elige el idioma que quieres practicar en Drex. Tu selección se guardará en tu perfil.":"Choose the language you want to practice on Drex. Your selection will be saved to your profile.",
+"Elige un idioma para comenzar tu camino de aprendizaje.":"Choose a language to start your learning journey.",
+"Elige un idioma para continuar.":"Choose a language to continue.",
+"Eliminado de guardados":"Removed from saved",
+"Ella":"She",
+"En algunas regiones (como el Espacio Económico Europeo), usted tiene ciertos derechos según las leyes de protección de datos aplicables. Estos pueden incluir el derecho (i) a solicitar acceso y obtener una copia de su información personal, (ii) a solicitar la rectificación o eliminación; (iii) a restringir el procesamiento de su información personal; y (iv) si corresponde, a la portabilidad de los datos. En determinadas circunstancias, también puede tener derecho a oponerse al procesamiento de su información personal. Para realizar dicha solicitud, utilice los datos de contacto proporcionados. Consideraremos y actuaremos sobre cualquier solicitud de acuerdo con las leyes de protección de datos aplicables.":"In some regions (such as the European Economic Area), you have certain rights under applicable data protection laws. These may include the right (i) to request access and obtain a copy of your personal information, (ii) to request rectification or erasure; (iii) to restrict the processing of your personal information; and (iv) where applicable, to data portability. In certain circumstances, you may also have the right to object to the processing of your personal information. To make such a request, please use the contact details provided. We will consider and act upon any request in accordance with applicable data protection laws.",
+"En ningún caso Drex, ni sus directores, empleados o afiliados, serán responsables por cualquier daño indirecto, incidental, especial o consecuente que surja de su uso de la plataforma. El servicio se proporciona \"tal cual\" y \"según disponibilidad\", sin garantías de ningún tipo, ya sean expresas o implícitas.":"In no event shall Drex, nor its directors, employees or affiliates, be liable for any indirect, incidental, special or consequential damages arising from your use of the platform. The service is provided \"as is\" and \"as available\", without warranties of any kind, whether express or implied.",
+"English (Inglés)":"English (English)",
+"Enlace copiado al portapapeles":"Link copied to clipboard",
+"Entendido":"Got it",
+"Entra como oyente o pide hablar con la mano ✋️.":"Join as a listener or raise your hand ✋️ to speak.",
+"Entra con tu correo o tu cuenta de Facebook":"Log in with your email or your Facebook account",
+"Enviado":"Sent",
+"Enviamos un código de 6 dígitos a:":"We sent a 6-digit code to:",
+"Enviar código":"Send code",
+"Envíala a alguien en Drex":"Send it to someone on Drex",
+"Error al crear grupo":"Failed to create group",
+"Error al guardar. Inténtalo de nuevo.":"Failed to save. Try again.",
+"Error de sesión. Vuelve a intentarlo.":"Session error. Try again.",
+"Es hora de descansar un momento. Tómate 1 minuto.":"Time for a short break. Take 1 minute.",
+"Esa contraseña es muy común y fácil de adivinar. Elige una más segura.":"That password is very common and easy to guess. Choose a safer one.",
+"Escribe al menos 10 caracteres.":"Write at least 10 characters.",
+"Escribe algo, agrega un GIF o una foto antes de enviar":"Write something, add a GIF or a photo before sending",
+"Escribe ejercicios en el idioma que aprendes y recibe correcciones reales. También puedes ayudar a otros con tu idioma.":"Write exercises in the language you're learning and get real corrections. You can also help others with your language.",
+"Escribe tu correo electrónico y te enviaremos un código de 6 dígitos para restablecer tu contraseña.":"Enter your email and we'll send you a 6-digit code to reset your password.",
+"Escribe tu país para personalizar tu perfil y conectar con tu comunidad.":"Enter your country to personalize your profile and connect with your community.",
+"Escuchando":"Listening",
+"Esta fiesta ya terminó.":"This party has already ended.",
+"Esta publicación es privada y no está disponible desde este enlace.":"This post is private and not available from this link.",
+"Esta publicación no está disponible.":"This post is not available.",
+"Esta publicación ya no existe o fue eliminada.":"This post no longer exists or was deleted.",
+"Estamos preparando la información del autor.":"We're preparing the author's information.",
+"Estos términos constituyen un acuerdo legal vinculante entre usted y Drex con respecto a su uso de nuestros servicios. Nos reservamos el derecho de modificar estos términos en cualquier momento, y su uso continuado de la plataforma constituirá su aceptación de tales cambios.":"These terms constitute a binding legal agreement between you and Drex regarding your use of our services. We reserve the right to modify these terms at any time, and your continued use of the platform will constitute your acceptance of such changes.",
+"Estos términos se regirán e interpretarán de acuerdo con las leyes del país de operación de la empresa, sin tener en cuenta sus disposiciones sobre conflictos de leyes. Nuestra falta de cumplimiento de cualquier derecho o disposición de estos Términos no se considerará una renuncia a esos derechos.":"These terms shall be governed and construed in accordance with the laws of the company's country of operation, without regard to its conflict of law provisions. Our failure to enforce any right or provision of these Terms shall not be deemed a waiver of those rights.",
+"Euskara (Euskera)":"Euskara (Basque)",
+"Expira en 12 horas":"Expires in 12 hours",
+"Fiesta":"Party",
+"Fiesta publicada en el feed.":"Party published to the feed.",
+"Fiestas":"Parties",
+"Fiestas de voz":"Voice parties",
+"Fijados":"Pinned",
+"Filipino (Tagalo)":"Filipino (Tagalog)",
+"Foto del grupo actualizada":"Group photo updated",
+"Francés":"French",
+"Français (Francés)":"Français (French)",
+"Fuerte":"Strong",
+"GIF seleccionado":"GIF selected",
+"Gaeilge (Irlandés)":"Gaeilge (Irish)",
+"Galaxia":"Galaxy",
+"Galego (Gallego)":"Galego (Galician)",
+"Gracias por tu respuesta":"Thanks for your answer",
+"Gracias por tu respuesta.":"Thanks for your answer.",
+"Grupo creado":"Group created",
+"Grupo silenciado":"Group muted",
+"Guardado":"Saved",
+"Guardado automáticamente":"Auto-saved",
+"Guardando…":"Saving…",
+"Guardar comentario":"Save comment",
+"Habla el idioma de la fiesta y respeta los turnos.":"Speak the party's language and respect turn-taking.",
+"Hablando":"Speaking",
+"Hablantes":"Speakers",
+"Halloween":"Halloween",
+"Hay violencia, amenazas o acoso":"There is violence, threats or harassment",
+"Hemos implementado medidas de seguridad técnicas y organizativas adecuadas diseñadas para proteger la seguridad de cualquier información personal que procesemos. Sin embargo, recuerde también que no podemos garantizar que Internet sea 100% seguro. Aunque haremos todo lo posible para proteger su información personal, la transmisión de información personal hacia y desde nuestras aplicaciones es bajo su propio riesgo. Solo debe acceder a los servicios dentro de un entorno seguro.":"We have implemented appropriate technical and organizational security measures designed to protect the security of any personal information we process. However, please also remember that we cannot guarantee that the Internet is 100% secure. Although we will do our best to protect your personal information, transmission of personal information to and from our apps is at your own risk. You should only access the services within a secure environment.",
+"Hindi":"Hindi",
+"Historial":"History",
+"Hoy:":"Today:",
+"Hrvatski (Croata)":"Hrvatski (Croatian)",
+"Idioma guardado":"Language saved",
+"Idioma que estoy aprendiendo":"Language I'm learning",
+"Idiomas guardados.":"Languages saved.",
+"Incluye odio o discriminación":"Includes hate or discrimination",
+"Información engañosa o spam":"Misleading information or spam",
+"Infracción a las normas de la comunidad":"Community guidelines violation",
+"Infracción de derechos de autor":"Copyright infringement",
+"Inglés":"English",
+"Ingresa el código":"Enter the code",
+"Ingresa el código de 6 dígitos tal cual te lo compartieron.":"Enter the 6-digit code exactly as it was shared with you.",
+"Ingresa tu correo electrónico.":"Enter your email.",
+"Ingresa tu fecha de nacimiento para continuar.":"Enter your date of birth to continue.",
+"Ingresa una fecha de nacimiento válida.":"Enter a valid date of birth.",
+"Inicia sesión para crear una fiesta.":"Log in to create a party.",
+"Inicia sesión para unirte.":"Log in to join.",
+"Instagram también protege comentarios: este texto parece ofensivo o inseguro y no se podrá publicar.":"Instagram also protects comments: this text looks offensive or unsafe and cannot be published.",
+"Interacciones":"Interactions",
+"Invitar amigos a Drex":"Invite friends to Drex",
+"IsiXhosa (Xhosa)":"IsiXhosa (Xhosa)",
+"IsiZulu (Zulú)":"IsiZulu (Zulu)",
+"Kiswahili (Swahili)":"Kiswahili (Swahili)",
+"Kreyòl Ayisyen (Haitiano)":"Kreyòl Ayisyen (Haitian)",
+"La contraseña debe tener al menos 6 caracteres.":"The password must be at least 6 characters long.",
+"La estética sin rendimiento es vacía. Nuestra arquitectura base está optimizada a nivel de milisegundos, garantizando que la belleza de la interfaz esté respaldada por una velocidad inquebrantable.":"Aesthetics without performance is hollow. Our base architecture is optimized down to the millisecond, ensuring the beauty of the interface is backed by unbreakable speed.",
+"La fiesta está llena de hablantes.":"The party is full of speakers.",
+"La fiesta terminó.":"The party ended.",
+"La fusión de la tecnología textil y el diseño futurista. Piezas físicas creadas con la misma obsesión por el detalle que nuestro software, sirviendo como extensión de la identidad digital.":"The fusion of textile technology and futuristic design. Physical pieces crafted with the same obsession for detail as our software, serving as an extension of digital identity.",
+"La información personal que recopilamos depende del contexto de sus interacciones con nosotros y las aplicaciones, las elecciones que realiza y los productos y funciones que utiliza. La información personal que recopilamos puede incluir lo siguiente: Nombre y datos de contacto, credenciales y datos de inicio de sesión en redes sociales.":"The personal information we collect depends on the context of your interactions with us and the apps, the choices you make, and the products and features you use. The personal information we collect may include the following: name and contact details, credentials and social login data.",
+"La infraestructura que impulsa cada interacción en tiempo real.":"The infrastructure powering every real-time interaction.",
+"La mayoría de los navegadores web y algunos sistemas operativos móviles y aplicaciones móviles incluyen una función o configuración de No rastrear (\"DNT\") que puede activar para indicar su preferencia de privacidad de no tener datos sobre sus actividades de navegación en línea monitoreados y recopilados. En esta etapa, no se ha finalizado ningún estándar tecnológico uniforme para reconocer e implementar señales DNT. Como tal, actualmente no respondemos a las señales del navegador DNT ni a cualquier otro mecanismo que comunique automáticamente su elección de no ser rastreado en línea. Si se adopta un estándar para el seguimiento en línea que debamos seguir en el futuro, le informaremos sobre esa práctica en una versión revisada de esta política de privacidad.":"Most web browsers and some mobile operating systems and mobile apps include a Do Not Track (\"DNT\") feature or setting you can activate to signal your privacy preference not to have data about your online browsing activities monitored and collected. At this stage, no uniform technological standard for recognizing and implementing DNT signals has been finalized. As such, we do not currently respond to DNT browser signals or any other mechanism that automatically communicates your choice not to be tracked online. If a standard for online tracking is adopted that we must follow in the future, we will inform you about that practice in a revised version of this privacy policy.",
+"La nueva contraseña debe tener al menos 8 caracteres.":"The new password must be at least 8 characters long.",
+"La publicación contiene contenido sexual o desnudez":"The post contains sexual content or nudity",
+"La publicación será visible para todos los usuarios de la plataforma.":"The post will be visible to everyone on the platform.",
+"La red redefinida. Un espacio digital de alto nivel estructurado para creadores, ofreciendo control absoluto sobre el contenido, interacciones en tiempo real y una estética impecable.":"The network redefined. A high-end digital space structured for creators, offering absolute control over content, real-time interactions and impeccable aesthetics.",
+"Las contraseñas no coinciden.":"The passwords don't match.",
+"Las cookies nos ayudan a mejorar su experiencia en Drex al recordar sus preferencias y visitas repetidas. Puede configurar su navegador para rechazar todas o algunas cookies, o para que le avise cuando los sitios web instalen o accedan a cookies. Si desactiva o rechaza las cookies, tenga en cuenta que algunas partes de este servicio pueden volverse inaccesibles o no funcionar correctamente.":"Cookies help us improve your experience on Drex by remembering your preferences and repeat visits. You can set your browser to refuse all or some cookies, or to alert you when websites set or access cookies. If you disable or refuse cookies, please note that some parts of this service may become inaccessible or not function properly.",
+"Latencia":"Latency",
+"Latina (Latín)":"Latina (Latin)",
+"Latviešu (Letón)":"Latviešu (Latvian)",
+"Lava":"Lava",
+"Legal y empresa":"Legal & company",
+"Ley Aplicable":"Applicable law",
+"Lietuvių (Lituano)":"Lietuvių (Lithuanian)",
+"Lo que escribas en un post se guarda aquí automáticamente.":"What you write in a post is auto-saved here.",
+"Lo usaremos para verificar tu identidad.":"We'll use it to verify your identity.",
+"Lëtzebuergesch (Luxemburgués)":"Lëtzebuergesch (Luxembourgish)",
+"Límite diario desactivado":"Daily limit disabled",
+"Magyar (Húngaro)":"Magyar (Hungarian)",
+"Malti (Maltés)":"Malti (Maltese)",
+"Marcada como no leída":"Marked as unread",
+"Menciones":"Mentions",
+"Mensajes temporales desactivados":"Temporary messages disabled",
+"Menta":"Mint",
+"Mentes Creadoras":"Creative Minds",
+"Minimalismo Funcional":"Functional Minimalism",
+"Minutos":"Minutes",
+"Mis idiomas":"My languages",
+"Modo silencio desactivado.":"Quiet mode disabled.",
+"Modo silencio finalizado. Notificaciones restauradas.":"Quiet mode finished. Notifications restored.",
+"Modo silencio nocturno":"Night quiet mode",
+"Modo silencio nocturno activado. Las notificaciones se pausarán a las 10:00 p.m.":"Night quiet mode enabled. Notifications will pause at 10:00 p.m.",
+"Modo silencio nocturno activado. Notificaciones pausadas hasta las 8:00 a.m.":"Night quiet mode enabled. Notifications paused until 8:00 a.m.",
+"Mostrar":"Show",
+"Movido a Sin carpeta":"Moved to No folder",
+"Movido a la carpeta":"Moved to the folder",
+"Multimedia":"Media",
+"Muy débil":"Very weak",
+"Más específicamente, es posible que necesitemos procesar sus datos o compartir su información personal en las siguientes situaciones: Proveedores, consultores y otros proveedores de servicios externos, transferencias comerciales y afiliados.":"More specifically, we may need to process your data or share your personal information in the following situations: vendors, consultants and other third-party service providers, business transfers and affiliates.",
+"Nada que guardar":"Nothing to save",
+"Nadie":"Nobody",
+"Naturaleza":"Nature",
+"Navidad":"Christmas",
+"Nederlands (Holandés)":"Nederlands (Dutch)",
+"Neón":"Neon",
+"No Acoso:":"No Harassment:",
+"No creamos productos aislados. Cada elemento desarrollado bajo el sello de Kor Systems está diseñado para comunicarse fluidamente con el resto del ecosistema, creando una experiencia holística.":"We don't build isolated products. Every element developed under the Kor Systems seal is designed to communicate fluidly with the rest of the ecosystem, creating a holistic experience.",
+"No distinguido":"Not featured",
+"No encontramos ninguna cuenta con este correo.":"We couldn't find any account with this email.",
+"No puedes corregir tu propio ejercicio.":"You can't correct your own exercise.",
+"No puedes eliminar al creador del grupo":"You can't remove the group creator",
+"No quiero":"I don't want to",
+"No se encontraron países.":"No countries found.",
+"No se pudo acceder al micrófono.":"Couldn't access the microphone.",
+"No se pudo agregar al miembro":"Couldn't add the member",
+"No se pudo cambiar el fijado":"Couldn't change the pin",
+"No se pudo cambiar el nombre":"Couldn't change the name",
+"No se pudo cambiar la configuración":"Couldn't change the settings",
+"No se pudo cargar la publicación. Revisa tu conexión e inténtalo de nuevo.":"Couldn't load the post. Check your connection and try again.",
+"No se pudo cargar por completo el Centro de seguridad.":"Couldn't fully load the Security Center.",
+"No se pudo desactivar. Inténtalo de nuevo.":"Couldn't disable it. Try again.",
+"No se pudo eliminar al miembro":"Couldn't remove the member",
+"No se pudo eliminar.":"Couldn't delete.",
+"No se pudo enviar el código. Inténtalo de nuevo más tarde.":"Couldn't send the code. Try again later.",
+"No se pudo enviar. Intenta de nuevo.":"Couldn't send. Try again.",
+"No se pudo generar el archivo de datos.":"Couldn't generate the data file.",
+"No se pudo guardar el borrador":"Couldn't save the draft",
+"No se pudo guardar. Intenta de nuevo.":"Couldn't save. Try again.",
+"No se pudo guardar. Inténtalo de nuevo.":"Couldn't save. Try again.",
+"No se pudo marcar como no leída":"Couldn't mark as unread",
+"No se pudo otorgar el rol de administrador":"Couldn't grant the admin role",
+"No se pudo publicar. Intenta de nuevo.":"Couldn't publish. Try again.",
+"No se pudo quitar el rol de administrador":"Couldn't remove the admin role",
+"No se pudo reenviar el código. Inténtalo de nuevo.":"Couldn't resend the code. Try again.",
+"No se pudo salir del grupo":"Couldn't leave the group",
+"No se pudo subir la foto":"Couldn't upload the photo",
+"No se pudo vaciar el chat":"Couldn't clear the chat",
+"No se pudo verificar el código. Inténtalo de nuevo.":"Couldn't verify the code. Try again.",
+"No solicitamos datos a sabiendas ni comercializamos con niños menores de 18 años. Al utilizar las aplicaciones, usted declara que tiene al menos 18 años o que es el padre o tutor de dicho menor y da su consentimiento para el uso de las aplicaciones por parte de dicho menor dependiente. Si nos enteramos de que se ha recopilado información personal de usuarios menores de 18 años, desactivaremos la cuenta y tomaremos medidas razonables para eliminar de inmediato dichos datos de nuestros registros. Si tiene conocimiento de cualquier dato que hayamos recopilado de niños menores de 18 años, contáctenos en":"We do not knowingly request data from or market to children under 18. By using the apps, you represent that you are at least 18 years old or that you are the parent or guardian of such a minor and consent to the dependent minor's use of the apps. If we learn that personal information has been collected from users under 18, we will disable the account and take reasonable steps to promptly delete such data from our records. If you are aware of any data we have collected from children under 18, contact us at",
+"No soy un robot":"I'm not a robot",
+"No tienes borradores":"You have no drafts",
+"No tienes solicitudes pendientes":"You have no pending requests",
+"Nombre del grupo actualizado":"Group name updated",
+"Norsk (Noruego)":"Norsk (Norwegian)",
+"Nota: aquí puedes elegir cómo quieres ver la plataforma. Si activas el modo oscuro, Drex ajustará fondos, tarjetas y textos para que todo se vea más cómodo y legible.":"Note: here you can choose how you want to view the platform. If you enable dark mode, Drex will adjust backgrounds, cards and text so everything looks more comfortable and readable.",
+"Notas":"Notes",
+"Noticia":"News",
+"Nuestro Enfoque":"Our Approach",
+"Nueva conversación":"New conversation",
+"Nuevo inicio de sesión":"New login",
+"Ocultar":"Hide",
+"Ocurrió un error. Inténtalo de nuevo.":"Something went wrong. Try again.",
+"Océano":"Ocean",
+"Odio o discriminación":"Hate or discrimination",
+"Omitir":"Skip",
+"Opciones":"Options",
+"Otras sesiones cerradas":"Other sessions signed out",
+"Otro motivo":"Another reason",
+"Oʻzbek (Uzbeko)":"Oʻzbek (Uzbek)",
+"Para utilizar ciertas funciones de Drex, es posible que deba registrarse para obtener una cuenta. Usted acepta proporcionar información precisa, completa y actualizada.":"To use certain Drex features, you may need to register for an account. You agree to provide accurate, complete and up-to-date information.",
+"Participantes":"Participants",
+"Paso 1 de 5":"Step 1 of 5",
+"Paso 2 de 5":"Step 2 of 5",
+"Paso 3 de 5":"Step 3 of 5",
+"Paso 4 de 5":"Step 4 of 5",
+"Paso 5 de 5":"Step 5 of 5",
+"Pausar":"Pause",
+"Perfil falso: el autor está suplantando identidad":"Fake profile: the author is impersonating someone",
+"Personalizado":"Custom",
+"Personas que sigo":"People I follow",
+"Pilares Principales":"Core Pillars",
+"Podemos actualizar esta política de privacidad de vez en cuando. La versión actualizada se indicará mediante una fecha de \"Revisada\" actualizada y la versión actualizada entrará en vigencia tan pronto como sea accesible. Si realizamos cambios sustanciales en esta política de privacidad, podemos notificárselo mediante la publicación destacada de un aviso de dichos cambios o enviándole directamente una notificación. Le recomendamos que revise esta política de privacidad con frecuencia para estar informado de cómo protegemos su información.":"We may update this privacy policy from time to time. The updated version will be indicated by an updated \"Revised\" date and the updated version will take effect as soon as it is accessible. If we make material changes to this privacy policy, we may notify you by prominently posting a notice of such changes or by sending you a notification directly. We encourage you to review this privacy policy frequently to stay informed about how we protect your information.",
+"Podemos terminar o suspender su cuenta e interrumpir el acceso a los servicios de inmediato, sin previo aviso ni responsabilidad, por cualquier motivo, incluyendo, entre otros, si usted incumple los Términos.":"We may terminate or suspend your account and discontinue access to the services immediately, without prior notice or liability, for any reason, including, but not limited to, if you breach the Terms.",
+"Podemos utilizar cookies y tecnologías de seguimiento similares (como balizas web y píxeles) para acceder o almacenar información. La información específica sobre cómo utilizamos dichas tecnologías y cómo puede rechazar ciertas cookies se establece en nuestra Política de Cookies.":"We may use cookies and similar tracking technologies (such as web beacons and pixels) to access or store information. Specific information about how we use such technologies and how you can refuse certain cookies is set out in our Cookie Policy.",
+"Podemos utilizar su información como parte de nuestros esfuerzos para mantener nuestras aplicaciones seguras y protegidas (por ejemplo, para el monitoreo y la prevención de fraudes).":"We may use your information as part of our efforts to keep our apps safe and secure (for example, for fraud monitoring and prevention).",
+"Podemos utilizar su información personal para enviarle información sobre productos, servicios y nuevas funciones y/o información sobre cambios en nuestros términos, condiciones y políticas.":"We may use your personal information to send you information about products, services and new features and/or information about changes to our terms, conditions and policies.",
+"Polski (Polaco)":"Polski (Polish)",
+"Ponle un nombre al grupo":"Name the group",
+"Ponle un título a tu fiesta.":"Give your party a title.",
+"Por favor ingresa tu correo electrónico.":"Please enter your email.",
+"Por favor ingresa un correo válido.":"Please enter a valid email.",
+"Por favor, ingresa tu correo electrónico.":"Please enter your email.",
+"Portugués":"Portuguese",
+"Português (Portugués)":"Português (Portuguese)",
+"Practica con hablantes nativos":"Practice with native speakers",
+"Practica idiomas hablando en grupo":"Practice languages by speaking in a group",
+"Preferencia activada":"Preference enabled",
+"Preferencia de seguridad":"Security preference",
+"Preferencia desactivada":"Preference disabled",
+"Pregunta":"Question",
+"Producto Kor GRATIS":"FREE Kor Product",
+"Promedio:":"Average:",
+"Promueve autolesión o suicidio":"Promotes self-harm or suicide",
+"Propiedad Intelectual":"Intellectual Property",
+"Publicamos testimonios en nuestras aplicaciones que pueden contener información personal. Antes de publicar un testimonio, obtendremos su consentimiento para utilizar su nombre y testimonio.":"We publish testimonials on our apps that may contain personal information. Before posting a testimonial, we will obtain your consent to use your name and testimonial.",
+"Puedes cambiarlo cuando quieras.":"You can change it anytime.",
+"Puntuación:":"Score:",
+"Quitar color":"Remove color",
+"REINTENTAR":"RETRY",
+"Recibe un aviso al alcanzarlo":"Get notified when you reach it",
+"Reconectando audio...":"Reconnecting audio...",
+"Recopilamos automáticamente cierta información cuando visita, usa o navega por las aplicaciones. Esta información no revela su identidad específica (como su nombre o información de contacto), pero puede incluir información sobre el dispositivo y el uso, como su dirección IP, características del navegador y del dispositivo, sistema operativo, preferencias de idioma, URL de referencia, nombre del dispositivo, país, ubicación, información sobre cómo y cuándo usa nuestras aplicaciones y otra información técnica.":"We automatically collect certain information when you visit, use or navigate the apps. This information does not reveal your specific identity (such as your name or contact information), but may include device and usage information, such as your IP address, browser and device characteristics, operating system, language preferences, referring URL, device name, country, location, information about how and when you use our apps, and other technical information.",
+"Recopilamos información personal que usted nos proporciona voluntariamente al registrarse en las aplicaciones, expresar interés en obtener información sobre nosotros o nuestros productos y servicios, al participar en actividades en las aplicaciones o al contactarnos de otra manera.":"We collect personal information that you voluntarily provide to us when you register on the apps, express interest in obtaining information about us or our products and services, when you participate in activities on the apps, or when you otherwise contact us.",
+"Recuperación solicitada":"Recovery requested",
+"Regular":"Fair",
+"Relájate y descansa":"Relax and rest",
+"Rendimiento Absoluto":"Absolute Performance",
+"Requisito de Edad":"Age Requirement",
+"Restablecer contraseña":"Reset password",
+"Română (Rumano)":"Română (Romanian)",
+"Ruso":"Russian",
+"SALIR":"LOG OUT",
+"Salas de voz en vivo para practicar idiomas y conocer gente.":"Live voice rooms to practice languages and meet people.",
+"Saliste del grupo":"You left the group",
+"Salud (Sleep Mode)":"Health (Sleep Mode)",
+"San Valentín":"Valentine's Day",
+"Se activó la verificación en dos pasos.":"Two-step verification enabled.",
+"Se activó una app de autenticación y se generaron códigos de respaldo.":"An authenticator app was enabled and backup codes were generated.",
+"Se cambió la contraseña desde el Centro de seguridad.":"The password was changed from the Security Center.",
+"Se cambió la foto del grupo":"The group photo was changed",
+"Se cerró una sesión reconocida desde el Centro de seguridad.":"A recognized session was signed out from the Security Center.",
+"Se conservarán tus datos de cuenta y sesión. Solo se limpia información temporal (historiales y caché local).":"Your account and session data will be kept. Only temporary information is cleaned (history and local cache).",
+"Se desactivó la app de autenticación.":"The authenticator app was disabled.",
+"Se desactivó la verificación en dos pasos.":"Two-step verification was disabled.",
+"Se envió un código al correo vinculado.":"A code was sent to the linked email.",
+"Se envió un código para cambiar la contraseña.":"A code was sent to change the password.",
+"Se generó un archivo con perfil y preferencias.":"A file with profile and preferences was generated.",
+"Se guardan solo en este dispositivo":"Stored only on this device",
+"Se publicará en el feed principal":"It will be published to the main feed",
+"Se solicitó el cierre de las demás sesiones de Drex.":"Sign-out of the other Drex sessions was requested.",
+"Seguidos":"Following",
+"Selecciona tu idioma preferido. Los posts, comentarios y respuestas escritos en otros idiomas serán detectados y traducidos automáticamente usando Google Translate.":"Select your preferred language. Posts, comments and replies written in other languages will be detected and automatically translated using Google Translate.",
+"Selecciona tu país para continuar.":"Select your country to continue.",
+"Selecciona un idioma":"Select a language",
+"Sesión cerrada":"Session signed out",
+"Shqip (Albanés)":"Shqip (Albanian)",
+"Si dependemos de su consentimiento para procesar su información personal, tiene derecho a retirar su consentimiento en cualquier momento. Sin embargo, tenga en cuenta que esto no afectará la legalidad del procesamiento antes de su retiro, ni afectará el procesamiento de su información personal realizado en base a motivos de procesamiento legales distintos al consentimiento.":"If we rely on your consent to process your personal information, you have the right to withdraw your consent at any time. However, please note that this will not affect the lawfulness of processing before its withdrawal, nor will it affect the processing of your personal information carried out on legal processing grounds other than consent.",
+"Si sos el papá, la mamá o un adulto responsable, pedile a la persona menor de edad el código de 6 dígitos que le aparece en su propia sección de Control parental, e ingresalo acá para supervisar su cuenta.":"If you are the dad, mom or a responsible adult, ask the minor for the 6-digit code that appears in their own Parental controls section, and enter it here to supervise their account.",
+"Si utiliza nuestras aplicaciones, también podemos recopilar la siguiente información: Información de geolocalización, acceso a dispositivos móviles, datos de dispositivos móviles y notificaciones push.":"If you use our apps, we may also collect the following information: geolocation information, mobile device access, mobile device data and push notifications.",
+"Silencio desactivado":"Silence disabled",
+"Sleep Mode interactivo":"Interactive Sleep Mode",
+"Slovenčina (Eslovaco)":"Slovenčina (Slovak)",
+"Slovenščina (Esloveno)":"Slovenščina (Slovenian)",
+"Solicitamos el cierre de las demás sesiones.":"We requested sign-out of the other sessions.",
+"Solicitudes":"Requests",
+"Solicitudes de seguimiento":"Follow requests",
+"Solo amigos":"Friends only",
+"Solo compartimos información con su consentimiento, para cumplir con las leyes, para brindarle servicios, para proteger sus derechos o para cumplir con obligaciones comerciales. Podemos procesar o compartir datos sobre la siguiente base legal: Consentimiento, Intereses Legítimos, Ejecución de un Contrato, Obligaciones Legales y Intereses Vitales.":"We only share information with your consent, to comply with laws, to provide you with services, to protect your rights, or to fulfill business obligations. We may process or share data on the following legal basis: consent, legitimate interests, performance of a contract, legal obligations and vital interests.",
+"Solo conservaremos su información personal durante el tiempo que sea necesario para los fines establecidos en esta política de privacidad, a menos que la ley exija o permita un período de retención más largo (como requisitos fiscales, contables u otros requisitos legales). Ningún propósito en esta política requerirá que conservemos su información personal por más tiempo del período en el que los usuarios tienen una cuenta con nosotros.":"We will only retain your personal information for as long as necessary for the purposes set out in this privacy policy, unless a longer retention period is required or permitted by law (such as tax, accounting or other legal requirements). No purpose in this policy will require us to retain your personal information for longer than the period during which users hold an account with us.",
+"Solo el autor podrá ver la publicación.":"Only the author will be able to see the post.",
+"Solo el creador puede eliminar a un administrador":"Only the creator can remove an admin",
+"Solo las personas que sigo podrán ver la publicación.":"Only people I follow will be able to see the post.",
+"Solo letras, números, puntos y guiones bajos.":"Only letters, numbers, dots and underscores.",
+"Solo los administradores pueden cambiar esto":"Only admins can change this",
+"Solo los administradores pueden editar el grupo":"Only admins can edit the group",
+"Solo se edita el texto":"Only the text is edited",
+"Solo un administrador puede agregar participantes":"Only an admin can add participants",
+"Solo un administrador puede vaciar el chat":"Only an admin can clear the chat",
+"Solo visible para ti":"Only visible to you",
+"Solo yo":"Only me",
+"Soomaali (Somalí)":"Soomaali (Somali)",
+"Spam o actividad sospechosa":"Spam or suspicious activity",
+"Spam, fraude o contenido engañoso":"Spam, fraud or misleading content",
+"Suomi (Finlandés)":"Suomi (Finnish)",
+"Svenska (Sueco)":"Svenska (Swedish)",
+"Sé amable: todos estamos aprendiendo.":"Be kind: we're all learning.",
+"Te enviamos un código de verificación al correo vinculado.":"We sent a verification code to the linked email.",
+"Te han agregado al grupo":"You've been added to the group",
+"Temas populares":"Trending topics",
+"Terminar fiesta":"End party",
+"Tiếng Việt (Vietnamita)":"Tiếng Việt (Vietnamese)",
+"Toca la foto para elegir una nueva":"Tap the photo to choose a new one",
+"Todo el contenido original, las características y la funcionalidad de la plataforma son y seguirán siendo propiedad exclusiva de Drex y sus licenciantes. Esto incluye, entre otros, el diseño, el código, los gráficos y el nombre de la marca.":"All original content, features and functionality of the platform are and will remain the exclusive property of Drex and its licensors. This includes, among others, the design, code, graphics and brand name.",
+"Total de lecturas":"Total reads",
+"Tras la terminación, su derecho a utilizar el servicio cesará de inmediato. Si desea cancelar su cuenta, simplemente puede dejar de utilizar el servicio o solicitar la eliminación de su cuenta a través de los canales oficiales.":"Upon termination, your right to use the service will cease immediately. If you wish to cancel your account, you can simply stop using the service or request deletion of your account through the official channels.",
+"Tu archivo privado ya está listo.":"Your private file is ready.",
+"Tu contraseña no debe contener tu correo o nombre de usuario.":"Your password must not contain your email or username.",
+"Tu correo ya está verificado.":"Your email is already verified.",
+"Tu fiesta se publica en el feed para que todos se unan.":"Your party is published to the feed so everyone can join.",
+"Título":"Title",
+"Türkmen (Turcomano)":"Türkmen (Turkmen)",
+"Türkçe (Turco)":"Türkçe (Turkish)",
+"Urdu":"Urdu",
+"Usted es responsable de mantener la confidencialidad de su contraseña y cuenta, y es plenamente responsable de todas las actividades que ocurran bajo su cuenta. Debe notificarnos de inmediato cualquier uso no autorizado de su cuenta.":"You are responsible for maintaining the confidentiality of your password and account, and you are fully responsible for all activities that occur under your account. You must notify us immediately of any unauthorized use of your account.",
+"Utilizamos la información personal recopilada a través de nuestras aplicaciones para una variedad de propósitos comerciales descritos a continuación. Procesamos su información personal para estos fines basándonos en nuestros intereses comerciales legítimos, para celebrar o ejecutar un contrato con usted, con su consentimiento y/o para cumplir con nuestras obligaciones legales.":"We use the personal information collected through our apps for a variety of business purposes described below. We process your personal information for these purposes based on our legitimate business interests, to enter into or perform a contract with you, with your consent and/or to comply with our legal obligations.",
+"Utilizamos la información que nos permitió recopilar para facilitar la creación de cuentas y el proceso de inicio de sesión para la ejecución del contrato.":"We use the information you allowed us to collect to facilitate account creation and the login process for the performance of the contract.",
+"Ver menos":"Show less",
+"Ver más":"Show more",
+"Verificación de correo solicitada":"Email verification requested",
+"Verificación en dos pasos activada":"Two-step verification enabled",
+"Verificación en dos pasos desactivada":"Two-step verification disabled",
+"Vibrantes":"Vibrant",
+"Vincular":"Link",
+"Ya enviaste una corrección en este ejercicio.":"You already submitted a correction on this exercise.",
+"Ya estás en esta fiesta.":"You're already in this party.",
+"Ya estás en una fiesta.":"You're already in a party.",
+"Ya no estás supervisado por esa cuenta":"You're no longer supervised by that account",
+"Ya puedes iniciar sesión con tu nueva contraseña.":"You can now log in with your new password.",
+"Yorùbá":"Yorùbá",
+"desfijada":"unpinned",
+"escribiendo...":"typing...",
+"fijada":"pinned",
+"¡Atrapa los Kor!":"Catch the Kor!",
+"¡Cuenta lista! Bienvenido a Drex":"Account ready! Welcome to Drex",
+"¡Este es tu tema!":"This is your theme!",
+"¡PREMIO DESBLOQUEADO!":"PRIZE UNLOCKED!",
+"¿Cómo podemos ayudarte?":"How can we help you?",
+"¿De dónde eres?":"Where are you from?",
+"¿Prefieres que nuestro equipo lo haga por ti?":"Would you rather have our team do it for you?",
+"¿Qué quieres aprender?":"What do you want to learn?",
+"¿Te sirvió este artículo?":"Was this article helpful?",
+"¿Tienes problemas para iniciar sesión?":"Trouble logging in?",
+"Árabe":"Arabic",
+"Íslenska (Islandés)":"Íslenska (Icelandic)",
+"Čeština (Checo)":"Čeština (Czech)",
+"Ελληνικά (Griego)":"Ελληνικά (Greek)",
+"Беларуская (Bielorruso)":"Беларуская (Belarusian)",
+"Български (Búlgaro)":"Български (Bulgarian)",
+"Кыргыз (Kirguís)":"Кыргыз (Kyrgyz)",
+"Македонски (Macedonio)":"Македонски (Macedonian)",
+"Монгол (Mongol)":"Монгол (Mongolian)",
+"Русский (Ruso)":"Русский (Russian)",
+"Српски (Serbio)":"Српски (Serbian)",
+"Тоҷикӣ (Tayiko)":"Тоҷикӣ (Tajik)",
+"Українська (Ucraniano)":"Українська (Ukrainian)",
+"Қазақ (Kazajo)":"Қазақ (Kazakh)",
+"Հայերեն (Armenio)":"Հայերեն (Armenian)",
+"עברית (Hebreo)":"עברית (Hebrew)",
+"اردو (Urdu)":"اردو (Urdu)",
+"العربية (Árabe)":"العربية (Arabic)",
+"سنڌي (Sindhi)":"سنڌي (Sindhi)",
+"فارسی (Persa)":"فارسی (Persian)",
+"پښتو (Pastún)":"پښتو (Pashto)",
+"नेपाली (Nepalés)":"नेपाली (Nepali)",
+"मराठी (Marathi)":"मराठी (Marathi)",
+"हिन्दी (Hindi)":"हिन्दी (Hindi)",
+"বাংলা (Bengalí)":"বাংলা (Bengali)",
+"ગુજરાતી (Gujarati)":"ગુજરાતી (Gujarati)",
+"தமிழ் (Tamil)":"தமிழ் (Tamil)",
+"తెలుగు (Telugu)":"తెలుగు (Telugu)",
+"മലയാളം (Malayalam)":"മലയാളം (Malayalam)",
+"සිංහල (Cingalés)":"සිංහල (Sinhala)",
+"ไทย (Tailandés)":"ไทย (Thai)",
+"ລາວ (Laosiano)":"ລາວ (Lao)",
+"မြန်မာ (Birmano)":"မြန်မာ (Burmese)",
+"ქართული (Georgiano)":"ქართული (Georgian)",
+"አማርኛ (Amhárico)":"አማርኛ (Amharic)",
+"ខ្មែរ (Jemer)":"ខ្មែរ (Khmer)",
+"• Retorno instantáneo: Puedes recuperar tu cuenta y restaurar todo tu contenido cuando quieras; solo tienes que volver a entrar con tus credenciales habituales.":"• Instant return: you can recover your account and restore all your content whenever you want; just log back in with your usual credentials.",
+"• Tienes un plazo de 30 días para arrepentirte; si inicias sesión antes de que se cumpla ese tiempo, la solicitud de borrado se cancelará automáticamente.":"• You have 30 days to change your mind; if you log in before that time is up, the deletion request will be cancelled automatically.",
+"⏳ Mensajes temporales activados":"⏳ Temporary messages enabled",
+"⏳ Subiendo foto...":"⏳ Uploading photo...",
+"⚽ Deportes":"⚽ Sports",
+"✈️ Viajes":"✈️ Travel",
+"✓ Guardado":"✓ Saved",
+"✓ Las contraseñas coinciden":"✓ Passwords match",
+"✗ Las contraseñas no coinciden":"✗ Passwords don't match",
+"❤️ Corazones":"❤️ Hearts",
+"中文 (Chino)":"中文 (Chinese)",
+"日本語 (Japonés)":"日本語 (Japanese)",
+"한국어 (Coreano)":"한국어 (Korean)",
+"🌿 Naturaleza":"🌿 Nature",
+"🍕 Comida":"🍕 Food",
+"🎨 Arte":"🎨 Art",
+"🎬 Cine":"🎬 Movies",
+"🎮 Gaming":"🎮 Gaming",
+"🐶 Animales":"🐶 Animals",
+"👋 Gestos":"👋 Gestures",
+"💬 Humor":"💬 Humor",
+"📰 Noticias":"📰 News",
+"😊 Caras":"😊 Faces",
+"Público":"Public",
+"últimos 7 días":"Last 7 days",
+"Por favor ingresa tu nombre y apellido.":"Please enter your first and last name.",
 };
-  const APP_ENGLISH_ATTRS = { "Explica los errores...":"Explain the mistakes...", "Escribe tu texto aquí...":"Write your text here...", "Adjuntar foto":"Attach photo", "Anclar mensaje":"Anclar mensaje", "Atrás":"Back", "Añade un comentario...":"Add a comment...", "Año":"Year", "Buscar":"Search", "Buscar GIFs":"Search GIFs", "Buscar chats":"Search chats", "Buscar dentro del chat":"Search inside chat", "Buscar en esta conversación":"Search this conversation", "Buscar en la conversación...":"Search in conversation...", "Buscar entre mis matches":"Search among my matches", "Buscar mensajes":"Search messages", "Buscar personas…":"Search people…", "Buscar stickers":"Search stickers", "Buscar un match":"Search a match", "Buscar usuario":"Search user", "Buscar usuario...":"Search user...", "Buscar usuarios":"Search users", "Buscar usuarios...":"Search users...", "Buscar...":"Search...", "Cambiar foto de perfil":"Change profile photo", "Cambiar país":"Change country", "Cancelar edición":"Cancel edit", "Cerrar":"Close", "Cerrar búsqueda":"Close search", "Cerrar reporte de comentario":"Close comment report", "Comentarios":"Comments", "Contraseña":"Password", "Copiar texto":"Copy text", "Copiar usuario":"Copy user", "Correo electrónico":"Email", "Correo electrónico o número de móvil":"Email or mobile number", "Crear contraseña":"Create password", "Crear grupo de chat":"Create chat group", "Crear publicación":"Create post", "Cuéntale a la comunidad sobre ti...":"Tell the community about you...", "Código de 6 dígitos":"6-digit code", "Describe el problema (máx. 100 caracteres)":"Describe the problem (max 100 characters)", "Deshacer última decisión":"Undo last decision", "Detener grabación":"Stop recording", "Día":"Day", "Editar mensaje":"Edit message", "Editar nombre del grupo":"Edit group name", "Ej. Ciudad de México":"E.g. Mexico City", "Elegir foto del grupo":"Choose group photo", "Eliminar fotos":"Delete photos", "Eliminar para mí":"Delete for me", "Enviar mensaje":"Send message", "Escribe el nombre de tu país":"Type the name of your country", "Escribe tu info":"Write your bio", "Escribe tu mensaje...":"Write your message...", "Escribe tu nombre de usuario":"Write your username", "Escribe tu nota (máx. 100 caracteres)":"Write your note (max 100 characters)", "Escribe un texto...":"Write a text...", "Escribe una descripción para tu foto...":"Write a description for your photo...", "Escribe una descripción... usa #hashtags para que le llegue a más personas":"Write a description... use #hashtags to reach more people", "Foto":"Foto", "Galería":"Gallery", "Guardar":"Save",  "Guardar publicación":"Save post", "Limpiar búsqueda":"Clear search", "Limpiar búsqueda GIF":"Clear GIF search", "Limpiar búsqueda de chats":"Clear chat search", "Limpiar búsqueda de stickers":"Clear sticker search", "Limpiar búsqueda de usuarios":"Clear user search", "Mensaje...":"Message...", "Mínimo 6 caracteres":"Minimum 6 characters", "Nombre":"Nombre", "Opciones del comentario":"Comment options", "Opción ${pollOptionCount}":"Opción ${pollOptionCount}", "Opción 1":"Option 1", "Opción 2":"Option 2", "Publicar comentario":"Post comment", "Quitar foto":"Quitar foto", "Repetir contraseña":"Repeat password", "Repite la contraseña":"Repeat password", "Repostear publicación":"Repost post", "Resultados de países":"Country results", "Seguir usuario":"Seguir usuario", "Tu nombre":"Tu nombre", "Ver perfil de ${escapeHtml(post.authorName || 'Usuario')}":"Ver perfil de ${escapeHtml(post.authorName || 'Usuario')}", "Ver perfil de ${note.authorName || 'Usuario'}":"Ver perfil de ${note.authorName || 'Usuario'}", "Volver":"Back", "Volver de búsqueda":"Back from search", "tunombredeusuario":"tunombredeusuario", "usuario@ejemplo.com":"usuario@ejemplo.com", "¿Cuál es tu pregunta?":"What is your question?", "¿Qué quieres compartir?":"What do you want to share?", "Fiesta":"Party", "Fiestas":"Parties", "Crear fiesta":"Create party", "En vivo ahora":"Live now", "Próximas fiestas":"Upcoming parties", "Unirse":"Join", "Título de la fiesta":"Party title", "Idioma a practicar":"Language to practice", "Descripción":"Description", "Hablantes":"Speakers", "Empezar ahora":"Start now", "Quiero hablar":"I want to speak", "Terminar":"End", "Oyentes":"Listeners", "¿Cómo funcionan las fiestas?":"How do parties work?", "Unirse a la fiesta":"Join the party", "Iniciar":"Start", "En vivo":"Live", "Hablando":"Speaking", "Escuchando":"Listening" };
+  const APP_ENGLISH_ATTRS = { "Explica los errores...":"Explain the mistakes...", "Escribe tu texto aquí...":"Write your text here...", "Adjuntar foto":"Attach photo", "Anclar mensaje":"Pin message", "Atrás":"Back", "Añade un comentario...":"Add a comment...", "Año":"Year", "Buscar":"Search", "Buscar GIFs":"Search GIFs", "Buscar chats":"Search chats", "Buscar dentro del chat":"Search inside chat", "Buscar en esta conversación":"Search this conversation", "Buscar en la conversación...":"Search in conversation...", "Buscar entre mis matches":"Search among my matches", "Buscar mensajes":"Search messages", "Buscar personas…":"Search people…", "Buscar stickers":"Search stickers", "Buscar un match":"Search a match", "Buscar usuario":"Search user", "Buscar usuario...":"Search user...", "Buscar usuarios":"Search users", "Buscar usuarios...":"Search users...", "Buscar...":"Search...", "Cambiar foto de perfil":"Change profile photo", "Cambiar país":"Change country", "Cancelar edición":"Cancel edit", "Cerrar":"Close", "Cerrar búsqueda":"Close search", "Cerrar reporte de comentario":"Close comment report", "Comentarios":"Comments", "Contraseña":"Password", "Copiar texto":"Copy text", "Copiar usuario":"Copy user", "Correo electrónico":"Email", "Correo electrónico o número de móvil":"Email or mobile number", "Crear contraseña":"Create password", "Crear grupo de chat":"Create chat group", "Crear publicación":"Create post", "Cuéntale a la comunidad sobre ti...":"Tell the community about you...", "Código de 6 dígitos":"6-digit code", "Describe el problema (máx. 100 caracteres)":"Describe the problem (max 100 characters)", "Deshacer última decisión":"Undo last decision", "Detener grabación":"Stop recording", "Día":"Day", "Editar mensaje":"Edit message", "Editar nombre del grupo":"Edit group name", "Ej. Ciudad de México":"E.g. Mexico City", "Elegir foto del grupo":"Choose group photo", "Eliminar fotos":"Delete photos", "Eliminar para mí":"Delete for me", "Enviar mensaje":"Send message", "Escribe el nombre de tu país":"Type the name of your country", "Escribe tu info":"Write your bio", "Escribe tu mensaje...":"Write your message...", "Escribe tu nombre de usuario":"Write your username", "Escribe tu nota (máx. 100 caracteres)":"Write your note (max 100 characters)", "Escribe un texto...":"Write a text...", "Escribe una descripción para tu foto...":"Write a description for your photo...", "Escribe una descripción... usa #hashtags para que le llegue a más personas":"Write a description... use #hashtags to reach more people", "Foto":"Photo", "Galería":"Gallery", "Guardar":"Save",  "Guardar publicación":"Save post", "Limpiar búsqueda":"Clear search", "Limpiar búsqueda GIF":"Clear GIF search", "Limpiar búsqueda de chats":"Clear chat search", "Limpiar búsqueda de stickers":"Clear sticker search", "Limpiar búsqueda de usuarios":"Clear user search", "Mensaje...":"Message...", "Mínimo 6 caracteres":"Minimum 6 characters", "Nombre":"Name", "Opciones del comentario":"Comment options", "Opción 1":"Option 1", "Opción 2":"Option 2", "Publicar comentario":"Post comment", "Quitar foto":"Remove photo", "Repetir contraseña":"Repeat password", "Repite la contraseña":"Repeat password", "Repostear publicación":"Repost post", "Resultados de países":"Country results", "Seguir usuario":"Follow user", "Tu nombre":"Your name", "Volver":"Back", "Volver de búsqueda":"Back from search", "tunombredeusuario":"tunombredeusuario", "usuario@ejemplo.com":"usuario@ejemplo.com", "¿Cuál es tu pregunta?":"What is your question?", "¿Qué quieres compartir?":"What do you want to share?", "Fiesta":"Party", "Fiestas":"Parties", "Crear fiesta":"Create party", "En vivo ahora":"Live now", "Próximas fiestas":"Upcoming parties", "Unirse":"Join", "Título de la fiesta":"Party title", "Idioma a practicar":"Language to practice", "Descripción":"Description", "Hablantes":"Speakers", "Empezar ahora":"Start now", "Quiero hablar":"I want to speak", "Terminar":"End", "Oyentes":"Listeners", "¿Cómo funcionan las fiestas?":"How do parties work?", "Unirse a la fiesta":"Join the party", "Iniciar":"Start", "En vivo":"Live", "Hablando":"Speaking", "Escuchando":"Listening" , "Abrir ajustes":"Open settings", "Abrir panel lateral":"Open side panel", "Apellido":"Last name", "Asunto":"Subject", "Autor":"Author", "Bandera de Arabia Saudita":"Saudi Arabia flag", "Bandera de Bangladesh":"Bangladesh flag", "Bandera de Brasil":"Brazil flag", "Bandera de China":"China flag", "Bandera de España":"Spain flag", "Bandera de Estados Unidos":"United States flag", "Bandera de Francia":"France flag", "Bandera de India":"India flag", "Bandera de Pakistán":"Pakistan flag", "Bandera de Rusia":"Russia flag", "Bienvenido a Drex":"Welcome to Drex", "Bloquear":"Block", "Buscar en la ayuda":"Search help", "Cambiar de cuenta":"Switch account", "Cancelar respuesta":"Cancel reply", "Centro de ayuda":"Help center", "Chat":"Chat", "Colgar":"Hang up", "Configurar idiomas":"Set up languages", "Copiar":"Copy", "Crear":"Create", "Código de verificación":"Verification code", "De acuerdo":"OK", "Desanclar":"Unpin", "Describe tu problema…":"Describe your problem…", "Edita tu comentario":"Edit your comment", "Editar foto y perfil":"Edit photo and profile", "Ej. Café en inglés ☕":"E.g. coffee in English ☕", "Ej: Amigos del trabajo":"E.g. work friends", "Elegir foto de perfil":"Choose profile photo", "Eliminar para todos":"Delete for everyone", "Escribe tu país":"Type your country", "Escribe tu respuesta":"Write your answer", "Foto de perfil":"Profile photo", "Foto del grupo":"Group photo", "Fuego":"Fire", "Grupo":"Group", "Hola, soy… Me gusta…":"Hi, I'm… I like…", "Info del chat":"Chat info", "Ingresa tu contraseña":"Enter your password", "Ingresa tu correo":"Enter your email", "Inicio":"Home", "Jaja":"Haha", "Me gusta":"Like", "Mes":"Month", "Mi perfil":"My profile", "Mis borradores":"My drafts", "Más acciones":"More actions", "No me gusta":"Dislike", "Notificaciones":"Notifications", "Nueva contraseña":"New password", "Nueva contraseña (mínimo 8 caracteres)":"New password (minimum 8 characters)", "Nuevo ejercicio":"New exercise", "Nuevo icono":"New icon", "Nuevo mensaje":"New message", "Países disponibles":"Available countries", "Perfil":"Profile", "Practicar idiomas":"Practice languages", "Quitar GIF":"Remove GIF", "Reaccionar":"React", "Reenviar":"Forward", "Reportar":"Report", "Responder":"Reply", "Seguir/Dejar de seguir":"Follow/Unfollow", "Sello de marca":"Brand badge", "Silenciar micrófono":"Mute microphone", "Sin color":"No color", "Sticker":"Sticker", "Tu apellido":"Your last name", "Usuario":"User", "Usuario bloqueado":"Blocked user", "Vista previa":"Preview", "Volver a carpetas":"Back to folders", "Wow":"Wow", "foto":"photo", "¿De qué van a hablar?":"What will you talk about?", "¿Qué opinas?":"What do you think?"};
   let appLanguageObserver = null;
   function getAppLanguage() { const stored = localStorage.getItem(APP_LANGUAGE_STORAGE_KEY) || localStorage.getItem('selectedLanguage') || 'es'; return stored === 'en' ? 'en' : 'es'; }
   function shouldSkipAppLanguageNode(node) { const element = node.parentElement; return Boolean(!element || element.closest('[data-i18n-skip], #notes-feed, #home-community-feed, #comments-list, #chat-room-messages, .note-content-text, .post-text, [data-user-content]')); }
@@ -15273,33 +15832,26 @@ function saveNote() {
     } catch (_) {}
 
 
-    if ('Notification' in window) {
-      if (Notification.permission === "granted") {
-        new Notification("Drex", {
-          body: message,
-          icon: "https://cdn-icons-png.flaticon.com/512/907/907822.png",
-          vibrate: [200, 100, 200]
-        });
-      } else if (Notification.permission !== "denied") {
-        try {
-          const permission = await Notification.requestPermission();
-          if (permission === "granted") {
-            new Notification("Drex", {
-              body: message,
-              icon: "https://cdn-icons-png.flaticon.com/512/907/907822.png",
-              vibrate: [200, 100, 200]
-            });
-          }
-        } catch (error) {
-          console.log('Notification permission error:', error);
-        }
-      }
-    }
-
-    if (navigator.vibrate) {
-      navigator.vibrate([200, 100, 200]);
+    // La notificacion del sistema y la vibracion solo tienen sentido en el
+    // dispositivo del DESTINATARIO. addNotification la invoca quien actua,
+    // asi que aqui solo se disparan si el destinatario es el usuario actual
+    // (p. ej. avisos de moderacion propios). El destinatario real recibe su
+    // aviso en el listener de setupNotificationsBadge.
+    const notifSelf = DrexCloud.auth().currentUser;
+    if (notifSelf && notifSelf.uid === userId) {
+      fireDrexSystemNotification(message, true);
     }
 }
+
+  function fireDrexSystemNotification(message, forceVisible) {
+    try {
+      if (!forceVisible && !document.hidden) return;
+      if ('Notification' in window && Notification.permission === "granted") {
+        new Notification("Drex", { body: message, icon: "icon-192.png" });
+      }
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    } catch (_) {}
+  }
 
   let notificationsListenerRef = null;
   let notificationsBadgeRef = null;
@@ -15349,6 +15901,7 @@ function saveNote() {
         }
       });
     }).catch(() => {});
+    const notifListenerStart = Date.now();
     notificationsBadgeRef.on('value', snapshot => {
       if (snapshot.exists()) {
         let localNotes = getLocalNotifications(userId);
@@ -15358,6 +15911,11 @@ function saveNote() {
             const exists = localNotes.some(ln => ln.notificationId === n.notificationId);
             if (!exists) {
               localNotes.unshift(n);
+              // Aviso del sistema solo para notificaciones realmente nuevas
+              // (no el historial cargado al abrir la app).
+              if (!n.read && n.timestamp && n.timestamp >= notifListenerStart - 5000 && !isChatNotificationMuted(n)) {
+                fireDrexSystemNotification(n.message, false);
+              }
             } else {
               const idx = localNotes.findIndex(ln => ln.notificationId === n.notificationId);
               if (idx !== -1) {
@@ -15423,6 +15981,45 @@ function saveNote() {
     updateChatUnreadBadge();
   }
 
+  const chatMuteCache = { users: {}, groups: {} };
+  let chatMuteListenerUid = null;
+  let chatMuteUserRef = null;
+  let chatMuteGroupRef = null;
+
+  function loadChatMutes(userId) {
+    if (!userId || chatMuteListenerUid === userId) return;
+    chatMuteListenerUid = userId;
+    if (chatMuteUserRef) chatMuteUserRef.off('value');
+    if (chatMuteGroupRef) chatMuteGroupRef.off('value');
+    chatMuteUserRef = DrexCloud.database().ref('chatMutes/' + userId);
+    chatMuteGroupRef = DrexCloud.database().ref('groupMutes/' + userId);
+    chatMuteUserRef.on('value', snap => { chatMuteCache.users = snap.val() || {}; updateChatUnreadBadge(); });
+    chatMuteGroupRef.on('value', snap => { chatMuteCache.groups = snap.val() || {}; updateChatUnreadBadge(); });
+  }
+
+  function isMuteActive(entry) {
+    return !!(entry && Number(entry.muteUntil || 0) > Date.now());
+  }
+
+  // DM: convoId es "uidA__uidB"; grupos: el id de la conversacion.
+  function isChatConversationMuted(convoId, myUid) {
+    if (!convoId || !myUid) return false;
+    const parts = String(convoId).split('__');
+    if (parts.length === 2 && parts.includes(myUid)) {
+      const other = parts[0] === myUid ? parts[1] : parts[0];
+      if (isMuteActive(chatMuteCache.users[other])) return true;
+    }
+    return isMuteActive(chatMuteCache.groups[convoId]);
+  }
+
+  // Notificacion de chat (actionType 'chat'): en DM actionId es el uid del
+  // remitente; en grupos (isGroupChat) es el id de la conversacion.
+  function isChatNotificationMuted(n) {
+    if (!n || n.actionType !== 'chat') return false;
+    if (n.isGroupChat) return isMuteActive(chatMuteCache.groups[n.actionId]);
+    return isMuteActive(chatMuteCache.users[n.actionId]);
+  }
+
   function updateChatUnreadBadge() {
     const user = DrexCloud.auth().currentUser;
     const badge = document.getElementById('chat-unread-badge');
@@ -15436,6 +16033,7 @@ function saveNote() {
         if (!meta || typeof meta !== 'object') return;
         const updatedAt = Number(meta.updatedAt || 0);
         if (!updatedAt) return;
+        if (isChatConversationMuted(convoId, user.uid)) return;
         let lastRead = 0;
         try { lastRead = Number(localStorage.getItem(getChatLastReadKey(user.uid, convoId)) || 0); } catch (_) {}
         if (updatedAt > lastRead) unread++;
@@ -15461,11 +16059,15 @@ function saveNote() {
     chatUnreadBadgeRef.on('value', () => {
       updateChatUnreadBadge();
     });
+    loadChatMutes(userId);
   }
 
   function clearChatUnreadBadge() {
     const badge = document.getElementById('chat-unread-badge');
     if (badge) { badge.classList.add('hidden'); badge.textContent = '0'; }
+    if (chatMuteUserRef) { chatMuteUserRef.off('value'); chatMuteUserRef = null; }
+    if (chatMuteGroupRef) { chatMuteGroupRef.off('value'); chatMuteGroupRef = null; }
+    chatMuteCache.users = {}; chatMuteCache.groups = {}; chatMuteListenerUid = null;
     if (chatUnreadBadgeRef) {
       chatUnreadBadgeRef.off('value');
       chatUnreadBadgeRef = null;
@@ -15725,6 +16327,19 @@ function saveNote() {
     }, 200);
   }
 
+  function markAllNotificationsRead(userId) {
+    if (!userId) return;
+    const localNotes = getLocalNotifications(userId);
+    const unreadIds = localNotes.filter(n => !n.read && n.notificationId).map(n => n.notificationId);
+    if (!unreadIds.length) return;
+    localNotes.forEach(n => { n.read = true; });
+    saveLocalNotifications(userId, localNotes);
+    const updates = {};
+    unreadIds.forEach(id => { updates['notifications/' + userId + '/' + id + '/read'] = true; });
+    DrexCloud.database().ref().update(updates).catch(() => {});
+    updateBadgeCount(userId);
+  }
+
   function updateBadgeCount(userId) {
     const badge = document.getElementById('unread-notifications-count');
     if (!badge) return;
@@ -15742,6 +16357,8 @@ function saveNote() {
     const modal = document.getElementById('notifications-modal');
     if (modal) modal.classList.add('hidden');
     setBottomNavVisibility(true);
+    const currentUser = DrexCloud.auth().currentUser;
+    if (currentUser) markAllNotificationsRead(currentUser.uid);
 
     if (notificationsListenerRef) {
       notificationsListenerRef.off('value');
@@ -17103,6 +17720,25 @@ function saveNote() {
           if (data) {
             window._drexUserName = (data.username || data.fullName || '').replace(/<[^>]*>/g, '').trim() || null;
           }
+        }
+      }).catch(err => {
+        console.error('Error al cargar el perfil tras el login:', err);
+        if (typeof hideSplashScreen === 'function') hideSplashScreen();
+        const authErrorEl = document.getElementById('authError');
+        if (authErrorEl) {
+          authErrorEl.innerHTML = '';
+          const msg = document.createElement('div');
+          msg.textContent = 'No se pudo cargar tu perfil. Revisa tu conexión e inténtalo de nuevo.';
+          msg.style.marginBottom = '8px';
+          const retryBtn = document.createElement('button');
+          retryBtn.type = 'button';
+          retryBtn.textContent = 'Reintentar';
+          retryBtn.className = 'px-4 py-2 rounded-full font-semibold text-sm';
+          retryBtn.style.background = '#3897f0';
+          retryBtn.style.color = '#fff';
+          retryBtn.addEventListener('click', () => location.reload());
+          authErrorEl.append(msg, retryBtn);
+          authErrorEl.classList.remove('hidden');
         }
       });
     } else {
@@ -24959,6 +25595,10 @@ function renderAccountsList(accounts) {
         groupsSnap.forEach(child => { if ((child.val() || {}).creatorId === authorId) groupsCount++; });
         if (authorGroupsNode) authorGroupsNode.textContent = formatNumber(groupsCount);
       });
+    }).catch(() => {
+      if (currentViewedAuthorId !== authorId) return;
+      if (authorNameNode) authorNameNode.textContent = 'Autor desconocido';
+      window.paintLoadError(authorBioNode, 'No se pudo cargar este perfil. Revisa tu conexión.', () => openAuthorProfile(authorId, origin));
     });
 
 
@@ -25107,6 +25747,8 @@ function renderAccountsList(accounts) {
       Promise.all(ids.map(uid => DrexCloud.database().ref('users/' + uid).once('value').then(s => ({ uid, data: s.val() || {} })))).then(items => {
         followersListDiv.innerHTML = items.map(item => buildAuthorRelationRow(item.uid, item.data)).join('');
       });
+    }).catch(() => {
+      window.paintLoadError(followersListDiv, 'No se pudieron cargar los seguidores. Revisa tu conexión.', openFollowersModal);
     });
     document.getElementById('followers-modal').classList.remove('hidden');
   }
@@ -25129,6 +25771,8 @@ function renderAccountsList(accounts) {
       Promise.all(ids.map(uid => DrexCloud.database().ref('users/' + uid).once('value').then(s => ({ uid, data: s.val() || {} })))).then(items => {
         followingListDiv.innerHTML = items.map(item => buildAuthorRelationRow(item.uid, item.data)).join('');
       });
+    }).catch(() => {
+      window.paintLoadError(followingListDiv, 'No se pudieron cargar los seguidos. Revisa tu conexión.', openFollowingModal);
     });
     document.getElementById('following-modal').classList.remove('hidden');
   }
@@ -28990,7 +29634,7 @@ function renderParentalTeenSection() {
 
     renderParentalCodeGenerator(box, user.uid);
   }).catch(() => {
-    box.innerHTML = `<p class="text-sm text-[#7b878f]">No se pudo cargar esta sección. Intenta de nuevo.</p>`;
+    window.paintLoadError(box, 'No se pudo cargar esta sección. Revisa tu conexión.', renderParentalTeenSection);
   });
 }
 
@@ -30694,6 +31338,14 @@ async function endFiesta() {
   if (!confirm('¿Terminar la fiesta para todos?')) return;
   await DrexCloud.database().ref('fiestas/' + fiestaCur.id + '/status').set('ended').catch(() => {});
 }
+</script>
+<script>
+  // Registro del service worker para que la PWA sea instalable.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+  }
 </script>
 </body>
 </html>
