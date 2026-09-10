@@ -29770,8 +29770,7 @@ async function publishExercise() {
       language: lang, topic: topic, text: text,
       timestamp: Date.now(), correctionsCount: 0
     };
-    const r1 = DrexCloud.database().ref('languageExercises').push(payload);
-    try { DrexCloud.database().ref('languageExercises').push(payload); } catch(e) {}
+    await DrexCloud.database().ref('languageExercises').push(payload);
     closePracticarComposer();
     if (typeof showMiniToast === 'function') showMiniToast('Ejercicio publicado.');
     loadPracticarFeed();
@@ -29953,10 +29952,8 @@ async function submitCorrection() {
       correctedText: correctedText, notes: notes,
       timestamp: Date.now(), helpfulCount: 0
     };
-    const r1 = DrexCloud.database().ref('exerciseCorrections/' + ex.id).push(payload);
-    try { DrexCloud.database().ref('exerciseCorrections/' + ex.id).push(payload); } catch(e) {}
-    const bump = await DrexCloud.database().ref('languageExercises/' + ex.id + '/correctionsCount').transaction(function(c) { return (c || 0) + 1; });
-    try { await DrexCloud.database().ref('languageExercises/' + ex.id + '/correctionsCount').set(bump.snapshot.val()); } catch(e) {}
+    await DrexCloud.database().ref('exerciseCorrections/' + ex.id).push(payload);
+    await DrexCloud.database().ref('languageExercises/' + ex.id + '/correctionsCount').transaction(function(c) { return (c || 0) + 1; });
     try {
       if (typeof addNotification === 'function' && ex.authorId !== me.uid) {
         const lang = practicarLangByCode(ex.language);
@@ -29978,14 +29975,10 @@ async function toggleCorrectionHelpful(exId, corrId, btn) {
     const votePath = 'correctionHelpful/' + exId + '/' + corrId + '/' + me.uid;
     const vSnap = await DrexCloud.database().ref(votePath).once('value');
     const adding = !vSnap.exists();
-    if (adding) {
-      await Promise.all([DrexCloud.database().ref(votePath).set(true), DrexCloud.database().ref(votePath).set(true).catch(function() {})]);
-    } else {
-      await Promise.all([DrexCloud.database().ref(votePath).remove(), DrexCloud.database().ref(votePath).remove().catch(function() {})]);
-    }
+    if (adding) await DrexCloud.database().ref(votePath).set(true);
+    else await DrexCloud.database().ref(votePath).remove();
     const cPath = 'exerciseCorrections/' + exId + '/' + corrId + '/helpfulCount';
     const r = await DrexCloud.database().ref(cPath).transaction(function(c) { return Math.max(0, (c || 0) + (adding ? 1 : -1)); });
-    try { await DrexCloud.database().ref(cPath).set(r.snapshot.val()); } catch(e) {}
     pxMyHelpful[corrId] = adding;
     const corr = pxDetailCorrections.find(function(c) { return c.id === corrId; });
     if (corr) corr.helpfulCount = r.snapshot.val();
@@ -30007,11 +30000,8 @@ async function deleteExercise(exId) {
   try {
     await Promise.all([
       DrexCloud.database().ref('languageExercises/' + exId).remove(),
-      DrexCloud.database().ref('languageExercises/' + exId).remove().catch(function() {}),
       DrexCloud.database().ref('exerciseCorrections/' + exId).remove(),
-      DrexCloud.database().ref('exerciseCorrections/' + exId).remove().catch(function() {}),
-      DrexCloud.database().ref('correctionHelpful/' + exId).remove(),
-      DrexCloud.database().ref('correctionHelpful/' + exId).remove().catch(function() {})
+      DrexCloud.database().ref('correctionHelpful/' + exId).remove()
     ]);
     if (typeof showMiniToast === 'function') showMiniToast('Ejercicio eliminado.');
     closeExerciseDetail();
