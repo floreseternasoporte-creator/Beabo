@@ -834,6 +834,27 @@
     });
   }
 
+  // C12: si el refresh del token falla, la sesión murió. Se limpia el
+  // estado de auth, se avisa a los listeners (la app vuelve al login) y se
+  // deja una marca para mostrar "sesión expirada" en el idioma de la app.
+  function handleExpiredSession() {
+    try { if (currentCognitoUser) currentCognitoUser.signOut(); } catch (e) {}
+    currentCognitoUser = null;
+    if (authInstance) authInstance.currentUser = null;
+    if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+    _awsCredentials = null;
+    _docClient = null;
+    try {
+      var lang = 'es';
+      try {
+        var stored = (typeof localStorage !== 'undefined') && localStorage.getItem('drex_app_language_v1');
+        if (stored === 'en') lang = 'en';
+      } catch (e2) {}
+      sessionStorage.setItem('drex_session_expired', lang);
+    } catch (e3) {}
+    notifyAuthListeners();
+  }
+
   function scheduleTokenRefresh(cognitoUser, session) {
     if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
     try {
@@ -845,6 +866,8 @@
           if (!err && newSession) {
             configureAwsCredentials(newSession.getIdToken()).catch(function () {});
             scheduleTokenRefresh(cognitoUser, newSession);
+          } else {
+            handleExpiredSession();
           }
         });
       }, delay);

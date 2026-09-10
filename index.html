@@ -3667,6 +3667,11 @@ document.addEventListener("DOMContentLoaded", function() {
         <div class="h-1 flex-1 rounded-full" style="background:#dce1e5;"></div>
         <div class="h-1 flex-1 rounded-full" style="background:#dce1e5;"></div>
       </div>
+      <div class="flex items-center pt-4 pb-0">
+        <button id="backFromRegVerify" type="button" class="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full transition" style="color:#24324c; background:#eef2f7;" aria-label="Atrás">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
       <div class="flex-1 flex flex-col items-center justify-center text-center px-2">
         <div class="w-24 h-24 rounded-full flex items-center justify-center mb-6" style="background:#eef2f7;">
           <i class="fa-regular fa-envelope-open-text text-5xl" style="color:#24324c;"></i>
@@ -5639,6 +5644,20 @@ if (scrollArea) {
             </button>
           </div>
         </div>
+        <!-- C9: publicar en un grupo — selector visible -->
+        <div class="relative inline-block">
+          <button id="group-pill-btn" onclick="toggleNoteGroupDropdown()" class="flex items-center gap-1 bg-[#e7ecf3] hover:bg-[#dce1e5] active:bg-[#cbd5e1] transition rounded-full px-2.5 py-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-[#5c6974]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            <span id="group-pill-label" class="text-xs font-semibold text-[#5c6974]">Grupo</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-[#7b878f]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div id="note-group-dropdown" class="hidden absolute left-0 top-full mt-1.5 bg-white border border-[#dce1e5] rounded-2xl shadow-lg z-10 w-60 p-2">
+            <input id="note-group-search-input" type="text" placeholder="Buscar grupo\u2026" oninput="searchGroupsForNotePost(this.value)" class="w-full bg-[#f0f4f9] rounded-xl px-3 py-2 text-sm text-[#1c2b4a] outline-none placeholder:text-[#b6c0d1]">
+            <div id="note-group-search-results" class="hidden max-h-44 overflow-y-auto mt-1"></div>
+            <div id="note-group-selected" class="hidden mt-1 text-xs text-[#5c6974] px-1"></div>
+            <button id="note-group-search-clear-btn" class="hidden"></button>
+          </div>
+        </div>
       </div>
       <!-- elementos hidden para compatibilidad con funciones existentes -->
       <select id="note-audience-selector" onchange="selectNoteAudience(this.value)" class="hidden">
@@ -5649,10 +5668,7 @@ if (scrollArea) {
       <select id="note-format-selector" onchange="onNoteFormatChange(this.value)" class="hidden">
         <option value="post">Post</option>
       </select>
-      <input id="note-group-search-input" type="text" class="hidden" readonly>
-      <div id="note-group-selected" class="hidden"></div>
-      <div id="note-group-search-results" class="hidden"></div>
-      <button id="note-group-search-clear-btn" class="hidden"></button>
+      <!-- C9: el selector de grupo ahora vive visible junto a la píldora de audiencia -->
     </div>
 
     <!-- Contenido principal — scrolleable -->
@@ -6365,15 +6381,15 @@ if (scrollArea) {
             <span id="profile-posts-count-mobile" class="block text-lg font-black text-[#1c2b4a] leading-tight">0</span>
             <span class="text-xs text-[#7b878f]">Posts</span>
           </div>
-          <div>
+          <button onclick="openMyFollowersModal()" class="text-center cursor-pointer">
             <span id="profile-followers" class="block text-lg font-black text-[#1c2b4a] leading-tight">0</span>
             <span class="text-xs text-[#7b878f]">Seguidores</span>
-          </div>
+          </button>
           <div class="w-px h-8 bg-[#dce1e5]"></div>
-          <div>
+          <button onclick="openMyFollowingModal()" class="text-center cursor-pointer">
             <span id="profile-following" class="block text-lg font-black text-[#1c2b4a] leading-tight">0</span>
             <span class="text-xs text-[#7b878f]">Siguiendo</span>
-          </div>
+          </button>
         </div>
       </div>
       <!-- Nombre -->
@@ -8491,9 +8507,14 @@ function saveNote() {
       if (sidebarFollowersCount) sidebarFollowersCount.textContent = followersCount;
     });
 
-    DrexCloud.database().ref('groups').on('value', snapshot => {
-      updateProfileGroupCountUI(countGroupsCreatedFromSnapshot(snapshot, userId));
-    });
+    // A29: el nodo "groups" de comunidades no se usa (cero escrituras); el
+    // listener permanente anterior era costoso e inútil. Se cuentan los
+    // chats grupales reales del usuario con una sola lectura.
+    DrexCloud.database().ref('userConversations/' + userId).once('value').then(snap => {
+      let n = 0;
+      snap.forEach(child => { if ((child.val() || {}).isGroup) n += 1; });
+      updateProfileGroupCountUI(n);
+    }).catch(() => updateProfileGroupCountUI(0));
   }
 
   function loadUserPostsGrid(postsSnapshot) {
@@ -8655,6 +8676,7 @@ function saveNote() {
 
 
   function openCreatorHub() {
+    if (typeof window.closeOverlaysForTabSwitch === 'function') window.closeOverlaysForTabSwitch();
     // Oculta otras vistas de nivel superior, igual que el resto de vistas principales de la app
     document.getElementById('community-view')?.classList.add('hidden');
     document.getElementById('profile-view')?.classList.add('hidden');
@@ -9492,14 +9514,10 @@ function saveNote() {
 
 
   const CLOUDINARY_CLOUD  = 'dwkutkyqd';
-  const CLOUDINARY_KEY    = '448394361211235';
-  const CLOUDINARY_SECRET = 'UV4brna4meM0I5uZ_UG_U7pJz4Q';
-
-  async function cloudinaryClientSign(timestamp) {
-    const str = `timestamp=${timestamp}${CLOUDINARY_SECRET}`;
-    const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(str));
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
+  // Subidas SIN firma (unsigned): requieren un upload preset en modo "Unsigned"
+  // llamado "drex_unsigned" en el panel de Cloudinary (Settings → Upload →
+  // Upload presets). La firma con API secret en el navegador exponía el secreto.
+  const CLOUDINARY_UPLOAD_PRESET = 'drex_unsigned';
 
   function processImageFile(file) {
     return new Promise((resolve, reject) => {
@@ -9520,23 +9538,23 @@ function saveNote() {
 
             canvas.toBlob(async function(blob) {
               try {
-                // Firma Cloudinary directamente en el cliente (sin servidor)
-                const timestamp = Math.floor(Date.now() / 1000);
-                const signature = await cloudinaryClientSign(timestamp);
-                const api_key = CLOUDINARY_KEY;
+                // Subida unsigned con preset: sin secreto ni firma en el cliente.
                 const cloud_name = CLOUDINARY_CLOUD;
 
                 const formData = new FormData();
                 formData.append('file', blob, 'imagen.jpg');
-                formData.append('api_key', api_key);
-                formData.append('timestamp', timestamp);
-                formData.append('signature', signature);
+                formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 
                 const uploadRes = await fetch(
                   `https://api.cloudinary.com/v1_1/${cloud_name}/image/upload`,
                   { method: 'POST', body: formData }
                 );
-                if (!uploadRes.ok) throw new Error('Error al subir imagen a Cloudinary');
+                if (!uploadRes.ok) {
+                  let detail = '';
+                  try { detail = await uploadRes.text(); } catch (_) {}
+                  console.error('Cloudinary upload falló:', detail);
+                  throw new Error('No se pudo subir la imagen. Inténtalo de nuevo.');
+                }
                 const data = await uploadRes.json();
 
                 clearTimeout(timeoutId);
@@ -9958,6 +9976,7 @@ function saveNote() {
     const modal = document.getElementById('image-modal');
     if (!modal) return;
     modal.classList.remove('hidden');
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
     document.body.style.overflow = 'hidden';
     _renderFeedImageModal();
     _bindFeedImageModalGestures();
@@ -10309,10 +10328,16 @@ function saveNote() {
     });
   }
 
+  // A17: cada suscripción invalida los renders en vuelo de la anterior, para
+  // que dos eventos 'value' seguidos no pinten el feed dos veces ni dejen
+  // tarjetas de una generación vieja.
+  let _notesFeedGeneration = 0;
   function _subscribeNotesFeed(feedContainer, user, userVotes, userReposts, feedMode = 'foryou', followingMap = null) {
     const notesRef = DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     notesRef.off();
+    const myGeneration = ++_notesFeedGeneration;
     notesRef.on('value', async snapshot => {
+      if (myGeneration !== _notesFeedGeneration) return;
       const rawEntries = [];
       snapshot.forEach(child => {
         const rawNote = child.val() || {};
@@ -10550,12 +10575,12 @@ function saveNote() {
             `;
             loadUserFrame(safeAuthorId, authorAvatarId);
             feedFragment.appendChild(noteElement);
-            trackPostView(note.id, noteElement);
           } catch (renderError) {
             console.error('Error renderizando publicación:', note?.id, renderError);
           }
       });
 
+      if (myGeneration !== _notesFeedGeneration) return;
       if (feedFragment.children.length > 0) {
           if (feedContainer.querySelector(':scope > .feed-empty-state')) {
               feedContainer.innerHTML = '';
@@ -10576,34 +10601,34 @@ function saveNote() {
       return;
     }
 
-    const noteRef = DrexCloud.database().ref('communityNotes/' + noteId);
-    noteRef.once('value').then(snapshot => {
-      const note = snapshot.val();
-      if (!note.poll) return;
-
-      let hasVoted = false;
+    // C10: transacción en lugar de leer-modificar-escribir manual, para que
+    // votos concurrentes o doble clic no dupliquen ni pierdan votos.
+    // (Nota: la transacción de drex-cloud es best-effort —leer, aplicar,
+    // escribir— sin atomicidad del servidor; la atomicidad real requeriría
+    // escrituras condicionales en el backend.)
+    DrexCloud.database().ref('communityNotes/' + noteId + '/poll').transaction(poll => {
+      if (!poll || !Array.isArray(poll.options)) return undefined;
+      if (optionIndex < 0 || optionIndex >= poll.options.length) return undefined;
+      const options = poll.options.map(opt => ({
+        text: (opt && opt.text) || '',
+        votes: Number(opt && opt.votes) || 0,
+        voters: Array.isArray(opt && opt.voters) ? opt.voters.filter(id => id) : []
+      }));
       let previousVoteIndex = -1;
-      note.poll.options.forEach((option, index) => {
-        if (option.voters && option.voters.includes(user.uid)) {
-          hasVoted = true;
-          previousVoteIndex = index;
-        }
+      options.forEach((option, index) => {
+        if (option.voters.includes(user.uid)) previousVoteIndex = index;
       });
-
-      if (hasVoted && previousVoteIndex !== -1) {
-        note.poll.options[previousVoteIndex].votes = (note.poll.options[previousVoteIndex].votes || 1) - 1;
-        note.poll.options[previousVoteIndex].voters = note.poll.options[previousVoteIndex].voters.filter(id => id !== user.uid);
+      if (previousVoteIndex !== -1) {
+        options[previousVoteIndex].votes = Math.max(0, options[previousVoteIndex].votes - 1);
+        options[previousVoteIndex].voters = options[previousVoteIndex].voters.filter(id => id !== user.uid);
       }
-
-      if (!note.poll.options[optionIndex].voters) {
-        note.poll.options[optionIndex].voters = [];
+      if (previousVoteIndex !== optionIndex && !options[optionIndex].voters.includes(user.uid)) {
+        options[optionIndex].votes += 1;
+        options[optionIndex].voters.push(user.uid);
       }
-      if (!note.poll.options[optionIndex].voters.includes(user.uid)) {
-        note.poll.options[optionIndex].votes = (note.poll.options[optionIndex].votes || 0) + 1;
-        note.poll.options[optionIndex].voters.push(user.uid);
-      }
-
-      noteRef.update({ poll: note.poll });
+      return { ...poll, options };
+    }).catch(() => {
+      showMiniToast('No se pudo registrar tu voto');
     });
   }
   function closeImageModal() {
@@ -10657,8 +10682,8 @@ function saveNote() {
 
   function moderarContenidoAutomaticamente(noteId, content) {
     if (contienePalabrasOfensivas(content)) {
-      DrexCloud.database().ref('communityNotes/' + noteId).remove()
-      .then(() => {
+      // C11: la eliminación automática también usa la cascada completa.
+      cascadeDeleteNote(noteId).then(() => {
         console.log('Nota eliminada por contener lenguaje ofensivo');
         alert('Tu nota ha sido eliminada por contener lenguaje inapropiado.');
       });
@@ -10744,40 +10769,55 @@ function saveNote() {
   // seguir directo crea una solicitud pendiente que el dueño debe aprobar.
   // Los 3 puntos de entrada existentes (feed, perfil, quick-follow) llaman a
   // esta única función para no triplicar la lógica de privacidad.
-  async function requestOrFollowUser(targetUserId, { onFollowed, onRequested, onAlready } = {}) {
+  async function requestOrFollowUser(targetUserId, { onFollowed, onRequested, onAlready, onError } = {}) {
     const currentUser = DrexCloud.auth().currentUser;
     if (!currentUser || !targetUserId || currentUser.uid === targetUserId) return;
 
     const followRef = DrexCloud.database().ref('followers/' + targetUserId + '/' + currentUser.uid);
-    const [alreadyFollowing, alreadyRequested, targetIsPrivate] = await Promise.all([
-    followRef.once('value').then(s => s.exists()),
-    DrexCloud.database().ref('followRequests/' + targetUserId + '/' + currentUser.uid).once('value').then(s => s.exists()),
-    isAccountPrivate(targetUserId)
-    ]);
+    let senderName = currentUser.displayName || 'Alguien';
+    try {
+      const [alreadyFollowing, alreadyRequested, targetIsPrivate] = await Promise.all([
+      followRef.once('value').then(s => s.exists()),
+      DrexCloud.database().ref('followRequests/' + targetUserId + '/' + currentUser.uid).once('value').then(s => s.exists()),
+      isAccountPrivate(targetUserId)
+      ]);
 
-    if (alreadyFollowing) { onAlready?.('following'); return; }
-    if (alreadyRequested) { onAlready?.('requested'); return; }
+      if (alreadyFollowing) { onAlready?.('following'); return; }
+      if (alreadyRequested) { onAlready?.('requested'); return; }
 
-    const senderSnap = await DrexCloud.database().ref('users/' + currentUser.uid).once('value');
-    const senderData = senderSnap.val() || {};
-    const senderName = senderData.username || currentUser.displayName || 'Alguien';
+      const senderSnap = await DrexCloud.database().ref('users/' + currentUser.uid).once('value');
+      const senderData = senderSnap.val() || {};
+      senderName = senderData.username || currentUser.displayName || 'Alguien';
 
-    if (targetIsPrivate) {
-      await DrexCloud.database().ref('followRequests/' + targetUserId + '/' + currentUser.uid).set({
-        requestedAt: Date.now(),
-        requesterName: senderName,
-        requesterImage: senderData.profileImage || ''
-      });
-      if (typeof addNotification === 'function') {
-        addNotification(targetUserId, `${senderName} quiere seguirte`, 'follow_request', { actionType: 'profile', actionId: currentUser.uid });
+      if (targetIsPrivate) {
+        await DrexCloud.database().ref('followRequests/' + targetUserId + '/' + currentUser.uid).set({
+          requestedAt: Date.now(),
+          requesterName: senderName,
+          requesterImage: senderData.profileImage || ''
+        });
+        if (typeof addNotification === 'function') {
+          addNotification(targetUserId, `${senderName} quiere seguirte`, 'follow_request', { actionType: 'profile', actionId: currentUser.uid });
+        }
+        onRequested?.();
+        return;
       }
-      onRequested?.();
+
+      // A14: escritura en dos pasos con reversión: si el segundo falla, se
+      // deshace el primero para no dejar la relación a medias.
+      await followRef.set({ followedAt: Date.now() });
+      try {
+        await DrexCloud.database().ref('following/' + currentUser.uid + '/' + targetUserId).set({ followedAt: Date.now() });
+      } catch (e) {
+        await followRef.remove().catch(() => {});
+        throw e;
+      }
+    } catch (e) {
+      if (typeof onError === 'function') onError(e);
       return;
     }
-
-    await followRef.set({ followedAt: Date.now() });
-    await DrexCloud.database().ref('following/' + currentUser.uid + '/' + targetUserId).set({ followedAt: Date.now() });
+    // A9: mantener followingCount (antes nunca se actualizaba).
     DrexCloud.database().ref('users/' + targetUserId + '/followersCount').transaction(c => (c || 0) + 1);
+    DrexCloud.database().ref('users/' + currentUser.uid + '/followingCount').transaction(c => (c || 0) + 1);
     if (typeof addNotification === 'function') {
       addNotification(targetUserId, `${senderName} te comenzó a seguir`, 'follow', { actionType: 'profile', actionId: currentUser.uid });
     }
@@ -10797,6 +10837,7 @@ function saveNote() {
       await DrexCloud.database().ref('followers/' + user.uid + '/' + requesterUid).set({ followedAt: Date.now() });
       await DrexCloud.database().ref('following/' + requesterUid + '/' + user.uid).set({ followedAt: Date.now() });
       DrexCloud.database().ref('users/' + user.uid + '/followersCount').transaction(c => (c || 0) + 1);
+      DrexCloud.database().ref('users/' + requesterUid + '/followingCount').transaction(c => (c || 0) + 1);
       if (typeof addNotification === 'function') {
         const uSnap = await DrexCloud.database().ref('users/' + user.uid).once('value');
         const myName = uSnap.val()?.username || 'Alguien';
@@ -11001,13 +11042,20 @@ function saveNote() {
     const followRef = DrexCloud.database().ref('followers/' + targetId + '/' + user.uid);
     followRef.once('value').then(snap => {
       if (snap.exists()) {
-        followRef.remove().then(() => {
-          DrexCloud.database().ref('following/' + user.uid + '/' + targetId).remove();
+        followRef.remove().then(async () => {
+          try {
+            await DrexCloud.database().ref('following/' + user.uid + '/' + targetId).remove();
+          } catch (e) {
+            await followRef.set({ followedAt: Date.now() }).catch(() => {});
+            showMiniToast('No se pudo dejar de seguir. Intenta de nuevo.');
+            return;
+          }
           DrexCloud.database().ref('users/' + targetId + '/followersCount').transaction(c => Math.max(0, (c || 1) - 1));
+          DrexCloud.database().ref('users/' + user.uid + '/followingCount').transaction(c => Math.max(0, (c || 1) - 1));
           _invalidatePrivacyCaches(targetId);
           showMiniToast('Dejaste de seguir a @' + (currentPostOptionsAuthorData?.username || 'usuario'));
           closeUserActionsSheet();
-        });
+        }).catch(() => showMiniToast('No se pudo dejar de seguir. Intenta de nuevo.'));
         return;
       }
       DrexCloud.database().ref('followRequests/' + targetId + '/' + user.uid).once('value').then(reqSnap => {
@@ -11027,7 +11075,8 @@ function saveNote() {
             showMiniToast('Solicitud enviada a @' + (currentPostOptionsAuthorData?.username || 'usuario'));
             closeUserActionsSheet();
           },
-          onAlready: () => closeUserActionsSheet()
+          onAlready: () => closeUserActionsSheet(),
+          onError: () => showMiniToast('No se pudo seguir. Intenta de nuevo.')
         });
       });
     }).catch(() => showMiniToast('Error al procesar'));
@@ -11046,6 +11095,43 @@ function saveNote() {
     closeUserActionsSheet();
   }
 
+  // A12: al bloquear se rompen las relaciones de seguimiento en ambas
+  // direcciones (y las solicitudes pendientes) y se ajustan los contadores.
+  async function breakFollowRelationsOnBlock(myUid, targetId) {
+    if (!myUid || !targetId || myUid === targetId) return;
+    const db = DrexCloud.database();
+    try {
+      const [iFollowThem, theyFollowMe] = await Promise.all([
+        db.ref('followers/' + targetId + '/' + myUid).once('value').then(sn => sn.exists()),
+        db.ref('followers/' + myUid + '/' + targetId).once('value').then(sn => sn.exists())
+      ]);
+      const updates = {};
+      if (iFollowThem) {
+        updates['followers/' + targetId + '/' + myUid] = null;
+        updates['following/' + myUid + '/' + targetId] = null;
+      }
+      if (theyFollowMe) {
+        updates['followers/' + myUid + '/' + targetId] = null;
+        updates['following/' + targetId + '/' + myUid] = null;
+      }
+      updates['followRequests/' + targetId + '/' + myUid] = null;
+      updates['followRequests/' + myUid + '/' + targetId] = null;
+      await db.ref().update(updates);
+      if (iFollowThem) {
+        db.ref('users/' + targetId + '/followersCount').transaction(c => Math.max(0, (c || 1) - 1));
+        db.ref('users/' + myUid + '/followingCount').transaction(c => Math.max(0, (c || 1) - 1));
+      }
+      if (theyFollowMe) {
+        db.ref('users/' + myUid + '/followersCount').transaction(c => Math.max(0, (c || 1) - 1));
+        db.ref('users/' + targetId + '/followingCount').transaction(c => Math.max(0, (c || 1) - 1));
+      }
+      if (typeof _invalidatePrivacyCaches === 'function') {
+        _invalidatePrivacyCaches(targetId);
+        _invalidatePrivacyCaches(myUid);
+      }
+    } catch (e) { /* best-effort: el bloqueo ya quedó registrado */ }
+  }
+
   function blockUserFromUserActions() {
     const user = DrexCloud.auth().currentUser;
     const targetId = currentPostOptionsAuthorId;
@@ -11055,6 +11141,7 @@ function saveNote() {
       const blockPayload = { blockedAt: Date.now(), username: uname };
       DrexCloud.database().ref('blocks/' + user.uid + '/' + targetId).set(blockPayload).then(() => {
         try { blockedAccountsSet.add(targetId); } catch (_) {}
+        breakFollowRelationsOnBlock(user.uid, targetId);
         document.querySelectorAll('[data-author-id="' + targetId + '"]').forEach(el => { el.style.display = 'none'; });
         showMiniToast('@' + uname + ' bloqueado');
         closeUserActionsSheet();
@@ -11169,6 +11256,45 @@ function saveNote() {
     reportNote(noteId);
   }
 
+  // C11: borrado en cascada COMPLETO de una publicación. Elimina la nota,
+  // sus comentarios, los votos / reposts / guardados de TODOS los usuarios
+  // (a través de los índices postVotes, postReposts y postSavedBy, más los
+  // espejos userVotes / userReposts / savedPosts de cada uid) y las
+  // notificaciones relacionadas (las del autor y las de quienes votaron o
+  // repostearon). Nada queda huérfano ni puede resucitar la tarjeta.
+  async function cascadeDeleteNote(noteId) {
+    const db = DrexCloud.database();
+    const noteSnap = await db.ref('communityNotes/' + noteId).once('value').catch(() => null);
+    const authorId = (noteSnap && noteSnap.val() && (noteSnap.val().authorId || noteSnap.val().userId)) || '';
+    await db.ref('communityNotes/' + noteId).remove().catch(() => {});
+    const [voteSnap, repostSnap, savedBySnap] = await Promise.all([
+      db.ref('postVotes/' + noteId).once('value').catch(() => null),
+      db.ref('postReposts/' + noteId).once('value').catch(() => null),
+      db.ref('postSavedBy/' + noteId).once('value').catch(() => null),
+    ]);
+    const updates = {};
+    const notifyUids = new Set();
+    if (authorId) notifyUids.add(authorId);
+    if (voteSnap) voteSnap.forEach(c => { updates['userVotes/' + c.key + '/' + noteId] = null; notifyUids.add(c.key); });
+    if (repostSnap) repostSnap.forEach(c => { updates['userReposts/' + c.key + '/' + noteId] = null; notifyUids.add(c.key); });
+    if (savedBySnap) savedBySnap.forEach(c => { updates['savedPosts/' + c.key + '/' + noteId] = null; });
+    updates['postVotes/' + noteId] = null;
+    updates['postReposts/' + noteId] = null;
+    updates['postSavedBy/' + noteId] = null;
+    updates['postComments/' + noteId] = null;
+    await db.ref().update(updates).catch(() => {});
+    await Promise.all([...notifyUids].map(uid =>
+      db.ref('notifications/' + uid).once('value').then(snap => {
+        const nu = {};
+        snap.forEach(child => {
+          const n = child.val() || {};
+          if (n.actionId === noteId || n.postId === noteId) nu['notifications/' + uid + '/' + child.key] = null;
+        });
+        if (Object.keys(nu).length) return db.ref().update(nu);
+      }).catch(() => {})
+    ));
+  }
+
   function deletePostFromOptions() {
     if (!currentPostOptionsNoteId) return;
 
@@ -11179,7 +11305,10 @@ function saveNote() {
     closePostOptionsSheet();
 
     const groupId = currentPostOptionsNoteData?.groupId || '';
-    DrexCloud.database().ref('communityNotes/' + noteId).remove().then(() => {
+    cascadeDeleteNote(noteId).then(() => {
+      // A15: retirar la tarjeta del DOM de inmediato, sin esperar al refresco.
+      document.getElementById('post-' + noteId)?.remove();
+      document.getElementById('saved-post-card-' + noteId)?.remove();
       alert('Publicación eliminada exitosamente.');
       refreshVisiblePostFeeds(groupId);
     }).catch(error => {
@@ -11386,10 +11515,8 @@ function saveNote() {
 
       let notifMsg;
       if (verdict.flagged) {
-        await Promise.all([
-        DrexCloud.database().ref('communityNotes/' + noteId).remove(),
-        DrexCloud.database().ref('postComments/' + noteId).remove()
-        ]);
+        // C11: cascada completa también en la eliminación por reporte.
+        await cascadeDeleteNote(noteId);
         await DrexCloud.database().ref('postReports/' + reportId).update({ status: 'removed', aiVerdict: verdict.reason });
         notifMsg = '✅ Tomamos medidas sobre el contenido que reportaste. ¡Gracias por proteger a la comunidad de Drex!';
       } else {
@@ -11567,7 +11694,9 @@ function saveNote() {
       const currentVote = snapshot.val();
 
       return noteRef.transaction(note => {
-        if (!note) return note;
+        // A16: si el post ya no existe, abortar (devolver undefined) en lugar
+        // de escribir sobre la nada o dejar votos huérfanos.
+        if (!note) return undefined;
 
         // Quitar el voto anterior (si había uno) antes de aplicar el nuevo,
         // así upvotes/downvotes siempre quedan en un estado consistente sin
@@ -11582,6 +11711,17 @@ function saveNote() {
 
         return note;
       }).then(transactionResult => {
+        if (!transactionResult || !transactionResult.committed) {
+          // A16: el post desapareció entre la lectura y la escritura.
+          if (upvoteBtn) upvoteBtn.classList.toggle('active', wasUpvoted);
+          if (scoreLabel) {
+            scoreLabel.textContent = formatVoteScore(currentScore);
+            scoreLabel.classList.toggle('text-[#5c6974]', currentScore > 0);
+            scoreLabel.classList.toggle('text-[#7b878f]', currentScore <= 0);
+          }
+          showMiniToast('Esta publicación ya no existe.');
+          return;
+        }
         const updatedNote = transactionResult && transactionResult.snapshot ? transactionResult.snapshot.val() : null;
         const newVote = currentVote === voteType ? null : voteType;
 
@@ -11622,6 +11762,14 @@ function saveNote() {
       });
     }).catch(err => {
       console.error('Error al votar publicación:', err);
+      // A19: revertir el cambio optimista para no mostrar un estado falso.
+      if (upvoteBtn) upvoteBtn.classList.toggle('active', wasUpvoted);
+      if (scoreLabel) {
+        scoreLabel.textContent = formatVoteScore(currentScore);
+        scoreLabel.classList.toggle('text-[#5c6974]', currentScore > 0);
+        scoreLabel.classList.toggle('text-[#7b878f]', currentScore <= 0);
+      }
+      showMiniToast('No se pudo votar. Intenta de nuevo.');
       _postVoteLocks.delete(noteId);
     });
   }
@@ -11703,16 +11851,30 @@ function saveNote() {
 
     const isSaved = Boolean(_userSavedPosts[noteId]);
 
-    if (isSaved) {
-      delete _userSavedPosts[noteId];
-      await ref.child(noteId).remove();
-      btnEl.classList.remove('saved');
-      showMiniToast('Eliminado de guardados');
-    } else {
-      _userSavedPosts[noteId] = { savedAt: Date.now() };
-      await ref.child(noteId).set({ savedAt: Date.now() });
-      btnEl.classList.add('saved');
-      showMiniToast('Guardado');
+    // A20: primero la escritura; solo si tiene éxito se confirma el estado
+    // local y visual. Si falla, se revierte todo.
+    try {
+      if (isSaved) {
+        await ref.child(noteId).remove();
+        await DrexCloud.database().ref('postSavedBy/' + noteId + '/' + user.uid).remove().catch(() => {});
+        delete _userSavedPosts[noteId];
+        btnEl.classList.remove('saved');
+        showMiniToast('Eliminado de guardados');
+      } else {
+        // A26: límite de 30 guardados con aviso claro.
+        if (Object.keys(_userSavedPosts).length >= 30) {
+          showMiniToast('Límite de 30 guardados alcanzado. Elimina alguno para guardar más.');
+          return;
+        }
+        await ref.child(noteId).set({ savedAt: Date.now() });
+        await DrexCloud.database().ref('postSavedBy/' + noteId + '/' + user.uid).set(true).catch(() => {});
+        _userSavedPosts[noteId] = { savedAt: Date.now() };
+        btnEl.classList.add('saved');
+        showMiniToast('Guardado');
+      }
+    } catch (e) {
+      showMiniToast('No se pudo guardar. Intenta de nuevo.');
+      return;
     }
     refreshHistorialIfVisible();
   }
@@ -12286,26 +12448,16 @@ function saveNote() {
     if (!btn) return;
 
     const countSpan = btn.querySelector('span');
-    const isCurrentlyActive = btn.classList.contains('active');
-    let currentCount = parseInt(countSpan.textContent) || 0;
-
-    btn.classList.add('animating');
-    if (isCurrentlyActive) {
-      btn.classList.remove('active');
-      currentCount = Math.max(0, currentCount - 1);
-    } else {
-      btn.classList.add('active');
-      currentCount = currentCount + 1;
-    }
-    countSpan.textContent = currentCount;
-
-    setTimeout(() => btn.classList.remove('animating'), 400);
 
     const noteRef = DrexCloud.database().ref('communityNotes/' + noteId);
     const userRepostRef = DrexCloud.database().ref('userReposts/' + user.uid + '/' + noteId);
     const postRepostRef = DrexCloud.database().ref('postReposts/' + noteId + '/' + user.uid);
+    let alreadyReposted = false;
 
     try {
+      // A18: leer el estado real de la BD ANTES de decidir. El estado visual
+      // del botón puede estar desfasado (repost desde otro dispositivo) y
+      // antes se actuaba al revés de lo que la BD decía.
       const [noteSnap, userSnap, repostSnap] = await Promise.all([
       noteRef.once('value'),
       DrexCloud.database().ref('users/' + user.uid).once('value'),
@@ -12314,13 +12466,18 @@ function saveNote() {
 
       const note = noteSnap.val();
       if (!note) {
-        btn.classList.toggle('active', isCurrentlyActive);
-        countSpan.textContent = parseInt(countSpan.textContent) + (isCurrentlyActive ? 1 : -1);
         alert('Este post ya no existe.');
         return;
       }
 
-      const alreadyReposted = repostSnap.exists();
+      alreadyReposted = repostSnap.exists();
+      // UI optimista alineada con la realidad recién leída.
+      const willBeActive = !alreadyReposted;
+      let currentCount = parseInt(countSpan.textContent) || 0;
+      btn.classList.add('animating');
+      btn.classList.toggle('active', willBeActive);
+      countSpan.textContent = willBeActive ? currentCount + 1 : Math.max(0, currentCount - 1);
+      setTimeout(() => btn.classList.remove('animating'), 400);
       const userData = userSnap.val() || {};
       const reposterName = userData.username || user.displayName || user.email || 'Alguien';
 
@@ -12364,8 +12521,10 @@ function saveNote() {
       }
     } catch (error) {
       console.error('Error al hacer repost:', error);
-      btn.classList.toggle('active', isCurrentlyActive);
-      countSpan.textContent = parseInt(countSpan.textContent) + (isCurrentlyActive ? 1 : -1);
+      // Revertir al estado real conocido (alreadyReposted).
+      btn.classList.toggle('active', alreadyReposted);
+      const revertedCount = parseInt(countSpan.textContent) || 0;
+      countSpan.textContent = alreadyReposted ? revertedCount + 1 : Math.max(0, revertedCount - 1);
       alert('No se pudo completar el Repost.');
     }
   }
@@ -12896,6 +13055,7 @@ function saveNote() {
       mainApp.classList.add('hidden');
     }
     commentsView?.classList.remove('hidden');
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
     document.body.classList.add('comments-view-open');
 
@@ -12908,6 +13068,12 @@ function saveNote() {
     }
 
     DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
+      // A16: no abrir ni comentar un post que ya no existe.
+      if (!snapshot.exists()) {
+        showMiniToast('Esta publicación ya no existe.');
+        closeCommentsView();
+        return;
+      }
       const note = { ...(snapshot.val() || {}), id: noteId };
       const upvotes = note.upvotes || 0;
       const downvotes = note.downvotes || 0;
@@ -13527,6 +13693,16 @@ function saveNote() {
     }
 
     if (blockUnsafeCommentIfNeeded(noteId, user, resolvedContent, editTarget ? 'edit' : 'create')) return;
+
+    // A16: no comentar (ni resucitar) un post eliminado.
+    if (!editTarget) {
+      const noteSnap = await DrexCloud.database().ref('communityNotes/' + noteId).once('value').catch(() => null);
+      if (!noteSnap || !noteSnap.exists()) {
+        showMiniToast('Esta publicación ya no existe.');
+        closeCommentsView();
+        return;
+      }
+    }
 
     if (editTarget) {
       if (gifUrl || photoUrl || String(resolvedContent || '').startsWith(STICKER_PREFIX)) {
@@ -16606,9 +16782,10 @@ function saveNote() {
   }
 
   // Visualizaciones de posts desactivadas por solicitud del producto.
-  function trackPostView(noteId, postElement) {
-    return;
-  }
+  // A21: trackPostView era un stub vacío (solo "return;"). Se elimina en
+  // lugar de implementar tracking de vistas: no hay ningún consumidor del
+  // campo y añadir escrituras por cada tarjeta visible tendría costo sin
+  // beneficio.
 
   // Autenticación
 
@@ -16631,6 +16808,9 @@ function saveNote() {
   ];
 
   function showAuthSection(section) {
+    // Abandonar el registro (volver al menú o al login) libera el bloqueo de
+    // onAuthStateChanged: si no, el login posterior jamás entra a la app.
+    if (section === authOptions || section === loginOptions) isRegistering = false;
     allAuthSections.forEach(s => { if (s) s.classList.add('hidden'); });
     if (section) section.classList.remove('hidden');
     if (authError) authError.classList.add('hidden');
@@ -16660,7 +16840,7 @@ function saveNote() {
   let isRegistering = false;
 
   document.getElementById('goToRegisterBtn').addEventListener('click', () => {
-    regData = { firstName: '', lastName: '', email: '', password: '', username: '', photoFile: null, drexUser: null, birthDate: '', accountTier: 'standard' };
+    regData = { firstName: '', lastName: '', email: '', password: '', username: '', photoFile: null, drexUser: null, birthDate: '', accountTier: 'standard', usernameClaimed: '', userCounted: false, grantedVerified: false, socialCompletion: false };
     isRegistering = true;
     showAuthSection(regNameStep);
   });
@@ -16900,7 +17080,7 @@ function saveNote() {
     err.classList.add('hidden');
     regData.birthDate   = raw;
     regData.accountTier = age < 14 ? 'minor_restricted' : 'standard';
-    showAuthSection(regCredStep);
+    showAuthSection(regData.socialCompletion ? regUsernameStep : regCredStep);
   });
 
   // Paso 3: correo y contraseña
@@ -17087,6 +17267,11 @@ function saveNote() {
     setTimeout(() => { try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (_) {} } }, 350);
   }
 
+  document.getElementById('backFromRegVerify').addEventListener('click', () => {
+    // Correo mal escrito: volver permite corregirlo en vez de quedar atascado.
+    showAuthSection(verifyReturnTo === 'register' ? regCredStep : loginOptions);
+  });
+
   document.getElementById('regVerifyCode').addEventListener('input', e => {
     const clean = e.target.value.replace(/\D/g, '').slice(0, 6);
     if (e.target.value !== clean) e.target.value = clean;
@@ -17250,17 +17435,19 @@ function saveNote() {
             } else {
               setUsernameUI('available', '@' + raw + ' está disponible ✓');
             }
+          }).catch(() => {
+            setUsernameUI('taken', 'No se pudo verificar. Revisa tu conexión.');
           });
         }
       }).catch(() => {
-        setUsernameUI('available', '@' + raw + ' — continúa para confirmar.');
+        setUsernameUI('taken', 'No se pudo verificar. Revisa tu conexión.');
       });
     }, 400);
   });
 
   document.getElementById('backFromRegUsername').addEventListener('click', () => { showAuthSection(regCredStep); });
 
-  document.getElementById('regUsernameContinue').addEventListener('click', () => {
+  document.getElementById('regUsernameContinue').addEventListener('click', async () => {
     const username = document.getElementById('regUsername').value.trim().replace(/\s+/g,'').toLowerCase();
     const err      = document.getElementById('regUsernameError');
     if (!username || username.length < 3) {
@@ -17273,8 +17460,14 @@ function saveNote() {
       err.classList.remove('hidden');
       return;
     }
+    // La disponibilidad debe haberse verificado en este dispositivo: nunca se
+    // avanza con el chequeo pendiente o fallido (no fail-open).
+    if (!usernameIsAvailable) {
+      err.textContent = 'Espera a que se verifique la disponibilidad del nombre.';
+      err.classList.remove('hidden');
+      return;
+    }
     err.classList.add('hidden');
-    regData.username = username;
 
     const user = regData.drexUser || DrexCloud.auth().currentUser;
     if (!user) { err.textContent = 'Error de sesión. Vuelve a intentarlo.'; err.classList.remove('hidden'); return; }
@@ -17282,46 +17475,71 @@ function saveNote() {
     const btn = document.getElementById('regUsernameContinue');
     btn.disabled = true;
     btn.innerHTML = `<span class="inline-flex items-center gap-2 justify-center"><i class="fas fa-spinner fa-spin"></i><span>Guardando...</span></span>`;
+    const restoreBtn = () => { btn.disabled = false; btn.textContent = 'Continuar'; };
+    const fail = (msg) => { err.textContent = msg; err.classList.remove('hidden'); restoreBtn(); };
 
-    const fullName = `${regData.firstName} ${regData.lastName}`;
-    const userCountRef = DrexCloud.database().ref('userCount');
-    userCountRef.transaction(count => (count || 0) + 1).then(result => {
-      const newCount   = result.snapshot.val();
-      const isVerified = newCount <= 100;
+    try {
+      // Reserva atómica del username: si alguien lo tomó entre la verificación
+      // y el guardado, la transacción se aborta y no hay duplicados.
+      const claim = await DrexCloud.database().ref('usernames/' + username)
+        .transaction(cur => (cur === null ? user.uid : undefined));
+      if (!claim.committed) {
+        setUsernameUI('taken', '@' + username + ' ya está en uso. Prueba otro.');
+        usernameIsAvailable = false;
+        fail('Ese nombre de usuario acaba de ser tomado. Prueba otro.');
+        return;
+      }
+      regData.username = username;
+
+      const updates = {};
+      // Si cambió el nombre tras ir atrás, liberar la reserva anterior para no
+      // dejar el índice huérfano.
+      if (regData.usernameClaimed && regData.usernameClaimed !== username) {
+        updates['usernames/' + regData.usernameClaimed] = null;
+      }
+      const firstClaim = !regData.usernameClaimed;
+
+      // userCount se incrementa una sola vez por registro (no al reintentar).
+      let isVerified = regData.grantedVerified === true;
+      if (!regData.userCounted) {
+        const cRes = await DrexCloud.database().ref('userCount').transaction(c => (c || 0) + 1);
+        isVerified = (cRes.snapshot.val() || 0) <= 100;
+        regData.userCounted = true;
+        regData.grantedVerified = isVerified;
+      }
+
+      // Actualización por campos (no reemplazo del objeto): no borra datos que
+      // otros flujos hayan escrito en el perfil.
+      const fullName = `${regData.firstName} ${regData.lastName}`.trim();
       const isMinorRestricted = regData.accountTier === 'minor_restricted';
-      const updates    = {};
-      updates['users/' + user.uid] = {
-        username:              username,
-        displayName:           fullName,
-        bio:                   '',
-        profileImage:          '',
-        followersCount:        0,
-        followingCount:        0,
-        ratedCount:            0,
-        isVerified:            isVerified,
-        registrationTimestamp: Date.now(),
-        founder:               false,
-        email:                 user.email,
-        birthday:              regData.birthDate || '',
-        accountTier:           regData.accountTier || 'standard',
-        // Las cuentas de menores de 14 arrancan privadas y con mensajes
-        // restringidos a seguidores por defecto, igual que hacen
-        // Instagram/TikTok con sus "cuentas para adolescentes".
-        isPrivate:             isMinorRestricted ? true : false,
-        dmPermission:          isMinorRestricted ? 'friends' : 'all'
-      };
-      updates['usernames/' + username] = user.uid;
-      return DrexCloud.database().ref().update(updates);
-    }).then(() => {
-      btn.disabled = false;
-      btn.textContent = 'Continuar';
+      const p = 'users/' + user.uid + '/';
+      updates[p + 'username'] = username;
+      updates[p + 'displayName'] = fullName;
+      updates[p + 'email'] = user.email || regData.email || '';
+      updates[p + 'birthday'] = regData.birthDate || '';
+      updates[p + 'accountTier'] = regData.accountTier || 'standard';
+      updates[p + 'isPrivate'] = isMinorRestricted ? true : false;
+      updates[p + 'dmPermission'] = isMinorRestricted ? 'friends' : 'all';
+      updates[p + 'registrationTimestamp'] = Date.now();
+      updates[p + 'founder'] = false;
+      if (firstClaim) {
+        updates[p + 'bio'] = '';
+        updates[p + 'profileImage'] = '';
+        updates[p + 'followersCount'] = 0;
+        updates[p + 'followingCount'] = 0;
+        updates[p + 'ratedCount'] = 0;
+        updates[p + 'isVerified'] = isVerified;
+      }
+      const refCode = sessionStorage.getItem('drex_ref');
+      if (refCode && firstClaim) updates[p + 'referredBy'] = refCode;
+      await DrexCloud.database().ref().update(updates);
+      if (refCode) { try { sessionStorage.removeItem('drex_ref'); } catch (_) {} }
+      regData.usernameClaimed = username;
+      restoreBtn();
       showAuthSection(regPhotoStep);
-    }).catch(() => {
-      err.textContent = 'Error al guardar. Inténtalo de nuevo.';
-      err.classList.remove('hidden');
-      btn.disabled = false;
-      btn.textContent = 'Continuar';
-    });
+    } catch (e) {
+      fail('Error al guardar. Inténtalo de nuevo.');
+    }
   });
 
   // Paso 4: foto de perfil
@@ -17595,6 +17813,31 @@ function saveNote() {
       if (typeof loadNotes === 'function') loadNotes();
     }
     showMiniToast && showMiniToast('¡Cuenta lista! Bienvenido a Drex');
+    if (typeof consumePendingDeepLinks === 'function') consumePendingDeepLinks();
+  }
+
+  // Completa el registro cuando la cuenta existe pero nunca pasó por el flujo
+  // (entró con Facebook o cerró la app a mitad del registro): pide fecha de
+  // nacimiento (control de edad), username y foto en vez de entrar con un
+  // perfil degradado sin índice ni onboarding.
+  function startRegistrationCompletion(user, data) {
+    isRegistering = true;
+    const prevName = (data && (data.displayName || data.username)) || user.displayName || '';
+    const parts = String(prevName).trim().split(/\s+/).filter(Boolean);
+    regData = {
+      firstName: parts[0] || '', lastName: parts.slice(1).join(' ') || '',
+      email: (data && data.email) || user.email || '', password: '',
+      username: '', photoFile: null, drexUser: user,
+      birthDate: (data && data.birthday) || '', accountTier: 'standard',
+      usernameClaimed: '', userCounted: false, grantedVerified: false,
+      socialCompletion: true
+    };
+    const fn = document.getElementById('regFirstName'); if (fn) fn.value = regData.firstName;
+    const ln = document.getElementById('regLastName'); if (ln) ln.value = regData.lastName;
+    const bd = document.getElementById('regBirthDate'); if (bd && regData.birthDate) bd.value = regData.birthDate;
+    const afc = document.getElementById('auth-form'); if (afc) afc.classList.remove('hidden');
+    const ma = document.getElementById('main-app'); if (ma) ma.classList.add('hidden');
+    showAuthSection(regBirthdateStep);
   }
 
   // Confeti
@@ -17701,6 +17944,13 @@ function saveNote() {
           return;
         }
 
+        // Sin registro completo no se entra a la app: se completa el flujo
+        // (edad, username, foto) en vez de usar un perfil degradado.
+        if (!data || !data.registrationTimestamp) {
+          startRegistrationCompletion(user, data);
+          return;
+        }
+
         authFormContainer.classList.add('hidden');
         mainApp.classList.remove('hidden');
 
@@ -17768,6 +18018,7 @@ function saveNote() {
           loadUserFrame(user.uid, 'profile-frame');
           loadUserFrame(user.uid, 'profile-frame-desktop');
           hideSplashScreen();
+          if (typeof consumePendingDeepLinks === 'function') consumePendingDeepLinks();
 
           if (data) {
             window._drexUserName = (data.username || data.fullName || '').replace(/<[^>]*>/g, '').trim() || null;
@@ -17809,6 +18060,20 @@ function saveNote() {
       window._drexUserName = null;
       submitButton.disabled = false;
       submitButton.textContent = isLogin ? translations[currentLanguage].btnIniciarSesion : 'Comenzar aventura';
+      // C12: si drex-cloud detectó sesión expirada, avisar en el login (ES/EN).
+      try {
+        const expiredLang = sessionStorage.getItem('drex_session_expired');
+        if (expiredLang) {
+          sessionStorage.removeItem('drex_session_expired');
+          const authErrorEl = document.getElementById('authError');
+          if (authErrorEl) {
+            authErrorEl.textContent = expiredLang === 'en'
+              ? 'Your session has expired. Please sign in again.'
+              : 'Tu sesión ha expirado. Vuelve a iniciar sesión.';
+            authErrorEl.classList.remove('hidden');
+          }
+        }
+      } catch (_) {}
     }
   });
   (function showLastLoginMethodHint() {
@@ -18001,6 +18266,20 @@ function saveNote() {
   }
   function escapeJsString(str) {
     return String(str == null ? '' : str).replace(/[\\'"]/g, '\\$&');
+  }
+
+  // Solo se permiten enlaces http(s). Cualquier otro esquema (javascript:,
+  // data:, …) se descarta: evita XSS almacenado vía el campo "sitio web".
+  function sanitizeWebsiteUrl(raw) {
+    if (raw == null) return null;
+    let v = String(raw).trim();
+    if (!v) return null;
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(v)) v = 'https://' + v;
+    try {
+      const u = new URL(v);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      return u.href;
+    } catch (_) { return null; }
   }
 
   function openAccountSwitcher() {
@@ -18408,6 +18687,8 @@ o
   }
 
   function closeSupportModal() {
+    // A31: detener el sondeo de tickets al cerrar el modal.
+    if (_supportPollTimer) { clearTimeout(_supportPollTimer); _supportPollTimer = null; }
     const modal = document.getElementById('support-modal');
     if (!modal) return;
     modal.style.display = 'none';
@@ -20875,6 +21156,7 @@ o
   }
 
   function openHome() {
+    if (typeof window.closeOverlaysForTabSwitch === 'function') window.closeOverlaysForTabSwitch();
     initFeedTabsIndicator();
     document.getElementById('games-view')?.classList.add('hidden');
     document.getElementById('games-search-view')?.classList.add('hidden');
@@ -20951,9 +21233,20 @@ let chatTypingListener = null;
   // Historial (guardados + me gusta + reposts + comentarios)
   let historialCurrentTab = 'saved';
 
+  // A25: Chat e Historial exigen sesión: avisan y llevan al login en vez de
+  // quedarse en silencio.
+  function requireSessionForView(viewName) {
+    if (DrexCloud.auth().currentUser) return true;
+    if (typeof showMiniToast === 'function') showMiniToast('Inicia sesión para ver ' + viewName);
+    document.getElementById('auth-form')?.classList.remove('hidden');
+    document.getElementById('main-app')?.classList.add('hidden');
+    try { if (typeof showAuthSection === 'function') showAuthSection(loginOptions); } catch (_) {}
+    return false;
+  }
+
   function openHistorialView() {
     const user = DrexCloud.auth().currentUser;
-    if (!user) return;
+    if (!user) { requireSessionForView('tu historial'); return; }
     document.getElementById('historial-view')?.classList.remove('hidden');
     historialCurrentTab = 'saved';
     switchHistorialTab('saved');
@@ -21064,7 +21357,7 @@ let chatTypingListener = null;
           const post = s.val();
           if (!post) return;
           count++;
-          panel.appendChild(_buildHistorialCard(s.key, post, () => { closeHistorialView(); openNoteDetail(s.key); }));
+          panel.appendChild(_buildHistorialCard(s.key, post, () => { closeHistorialView(); openPostPermalink(s.key); }));
         });
         if (!count) panel.innerHTML = '<div class="py-16 text-center text-sm text-[#7b878f]">No tienes posts guardados aún.</div>';
       });
@@ -21093,7 +21386,7 @@ let chatTypingListener = null;
           const post = s.val();
           if (!post) return;
           count++;
-          panel.appendChild(_buildHistorialCard(s.key, post, () => { closeHistorialView(); openNoteDetail(s.key); }));
+          panel.appendChild(_buildHistorialCard(s.key, post, () => { closeHistorialView(); openPostPermalink(s.key); }));
         });
         if (!count) panel.innerHTML = '<div class="py-16 text-center text-sm text-[#7b878f]">Aún no has dado me gusta a ningún post.</div>';
       });
@@ -21125,7 +21418,7 @@ let chatTypingListener = null;
             meta: `Reposteado ${formatRelativeTime(item.timestamp || Date.now())}`,
             text: post.content || 'Publicación sin texto',
             image: thumb,
-            onClick: () => { closeHistorialView(); openNoteDetail(item.noteId); }
+            onClick: () => { closeHistorialView(); openPostPermalink(item.noteId); }
           }));
         });
       });
@@ -21328,7 +21621,8 @@ let chatTypingListener = null;
 
   function openChatInboxView() {
     const user = DrexCloud.auth().currentUser;
-    if (!user) return;
+    if (!user) { requireSessionForView('tus chats'); return; }
+    if (typeof window.closeOverlaysForTabSwitch === 'function') window.closeOverlaysForTabSwitch();
     document.getElementById('main-app')?.classList.add('hidden');
     document.getElementById('groups-view')?.classList.add('hidden');
     document.getElementById('profile-view')?.classList.add('hidden');
@@ -22472,6 +22766,7 @@ let chatTypingListener = null;
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.remove('hidden');
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
     const userImg = document.getElementById('chat-room-user-image');
     const groupAvatar = document.getElementById('chat-room-group-avatar');
     const subtitle = document.getElementById('chat-room-group-subtitle');
@@ -22513,6 +22808,7 @@ let chatTypingListener = null;
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.remove('hidden');
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
     const userImg = document.getElementById('chat-room-user-image');
     const groupAvatar = document.getElementById('chat-room-group-avatar');
     const subtitle = document.getElementById('chat-room-group-subtitle');
@@ -24155,6 +24451,7 @@ const _startChatListeners = () => {
       DrexCloud.database().ref('blocks/' + user.uid + '/' + currentChatRecipient).set({ blockedAt: Date.now() })
         .then(() => {
           try { blockedAccountsSet.add(currentChatRecipient); } catch (_) {}
+          breakFollowRelationsOnBlock(user.uid, currentChatRecipient);
           closeChatOptionsPanel();
           closeChatRoomInfo();
           closeChatRoomView();
@@ -24409,7 +24706,7 @@ const _startChatListeners = () => {
     if (!input || !currentChatRoomId) return;
     const newName = input.value.trim();
     if (!newName) { showMiniToast('Ponle un nombre al grupo'); return; }
-    if (!currentGroupIsAdmin) { showMiniToast('Solo los administradores pueden editar el grupo'); return; }
+    if (!(await verifyGroupAdminFresh(false))) { showMiniToast('Solo los administradores pueden editar el grupo'); return; }
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
     try {
@@ -24439,7 +24736,7 @@ const _startChatListeners = () => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || !currentChatRoomId) return;
-    if (!currentGroupIsAdmin) { showMiniToast('Solo los administradores pueden editar el grupo'); return; }
+    if (!(await verifyGroupAdminFresh(false))) { showMiniToast('Solo los administradores pueden editar el grupo'); return; }
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
     showMiniToast('⏳ Subiendo foto...');
@@ -24500,10 +24797,33 @@ const _startChatListeners = () => {
     _groupMemberActionsTarget = null;
   }
 
+  // A30: los permisos de admin se verificaban solo con el estado cacheado al
+  // abrir el panel. Antes de cada mutación se relee el rol desde el servidor.
+  // (La BD es DynamoDB vía credenciales de Cognito: el refuerzo real depende
+  // de la política IAM del rol de identidad, que no se puede verificar aquí;
+  // queda como pendiente de revisión en AWS.)
+  async function verifyGroupAdminFresh(requireCreator = false) {
+    const user = DrexCloud.auth().currentUser;
+    if (!user || !currentChatRoomId) return false;
+    try {
+      const snap = await DrexCloud.database().ref('groupChats/' + currentChatRoomId).once('value');
+      const data = snap.val() || {};
+      const isCreator = data.createdBy === user.uid;
+      const isAdmin = isCreator || (data.admins || {})[user.uid] === true;
+      currentGroupIsAdmin = isAdmin;
+      currentGroupIsCreator = isCreator;
+      currentGroupCreatedBy = data.createdBy || currentGroupCreatedBy;
+      return requireCreator ? isCreator : isAdmin;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async function promoteGroupMember() {
     const target = _groupMemberActionsTarget;
     closeGroupMemberActions();
-    if (!target || !currentChatRoomId || !currentGroupIsCreator) return;
+    if (!target || !currentChatRoomId) return;
+    if (!(await verifyGroupAdminFresh(true))) { showMiniToast('Solo el creador puede hacer esto'); return; }
     try {
       await DrexCloud.database().ref('groupChats/' + currentChatRoomId + '/admins/' + target.uid).set(true);
       await DrexCloud.database().ref('conversationMessages/' + currentChatRoomId).push({
@@ -24521,7 +24841,8 @@ const _startChatListeners = () => {
   async function demoteGroupMember() {
     const target = _groupMemberActionsTarget;
     closeGroupMemberActions();
-    if (!target || !currentChatRoomId || !currentGroupIsCreator) return;
+    if (!target || !currentChatRoomId) return;
+    if (!(await verifyGroupAdminFresh(true))) { showMiniToast('Solo el creador puede hacer esto'); return; }
     if (target.uid === currentGroupCreatedBy) { showMiniToast('El creador del grupo siempre es administrador'); return; }
     try {
       await DrexCloud.database().ref('groupChats/' + currentChatRoomId + '/admins/' + target.uid).remove();
@@ -24539,7 +24860,8 @@ const _startChatListeners = () => {
 
   async function kickGroupMember() {
     const target = _groupMemberActionsTarget;
-    if (!target || !currentChatRoomId || !currentGroupIsAdmin) { closeGroupMemberActions(); return; }
+    if (!target || !currentChatRoomId) { closeGroupMemberActions(); return; }
+    if (!(await verifyGroupAdminFresh(false))) { showMiniToast('Solo un administrador puede hacer esto'); closeGroupMemberActions(); return; }
     if (target.uid === currentGroupCreatedBy) { showMiniToast('No puedes eliminar al creador del grupo'); closeGroupMemberActions(); return; }
     if (target.isAdmin && !currentGroupIsCreator) { showMiniToast('Solo el creador puede eliminar a un administrador'); closeGroupMemberActions(); return; }
     if (!confirm('¿Eliminar a ' + target.name + ' del grupo?')) return;
@@ -24584,7 +24906,17 @@ const _startChatListeners = () => {
         }
       }
       await DrexCloud.database().ref().update(updates);
-      const userName = document.getElementById('group-info-name')?.textContent || '';
+      // A28: si ya no queda ningún miembro, el grupo se elimina por completo
+      // (ficha, mensajes y referencias) en lugar de quedar huérfano.
+      const leftRoomId = currentChatRoomId;
+      const membersSnap = await DrexCloud.database().ref('groupChats/' + leftRoomId + '/members').once('value').catch(() => null);
+      if (membersSnap && !membersSnap.exists()) {
+        await DrexCloud.database().ref('groupChats/' + leftRoomId).remove().catch(() => {});
+        await DrexCloud.database().ref('conversationMessages/' + leftRoomId).remove().catch(() => {});
+        showMiniToast('Saliste del grupo');
+        closeChatRoomView();
+        return;
+      }
       await DrexCloud.database().ref('conversationMessages/' + currentChatRoomId).push({
         system: true,
         text: (user.displayName || 'Alguien') + ' salió del grupo',
@@ -24600,7 +24932,8 @@ const _startChatListeners = () => {
   async function clearGroupConversation() {
     if (!currentChatRoomId) return;
     const user = DrexCloud.auth().currentUser;
-    if (!user || !currentGroupIsAdmin) {
+    if (!user) return;
+    if (!(await verifyGroupAdminFresh(false))) {
       showMiniToast('Solo un administrador puede vaciar el chat');
       return;
     }
@@ -24617,8 +24950,8 @@ const _startChatListeners = () => {
     }
   }
 
-  function openAddMemberToGroup() {
-    if (!currentGroupIsAdmin) { showMiniToast('Solo un administrador puede agregar participantes'); return; }
+  async function openAddMemberToGroup() {
+    if (!(await verifyGroupAdminFresh(false))) { showMiniToast('Solo un administrador puede agregar participantes'); return; }
     const panel = document.getElementById('add-member-panel');
     if (!panel) return;
     panel.classList.remove('hidden');
@@ -24686,7 +25019,7 @@ const _startChatListeners = () => {
     if (!currentChatRoomId || !uid) return;
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
-    if (!currentGroupIsAdmin) { showMiniToast('Solo un administrador puede agregar participantes'); return; }
+    if (!(await verifyGroupAdminFresh(false))) { showMiniToast('Solo un administrador puede agregar participantes'); return; }
     if (btnEl) { btnEl.disabled = true; btnEl.querySelector('span:last-child').textContent = 'Agregando...'; }
     try {
       const groupSnap = await DrexCloud.database().ref('groupChats/' + currentChatRoomId).once('value');
@@ -24828,6 +25161,24 @@ const _startChatListeners = () => {
     });
   }
 
+  function toggleNoteGroupDropdown() {
+    const dd = document.getElementById('note-group-dropdown');
+    if (!dd) return;
+    dd.classList.toggle('hidden');
+    if (!dd.classList.contains('hidden')) {
+      setTimeout(() => document.addEventListener('click', _closeNoteGroupOnOutside, { once: true }), 0);
+      document.getElementById('note-group-search-input')?.focus();
+    }
+  }
+
+  function _closeNoteGroupOnOutside(e) {
+    const dd = document.getElementById('note-group-dropdown');
+    const btn = document.getElementById('group-pill-btn');
+    if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) {
+      dd.classList.add('hidden');
+    }
+  }
+
   function selectGroupForNotePost(groupId, groupName) {
     selectedGroupForPost = { id: groupId, name: groupName };
     const chip = document.getElementById('note-group-selected');
@@ -24842,17 +25193,22 @@ const _startChatListeners = () => {
       list.innerHTML = '';
     }
     if (input) input.value = groupName;
+    const pillLabel = document.getElementById('group-pill-label');
+    if (pillLabel) pillLabel.textContent = groupName;
+    document.getElementById('note-group-dropdown')?.classList.add('hidden');
   }
 
   function clearGroupForNotePost() {
     selectedGroupForPost = null;
     const chip = document.getElementById('note-group-selected');
     const input = document.getElementById('note-group-search-input');
+    const pillLabel = document.getElementById('group-pill-label');
     if (chip) {
       chip.classList.add('hidden');
       chip.innerHTML = '';
     }
     if (input) input.value = '';
+    if (pillLabel) pillLabel.textContent = 'Grupo';
   }
 
   let searchRequestNonce = 0;
@@ -25387,16 +25743,39 @@ function renderAccountsList(accounts) {
       (desktopUsernameInput?.value || "").trim();
 
     // Cambio de nombre de usuario: solo cada 7 días
-    DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
+    DrexCloud.database().ref('users/' + user.uid).once('value').then(async snapshot => {
       const userData = snapshot.val() || {};
       const lastUsernameChange = userData.lastUsernameChange || 0;
       const timeSinceLastChange = Date.now() - lastUsernameChange;
       const USERNAME_CHANGE_COOLDOWN = 7 * 24 * 60 * 60 * 1000; // 7 días
+      const currentUsername = userData.username || '';
+      const usernameChanged = !!newUsername && newUsername.toLowerCase() !== currentUsername.toLowerCase();
 
-      if (newUsername !== userData.username && timeSinceLastChange < USERNAME_CHANGE_COOLDOWN) {
+      if (usernameChanged && timeSinceLastChange < USERNAME_CHANGE_COOLDOWN) {
         const daysLeft = Math.ceil((USERNAME_CHANGE_COOLDOWN - timeSinceLastChange) / (24 * 60 * 60 * 1000));
         alert(`No puedes cambiar tu nombre de usuario hasta dentro de ${daysLeft} días.`);
         return;
+      }
+
+      // A10: reserva atómica del nuevo username en el índice usernames/
+      // antes de guardar. Si otro usuario lo tomó, se aborta sin duplicados.
+      const finalUsername = usernameChanged ? newUsername.toLowerCase() : currentUsername;
+      let oldUsernameIndex = null;
+      if (usernameChanged) {
+        if (finalUsername.length < 3) { alert('El nombre de usuario debe tener al menos 3 caracteres.'); return; }
+        if (!/^[a-z0-9._]+$/.test(finalUsername)) { alert('Solo letras, números, puntos y guiones bajos.'); return; }
+        try {
+          const claim = await DrexCloud.database().ref('usernames/' + finalUsername)
+            .transaction(cur => (cur === null || cur === user.uid ? user.uid : undefined));
+          if (!claim.committed) {
+            alert('@' + finalUsername + ' ya está en uso. Prueba otro.');
+            return;
+          }
+        } catch (e) {
+          alert('No se pudo verificar el nombre de usuario. Revisa tu conexión.');
+          return;
+        }
+        oldUsernameIndex = currentUsername.toLowerCase();
       }
 
       let updates = {};
@@ -25407,10 +25786,10 @@ function renderAccountsList(accounts) {
           return el ? el.value : (current || "");
         };
         updates = {
-          username: newUsername,
+          username: finalUsername,
           pronouns: valueOrCurrent('edit-pronouns', userData.pronouns),
           bio: valueOrCurrent('edit-bio', userData.bio),
-          website: valueOrCurrent('edit-website', userData.website),
+          website: sanitizeWebsiteUrl(valueOrCurrent('edit-website', userData.website)) || '',
           gender: valueOrCurrent('edit-gender', userData.gender),
           birthday: valueOrCurrent('edit-birthday', userData.birthday)
         };
@@ -25420,41 +25799,42 @@ function renderAccountsList(accounts) {
           return el ? el.value : (current || "");
         };
         updates = {
-          username: newUsername,
+          username: finalUsername,
           firstName: valueOrCurrentDesktop('edit-first-name-desktop', userData.firstName),
           lastName: valueOrCurrentDesktop('edit-last-name-desktop', userData.lastName),
           bio: valueOrCurrentDesktop('edit-bio-desktop', userData.bio),
-          website: valueOrCurrentDesktop('edit-website-desktop', userData.website),
+          website: sanitizeWebsiteUrl(valueOrCurrentDesktop('edit-website-desktop', userData.website)) || '',
           gender: valueOrCurrentDesktop('edit-gender-desktop', userData.gender),
           birthday: valueOrCurrentDesktop('edit-birthday-desktop', userData.birthday)
         };
       }
 
-      if (newUsername !== userData.username) {
+      if (usernameChanged) {
         updates.lastUsernameChange = Date.now();
       }
-      if (updates.username === "darheel_") {
-        updates.followersCount = 19000;
-        updates.founder = true;
-        updates.isVerified = true;
+      try {
+        await DrexCloud.database().ref('users/' + user.uid).update(updates);
+        // Liberar el índice del nombre anterior para no dejarlo huérfano.
+        if (oldUsernameIndex && oldUsernameIndex !== finalUsername) {
+          await DrexCloud.database().ref('usernames/' + oldUsernameIndex).remove().catch(() => {});
+        }
+      } catch (error) {
+        console.error("Error al guardar cambios en el perfil:", error);
+        // Revertir la reserva si el perfil no se pudo guardar.
+        if (usernameChanged) await DrexCloud.database().ref('usernames/' + finalUsername).remove().catch(() => {});
+        alert('No se pudo guardar. Intenta de nuevo.');
+        return;
       }
-
-      DrexCloud.database().ref('users/' + user.uid).update(updates)
-        .then(() => {
-          addNotification(user.uid, translations[currentLanguage].usernameUpdated);
-          let newName = updates.username;
-          if (updates.founder) {
-            newName += ' <span class="founder-tag">Fundador</span>';
-          }
-          newName += getVerificationIcon(updates.email || user.email);
-          document.getElementById('profile-username').innerHTML = newName;
-          syncProfileHeaderUsername(newName);
-          alert("Perfil actualizado");
-          closeProfileEdit();
-        })
-        .catch(error => {
-          console.error("Error al guardar cambios en el perfil:", error);
-        });
+      addNotification(user.uid, translations[currentLanguage].usernameUpdated);
+      let newName = updates.username;
+      if (updates.founder) {
+        newName += ' <span class="founder-tag">Fundador</span>';
+      }
+      newName += getVerificationIcon(updates.email || user.email);
+      document.getElementById('profile-username').innerHTML = newName;
+      syncProfileHeaderUsername(newName);
+      alert("Perfil actualizado");
+      closeProfileEdit();
     });
   }
 
@@ -25516,6 +25896,7 @@ function renderAccountsList(accounts) {
       return;
     }
     setAuthorProfileVisibility(true);
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
 
     const addNoteBtn = document.getElementById('add-note-btn');
     const profileNote = document.getElementById('profile-note');
@@ -25648,8 +26029,9 @@ function renderAccountsList(accounts) {
       }, 500);
 
       let socialLinksHTML = "";
-      if (authorData.website) {
-        socialLinksHTML += `<a href="${authorData.website}" target="_blank" class="w-10 h-10 rounded-full bg-[#eef2f7] text-[#5c6974] flex items-center justify-center"><i class="fa-solid fa-globe text-lg"></i></a>`;
+      const safeWebsite = sanitizeWebsiteUrl(authorData.website);
+      if (safeWebsite) {
+        socialLinksHTML += `<a href="${safeWebsite}" target="_blank" rel="noopener" class="w-10 h-10 rounded-full bg-[#eef2f7] text-[#5c6974] flex items-center justify-center"><i class="fa-solid fa-globe text-lg"></i></a>`;
       }
       socialLinksNode.innerHTML = socialLinksHTML;
 
@@ -25663,10 +26045,10 @@ function renderAccountsList(accounts) {
         const authorRepostsNode = document.getElementById('author-reposts-count');
         if (authorRepostsNode) authorRepostsNode.textContent = formatNumber(repostsSnap.numChildren() || 0);
       });
-      DrexCloud.database().ref('groups').once('value').then(groupsSnap => {
+      DrexCloud.database().ref('userConversations/' + authorId).once('value').then(convoSnap => {
         if (currentViewedAuthorId !== authorId) return;
         let groupsCount = 0;
-        groupsSnap.forEach(child => { if ((child.val() || {}).creatorId === authorId) groupsCount++; });
+        convoSnap.forEach(child => { if ((child.val() || {}).isGroup) groupsCount++; });
         if (authorGroupsNode) authorGroupsNode.textContent = formatNumber(groupsCount);
       });
     }).catch(() => {
@@ -25750,41 +26132,54 @@ function renderAccountsList(accounts) {
     }
 
     const followRef = DrexCloud.database().ref('followers/' + currentViewedAuthorId + '/' + currentUser.uid);
-    const followButton = document.getElementById('follow-button');
     const authorFollowersRef = DrexCloud.database().ref('users/' + currentViewedAuthorId + '/followersCount');
-    const currentFollowersElement = document.getElementById('author-followers');
-
-    authorFollowersRef.on('value', (snapshot) => {
-      const followersCount = snapshot.val() || 0;
-      currentFollowersElement.textContent = formatNumber(followersCount);
-    });
+    // A11: sin listener permanente aquí (cada llamada a followAuthor creaba
+    // uno nuevo y nunca se liberaba). El conteo se refresca con lectura única
+    // tras cada acción.
 
     followRef.once('value').then(snapshot => {
       if (snapshot.exists()) {
-        followRef.remove().then(() => {
-          DrexCloud.database().ref('following/' + currentUser.uid + '/' + currentViewedAuthorId).remove();
-          authorFollowersRef.transaction(current => {
-            return (current || 1) - 1;
-          });
+        // A14: dejar de seguir con reversión si la segunda escritura falla.
+        followRef.remove().then(async () => {
+          try {
+            await DrexCloud.database().ref('following/' + currentUser.uid + '/' + currentViewedAuthorId).remove();
+          } catch (e) {
+            await followRef.set({ followedAt: Date.now() }).catch(() => {});
+            showMiniToast('No se pudo dejar de seguir. Intenta de nuevo.');
+            return;
+          }
+          const tRes = await authorFollowersRef.transaction(current => Math.max(0, (current || 1) - 1)).catch(() => null);
+          // A9: mantener followingCount propio.
+          DrexCloud.database().ref('users/' + currentUser.uid + '/followingCount').transaction(c => Math.max(0, (c || 1) - 1));
+          const countEl = document.getElementById('author-followers');
+          if (countEl && tRes && tRes.committed) countEl.textContent = formatNumber(tRes.snapshot.val() || 0);
           _invalidatePrivacyCaches(currentViewedAuthorId);
           updateFollowIcon();
-        });
+        }).catch(() => showMiniToast('No se pudo dejar de seguir. Intenta de nuevo.'));
         return;
       }
       DrexCloud.database().ref('followRequests/' + currentViewedAuthorId + '/' + currentUser.uid).once('value').then(reqSnap => {
         if (reqSnap.exists()) {
           DrexCloud.database().ref('followRequests/' + currentViewedAuthorId + '/' + currentUser.uid).remove().then(() => {
             updateFollowIcon();
-          });
+          }).catch(() => showMiniToast('No se pudo cancelar la solicitud.'));
           return;
         }
         requestOrFollowUser(currentViewedAuthorId, {
-          onFollowed: () => updateFollowIcon(),
+          onFollowed: () => {
+            // Refrescar el conteo visible con lectura única (sin listener).
+            authorFollowersRef.once('value').then(cSnap => {
+              const countEl = document.getElementById('author-followers');
+              if (countEl) countEl.textContent = formatNumber(cSnap.val() || 0);
+            }).catch(() => {});
+            updateFollowIcon();
+          },
           onRequested: () => updateFollowIcon(),
-          onAlready: () => updateFollowIcon()
+          onAlready: () => updateFollowIcon(),
+          onError: () => showMiniToast('No se pudo seguir. Intenta de nuevo.')
         });
-      });
-    });
+      }).catch(() => showMiniToast('No se pudo procesar. Intenta de nuevo.'));
+    }).catch(() => showMiniToast('No se pudo procesar. Intenta de nuevo.'));
   }
 
 
@@ -25807,11 +26202,24 @@ function renderAccountsList(accounts) {
     openAuthorProfile(userId);
   }
 
-  function openFollowersModal() {
-    if (!currentViewedAuthorId) return;
+  // A13: uid opcional para abrir las listas propias (el perfil personal no
+  // pasa por currentViewedAuthorId porque openAuthorProfile redirige a él).
+  function openMyFollowersModal() {
+    const u = DrexCloud.auth().currentUser;
+    if (u) openFollowersModal(u.uid);
+  }
+
+  function openMyFollowingModal() {
+    const u = DrexCloud.auth().currentUser;
+    if (u) openFollowingModal(u.uid);
+  }
+
+  function openFollowersModal(uid) {
+    const targetId = uid || currentViewedAuthorId;
+    if (!targetId) return;
     const followersListDiv = document.getElementById('followers-list');
     followersListDiv.innerHTML = `<div class="py-6 text-center">${getFadingCircleLoaderMarkup()}</div>`;
-    DrexCloud.database().ref('followers/' + currentViewedAuthorId).once('value').then(snapshot => {
+    DrexCloud.database().ref('followers/' + targetId).once('value').then(snapshot => {
       const ids = [];
       snapshot.forEach(child => ids.push(child.key));
       if (!ids.length) {
@@ -25822,7 +26230,7 @@ function renderAccountsList(accounts) {
         followersListDiv.innerHTML = items.map(item => buildAuthorRelationRow(item.uid, item.data)).join('');
       });
     }).catch(() => {
-      window.paintLoadError(followersListDiv, 'No se pudieron cargar los seguidores. Revisa tu conexión.', openFollowersModal);
+      window.paintLoadError(followersListDiv, 'No se pudieron cargar los seguidores. Revisa tu conexión.', () => openFollowersModal(targetId));
     });
     document.getElementById('followers-modal').classList.remove('hidden');
   }
@@ -25831,11 +26239,12 @@ function renderAccountsList(accounts) {
     document.getElementById('followers-modal').classList.add('hidden');
   }
 
-  function openFollowingModal() {
-    if (!currentViewedAuthorId) return;
+  function openFollowingModal(uid) {
+    const targetId = uid || currentViewedAuthorId;
+    if (!targetId) return;
     const followingListDiv = document.getElementById('following-list');
     followingListDiv.innerHTML = `<div class="py-6 text-center">${getFadingCircleLoaderMarkup()}</div>`;
-    DrexCloud.database().ref('following/' + currentViewedAuthorId).once('value').then(snapshot => {
+    DrexCloud.database().ref('following/' + targetId).once('value').then(snapshot => {
       const ids = [];
       snapshot.forEach(child => ids.push(child.key));
       if (!ids.length) {
@@ -25846,7 +26255,7 @@ function renderAccountsList(accounts) {
         followingListDiv.innerHTML = items.map(item => buildAuthorRelationRow(item.uid, item.data)).join('');
       });
     }).catch(() => {
-      window.paintLoadError(followingListDiv, 'No se pudieron cargar los seguidos. Revisa tu conexión.', openFollowingModal);
+      window.paintLoadError(followingListDiv, 'No se pudieron cargar los seguidos. Revisa tu conexión.', () => openFollowingModal(targetId));
     });
     document.getElementById('following-modal').classList.remove('hidden');
   }
@@ -28611,6 +29020,17 @@ function recordShare(platform) {
   <div id="post-permalink-body" class="max-w-lg mx-auto"></div>
 </div>
 
+<div id="group-posts-view" class="fixed inset-0 bg-[#f0f4f9] text-[#1c2b4a] z-[210] hidden overflow-y-auto">
+  <div class="flex items-center justify-between px-4 py-3 bg-white border-b border-[#e5e9ee] sticky top-0 z-10">
+    <button onclick="closeGroupPostsView()" class="w-10 h-10 flex items-center justify-center rounded-full active:bg-[#eef2f7] text-[#1c2b4a]" aria-label="Volver">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </button>
+    <span id="group-posts-title" class="text-[16px] font-extrabold truncate px-2">Grupo</span>
+    <span class="w-10 h-10"></span>
+  </div>
+  <div id="group-posts-list" class="max-w-lg mx-auto"></div>
+</div>
+
 <script>function initEmpresaView() {
   if (window.__empresaInited) return;
   window.__empresaInited = true;
@@ -30057,6 +30477,42 @@ function openPostPermalink(noteId, options = {}) {
   });
 }
 
+// C9: vista mínima de lectura para publicaciones etiquetadas con un grupo.
+// El selector de grupo del composer está desactivado (nodo "groups" sin uso),
+// pero si alguna publicación llega a traer groupId, esta vista evita que su
+// contenido quede invisible para siempre: lista sus posts y abre cada uno.
+function openGroupPostsView(groupId, groupName) {
+  if (!groupId) return;
+  const view = document.getElementById('group-posts-view');
+  const title = document.getElementById('group-posts-title');
+  const list = document.getElementById('group-posts-list');
+  if (!view || !list) return;
+  if (title) title.textContent = groupName || 'Grupo';
+  list.innerHTML = `<div class="py-16 flex justify-center">${typeof getFadingCircleLoaderMarkup === 'function' ? getFadingCircleLoaderMarkup() : '<span class="text-sm text-[#9aa4ae]">Cargando...</span>'}</div>`;
+  view.classList.remove('hidden');
+  DrexCloud.database().ref('communityNotes').orderByChild('groupId').equalTo(groupId).limitToLast(50).once('value').then(snapshot => {
+    const items = [];
+    snapshot.forEach(child => { const v = child.val() || {}; items.push({ id: child.key, ...v }); });
+    items.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+    if (!items.length) {
+      list.innerHTML = '<p class="text-center text-sm text-[#9aa4ae] py-16 px-6">Este grupo a\u00fan no tiene publicaciones.</p>';
+      return;
+    }
+    list.innerHTML = items.map(item => `
+      <button onclick="closeGroupPostsView(); openPostPermalink('${item.id}')" class="w-full text-left bg-white border-b border-[#eef2f7] px-4 py-3 active:bg-[#f7fafc]">
+        <span class="text-sm font-extrabold text-[#1c2b4a]">${escapeHtml(item.authorName || 'Usuario')}</span>
+        <span class="text-xs text-[#9aa4ae] ml-2">${typeof formatRelativeTime === 'function' ? formatRelativeTime(Number(item.timestamp) || Date.now()) : ''}</span>
+        <p class="text-sm text-[#1c2b4a] mt-1 line-clamp-3">${escapeHtml(String(item.text || '').slice(0, 280))}</p>
+      </button>`).join('');
+  }).catch(() => {
+    list.innerHTML = '<p class="text-center text-sm text-[#9aa4ae] py-16 px-6">No se pudieron cargar las publicaciones del grupo.</p>';
+  });
+}
+
+function closeGroupPostsView() {
+  document.getElementById('group-posts-view')?.classList.add('hidden');
+}
+
 function _renderPostPermalinkMessage(msg) {
   const body = document.getElementById('post-permalink-body');
   if (body) body.innerHTML = `<div class="py-16 px-6 text-center text-sm text-[#7b878f]">${escapeHTML(msg)}</div>`;
@@ -30104,8 +30560,12 @@ function _renderPostPermalinkCard(note) {
       `;
   }
 
+  const groupChipHTML = (note.groupId && note.groupName)
+    ? `<button onclick="openGroupPostsView('${note.groupId}', '${escapeSingleQuote(note.groupName)}')" class="mb-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#1c2b4a] bg-[#eef2f7] rounded-full px-3 py-1.5 active:bg-[#e2e9f1]">\uD83D\uDC65 ${escapeHtml(note.groupName)}</button>`
+    : '';
   body.innerHTML = `
       <div class="bg-white border border-[#dce1e5] rounded-2xl p-4 mx-4 my-4 shadow-sm">
+        ${groupChipHTML}
         <div class="flex items-center gap-2.5 mb-3">
           <img src="${safeAuthorImage}" class="w-10 h-10 rounded-full object-cover" alt="${safeAuthorName}">
           <div class="flex flex-col">
@@ -30231,7 +30691,71 @@ function closeSubpageView() {
   }
 }
 
+  // A22: al cambiar de tab se cierran los overlays abiertos y, si hay una
+  // fiesta en curso, se sale de ella con limpieza completa (mic, peers,
+  // listeners), en lugar de dejarla sonando en segundo plano.
+  function closeOverlaysForTabSwitch() {
+    const closeIfOpen = (id, fn) => {
+      try {
+        const el = document.getElementById(id);
+        if (el && !el.classList.contains('hidden') && el.style.display !== 'none' && typeof fn === 'function') fn();
+      } catch (_) {}
+    };
+    closeIfOpen('comments-view', () => closeCommentsView());
+    closeIfOpen('post-permalink-view', () => closePostPermalink());
+    closeIfOpen('image-modal', () => closeImageModal());
+    closeIfOpen('author-profile-view', () => closeAuthorProfile());
+    closeIfOpen('user-actions-sheet', () => closeUserActionsSheet());
+    closeIfOpen('post-options-sheet', () => closePostOptionsSheet());
+    closeIfOpen('group-posts-view', () => closeGroupPostsView());
+    closeIfOpen('historial-view', () => closeHistorialView());
+    try {
+      const room = document.getElementById('fiesta-room-view');
+      if (room && !room.classList.contains('hidden') && typeof leaveFiesta === 'function') leaveFiesta(true);
+    } catch (_) {}
+  }
+
+  // A23: historial interno para el botón Atrás del móvil. Cada vez
+  // que se abre un overlay se empuja una entrada al historial; al pulsar
+  // Atrás, el manejador de popstate cierra primero el overlay abierto
+  // (y repone la entrada) en lugar de salir de la app.
+  function _pushOverlayBackGuard() {
+    try { history.pushState({ drexOverlayGuard: true }, '', location.href); } catch (_) {}
+  }
+  function closeTopmostOverlayForBack() {
+    const candidates = [
+      ['image-modal', () => typeof closeImageModal === 'function' && closeImageModal()],
+      ['comments-view', () => typeof closeCommentsView === 'function' && closeCommentsView()],
+      ['author-profile-view', () => typeof closeAuthorProfile === 'function' && closeAuthorProfile()],
+      ['user-actions-sheet', () => typeof closeUserActionsSheet === 'function' && closeUserActionsSheet()],
+      ['post-options-sheet', () => typeof closePostOptionsSheet === 'function' && closePostOptionsSheet()],
+      ['group-posts-view', () => typeof closeGroupPostsView === 'function' && closeGroupPostsView()],
+      ['chat-room-view', () => typeof closeChatRoomView === 'function' && closeChatRoomView()],
+      ['fiesta-room-view', () => typeof leaveFiesta === 'function' && leaveFiesta(true)],
+      ['historial-view', () => typeof closeHistorialView === 'function' && closeHistorialView()],
+    ];
+    for (const [id, closeFn] of candidates) {
+      const el = document.getElementById(id);
+      if (el && !el.classList.contains('hidden') && el.style.display !== 'none') {
+        try { closeFn(); } catch (_) {}
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Exponer en window: otros bloques de script los llaman al cambiar de
+  // tab (A22) y al abrir overlays (A23).
+  window.closeOverlaysForTabSwitch = closeOverlaysForTabSwitch;
+  window._pushOverlayBackGuard = _pushOverlayBackGuard;
+  window.closeTopmostOverlayForBack = closeTopmostOverlayForBack;
+
 function handleSubpageHash() {
+  // A23: Atrás cierra primero el overlay/vista abierto antes que navegar.
+  if (typeof closeTopmostOverlayForBack === 'function' && closeTopmostOverlayForBack()) {
+    try { history.pushState({ drexOverlayGuard: true }, '', location.href); } catch (_) {}
+    return;
+  }
   const name = location.hash.replace('#', '');
   if (name.startsWith('post-')) {
     const postId = name.slice(5);
@@ -30250,6 +30774,61 @@ function handleSubpageHash() {
 
 window.addEventListener('popstate', handleSubpageHash);
 document.addEventListener('DOMContentLoaded', handleSubpageHash);
+
+// Enlaces compartidos: ?ref= (referido), ?user= (perfil), ?joinGroup= (grupo).
+// Se guardan al cargar y se consumen tras entrar a la app.
+(function captureSharedQueryParams() {
+  try {
+    const q = new URLSearchParams(location.search);
+    let touched = false;
+    const ref = q.get('ref');
+    if (ref && /^[a-z0-9._]{3,30}$/i.test(ref)) {
+      sessionStorage.setItem('drex_ref', ref.toLowerCase());
+      touched = true;
+    }
+    const sharedUser = q.get('user');
+    if (sharedUser && /^[a-z0-9._]{3,30}$/i.test(sharedUser)) {
+      sessionStorage.setItem('drex_pending_open_user', sharedUser.toLowerCase());
+      touched = true;
+    }
+    const joinGroup = q.get('joinGroup');
+    if (joinGroup && /^[A-Za-z0-9_-]{4,64}$/.test(joinGroup)) {
+      sessionStorage.setItem('drex_pending_join_group', joinGroup);
+      touched = true;
+    }
+    if (touched) {
+      const url = new URL(location.href);
+      url.search = '';
+      history.replaceState(null, '', url.toString());
+    }
+  } catch (_) {}
+})();
+
+function consumePendingDeepLinks() {
+  let pendingUser = null, pendingGroup = null;
+  try {
+    pendingUser = sessionStorage.getItem('drex_pending_open_user');
+    pendingGroup = sessionStorage.getItem('drex_pending_join_group');
+    sessionStorage.removeItem('drex_pending_open_user');
+    sessionStorage.removeItem('drex_pending_join_group');
+  } catch (_) {}
+  if (pendingGroup && typeof DrexCloud !== 'undefined') {
+    const me = DrexCloud.auth().currentUser;
+    DrexCloud.database().ref('groupChats/' + pendingGroup + '/members/' + (me ? me.uid : '-'))
+      .once('value').then(snap => {
+        if (snap.exists() && typeof openGroupChatRoom === 'function') {
+          openGroupChatRoom(pendingGroup);
+        } else if (typeof showMiniToast === 'function') {
+          showMiniToast('Ese grupo ya no está disponible o no eres miembro.');
+        }
+      }).catch(() => {});
+  } else if (pendingUser && typeof openAuthorProfileByUsername === 'function') {
+    setTimeout(() => {
+      try { openAuthorProfileByUsername(pendingUser); }
+      catch (_) {}
+    }, 800);
+  }
+}
 
 </script>
 <script>
@@ -30288,6 +30867,7 @@ function practicarLangOptions(selected) {
 }
 
 function openPracticar() {
+  if (typeof window.closeOverlaysForTabSwitch === 'function') window.closeOverlaysForTabSwitch();
   if (typeof closePracticarComposer === 'function') { closePracticarComposer(); closePracticarLang(); }
   ['games-view','games-search-view','community-view','creator-hub-view','profile-view','search-view','groups-view','chat-inbox-view','new-chat-view','chat-room-view','community-detail-view','community-manage-view','delete-community-confirm-view','create-community-view','practicar-detail-view'].forEach(function(id) {
     document.getElementById(id)?.classList.add('hidden');
@@ -30753,6 +31333,47 @@ let fiestaEarlyCands = {};
 let fiestaMembers = {};
 let fiestaRefs = {};
 let fiestaAmHost = false;
+let fiestaReasserting = false;
+let fiestaHostMuteToastShown = false;
+
+// Volver a la app (desbloquear el teléfono, cambiar de app): re-afirmar la
+// membresía por si el onDisconnect la borró al ocultarse, y resincronizar.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && fiestaCur && fiestaMyUid) {
+    fiestaReasserting = false;
+    fiestaReassertMembership().then(() => {
+      if (typeof fiestaSyncPeers === 'function') fiestaSyncPeers();
+      fiestaPaintControls();
+    }).catch(() => {});
+  }
+});
+
+// Re-afirma mi presencia en la fiesta (tras volver de segundo plano). Respeta
+// la lista de expulsados: si el anfitrión me expulsó, salgo en vez de reentrar.
+async function fiestaReassertMembership() {
+  if (!fiestaCur || !fiestaMyUid) return;
+  try {
+    const kickSnap = await DrexCloud.database().ref('fiestaKicked/' + fiestaCur.id + '/' + fiestaMyUid).once('value');
+    if (kickSnap && kickSnap.exists()) {
+      await leaveFiesta(true);
+      showMiniToast('Fuiste expulsado de la fiesta.');
+      return;
+    }
+    let prof = null;
+    try { prof = await fiestaMyProfile(); } catch (_) {}
+    const node = DrexCloud.database().ref('fiestaMembers/' + fiestaCur.id + '/' + fiestaMyUid);
+    await node.set({
+      name: (prof && prof.name) || 'Usuario',
+      photo: (prof && prof.photo) || '',
+      role: fiestaMyRole || 'listener',
+      muted: !!fiestaMuted,
+      joinedAt: Date.now(),
+      lastSeen: Date.now()
+    });
+    try { node.onDisconnect().remove(); } catch (_) {}
+    if (typeof fiestaSyncPeers === 'function') fiestaSyncPeers();
+  } catch (_) {}
+}
 const FIESTA_BUILD = '2026-09-09-E';
 const FIESTA_DEBUG = true;
 function fiestaDbg(t) {
@@ -30948,7 +31569,9 @@ function renderFiestaCardHTML(note) {
       ${desc ? `<p class="text-[13px] text-[#5c6974] mt-1 leading-snug">${desc}</p>` : ''}
     </div>
     <div class="px-5 pb-5 flex items-center gap-2">
-      <button onclick="joinFiestaFromFeed('${fid}')" class="flex-1 h-12 rounded-full bg-[#0084FF] text-white font-extrabold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition">${FIESTA_PHONE_ICON}Unirse a la fiesta</button>
+      ${note.fiestaStatus === 'ended'
+        ? '<button disabled class="flex-1 h-12 rounded-full bg-[#eef2f7] text-[#8fa2c7] font-extrabold text-sm flex items-center justify-center gap-2">Fiesta terminada</button>'
+        : `<button onclick="joinFiestaFromFeed('${fid}')" class="flex-1 h-12 rounded-full bg-[#0084FF] text-white font-extrabold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition">${FIESTA_PHONE_ICON}Unirse a la fiesta</button>`}
     </div>
   </div>`;
 }
@@ -30999,6 +31622,7 @@ async function joinFiesta(id, asSpeaker) {
     if (!ok) {
       fiestaMyRole = 'listener';
       await mRef.child(user.uid).update({ role: 'listener' });
+      fiestaPaintControls();
     }
   }
 }
@@ -31007,6 +31631,7 @@ function fiestaShowRoom() {
   const v = document.getElementById('fiesta-room-view');
   v.classList.remove('hidden');
   v.classList.add('flex');
+  if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
   fiestaArmAudioUnlock();
   fiestaLevelCtx();
@@ -31034,8 +31659,36 @@ function fiestaWatchRoom() {
   fiestaRefs.members = DrexCloud.database().ref('fiestaMembers/' + id);
   fiestaRefs.members.on('value', snap => {
     fiestaMembers = snap.val() || {};
-    if (!fiestaMembers[fiestaMyUid]) { leaveFiesta(true); return; }
-    const myNewRole = fiestaMembers[fiestaMyUid].role;
+    const myMemberRec = fiestaMembers[fiestaMyUid];
+    if (!myMemberRec) {
+      // Mi registro desapareció: puede ser el onDisconnect al ocultar la app
+      // (bloquear el teléfono / cambiar de app) o una expulsión del anfitrión.
+      // Con la página oculta se espera; visible se intenta re-afirmar la
+      // membresía una vez antes de rendirse.
+      if (document.visibilityState === 'hidden') return;
+      if (!fiestaReasserting) {
+        fiestaReasserting = true;
+        fiestaReassertMembership().catch(() => {});
+        setTimeout(() => { fiestaReasserting = false; }, 8000);
+      }
+      return;
+    }
+    fiestaReasserting = false;
+    // Silenciado por el anfitrión: forzar el mute local aunque intente abrirlo.
+    if (myMemberRec.mutedByHost && fiestaMyRole === 'speaker') {
+      if (!fiestaMuted) {
+        fiestaMuted = true;
+        if (fiestaLocalStream) fiestaLocalStream.getAudioTracks().forEach(t => { t.enabled = false; });
+        fiestaPaintControls();
+      }
+      if (!fiestaHostMuteToastShown) {
+        fiestaHostMuteToastShown = true;
+        showMiniToast('El anfitrión te silenció.');
+      }
+    } else if (!myMemberRec.mutedByHost) {
+      fiestaHostMuteToastShown = false;
+    }
+    const myNewRole = myMemberRec.role;
     if (myNewRole !== fiestaMyRole) {
       fiestaMyRole = myNewRole;
       if (myNewRole === 'speaker') fiestaEnsureMic().then(() => fiestaSyncPeers());
@@ -31055,6 +31708,12 @@ function fiestaWatchRoom() {
   });
   if (fiestaRefs.heal) clearInterval(fiestaRefs.heal);
   fiestaRefs.status = setInterval(fiestaUpdateStatus, 2500);
+  if (fiestaRefs.heartbeat) clearInterval(fiestaRefs.heartbeat);
+  fiestaRefs.heartbeat = setInterval(() => {
+    if (!fiestaCur || !fiestaMyUid) return;
+    DrexCloud.database().ref('fiestaMembers/' + fiestaCur.id + '/' + fiestaMyUid)
+      .update({ lastSeen: Date.now() }).catch(() => {});
+  }, 25000);
   fiestaRefs.heal = setInterval(() => {
     if (!fiestaCur) return;
     const now = Date.now();
@@ -31085,6 +31744,10 @@ function renderFiestaRoom() {
         ${fiestaCur.data.hostId === uid ? '<span class="absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full bg-amber-400 border-2 border-[#141a38] flex items-center justify-center text-sm leading-none">👑</span>' : ''}
       </div>
       <p class="text-[11px] font-bold truncate max-w-[84px] text-white/90">${esc(m.name)}${uid === fiestaMyUid ? ' (tú)' : ''}</p>
+      ${(fiestaAmHost && uid !== fiestaMyUid) ? `<div class="flex gap-1">
+        <button onclick="fiestaMuteMember('${uid}')" class="text-[9px] font-bold px-2 py-1 rounded-full bg-white/15 text-white/85">Silenciar</button>
+        <button onclick="fiestaKickMember('${uid}')" class="text-[9px] font-bold px-2 py-1 rounded-full bg-red-500/80 text-white">Expulsar</button>
+      </div>` : ''}
     </div>`).join('') || '<p class="text-xs text-white/50 col-span-3 text-center py-4">Aún no hay hablantes.</p>';
 
   document.getElementById('fiesta-listener-count').textContent = listeners.length ? '(' + listeners.length + ')' : '';
@@ -31110,7 +31773,7 @@ function fiestaPaintControls() {
     muteBtn.innerHTML = fiestaMuted ? MIC_OFF : MIC_ON;
   }
   const showSpeak = !isSpeaker;
-  const showEnd = isSpeaker && fiestaAmHost;
+  const showEnd = fiestaAmHost;
   if (speakBtn) {
     speakBtn.classList.toggle('hidden', !showSpeak);
     speakBtn.classList.toggle('flex', showSpeak);
@@ -31183,8 +31846,25 @@ async function fiestaEnsureMic() {
   }
 }
 
+// Moderación del anfitrión: expulsar y silenciar participantes.
+async function fiestaKickMember(uid) {
+  if (!fiestaCur || !fiestaAmHost || !uid || uid === fiestaMyUid) return;
+  if (!confirm('¿Expulsar a este participante de la fiesta?')) return;
+  const id = fiestaCur.id;
+  await DrexCloud.database().ref('fiestaKicked/' + id + '/' + uid).set({ at: Date.now(), by: fiestaMyUid }).catch(() => {});
+  await DrexCloud.database().ref('fiestaMembers/' + id + '/' + uid).remove().catch(() => {});
+  showMiniToast('Participante expulsado.');
+}
+async function fiestaMuteMember(uid) {
+  if (!fiestaCur || !fiestaAmHost || !uid || uid === fiestaMyUid) return;
+  await DrexCloud.database().ref('fiestaMembers/' + fiestaCur.id + '/' + uid).update({ muted: true, mutedByHost: true }).catch(() => {});
+  showMiniToast('Participante silenciado.');
+}
+
 async function fiestaToggleMute() {
   if (fiestaMyRole !== 'speaker' || !fiestaLocalStream) return;
+  const myRec = (typeof fiestaMembers !== 'undefined' && fiestaMembers[fiestaMyUid]) || {};
+  if (myRec.mutedByHost && fiestaMuted) { showMiniToast('El anfitrión te silenció.'); return; }
   fiestaMuted = !fiestaMuted;
   fiestaLocalStream.getAudioTracks().forEach(t => { t.enabled = !fiestaMuted; });
   await DrexCloud.database().ref('fiestaMembers/' + fiestaCur.id + '/' + fiestaMyUid).update({ muted: fiestaMuted }).catch(() => {});
@@ -31194,8 +31874,19 @@ async function fiestaToggleMute() {
 function fiestaSendSignal(toUid, payload) {
   if (!fiestaCur || !fiestaMyUid) return;
   const p = Object.assign({ from: fiestaMyUid }, payload);
-  // DrexCloud: push() devuelve un Ref (no promesa); la escritura ya maneja errores internamente.
-  DrexCloud.database().ref('fiestaSignals/' + fiestaCur.id + '/' + toUid).push(p);
+  // Un slot fijo + set() con promesa real permite reintentar si la señal se
+  // pierde; sin esto un offer perdido deja al par en "Conectando…" por siempre.
+  const slot = DrexCloud.database().ref('fiestaSignals/' + fiestaCur.id + '/' + toUid).push();
+  let attempts = 0;
+  const trySend = () => {
+    attempts++;
+    let pr;
+    try { pr = slot.set(p); } catch (e) { pr = Promise.reject(e); }
+    Promise.resolve(pr).catch(() => {
+      if (attempts < 3) setTimeout(trySend, 500 * attempts);
+    });
+  };
+  trySend();
 }
 
 function fiestaSetupPC(uid, pc) {
@@ -31387,6 +32078,7 @@ function fiestaFullCleanup() {
   fiestaStopLevels();
   if (fiestaRefs.status) { clearInterval(fiestaRefs.status); delete fiestaRefs.status; }
   if (fiestaRefs.heal) { clearInterval(fiestaRefs.heal); delete fiestaRefs.heal; }
+  if (fiestaRefs.heartbeat) { clearInterval(fiestaRefs.heartbeat); delete fiestaRefs.heartbeat; }
   Object.keys(fiestaPCs).forEach(fiestaDropPeer);
   if (fiestaLocalStream) { fiestaLocalStream.getTracks().forEach(t => t.stop()); fiestaLocalStream = null; }
   Object.values(fiestaRefs).forEach(r => { try { r.off(); } catch (_) {} });
@@ -31396,12 +32088,22 @@ function fiestaFullCleanup() {
 async function leaveFiesta(silent) {
   const id = fiestaCur && fiestaCur.id;
   const uid = fiestaMyUid;
+  const wasHost = fiestaAmHost;
   fiestaFullCleanup();
+  fiestaReasserting = false;
   if (id && uid) {
     const mRef = DrexCloud.database().ref('fiestaMembers/' + id + '/' + uid);
     try { mRef.onDisconnect().cancel(); } catch (_) {}
     await mRef.remove().catch(() => {});
     await DrexCloud.database().ref('fiestaSignals/' + id + '/' + uid).remove().catch(() => {});
+  }
+  // El anfitrión no puede "colgar" dejando la fiesta viva para siempre: al
+  // salir, la fiesta se termina para todos (no más fiestas zombis).
+  if (wasHost && id) {
+    await DrexCloud.database().ref('fiestas/' + id + '/status').set('ended').catch(() => {});
+    await markFiestaNotesEnded(id);
+    await DrexCloud.database().ref('fiestaReactions/' + id).remove().catch(() => {});
+    await DrexCloud.database().ref('fiestaKicked/' + id).remove().catch(() => {});
   }
   fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener'; fiestaPeerDownSince = {};
   fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false;
@@ -31410,10 +32112,24 @@ async function leaveFiesta(silent) {
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
 }
 
+// Marca las tarjetas del feed de una fiesta como terminadas.
+async function markFiestaNotesEnded(fiestaId) {
+  try {
+    const snap = await DrexCloud.database().ref('communityNotes').orderByChild('fiestaId').equalTo(fiestaId).once('value');
+    const updates = {};
+    snap.forEach(child => { updates['communityNotes/' + child.key + '/fiestaStatus'] = 'ended'; });
+    if (Object.keys(updates).length) await DrexCloud.database().ref().update(updates);
+  } catch (_) {}
+}
+
 async function endFiesta() {
   if (!fiestaCur || !fiestaAmHost) return;
   if (!confirm('¿Terminar la fiesta para todos?')) return;
-  await DrexCloud.database().ref('fiestas/' + fiestaCur.id + '/status').set('ended').catch(() => {});
+  const id = fiestaCur.id;
+  await DrexCloud.database().ref('fiestas/' + id + '/status').set('ended').catch(() => {});
+  await markFiestaNotesEnded(id);
+  await DrexCloud.database().ref('fiestaReactions/' + id).remove().catch(() => {});
+  await DrexCloud.database().ref('fiestaKicked/' + id).remove().catch(() => {});
 }
 </script>
 <script>
