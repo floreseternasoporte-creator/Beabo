@@ -29,7 +29,10 @@
     // Login social via Cognito OAuth (se activa al desplegar el dominio + IdPs)
     oauthDomain: 'drex-voz-auth.auth.us-east-1.amazoncognito.com',
     oauthRedirectUri: 'https://drex.glamworksapps.workers.dev/',
-    oauthScope: 'email openid profile'
+    oauthScope: 'email openid profile',
+    // URL de DrexTotpFunction (verificación TOTP del lado servidor).
+    // Se rellena con el Output TotpFunctionUrl tras desplegar el backend.
+    totpFunctionUrl: ''
   };
   var IDP_ISSUER = 'cognito-idp.us-east-1.amazonaws.com/us-east-1_kDSYEBsnY';
 
@@ -129,7 +132,30 @@
       }
     }
     if (result === undefined) return hasChildren ? {} : null;
-    return result;
+    return arraysBack(result);
+  }
+
+  // Los arrays se aplanan como claves numéricas ("0","1",...); al reconstruir,
+  // los objetos con claves 0..n-1 consecutivas vuelven a ser arrays (igual que
+  // hace el SDK de Firebase). Sin esto las encuestas nunca se podían votar.
+  function arraysBack(node) {
+    if (Array.isArray(node)) {
+      for (var i = 0; i < node.length; i++) node[i] = arraysBack(node[i]);
+      return node;
+    }
+    if (!isPlainObject(node)) return node;
+    var keys = Object.keys(node);
+    var isSeq = keys.length > 0;
+    for (var i = 0; i < keys.length && isSeq; i++) {
+      if (keys[i] !== String(i)) isSeq = false;
+    }
+    if (isSeq) {
+      var arr = [];
+      for (var j = 0; j < keys.length; j++) arr.push(arraysBack(node[String(j)]));
+      return arr;
+    }
+    for (var k = 0; k < keys.length; k++) node[keys[k]] = arraysBack(node[keys[k]]);
+    return node;
   }
 
   // cliente DynamoDB (perezoso)
@@ -212,6 +238,75 @@
   }
   function deleteKey(pk, sk) {
     return { DeleteRequest: { Key: { pk: pk, sk: normSk(sk) } } };
+  }
+  // Put condicional de una hoja: solo escribe si el valor actual en 'v' sigue
+  // siendo expectedJson (o si la hoja no existe cuando expectedJson es null).
+  // Es la primitiva que da atomicidad real a transaction() en hojas escalares.
+  function putLeafConditional(pk, sk, jsonValue, expectedJson) {
+    var dc = getDocClient();
+    var params = {
+      TableName: AWS_CONFIG.tableName,
+      Item: { pk: pk, sk: normSk(sk), v: jsonValue },
+      ExpressionAttributeNames: { '#v': 'v' },
+      ExpressionAttributeValues: { ':exp': expectedJson }
+    };
+    if (expectedJson === null) {
+      // snap.val() devuelve null tanto si la hoja no existe como si guarda
+      // el JSON null; en ambos casos la v almacenada es inexistente o la
+      // cadena "null" (JSON.stringify(null)). Comparar contra la cadena,
+      // no contra el tipo NULL de DynamoDB (una v='null' nunca iguala NULL).
+      params.ExpressionAttributeValues = { ':exp': 'null' };
+      params.ConditionExpression = 'attribute_not_exists(pk) OR #v = :exp';
+    } else {
+      params.ConditionExpression = '#v = :exp';
+    }
+    return dc.put(params).promise();
+  }
+
+  // Transacción multi-hoja con atomicidad real (DynamoDB transact_write_items):
+  // cada hoja se escribe o borra solo si su valor crudo sigue siendo el que
+  // se leyó; si otra escritura se adelantó, toda la transacción se aborta de
+  // forma atómica. Límite de DynamoDB: 100 hojas por transacción.
+  function transactObjectLeaves(segs, oldLeaves, newValue) {
+    var dc = getDocClient();
+    var oldMap = {}; // sk relativo a segs -> json crudo almacenado
+    oldLeaves.forEach(function (l) {
+      oldMap[l.segs.slice(segs.length).join('/')] = JSON.stringify(l.value);
+    });
+    var newMap = {};
+    flatten(newValue, []).forEach(function (l) {
+      newMap[l.segs.join('/')] = JSON.stringify(l.value);
+    });
+    var items = [];
+    var sk;
+    var skPrefix = segs.slice(1).join('/');
+    function fullSk(rel) { return normSk(skPrefix ? skPrefix + '/' + rel : rel); }
+    for (sk in newMap) {
+      var put = { Put: {
+        TableName: AWS_CONFIG.tableName,
+        Item: { pk: segs[0], sk: fullSk(sk), v: newMap[sk] }
+      } };
+      if (Object.prototype.hasOwnProperty.call(oldMap, sk)) {
+        put.Put.ConditionExpression = '#v = :old';
+        put.Put.ExpressionAttributeNames = { '#v': 'v' };
+        put.Put.ExpressionAttributeValues = { ':old': oldMap[sk] };
+      } else {
+        put.Put.ConditionExpression = 'attribute_not_exists(pk)';
+      }
+      items.push(put);
+    }
+    for (sk in oldMap) {
+      if (Object.prototype.hasOwnProperty.call(newMap, sk)) continue;
+      items.push({ Delete: {
+        TableName: AWS_CONFIG.tableName,
+        Key: { pk: segs[0], sk: fullSk(sk) },
+        ConditionExpression: '#v = :old',
+        ExpressionAttributeNames: { '#v': 'v' },
+        ExpressionAttributeValues: { ':old': oldMap[sk] }
+      } });
+    }
+    if (!items.length) return Promise.resolve();
+    return dc.transactWrite({ TransactItems: items }).promise();
   }
 
   // Lee todas las hojas bajo una ruta (hoja exacta + descendientes).
@@ -607,16 +702,67 @@
     return new Ref(this._segs, q);
   };
 
-  // Transacción best-effort: leer, aplicar, escribir (sin atomicidad del servidor)
+  // Transacción con atomicidad real del lado servidor (sin backend nuevo):
+  // - Hojas escalares (contadores, reservas): Put condicional sobre el valor
+  //   leído; si otro escritor se adelantó, reintenta la lectura completa.
+  // - Objetos (p. ej. el voto de encuestas): transact_write_items multi-hoja;
+  //   cada hoja se escribe/borra solo si su valor sigue siendo el leído, así
+  //   que los votos concurrentes ya no se pierden. Si el objeto supera el
+  //   límite de DynamoDB se conserva el best-effort anterior (leer+set).
   Ref.prototype.transaction = function (updateFn, onComplete) {
     var ref = this;
-    var p = ref.once('value').then(function (snap) {
-      var newVal = updateFn(snap.val());
-      if (newVal === undefined) return { committed: false, snapshot: snap };
-      return ref.set(newVal).then(function () {
-        return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
+    var MAX_ATTEMPTS = 6;
+    var MAX_TRANSACT_ITEMS = 90; // margen bajo el límite de 100 de DynamoDB
+    function isScalar(v) { return v === null || v === undefined || typeof v !== 'object'; }
+    function isConditionalCancel(err) {
+      if (!err) return false;
+      if (err.code === 'ConditionalCheckFailedException') return true;
+      if (err.code === 'TransactionCanceledException' && err.CancellationReasons) {
+        return err.CancellationReasons.some(function (r) { return r && r.Code === 'ConditionalCheckFailed'; });
+      }
+      return false;
+    }
+    function run(attempt) {
+      return readLeaves(ref._segs).then(function (leaves) {
+        var cur = unflatten(leaves, ref._segs);
+        var newVal = updateFn(cur);
+        if (newVal === undefined) {
+          var key = ref._segs.length ? ref._segs[ref._segs.length - 1] : null;
+          return { committed: false, snapshot: new DataSnapshot(cur, key) };
+        }
+        var segs = ref._segs;
+        if (isScalar(cur) && isScalar(newVal) && segs.length) {
+          var expectedJson = (cur === null || cur === undefined) ? null : JSON.stringify(cur);
+          return putLeafConditional(segs[0], segs.slice(1).join('/'), JSON.stringify(newVal), expectedJson)
+            .then(function () {
+              notifyLocal(segs);
+              return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
+            })
+            .catch(function (err) {
+              if (isConditionalCancel(err) && attempt < MAX_ATTEMPTS) return run(attempt + 1);
+              throw err;
+            });
+        }
+        if (segs.length) {
+          var newLeaves = flatten(newVal, []);
+          if (leaves.length + newLeaves.length <= MAX_TRANSACT_ITEMS) {
+            return transactObjectLeaves(segs, leaves, newVal)
+              .then(function () {
+                notifyLocal(segs);
+                return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
+              })
+              .catch(function (err) {
+                if (isConditionalCancel(err) && attempt < MAX_ATTEMPTS) return run(attempt + 1);
+                throw err;
+              });
+          }
+        }
+        return ref.set(newVal).then(function () {
+          return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
+        });
       });
-    });
+    }
+    var p = run(1);
     if (typeof onComplete === 'function') {
       p = p.then(function (res) { onComplete(null, res.committed, res.snapshot); return res; },
                  function (err) { onComplete(err, false, null); throw err; });
@@ -751,7 +897,23 @@
       sendPasswordResetEmail: sendPasswordResetEmail,
       confirmPasswordReset: confirmPasswordReset,
       signOut: signOutUser,
-      signInWithPopup: signInWithPopup
+      signInWithPopup: signInWithPopup,
+      // JWT del ID token de Cognito (para autenticar llamadas a lambdas propias)
+      getIdToken: function () {
+        return new Promise(function (resolve) {
+          try {
+            var C = cognitoLib();
+            if (!C) return resolve(null);
+            var cu = getUserPool().getCurrentUser();
+            if (!cu) return resolve(null);
+            cu.getSession(function (err, session) {
+              if (err || !session || !session.isValid()) return resolve(null);
+              try { resolve(session.getIdToken().getJwtToken()); }
+              catch (e) { resolve(null); }
+            });
+          } catch (e) { resolve(null); }
+        });
+      }
     };
     return authInstance;
   }
@@ -1181,6 +1343,38 @@
   // DrexCloud
 
   var databaseSingleton = null;
+
+  // Llamadas a DrexTotpFunction (verificación del lado servidor).
+  // El secreto nunca viaja al cliente: solo se envían códigos de 6 dígitos.
+  function totpApi(path, body) {
+    var base = (AWS_CONFIG.totpFunctionUrl || '').replace(/\/$/, '');
+    if (!base) return Promise.reject(new Error('totp-not-configured'));
+    return getAuth().getIdToken().then(function (jwt) {
+      if (!jwt) throw new Error('totp-no-session');
+      return fetch(base + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwt },
+        body: JSON.stringify(body || {})
+      }).then(function (res) {
+        if (!res.ok) throw new Error('totp-http-' + res.status);
+        return res.json();
+      });
+    });
+  }
+  function totpSetupStart() { return totpApi('/totp/setup/start', {}); }
+  function totpSetupConfirm(code) { return totpApi('/totp/setup/confirm', { code: code }); }
+  function totpVerify(code) { return totpApi('/totp/verify', { code: code }); }
+  function totpDisable(code) { return totpApi('/totp/disable', { code: code }); }
+  function totpBackupRegenerate(code) { return totpApi('/totp/backup/regenerate', { code: code }); }
+  function totpConfigured() { return !!(AWS_CONFIG.totpFunctionUrl || '').trim(); }
+  var totpApiNs = {
+    configured: totpConfigured,
+    setupStart: totpSetupStart,
+    setupConfirm: totpSetupConfirm,
+    verify: totpVerify,
+    disable: totpDisable,
+    backupRegenerate: totpBackupRegenerate
+  };
   var SUPPORT_TABLE = 'drex-support-tickets';
   var SUPPORT_OWNER_EMAIL = 'zam.contact@yahoo.com';
 
@@ -1300,6 +1494,7 @@
     },
     auth: getAuth,
     support: supportApi,
+    totp: totpApiNs,
     // Inicialización opcional por compatibilidad (la config vive arriba)
     initializeApp: function () { return {}; }
   };
