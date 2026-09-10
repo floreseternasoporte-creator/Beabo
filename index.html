@@ -3670,30 +3670,31 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
          REGISTRO — PASO 3: Nombre de usuario
     ══════════════════════════════════════════════ -->
     <!-- ══════════════════════════════════════════════
-         REGISTRO — VERIFICACIÓN DE CORREO
+         REGISTRO — VERIFICACIÓN DE CORREO (código de 6 dígitos)
     ══════════════════════════════════════════════ -->
     <div id="reg-verify-step" class="hidden absolute inset-0 bg-white flex flex-col px-6">
       <div class="flex gap-1.5 pt-5 w-full">
+        <div class="h-1 flex-1 rounded-full" style="background:#24324c;"></div>
         <div class="h-1 flex-1 rounded-full" style="background:#24324c;"></div>
         <div class="h-1 flex-1 rounded-full" style="background:#24324c;"></div>
         <div class="h-1 flex-1 rounded-full" style="background:#dce1e5;"></div>
         <div class="h-1 flex-1 rounded-full" style="background:#dce1e5;"></div>
       </div>
       <div class="flex-1 flex flex-col items-center justify-center text-center px-2">
-        <!-- Ícono sobre animado -->
         <div class="w-24 h-24 rounded-full flex items-center justify-center mb-6" style="background:#eef2f7;">
-          <i class="fa-regular fa-envelope text-5xl" style="color:#24324c;"></i>
+          <i class="fa-regular fa-envelope-open-text text-5xl" style="color:#24324c;"></i>
         </div>
         <h2 class="text-2xl font-bold mb-3" style="color:#24324c;">Verifica tu correo</h2>
-        <p class="text-sm mb-1" style="color:#7b878f;">Enviamos un enlace de verificación a:</p>
+        <p class="text-sm mb-1" style="color:#7b878f;">Escribe el código de 6 dígitos que enviamos a:</p>
         <p id="regVerifyEmailLabel" class="text-sm font-semibold mb-6" style="color:#24324c;"></p>
-        <p class="text-xs leading-relaxed mb-8" style="color:#7b878f;">Abre tu bandeja de entrada, haz clic en el enlace y luego regresa aquí para continuar.</p>
-
-        <button id="regCheckVerifiedBtn" type="button" class="w-full p-4 font-bold rounded-full transition text-white mb-3" style="background:#24324c;">
-          Ya verifiqué mi correo
+        <input id="regVerifyCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" placeholder="123456" aria-label="Código de verificación"
+          class="w-full p-4 mb-6 text-center font-bold rounded-2xl outline-none"
+          style="max-width:250px; font-size:28px; letter-spacing:10px; text-indent:10px; border:2px solid #dce1e5; color:#24324c;" />
+        <button id="regVerifyCodeBtn" type="button" class="w-full p-4 font-bold rounded-full transition text-white mb-3" style="background:#24324c;">
+          Verificar
         </button>
-        <button id="regResendEmailBtn" type="button" class="w-full p-3 text-sm font-medium transition rounded-full" style="border:2px solid #dce1e5; color:#7b878f;">
-          Reenviar correo
+        <button id="regResendCodeBtn" type="button" class="w-full p-3 text-sm font-medium transition rounded-full" style="border:2px solid #dce1e5; color:#7b878f;">
+          Reenviar código
         </button>
         <div id="regVerifyMsg" class="mt-4 text-sm font-medium hidden"></div>
       </div>
@@ -15873,7 +15874,11 @@ function deleteComment(noteId, commentPath) {
 "Verifica tu correo y refuerza el inicio de sesión.":"Verifica tu correo y refuerza el inicio de sesión.",
 "Verificación en dos pasos":"Verificación en dos pasos",
 "Verificando...":"Verificando...",
-"Verificar":"Verificar",
+"Verificar":"Verify",
+"Escribe el código de 6 dígitos que enviamos a:":"Enter the 6-digit code we sent to:",
+"Escribe el código de 6 dígitos que recibiste por correo.":"Enter the 6-digit code you received by email.",
+"Reenviar código":"Resend code",
+"✓ Código reenviado. Revisa tu bandeja de entrada.":"✓ Code resent. Check your inbox.",
 "Versión 2.0 - Actualizada el 17 de Abril, 2026":"Versión 2.0 - Actualizada el 17 de Abril, 2026",
 "Versión 4.0 - Actualizada el 17 de Abril, 2026":"Versión 4.0 - Actualizada el 17 de Abril, 2026",
 "Verás un aviso cuando se detecte un nuevo navegador.":"Verás un aviso cuando se detecte un nuevo navegador.",
@@ -16899,6 +16904,10 @@ function deleteComment(noteId, commentPath) {
       case 'auth/weak-password':         return 'La contraseña es demasiado débil. Usa al menos 6 caracteres.';
       case 'auth/network-request-failed':return 'Error de conexión. Revisa tu internet.';
       case 'auth/too-many-requests':     return 'Demasiados intentos fallidos. Inténtalo más tarde.';
+      case 'auth/needs-confirmation':       return 'Tu correo aún no está verificado. Te enviamos un código.';
+      case 'auth/user-not-confirmed':       return 'Debes verificar tu correo antes de iniciar sesión.';
+      case 'auth/invalid-verification-code':return 'El código no es válido. Revísalo e inténtalo de nuevo.';
+      case 'auth/code-expired':             return 'El código venció. Pide uno nuevo con "Reenviar código".';
       default:                           return 'Ocurrió un error inesperado. Inténtalo de nuevo.';
     }
   }
@@ -17059,6 +17068,13 @@ function deleteComment(noteId, commentPath) {
         localStorage.setItem('drex_last_login_method', 'email');
       })
       .catch(error => {
+        if (error && error.code === 'auth/needs-confirmation') {
+          // La cuenta existe pero el correo no está verificado: pantalla de código
+          showVerifyCodeScreen(error.email || email, password, 'login');
+          submitButton.disabled = false;
+          submitButton.textContent = 'Iniciar sesión';
+          return;
+        }
         if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials') {
           const record = registerFailedLogin(email);
           if (record.lockedUntil && record.lockedUntil > Date.now()) {
@@ -17294,18 +17310,19 @@ function deleteComment(noteId, commentPath) {
 
     DrexCloud.auth().createUserWithEmailAndPassword(email, password)
       .then(userCredential => {
-        regData.email        = email;
-        regData.password     = password;
-        regData.drexUser = userCredential.user;
         btn.disabled = false;
         btn.textContent = 'Continuar';
-        // Enviar correo de verificación en español
-        DrexCloud.auth().languageCode = 'es';
-        userCredential.user.sendEmailVerification().catch(() => {});
-        // Mostrar pantalla de verificación
-        document.getElementById('regVerifyEmailLabel').textContent = email;
-        document.getElementById('regVerifyMsg').classList.add('hidden');
-        showAuthSection(regVerifyStep);
+        if (userCredential && userCredential.needsConfirmation) {
+          // Cognito ya envió el código de verificación al correo: pedir el código
+          regData.email    = email;
+          regData.password = password;
+          showVerifyCodeScreen(userCredential.email || email, password, 'register');
+        } else if (userCredential && userCredential.user) {
+          regData.email    = email;
+          regData.password = password;
+          regData.drexUser = userCredential.user;
+          showAuthSection(regUsernameStep);
+        }
       })
       .catch(error => {
         err.textContent = getFriendlyErrorMessage(error);
@@ -17315,74 +17332,103 @@ function deleteComment(noteId, commentPath) {
       });
   });
 
-  // — PANTALLA VERIFICACIÓN DE CORREO
-  document.getElementById('regCheckVerifiedBtn').addEventListener('click', () => {
-    const btn = document.getElementById('regCheckVerifiedBtn');
+  // — PANTALLA VERIFICACIÓN DE CORREO (código de 6 dígitos) —
+  // La usa el registro (tras crear la cuenta) y el login (si la cuenta aún no está verificada).
+  let pendingVerifyEmail = '';
+  let pendingVerifyPassword = '';
+  let verifyReturnTo = 'register'; // 'register' | 'login'
+
+  function showVerifyCodeScreen(email, password, returnTo) {
+    pendingVerifyEmail = email || '';
+    pendingVerifyPassword = password || '';
+    verifyReturnTo = returnTo || 'register';
+    document.getElementById('regVerifyEmailLabel').textContent = pendingVerifyEmail;
+    const input = document.getElementById('regVerifyCode');
+    input.value = '';
     const msg = document.getElementById('regVerifyMsg');
-    const user = regData.drexUser || DrexCloud.auth().currentUser;
-    if (!user) { showAuthSection(regUsernameStep); return; }
+    msg.classList.add('hidden');
+    const btn = document.getElementById('regVerifyCodeBtn');
+    btn.disabled = false;
+    btn.textContent = 'Verificar';
+    showAuthSection(regVerifyStep);
+    setTimeout(() => { try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (_) {} } }, 350);
+  }
 
-    btn.disabled = true;
-    btn.innerHTML = `<span class="inline-flex items-center gap-2 justify-center"><i class="fas fa-spinner fa-spin"></i><span>Verificando...</span></span>`;
-
-    user.reload().then(() => {
-      if (user.emailVerified) {
-        msg.textContent  = '✓ Correo verificado correctamente.';
-        msg.style.color  = '#58CC02';
-        msg.classList.remove('hidden');
-        btn.disabled = false;
-        btn.textContent = 'Ya verifiqué mi correo';
-        setTimeout(() => showAuthSection(regUsernameStep), 700);
-      } else {
-        msg.textContent  = 'Aún no hemos detectado la verificación. Revisa tu correo y vuelve a intentarlo.';
-        msg.style.color  = '#ff4d4f';
-        msg.classList.remove('hidden');
-        btn.disabled = false;
-        btn.textContent = 'Ya verifiqué mi correo';
-      }
-    }).catch(() => {
-      msg.textContent = 'Error al verificar. Inténtalo de nuevo.';
-      msg.style.color = '#ff4d4f';
-      msg.classList.remove('hidden');
-      btn.disabled = false;
-      btn.textContent = 'Ya verifiqué mi correo';
-    });
+  // Solo dígitos en el campo del código
+  document.getElementById('regVerifyCode').addEventListener('input', e => {
+    const clean = e.target.value.replace(/\D/g, '').slice(0, 6);
+    if (e.target.value !== clean) e.target.value = clean;
   });
 
-  let resendCooldown = false;
-  document.getElementById('regResendEmailBtn').addEventListener('click', () => {
-    const btn = document.getElementById('regResendEmailBtn');
+  document.getElementById('regVerifyCodeBtn').addEventListener('click', () => {
+    const btn = document.getElementById('regVerifyCodeBtn');
     const msg = document.getElementById('regVerifyMsg');
-    const user = regData.drexUser || DrexCloud.auth().currentUser;
-    if (!user || resendCooldown) return;
+    const code = document.getElementById('regVerifyCode').value.trim();
+    if (!/^\d{6}$/.test(code)) {
+      msg.textContent = 'Escribe el código de 6 dígitos que recibiste por correo.';
+      msg.style.color = '#ff4d4f';
+      msg.classList.remove('hidden');
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = `<span class="inline-flex items-center gap-2 justify-center"><i class="fas fa-spinner fa-spin"></i><span>Verificando...</span></span>`;
+    msg.classList.add('hidden');
 
-    resendCooldown = true;
+    DrexCloud.auth().confirmRegistration(pendingVerifyEmail, code)
+      .then(() => DrexCloud.auth().signInWithEmailAndPassword(pendingVerifyEmail, pendingVerifyPassword))
+      .then(userCredential => {
+        btn.disabled = false;
+        btn.textContent = 'Verificar';
+        if (verifyReturnTo === 'register' && userCredential && userCredential.user) {
+          regData.email = pendingVerifyEmail;
+          regData.password = pendingVerifyPassword;
+          regData.drexUser = userCredential.user;
+          showAuthSection(regUsernameStep);
+        }
+        // Si viene del login, el observador de sesión (onAuthStateChanged) lleva a la app.
+      })
+      .catch(error => {
+        msg.textContent = getFriendlyErrorMessage(error);
+        msg.style.color = '#ff4d4f';
+        msg.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Verificar';
+      });
+  });
+
+  let resendCodeCooldown = false;
+  document.getElementById('regResendCodeBtn').addEventListener('click', () => {
+    const btn = document.getElementById('regResendCodeBtn');
+    const msg = document.getElementById('regVerifyMsg');
+    if (!pendingVerifyEmail || resendCodeCooldown) return;
+
+    resendCodeCooldown = true;
     btn.disabled = true;
     btn.textContent = 'Enviando...';
 
-    user.sendEmailVerification().then(() => {
-      msg.textContent = '✓ Correo reenviado. Revisa tu bandeja de entrada.';
+    DrexCloud.auth().resendConfirmation(pendingVerifyEmail).then(() => {
+      msg.textContent = '✓ Código reenviado. Revisa tu bandeja de entrada.';
       msg.style.color = '#58CC02';
       msg.classList.remove('hidden');
       let secs = 30;
-      btn.textContent = `Reenviar correo (${secs}s)`;
+      btn.textContent = `Reenviar código (${secs}s)`;
       const timer = setInterval(() => {
         secs--;
-        btn.textContent = `Reenviar correo (${secs}s)`;
+        btn.textContent = `Reenviar código (${secs}s)`;
         if (secs <= 0) {
           clearInterval(timer);
           btn.disabled = false;
-          btn.textContent = 'Reenviar correo';
-          resendCooldown = false;
+          btn.textContent = 'Reenviar código';
+          resendCodeCooldown = false;
         }
       }, 1000);
-    }).catch(() => {
-      msg.textContent = 'No se pudo reenviar el correo. Inténtalo más tarde.';
+    }).catch(error => {
+      msg.textContent = getFriendlyErrorMessage(error);
       msg.style.color = '#ff4d4f';
       msg.classList.remove('hidden');
       btn.disabled = false;
-      btn.textContent = 'Reenviar correo';
-      resendCooldown = false;
+      btn.textContent = 'Reenviar código';
+      resendCodeCooldown = false;
     });
   });
 
@@ -31629,7 +31675,7 @@ function initSleepModeView() {
   }
   async function openSecurityCenter() { const view = document.getElementById('security-center-view'); if (!view) return; view.classList.remove('hidden'); view.style.display = 'flex'; try { await loadSecurityCenter(); } catch (_) { securityToast('No se pudo cargar por completo el Centro de seguridad.'); } }
   function closeSecurityCenter() { const view = document.getElementById('security-center-view'); if (view) { view.classList.add('hidden'); view.style.display = 'none'; } }
-  async function sendSecurityVerificationEmail() { const user = DrexCloud.auth().currentUser; if (!user) return; if (user.emailVerified) { securityToast('Tu correo ya está verificado.'); return; } try { DrexCloud.auth().languageCode = getAppLanguage?.() || 'es'; await user.sendEmailVerification(); await recordSecurityEvent('Verificación de correo solicitada', 'Se envió un enlace al correo vinculado.'); securityToast('Te enviamos un enlace de verificación al correo vinculado.'); } catch (_) { securityToast('No se pudo enviar el enlace. Inténtalo de nuevo más tarde.'); } }
+  async function sendSecurityVerificationEmail() { const user = DrexCloud.auth().currentUser; if (!user) return; if (user.emailVerified) { securityToast('Tu correo ya está verificado.'); return; } try { DrexCloud.auth().languageCode = getAppLanguage?.() || 'es'; await user.sendEmailVerification(); await recordSecurityEvent('Verificación de correo solicitada', 'Se envió un código al correo vinculado.'); securityToast('Te enviamos un código de verificación al correo vinculado.'); } catch (_) { securityToast('No se pudo enviar el código. Inténtalo de nuevo más tarde.'); } }
   async function sendSecurityRecoveryEmail() { const user = DrexCloud.auth().currentUser; if (!user?.email) return; try { DrexCloud.auth().languageCode = getAppLanguage?.() || 'es'; await DrexCloud.auth().sendPasswordResetEmail(user.email); await recordSecurityEvent('Recuperación solicitada', 'Se envió un enlace para cambiar la contraseña.'); securityToast('Enviamos el enlace de recuperación a tu correo.'); } catch (_) { securityToast('No se pudo enviar el enlace de recuperación.'); } }
   async function closeDrexSecuritySession(sessionId) { const user = DrexCloud.auth().currentUser; if (!user || !sessionId || sessionId === drexSecuritySessionId) return; if (!confirm('¿Cerrar esta sesión de Drex?')) return; await DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}/sessions/${sessionId}`).update({ active:false, endedAt:Date.now() }); await recordSecurityEvent('Sesión cerrada', 'Se cerró una sesión reconocida desde el Centro de seguridad.'); await loadSecurityCenter(); }
   async function endOtherDrexSessions() { const user = DrexCloud.auth().currentUser; if (!user || !drexSecuritySessionId) return; if (!confirm('¿Cerrar todas las demás sesiones de Drex? Los otros navegadores serán desconectados cuando vuelvan a la aplicación.')) return; const stamp = Date.now(); const root = DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}`); const sessions = (await root.child('sessions').once('value')).val() || {}; const updates = { revokeOtherSessions: { timestamp:stamp, exceptSessionId:drexSecuritySessionId } }; Object.keys(sessions).filter(id => id !== drexSecuritySessionId).forEach(id => { updates[`sessions/${id}/active`] = false; updates[`sessions/${id}/endedAt`] = stamp; }); await root.update(updates); await recordSecurityEvent('Otras sesiones cerradas', 'Se solicitó el cierre de las demás sesiones de Drex.'); securityToast('Solicitamos el cierre de las demás sesiones.'); await loadSecurityCenter(); }

@@ -12,9 +12,12 @@
  *   Ej: ref('users/abc/name').set('Zed') -> pk='users', sk='abc/name', v='"Zed"'
  *
  * PENDIENTES DOCUMENTADOS (los resuelve el backend, no este archivo):
- *  1. Lambda PreSignUp de autoconfirmación en el User Pool: hoy Cognito exige
- *     verificar el email con un código al registrarse; la app espera acceso
- *     inmediato tras crear la cuenta.
+ *  1. Verificación de email por código: el User Pool debe exigir verificación
+ *     (SIN lambda PreSignUp de autoconfirmación) y usar la plantilla de correo
+ *     personalizada de Drex (ver ~/workspace/beabo-aws/verify-email-template.md).
+ *     Flujo en app: createUser -> { needsConfirmation: true } -> pantalla de
+ *     código -> confirmRegistration -> signIn. Login sin confirmar ->
+ *     error auth/needs-confirmation -> pantalla de código.
  *  2. Login social (Google/Facebook/X): falta configurar los OAuth client IDs
  *     en Cognito. signInWithPopup muestra un aviso amable y no rompe el flujo.
  *  3. Recuperación de contraseña: puente temporal con prompt() para el código
@@ -199,13 +202,19 @@
     return chain;
   }
 
+  // DynamoDB no permite cadenas vacías en las claves: las rutas de un solo
+  // segmento (p. ej. 'userCount') se guardan con este centinela como sort key,
+  // y se traduce de vuelta al leer. Ningún segmento real usa '#'.
+  var EMPTY_SK = '#';
+  function normSk(sk) { return (sk === '' || sk === null || sk === undefined) ? EMPTY_SK : sk; }
+
   function putLeaf(pk, sk, value) {
     return {
-      PutRequest: { Item: { pk: pk, sk: sk, v: JSON.stringify(value === undefined ? null : value) } }
+      PutRequest: { Item: { pk: pk, sk: normSk(sk), v: JSON.stringify(value === undefined ? null : value) } }
     };
   }
   function deleteKey(pk, sk) {
-    return { DeleteRequest: { Key: { pk: pk, sk: sk } } };
+    return { DeleteRequest: { Key: { pk: pk, sk: normSk(sk) } } };
   }
 
   // Lee todas las hojas bajo una ruta (hoja exacta + descendientes).
@@ -239,7 +248,9 @@
     return Promise.all(jobs).then(function (parts) {
       var items = parts[0].concat(parts[1] || []);
       return items.map(function (it) {
-        var skSegs = String(it.sk === undefined || it.sk === null ? '' : it.sk).split('/').filter(function (s) { return s !== ''; });
+        var rawSk = (it.sk === undefined || it.sk === null) ? '' : String(it.sk);
+        if (rawSk === EMPTY_SK) rawSk = ''; // centinela de ruta de un segmento
+        var skSegs = rawSk.split('/').filter(function (s) { return s !== ''; });
         var v;
         try { v = JSON.parse(it.v); } catch (e) { v = null; }
         return { segs: [pk].concat(skSegs), value: v };
@@ -741,6 +752,8 @@
       },
       signInWithEmailAndPassword: signInWithEmailAndPassword,
       createUserWithEmailAndPassword: createUserWithEmailAndPassword,
+      confirmRegistration: confirmRegistration,
+      resendConfirmation: resendConfirmation,
       sendPasswordResetEmail: sendPasswordResetEmail,
       signOut: signOutUser,
       signInWithPopup: signInWithPopup
@@ -877,7 +890,18 @@
             resolve({ user: user });
           }, reject);
         },
-        onFailure: function (err) { reject(mapAuthError(err)); },
+        onFailure: function (err) {
+          if (err && err.code === 'UserNotConfirmedException') {
+            // La cuenta existe pero el email no está verificado: la app debe
+            // llevar al usuario a la pantalla de código de verificación.
+            var need = new Error('Tu correo aún no está verificado. Escribe el código que te enviamos.');
+            need.code = 'auth/needs-confirmation';
+            need.email = String(email).trim();
+            reject(need);
+            return;
+          }
+          reject(mapAuthError(err));
+        },
         newPasswordRequired: function () {
           reject(Object.assign(new Error('Debes restablecer tu contraseña.'), { code: 'auth/password-reset-required' }));
         }
@@ -895,14 +919,58 @@
       getUserPool().signUp(cleanEmail, String(password), attrs, null, function (err, result) {
         if (err) { reject(mapAuthError(err)); return; }
         if (result && result.userConfirmed) {
-          // Autoconfirmado (lambda PreSignUp): entrar de inmediato
+          // Autoconfirmado: entrar de inmediato
           signInWithEmailAndPassword(cleanEmail, String(password)).then(resolve, reject);
         } else {
-          // PENDIENTE lambda de autoconfirmación: hoy Cognito pide código por email
-          var e = new Error('Cuenta creada. Revisa tu correo para verificarla e inicia sesión.');
-          e.code = 'auth/email-not-verified';
-          reject(e);
+          // Cognito envió el código de verificación al correo automáticamente.
+          // La app muestra la pantalla de código y luego llama a confirmRegistration.
+          resolve({ user: null, needsConfirmation: true, email: cleanEmail });
         }
+      });
+    });
+  }
+
+  // Confirma la cuenta con el código de 6 dígitos enviado al correo.
+  // Resuelve con 'CONFIRMED' (o 'ALREADY_CONFIRMED' si ya estaba verificada).
+  function confirmRegistration(email, code) {
+    getAuth();
+    var C = cognitoLib();
+    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    var cleanEmail = String(email).trim();
+    var cleanCode = String(code).trim();
+    if (!/^\d{6}$/.test(cleanCode)) {
+      var bad = new Error('Escribe el código de 6 dígitos que recibiste por correo.');
+      bad.code = 'auth/invalid-verification-code';
+      return Promise.reject(bad);
+    }
+    var cognitoUser = new C.CognitoUser({ Username: cleanEmail, Pool: getUserPool() });
+    return new Promise(function (resolve, reject) {
+      cognitoUser.confirmRegistration(cleanCode, true, function (err, result) {
+        if (err) {
+          // Si ya estaba confirmada (p. ej. doble envío), no es un error real.
+          var msg = String((err && err.message) || '');
+          if (err.code === 'NotAuthorizedException' && /confirm/i.test(msg)) {
+            resolve('ALREADY_CONFIRMED');
+            return;
+          }
+          reject(mapAuthError(err));
+          return;
+        }
+        resolve(result || 'CONFIRMED');
+      });
+    });
+  }
+
+  // Reenvía el código de verificación al correo.
+  function resendConfirmation(email) {
+    getAuth();
+    var C = cognitoLib();
+    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    var cleanEmail = String(email).trim();
+    var cognitoUser = new C.CognitoUser({ Username: cleanEmail, Pool: getUserPool() });
+    return new Promise(function (resolve, reject) {
+      cognitoUser.resendConfirmationCode(function (err, result) {
+        if (err) reject(mapAuthError(err)); else resolve(result);
       });
     });
   }
