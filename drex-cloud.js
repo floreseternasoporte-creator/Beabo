@@ -759,6 +759,7 @@
       confirmRegistration: confirmRegistration,
       resendConfirmation: resendConfirmation,
       sendPasswordResetEmail: sendPasswordResetEmail,
+      confirmPasswordReset: confirmPasswordReset,
       signOut: signOutUser,
       signInWithPopup: signInWithPopup
     };
@@ -979,8 +980,9 @@
     });
   }
 
-  // Puente temporal: Cognito envía un CÓDIGO (no un enlace). Se pide por prompt()
-  // hasta tener una pantalla propia de recuperación.
+  // Cognito envía un CÓDIGO de 6 dígitos por correo (no un enlace).
+  // Esta función solo envía el código; la pantalla de la app pide el PIN
+  // y la nueva contraseña en su propia sección estilo Instagram.
   function sendPasswordResetEmail(email) {
     getAuth();
     var C = cognitoLib();
@@ -989,19 +991,21 @@
     var cognitoUser = new C.CognitoUser({ Username: cleanEmail, Pool: getUserPool() });
     return new Promise(function (resolve, reject) {
       cognitoUser.forgotPassword({
-        onSuccess: function () {
-          try {
-            if (typeof global.prompt !== 'function') { resolve(); return; }
-            var code = global.prompt('Te enviamos un código a ' + cleanEmail + '. Escríbelo aquí:');
-            if (!code) { reject(Object.assign(new Error('Cancelado'), { code: 'auth/cancelled' })); return; }
-            var np = global.prompt('Escribe tu nueva contraseña (mínimo 6 caracteres):');
-            if (!np) { reject(Object.assign(new Error('Cancelado'), { code: 'auth/cancelled' })); return; }
-            cognitoUser.confirmPassword(String(code).trim(), String(np), {
-              onSuccess: function () { resolve(); },
-              onFailure: function (err2) { reject(mapAuthError(err2)); }
-            });
-          } catch (e) { reject(mapAuthError(e)); }
-        },
+        onSuccess: function () { resolve(); },
+        onFailure: function (err) { reject(mapAuthError(err)); }
+      });
+    });
+  }
+
+  // Confirma el PIN de recuperación y fija la nueva contraseña.
+  function confirmPasswordReset(email, code, newPassword) {
+    getAuth();
+    var C = cognitoLib();
+    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    var cognitoUser = new C.CognitoUser({ Username: String(email).trim(), Pool: getUserPool() });
+    return new Promise(function (resolve, reject) {
+      cognitoUser.confirmPassword(String(code).trim(), String(newPassword), {
+        onSuccess: function () { resolve(); },
         onFailure: function (err) { reject(mapAuthError(err)); }
       });
     });
