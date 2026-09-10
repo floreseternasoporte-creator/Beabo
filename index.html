@@ -17530,6 +17530,7 @@ function saveNote() {
       updates[p + 'isPrivate'] = isMinorRestricted ? true : false;
       updates[p + 'dmPermission'] = isMinorRestricted ? 'friends' : 'all';
       updates[p + 'registrationTimestamp'] = Date.now();
+      updates[p + 'profileDegraded'] = null;
       updates[p + 'founder'] = false;
       if (firstClaim) {
         updates[p + 'bio'] = '';
@@ -17955,7 +17956,12 @@ function saveNote() {
 
         // Sin registro completo no se entra a la app: se completa el flujo
         // (edad, username, foto) en vez de usar un perfil degradado.
-        if (!data || !data.registrationTimestamp) {
+        // Los usuarios antiguos no tienen registrationTimestamp: se consideran
+        // completos si ya tienen username. Los perfiles degradados (Facebook o
+        // registro interrumpido) llevan la marca profileDegraded.
+        const needsCompletion = !data || data.profileDegraded === true ||
+          (!data.registrationTimestamp && !data.username);
+        if (needsCompletion) {
           startRegistrationCompletion(user, data);
           return;
         }
@@ -24517,6 +24523,7 @@ const _startChatListeners = () => {
         profileImage: existing.profileImage || user.photoURL || '',
         lastChatLoginAt: Date.now()
       };
+      if (!existing.username) updates.profileDegraded = true;
       return ref.update(updates);
     }).catch(() => {});
   }
