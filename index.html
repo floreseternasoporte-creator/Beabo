@@ -9819,22 +9819,12 @@ function saveNote() {
 
   function switchCommunityTab(tab) {
     const feedTab = document.getElementById('feed-tab');
-    const photosTab = document.getElementById('photos-tab');
     const notesFeed = document.getElementById('notes-feed');
-    const photosFeed = document.getElementById('photos-feed');
 
     if (tab === 'feed') {
       if (feedTab) feedTab.classList.add('text-[#1c2b4a]', 'border-b-2', 'border-[#0084FF]');
-      if (photosTab) photosTab.classList.remove('text-[#1c2b4a]', 'border-b-2', 'border-[#0084FF]');
       if (notesFeed) notesFeed.classList.remove('hidden');
-      if (photosFeed) photosFeed.classList.add('hidden');
       loadNotes(false);
-    } else if (tab === 'photos') {
-      if (photosTab) photosTab.classList.add('text-[#1c2b4a]', 'border-b-2', 'border-[#0084FF]');
-      if (feedTab) feedTab.classList.remove('text-[#1c2b4a]', 'border-b-2', 'border-[#0084FF]');
-      if (photosFeed) photosFeed.classList.remove('hidden');
-      if (notesFeed) notesFeed.classList.add('hidden');
-      loadPhotos();
     }
   }
 
@@ -12233,6 +12223,10 @@ function saveNote() {
     refreshHistorialIfVisible();
   }
 
+  // showToast existía como llamadas pero nunca se definió (ReferenceError).
+  // Se comporta igual que showMiniToast.
+  function showToast(msg) { showMiniToast(msg); }
+
   function showMiniToast(msg) {
     let toast = document.getElementById('mini-toast');
     if (!toast) {
@@ -12622,7 +12616,9 @@ function saveNote() {
   }
 
   function getSafeMediaUrl(url, fallback = '') {
-    const value = String(url || '').trim();
+    // Caracteres de control (incl. \r\n) nunca son válidos en una URL y
+    // romperían el literal entre comillas en handlers inline.
+    const value = String(url || '').replace(/[\x00-\x1F\x7F]/g, '').trim();
     if (!value) return fallback;
     try {
       const parsed = new URL(value, window.location.origin);
@@ -12638,7 +12634,7 @@ function saveNote() {
   // URL validada para medios (http/https/data:image) en bruto, sin escapar:
   // para usar como valor JS (p. ej. img.src por propiedad o arrays).
   function getSafeMediaUrlRaw(url) {
-    const value = String(url || '').trim();
+    const value = String(url || '').replace(/[\x00-\x1F\x7F]/g, '').trim();
     if (!value) return '';
     try {
       const parsed = new URL(value, window.location.origin);
@@ -12656,7 +12652,7 @@ function saveNote() {
   // esquema y escapa sin entidades HTML (el parser HTML las decodificaría
   // antes de compilar el handler y rompería la cadena JS).
   function getSafeMediaUrlInlineJs(url) {
-    const value = String(url || '').trim();
+    const value = String(url || '').replace(/[\x00-\x1F\x7F]/g, '').trim();
     if (!value) return '';
     try {
       const parsed = new URL(value, window.location.origin);
@@ -28216,7 +28212,7 @@ function shareToTikTok() {
       url: window.location.href
     });
   } else {
-    window.open(url, '_blank', 'width=600,height=400');
+    window.open(url, '_blank', 'noopener,width=600,height=400');
   }
 
   recordShare('tiktok');
