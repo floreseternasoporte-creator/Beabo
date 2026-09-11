@@ -1,0 +1,56 @@
+name: Validar código
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sintaxis de archivos JS
+        run: |
+          for f in drex-cloud.js server.js sw.js; do
+            echo "== $f"
+            node --check "$f"
+          done
+
+      - name: Sintaxis de scripts inline en index.html
+        run: |
+          python3 - <<'EOF'
+          import re, subprocess, os
+          s = open('index.html', encoding='utf-8').read()
+          blocks = re.findall(r'<script(?![^>]*src=)[^>]*>(.*?)</script>', s, re.S)
+          os.makedirs('/tmp/jscheck', exist_ok=True)
+          for i, b in enumerate(blocks):
+              p = f'/tmp/jscheck/b{i:02d}.js'
+              open(p, 'w', encoding='utf-8').write(b)
+              r = subprocess.run(['node', '--check', p], capture_output=True, text=True)
+              if r.returncode != 0:
+                  print(f'ERROR de sintaxis en bloque inline #{i}:')
+                  print(r.stderr[:800])
+                  raise SystemExit(1)
+          print(f'{len(blocks)} bloques inline OK')
+          EOF
+
+      - name: Prueba de humo de server.js
+        run: |
+          node server.js & SRV=$!
+          sleep 1
+          code() { curl -s -o /dev/null -w "%{http_code}" "http://localhost:5000$1"; }
+          test "$(code /)" = "200"          || { echo "FAIL /"; exit 1; }
+          test "$(code /server.js)" = "404"  || { echo "FAIL /server.js"; exit 1; }
+          test "$(code /.replit)" = "404"    || { echo "FAIL /.replit"; exit 1; }
+          test "$(code /%2e%2e/%2e%2e/etc/passwd)" = "403" || { echo "FAIL traversal"; exit 1; }
+          test "$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:5000/api/x)" = "405" || { echo "FAIL POST"; exit 1; }
+          kill $SRV
+          echo "server.js OK"
