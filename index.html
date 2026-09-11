@@ -9683,13 +9683,20 @@ function saveNote() {
   }
 
   function handleNoteImagePreviewFullscreen(event, source = 'gallery') {
-    const selectedFiles = Array.from(event.target.files || []);
+    try {
+    const input = event.target;
+    const selectedFiles = Array.from(input.files || []);
     const isCameraSource = source === 'camera';
     const maxFiles = isCameraSource ? 1 : 20;
     const files = selectedFiles.slice(0, maxFiles);
-    if (!files.length) return;
+    // Limpiar el input para permitir seleccionar la misma foto de nuevo
+    input.value = '';
+    if (!files.length) {
+      alert('No se pudo leer la foto seleccionada. Intenta de nuevo.');
+      return;
+    }
 
-    const hasStickerSelected = pendingStickers['note-content-fullscreen'];
+    const hasStickerSelected = typeof pendingStickers !== 'undefined' && pendingStickers['note-content-fullscreen'];
     if (hasStickerSelected) {
       alert('❌ Error: No puedes agregar fotos si ya has seleccionado un sticker. Por favor, elimina el sticker primero.');
       event.target.value = '';
@@ -9712,11 +9719,22 @@ function saveNote() {
         previewEl.className = 'w-full aspect-square object-cover bg-black/5 rounded-lg border border-gray-300';
         previewGrid.appendChild(previewEl);
       };
-      reader.readAsDataURL(file);
+      reader.onerror = function() {
+        alert('No se pudo leer una de las fotos. Intenta con otra imagen.');
+      };
+      try {
+        reader.readAsDataURL(file);
+      } catch (readErr) {
+        alert('Error al leer la foto: ' + (readErr.message || 'intenta de nuevo'));
+      }
     });
 
     counter.textContent = `${files.length} foto${files.length === 1 ? '' : 's'} seleccionada${files.length === 1 ? '' : 's'} (máximo ${isCameraSource ? 1 : 20})`;
     document.getElementById('image-preview-fullscreen').classList.remove('hidden');
+    } catch (err) {
+      console.error('Error al procesar foto:', err);
+      alert('Error al agregar la foto: ' + (err.message || 'intenta de nuevo'));
+    }
   }
 
   function removeImageFullscreen(keepGifSelectionState = false) {
