@@ -12407,6 +12407,25 @@ function saveNote() {
     }, 2000);
   }
 
+  // Los alert() nativos bloquean la app y en iOS se acumulan como ventanas
+  // emergentes repetidas ("muchos errores"). Se convierten en avisos no
+  // bloqueantes (toast). Los confirm() se dejan intactos porque necesitan
+  // la respuesta del usuario.
+  (function() {
+    let nativeAlert = null;
+    try { nativeAlert = window.alert.bind(window); } catch (_) {}
+    window.alert = function(msg) {
+      try {
+        const text = String(msg == null ? '' : msg);
+        if (typeof showMiniToast === 'function' && text) {
+          showMiniToast(text.length > 140 ? text.slice(0, 137) + '...' : text);
+          return;
+        }
+      } catch (_) {}
+      if (nativeAlert) nativeAlert(msg);
+    };
+  })();
+
   async function shareRepost(note, reposterName = 'Alguien') {
     const shareText = `🔁 ${reposterName} hizo Repost en Drex\n\n${(note?.content || '').trim() || 'Mira este post.'}`;
     const shareUrl = `${location.origin}${location.pathname}#post-${note?.id || ''}`;
@@ -17092,6 +17111,8 @@ function saveNote() {
     isRegistering = true;
     const soBtn = document.getElementById('regBirthdateSignOut');
     if (soBtn) soBtn.style.display = 'none';
+    const backBtnN = document.getElementById('backFromRegBirthdate');
+    if (backBtnN) backBtnN.style.visibility = 'visible';
     showAuthSection(regNameStep);
   });
 
@@ -18108,9 +18129,13 @@ function saveNote() {
     const afc = document.getElementById('auth-form'); if (afc) afc.classList.remove('hidden');
     const ma = document.getElementById('main-app'); if (ma) ma.classList.add('hidden');
     // En modo completar-registro mostrar opción de cerrar sesión por si
-    // el usuario entró con la cuenta equivocada (evita quedar atrapado)
+    // el usuario entró con la cuenta equivocada (evita quedar atrapado).
+    // Además se oculta la flecha de "atrás": en este modo no hay paso
+    // anterior válido (el paso de nombre no aplica) y solo confundiría.
     const soBtn = document.getElementById('regBirthdateSignOut');
     if (soBtn) soBtn.style.display = 'block';
+    const backBtn = document.getElementById('backFromRegBirthdate');
+    if (backBtn) backBtn.style.visibility = 'hidden';
     showAuthSection(regBirthdateStep);
   }
 
