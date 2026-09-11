@@ -631,6 +631,10 @@
     return r;
   };
 
+  // NOTA: se eliminó Ref.prototype.then (hacía al Ref "thenable" y provocaba
+  // asimilación recursiva infinita: `await ref.push(x)` nunca resolvía).
+  // Para esperar la escritura: `await ref.push(valor)._writePromise`.
+
   Ref.prototype.remove = function () {
     var segs = this._segs;
     return deleteSubtree(segs).then(function () { notifyLocal(segs); return null; });
@@ -663,11 +667,13 @@
 
   Ref.prototype.off = function (eventType, cb) {
     var path = this._segs.join('/');
+    var query = JSON.stringify(this._query || null);
     for (var i = listeners.length - 1; i >= 0; i--) {
       var l = listeners[i];
       var sameRef = l.ref._segs.join('/') === path;
+      var sameQuery = JSON.stringify(l.ref._query || null) === query;
       var sameEvent = !eventType || l.eventType === eventType;
-      if (sameRef && sameEvent && (!cb || l.cb === cb)) {
+      if (sameRef && sameQuery && sameEvent && (!cb || l.cb === cb)) {
         if (l._deb) clearTimeout(l._deb);
         listeners.splice(i, 1);
       }
@@ -708,7 +714,17 @@
   // - Objetos (p. ej. el voto de encuestas): transact_write_items multi-hoja;
   //   cada hoja se escribe/borra solo si su valor sigue siendo el leído, así
   //   que los votos concurrentes ya no se pierden. Si el objeto supera el
-  //   límite de DynamoDB se conserva el best-effort anterior (leer+set).
+  //   límite de DynamoDB (90 hojas) se usa optimistic locking: releer y solo
+  //   escribir si nadie cambió los datos; si no, reintentar con datos frescos.
+  // Huella canónica de un conjunto de hojas para comparar lecturas
+  // (el orden de readLeaves no es determinista, por eso se ordena).
+  function leavesFingerprint(leaves) {
+    return (leaves || [])
+      .map(function (l) { return l.segs.join('/') + '=' + JSON.stringify(l.value); })
+      .sort()
+      .join('\n');
+  }
+
   Ref.prototype.transaction = function (updateFn, onComplete) {
     var ref = this;
     var MAX_ATTEMPTS = 6;
@@ -757,8 +773,18 @@
               });
           }
         }
-        return ref.set(newVal).then(function () {
-          return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
+        // Más de 90 hojas: no cabe en una TransactWriteItems de DynamoDB.
+        // Optimistic locking en vez de set() ciego: releer y escribir solo si
+        // nadie modificó los datos; si hubo cambios concurrentes, reintentar
+        // con datos frescos en lugar de sobrescribirlos en silencio.
+        return readLeaves(ref._segs).then(function (freshLeaves) {
+          if (leavesFingerprint(freshLeaves) !== leavesFingerprint(leaves)) {
+            if (attempt < MAX_ATTEMPTS) return run(attempt + 1);
+            throw new Error('transaction(): contención excesiva, intente de nuevo');
+          }
+          return ref.set(newVal).then(function () {
+            return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
+          });
         });
       });
     }

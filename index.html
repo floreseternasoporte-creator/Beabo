@@ -8479,8 +8479,23 @@ function saveNote() {
     }
   }
 
+  // Refs de los listeners permanentes de loadUserStats: se guardan para
+  // poder detacharlos al cerrar sesión o al recargar stats (evita fugas y
+  // lecturas duplicadas tras re-login).
+  let _userStatsRefs = [];
+
+  function clearUserStats() {
+    _userStatsRefs.forEach(r => { try { r.off('value'); } catch (e) {} });
+    _userStatsRefs = [];
+  }
+
   function loadUserStats(userId) {
-    DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(userId).on('value', postsSnapshot => {
+    clearUserStats(); // evita duplicar listeners si se llama dos veces
+    const _db = DrexCloud.database();
+
+    const _postsRef = _db.ref('communityNotes').orderByChild('authorId').equalTo(userId);
+    _userStatsRefs.push(_postsRef);
+    _postsRef.on('value', postsSnapshot => {
       const postsCount = postsSnapshot.numChildren();
 
       const profilePostsTitle = document.getElementById('profile-posts-title');
@@ -8502,7 +8517,9 @@ function saveNote() {
       loadUserPostsGrid(postsSnapshot);
     });
 
-    DrexCloud.database().ref('userReposts/' + userId).on('value', repostsSnapshot => {
+    const _repostsRef = _db.ref('userReposts/' + userId);
+    _userStatsRefs.push(_repostsRef);
+    _repostsRef.on('value', repostsSnapshot => {
       const repostsCount = repostsSnapshot.numChildren();
       const profileRepostsCountDesktop = document.getElementById('profile-reposts-count-desktop');
       const sidebarRepostsCount = document.getElementById('sidebar-reposts-count');
@@ -8512,7 +8529,9 @@ function saveNote() {
       loadUserRepostsGrid(repostsSnapshot);
     });
 
-    DrexCloud.database().ref('users/' + userId + '/followersCount').on('value', snapshot => {
+    const _followersRef = _db.ref('users/' + userId + '/followersCount');
+    _userStatsRefs.push(_followersRef);
+    _followersRef.on('value', snapshot => {
       const followersCount = snapshot.val() || 0;
       const sidebarFollowersCount = document.getElementById('sidebar-followers-count');
       if (sidebarFollowersCount) sidebarFollowersCount.textContent = followersCount;
@@ -8583,12 +8602,12 @@ function saveNote() {
     const noteId = post.id || '';
 
     card.innerHTML = `
-      <div class="flex items-start gap-2 cursor-pointer" onclick="openCommentsView('${noteId}')">
-        <img src="${post.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-8 h-8 rounded-full object-cover flex-shrink-0" alt="${post.authorName || 'Usuario'}">
+      <div class="flex items-start gap-2 cursor-pointer" onclick="openCommentsView('${escapeInlineSingleQuote(noteId)}')">
+        <img src="${getSafeMediaUrl(post.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-8 h-8 rounded-full object-cover flex-shrink-0" alt="${escapeHTML(post.authorName || 'Usuario')}">
         <div class="flex-1 min-w-0">
-          <p class="font-semibold text-xs text-gray-800">${post.authorName || 'Usuario'}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')}</p>
+          <p class="font-semibold text-xs text-gray-800">${escapeHTML(post.authorName || 'Usuario')}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')}</p>
           ${renderNoteAnchoredMeta(post)}
-          ${post.content ? `<p class="text-xs text-gray-700 mt-1 line-clamp-3">${post.content}</p>` : ''}
+          ${post.content ? renderContentWithSticker(post.content, 'text-xs text-gray-700 mt-1 line-clamp-3') : ''}
           ${renderNoteImages(post, noteId)}
           <div class="mt-2 flex items-center gap-2 text-xs text-gray-500">
             <span>${formatRelativeTime(post.timestamp)}</span>
@@ -8596,14 +8615,14 @@ function saveNote() {
         </div>
       </div>
       <div class="mt-3 pt-3 border-t border-[#eef2f7] flex items-center gap-3 text-[#6b7280]">
-        <button onclick="votePost('${noteId}', 'up')" class="vote-star flex items-center gap-1" aria-label="Dar Like">
+        <button onclick="votePost('${escapeInlineSingleQuote(noteId)}', 'up')" class="vote-star flex items-center gap-1" aria-label="Dar Like">
           <svg class="like-icon-sm" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 20.6C6.9 16.6 3.6 13.4 3.6 9.7 3.6 7.2 5.6 5.2 8.1 5.2c1.6 0 3 .8 3.9 2 .9-1.2 2.3-2 3.9-2 2.5 0 4.5 2 4.5 4.5 0 3.7-3.3 6.9-8.4 10.9z"/>
           </svg>
         </button>
         <span class="text-xs font-bold">${formatVoteScore(score)}</span>
-        <button onclick="openCommentsView('${noteId}')" class="flex items-center gap-1 text-xs font-bold hover:text-[#5c6974]">${commentsCount}</button>
-        <button onclick="toggleRepost('${noteId}')" class="repost-btn" aria-label="Repostear publicación">
+        <button onclick="openCommentsView('${escapeInlineSingleQuote(noteId)}')" class="flex items-center gap-1 text-xs font-bold hover:text-[#5c6974]">${commentsCount}</button>
+        <button onclick="toggleRepost('${escapeInlineSingleQuote(noteId)}')" class="repost-btn" aria-label="Repostear publicación">
           <svg class="repost-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <path d="M17 1L21 5L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M3 11V9C3 7.93913 3.42143 6.92172 4.17157 6.17157C4.92172 5.42143 5.93913 5 7 5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -8636,11 +8655,11 @@ function saveNote() {
         Reposteado ${formatRelativeTime(payload?.timestamp || Date.now())}
       </div>
       <div class="flex items-start gap-2">
-        <img src="${originalPost?.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-8 h-8 rounded-full object-cover flex-shrink-0">
+        <img src="${getSafeMediaUrl(originalPost?.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-8 h-8 rounded-full object-cover flex-shrink-0">
         <div class="flex-1 min-w-0">
-          <p class="font-semibold text-xs text-gray-800">${originalPost?.authorName || payload?.originalAuthorName || 'Usuario'}${getVerificationIconByAuthor(originalPost?.authorEmail || '', originalPost?.authorId || '')}</p>
+          <p class="font-semibold text-xs text-gray-800">${escapeHTML(originalPost?.authorName || payload?.originalAuthorName || 'Usuario')}${getVerificationIconByAuthor(originalPost?.authorEmail || '', originalPost?.authorId || '')}</p>
           ${renderNoteAnchoredMeta(originalPost || {})}
-          <p class="text-xs text-gray-700 mt-1 line-clamp-3">${originalPost?.content || 'Publicación sin texto'}</p>
+          ${originalPost?.content ? renderContentWithSticker(originalPost.content, 'text-xs text-gray-700 mt-1 line-clamp-3') : '<p class="text-xs text-gray-700 mt-1 line-clamp-3">Publicación sin texto</p>'}
           ${renderNoteImages(originalPost || {}, originalPost?.id || '')}
         </div>
       </div>
@@ -9579,6 +9598,11 @@ function saveNote() {
     updateCharRing(textarea.value.length, getCurrentNoteMaxLength());
   }
 
+  function closeNoteAudienceSelector() {
+    const dd = document.getElementById('audience-dropdown');
+    if (dd) dd.classList.add('hidden');
+  }
+
   function closeNoteCreationFullscreen() {
     saveCurrentNoteDraft(false);
     const panel = document.getElementById('note-creation-fullscreen');
@@ -9998,12 +10022,17 @@ function saveNote() {
 
     const renderImageContainer = (img, index, total) => {
       const safeImg = escapeHtml(img);
+      // Para el handler inline se usa la URL validada y escapada para string
+      // JS (escapeHtml dejaría &#039; que el parser HTML decodifica antes de
+      // compilar el handler y rompería la cadena).
+      const safeImgJs = getSafeMediaUrlInlineJs(img);
+      const safeNoteIdJs = escapeInlineSingleQuote(noteIdForModal);
       if (isCarrete) {
         return `
         <div class="w-full flex-shrink-0 snap-center relative">
           <div class="feed-carrete-sprockets feed-carrete-sprockets-top"></div>
           <div class="feed-carrete-frame">
-            <img src="${safeImg}" alt="Imagen ${index + 1}" onclick="event.stopPropagation(); openImageModal('${safeImg}', '${noteIdForModal}', this)" onerror="this.onerror=null;this.closest('.feed-carrete-frame').innerHTML='<div class=&quot;w-full h-40 flex items-center justify-center text-[#9aa4ae] text-xs font-semibold&quot;>Imagen no disponible</div>'" class="w-full h-auto max-h-[80vh] object-contain cursor-pointer">
+            <img src="${safeImg}" alt="Imagen ${index + 1}" onclick="event.stopPropagation(); openImageModal('${safeImgJs}', '${safeNoteIdJs}', this)" onerror="this.onerror=null;this.closest('.feed-carrete-frame').innerHTML='<div class=&quot;w-full h-40 flex items-center justify-center text-[#9aa4ae] text-xs font-semibold&quot;>Imagen no disponible</div>'" class="w-full h-auto max-h-[80vh] object-contain cursor-pointer">
           </div>
           <div class="feed-carrete-sprockets feed-carrete-sprockets-bottom"></div>
         </div>
@@ -10011,7 +10040,7 @@ function saveNote() {
       }
       return `
       <div class="feed-post-media feed-post-carousel-slide w-full flex-shrink-0 snap-center relative">
-        <img src="${safeImg}" alt="Imagen ${index + 1}" onclick="event.stopPropagation(); openImageModal('${safeImg}', '${noteIdForModal}', this)" onerror="this.onerror=null;this.closest('.feed-post-media').innerHTML='<div class=&quot;w-full h-40 flex items-center justify-center bg-[#f0f4f9] text-[#9aa4ae] text-xs font-semibold&quot;>Imagen no disponible</div>'" class="w-full h-auto max-h-[80vh] object-contain cursor-pointer">
+        <img src="${safeImg}" alt="Imagen ${index + 1}" onclick="event.stopPropagation(); openImageModal('${safeImgJs}', '${safeNoteIdJs}', this)" onerror="this.onerror=null;this.closest('.feed-post-media').innerHTML='<div class=&quot;w-full h-40 flex items-center justify-center bg-[#f0f4f9] text-[#9aa4ae] text-xs font-semibold&quot;>Imagen no disponible</div>'" class="w-full h-auto max-h-[80vh] object-contain cursor-pointer">
       </div>
     `;
     };
@@ -10559,17 +10588,17 @@ function saveNote() {
               const totalVotes = pollOptions.reduce((sum, opt) => sum + Number(opt?.votes || 0), 0);
               pollHTML = `
               <div class="mt-3 p-3 bg-white rounded-lg border border-gray-300">
-                <h4 class="font-medium text-gray-900 mb-3 text-sm">${note.poll.question}</h4>
+                <h4 class="font-medium text-gray-900 mb-3 text-sm">${escapeHTML(note.poll.question)}</h4>
                 <div class="space-y-2">
                   ${pollOptions.map((option, index) => {
                     const votes = Number(option?.votes || 0);
                     const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
                     const hasVoted = user && Array.isArray(option?.voters) && option.voters.includes(user.uid);
                     return `
-                      <button onclick="votePoll('${note.id}', ${index})" class="w-full text-left p-2.5 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#5c6974] bg-red-50' : 'border-gray-300 bg-white hover:border-gray-400'}">
+                      <button onclick="votePoll('${escapeInlineSingleQuote(note.id)}', ${index})" class="w-full text-left p-2.5 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#5c6974] bg-red-50' : 'border-gray-300 bg-white hover:border-gray-400'}">
                         <div class="absolute inset-0 bg-[#5c6974]" style="width: ${percentage}%; opacity: 0.08"></div>
                         <div class="relative flex justify-between items-center">
-                          <span class="text-sm font-medium text-gray-900">${option?.text || 'Opción'}</span>
+                          <span class="text-sm font-medium text-gray-900">${escapeHTML(option?.text) || 'Opción'}</span>
                           <span class="text-xs font-bold ${hasVoted ? 'text-[#5c6974]' : 'text-gray-500'}">${percentage}%</span>
                         </div>
                       </button>
@@ -10582,7 +10611,7 @@ function saveNote() {
             }
 
             const safeTimestamp = Number(note.timestamp) || Date.now();
-            const safeAuthorId = note.authorId || '';
+            const safeAuthorId = escapeInlineSingleQuote(note.authorId || '');
             const safeAuthorName = note.authorName || 'Usuario';
             const safeAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', safeAuthorId);
             const authorAvatarId = `feed-author-${note.id}`;
@@ -10626,10 +10655,10 @@ function saveNote() {
                   </div>
                 </div>
                 ${renderNoteImages(note, note.id)}
-                ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${note.gifUrl}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+                ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
                 ${note.taggedPeople && note.taggedPeople.length ? `<div class="mb-3 flex items-center gap-2 flex-wrap">
                   <span class="text-xs text-[#7b878f] font-semibold">Con:</span>
-                  ${note.taggedPeople.map(p => `<span class="inline-flex items-center gap-1 text-xs bg-white border border-[#dce1e5] rounded-full px-2 py-0.5 font-semibold text-[#24324c] cursor-pointer" onclick="openAuthorProfile('${escapeHtml(p.uid||'')}')">
+                  ${note.taggedPeople.map(p => `<span class="inline-flex items-center gap-1 text-xs bg-white border border-[#dce1e5] rounded-full px-2 py-0.5 font-semibold text-[#24324c] cursor-pointer" onclick="openAuthorProfile('${escapeInlineSingleQuote(p.uid||'')}')">
                     <img src="${escapeHtml(p.image||'')}" class="w-3.5 h-3.5 rounded-full object-cover" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='">
                     ${escapeHtml(p.name||'')}
                   </span>`).join('')}
@@ -12250,7 +12279,7 @@ function saveNote() {
               <div class="flex items-center justify-between mt-2">
                 <p class="text-xs text-[#b6c0d1]">${timeAgo}</p>
                 <div class="flex gap-2">
-                  <button onclick="openCommentsView('${noteId}')" class="text-xs text-[#6b7280] hover:text-[#1c2b4a] transition px-2 py-1 rounded-full bg-[#f0f4f9]">Ver post</button>
+                  <button onclick="openCommentsView('${escapeInlineSingleQuote(noteId)}')" class="text-xs text-[#6b7280] hover:text-[#1c2b4a] transition px-2 py-1 rounded-full bg-[#f0f4f9]">Ver post</button>
                   <button onclick="openSavedFolderPicker('${noteId}')" class="text-xs text-[#6b7280] hover:text-[#1c2b4a] transition px-2 py-1 rounded-full bg-[#f0f4f9]">Mover</button>
                   <button onclick="removeSavedPost('${noteId}', this)" class="text-xs text-[#c0392b] hover:text-[#922b21] transition px-2 py-1 rounded-full bg-red-50">Eliminar</button>
                 </div>
@@ -12611,7 +12640,7 @@ function saveNote() {
         userRepostRef.remove(),
         postRepostRef.remove(),
         noteRef.transaction(currentNote => {
-          if (!currentNote) return currentNote;
+          if (!currentNote) return undefined;
           currentNote.repostsCount = Math.max(0, Number(currentNote.repostsCount || 0) - 1);
           return currentNote;
         })
@@ -12632,7 +12661,7 @@ function saveNote() {
         userRepostRef.set(payload),
         postRepostRef.set(payload),
         noteRef.transaction(currentNote => {
-          if (!currentNote) return currentNote;
+          if (!currentNote) return undefined;
           currentNote.repostsCount = Number(currentNote.repostsCount || 0) + 1;
           return currentNote;
         })
@@ -12701,6 +12730,40 @@ function saveNote() {
     }
   }
 
+  // URL validada para medios (http/https/data:image) en bruto, sin escapar:
+  // para usar como valor JS (p. ej. img.src por propiedad o arrays).
+  function getSafeMediaUrlRaw(url) {
+    const value = String(url || '').trim();
+    if (!value) return '';
+    try {
+      const parsed = new URL(value, window.location.origin);
+      const isHttp = parsed.protocol === 'https:' || parsed.protocol === 'http:';
+      const isSafeDataImage = parsed.protocol === 'data:' && /^data:image\/(png|jpe?g|gif|webp);base64,/i.test(value);
+      if (!isHttp && !isSafeDataImage) return '';
+      return value;
+    } catch (error) {
+      return '';
+    }
+  }
+
+  // Como getSafeMediaUrl pero para interpolar la URL en un string JS entre
+  // comillas simples dentro de un handler inline (onclick="..."): valida el
+  // esquema y escapa sin entidades HTML (el parser HTML las decodificaría
+  // antes de compilar el handler y rompería la cadena JS).
+  function getSafeMediaUrlInlineJs(url) {
+    const value = String(url || '').trim();
+    if (!value) return '';
+    try {
+      const parsed = new URL(value, window.location.origin);
+      const isHttp = parsed.protocol === 'https:' || parsed.protocol === 'http:';
+      const isSafeDataImage = parsed.protocol === 'data:' && /^data:image\/(png|jpe?g|gif|webp);base64,/i.test(value);
+      if (!isHttp && !isSafeDataImage) return '';
+    } catch (error) {
+      return '';
+    }
+    return escapeInlineSingleQuote(value);
+  }
+
   function extractMentionUsernames(text) {
     if (!text) return [];
     const regex = /@([\p{L}\p{N}_-]+)/gu;
@@ -12719,7 +12782,7 @@ function saveNote() {
     if (!text) return '';
     const safeText = escapeHTML(text);
     const withMentions = safeText.replace(/@([\p{L}\p{N}_-]+)/gu, (_, username) => {
-      const safeUsername = escapeHTML(username);
+      const safeUsername = escapeInlineSingleQuote(username);
       return `<a href="javascript:void(0)" class="mention-link" onclick="openAuthorProfileByUsername('${safeUsername}')">@${safeUsername}</a>`;
     });
     // Hashtags: mismo tratamiento que las menciones, pero llevan a los
@@ -12727,7 +12790,7 @@ function saveNote() {
     // Antes se extraían solo para el algoritmo de recomendación interno;
     // nunca eran clicables para la persona que lee el post.
     const withHashtags = withMentions.replace(/#([\p{L}\p{N}_]+)/gu, (_, tag) => {
-      const safeTag = escapeHTML(tag);
+      const safeTag = escapeInlineSingleQuote(tag);
       return `<a href="javascript:void(0)" class="hashtag-link" onclick="openHashtagSearch('${safeTag}')">#${safeTag}</a>`;
     });
     return withHashtags;
@@ -13209,16 +13272,16 @@ function saveNote() {
         const totalVotes = note.poll.options.reduce((sum, opt) => sum + (opt.votes || 0), 0);
         pollHTML = `
         <div class="mt-2 p-3 bg-white rounded-lg border border-gray-300">
-          <h4 class="font-medium text-gray-900 mb-2 text-sm">${note.poll.question}</h4>
+          <h4 class="font-medium text-gray-900 mb-2 text-sm">${escapeHTML(note.poll.question)}</h4>
           <div class="space-y-2">
             ${note.poll.options.map((option, index) => {
               const percentage = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
               const hasVoted = user && option.voters && option.voters.includes(user.uid);
               return `
-                <button onclick="votePoll('${noteId}', ${index})" class="w-full text-left p-2 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#5c6974] bg-red-50' : 'border-gray-300 bg-white'}">
+                <button onclick="votePoll('${escapeInlineSingleQuote(noteId)}', ${index})" class="w-full text-left p-2 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#5c6974] bg-red-50' : 'border-gray-300 bg-white'}">
                   <div class="absolute inset-0 bg-[#5c6974]" style="width: ${percentage}%; opacity: 0.08"></div>
                   <div class="relative flex justify-between items-center">
-                    <span class="text-xs font-medium text-gray-900">${option.text}</span>
+                    <span class="text-xs font-medium text-gray-900">${escapeHTML(option.text)}</span>
                     <span class="text-xs font-bold ${hasVoted ? 'text-[#5c6974]' : 'text-gray-500'}">${percentage}%</span>
                   </div>
                 </button>
@@ -13250,7 +13313,7 @@ function saveNote() {
         </div>
       </div>
       ${renderNoteImages(note, noteId)}
-      ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${note.gifUrl}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+      ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
       ${pollHTML}
       <div class="flex items-center justify-between gap-3 text-xs text-[#7b878f] mt-2">
         <span class="font-bold ${score > 0 ? 'text-[#5c6974]' : 'text-[#7b878f]'}">${formatVoteScore(score)}</span>
@@ -13364,7 +13427,7 @@ function saveNote() {
         </div>
         <div class="text-sm text-[#1c2b4a] leading-relaxed break-words">${renderContentWithSticker(comment.content, '')}</div>
         ${safeGifUrl ? `<img src="${safeGifUrl}" class="mt-1.5 max-h-40 rounded-xl border border-[#dce1e5]" loading="lazy">` : ''}
-        ${safePhotoUrl ? `<img src="${safePhotoUrl}" class="mt-1.5 max-h-56 rounded-xl border border-[#dce1e5] object-cover cursor-pointer" loading="lazy" onclick="window.open('${safePhotoUrl}','_blank')">` : ''}
+        ${safePhotoUrl ? `<img src="${safePhotoUrl}" class="mt-1.5 max-h-56 rounded-xl border border-[#dce1e5] object-cover cursor-pointer" loading="lazy" onclick="window.open('${getSafeMediaUrlInlineJs(comment.photoUrl)}','_blank','noopener')">` : ''}
       </div>
     </div>
   `;
@@ -13718,7 +13781,7 @@ function saveNote() {
           </div>
         </div>
         ${safeGifUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[220px]"><img src="${safeGifUrl}" class="w-full max-h-60 object-cover" loading="lazy"></div>` : ''}
-        ${safePhotoUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[260px] cursor-pointer" onclick="window.open('${safePhotoUrl}','_blank')"><img src="${safePhotoUrl}" class="w-full max-h-72 object-cover" loading="lazy"></div>` : ''}
+        ${safePhotoUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[260px] cursor-pointer" onclick="window.open('${getSafeMediaUrlInlineJs(comment.photoUrl)}','_blank','noopener')"><img src="${safePhotoUrl}" class="w-full max-h-72 object-cover" loading="lazy"></div>` : ''}
         <div class="flex items-center gap-3 text-[11px] text-[#7b878f] mt-1 px-1">
           <span class="text-[#7b878f]">${formatRelativeTime(comment.timestamp)}</span>
           <span id="comment-edited-${commentPath}" class="text-[10px] text-[#b6c0d1] ${comment.editedAt ? '' : 'hidden'}">Editado</span>
@@ -14085,7 +14148,7 @@ function saveNote() {
     const editedAt = Date.now();
 
     return commentRef.transaction(comment => {
-      if (!comment) return comment;
+      if (!comment) return undefined;
       if (comment.authorId !== user.uid) return;
       comment.content = cleanedContent;
       comment.editedAt = editedAt;
@@ -16381,7 +16444,7 @@ function saveNote() {
         if (!updatedAt) return;
         if (isChatConversationMuted(convoId, user.uid)) return;
         let lastRead = 0;
-        try { lastRead = Number(localStorage.getItem(getChatLastReadKey(user.uid, convoId)) || 0); } catch (_) {}
+        try { lastRead = Number(localStorage.getItem(getChatLastReadKey(user.uid, convoId))) || 0; } catch (_) {}
         if (updatedAt > lastRead) unread++;
       });
 
@@ -16785,7 +16848,7 @@ function saveNote() {
       }
 
       const seenKey = 'drex_mentions_seen_' + user.uid;
-      const lastSeen = Number(localStorage.getItem(seenKey) || 0);
+      const lastSeen = Number(localStorage.getItem(seenKey)) || 0;
       const hasNew = mentions.some(m => (m.timestamp || 0) > lastSeen);
       if (hasNew) document.getElementById('mentions-unread-dot')?.classList.remove('hidden');
       localStorage.setItem(seenKey, Date.now());
@@ -16795,17 +16858,17 @@ function saveNote() {
         const card = document.createElement('div');
         card.className = 'bg-white rounded-2xl border border-[#dce1e5] p-4 shadow-sm';
         const timeAgo = typeof formatRelativeTime === 'function' ? formatRelativeTime(note.timestamp || Date.now()) : '';
-        const preview = (note.content || '').replace(mentionPattern, `<span class="font-bold text-[#1c2b4a]">@${myUsername}</span>`).slice(0, 200);
+        const preview = escapeHTML(note.content || '').replace(mentionPattern, `<span class="font-bold text-[#1c2b4a]">@${escapeHTML(myUsername)}</span>`).slice(0, 200);
         card.innerHTML = `
           <div class="flex items-start gap-3">
-            <img src="${note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0 mt-0.5">
+            <img src="${getSafeMediaUrl(note.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0 mt-0.5">
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between mb-1">
-                <span class="font-semibold text-sm text-[#1c2b4a]">${note.authorName || 'Usuario'}</span>
+                <span class="font-semibold text-sm text-[#1c2b4a]">${escapeHTML(note.authorName || 'Usuario')}</span>
                 <span class="text-[10px] text-[#b6c0d1] ml-2 flex-shrink-0">${timeAgo}</span>
               </div>
               <p class="text-sm text-[#5c6974] leading-relaxed">${preview}${note.content && note.content.length > 200 ? '...' : ''}</p>
-              <button onclick="openCommentsView('${note.id}'); closeNotifications();" class="mt-2 text-xs font-semibold text-[#6b7280] hover:text-[#1c2b4a] transition px-3 py-1 rounded-full bg-[#f0f4f9] border border-[#dce1e5]">Ver post</button>
+              <button onclick="openCommentsView('${escapeInlineSingleQuote(note.id)}'); closeNotifications();" class="mt-2 text-xs font-semibold text-[#6b7280] hover:text-[#1c2b4a] transition px-3 py-1 rounded-full bg-[#f0f4f9] border border-[#dce1e5]">Ver post</button>
             </div>
           </div>`;
         listEl.appendChild(card);
@@ -17477,6 +17540,10 @@ function saveNote() {
   // Paso 3: nombre de usuario
   let usernameCheckTimer = null;
   let usernameIsAvailable = false;
+  // Token de secuencia: el debounce cancela el timer pero no la lectura
+  // .once() ya en vuelo; las respuestas con seq obsoleta se descartan para
+  // que un resultado viejo no marque "disponible" un valor ya cambiado.
+  let usernameCheckSeq = 0;
 
   function setUsernameUI(state, message) {
     const icon   = document.getElementById('regUsernameIcon');
@@ -17523,6 +17590,10 @@ function saveNote() {
 
   document.getElementById('regUsername').addEventListener('input', () => {
     clearTimeout(usernameCheckTimer);
+    // Invalidar de inmediato cualquier verificación en curso: la secuencia se
+    // incrementa aquí (no dentro del setTimeout) para que un check antiguo en
+    // vuelo nunca actualice la UI después de que el usuario siguió escribiendo.
+    const mySeq = ++usernameCheckSeq;
     const raw      = document.getElementById('regUsername').value.trim().toLowerCase().replace(/\s+/g, '');
     const icon     = document.getElementById('regUsernameIcon');
     const status   = document.getElementById('regUsernameStatus');
@@ -17550,11 +17621,13 @@ function saveNote() {
 
     usernameCheckTimer = setTimeout(() => {
       DrexCloud.database().ref('usernames/' + raw).once('value').then(snap => {
+        if (mySeq !== usernameCheckSeq) return; // obsoleto: el usuario siguió escribiendo
         if (snap.exists()) {
           setUsernameUI('taken', '@' + raw + ' ya está en uso. Prueba otro.');
         } else {
           // Respaldo: buscar en users por username (por si no se usa el índice)
           DrexCloud.database().ref('users').orderByChild('username').equalTo(raw).once('value').then(snap2 => {
+            if (mySeq !== usernameCheckSeq) return; // obsoleto
             if (snap2.exists()) {
               setUsernameUI('taken', '@' + raw + ' ya está en uso. Prueba otro.');
             } else {
@@ -18216,6 +18289,7 @@ function saveNote() {
     } else {
       clearNotificationsBadge();
       clearChatUnreadBadge();
+      clearUserStats();
       hideSplashScreen();
       // switchToAccount() prepara el formulario inmediatamente después de
       // signOut(). No debemos devolverlo al menú general de login durante
@@ -19375,7 +19449,8 @@ o
   }
 
   function _stGetMinutes(dateKey) {
-    return parseFloat(localStorage.getItem(ST_PREFIX + dateKey) || '0');
+    const v = parseFloat(localStorage.getItem(ST_PREFIX + dateKey) || '0');
+    return Number.isFinite(v) ? v : 0;
   }
 
   function _stAddMinutes(dateKey, mins) {
@@ -20088,7 +20163,7 @@ o
         row.id = 'follow-request-row-' + req.uid;
         row.className = 'bg-white border border-[#dce1e5] rounded-2xl p-3 flex items-center gap-3';
         row.innerHTML = `
-          <img src="${req.requesterImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-11 h-11 rounded-full object-cover border border-[#e7ecf3]">
+          <img src="${getSafeMediaUrl(req.requesterImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-11 h-11 rounded-full object-cover border border-[#e7ecf3]">
           <p class="flex-1 font-semibold text-sm text-[#1c2b4a] truncate">${escapeHtml(req.requesterName || 'Usuario')}</p>
           <button onclick="respondToFollowRequest('${req.uid}', true)" class="px-3 py-1.5 rounded-full bg-[#0084FF] text-white text-xs font-bold active:scale-95 transition">Aceptar</button>
           <button onclick="respondToFollowRequest('${req.uid}', false)" class="px-3 py-1.5 rounded-full bg-[#f0f4f9] text-[#5c6974] text-xs font-bold active:scale-95 transition">Rechazar</button>
@@ -20150,12 +20225,12 @@ o
       ).then(rows => {
         list.innerHTML = rows.map(({ uid, data }) => `
           <div class="bg-white border border-[#dce1e5] rounded-2xl p-4 flex items-center gap-3 shadow-sm">
-            <img src="${data.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" alt="${data.username || 'Usuario'}" class="w-12 h-12 rounded-full object-cover">
+            <img src="${getSafeMediaUrl(data.profileImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" alt="${escapeHTML(data.username || 'Usuario')}" class="w-12 h-12 rounded-full object-cover">
             <div class="flex-1 min-w-0">
-              <p class="font-bold text-[#1c2b4a] truncate">${data.username || 'Usuario'}</p>
-              <p class="text-xs text-[#6b7280] truncate">@${data.username || 'usuario'}</p>
+              <p class="font-bold text-[#1c2b4a] truncate">${escapeHTML(data.username || 'Usuario')}</p>
+              <p class="text-xs text-[#6b7280] truncate">@${escapeHTML(data.username || 'usuario')}</p>
             </div>
-            <button onclick="unblockAccountFromPrivacy('${uid}')" class="bg-[#0084FF] text-white px-3 py-2 rounded-xl text-sm font-semibold">Desbloquear</button>
+            <button onclick="unblockAccountFromPrivacy('${escapeInlineSingleQuote(uid)}')" class="bg-[#0084FF] text-white px-3 py-2 rounded-xl text-sm font-semibold">Desbloquear</button>
           </div>
         `).join('');
       });
@@ -21333,10 +21408,7 @@ o
       const file = fileInput.files[0];
       const cloudUrl = await processImageFile(file);
 
-      const p1 = DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
-      const p2 = DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
-
-      await Promise.all([p1, p2]);
+      await DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
       document.getElementById('profile-image').src = cloudUrl;
       const desktopImg = document.getElementById('profile-image-desktop');
       if (desktopImg) desktopImg.src = cloudUrl;
@@ -21501,7 +21573,7 @@ let chatTypingListener = null;
     }
     card.innerHTML = `
       <div class="flex items-start gap-3">
-        ${image ? `<img src="${image}" class="w-12 h-12 rounded-xl object-cover border border-[#dce1e5]" alt="">` : ''}
+        ${image ? `<img src="${getSafeMediaUrl(image)}" class="w-12 h-12 rounded-xl object-cover border border-[#dce1e5]" alt="">` : ''}
         <div class="flex-1 min-w-0">
           <p class="font-bold text-[#1c2b4a] text-sm">${escapeHtml(title)}</p>
           ${meta ? `<p class="text-xs text-[#7b878f] mt-0.5">${escapeHtml(meta)}</p>` : ''}
@@ -21717,7 +21789,7 @@ let chatTypingListener = null;
         const item = document.createElement('button');
         item.type = 'button';
         item.className = 'w-full flex items-center gap-3 bg-white border border-[#dce1e5] rounded-2xl px-4 py-3 text-left transition active:bg-[#eef2f7]';
-        item.innerHTML = `<img src="${u.image}" class="w-10 h-10 rounded-full object-cover border border-[#dce1e5]" alt="${u.name}"><span class="font-semibold text-[#1c2b4a] flex-1">${u.name}</span>${alreadySelected ? '<span class="text-xs text-[#7b878f]">Agregado</span>' : '<span class="text-xs font-semibold text-[#1c2b4a] bg-[#eef2f7] px-3 py-1 rounded-full">Agregar</span>'}`;
+        item.innerHTML = `<img src="${getSafeMediaUrl(u.image)}" class="w-10 h-10 rounded-full object-cover border border-[#dce1e5]" alt="${escapeHTML(u.name)}"><span class="font-semibold text-[#1c2b4a] flex-1">${escapeHTML(u.name)}</span>${alreadySelected ? '<span class="text-xs text-[#7b878f]">Agregado</span>' : '<span class="text-xs font-semibold text-[#1c2b4a] bg-[#eef2f7] px-3 py-1 rounded-full">Agregar</span>'}`;
         if (!alreadySelected) {
           item.onclick = () => addUserToGroupChat(u);
         }
@@ -21750,7 +21822,7 @@ let chatTypingListener = null;
     groupChatSelectedUsers.forEach(u => {
       const chip = document.createElement('div');
       chip.className = 'flex items-center gap-1.5 bg-white border border-[#dce1e5] rounded-full pl-1 pr-2.5 py-1 text-sm font-semibold text-[#1c2b4a]';
-      chip.innerHTML = `<img src="${u.image}" class="w-6 h-6 rounded-full object-cover" alt="${u.name}"><span>${u.name}</span><button type="button" onclick="removeUserFromGroupChat('${u.uid}')" class="ml-1 text-[#8fa2c7] hover:text-[#5c6974]"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+      chip.innerHTML = `<img src="${getSafeMediaUrl(u.image)}" class="w-6 h-6 rounded-full object-cover" alt="${escapeHTML(u.name)}"><span>${escapeHTML(u.name)}</span><button type="button" onclick="removeUserFromGroupChat('${escapeInlineSingleQuote(u.uid)}')" class="ml-1 text-[#8fa2c7] hover:text-[#5c6974]"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6 6 18"/></svg></button>`;
       list.appendChild(chip);
     });
   }
@@ -21804,7 +21876,7 @@ let chatTypingListener = null;
         system: true,
         text: 'Grupo "' + groupName + '" creado',
         timestamp: createdAt
-      });
+      })._writePromise;
       showMiniToast('Grupo creado');
       closeCreateGroupChatView();
       openChatInboxView();
@@ -22277,7 +22349,7 @@ let chatTypingListener = null;
       } catch(_) { payload.senderName = 'Usuario'; }
     }
     try {
-      await DrexCloud.database().ref('conversationMessages/' + conversationId).push(payload);
+      await DrexCloud.database().ref('conversationMessages/' + conversationId).push(payload)._writePromise;
       await updateChatConversationPreview(emoji || 'Sticker', payload, { conversationId, recipientId, isGroup, groupMembers });
     } catch (_) {
       alert('No se pudo enviar el sticker. Inténtalo de nuevo.');
@@ -22321,7 +22393,7 @@ let chatTypingListener = null;
       } catch(_) { payload.senderName = 'Usuario'; }
     }
     try {
-      await DrexCloud.database().ref('conversationMessages/' + conversationId).push(payload);
+      await DrexCloud.database().ref('conversationMessages/' + conversationId).push(payload)._writePromise;
       await updateChatConversationPreview('GIF', payload, { conversationId, recipientId, isGroup, groupMembers });
     } catch (_) {
       alert('No se pudo enviar el GIF. Inténtalo de nuevo.');
@@ -22624,7 +22696,7 @@ let chatTypingListener = null;
     const user = DrexCloud.auth().currentUser;
     if (!user || !item?.id) return false;
     let lastRead = 0;
-    try { lastRead = Number(localStorage.getItem(getChatLastReadKey(user.uid, item.id)) || 0); } catch (_) {}
+    try { lastRead = Number(localStorage.getItem(getChatLastReadKey(user.uid, item.id))) || 0; } catch (_) {}
     return Number(item.updatedAt || 0) > lastRead;
   }
 
@@ -22843,7 +22915,7 @@ let chatTypingListener = null;
       if (type === 'dm') {
         const item = allChatConversations.find(i => i.otherUid === id);
         if (item?.otherImage) {
-          avatarWrap.innerHTML = `<img src="${item.otherImage}" class="w-full h-full object-cover" alt="">`;
+          avatarWrap.innerHTML = `<img src="${getSafeMediaUrl(item.otherImage)}" class="w-full h-full object-cover" alt="">`;
         }
       } else {
         avatarWrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[#7b878f]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" stroke-linejoin="round" d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path stroke-linecap="round" stroke-linejoin="round" d="M16 3.13a4 4 0 010 7.75"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21v-2a4 4 0 00-3-3.85"/></svg>`;
@@ -23216,7 +23288,7 @@ let chatTypingListener = null;
         const n = msgImages.length;
         const safeImagesJson = JSON.stringify(msgImages).replace(/'/g, "&#39;").replace(/"/g, '&quot;');
         if (n === 1) {
-          return `<img src="${msgImages[0]}" class="rounded-2xl object-cover cursor-pointer block" style="max-width:220px;max-height:300px;box-shadow:0 4px 14px rgba(0,0,0,0.13)" alt="Foto" onclick="openPhotoCarousel(${safeImagesJson},0)">`;
+          return `<img src="${getSafeMediaUrl(msgImages[0])}" class="rounded-2xl object-cover cursor-pointer block" style="max-width:220px;max-height:300px;box-shadow:0 4px 14px rgba(0,0,0,0.13)" alt="Foto" onclick="openPhotoCarousel(${safeImagesJson},0)">`;
         }
         const W = 200, H = 218;
         const cW = W + 24, cH = H + 22;
@@ -23229,7 +23301,7 @@ let chatTypingListener = null;
           const isFront = i === sliceRev.length - 1;
           const ri = vis - 1 - i;
           const rot = isFront ? '0deg' : (rots[ri] || '0deg');
-          return `<div style="position:absolute;top:${vtops[ri]};left:${vlefts[ri]};width:${W}px;height:${H}px;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.18);transform:rotate(${rot});transform-origin:bottom center;z-index:${i}"><img src="${url}" style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer" alt="Foto" onclick="openPhotoCarousel(${safeImagesJson},${i})">${isFront ? `<div style="position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,0.52);color:#fff;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:800">${n} fotos</div>` : ''}</div>`;
+          return `<div style="position:absolute;top:${vtops[ri]};left:${vlefts[ri]};width:${W}px;height:${H}px;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.18);transform:rotate(${rot});transform-origin:bottom center;z-index:${i}"><img src="${getSafeMediaUrl(url)}" style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer" alt="Foto" onclick="openPhotoCarousel(${safeImagesJson},${i})">${isFront ? `<div style="position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,0.52);color:#fff;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:800">${n} fotos</div>` : ''}</div>`;
         }).join('');
         return `<div style="position:relative;width:${cW}px;height:${cH}px">${cards}</div>`;
       
@@ -23248,7 +23320,7 @@ let chatTypingListener = null;
       } else if (msg.type === 'sticker' && msg.sticker) {
         content = `<div class="text-5xl select-none leading-none p-1">${escapeHtml(msg.sticker)}</div>`;
       } else if (msg.type === 'gif' && msg.gifUrl) {
-        content = `<img src="${escapeHtml(msg.gifUrl)}" class="rounded-2xl block" style="max-width:200px;max-height:200px;object-fit:cover;cursor:pointer" alt="GIF" onclick="window.open('${escapeHtml(msg.gifUrl)}','_blank')">`;
+        content = `<img src="${getSafeMediaUrl(msg.gifUrl)}" class="rounded-2xl block" style="max-width:200px;max-height:200px;object-fit:cover;cursor:pointer" alt="GIF" onclick="window.open('${getSafeMediaUrlInlineJs(msg.gifUrl)}','_blank','noopener')">`;
       } else if (msg.type === 'sharedPost' && msg.sharedPost) {
         const sp = msg.sharedPost;
         const spThumb = sp.thumbnailUrl
@@ -23692,7 +23764,7 @@ const _startChatListeners = () => {
         ? `<div class="mb-2 pl-2 border-l-2 border-white/40 opacity-80"><p class="text-[10px] font-bold mb-0.5 text-white/70">${escapeHtml(payload.replyTo.senderName || 'Mensaje')}</p><p class="text-xs truncate text-white/60">${payload.replyTo.images ? '📷 Foto' : escapeHtml(payload.replyTo.text || '')}</p></div>` : '';
       let html = '';
       if (imageUrls.length === 1) {
-        html = `<img src="${imageUrls[0]}" class="max-w-[240px] w-full rounded-2xl object-cover cursor-pointer" style="max-height:320px" alt="Foto" onclick="window.open('${imageUrls[0]}','_blank')">`;
+        html = `<img src="${getSafeMediaUrl(imageUrls[0])}" class="max-w-[240px] w-full rounded-2xl object-cover cursor-pointer" style="max-height:320px" alt="Foto" onclick="window.open('${getSafeMediaUrlInlineJs(imageUrls[0])}','_blank','noopener')">`;
       } else if (imageUrls.length > 1) {
         const visN = Math.min(imageUrls.length, 3);
         const rots = ['-6deg','4deg','0deg'];
@@ -23704,7 +23776,7 @@ const _startChatListeners = () => {
           const isFront = i === sliceRev.length - 1;
           const ri = visN - 1 - i;
           const rot = isFront ? '0deg' : (rots[ri] || '0deg');
-          return `<div style="position:absolute;top:${vtops[ri]};left:${vlefts[ri]};width:${W}px;height:${H}px;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.22);transform:rotate(${rot});transform-origin:bottom center;z-index:${i}"><img src="${u}" style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer" alt="Foto" onclick="window.open('${u}','_blank')">${isFront && imageUrls.length > 3 ? `<div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.55);color:#fff;border-radius:20px;padding:2px 9px;font-size:12px;font-weight:800">+${imageUrls.length-3}</div>` : ''}</div>`;
+          return `<div style="position:absolute;top:${vtops[ri]};left:${vlefts[ri]};width:${W}px;height:${H}px;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.22);transform:rotate(${rot});transform-origin:bottom center;z-index:${i}"><img src="${getSafeMediaUrl(u)}" style="width:100%;height:100%;object-fit:cover;display:block;cursor:pointer" alt="Foto" onclick="window.open('${getSafeMediaUrlInlineJs(u)}','_blank','noopener')">${isFront && imageUrls.length > 3 ? `<div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.55);color:#fff;border-radius:20px;padding:2px 9px;font-size:12px;font-weight:800">+${imageUrls.length-3}</div>` : ''}</div>`;
         }).join('');
         html = `<div style="position:relative;width:${W+14}px;height:${H+16}px">${cards}</div>`;
       }
@@ -24180,10 +24252,10 @@ const _startChatListeners = () => {
     if (!convs.length) { list.innerHTML = '<p class="text-center text-[#7b878f] text-sm py-6">No hay conversaciones</p>'; return; }
     list.innerHTML = convs.map(c => {
       const name = c.displayName || c.username || 'Usuario';
-      const avatar = c.photoURL ? `<img src="${c.photoURL}" class="w-11 h-11 rounded-full object-cover" alt="${name}">` : `<div class="w-11 h-11 rounded-full bg-[#dce1e5] flex items-center justify-center text-lg font-bold text-[#5c6974]">${name[0]?.toUpperCase()}</div>`;
-      return `<button onclick="doForwardMessage('${c.convId}','${c.otherUid}')" class="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-[#f0f4f9] active:scale-98 transition text-left">
+      const avatar = c.photoURL ? `<img src="${getSafeMediaUrl(c.photoURL)}" class="w-11 h-11 rounded-full object-cover" alt="${escapeHTML(name)}">` : `<div class="w-11 h-11 rounded-full bg-[#dce1e5] flex items-center justify-center text-lg font-bold text-[#5c6974]">${escapeHTML(name[0]?.toUpperCase() || '')}</div>`;
+      return `<button onclick="doForwardMessage('${escapeInlineSingleQuote(c.convId)}','${escapeInlineSingleQuote(c.otherUid)}')" class="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-[#f0f4f9] active:scale-98 transition text-left">
         ${avatar}
-        <div class="min-w-0"><p class="font-bold text-[#1c2b4a] text-sm truncate">${name}</p><p class="text-xs text-[#7b878f] truncate">@${c.username || ''}</p></div>
+        <div class="min-w-0"><p class="font-bold text-[#1c2b4a] text-sm truncate">${escapeHTML(name)}</p><p class="text-xs text-[#7b878f] truncate">@${escapeHTML(c.username || '')}</p></div>
       </button>`;
     }).join('');
   }
@@ -24330,9 +24402,11 @@ const _startChatListeners = () => {
         grid.innerHTML = '<div class="col-span-3 py-8 text-center text-sm text-[#7b878f]">No hay fotos compartidas aún</div>';
         return;
       }
-      const safePhotos = JSON.stringify(photos.slice(0, 9));
-      grid.innerHTML = photos.slice(0, 9).map((url, i) =>
-        `<div class="aspect-square overflow-hidden cursor-pointer" onclick="openPhotoCarousel(${safePhotos},${i})"><img src="${url}" class="w-full h-full object-cover" alt="Foto"></div>`
+      // URLs validadas; se pasan por variable global en vez de JSON inline
+      // (las comillas dobles del JSON romperían el atributo onclick).
+      _chatMediaGridPhotos = photos.slice(0, 9).map(u => getSafeMediaUrlRaw(u)).filter(Boolean);
+      grid.innerHTML = _chatMediaGridPhotos.map((url, i) =>
+        `<div class="aspect-square overflow-hidden cursor-pointer" onclick="openPhotoCarousel(_chatMediaGridPhotos,${i})"><img src="${getSafeMediaUrl(url)}" class="w-full h-full object-cover" alt="Foto"></div>`
       ).join('');
     }).catch(() => {
       grid.innerHTML = '<div class="col-span-3 py-4 text-center text-sm text-red-400">No se pudieron cargar las fotos</div>';
@@ -24341,6 +24415,7 @@ const _startChatListeners = () => {
 
   // Photo carousel
   let _carouselPhotos = [];
+  let _chatMediaGridPhotos = [];
   let _carouselIndex = 0;
   let _carouselTouchStartX = 0;
 
@@ -24775,14 +24850,14 @@ const _startChatListeners = () => {
           ? '<span class="text-[10px] font-bold text-[#7b878f] bg-[#eef2f7] px-2 py-0.5 rounded-full shrink-0">Creador</span>'
           : (isAdminMember ? '<span class="text-[10px] font-bold text-[#7b878f] bg-[#eef2f7] px-2 py-0.5 rounded-full shrink-0">Admin</span>' : '');
         return `<div class="flex items-center gap-3 py-2" data-uid="${escapeHtml(p.uid)}">
-          <div class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onclick="${isMe ? '' : `openSenderProfile('${p.uid}')`}">
-            <img src="${p.image}" class="w-10 h-10 rounded-full object-cover border border-[#dce1e5]" alt="${escapeHtml(p.name)}">
+          <div class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onclick="${isMe ? '' : `openSenderProfile('${escapeInlineSingleQuote(p.uid)}')`}">
+            <img src="${getSafeMediaUrl(p.image)}" class="w-10 h-10 rounded-full object-cover border border-[#dce1e5]" alt="${escapeHtml(p.name)}">
             <div class="min-w-0 flex-1">
               <p class="font-semibold text-[#1c2b4a] truncate">${escapeHtml(p.name)}${isMe ? ' <span class="text-[10px] text-[#7b878f] font-normal">(tú)</span>' : ''}</p>
             </div>
           </div>
           ${roleBadge}
-          ${canManage ? `<button type="button" onclick="openGroupMemberActions('${escapeHtml(p.uid)}','${escapeHtml(p.name).replace(/'/g, "&#39;")}','${escapeHtml(p.image)}',${isAdminMember})" class="w-8 h-8 rounded-full flex items-center justify-center text-[#7b878f] hover:bg-[#f0f4f9] shrink-0" aria-label="Opciones"><svg xmlns="http://www.w3.org/2000/svg" class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>` : ''}
+          ${canManage ? `<button type="button" onclick="openGroupMemberActions('${escapeInlineSingleQuote(p.uid)}','${escapeInlineSingleQuote(p.name)}','${getSafeMediaUrlInlineJs(p.image)}',${isAdminMember})" class="w-8 h-8 rounded-full flex items-center justify-center text-[#7b878f] hover:bg-[#f0f4f9] shrink-0" aria-label="Opciones"><svg xmlns="http://www.w3.org/2000/svg" class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>` : ''}
         </div>`;
       }).join('');
     }).catch(() => {
@@ -24933,7 +25008,7 @@ const _startChatListeners = () => {
         system: true,
         text: 'El nombre del grupo cambió a "' + newName + '"',
         timestamp: Date.now()
-      });
+      })._writePromise;
       const nameEl = document.getElementById('group-info-name');
       if (nameEl) nameEl.textContent = newName;
       const headerName = document.getElementById('chat-room-username');
@@ -24965,7 +25040,7 @@ const _startChatListeners = () => {
         system: true,
         text: 'Se cambió la foto del grupo',
         timestamp: Date.now()
-      });
+      })._writePromise;
       const editImg = document.getElementById('group-info-avatar-img-edit');
       const editIcon = document.getElementById('group-info-avatar-icon-edit');
       if (editImg) { editImg.src = newImage; editImg.classList.remove('hidden'); }
@@ -25043,7 +25118,7 @@ const _startChatListeners = () => {
         system: true,
         text: target.name + ' ahora es administrador',
         timestamp: Date.now()
-      });
+      })._writePromise;
       showMiniToast(target.name + ' es administrador ahora');
       openGroupInfoPanel();
     } catch (e) {
@@ -25063,7 +25138,7 @@ const _startChatListeners = () => {
         system: true,
         text: target.name + ' ya no es administrador',
         timestamp: Date.now()
-      });
+      })._writePromise;
       showMiniToast(target.name + ' ya no es administrador');
       openGroupInfoPanel();
     } catch (e) {
@@ -25089,7 +25164,7 @@ const _startChatListeners = () => {
         system: true,
         text: target.name + ' fue eliminado del grupo',
         timestamp: Date.now()
-      });
+      })._writePromise;
       showMiniToast(target.name + ' fue eliminado del grupo');
       openGroupInfoPanel();
     } catch (e) {
@@ -25134,7 +25209,7 @@ const _startChatListeners = () => {
         system: true,
         text: (user.displayName || 'Alguien') + ' salió del grupo',
         timestamp: Date.now()
-      }).catch(() => {});
+      })._writePromise.catch(() => {});
       showMiniToast('Saliste del grupo');
       closeChatRoomView();
     } catch (e) {
@@ -25253,7 +25328,7 @@ const _startChatListeners = () => {
         system: true,
         text: name + ' se unió al grupo',
         timestamp: now
-      });
+      })._writePromise;
       if (Array.isArray(currentGroupMembers)) {
         currentGroupMembers.push(uid);
       } else {
@@ -25767,10 +25842,10 @@ function renderPostsList(posts) {
     item.className = 'w-full text-left p-4 bg-white border border-[#dce1e5] rounded-3xl shadow-sm hover:border-[#dce1e5] transition';
     item.innerHTML = `
       <div class="flex items-start gap-3">
-        <img id="${authorAvatarId}" data-author-id="${post.authorId || ''}" src="${post.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-10 h-10 rounded-full object-cover">
+        <img id="${authorAvatarId}" data-author-id="${post.authorId || ''}" src="${getSafeMediaUrl(post.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-10 h-10 rounded-full object-cover">
         <div class="min-w-0">
-          <p class="text-sm font-semibold text-[#6b7280]">${post.authorName || 'Usuario'}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')} • ${formatRelativeTime(post.timestamp)}</p>
-          <p class="text-lg leading-tight text-[#1c2b4a] line-clamp-2 mt-1">${post.content || 'Sin texto'}</p>
+          <p class="text-sm font-semibold text-[#6b7280]">${escapeHTML(post.authorName || 'Usuario')}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')} • ${formatRelativeTime(post.timestamp)}</p>
+          <p class="text-lg leading-tight text-[#1c2b4a] line-clamp-2 mt-1">${escapeHTML(post.content || 'Sin texto')}</p>
         </div>
       </div>`;
     item.onclick = () => {
@@ -25790,7 +25865,7 @@ function renderPhotosList(photos) {
   photos.forEach(photo => {
     const btn = document.createElement('button');
     btn.className = 'relative aspect-square rounded-2xl overflow-hidden border border-[#dce1e5] bg-white';
-    btn.innerHTML = `<img src="${photo.url}" class="w-full h-full object-cover" alt="Foto de post">`;
+    btn.innerHTML = `<img src="${getSafeMediaUrl(photo.url)}" class="w-full h-full object-cover" alt="Foto de post">`;
     btn.onclick = () => { closeSearch(); openCommentsView(photo.postId); };
     grid.appendChild(btn);
   });
@@ -25806,8 +25881,8 @@ function renderAccountsList(accounts) {
     const item = document.createElement('div');
     item.className = 'flex items-center space-x-3 cursor-pointer p-3 rounded-2xl bg-white border border-[#dce1e5] hover:border-[#dce1e5] shadow-sm';
     item.innerHTML = `
-      <img id="${accountAvatarId}" data-author-id="${account.uid || ''}" src="${account.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" alt="${account.username || 'Cuenta'}" class="w-11 h-11 rounded-full object-cover">
-      <span class="font-semibold text-[#1c2b4a]">${account.username || 'Cuenta'}${getVerificationIconByAuthor(account.email || '', account.uid || '')}</span>`;
+      <img id="${accountAvatarId}" data-author-id="${account.uid || ''}" src="${getSafeMediaUrl(account.profileImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" alt="${escapeHTML(account.username || 'Cuenta')}" class="w-11 h-11 rounded-full object-cover">
+      <span class="font-semibold text-[#1c2b4a]">${escapeHTML(account.username || 'Cuenta')}${getVerificationIconByAuthor(account.email || '', account.uid || '')}</span>`;
     item.addEventListener('click', () => { closeSearch(); openAuthorProfile(account.uid); });
     list.appendChild(item);
     loadUserFrame(account.uid || '', accountAvatarId);
@@ -25922,7 +25997,7 @@ function renderAccountsList(accounts) {
           notesHTML += `
             <div class="bg-white p-4 rounded-xl border hover:shadow-md transition-shadow">
               ${note.content ? renderContentWithSticker(note.content, 'mb-3') : ''}
-              ${note.imageUrl ? `<img src="${note.imageUrl}" alt="Imagen de la nota" class="w-full h-auto max-h-[70vh] object-contain rounded-lg mb-3">` : ''}
+              ${note.imageUrl ? `<img src="${getSafeMediaUrl(note.imageUrl)}" alt="Imagen de la nota" class="w-full h-auto max-h-[70vh] object-contain rounded-lg mb-3">` : ''}
               <div class="flex items-center justify-between text-sm text-gray-500">
                 <span>${formatRelativeTime(note.timestamp)}</span>
                 <span>👍 ${note.likes || 0}</span>
@@ -26399,11 +26474,11 @@ function renderAccountsList(accounts) {
   function buildAuthorRelationRow(userId, userData) {
     const verifiedIcon = getVerificationIconByAuthor(userData?.email || "", userId);
     return `
-      <button onclick="openAuthorFromRelationList('${userId}')" class="w-full border-0 border-b border-[#e7ecf3] p-4 flex items-center gap-3 text-left hover:bg-[#f7f8fa] transition">
-        <img src="${userData?.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" alt="${userData?.username || 'Usuario'}" class="w-12 h-12 rounded-full object-cover">
+      <button onclick="openAuthorFromRelationList('${escapeInlineSingleQuote(userId)}')" class="w-full border-0 border-b border-[#e7ecf3] p-4 flex items-center gap-3 text-left hover:bg-[#f7f8fa] transition">
+        <img src="${getSafeMediaUrl(userData?.profileImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" alt="${escapeHTML(userData?.username || 'Usuario')}" class="w-12 h-12 rounded-full object-cover">
         <div class="min-w-0 flex-1">
-          <p class="font-bold text-[#1c2b4a] truncate">${userData?.username || 'Usuario'}${verifiedIcon}</p>
-          <p class="text-sm text-[#7b878f] truncate">${userData?.bio || userData?.info || 'Perfil de Drex'}</p>
+          <p class="font-bold text-[#1c2b4a] truncate">${escapeHTML(userData?.username || 'Usuario')}${verifiedIcon}</p>
+          <p class="text-sm text-[#7b878f] truncate">${escapeHTML(userData?.bio || userData?.info || 'Perfil de Drex')}</p>
         </div>
       </button>
     `;
@@ -26623,7 +26698,7 @@ function renderAccountsList(accounts) {
         description,
         status: 'ai_reviewing',
         timestamp: Date.now()
-      });
+      })._writePromise;
 
       closeReportModal();
       document.getElementById('report-description').value = '';
@@ -28290,7 +28365,9 @@ function shareToInstagram() {
 }
 
 function recordShare(platform) {
-  const shares = JSON.parse(localStorage.getItem('beabo_game_shares') || '[]');
+  let shares = [];
+  try { shares = JSON.parse(localStorage.getItem('beabo_game_shares') || '[]'); } catch (e) { shares = []; }
+  if (!Array.isArray(shares)) shares = [];
   shares.push({
     platform: platform,
     score: gameScore,
@@ -29926,7 +30003,7 @@ async function recordSecurityEvent(type, detail) {
   const user = DrexCloud.auth().currentUser;
   if (!user) return;
   try {
-    await DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}/events`).push({ type, detail, timestamp: Date.now() });
+    await DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}/events`).push({ type, detail, timestamp: Date.now() })._writePromise;
   } catch (_) {}
 }
 async function showSecurityAlertIfEnabled(key, message) {
@@ -30795,7 +30872,7 @@ function _renderPostPermalinkCard(note) {
   const commentsCount = Number(note.commentsCount) || 0;
   const repostsCount = Number(note.repostsCount) || 0;
   const safeAuthorName = escapeHTML(note.authorName || 'Usuario');
-  const safeAuthorImage = escapeHTML(note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==');
+  const safeAuthorImage = getSafeMediaUrl(note.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
   const verifiedIcon = typeof getVerificationIconByAuthor === 'function' ? getVerificationIconByAuthor(note.authorEmail || '', note.authorId || '') : '';
 
   const imagesHTML = typeof renderNoteImages === 'function' ? renderNoteImages(note, note.id) : '';
@@ -30844,7 +30921,7 @@ function _renderPostPermalinkCard(note) {
         </div>
         ${note.content ? `<p class="text-[15px] text-[#1c2b4a] whitespace-pre-wrap mb-1">${renderTextWithMentions(note.content)}</p>` : ''}
         ${imagesHTML}
-        ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${escapeHTML(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+        ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
         ${pollHTML}
         <div class="flex items-center justify-between mt-3 pt-3 border-t border-[#eef2f7]">
           <div class="flex items-center gap-3 text-[#6b7280]">
@@ -31196,10 +31273,7 @@ async function savePracticarLangs() {
   pxMyLangs.learning = document.getElementById('px-lang-learning').value;
   const payload = { native: pxMyLangs.native, learning: pxMyLangs.learning, updatedAt: Date.now() };
   try {
-    await Promise.all([
-      DrexCloud.database().ref('userLanguages/' + user.uid).set(payload),
-      DrexCloud.database().ref('userLanguages/' + user.uid).set(payload)
-    ]);
+    await DrexCloud.database().ref('userLanguages/' + user.uid).set(payload);
     if (typeof showMiniToast === 'function') showMiniToast('Idiomas guardados.');
   } catch(e) {
     if (typeof showMiniToast === 'function') showMiniToast('No se pudo guardar. Intenta de nuevo.');
@@ -31340,7 +31414,7 @@ async function publishExercise() {
       language: lang, topic: topic, text: text,
       timestamp: Date.now(), correctionsCount: 0
     };
-    await DrexCloud.database().ref('languageExercises').push(payload);
+    await DrexCloud.database().ref('languageExercises').push(payload)._writePromise;
     closePracticarComposer();
     if (typeof showMiniToast === 'function') showMiniToast('Ejercicio publicado.');
     loadPracticarFeed();
@@ -31513,8 +31587,16 @@ async function submitCorrection() {
   const btn = document.getElementById('px-correction-btn');
   btn.disabled = true; btn.textContent = 'Enviando...';
   try {
-    const dup = await DrexCloud.database().ref('exerciseCorrections/' + ex.id).orderByChild('correctorId').equalTo(me.uid).once('value');
-    if (dup.exists()) { if (typeof showMiniToast === 'function') showMiniToast('Ya enviaste una corrección en este ejercicio.'); renderExerciseDetail(); return; }
+    // Clave determinista por corrector (uid): el set() es idempotente, así que
+    // dos envíos concurrentes (doble clic, dos pestañas) colapsan en la misma
+    // clave en vez de crear duplicados. Se conserva la búsqueda legacy por si
+    // existen correcciones antiguas con push-ID.
+    const corrRef = DrexCloud.database().ref('exerciseCorrections/' + ex.id + '/' + me.uid);
+    const [existing, legacyDup] = await Promise.all([
+      corrRef.once('value'),
+      DrexCloud.database().ref('exerciseCorrections/' + ex.id).orderByChild('correctorId').equalTo(me.uid).once('value')
+    ]);
+    if (existing.exists() || legacyDup.exists()) { if (typeof showMiniToast === 'function') showMiniToast('Ya enviaste una corrección en este ejercicio.'); renderExerciseDetail(); return; }
     const profile = await practicarCurrentProfile();
     const payload = {
       correctorId: profile.uid, correctorName: profile.name, correctorImage: profile.img,
@@ -31522,7 +31604,7 @@ async function submitCorrection() {
       correctedText: correctedText, notes: notes,
       timestamp: Date.now(), helpfulCount: 0
     };
-    await DrexCloud.database().ref('exerciseCorrections/' + ex.id).push(payload);
+    await corrRef.set(payload);
     await DrexCloud.database().ref('languageExercises/' + ex.id + '/correctionsCount').transaction(function(c) { return (c || 0) + 1; });
     try {
       if (typeof addNotification === 'function' && ex.authorId !== me.uid) {
@@ -31810,7 +31892,7 @@ async function createFiesta() {
     fiestaStatus: 'live',
     fiestaMax: maxSpeakers
   };
-  await DrexCloud.database().ref('communityNotes').push(note);
+  await DrexCloud.database().ref('communityNotes').push(note)._writePromise;
   document.getElementById('fiesta-title').value = '';
   document.getElementById('fiesta-desc').value = '';
   closeFiestaSection();
