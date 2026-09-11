@@ -5636,8 +5636,8 @@ if (scrollArea) {
     <div class="border-t border-[#dce1e5] bg-[#f0f4f9] flex-shrink-0">
       <!-- Carrusel de herramientas deslizable -->
       <div id="note-tools-carousel" class="flex items-center gap-1 px-4 py-3 overflow-x-auto overflow-y-hidden scrollbar-none" style="-webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;">
-        <input type="file" id="note-image-fullscreen-gallery" accept="image/*" class="hidden" onchange="handleNoteImagePreviewFullscreen(event, 'gallery')" multiple>
-        <input type="file" id="note-image-fullscreen-camera" accept="image/*" capture="environment" class="hidden" onchange="handleNoteImagePreviewFullscreen(event, 'camera')">
+        <input type="file" id="note-image-fullscreen-gallery" accept="image/*" class="opacity-0 absolute pointer-events-none" style="width:1px;height:1px;" onchange="handleNoteImagePreviewFullscreen(event, 'gallery')" multiple>
+        <input type="file" id="note-image-fullscreen-camera" accept="image/*" capture="environment" class="opacity-0 absolute pointer-events-none" style="width:1px;height:1px;" onchange="handleNoteImagePreviewFullscreen(event, 'camera')">
 
         <!-- Foto (galería) - label nativo para iOS (más confiable que click programático) -->
         <label for="note-image-fullscreen-gallery" id="tool-photo" class="flex-shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-2xl active:bg-[#e7ecf3] transition cursor-pointer" style="scroll-snap-align: start;">
@@ -9757,8 +9757,21 @@ function saveNote() {
 
   function publishNoteFromFullscreen() {
     const content = resolveCommentContent('note-content-fullscreen');
-    // Usar los archivos guardados al seleccionar (el input se limpia tras elegir)
-    const imageFiles = (pendingNoteImageFiles || []).slice(0, 20);
+    // Usar los archivos guardados al seleccionar (el input se limpia tras elegir).
+    // Fallback: leer directamente del input por si el onchange no se disparó.
+    let imageFiles = (pendingNoteImageFiles || []).slice(0, 20);
+    if (!imageFiles.length) {
+      const galleryInput = document.getElementById('note-image-fullscreen-gallery');
+      const cameraInput = document.getElementById('note-image-fullscreen-camera');
+      const fallbackFiles = [
+        ...Array.from(galleryInput?.files || []),
+        ...Array.from(cameraInput?.files || [])
+      ].slice(0, 20);
+      if (fallbackFiles.length) {
+        imageFiles = fallbackFiles;
+        pendingNoteImageFiles = fallbackFiles;
+      }
+    }
     const gifUrl = selectedNotePostGif;
     const pollActive = isPollMode();
     let pollPayload = null;
