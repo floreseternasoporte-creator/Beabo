@@ -9451,6 +9451,10 @@ function saveNote() {
     document.getElementById('image-preview-fullscreen').classList.add('hidden');
     document.getElementById('preview-grid-fullscreen').innerHTML = '';
     document.getElementById('image-preview-counter-fullscreen').textContent = '';
+    // Los archivos pendientes también se limpian: si no, fotos de una
+    // sesión anterior del editor se adjuntarían en silencio a la nueva
+    // publicación aunque la vista previa aparezca vacía.
+    pendingNoteImageFiles = [];
     const galleryInput = document.getElementById('note-image-fullscreen-gallery');
     const cameraInput = document.getElementById('note-image-fullscreen-camera');
     if (galleryInput) galleryInput.value = '';
@@ -9588,6 +9592,16 @@ function saveNote() {
     ctx.drawImage(src, 0, 0);
   }
 
+  // Una data URL de imagen válida: esquema data:image/*;base64 con contenido
+  // real. canvas.toDataURL() devuelve 'data:,' cuando el canvas quedó vacío
+  // o corrupto (p. ej. bitmap defectuoso por presión de memoria en iOS);
+  // eso nunca debe aceptarse como éxito porque la publicación quedaría
+  // "solo texto" o con la imagen desaparecida sin ningún aviso.
+  function isValidImageDataUrl(dataUrl) {
+    return typeof dataUrl === 'string' &&
+      /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/]{100,}={0,2}$/.test(dataUrl);
+  }
+
   function processImageFile(file, maxUrlLength) {
     return new Promise(function(resolve, reject) {
       const timeoutId = setTimeout(function() { reject(new Error('Tiempo de espera agotado al procesar imagen')); }, 60000);
@@ -9610,6 +9624,7 @@ function saveNote() {
         const orientedW = swap ? srcH : srcW;
         const orientedH = swap ? srcW : srcH;
         let dataUrl = '';
+        let validButOversized = false;
         for (const attempt of attempts) {
           const scale = Math.min(1, attempt.maxSide / Math.max(orientedW, orientedH));
           const dw = Math.max(1, Math.round(orientedW * scale));
@@ -9618,11 +9633,19 @@ function saveNote() {
           canvas.width = dw;
           canvas.height = dh;
           drawImageOriented(canvas.getContext('2d'), src, srcW, srcH, orientation, dw, dh, orientedW, orientedH);
-          dataUrl = canvas.toDataURL('image/jpeg', attempt.quality);
-          if (dataUrl && dataUrl.length < MAX_URL_LENGTH) break;
+          const candidate = canvas.toDataURL('image/jpeg', attempt.quality);
+          // Solo vale si es una imagen REAL con contenido: un canvas
+          // vacío/corrupto devuelve 'data:,' (6 caracteres) y antes se
+          // aceptaba como éxito, con lo que la foto "desaparecía" de la
+          // publicación sin ningún aviso.
+          if (!isValidImageDataUrl(candidate)) continue;
+          if (candidate.length < MAX_URL_LENGTH) { dataUrl = candidate; break; }
+          validButOversized = true;
         }
-        if (!dataUrl || dataUrl.length >= MAX_URL_LENGTH) {
-          throw new Error('La imagen es demasiado grande incluso comprimida.');
+        if (!isValidImageDataUrl(dataUrl)) {
+          throw new Error(validButOversized
+            ? 'La imagen es demasiado grande incluso comprimida.'
+            : 'No se pudo procesar la imagen (resultado vacío). Intenta con otra foto.');
         }
         return dataUrl;
       }
@@ -9788,9 +9811,18 @@ function saveNote() {
         pendingNoteImageFiles = fallbackFiles;
       }
     }
-    // DEBUG: mostrar cuántas imágenes se van a publicar
-
     const gifUrl = selectedNotePostGif;
+    // Si la vista previa muestra fotos pero los archivos se perdieron en el
+    // camino (p. ej. el input se limpió sin guardar), no publicar
+    // solo-texto en silencio: avisar y detener.
+    const previewGridEl = document.getElementById('preview-grid-fullscreen');
+    const previewVisible = previewGridEl &&
+      !document.getElementById('image-preview-fullscreen')?.classList.contains('hidden');
+    const previewHasPhotos = previewVisible && previewGridEl.querySelectorAll('img').length > 0;
+    if (!gifUrl && previewHasPhotos && !imageFiles.length) {
+      alert('Las fotos seleccionadas se perdieron antes de publicar. Vuelve a seleccionarlas.');
+      return;
+    }
     const pollActive = isPollMode();
     let pollPayload = null;
     if (pollActive) {
@@ -9889,8 +9921,20 @@ function saveNote() {
           });
         };
         processNextImage(0).then(() => {
-          note.imageUrls = processedImages;
-          note.imageUrl = processedImages[0];
+          // Solo se publican imágenes reales: si el usuario eligió fotos
+          // pero ninguna produjo una imagen válida, NO publicar solo-texto
+          // en silencio; avisar y detener.
+          const validImages = processedImages.filter(isValidImageDataUrl);
+          if (imageFiles.length && !validImages.length) {
+            console.error('[Drex] fotos elegidas pero ninguna válida:',
+              processedImages.map(u => String(u).slice(0, 40)));
+            alert('No se pudieron procesar las fotos seleccionadas. Intenta con otras imágenes.');
+            publishBtn.disabled = false;
+            publishBtn.innerHTML = 'Publicar';
+            return;
+          }
+          note.imageUrls = validImages;
+          note.imageUrl = validImages[0];
           publishWithAudienceScope().then(() => publishNoteToDatabase(note));
         }).catch((error) => {
           console.error('Error al procesar imágenes:', error);
