@@ -9779,7 +9779,9 @@ function saveNote() {
   }
 
   function publishNoteToDatabase(note) {
-    const preModeration = evaluateContentModeration(note.content || '', note.imageUrls || note.imageUrl || []);
+    // Solo se modera el texto: las URLs de imagen (data:image base64) generan
+    // falsos positivos en los regex y bloqueaban publicaciones inocentes.
+    const preModeration = evaluateContentModeration(note.content || '', []);
     if (preModeration.flagged) {
       alert('Tu nota no puede ser publicada porque contiene contenido inapropiado.');
       const publishBtn = document.getElementById('publish-btn-fullscreen');
@@ -9790,13 +9792,16 @@ function saveNote() {
       return;
     }
 
-    // Publicar en la base de datos (un solo push: antes se duplicaba al migrar de Firebase)
-    const p1 = DrexCloud.database().ref('communityNotes').push(note);
+    // Publicar en la base de datos (un solo push: antes se duplicaba al migrar de Firebase).
+    // push() devuelve el Ref de forma síncrona, no una promesa (y su escritura interna
+    // traga errores); por eso se usa push() + set() para obtener la promesa real.
+    const pushRef = DrexCloud.database().ref('communityNotes').push();
+    const p1 = pushRef.set(note);
 
     const mentionPromise = sendMentionNotifications(note.content, note.authorId, note.authorName, 'publicación', [note.authorId]);
-    Promise.all([p1, mentionPromise]).then(([ref1]) => {
+    Promise.all([p1, mentionPromise]).then(() => {
       if (note.content || note.imageUrls || note.imageUrl) {
-        moderarContenidoAutomaticamente(ref1.key, `${note.content || ''} ${(note.imageUrls || []).join(' ')} ${note.imageUrl || ''}`);
+        moderarContenidoAutomaticamente(pushRef.key, `${note.content || ''}`);
       }
 
       try {
