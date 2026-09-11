@@ -9497,61 +9497,175 @@ function saveNote() {
   // Imágenes SIN Cloudinary: se procesan en local y se guardan como data URL
   // directamente en la base de datos de AWS (DynamoDB). Se reduce el tamaño
   // por pasos hasta quedar bajo el límite de 400 KB por ítem.
+  //
+  // La orientación EXIF se aplica MANUALMENTE (no se confía en el navegador):
+  // en iOS, `new Image()` + `drawImage()` aplican la orientación de forma
+  // inconsistente y eso recortaba las fotos al publicarlas. Aquí se decodifica
+  // el bitmap crudo y se rota/voltea a mano, así la foto sale completa siempre.
+  function readJpegInfo(file) {
+    // Lee orientación EXIF + dimensiones reales del JPEG (null si no es JPEG).
+    let p;
+    try {
+      p = file.slice(0, 262144).arrayBuffer();
+    } catch (_) {
+      return Promise.resolve(null);
+    }
+    return Promise.resolve(p).then(function(buf) {
+      try {
+        const bytes = new DataView(buf);
+        if (bytes.getUint16(0) !== 0xFFD8) return null; // no es JPEG
+        let orientation = 1, width = 0, height = 0;
+        let offset = 2;
+        while (offset + 4 <= bytes.byteLength) {
+          if (bytes.getUint8(offset) !== 0xFF) break;
+          const marker = bytes.getUint8(offset + 1);
+          if (marker === 0xD9 || marker === 0xDA) break;
+          const size = bytes.getUint16(offset + 2);
+          if (size < 2) break;
+          if (marker === 0xE1 && size > 8 &&
+              bytes.getUint32(offset + 4) === 0x45786966 && // "Exif"
+              bytes.getUint16(offset + 8) === 0) {
+            const tiff = offset + 10;
+            const little = bytes.getUint16(tiff) === 0x4949;
+            const u16 = function(pr) { return little ? bytes.getUint16(pr, true) : bytes.getUint16(pr, false); };
+            const u32 = function(pr) { return little ? bytes.getUint32(pr, true) : bytes.getUint32(pr, false); };
+            if (u16(tiff + 2) === 0x002A) {
+              const ifd = tiff + u32(tiff + 4);
+              const entries = u16(ifd);
+              for (let i = 0; i < entries; i++) {
+                const e = ifd + 2 + i * 12;
+                if (e + 12 > bytes.byteLength) break;
+                if (u16(e) === 0x0112) {
+                  const v = u16(e + 8);
+                  if (v >= 1 && v <= 8) orientation = v;
+                  break;
+                }
+              }
+            }
+          } else if ((marker === 0xC0 || marker === 0xC2) && size >= 7) {
+            height = bytes.getUint16(offset + 5);
+            width = bytes.getUint16(offset + 7);
+          }
+          offset += 2 + size;
+        }
+        if (!width || !height) return null;
+        return { orientation: orientation, width: width, height: height };
+      } catch (_) {
+        return null;
+      }
+    }).catch(function() { return null; });
+  }
+
+  function drawImageOriented(ctx, src, srcW, srcH, orientation, dw, dh, orientedW, orientedH) {
+    // Dibuja el bitmap CRUDO completo (srcW x srcH) aplicando la orientación
+    // EXIF a mano, llenando exactamente el canvas de dw x dh. Nunca recorta.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.scale(dw / orientedW, dh / orientedH);
+    switch (orientation) {
+      case 2: ctx.transform(-1, 0, 0, 1, orientedW, 0); break;           // espejo horizontal
+      case 3: ctx.transform(-1, 0, 0, -1, orientedW, orientedH); break;  // 180°
+      case 4: ctx.transform(1, 0, 0, -1, 0, orientedH); break;           // espejo vertical
+      case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;                   // transpuesta
+      case 6: ctx.transform(0, 1, -1, 0, orientedW, 0); break;          // 90° horario
+      case 7: ctx.transform(0, -1, -1, 0, orientedW, orientedH); break; // transversal
+      case 8: ctx.transform(0, -1, 1, 0, 0, orientedH); break;         // 90° antihorario
+      default: break; // 1: tal cual
+    }
+    ctx.drawImage(src, 0, 0);
+  }
+
   function processImageFile(file) {
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => reject(new Error('Tiempo de espera agotado al procesar imagen')), 60000);
+    return new Promise(function(resolve, reject) {
+      const timeoutId = setTimeout(function() { reject(new Error('Tiempo de espera agotado al procesar imagen')); }, 60000);
+      const finishOk = function(v) { clearTimeout(timeoutId); resolve(v); };
+      const finishFail = function(e) { clearTimeout(timeoutId); reject(e); };
       // Margen seguro bajo el límite de 400 KB por ítem de DynamoDB
       // (la data URL en base64 pesa ~4/3 del binario).
       const MAX_URL_LENGTH = 300 * 1024;
+      const attempts = [
+        { maxSide: 1200, quality: 0.75 },
+        { maxSide: 1000, quality: 0.70 },
+        { maxSide: 800,  quality: 0.65 },
+        { maxSide: 640,  quality: 0.60 }
+      ];
 
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-          try {
-            const attempts = [
-              { maxSide: 1200, quality: 0.75 },
-              { maxSide: 1000, quality: 0.70 },
-              { maxSide: 800,  quality: 0.65 },
-              { maxSide: 640,  quality: 0.60 }
-            ];
-            let dataUrl = '';
-            for (const attempt of attempts) {
-              const scale = Math.min(1, attempt.maxSide / Math.max(img.width, img.height));
-              const canvas = document.createElement('canvas');
-              canvas.width = Math.max(1, Math.round(img.width * scale));
-              canvas.height = Math.max(1, Math.round(img.height * scale));
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              dataUrl = canvas.toDataURL('image/jpeg', attempt.quality);
-              if (dataUrl.length < MAX_URL_LENGTH) break;
+      function compressFromSource(src, srcW, srcH, orientation) {
+        const swap = orientation >= 5 && orientation <= 8;
+        const orientedW = swap ? srcH : srcW;
+        const orientedH = swap ? srcW : srcH;
+        let dataUrl = '';
+        for (const attempt of attempts) {
+          const scale = Math.min(1, attempt.maxSide / Math.max(orientedW, orientedH));
+          const dw = Math.max(1, Math.round(orientedW * scale));
+          const dh = Math.max(1, Math.round(orientedH * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = dw;
+          canvas.height = dh;
+          drawImageOriented(canvas.getContext('2d'), src, srcW, srcH, orientation, dw, dh, orientedW, orientedH);
+          dataUrl = canvas.toDataURL('image/jpeg', attempt.quality);
+          if (dataUrl && dataUrl.length < MAX_URL_LENGTH) break;
+        }
+        if (!dataUrl || dataUrl.length >= MAX_URL_LENGTH) {
+          throw new Error('La imagen es demasiado grande incluso comprimida.');
+        }
+        return dataUrl;
+      }
+
+      function legacyImagePath() {
+        // Reserva para navegadores sin createImageBitmap: el camino anterior.
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.onload = function() {
+            try {
+              const dataUrl = compressFromSource(img, img.naturalWidth || img.width, img.naturalHeight || img.height, 1);
+              try { img.src = ''; } catch (_) {}
+              finishOk(dataUrl);
+            } catch (err) { finishFail(err); }
+          };
+          img.onerror = function() { finishFail(new Error('No se pudo cargar la imagen seleccionada')); };
+          img.src = e.target.result;
+        };
+        reader.onerror = function() { finishFail(new Error('No se pudo leer una de las imágenes')); };
+        reader.readAsDataURL(file);
+      }
+
+      if (!window.createImageBitmap) { legacyImagePath(); return; }
+      let settled = false;
+      Promise.all([createImageBitmap(file), readJpegInfo(file)]).then(function(res) {
+        if (settled) return;
+        settled = true;
+        const bitmap = res[0];
+        const info = res[1];
+        try {
+          let orientation = 1;
+          if (info) {
+            orientation = info.orientation;
+            if (orientation >= 5 && orientation <= 8) {
+              // Autocorrección: si el navegador YA aplicó la orientación al
+              // bitmap (dimensiones invertidas respecto al JPEG crudo),
+              // no la aplicamos de nuevo para no rotar dos veces.
+              // Si las dimensiones no coinciden con nada conocido, tampoco
+              // rotamos a ciegas.
+              const isRaw = (bitmap.width === info.width && bitmap.height === info.height);
+              if (!isRaw) orientation = 1;
             }
-            if (!dataUrl || dataUrl.length >= MAX_URL_LENGTH) {
-              clearTimeout(timeoutId);
-              reject(new Error('La imagen es demasiado grande incluso comprimida.'));
-              return;
-            }
-            // Liberar el bitmap decodificado para no acumular memoria
-            // cuando se procesan varias fotos seguidas.
-            try { img.src = ''; } catch (_) {}
-            clearTimeout(timeoutId);
-            resolve(dataUrl);
-          } catch (error) {
-            clearTimeout(timeoutId);
-            reject(error);
+            // Orientaciones 2,3,4: aplicarlas dos veces vuelve al original,
+            // así que no hay riesgo aunque el navegador ya las hubiera aplicado.
           }
-        };
-        img.onerror = function() {
-          clearTimeout(timeoutId);
-          reject(new Error('No se pudo cargar la imagen seleccionada'));
-        };
-        img.src = e.target.result;
-      };
-      reader.onerror = function() {
-        clearTimeout(timeoutId);
-        reject(new Error('No se pudo leer una de las imágenes'));
-      };
-      reader.readAsDataURL(file);
+          const dataUrl = compressFromSource(bitmap, bitmap.width, bitmap.height, orientation);
+          try { bitmap.close(); } catch (_) {}
+          finishOk(dataUrl);
+        } catch (err) {
+          try { bitmap.close(); } catch (_) {}
+          finishFail(err);
+        }
+      }, function() {
+        if (settled) return;
+        settled = true;
+        legacyImagePath();
+      });
     });
   }
 
