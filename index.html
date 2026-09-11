@@ -9682,6 +9682,10 @@ function saveNote() {
     });
   }
 
+  // Archivos de imagen pendientes para publicar (se guardan aquí porque
+  // el input file se limpia tras seleccionar para permitir re-elegir)
+  let pendingNoteImageFiles = [];
+
   function handleNoteImagePreviewFullscreen(event, source = 'gallery') {
     try {
     const input = event.target;
@@ -9689,7 +9693,9 @@ function saveNote() {
     const isCameraSource = source === 'camera';
     const maxFiles = isCameraSource ? 1 : 20;
     const files = selectedFiles.slice(0, maxFiles);
-    // Limpiar el input para permitir seleccionar la misma foto de nuevo
+    // Guardar los archivos para la publicación y limpiar el input
+    // para permitir seleccionar la misma foto de nuevo
+    pendingNoteImageFiles = files;
     input.value = '';
     if (!files.length) {
       alert('No se pudo leer la foto seleccionada. Intenta de nuevo.');
@@ -9742,6 +9748,7 @@ function saveNote() {
     const cameraInput = document.getElementById('note-image-fullscreen-camera');
     if (galleryInput) galleryInput.value = '';
     if (cameraInput) cameraInput.value = '';
+    pendingNoteImageFiles = [];
     document.getElementById('preview-grid-fullscreen').innerHTML = '';
     document.getElementById('image-preview-counter-fullscreen').textContent = '';
     document.getElementById('image-preview-fullscreen').classList.add('hidden');
@@ -9750,10 +9757,8 @@ function saveNote() {
 
   function publishNoteFromFullscreen() {
     const content = resolveCommentContent('note-content-fullscreen');
-    const galleryFiles = Array.from(document.getElementById('note-image-fullscreen-gallery')?.files || []);
-    const cameraFiles = Array.from(document.getElementById('note-image-fullscreen-camera')?.files || []);
-    const allFiles = [...galleryFiles, ...cameraFiles];
-    const imageFiles = allFiles.slice(0, 20);
+    // Usar los archivos guardados al seleccionar (el input se limpia tras elegir)
+    const imageFiles = (pendingNoteImageFiles || []).slice(0, 20);
     const gifUrl = selectedNotePostGif;
     const pollActive = isPollMode();
     let pollPayload = null;
@@ -9980,6 +9985,7 @@ function saveNote() {
         if (contentFullscreen) contentFullscreen.value = '';
         if (imageFullscreenGallery) imageFullscreenGallery.value = '';
         if (imageFullscreenCamera) imageFullscreenCamera.value = '';
+        pendingNoteImageFiles = [];
         if (previewFullscreen) previewFullscreen.classList.add('hidden');
         const previewGridFullscreen = document.getElementById('preview-grid-fullscreen');
         const previewCounterFullscreen = document.getElementById('image-preview-counter-fullscreen');
