@@ -9531,6 +9531,9 @@ function saveNote() {
               reject(new Error('La imagen es demasiado grande incluso comprimida.'));
               return;
             }
+            // Liberar el bitmap decodificado para no acumular memoria
+            // cuando se procesan varias fotos seguidas.
+            try { img.src = ''; } catch (_) {}
             clearTimeout(timeoutId);
             resolve(dataUrl);
           } catch (error) {
@@ -9687,9 +9690,20 @@ function saveNote() {
         note.isGif = true;
         publishWithAudienceScope().then(() => publishNoteToDatabase(note));
       } else if (imageFiles.length) {
-        Promise.all(imageFiles.map(processImageFile)).then(images => {
-          note.imageUrls = images;
-          note.imageUrl = images[0];
+        // Las fotos se procesan EN SECUENCIA (no en paralelo): decodificar
+        // varias fotos grandes a la vez agota la memoria en iOS y las
+        // imágenes resultantes salen mal o cortadas.
+        const processedImages = [];
+        const processNextImage = (index) => {
+          if (index >= imageFiles.length) return Promise.resolve();
+          return processImageFile(imageFiles[index]).then(url => {
+            processedImages.push(url);
+            return processNextImage(index + 1);
+          });
+        };
+        processNextImage(0).then(() => {
+          note.imageUrls = processedImages;
+          note.imageUrl = processedImages[0];
           publishWithAudienceScope().then(() => publishNoteToDatabase(note));
         }).catch((error) => {
           console.error('Error al procesar imágenes:', error);
