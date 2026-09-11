@@ -9582,14 +9582,16 @@ function saveNote() {
     ctx.drawImage(src, 0, 0);
   }
 
-  function processImageFile(file) {
+  function processImageFile(file, maxUrlLength) {
     return new Promise(function(resolve, reject) {
       const timeoutId = setTimeout(function() { reject(new Error('Tiempo de espera agotado al procesar imagen')); }, 60000);
       const finishOk = function(v) { clearTimeout(timeoutId); resolve(v); };
       const finishFail = function(e) { clearTimeout(timeoutId); reject(e); };
       // Margen seguro bajo el límite de 400 KB por ítem de DynamoDB
       // (la data URL en base64 pesa ~4/3 del binario).
-      const MAX_URL_LENGTH = 300 * 1024;
+      // Si se publican varias fotos, el presupuesto se reparte para que el
+      // total no exceda el límite.
+      const MAX_URL_LENGTH = maxUrlLength || (300 * 1024);
       const attempts = [
         { maxSide: 1200, quality: 0.75 },
         { maxSide: 1000, quality: 0.70 },
@@ -9814,10 +9816,13 @@ function saveNote() {
         // Las fotos se procesan EN SECUENCIA (no en paralelo): decodificar
         // varias fotos grandes a la vez agota la memoria en iOS y las
         // imágenes resultantes salen mal o cortadas.
+        // Presupuesto total 340 KB para no exceder el límite de 400 KB por
+        // ítem de DynamoDB: se reparte entre todas las fotos.
+        const perImageBudget = Math.max(20 * 1024, Math.floor((340 * 1024) / imageFiles.length));
         const processedImages = [];
         const processNextImage = (index) => {
           if (index >= imageFiles.length) return Promise.resolve();
-          return processImageFile(imageFiles[index]).then(url => {
+          return processImageFile(imageFiles[index], perImageBudget).then(url => {
             processedImages.push(url);
             return processNextImage(index + 1);
           });
@@ -10640,7 +10645,7 @@ function saveNote() {
                   </div>
                 </div>
                 ${renderNoteImages(note, note.id)}
-                ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+                ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-contain"></div>` : ''}
                 ${note.taggedPeople && note.taggedPeople.length ? `<div class="mb-3 flex items-center gap-2 flex-wrap">
                   <span class="text-xs text-[#7b878f] font-semibold">Con:</span>
                   ${note.taggedPeople.map(p => `<span class="inline-flex items-center gap-1 text-xs bg-white border border-[#dce1e5] rounded-full px-2 py-0.5 font-semibold text-[#24324c] cursor-pointer" onclick="openAuthorProfile('${escapeInlineSingleQuote(p.uid||'')}')">
@@ -13307,7 +13312,7 @@ function saveNote() {
         </div>
       </div>
       ${renderNoteImages(note, noteId)}
-      ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+      ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-contain"></div>` : ''}
       ${pollHTML}
       <div class="flex items-center justify-between gap-3 text-xs text-[#7b878f] mt-2">
         <span class="font-bold ${score > 0 ? 'text-[#5c6974]' : 'text-[#7b878f]'}">${formatVoteScore(score)}</span>
@@ -30877,7 +30882,7 @@ function _renderPostPermalinkCard(note) {
         </div>
         ${note.content ? `<p class="text-[15px] text-[#1c2b4a] whitespace-pre-wrap mb-1">${renderTextWithMentions(note.content)}</p>` : ''}
         ${imagesHTML}
-        ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+        ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-contain"></div>` : ''}
         ${pollHTML}
         <div class="flex items-center justify-between mt-3 pt-3 border-t border-[#eef2f7]">
           <div class="flex items-center gap-3 text-[#6b7280]">
