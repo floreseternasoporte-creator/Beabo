@@ -9686,6 +9686,18 @@ function saveNote() {
   // el input file se limpia tras seleccionar para permitir re-elegir)
   let pendingNoteImageFiles = [];
 
+  // Muestra errores de foto dentro de la pantalla (sin alertas emergentes)
+  function showNotePhotoError(msg) {
+    const counter = document.getElementById('image-preview-counter-fullscreen');
+    const preview = document.getElementById('image-preview-fullscreen');
+    if (counter) {
+      counter.textContent = msg;
+      counter.classList.add('text-red-500');
+    }
+    if (preview) preview.classList.remove('hidden');
+    console.error('Foto:', msg);
+  }
+
   function handleNoteImagePreviewFullscreen(event, source = 'gallery') {
     try {
     const input = event.target;
@@ -9698,24 +9710,26 @@ function saveNote() {
     pendingNoteImageFiles = files;
     input.value = '';
     if (!files.length) {
-      alert('No se pudo leer la foto seleccionada. Intenta de nuevo.');
+      showNotePhotoError('No se pudo leer la foto seleccionada. Intenta de nuevo.');
       return;
     }
 
     const hasStickerSelected = typeof pendingStickers !== 'undefined' && pendingStickers['note-content-fullscreen'];
     if (hasStickerSelected) {
-      alert('❌ Error: No puedes agregar fotos si ya has seleccionado un sticker. Por favor, elimina el sticker primero.');
-      event.target.value = '';
+      pendingNoteImageFiles = [];
+      showNotePhotoError('No puedes agregar fotos si ya seleccionaste un sticker. Elimínalo primero.');
+      input.value = '';
       return;
     }
 
     if (!isCameraSource && selectedFiles.length > 20) {
-      alert('Solo puedes subir un máximo de 20 fotos por publicación.');
+      showNotePhotoError('Solo puedes subir un máximo de 20 fotos por publicación.');
     }
 
     const previewGrid = document.getElementById('preview-grid-fullscreen');
     const counter = document.getElementById('image-preview-counter-fullscreen');
     previewGrid.innerHTML = '';
+    if (counter) counter.classList.remove('text-red-500');
 
     files.forEach(file => {
       const reader = new FileReader();
@@ -9726,12 +9740,12 @@ function saveNote() {
         previewGrid.appendChild(previewEl);
       };
       reader.onerror = function() {
-        alert('No se pudo leer una de las fotos. Intenta con otra imagen.');
+        showNotePhotoError('No se pudo leer una de las fotos. Intenta con otra imagen.');
       };
       try {
         reader.readAsDataURL(file);
       } catch (readErr) {
-        alert('Error al leer la foto: ' + (readErr.message || 'intenta de nuevo'));
+        showNotePhotoError('Error al leer la foto, intenta de nuevo.');
       }
     });
 
@@ -9739,7 +9753,7 @@ function saveNote() {
     document.getElementById('image-preview-fullscreen').classList.remove('hidden');
     } catch (err) {
       console.error('Error al procesar foto:', err);
-      alert('Error al agregar la foto: ' + (err.message || 'intenta de nuevo'));
+      showNotePhotoError('Error al agregar la foto, intenta de nuevo.');
     }
   }
 
