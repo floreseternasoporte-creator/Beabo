@@ -3541,6 +3541,7 @@ document.addEventListener("DOMContentLoaded", function() {
         <div class="reg-birthdate-copy w-full text-center mb-8">
           <h2 class="text-3xl font-bold mb-2" style="color:#24324c;">¿Cuándo naciste?</h2>
           <p class="text-sm" style="color:#7b878f;">Esta información no será pública. La usamos para mantener Drex seguro, sobre todo para las personas más jóvenes.</p>
+          <p id="regBirthdateWhy" class="text-sm mt-3 hidden" style="color:#24324c; background:#eef4ff; border:1px solid #d7e3f8; border-radius:12px; padding:10px 12px;"></p>
         </div>
         <div class="w-full">
           <input id="regBirthDate" type="date" class="w-full p-4 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #dce1e5; color:#24324c; background:#f0f4f9;">
@@ -17304,6 +17305,9 @@ function saveNote() {
     err.classList.add('hidden');
     regData.firstName = firstName;
     regData.lastName  = lastName;
+    // En registro normal no se muestra el aviso de "completar registro".
+    const _why = document.getElementById('regBirthdateWhy');
+    if (_why) _why.classList.add('hidden');
     showAuthSection(regBirthdateStep);
   });
 
@@ -18111,7 +18115,7 @@ function saveNote() {
   // (entró con Facebook o cerró la app a mitad del registro): pide fecha de
   // nacimiento (control de edad), username y foto en vez de entrar con un
   // perfil degradado sin índice ni onboarding.
-  function startRegistrationCompletion(user, data) {
+  function startRegistrationCompletion(user, data, reason) {
     isRegistering = true;
     const prevName = (data && (data.displayName || data.username)) || user.displayName || '';
     const parts = String(prevName).trim().split(/\s+/).filter(Boolean);
@@ -18136,6 +18140,18 @@ function saveNote() {
     if (soBtn) soBtn.style.display = 'block';
     const backBtn = document.getElementById('backFromRegBirthdate');
     if (backBtn) backBtn.style.visibility = 'hidden';
+    // Explicar por qué se pide completar el registro (solo en este modo,
+    // no en el registro normal). Así nunca aparece la pantalla sin contexto.
+    const why = document.getElementById('regBirthdateWhy');
+    if (why) {
+      const msg = reason === 'no-profile'
+        ? 'Tu sesión es válida, pero no encontramos tu perfil. Complétalo aquí para activar tu cuenta.'
+        : reason === 'degraded'
+        ? 'Tu cuenta necesita un nombre de usuario para continuar. Elige el tuyo en el siguiente paso.'
+        : 'A tu cuenta le faltan algunos datos. Complétalos aquí para entrar.';
+      why.textContent = msg;
+      why.classList.remove('hidden');
+    }
     showAuthSection(regBirthdateStep);
   }
 
@@ -18221,7 +18237,11 @@ function saveNote() {
       if (isRegistering) return;
 
       refreshVerifiedUsersCache();
-      ensureChatUserRecord(user);
+      // Se espera a que ensureChatUserRecord termine ANTES de leer el perfil.
+      // Si no, la lectura del perfil puede ganarle la carrera a su escritura
+      // y ver un perfil vacío o a medias, mandando al paso de cumpleaños a
+      // una cuenta que en realidad está completa.
+      const _chatRecordReady = ensureChatUserRecord(user).catch(() => {});
       setupNotificationsBadge(user.uid);
       setupChatUnreadBadge(user.uid);
       startScreenTimeTracking();
@@ -18232,7 +18252,7 @@ function saveNote() {
       _loadUserSavedPosts().catch(() => {});
       _loadUserSavedComments().catch(() => {});
 
-      DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
+      _chatRecordReady.then(() => DrexCloud.database().ref('users/' + user.uid).once('value')).then(snapshot => {
         const data = snapshot.val();
         if (data && data.blocked && data.blockedUntil && Date.now() < data.blockedUntil) {
           alert("Tu cuenta ha sido bloqueada por infracciones. Por favor, contacta con el soporte para recuperar el acceso.");
@@ -18286,7 +18306,12 @@ function saveNote() {
         const needsCompletion = !data || data.profileDegraded === true ||
           (!data.registrationTimestamp && !data.username);
         if (needsCompletion) {
-          startRegistrationCompletion(user, data);
+          // Motivo específico: se muestra en pantalla para que siempre quede
+          // claro por qué se pide completar el registro, y queda en consola
+          // para diagnóstico.
+          const _reason = !data ? 'no-profile' : (data.profileDegraded === true ? 'degraded' : 'incomplete');
+          try { console.warn('[Drex] completar-registro, motivo:', _reason); } catch (_) {}
+          startRegistrationCompletion(user, data, _reason);
           return;
         }
 
