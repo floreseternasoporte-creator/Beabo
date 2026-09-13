@@ -2,7 +2,7 @@
 <html lang="es">
 
 <head>
-<meta name="drex-build" content="1789334371">
+<meta name="drex-build" content="1789334849">
 <style>
 /* Fuente Optimistic no incluida en el despliegue: se usa system-ui de respaldo. */
 :where(html) {
@@ -395,10 +395,6 @@ body {
 }
 
 
-/* ===== COLLAPSE DE HILOS ===== */
-.thread-collapsed {
-  display: none !important;
-}
 
 /* ===== TIPO DE PUBLICACIÓN ===== */
 .post-type-active {
@@ -12653,165 +12649,6 @@ function saveNote() {
     if (sel) sel.value = 'best';
   }
 
-  function openContinueThread(noteId, commentPath) {
-    DrexCloud.database().ref('postComments/' + noteId + '/' + commentPath).once('value').then(snap => {
-      const comment = snap.val();
-      if (!comment) return;
-
-      const overlay = document.createElement('div');
-      overlay.id = 'continue-thread-overlay';
-      overlay.className = 'fixed inset-0 bg-black/40 z-[80]';
-      overlay.onclick = () => closeContinueThread();
-
-      const sheet = document.createElement('div');
-      sheet.id = 'continue-thread-sheet';
-      sheet.className = 'fixed bottom-0 left-0 right-0 z-[81] bg-[#f0f4f9] rounded-t-3xl overflow-hidden flex flex-col';
-      sheet.style.maxHeight = '80vh';
-
-      const authorName = escapeHTML(comment.authorName || 'Usuario');
-      sheet.innerHTML = `
-      <div class="flex items-center justify-between px-4 py-3 border-b border-[#dce1e5] flex-shrink-0">
-        <div class="flex items-center gap-2">
-          <svg class="w-4 h-4 text-[#5c6974]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-          <span class="font-bold text-sm text-[#1c2b4a]">Hilo de ${authorName}</span>
-        </div>
-        <button onclick="closeContinueThread()" class="w-7 h-7 rounded-full bg-[#dce1e5] flex items-center justify-center">
-          <svg class="w-3.5 h-3.5 text-[#5c6974]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
-      <div id="continue-thread-body" class="overflow-y-auto flex-1 px-4 py-3 space-y-3"></div>
-    `;
-
-      document.body.appendChild(overlay);
-      document.body.appendChild(sheet);
-
-      sheet.style.transform = 'translateY(100%)';
-      requestAnimationFrame(() => {
-        sheet.style.transition = 'transform .28s cubic-bezier(.32,1,.23,1)';
-        sheet.style.transform = 'translateY(0)';
-      });
-
-      const body = document.getElementById('continue-thread-body');
-      renderContinueThreadComment(noteId, commentPath.split('/').pop(), comment, body, 0, commentPath);
-    });
-  }
-
-  function renderContinueThreadComment(noteId, commentId, comment, container, level, fullPath) {
-    if (!comment || isAccountBlockedForCurrentUser(comment.authorId || '')) return;
-    const safeAuthorImage = getSafeMediaUrl(comment.authorImage, 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==');
-    const safeAuthorName = escapeHTML(comment.authorName || 'Usuario');
-    const safeGifUrl = getSafeMediaUrl(comment.gifUrl);
-    const safePhotoUrl = getSafeMediaUrl(comment.photoUrl);
-    const safePathJs = escapeInlineSingleQuote(fullPath);
-    const safeNoteJs = escapeInlineSingleQuote(noteId);
-    const safeNameJs = escapeInlineSingleQuote(comment.authorName || 'Usuario');
-    const sheetScore = (comment.upvotes || 0) - (comment.downvotes || 0);
-    const indent = level > 0 ? `margin-left:${Math.min(level, 4) * 16}px; padding-left:12px; border-left:2px solid #dce1e5;` : '';
-
-    const div = document.createElement('div');
-    div.style.cssText = indent;
-    div.className = 'py-2';
-    div.innerHTML = `
-    <div class="flex items-start gap-2">
-      <img src="${safeAuthorImage}" class="w-7 h-7 rounded-full object-cover flex-shrink-0">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2 mb-0.5">
-          <span class="font-semibold text-xs text-[#5c6974]">${safeAuthorName}</span>
-          <span class="text-[10px] text-[#b6c0d1]">${formatRelativeTime(comment.timestamp)}</span>
-        </div>
-        <div class="text-sm text-[#1c2b4a] leading-relaxed break-words">${renderContentWithSticker(comment.content, '')}</div>
-        ${safeGifUrl ? `<img src="${safeGifUrl}" class="mt-1.5 max-h-40 rounded-xl border border-[#dce1e5]" loading="lazy">` : ''}
-        ${safePhotoUrl ? `<img src="${safePhotoUrl}" class="mt-1.5 max-h-56 rounded-xl border border-[#dce1e5] object-cover cursor-pointer" loading="lazy" onclick="window.open('${getSafeMediaUrlInlineJs(comment.photoUrl)}','_blank','noopener')">` : ''}
-        <div class="flex items-center gap-3 mt-1.5 text-[11px] text-[#7b878f]">
-          <button onclick="voteSheetComment(this, '${safeNoteJs}', '${safePathJs}')" class="sheet-vote-btn flex items-center gap-1 font-bold text-[#7b878f]" aria-label="Votar">
-            <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
-            <span class="sheet-score">${sheetScore > 0 ? formatVoteScore(sheetScore) : ''}</span>
-          </button>
-          <button onclick="closeContinueThread(); setReplyTarget('${safePathJs}', '${safeNameJs}')" class="font-semibold hover:underline">Responder</button>
-        </div>
-      </div>
-    </div>
-  `;
-    container.appendChild(div);
-    hydrateSheetCommentVote(div, fullPath);
-
-    if (comment.replies) {
-      const replyEntries = Object.entries(comment.replies)
-      .filter(([, r]) => !isAccountBlockedForCurrentUser(r?.authorId || ''));
-      sortCommentEntries(replyEntries).forEach(([rId, reply]) => {
-        renderContinueThreadComment(noteId, rId, reply, container, level + 1, fullPath + '/replies/' + rId);
-      });
-    }
-  }
-
-  // El sheet de "continuar hilo" ya no es de solo lectura: like con la misma
-  // transacción que el voto normal (sin depender de IDs globales) y respuesta
-  // que salta al composer principal con el objetivo ya seleccionado.
-  function hydrateSheetCommentVote(rowEl, commentPath) {
-    const user = DrexCloud.auth().currentUser;
-    if (!user || !rowEl) return;
-    const safeVoteKey = String(commentPath || '').replace(/\//g, '__');
-    DrexCloud.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey).once('value').then(snap => {
-      if (snap.val() === 'up') {
-        const btn = rowEl.querySelector('.sheet-vote-btn');
-        if (btn) {
-          btn.classList.remove('text-[#7b878f]');
-          btn.classList.add('text-[#1c2b4a]');
-          const svg = btn.querySelector('svg');
-          if (svg) svg.setAttribute('fill', 'currentColor');
-        }
-      }
-    }).catch(() => {});
-  }
-
-  async function voteSheetComment(btn, noteId, commentPath) {
-    const user = DrexCloud.auth().currentUser;
-    if (!user) { alert('Debes iniciar sesión para votar'); return; }
-    if (!btn || btn.disabled) return;
-    const lockKey = 'sheet::' + noteId + '::' + commentPath;
-    if (_commentVoteLocks.has(lockKey)) return;
-    _commentVoteLocks.add(lockKey);
-    btn.disabled = true;
-    try {
-      const safeVoteKey = String(commentPath || '').replace(/\//g, '__');
-      const userVoteRef = DrexCloud.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey);
-      const currentVote = (await userVoteRef.once('value')).val();
-      const commentRef = DrexCloud.database().ref('postComments/' + noteId + '/' + commentPath);
-      const tx = await commentRef.transaction(c => {
-        if (!c) return c;
-        if (currentVote === 'up') c.upvotes = Math.max(0, (c.upvotes || 0) - 1);
-        else c.upvotes = (c.upvotes || 0) + 1;
-        return c;
-      });
-      const updated = tx && tx.snapshot ? tx.snapshot.val() : null;
-      const newVote = currentVote === 'up' ? null : 'up';
-      if (newVote) await userVoteRef.set(newVote);
-      else await userVoteRef.remove();
-      const score = updated ? (updated.upvotes || 0) - (updated.downvotes || 0) : 0;
-      const scoreEl = btn.querySelector('.sheet-score');
-      if (scoreEl) scoreEl.textContent = score > 0 ? formatVoteScore(score) : '';
-      btn.classList.toggle('text-[#1c2b4a]', newVote === 'up');
-      btn.classList.toggle('text-[#7b878f]', newVote !== 'up');
-      const svg = btn.querySelector('svg');
-      if (svg) svg.setAttribute('fill', newVote === 'up' ? 'currentColor' : 'none');
-    } catch (e) {
-      console.error('Error al votar desde el hilo:', e);
-    } finally {
-      _commentVoteLocks.delete(lockKey);
-      btn.disabled = false;
-    }
-  }
-
-  function closeContinueThread() {
-    const sheet = document.getElementById('continue-thread-sheet');
-    const overlay = document.getElementById('continue-thread-overlay');
-    if (sheet) {
-      sheet.style.transform = 'translateY(100%)';
-      setTimeout(() => { sheet.remove(); if (overlay) overlay.remove(); }, 280);
-    } else if (overlay) overlay.remove();
-  }
-
-
   function loadCommentsInView(noteId) {
     const commentsList = document.getElementById('comments-list-view');
 
@@ -13096,173 +12933,185 @@ function saveNote() {
     return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   }
 
-  function toggleThreadCollapse(commentPath) {
-    const repliesEl = document.getElementById(`replies-${commentPath}`);
-    const pillEl = document.getElementById(`collapsed-pill-${commentPath}`);
-    const lineEl = document.getElementById(`thread-line-${commentPath}`);
-    const chevEl = document.getElementById(`thread-chevron-${commentPath}`);
-    if (!repliesEl) return;
+  // ============ COMENTARIOS ESTILO INSTAGRAM ============
+  // Lista plana, sin hilos: nada de rieles de votos a la izquierda, líneas guía
+  // ni colapsables. Las respuestas se aplanan a un solo nivel bajo el
+  // comentario raíz, con el clásico "— Ver respuestas (n)" para expandirlas.
+  // Los votos se conservan (columna compacta a la derecha, como el corazón de IG).
 
-    const isCollapsed = repliesEl.classList.contains('thread-collapsed');
-    const chevSvg = chevEl ? chevEl.querySelector('svg') : null;
+  function collectFlatReplies(repliesObj, basePath, parentAuthorId, parentAuthorName, depth, out) {
+    Object.entries(repliesObj || {}).forEach(([rId, r]) => {
+      if (!r || isAccountBlockedForCurrentUser(r.authorId || '')) return;
+      const path = basePath + '/replies/' + rId;
+      out.push({
+        path,
+        reply: r,
+        depth,
+        replyToName: depth > 1 ? parentAuthorName : '',
+        replyToId: depth > 1 ? parentAuthorId : ''
+      });
+      collectFlatReplies(r.replies, path, r.authorId || '', r.authorName || 'Usuario', depth + 1, out);
+    });
+    return out;
+  }
 
-    if (isCollapsed) {
-      repliesEl.classList.remove('thread-collapsed');
-      if (pillEl) pillEl.classList.add('hidden');
-      if (lineEl) lineEl.setAttribute('aria-label', 'Colapsar hilo');
-      if (chevSvg) chevSvg.classList.remove('rotate-180');
-      if (chevEl) chevEl.setAttribute('aria-label', 'Colapsar hilo');
-    } else {
-      repliesEl.classList.add('thread-collapsed');
-      if (pillEl) pillEl.classList.remove('hidden');
-      if (lineEl) lineEl.setAttribute('aria-label', 'Expandir hilo');
-      if (chevSvg) chevSvg.classList.add('rotate-180');
-      if (chevEl) chevEl.setAttribute('aria-label', 'Expandir hilo');
+  function toggleIgReplies(commentPath) {
+    const box = document.getElementById('replies-' + commentPath);
+    if (!box) return;
+    const label = document.getElementById('ig-replies-label-' + commentPath);
+    const isHidden = box.classList.contains('hidden');
+    box.classList.toggle('hidden', !isHidden);
+    if (label) {
+      const n = box.dataset.count || '';
+      label.textContent = isHidden ? 'Ocultar respuestas' : `Ver respuestas (${n})`;
     }
+  }
+
+  function igCommentRowHTML(o) {
+    const c = o.comment;
+    const score = (c.upvotes || 0) - (c.downvotes || 0);
+    const scoreColorCls = score > 0 ? 'text-[#1c2b4a]' : score < 0 ? 'text-[#8b5a5a]' : 'text-[#9aa4ae]';
+    const replyToHtml = o.replyToName
+      ? (o.safeReplyToId
+        ? `<button onclick="openAuthorProfileFromComments('${o.safeReplyToId}')" class="font-semibold text-[#0084FF] hover:underline">${escapeHTML('@' + o.replyToName)}</button> `
+        : `<span class="font-semibold text-[#0084FF]">${escapeHTML('@' + o.replyToName)}</span> `)
+      : '';
+    return `
+    <div class="flex gap-2.5">
+      <button ${o.commentAuthorId ? `onclick="openAuthorProfileFromComments('${o.safeCommentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-[#eef2f7] ${o.commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${o.safeAuthorName}">
+        <img src="${o.safeAuthorImage}" class="w-full h-full object-cover" loading="lazy">
+      </button>
+      <div class="flex-1 min-w-0">
+        ${o.pinnedBadgeHtml || ''}
+        <div class="text-sm text-[#1c2b4a] leading-snug break-words">
+          <button ${o.commentAuthorId ? `onclick="openAuthorProfileFromComments('${o.safeCommentAuthorId}')"` : 'disabled'} class="font-bold hover:underline ${o.commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${o.safeAuthorName}</button>${o.commentVerifiedIcon}${o.quickFollowHtml}
+          ${replyToHtml}<span id="comment-content-${o.commentPath}">${renderContentWithSticker(c.content, 'text-sm text-[#1c2b4a] leading-snug')}</span>
+        </div>
+        ${o.safeGifUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[220px]"><img src="${o.safeGifUrl}" class="w-full max-h-60 object-cover" loading="lazy"></div>` : ''}
+        ${o.safePhotoUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[260px] cursor-pointer" onclick="window.open('${o.safePhotoUrlJs}','_blank','noopener')"><img src="${o.safePhotoUrl}" class="w-full max-h-72 object-cover" loading="lazy"></div>` : ''}
+        <div class="flex items-center gap-3 mt-1 text-[12px] text-[#7b878f]">
+          <span class="flex-shrink-0">${formatRelativeTime(c.timestamp)}</span>
+          <span id="comment-edited-${o.commentPath}" class="flex-shrink-0 ${c.editedAt ? '' : 'hidden'}">Editado</span>
+          <button onclick="setReplyTarget('${o.safeCommentPath}', '${o.safeAuthorNameArg}')" class="font-bold hover:text-[#1c2b4a] transition-colors flex-shrink-0" aria-label="Responder a ${o.safeAuthorName}">Responder</button>
+          <button onclick="openCommentActionsSheet('${o.safeNoteId}', '${o.safeCommentPath}', '${o.safeCommentTextArg}', '${o.safeCommentAuthorId}')" class="w-6 h-6 flex items-center justify-center rounded-full hover:bg-[#eef2f7] hover:text-[#5c6974] transition flex-shrink-0" aria-label="Opciones del comentario">
+            <svg class="w-4 h-4 pointer-events-none" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex flex-col items-center flex-shrink-0 w-8 pt-0.5 select-none">
+        <button onclick="voteComment('${o.safeNoteId}', '${o.safeCommentPath}', 'up')" id="comment-upvote-${o.commentPath}"
+          class="w-8 h-7 flex items-center justify-center rounded-lg text-[#7b878f] hover:bg-[#eef2f7] hover:text-[#1c2b4a] active:scale-90 transition" aria-label="Votar positivo">
+          <svg class="w-[18px] h-[18px] pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
+        </button>
+        <span id="comment-score-${o.commentPath}" data-score="${score}" class="text-[12px] font-bold tabular-nums leading-none my-[2px] ${scoreColorCls}">${formatVoteScore(score)}</span>
+        <button onclick="voteComment('${o.safeNoteId}', '${o.safeCommentPath}', 'down')" id="comment-downvote-${o.commentPath}"
+          class="w-8 h-7 flex items-center justify-center rounded-lg text-[#7b878f] hover:bg-[#eef2f7] hover:text-[#8b5a5a] active:scale-90 transition" aria-label="Votar negativo">
+          <svg class="w-[18px] h-[18px] pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }
+
+  function igRowOpts(noteId, commentPath, comment, pinnedBadgeHtml) {
+    const authorId = comment.authorId || '';
+    return {
+      noteId,
+      comment,
+      commentPath,
+      safeNoteId: escapeInlineSingleQuote(noteId),
+      safeCommentPath: escapeInlineSingleQuote(commentPath),
+      commentAuthorId: authorId,
+      safeCommentAuthorId: escapeInlineSingleQuote(authorId),
+      safeAuthorName: escapeHTML(comment.authorName || 'Usuario'),
+      safeAuthorNameArg: escapeInlineSingleQuote(comment.authorName || 'Usuario'),
+      safeCommentTextArg: escapeInlineSingleQuote(comment.content || ''),
+      safeAuthorImage: getSafeMediaUrl(comment.authorImage, 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='),
+      safeGifUrl: getSafeMediaUrl(comment.gifUrl),
+      safePhotoUrl: getSafeMediaUrl(comment.photoUrl),
+      safePhotoUrlJs: getSafeMediaUrlInlineJs(comment.photoUrl),
+      commentVerifiedIcon: getVerificationIconByAuthor(comment.authorEmail || '', authorId),
+      quickFollowHtml: getQuickFollowButtonMarkup(authorId, DrexCloud.auth().currentUser?.uid || ''),
+      pinnedBadgeHtml: pinnedBadgeHtml || '',
+      replyToName: '',
+      safeReplyToId: ''
+    };
+  }
+
+  function hydrateIgVoteButtons(commentPath) {
+    const user = DrexCloud.auth().currentUser;
+    if (!user) return;
+    const safeVoteKey = commentPath.replace(/\//g, '__');
+    DrexCloud.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey).once('value').then(voteSnapshot => {
+      const vote = voteSnapshot.val();
+      const upBtn = document.getElementById(`comment-upvote-${commentPath}`);
+      const downBtn = document.getElementById(`comment-downvote-${commentPath}`);
+      if (vote === 'up' && upBtn) {
+        upBtn.classList.add('active');
+        upBtn.classList.remove('text-[#7b878f]');
+        upBtn.classList.add('text-[#1c2b4a]');
+        const svg = upBtn.querySelector('svg');
+        if (svg) svg.setAttribute('fill', 'currentColor');
+      }
+      if (vote === 'down' && downBtn) {
+        downBtn.classList.add('active');
+        downBtn.classList.remove('text-[#7b878f]');
+        downBtn.classList.add('text-[#8b5a5a]');
+        const svg = downBtn.querySelector('svg');
+        if (svg) svg.setAttribute('fill', 'currentColor');
+      }
+    }).catch(() => {});
   }
 
   function renderCommentModern(noteId, commentId, comment, container, level, parentId = null, parentPath = "") {
     if (isAccountBlockedForCurrentUser(comment?.authorId || '')) return;
     const commentPath = parentPath ? `${parentPath}/replies/${commentId}` : commentId;
-    const commentAuthorId = comment.authorId || '';
-    const commentVerifiedIcon = getVerificationIconByAuthor(comment.authorEmail || '', commentAuthorId);
-    const upvotes = comment.upvotes || 0;
-    const downvotes = comment.downvotes || 0;
-    const score = upvotes - downvotes;
-    const safeNoteId = escapeInlineSingleQuote(noteId);
-    const safeCommentPath = escapeInlineSingleQuote(commentPath);
-    const safeCommentAuthorId = escapeInlineSingleQuote(commentAuthorId);
-    const safeAuthorName = escapeHTML(comment.authorName || 'Usuario');
-    const safeAuthorNameArg = escapeInlineSingleQuote(comment.authorName || 'Usuario');
-    const safeCommentTextArg = escapeInlineSingleQuote(comment.content || '');
-    const safeAuthorImage = getSafeMediaUrl(comment.authorImage, 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==');
-    const safeGifUrl = getSafeMediaUrl(comment.gifUrl);
-    const safePhotoUrl = getSafeMediaUrl(comment.photoUrl);
-
-    const hasReplies = comment.replies && Object.keys(comment.replies).length > 0;
-    const replyCount = hasReplies ? countVisibleReplies(comment.replies) : 0;
-    const isTopLevel = level === 0;
     const isPinned = currentPinnedCommentPath === commentPath;
-  
+
     const pinnedBadgeHtml = isPinned ? `
-    <div class="mb-2 inline-flex items-center gap-1 rounded-full bg-[#fff7ed] border border-[#fed7aa] text-[#24324c] px-2.5 py-1 text-[10px] font-black uppercase tracking-wide">
+    <div class="mb-1.5 inline-flex items-center gap-1 rounded-full bg-[#fff7ed] border border-[#fed7aa] text-[#24324c] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6-3.8L6.5 21V4.5a1 1 0 0 1 1-1z" /></svg>
       Fijado por el autor
     </div>` : '';
 
+    const hasReplies = comment.replies && Object.keys(comment.replies).length > 0;
+    const replyCount = hasReplies ? countVisibleReplies(comment.replies) : 0;
+
+    // Respuestas aplanadas a un solo nivel (estilo Instagram).
+    const flat = hasReplies ? collectFlatReplies(comment.replies, commentPath, comment.authorId || '', comment.authorName || 'Usuario', 1, []) : [];
+    const sortedFlat = sortCommentEntries(flat.map(f => [f.path, f.reply]));
+    const flatByPath = {};
+    flat.forEach(f => { flatByPath[f.path] = f; });
+
+    const repliesHtml = hasReplies ? `
+    <div class="mt-1">
+      <button onclick="toggleIgReplies('${escapeInlineSingleQuote(commentPath)}')" class="flex items-center gap-2 py-1 text-[12px] font-semibold text-[#7b878f] hover:text-[#1c2b4a] transition-colors" aria-label="Ver respuestas">
+        <span class="inline-block w-6 h-[1.5px] bg-[#b6c0d1] rounded-full"></span>
+        <span id="ig-replies-label-${commentPath}">Ver respuestas (${replyCount})</span>
+      </button>
+      <div id="replies-${commentPath}" data-count="${replyCount}" class="hidden mt-1.5 ml-10 space-y-3.5">
+        ${sortedFlat.map(([p]) => {
+          const f = flatByPath[p];
+          const opts = igRowOpts(noteId, p, f.reply, currentPinnedCommentPath === p ? pinnedBadgeHtml : '');
+          opts.replyToName = f.replyToName;
+          opts.safeReplyToId = escapeInlineSingleQuote(f.replyToId || '');
+          return igCommentRowHTML(opts);
+        }).join('')}
+      </div>
+    </div>` : '';
+
     const commentDiv = document.createElement('div');
     commentDiv.id = 'comment-card-' + commentPath;
-    // Hilo estilo comunidad: riel de votos + línea guía por nivel. El árbol se
-    // dibuja solo con el riel; sin burbujas ni márgenes manuales.
     commentDiv.className = 'relative' + (isPinned ? ' bg-[#fffdf7]' : '');
-    if (isTopLevel) commentDiv.style.cssText = 'padding:10px 12px;border-bottom:1px solid #eef2f7;';
-
-    const threadLineHtml = hasReplies ? `
-    <button id="thread-line-${commentPath}" onclick="toggleThreadCollapse('${safeCommentPath}')" aria-label="Colapsar hilo"
-      class="flex-1 w-[2px] mt-1 rounded-full bg-[#dce1e5] hover:bg-[#8fa2c7] active:bg-[#5c6974] transition-colors cursor-pointer" style="min-height:14px;">
-    </button>` : '';
-
-    const scoreColorCls = score > 0 ? 'text-[#1c2b4a]' : score < 0 ? 'text-[#8b5a5a]' : 'text-[#9aa4ae]';
-    const quickFollowHtml = getQuickFollowButtonMarkup(commentAuthorId, DrexCloud.auth().currentUser?.uid || '');
-
-    commentDiv.innerHTML = `
-    <div class="flex gap-1.5">
-      <div class="flex flex-col items-center flex-shrink-0 w-7 pt-0.5 select-none">
-        <button onclick="voteComment('${safeNoteId}', '${safeCommentPath}', 'up')" id="comment-upvote-${commentPath}"
-          class="w-7 h-6 flex items-center justify-center rounded-md text-[#7b878f] hover:bg-[#eef2f7] hover:text-[#1c2b4a] active:scale-90 transition ${score > 0 ? 'text-[#1c2b4a]' : ''}" aria-label="Votar positivo">
-          <svg class="w-4 h-4 pointer-events-none" fill="${score > 0 ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
-        </button>
-        <span id="comment-score-${commentPath}" data-score="${score}" class="text-[12px] font-extrabold tabular-nums leading-none my-[3px] ${scoreColorCls}">${formatVoteScore(score)}</span>
-        <button onclick="voteComment('${safeNoteId}', '${safeCommentPath}', 'down')" id="comment-downvote-${commentPath}"
-          class="w-7 h-6 flex items-center justify-center rounded-md text-[#7b878f] hover:bg-[#eef2f7] hover:text-[#1c2b4a] active:scale-90 transition ${score < 0 ? 'text-[#8b5a5a]' : ''}" aria-label="Votar negativo">
-          <svg class="w-4 h-4 pointer-events-none" fill="${score < 0 ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
-        </button>
-        ${threadLineHtml}
-      </div>
-      <div class="flex-1 min-w-0">
-        ${pinnedBadgeHtml}
-        <div class="flex items-center gap-1.5 min-w-0">
-          <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
-            <img src="${safeAuthorImage}" class="w-full h-full object-cover" loading="lazy">
-          </button>
-          <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="font-bold text-xs text-[#1c2b4a] hover:underline truncate text-left ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}</button>${commentVerifiedIcon}${quickFollowHtml}
-          <span class="text-[11px] text-[#9aa4ae] flex-shrink-0">· ${formatRelativeTime(comment.timestamp)}</span>
-          <span id="comment-edited-${commentPath}" class="text-[10px] text-[#b6c0d1] flex-shrink-0 ${comment.editedAt ? '' : 'hidden'}">· editado</span>
-          ${hasReplies ? `
-          <button id="thread-chevron-${commentPath}" onclick="toggleThreadCollapse('${safeCommentPath}')" class="ml-auto w-6 h-6 flex items-center justify-center rounded-full text-[#9aa4ae] hover:bg-[#eef2f7] hover:text-[#5c6974] transition flex-shrink-0" aria-label="Colapsar hilo">
-            <svg class="w-3.5 h-3.5 transition-transform duration-200 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
-          </button>` : ''}
-        </div>
-        <div id="comment-content-${commentPath}" class="break-words mt-0.5">
-          ${renderContentWithSticker(comment.content, 'text-sm text-[#1c2b4a] leading-relaxed')}
-        </div>
-        ${safeGifUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[220px]"><img src="${safeGifUrl}" class="w-full max-h-60 object-cover" loading="lazy"></div>` : ''}
-        ${safePhotoUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[260px] cursor-pointer" onclick="window.open('${getSafeMediaUrlInlineJs(comment.photoUrl)}','_blank','noopener')"><img src="${safePhotoUrl}" class="w-full max-h-72 object-cover" loading="lazy"></div>` : ''}
-        <div class="flex items-center gap-4 mt-1">
-          <button onclick="setReplyTarget('${safeCommentPath}', '${safeAuthorNameArg}')" class="text-[12px] font-bold text-[#7b878f] hover:text-[#1c2b4a] transition-colors" aria-label="Responder a ${safeAuthorName}">Responder</button>
-          <button onclick="openCommentActionsSheet('${safeNoteId}', '${safeCommentPath}', '${safeCommentTextArg}', '${safeCommentAuthorId}')" class="w-6 h-6 flex items-center justify-center rounded-full text-[#9aa4ae] hover:bg-[#eef2f7] hover:text-[#5c6974] transition" aria-label="Opciones del comentario">
-            <svg class="w-4 h-4 pointer-events-none" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
-          </button>
-        </div>
-        ${hasReplies ? `
-        <button id="collapsed-pill-${commentPath}" onclick="toggleThreadCollapse('${safeCommentPath}')"
-          class="hidden mt-1.5 w-full text-left text-[12px] font-semibold text-[#5c6974] bg-[#eef2f7] hover:bg-[#e2e9f2] rounded-xl px-3 py-2 transition-colors">
-          <span class="inline-flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-6-6m6 6l6-6"/></svg>
-            ${replyCount} ${replyCount === 1 ? 'respuesta' : 'respuestas'} · tocar para ver
-          </span>
-        </button>` : ''}
-        <div id="replies-${commentPath}" class="thread-replies-container"></div>
-      </div>
-    </div>
-  `;
+    commentDiv.style.cssText = 'padding:10px 12px;border-bottom:1px solid #eef2f7;';
+    commentDiv.innerHTML = igCommentRowHTML(igRowOpts(noteId, commentPath, comment, pinnedBadgeHtml)) + repliesHtml;
 
     container.appendChild(commentDiv);
     hydrateQuickFollowButtons(commentDiv);
 
-    const MAX_THREAD_DEPTH = 3;
-    if (comment.replies) {
-      const repliesContainer = document.getElementById(`replies-${commentPath}`);
-      if (level >= MAX_THREAD_DEPTH) {
-        const deepCount = countVisibleReplies(comment.replies);
-        const pill = document.createElement('button');
-        pill.className = 'mt-2 flex items-center gap-1.5 text-xs font-semibold text-[#5c6974] hover:text-[#24324c] transition-colors';
-        pill.setAttribute('onclick', `openContinueThread('${safeNoteId}', '${safeCommentPath}')`);
-        pill.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>Continuar hilo (${deepCount} ${deepCount === 1 ? 'respuesta' : 'respuestas'})`;
-        if (repliesContainer) repliesContainer.appendChild(pill);
-      } else {
-        const replyEntries = Object.entries(comment.replies || {})
-        .filter(([, reply]) => !isAccountBlockedForCurrentUser(reply?.authorId || ''));
-        sortCommentEntries(replyEntries).forEach(([replyId, reply]) => {
-          renderCommentModern(noteId, replyId, reply, repliesContainer, level + 1, commentId, commentPath);
-        });
-      }
-    }
-
-    const user = DrexCloud.auth().currentUser;
-    if (user) {
-      const safeVoteKey = commentPath.replace(/\//g, '__');
-      DrexCloud.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey).once('value').then(voteSnapshot => {
-        const vote = voteSnapshot.val();
-        const upBtn = document.getElementById(`comment-upvote-${commentPath}`);
-        const downBtn = document.getElementById(`comment-downvote-${commentPath}`);
-        if (vote === 'up' && upBtn) {
-          upBtn.classList.add('active');
-          upBtn.classList.remove('text-[#7b878f]');
-          upBtn.classList.add('text-[#1c2b4a]');
-          const svg = upBtn.querySelector('svg');
-          if (svg) svg.setAttribute('fill', 'currentColor');
-        }
-        if (vote === 'down' && downBtn) {
-          downBtn.classList.add('active');
-          downBtn.classList.remove('text-[#7b878f]');
-          downBtn.classList.add('text-[#8b5a5a]');
-          const svg = downBtn.querySelector('svg');
-          if (svg) svg.setAttribute('fill', 'currentColor');
-        }
-      });
-    }
+    hydrateIgVoteButtons(commentPath);
+    flat.forEach(f => hydrateIgVoteButtons(f.path));
   }
+
 
   async function submitComment() {
     if (!currentPostId || isSubmittingComment) return;
@@ -13431,6 +13280,9 @@ function saveNote() {
           refreshHistorialIfVisible();
           if (parentVal) {
             _renderLoadedComments(noteId);
+            const topAncestor = String(targetReply.commentId || '').split('/')[0];
+            const repliesBox = document.getElementById('replies-' + topAncestor);
+            if (repliesBox && repliesBox.classList.contains('hidden')) toggleIgReplies(topAncestor);
             const el = document.getElementById('comment-card-' + replyPath);
             if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
           } else {
