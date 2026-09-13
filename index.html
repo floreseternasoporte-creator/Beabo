@@ -15510,9 +15510,21 @@ function saveNote() {
     }, delay);
   }
 
-  window.addEventListener('DOMContentLoaded', () => {
+  // El splash se queda visible mientras DrexCloud restaura la sesión
+  // (como Instagram: logo → directo a la app, sin mostrar el login).
+  // Se oculta cuando el observador de sesión decide el destino.
+  // Red de seguridad: si la sesión tarda demasiado en resolverse
+  // (p. ej. Cognito no responde), no dejar al usuario atrapado en el logo.
+  setTimeout(() => {
+    const splash = document.getElementById('splash-screen');
+    if (!splash || splash.classList.contains('hidden')) return;
+    const mainApp = document.getElementById('main-app');
+    if (mainApp && !mainApp.classList.contains('hidden')) { hideSplashScreen(true); return; }
+    const authForm = document.getElementById('auth-form');
+    if (authForm) authForm.classList.remove('hidden');
+    if (mainApp) mainApp.classList.add('hidden');
     hideSplashScreen(true);
-  });
+  }, 12000);
   // Notificaciones
   let _notifActorCache = null;
   let _notifActorPromise = null;
@@ -17398,6 +17410,7 @@ function saveNote() {
   // perfil degradado sin índice ni onboarding.
   function startRegistrationCompletion(user, data, reason) {
     isRegistering = true;
+    if (typeof hideSplashScreen === 'function') hideSplashScreen();
     const prevName = (data && (data.displayName || data.username)) || user.displayName || '';
     const parts = String(prevName).trim().split(/\s+/).filter(Boolean);
     regData = {
@@ -29040,6 +29053,7 @@ function confirmDisableTwoFactor() {
 
 // Desafío de 2FA al iniciar sesión
 function show2FAChallenge() {
+  if (typeof hideSplashScreen === 'function') hideSplashScreen();
   document.getElementById('twofactor-challenge-view')?.classList.remove('hidden');
   const input = document.getElementById('twofactor-challenge-input');
   if (input) { input.value = ''; input.focus(); }
