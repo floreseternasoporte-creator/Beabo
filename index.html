@@ -2,7 +2,7 @@
 <html lang="es">
 
 <head>
-<meta name="drex-build" content="1789296335">
+<meta name="drex-build" content="1789296885">
 <style>
 /* Fuente Optimistic no incluida en el despliegue: se usa system-ui de respaldo. */
 :where(html) {
@@ -6810,7 +6810,7 @@ if (scrollArea) {
 
         <!-- Comunidad en una línea fluida -->
         <div class="mt-3 flex items-center justify-center flex-wrap gap-x-2 gap-y-1 text-sm text-gray-500">
-          <button onclick="openAuthorPostsView()" class="whitespace-nowrap active:opacity-60 transition"><span id="author-posts-count" class="font-bold text-black">0</span> posts</button>
+          <button onclick="document.getElementById('author-profile-posts-list').scrollIntoView({behavior:'smooth',block:'start'})" class="whitespace-nowrap active:opacity-60 transition"><span id="author-posts-count" class="font-bold text-black">0</span> posts</button>
           <span class="text-gray-300">·</span>
           <button onclick="openFollowersModal()" class="whitespace-nowrap active:opacity-60 transition"><span id="author-followers" class="font-bold text-black">0</span> seguidores</button>
           <span class="text-gray-300">·</span>
@@ -6825,6 +6825,11 @@ if (scrollArea) {
         </div>
       </div>
 
+      </div>
+      <!-- Publicaciones del autor: sueltas y visibles directo en el perfil -->
+      <div class="px-4 mt-2">
+        <h3 class="text-[15px] font-extrabold text-black mb-2 px-1">Publicaciones</h3>
+        <div id="author-profile-posts-list" class="flex flex-col"></div>
       </div>
         <!-- Nota de perfil -->
         <div id="profile-note" class="mx-4 hidden mt-2 bg-[#f0f4f9] p-4 rounded-2xl border border-[#dce1e5] text-center">
@@ -8264,32 +8269,37 @@ function saveNote() {
     return card;
   }
 
-  function createProfileRepostCard(payload, originalPost) {
+  // Repost en perfiles: mismo constructor suelto del feed para el post
+  // original, con cabecera "Reposteado". voteCtx = { user, userVote, hasReposted }.
+  function createProfileRepostCard(payload, originalPost, voteCtx) {
     const card = document.createElement('div');
-    card.className = 'bg-[#f0f4f9] rounded-xl border border-[#dce1e5] p-4 hover:shadow-md transition-all cursor-pointer w-full';
-    if (originalPost?.id) {
-      card.onclick = () => openCommentsView(originalPost.id);
+    card.className = 'drex-post w-full';
+    const repostId = (payload && payload.noteId) || (originalPost && originalPost.id) || '';
+    card.id = 'post-repost-' + repostId;
+    if (originalPost) {
+      card.dataset.noteId = originalPost.id || '';
+      card.dataset.postType = originalPost.postType || '';
     }
-    card.innerHTML = `
-      <div class="flex items-center gap-2 text-xs text-[#00a364] font-semibold mb-2">
+    const ctx = voteCtx || {};
+    try {
+      card.innerHTML = `
+      <div class="flex items-center gap-2 text-xs text-[#00a364] font-semibold px-1 mb-1">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M8 7H19L16.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           <path d="M16 17H5L7.5 19.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           <path d="M19 7V12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           <path d="M5 12V17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
-        Reposteado ${formatRelativeTime(payload?.timestamp || Date.now())}
-      </div>
-      <div class="flex items-start gap-2">
-        <img src="${getSafeMediaUrl(originalPost?.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-8 h-8 rounded-full object-cover flex-shrink-0">
-        <div class="flex-1 min-w-0">
-          <p class="font-semibold text-xs text-gray-800">${escapeHTML(originalPost?.authorName || payload?.originalAuthorName || 'Usuario')}${getVerificationIconByAuthor(originalPost?.authorEmail || '', originalPost?.authorId || '')}</p>
-          ${renderNoteAnchoredMeta(originalPost || {})}
-          ${originalPost?.content ? renderContentWithSticker(originalPost.content, 'text-xs text-gray-700 mt-1 line-clamp-3') : '<p class="text-xs text-gray-700 mt-1 line-clamp-3">Publicación sin texto</p>'}
-          ${renderNoteImages(originalPost || {}, originalPost?.id || '')}
-        </div>
-      </div>
-    `;
+        Reposteado ${formatRelativeTime((payload && payload.timestamp) || Date.now())}
+      </div>` + buildDrexPostCardHTML(originalPost || {}, {
+        user: ctx.user || null,
+        userVote: ctx.userVote || null,
+        hasReposted: Boolean(ctx.hasReposted),
+        avatarIdPrefix: 'repost-author-'
+      });
+    } catch (renderError) {
+      console.error('Error renderizando repost de perfil:', repostId, renderError);
+    }
     return card;
   }
 
@@ -25634,6 +25644,8 @@ function renderAccountsList(accounts) {
       authorPronounsPill.classList.add('hidden');
     }
     if (socialLinksNode) socialLinksNode.innerHTML = '';
+    const authorInlinePosts = document.getElementById('author-profile-posts-list');
+    if (authorInlinePosts) authorInlinePosts.innerHTML = '<div class="py-10 text-center text-[#6b7280]">Cargando publicaciones...</div>';
 
     if (followButtonText) followButtonText.textContent = 'Seguir';
     if (followButton) {
@@ -25739,6 +25751,8 @@ function renderAccountsList(accounts) {
         const authorRepostsNode = document.getElementById('author-reposts-count');
         if (authorRepostsNode) authorRepostsNode.textContent = formatNumber(repostsSnap.numChildren() || 0);
       });
+      // Posts sueltos directo en el perfil (sin vista intermedia)
+      _loadAuthorProfilePostsInline(authorId);
     }).catch(() => {
       if (currentViewedAuthorId !== authorId) return;
       if (authorNameNode) authorNameNode.textContent = 'Autor desconocido';
@@ -25950,6 +25964,29 @@ function renderAccountsList(accounts) {
 
   function closeFollowingModal() {
     document.getElementById('following-modal').classList.add('hidden');
+  }
+
+  // Posts del autor directo en el perfil (sueltos, sin vista intermedia).
+  // Reutiliza el mismo criterio de cuentas privadas que la vista de posts.
+  function _loadAuthorProfilePostsInline(authorId) {
+    const container = document.getElementById('author-profile-posts-list');
+    if (!container || !authorId) return;
+    container.innerHTML = `<div class="py-10 text-center text-[#6b7280]">Cargando publicaciones...</div>`;
+    isAccountPrivate(authorId).then(async isPrivate => {
+      if (currentViewedAuthorId !== authorId) return;
+      if (isPrivate) {
+        const canView = await canCurrentUserViewPrivateAccount(authorId);
+        if (currentViewedAuthorId !== authorId) return;
+        if (!canView) {
+          container.innerHTML = renderPrivateAccountNotice();
+          return;
+        }
+      }
+      _loadAuthorPostsContent(authorId, container);
+    }).catch(() => {
+      if (currentViewedAuthorId !== authorId) return;
+      container.innerHTML = `<div class="py-10 text-center text-red-500">Error al cargar las publicaciones.</div>`;
+    });
   }
 
   function openAuthorPostsView() {
