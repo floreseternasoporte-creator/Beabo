@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html lang="es">
 
-<head><style>
+<head>
+<meta name="drex-build" content="1789295382">
+<style>
 /* Fuente Optimistic no incluida en el despliegue: se usa system-ui de respaldo. */
 :where(html) {
   font-family: "Optimistic", system-ui, sans-serif;
@@ -31917,6 +31919,44 @@ async function endFiesta() {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     });
   }
+</script>
+<script>
+  // Auto-actualizador Drex: la app es de una sola página y una pestaña abierta
+  // puede quedarse corriendo el JS viejo por horas. Cada 5 minutos (y al volver
+  // a la pestaña) se compara el id de compilación con version.json; si hay un
+  // despliegue nuevo se muestra una píldora para recargar a la versión vigente.
+  (function drexAutoUpdater() {
+    try {
+      var meta = document.querySelector('meta[name="drex-build"]');
+      var current = meta ? meta.getAttribute('content') : '';
+      if (!current || current === 'BUILD_ID_PLACEHOLDER') return;
+      var pillShown = false;
+      function showUpdatePill() {
+        if (pillShown || document.getElementById('drex-update-pill')) return;
+        pillShown = true;
+        var pill = document.createElement('button');
+        pill.id = 'drex-update-pill';
+        pill.textContent = 'Nueva versión disponible · Toca para actualizar';
+        pill.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:86px;z-index:9999;'
+          + 'background:#1c2b4a;color:#fff;font-size:13px;font-weight:700;padding:10px 18px;border-radius:999px;'
+          + 'box-shadow:0 6px 24px rgba(0,0,0,.25);border:none;cursor:pointer;';
+        pill.onclick = function () { location.reload(); };
+        document.body.appendChild(pill);
+      }
+      function checkForUpdate() {
+        fetch('./version.json?t=' + Date.now(), { cache: 'no-store' })
+          .then(function (res) { return res.ok ? res.json() : null; })
+          .then(function (data) {
+            if (data && data.build && data.build !== current) showUpdatePill();
+          })
+          .catch(function () {});
+      }
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) checkForUpdate();
+      });
+      setInterval(checkForUpdate, 5 * 60 * 1000);
+    } catch (_) {}
+  })();
 </script>
 
 <!-- SECCIÓN DE PERFIL (a nivel de body: estas vistas también se abren fuera de Configuración) -->
