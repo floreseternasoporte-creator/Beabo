@@ -2,7 +2,7 @@
 <html lang="es">
 
 <head>
-<meta name="drex-build" content="1789334849">
+<meta name="drex-build" content="1789335401">
 <style>
 /* Fuente Optimistic no incluida en el despliegue: se usa system-ui de respaldo. */
 :where(html) {
@@ -5935,7 +5935,7 @@ if (scrollArea) {
   <!-- Contenido scrollable: post + composer ARRIBA + lista -->
   <div id="comments-scroll-container" class="flex-1 overflow-y-auto overscroll-contain">
     <!-- Post original compacto Reddit style -->
-    <div id="original-post" class="bg-white px-4 py-4 border-b border-[#dce1e5]"></div>
+    <div id="original-post" class="bg-white border-b border-[#dce1e5]"></div>
 
     <!-- Composer Reddit - ARRIBA del listado, no abajo -->
     <div class="bg-white border-b border-[#dce1e5] px-4 py-3">
@@ -12583,34 +12583,20 @@ function saveNote() {
       const originalAuthorId = note.authorId || '';
       currentPostAuthorId = originalAuthorId;
       const originalAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', originalAuthorId);
-      document.getElementById('original-post').innerHTML = `
-      <div class="flex items-start gap-3 mb-2">
-        <div class="relative w-8 h-8 flex-shrink-0">
-          <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${note.authorName || 'Usuario'}">
-            <img src="${note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-full h-full object-cover">
-          </button>
-          ${getQuickFollowButtonMarkup(originalAuthorId, user?.uid || '')}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 mb-1">
-            <button ${originalAuthorId ? `onclick="openAuthorProfileFromComments('${originalAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#6b7280] hover:text-[#5c6974] transition-colors text-left ${originalAuthorId ? 'cursor-pointer' : 'cursor-default'}">${note.authorName || 'Usuario'}${originalAuthorVerifiedIcon}</button>
-          </div>
-          ${renderNoteAnchoredMeta(note)}
-          ${note.content ? renderContentWithSticker(note.content, 'text-[#1c2b4a] text-base mb-2 leading-relaxed') : ''}
-        </div>
-      </div>
-      ${renderNoteImages(note, noteId)}
-      ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
-      <div class="flex items-center justify-between gap-3 text-xs text-[#7b878f] mt-2">
-        <span class="font-bold ${score > 0 ? 'text-[#5c6974]' : 'text-[#7b878f]'}">${formatVoteScore(score)}</span>
-        <div class="flex items-center gap-1">
-          <button onclick="openPostShareMenu('${noteId}')" class="text-[#6b7280] hover:text-[#1c2b4a] transition-colors p-1" aria-label="Compartir">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-          </button>
-        </div>
-      </div>
-      <p class="text-xs text-[#b6c0d1] mt-2">${formatRelativeTime(note.timestamp)}</p>
-    `;
+      // La publicación original usa la MISMA tarjeta del feed para que
+      // la vista de comentarios hable el mismo idioma visual.
+      const originalPostHost = document.getElementById('original-post');
+      const pvJobs = [];
+      let pUserVote = null;
+      let pHasReposted = false;
+      if (user) {
+        pvJobs.push(DrexCloud.database().ref('userVotes/' + user.uid + '/' + noteId).once('value').then(s => { pUserVote = s.val() || null; }).catch(() => {}));
+        pvJobs.push(DrexCloud.database().ref('userReposts/' + user.uid + '/' + noteId).once('value').then(s => { pHasReposted = !!s.val(); }).catch(() => {}));
+      }
+      Promise.all(pvJobs).then(() => {
+        originalPostHost.innerHTML = `<div class="drex-post w-full" data-note-id="${noteId}">${buildDrexPostCardHTML(note, { user, userVote: pUserVote, hasReposted: pHasReposted, avatarIdPrefix: 'comments-author-' })}</div>`;
+        hydrateQuickFollowButtons(originalPostHost);
+      });
     }).catch(() => {
       window.paintLoadError(document.getElementById('original-post'), 'No se pudo cargar la publicación. Revisa tu conexión.', () => openCommentsView(noteId));
     });
@@ -12970,12 +12956,13 @@ function saveNote() {
   function igCommentRowHTML(o) {
     const c = o.comment;
     const score = (c.upvotes || 0) - (c.downvotes || 0);
-    const scoreColorCls = score > 0 ? 'text-[#1c2b4a]' : score < 0 ? 'text-[#8b5a5a]' : 'text-[#9aa4ae]';
     const replyToHtml = o.replyToName
       ? (o.safeReplyToId
         ? `<button onclick="openAuthorProfileFromComments('${o.safeReplyToId}')" class="font-semibold text-[#0084FF] hover:underline">${escapeHTML('@' + o.replyToName)}</button> `
         : `<span class="font-semibold text-[#0084FF]">${escapeHTML('@' + o.replyToName)}</span> `)
       : '';
+    // Misma lengua visual que las tarjetas del feed: riel de votos drex,
+    // nombre/tiempo con las clases del feed y pildora de accion.
     return `
     <div class="flex gap-2.5">
       <button ${o.commentAuthorId ? `onclick="openAuthorProfileFromComments('${o.safeCommentAuthorId}')"` : 'disabled'} class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-[#eef2f7] ${o.commentAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${o.safeAuthorName}">
@@ -12984,29 +12971,27 @@ function saveNote() {
       <div class="flex-1 min-w-0">
         ${o.pinnedBadgeHtml || ''}
         <div class="text-sm text-[#1c2b4a] leading-snug break-words">
-          <button ${o.commentAuthorId ? `onclick="openAuthorProfileFromComments('${o.safeCommentAuthorId}')"` : 'disabled'} class="font-bold hover:underline ${o.commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${o.safeAuthorName}</button>${o.commentVerifiedIcon}${o.quickFollowHtml}
+          <button ${o.commentAuthorId ? `onclick="openAuthorProfileFromComments('${o.safeCommentAuthorId}')"` : 'disabled'} class="drex-post-author ${o.commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${o.safeAuthorName}</button>${o.commentVerifiedIcon}${o.quickFollowHtml}
           ${replyToHtml}<span id="comment-content-${o.commentPath}">${renderContentWithSticker(c.content, 'text-sm text-[#1c2b4a] leading-snug')}</span>
         </div>
         ${o.safeGifUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[220px]"><img src="${o.safeGifUrl}" class="w-full max-h-60 object-cover" loading="lazy"></div>` : ''}
         ${o.safePhotoUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[260px] cursor-pointer" onclick="window.open('${o.safePhotoUrlJs}','_blank','noopener')"><img src="${o.safePhotoUrl}" class="w-full max-h-72 object-cover" loading="lazy"></div>` : ''}
-        <div class="flex items-center gap-3 mt-1 text-[12px] text-[#7b878f]">
-          <span class="flex-shrink-0">${formatRelativeTime(c.timestamp)}</span>
-          <span id="comment-edited-${o.commentPath}" class="flex-shrink-0 ${c.editedAt ? '' : 'hidden'}">Editado</span>
-          <button onclick="setReplyTarget('${o.safeCommentPath}', '${o.safeAuthorNameArg}')" class="font-bold hover:text-[#1c2b4a] transition-colors flex-shrink-0" aria-label="Responder a ${o.safeAuthorName}">Responder</button>
-          <button onclick="openCommentActionsSheet('${o.safeNoteId}', '${o.safeCommentPath}', '${o.safeCommentTextArg}', '${o.safeCommentAuthorId}')" class="w-6 h-6 flex items-center justify-center rounded-full hover:bg-[#eef2f7] hover:text-[#5c6974] transition flex-shrink-0" aria-label="Opciones del comentario">
+        <div class="flex items-center gap-2.5 mt-1.5">
+          <span class="drex-post-time text-[12px]">&middot; ${formatRelativeTime(c.timestamp)}</span>
+          <span id="comment-edited-${o.commentPath}" class="text-[12px] text-[#9aa4b2] flex-shrink-0 ${c.editedAt ? '' : 'hidden'}">&middot; Editado</span>
+          <button onclick="setReplyTarget('${o.safeCommentPath}', '${o.safeAuthorNameArg}')" class="drex-action-pill" aria-label="Responder a ${o.safeAuthorName}">Responder</button>
+          <button onclick="openCommentActionsSheet('${o.safeNoteId}', '${o.safeCommentPath}', '${o.safeCommentTextArg}', '${o.safeCommentAuthorId}')" class="w-7 h-7 flex items-center justify-center rounded-full text-[#5c6974] hover:bg-[#e7edf5] hover:text-[#1c2b4a] transition flex-shrink-0" aria-label="Opciones del comentario">
             <svg class="w-4 h-4 pointer-events-none" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
           </button>
         </div>
       </div>
-      <div class="flex flex-col items-center flex-shrink-0 w-8 pt-0.5 select-none">
-        <button onclick="voteComment('${o.safeNoteId}', '${o.safeCommentPath}', 'up')" id="comment-upvote-${o.commentPath}"
-          class="w-8 h-7 flex items-center justify-center rounded-lg text-[#7b878f] hover:bg-[#eef2f7] hover:text-[#1c2b4a] active:scale-90 transition" aria-label="Votar positivo">
-          <svg class="w-[18px] h-[18px] pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
+      <div class="drex-vote-rail" role="group" aria-label="Votar comentario">
+        <button onclick="voteComment('${o.safeNoteId}', '${o.safeCommentPath}', 'up')" id="comment-upvote-${o.commentPath}" class="drex-vote-btn drex-up" aria-label="Voto positivo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 14.5 12 8l6.5 6.5"/></svg>
         </button>
-        <span id="comment-score-${o.commentPath}" data-score="${score}" class="text-[12px] font-bold tabular-nums leading-none my-[2px] ${scoreColorCls}">${formatVoteScore(score)}</span>
-        <button onclick="voteComment('${o.safeNoteId}', '${o.safeCommentPath}', 'down')" id="comment-downvote-${o.commentPath}"
-          class="w-8 h-7 flex items-center justify-center rounded-lg text-[#7b878f] hover:bg-[#eef2f7] hover:text-[#8b5a5a] active:scale-90 transition" aria-label="Votar negativo">
-          <svg class="w-[18px] h-[18px] pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        <span id="comment-score-${o.commentPath}" data-score="${score}" class="drex-vote-score">${formatVoteScore(score)}</span>
+        <button onclick="voteComment('${o.safeNoteId}', '${o.safeCommentPath}', 'down')" id="comment-downvote-${o.commentPath}" class="drex-vote-btn drex-down" aria-label="Voto negativo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 9.5 12 16l6.5-6.5"/></svg>
         </button>
       </div>
     </div>`;
@@ -13045,19 +13030,12 @@ function saveNote() {
       const vote = voteSnapshot.val();
       const upBtn = document.getElementById(`comment-upvote-${commentPath}`);
       const downBtn = document.getElementById(`comment-downvote-${commentPath}`);
-      if (vote === 'up' && upBtn) {
-        upBtn.classList.add('active');
-        upBtn.classList.remove('text-[#7b878f]');
-        upBtn.classList.add('text-[#1c2b4a]');
-        const svg = upBtn.querySelector('svg');
-        if (svg) svg.setAttribute('fill', 'currentColor');
-      }
-      if (vote === 'down' && downBtn) {
-        downBtn.classList.add('active');
-        downBtn.classList.remove('text-[#7b878f]');
-        downBtn.classList.add('text-[#8b5a5a]');
-        const svg = downBtn.querySelector('svg');
-        if (svg) svg.setAttribute('fill', 'currentColor');
+      const scoreEl = document.getElementById(`comment-score-${commentPath}`);
+      if (vote === 'up' && upBtn) upBtn.classList.add('active');
+      if (vote === 'down' && downBtn) downBtn.classList.add('active');
+      if (scoreEl) {
+        scoreEl.classList.toggle('is-up', vote === 'up');
+        scoreEl.classList.toggle('is-down', vote === 'down');
       }
     }).catch(() => {});
   }
@@ -13084,7 +13062,7 @@ function saveNote() {
 
     const repliesHtml = hasReplies ? `
     <div class="mt-1">
-      <button onclick="toggleIgReplies('${escapeInlineSingleQuote(commentPath)}')" class="flex items-center gap-2 py-1 text-[12px] font-semibold text-[#7b878f] hover:text-[#1c2b4a] transition-colors" aria-label="Ver respuestas">
+      <button onclick="toggleIgReplies('${escapeInlineSingleQuote(commentPath)}')" class="flex items-center gap-2 py-1 text-[12px] font-semibold text-[#5c6974] hover:text-[#1c2b4a] transition-colors" aria-label="Ver respuestas">
         <span class="inline-block w-6 h-[1.5px] bg-[#b6c0d1] rounded-full"></span>
         <span id="ig-replies-label-${commentPath}">Ver respuestas (${replyCount})</span>
       </button>
@@ -13513,22 +13491,27 @@ function saveNote() {
     const prevVote = upvoteBtn && upvoteBtn.classList.contains('active') ? 'up'
       : (downvoteBtn && downvoteBtn.classList.contains('active') ? 'down' : null);
     const optimisticVote = prevVote === voteType ? null : voteType;
-    const _paintThreadVoteBtn = (btn, isActive, activeColor) => {
+    // Pintado con las clases del sistema drex (igual que las tarjetas del feed).
+    const _paintIgVoteBtn = (btn, isActive) => {
       if (!btn) return;
       btn.classList.toggle('active', isActive);
-      btn.classList.toggle(activeColor, isActive);
-      btn.classList.toggle('text-[#7b878f]', !isActive);
       const svg = btn.querySelector('svg');
       if (svg) {
-        svg.setAttribute('fill', isActive ? 'currentColor' : 'none');
         svg.style.transform = 'scale(1.25)';
         setTimeout(() => { svg.style.transform = 'scale(1)'; }, 160);
       }
       btn.style.transform = 'scale(1.15)';
       setTimeout(() => { if (btn) btn.style.transform = 'scale(1)'; }, 150);
     };
-    _paintThreadVoteBtn(upvoteBtn, optimisticVote === 'up', 'text-[#1c2b4a]');
-    _paintThreadVoteBtn(downvoteBtn, optimisticVote === 'down', 'text-[#8b5a5a]');
+    const _paintIgScore = (label, scoreValue, isUp, isDown) => {
+      if (!label) return;
+      label.textContent = formatVoteScore(scoreValue);
+      if (label.dataset) label.dataset.score = String(scoreValue);
+      label.classList.toggle('is-up', isUp);
+      label.classList.toggle('is-down', isDown);
+    };
+    _paintIgVoteBtn(upvoteBtn, optimisticVote === 'up');
+    _paintIgVoteBtn(downvoteBtn, optimisticVote === 'down');
     if (scoreLabel) {
       const baseScore = parseInt(scoreLabel.dataset ? scoreLabel.dataset.score || '0' : '0', 10) || 0;
       let optimisticScore = baseScore;
@@ -13536,11 +13519,7 @@ function saveNote() {
       if (prevVote === 'down') optimisticScore += 1;
       if (optimisticVote === 'up') optimisticScore += 1;
       if (optimisticVote === 'down') optimisticScore -= 1;
-      scoreLabel.textContent = formatVoteScore(optimisticScore);
-      scoreLabel.classList.remove('hidden');
-      scoreLabel.classList.toggle('text-[#1c2b4a]', optimisticScore > 0);
-      scoreLabel.classList.toggle('text-[#8b5a5a]', optimisticScore < 0);
-      scoreLabel.classList.toggle('text-[#9aa4ae]', optimisticScore === 0);
+      _paintIgScore(scoreLabel, optimisticScore, optimisticVote === 'up', optimisticVote === 'down');
     }
 
     userVoteRef.once('value').then(snapshot => {
@@ -13561,24 +13540,9 @@ function saveNote() {
 
         if (updatedComment) {
           const finalScore = (updatedComment.upvotes || 0) - (updatedComment.downvotes || 0);
-          const _setThreadVoteBtn = (btn, isActive, activeColor) => {
-            if (!btn) return;
-            btn.classList.toggle('active', isActive);
-            btn.classList.toggle(activeColor, isActive);
-            btn.classList.toggle('text-[#7b878f]', !isActive);
-            const svg = btn.querySelector('svg');
-            if (svg) svg.setAttribute('fill', isActive ? 'currentColor' : 'none');
-          };
-          _setThreadVoteBtn(upvoteBtn, newVote === 'up', 'text-[#1c2b4a]');
-          _setThreadVoteBtn(downvoteBtn, newVote === 'down', 'text-[#8b5a5a]');
-          if (scoreLabel) {
-            scoreLabel.textContent = formatVoteScore(finalScore);
-            if (scoreLabel.dataset) scoreLabel.dataset.score = String(finalScore);
-            scoreLabel.classList.remove('hidden');
-            scoreLabel.classList.toggle('text-[#1c2b4a]', finalScore > 0);
-            scoreLabel.classList.toggle('text-[#8b5a5a]', finalScore < 0);
-            scoreLabel.classList.toggle('text-[#9aa4ae]', finalScore === 0);
-          }
+          _paintIgVoteBtn(upvoteBtn, newVote === 'up');
+          _paintIgVoteBtn(downvoteBtn, newVote === 'down');
+          _paintIgScore(scoreLabel, finalScore, newVote === 'up', newVote === 'down');
         }
 
         if (
@@ -13601,16 +13565,8 @@ function saveNote() {
       });
     }).catch(error => {
       console.error('Error al votar el comentario:', error);
-      const _rollbackThreadVoteBtn = (btn, isActive, activeColor) => {
-        if (!btn) return;
-        btn.classList.toggle('active', isActive);
-        btn.classList.toggle(activeColor, isActive);
-        btn.classList.toggle('text-[#7b878f]', !isActive);
-        const svg = btn.querySelector('svg');
-        if (svg) svg.setAttribute('fill', isActive ? 'currentColor' : 'none');
-      };
-      _rollbackThreadVoteBtn(upvoteBtn, prevVote === 'up', 'text-[#1c2b4a]');
-      _rollbackThreadVoteBtn(downvoteBtn, prevVote === 'down', 'text-[#8b5a5a]');
+      _paintIgVoteBtn(upvoteBtn, prevVote === 'up');
+      _paintIgVoteBtn(downvoteBtn, prevVote === 'down');
     }).finally(() => {
       _commentVoteLocks.delete(lockKey);
     });
