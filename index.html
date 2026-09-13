@@ -15515,16 +15515,26 @@ function saveNote() {
   // Se oculta cuando el observador de sesión decide el destino.
   // Red de seguridad: si la sesión tarda demasiado en resolverse
   // (p. ej. Cognito no responde), no dejar al usuario atrapado en el logo.
-  setTimeout(() => {
+  // Si la restauración sigue en curso, se espera un poco más antes de
+  // mostrar el login.
+  let splashNetAttempts = 0;
+  function splashSafetyNet() {
     const splash = document.getElementById('splash-screen');
     if (!splash || splash.classList.contains('hidden')) return;
+    const restoring = (typeof DrexCloud !== 'undefined' && typeof DrexCloud.authRestorePending === 'function' && DrexCloud.authRestorePending());
+    if (restoring && splashNetAttempts < 4) {
+      splashNetAttempts++;
+      setTimeout(splashSafetyNet, 5000);
+      return;
+    }
     const mainApp = document.getElementById('main-app');
     if (mainApp && !mainApp.classList.contains('hidden')) { hideSplashScreen(true); return; }
     const authForm = document.getElementById('auth-form');
     if (authForm) authForm.classList.remove('hidden');
     if (mainApp) mainApp.classList.add('hidden');
     hideSplashScreen(true);
-  }, 12000);
+  }
+  setTimeout(splashSafetyNet, 12000);
   // Notificaciones
   let _notifActorCache = null;
   let _notifActorPromise = null;

@@ -1130,28 +1130,41 @@
     } catch (e) { /* best-effort */ }
   }
 
+  // Una promesa con tiempo límite: si la red se queda colgada, se continúa
+  // con el flujo en vez de dejar la sesión atascada.
+  function promiseTimeout(promise, ms, label) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (!settled) { settled = true; reject(new Error(label || 'timeout')); }
+      }, ms);
+      promise.then(function (v) {
+        if (!settled) { settled = true; clearTimeout(timer); resolve(v); }
+      }, function (e) {
+        if (!settled) { settled = true; clearTimeout(timer); reject(e); }
+      });
+    });
+  }
+
   function establishSession(cognitoUser, session) {
     currentCognitoUser = cognitoUser;
     restoreSeq++;
-    return new Promise(function (resolve, reject) {
+    return new Promise(function (resolve) {
       // Los atributos enriquecen el usuario, pero una sesión válida no debe
-      // morir si esta llamada falla (sin red al abrir la app): se usan los
-      // datos del ID token como respaldo.
+      // morir si esta llamada falla o se cuelga (sin red al abrir la app):
+      // se usan los datos del ID token como respaldo.
       var tokenAttrs = attrsFromIdToken(session);
-      cognitoUser.getUserAttributes(function (err, attrs) {
-        var useAttrs = (!err && attrs && attrs.length) ? attrs : tokenAttrs;
-        if (err || !attrs || !attrs.length) {
+      var finished = false;
+      function finish(useAttrs, usedFallback) {
+        if (finished) return;
+        finished = true;
+        if (usedFallback) {
           try { console.warn('[DrexCloud] getUserAttributes no disponible; sesión establecida con datos del token.'); } catch (_) {}
         }
         authInstance.currentUser = makeCurrentUser(cognitoUser, useAttrs || []);
-        var credPromise;
-        try {
-          credPromise = configureAwsCredentials(session.getIdToken());
-        } catch (syncErr) {
-          // p. ej. SDK de AWS aún no cargado: la sesión sigue siendo válida,
-          // las credenciales se reintentan al usar la BD.
-          credPromise = Promise.reject(syncErr);
-        }
+        var credPromise = promiseTimeout(Promise.resolve().then(function () {
+          return configureAwsCredentials(session.getIdToken());
+        }), 15000, 'aws-creds-timeout');
         credPromise.then(function () {
           scheduleTokenRefresh(cognitoUser, session);
           clearSessionExpiredFlag();
@@ -1159,7 +1172,8 @@
           notifyAuthListeners();
           resolve(authInstance.currentUser);
         }, function (credErr) {
-          // Sesión válida aunque las credenciales AWS fallen: se reintentan al usar la BD
+          // Sesión válida aunque las credenciales AWS fallen o tarden:
+          // se reintentan al usar la BD.
           _awsCredentials = null;
           scheduleTokenRefresh(cognitoUser, session);
           clearSessionExpiredFlag();
@@ -1167,7 +1181,18 @@
           notifyAuthListeners();
           resolve(authInstance.currentUser);
         });
-      });
+      }
+      var attrTimer = setTimeout(function () { finish(tokenAttrs, true); }, 10000);
+      try {
+        cognitoUser.getUserAttributes(function (err, attrs) {
+          clearTimeout(attrTimer);
+          var ok = (!err && attrs && attrs.length);
+          finish(ok ? attrs : tokenAttrs, !ok);
+        });
+      } catch (e) {
+        clearTimeout(attrTimer);
+        finish(tokenAttrs, true);
+      }
     });
   }
 
