@@ -445,6 +445,11 @@
     });
     if (spec.limitFirst !== undefined) entries = entries.slice(0, spec.limitFirst);
     if (spec.limitLast !== undefined) entries = entries.slice(Math.max(0, entries.length - spec.limitLast));
+    // Sin coincidencias Firebase devuelve val() === null y exists() === false
+    // (nunca un objeto vacío). Devolver {} aquí rompía la verificación de
+    // disponibilidad de usernames (todo aparecía "en uso"), los estados
+    // "vacío" de solicitudes/notas y el bloqueo de correcciones duplicadas.
+    if (!entries.length) return null;
     var out = {};
     entries.forEach(function (e) { out[e[0]] = e[1]; });
     return out;

@@ -3530,6 +3530,7 @@ document.addEventListener("DOMContentLoaded", function() {
       <div class="reg-birthdate-content flex flex-col items-center justify-center w-full">
         <div class="reg-birthdate-copy w-full text-center mb-8">
           <h2 class="text-3xl font-bold mb-2" style="color:#24324c;">¿Cuándo naciste?</h2>
+          <p id="regBirthdateWhy" class="text-sm mb-3 hidden font-medium" style="color:#24324c;"></p>
           <p class="text-sm" style="color:#7b878f;">Esta información no será pública. La usamos para mantener Drex seguro, sobre todo para las personas más jóvenes.</p>
         </div>
         <div class="w-full">
@@ -3539,6 +3540,7 @@ document.addEventListener("DOMContentLoaded", function() {
       </div>
       <div class="pb-10 pt-4">
         <button id="regBirthdateContinue" type="button" class="w-full p-4 font-bold rounded-full transition text-white" style="background:#24324c;">Continuar</button>
+        <button id="regBirthdateSignOut" type="button" class="w-full p-3 mt-2 text-sm font-semibold transition" style="color:#7b878f; display:none;">Cerrar sesión e intentar con otra cuenta</button>
       </div>
     </div>
 
@@ -3682,6 +3684,7 @@ document.addEventListener("DOMContentLoaded", function() {
       </div>
       <div class="pb-10 pt-4">
         <button id="regUsernameContinue" type="button" class="w-full p-4 font-bold rounded-full transition text-white" style="background:#24324c;">Continuar</button>
+        <button id="regUsernameSignOut" type="button" class="w-full p-3 mt-2 text-sm font-semibold transition" style="color:#7b878f; display:none;">Cerrar sesión e intentar con otra cuenta</button>
       </div>
     </div>
 
@@ -3726,6 +3729,7 @@ document.addEventListener("DOMContentLoaded", function() {
       <div class="pb-10 pt-4 space-y-3">
         <button id="regPhotoContinue" type="button" class="w-full p-4 font-bold rounded-full transition text-white" style="background:#24324c;">Continuar</button>
         <button id="regPhotoSkip" type="button" class="w-full p-3 text-sm font-medium transition" style="color:#7b878f;">Omitir por ahora</button>
+        <button id="regPhotoSignOut" type="button" class="w-full p-3 text-sm font-semibold transition" style="color:#7b878f; display:none;">Cerrar sesión e intentar con otra cuenta</button>
       </div>
     </div>
 
@@ -16881,6 +16885,15 @@ function saveNote() {
   document.getElementById('goToRegisterBtn').addEventListener('click', () => {
     regData = { firstName: '', lastName: '', email: '', password: '', username: '', photoFile: null, drexUser: null, birthDate: '', accountTier: 'standard', usernameClaimed: '', userCounted: false, grantedVerified: false, socialCompletion: false };
     isRegistering = true;
+    // En el registro normal no se ofrece cerrar sesión a mitad del flujo.
+    ['regBirthdateSignOut', 'regUsernameSignOut', 'regPhotoSignOut'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.style.display = 'none';
+    });
+    const backBtn = document.getElementById('backFromRegBirthdate');
+    if (backBtn) backBtn.style.visibility = '';
+    const why = document.getElementById('regBirthdateWhy');
+    if (why) why.classList.add('hidden');
     showAuthSection(regNameStep);
   });
 
@@ -17494,7 +17507,7 @@ function saveNote() {
     }, 400);
   });
 
-  document.getElementById('backFromRegUsername').addEventListener('click', () => { showAuthSection(regCredStep); });
+  document.getElementById('backFromRegUsername').addEventListener('click', () => { showAuthSection(regData.socialCompletion ? regBirthdateStep : regCredStep); });
 
   document.getElementById('regUsernameContinue').addEventListener('click', async () => {
     const username = document.getElementById('regUsername').value.trim().replace(/\s+/g,'').toLowerCase();
@@ -17530,8 +17543,11 @@ function saveNote() {
     try {
       // Reserva atómica del username: si alguien lo tomó entre la verificación
       // y el guardado, la transacción se aborta y no hay duplicados.
+      // Si el valor actual es nuestro propio uid, es un reintento nuestro tras
+      // un fallo parcial (la reserva quedó hecha pero el perfil no se guardó):
+      // se reutiliza en vez de reportarlo como "tomado".
       const claim = await DrexCloud.database().ref('usernames/' + username)
-        .transaction(cur => (cur === null ? user.uid : undefined));
+        .transaction(cur => (cur === null || cur === user.uid ? user.uid : undefined));
       if (!claim.committed) {
         setUsernameUI('taken', '@' + username + ' ya está en uso. Prueba otro.');
         usernameIsAvailable = false;
@@ -17879,7 +17895,7 @@ function saveNote() {
   // (entró con Facebook o cerró la app a mitad del registro): pide fecha de
   // nacimiento (control de edad), username y foto en vez de entrar con un
   // perfil degradado sin índice ni onboarding.
-  function startRegistrationCompletion(user, data) {
+  function startRegistrationCompletion(user, data, reason) {
     isRegistering = true;
     const prevName = (data && (data.displayName || data.username)) || user.displayName || '';
     const parts = String(prevName).trim().split(/\s+/).filter(Boolean);
@@ -17896,8 +17912,55 @@ function saveNote() {
     const bd = document.getElementById('regBirthDate'); if (bd && regData.birthDate) bd.value = regData.birthDate;
     const afc = document.getElementById('auth-form'); if (afc) afc.classList.remove('hidden');
     const ma = document.getElementById('main-app'); if (ma) ma.classList.add('hidden');
+    // En modo completar-registro mostrar opción de cerrar sesión por si
+    // el usuario entró con la cuenta equivocada (evita quedar atrapado).
+    // Además se oculta la flecha de "atrás": en este modo no hay paso
+    // anterior válido (el paso de nombre no aplica) y solo confundiría.
+    const soBtn = document.getElementById('regBirthdateSignOut');
+    if (soBtn) soBtn.style.display = 'block';
+    const soBtnU = document.getElementById('regUsernameSignOut');
+    if (soBtnU) soBtnU.style.display = 'block';
+    const soBtnP = document.getElementById('regPhotoSignOut');
+    if (soBtnP) soBtnP.style.display = 'block';
+    const backBtn = document.getElementById('backFromRegBirthdate');
+    if (backBtn) backBtn.style.visibility = 'hidden';
+    // Explicar por qué se pide completar el registro (solo en este modo,
+    // no en el registro normal). Así nunca aparece la pantalla sin contexto.
+    const why = document.getElementById('regBirthdateWhy');
+    if (why) {
+      const msg = reason === 'no-profile'
+        ? 'Tu sesión es válida, pero no encontramos tu perfil. Complétalo aquí para activar tu cuenta.'
+        : reason === 'degraded'
+        ? 'Tu cuenta necesita un nombre de usuario para continuar. Elige el tuyo en el siguiente paso.'
+        : 'A tu cuenta le faltan algunos datos. Complétalos aquí para entrar.';
+      why.textContent = msg;
+      why.classList.remove('hidden');
+    }
     showAuthSection(regBirthdateStep);
   }
+
+  // Salir del flujo de completar-registro: cierra sesión y vuelve al inicio.
+  // Se usa en los pasos de nacimiento, usuario y foto (modo completar),
+  // para que nadie quede atrapado sin poder cambiar de cuenta.
+  function exitRegistrationCompletion() {
+    isRegistering = false;
+    ['regBirthdateSignOut', 'regUsernameSignOut', 'regPhotoSignOut'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.style.display = 'none';
+    });
+    const backBtn = document.getElementById('backFromRegBirthdate');
+    if (backBtn) backBtn.style.visibility = '';
+    const why = document.getElementById('regBirthdateWhy');
+    if (why) why.classList.add('hidden');
+    DrexCloud.auth().signOut().then(() => {
+      showAuthSection(authOptions);
+    }).catch(() => {
+      showAuthSection(authOptions);
+    });
+  }
+  document.getElementById('regBirthdateSignOut').addEventListener('click', exitRegistrationCompletion);
+  document.getElementById('regUsernameSignOut').addEventListener('click', exitRegistrationCompletion);
+  document.getElementById('regPhotoSignOut').addEventListener('click', exitRegistrationCompletion);
 
   // Confeti
   function launchConfetti() {
@@ -17969,7 +18032,11 @@ function saveNote() {
       if (isRegistering) return;
 
       refreshVerifiedUsersCache();
-      ensureChatUserRecord(user);
+      // Se espera a que ensureChatUserRecord termine ANTES de leer el perfil.
+      // Si no, la lectura del perfil puede ganarle la carrera a su escritura
+      // y ver un perfil vacío o a medias, mandando al paso de cumpleaños a
+      // una cuenta que en realidad está completa.
+      const _chatRecordReady = ensureChatUserRecord(user).catch(() => {});
       setupNotificationsBadge(user.uid);
       setupChatUnreadBadge(user.uid);
       startScreenTimeTracking();
@@ -17980,7 +18047,7 @@ function saveNote() {
       _loadUserSavedPosts().catch(() => {});
       _loadUserSavedComments().catch(() => {});
 
-      DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
+      _chatRecordReady.then(() => DrexCloud.database().ref('users/' + user.uid).once('value')).then(snapshot => {
         const data = snapshot.val();
         if (data && data.blocked && data.blockedUntil && Date.now() < data.blockedUntil) {
           alert("Tu cuenta ha sido bloqueada por infracciones. Por favor, contacta con el soporte para recuperar el acceso.");
@@ -18034,7 +18101,12 @@ function saveNote() {
         const needsCompletion = !data || data.profileDegraded === true ||
           (!data.registrationTimestamp && !data.username);
         if (needsCompletion) {
-          startRegistrationCompletion(user, data);
+          // Motivo específico: se muestra en pantalla para que siempre quede
+          // claro por qué se pide completar el registro, y queda en consola
+          // para diagnóstico.
+          const _reason = !data ? 'no-profile' : (data.profileDegraded === true ? 'degraded' : 'incomplete');
+          try { console.warn('[Drex] completar-registro, motivo:', _reason); } catch (_) {}
+          startRegistrationCompletion(user, data, _reason);
           return;
         }
 
