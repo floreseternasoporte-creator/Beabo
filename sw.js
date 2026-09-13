@@ -6,7 +6,7 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v5';
+const DREX_SW_VERSION = 'drex-v6';
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',
@@ -47,6 +47,31 @@ self.addEventListener('activate', event => {
   );
 });
 
+// Aviso de versión a las pestañas (ver fetch handler): se limita a un chequeo
+// cada 2 minutos para no generar tráfico.
+let drexLastBuildNotified = '';
+let drexLastBuildCheck = 0;
+function drexBroadcastBuild() {
+  try {
+    const now = Date.now();
+    if (now - drexLastBuildCheck < 120000) return;
+    drexLastBuildCheck = now;
+    fetch('./version.json', { cache: 'no-store' })
+      .then(res => (res && res.ok) ? res.json() : null)
+      .then(data => {
+        const build = data && data.build ? String(data.build) : '';
+        if (!build || build === drexLastBuildNotified) return;
+        drexLastBuildNotified = build;
+        self.clients.matchAll({ includeUncontrolled: true }).then(clients => {
+          clients.forEach(c => {
+            try { c.postMessage({ type: 'DREX_BUILD', build }); } catch (e) {}
+          });
+        }).catch(() => {});
+      })
+      .catch(() => {});
+  } catch (e) {}
+}
+
 // Red primero con respaldo a caché: la app sigue abriendo sin conexión,
 // pero una versión nueva siempre llega en cuanto hay red.
 function networkFirst(req, cacheKey) {
@@ -62,6 +87,23 @@ function networkFirst(req, cacheKey) {
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
+
+  // version.json: SIEMPRE red, nunca se guarda en caché. Es la señal que usa
+  // el actualizador para saber si hay un despliegue nuevo; si el worker la
+  // cacheara, la píldora "Nueva versión disponible" jamás aparecería.
+  try {
+    if (new URL(req.url).pathname.endsWith('/version.json')) {
+      event.respondWith(fetch(req));
+      return;
+    }
+  } catch (e) { /* sigue al flujo normal */ }
+
+  // Aviso de versión a las pestañas: el JS de una pestaña vieja puede tener
+  // sus temporizadores congelados (iOS en segundo plano), pero el worker se
+  // actualiza solo con cada navegación. Cuando detecta un build nuevo en
+  // version.json, se lo anuncia a todas las pestañas para que muestren la
+  // píldora de actualización aunque su propio chequeo no haya corrido.
+  drexBroadcastBuild();
 
   // Navegación / HTML: red primero, fallback a caché. Así una versión nueva
   // de index.html siempre llega sin que la caché la bloquee.
