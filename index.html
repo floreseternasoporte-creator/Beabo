@@ -5984,6 +5984,7 @@ if (scrollArea) {
       
     </div>
     <select id="comment-sort-select" onchange="changeCommentSort()" class="text-xs font-semibold text-[#5c6974] bg-white border border-[#dce1e5] rounded-full px-3 py-1.5 outline-none cursor-pointer hover:border-[#cbd5e1] transition">
+      <option value="best" selected>Destacados</option>
       <option value="top">Más votados</option>
       <option value="new">Más recientes</option>
       <option value="old">Más antiguos</option>
@@ -5991,7 +5992,7 @@ if (scrollArea) {
   </div>
 
   <!-- Contenido scrollable: post + composer ARRIBA + lista -->
-  <div class="flex-1 overflow-y-auto overscroll-contain">
+  <div id="comments-scroll-container" class="flex-1 overflow-y-auto overscroll-contain">
     <!-- Post original compacto Reddit style -->
     <div id="original-post" class="bg-white px-4 py-4 border-b border-[#dce1e5]"></div>
 
@@ -12954,7 +12955,7 @@ function saveNote() {
   }
 
   function openContinueThread(noteId, commentPath) {
-    DrexCloud.database().ref('postComments/' + noteId + '/' + commentPath.replace(/\/replies\//g, '/replies/')).once('value').then(snap => {
+    DrexCloud.database().ref('postComments/' + noteId + '/' + commentPath).once('value').then(snap => {
       const comment = snap.val();
       if (!comment) return;
 
@@ -13002,6 +13003,10 @@ function saveNote() {
     const safeAuthorName = escapeHTML(comment.authorName || 'Usuario');
     const safeGifUrl = getSafeMediaUrl(comment.gifUrl);
     const safePhotoUrl = getSafeMediaUrl(comment.photoUrl);
+    const safePathJs = escapeInlineSingleQuote(fullPath);
+    const safeNoteJs = escapeInlineSingleQuote(noteId);
+    const safeNameJs = escapeInlineSingleQuote(comment.authorName || 'Usuario');
+    const sheetScore = (comment.upvotes || 0) - (comment.downvotes || 0);
     const indent = level > 0 ? `margin-left:${Math.min(level, 4) * 16}px; padding-left:12px; border-left:2px solid #dce1e5;` : '';
 
     const div = document.createElement('div');
@@ -13018,10 +13023,18 @@ function saveNote() {
         <div class="text-sm text-[#1c2b4a] leading-relaxed break-words">${renderContentWithSticker(comment.content, '')}</div>
         ${safeGifUrl ? `<img src="${safeGifUrl}" class="mt-1.5 max-h-40 rounded-xl border border-[#dce1e5]" loading="lazy">` : ''}
         ${safePhotoUrl ? `<img src="${safePhotoUrl}" class="mt-1.5 max-h-56 rounded-xl border border-[#dce1e5] object-cover cursor-pointer" loading="lazy" onclick="window.open('${getSafeMediaUrlInlineJs(comment.photoUrl)}','_blank','noopener')">` : ''}
+        <div class="flex items-center gap-3 mt-1.5 text-[11px] text-[#7b878f]">
+          <button onclick="voteSheetComment(this, '${safeNoteJs}', '${safePathJs}')" class="sheet-like-btn flex items-center gap-1 font-bold text-[#7b878f]" aria-label="Me gusta">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/></svg>
+            <span class="sheet-score">${sheetScore > 0 ? formatVoteScore(sheetScore) : ''}</span>
+          </button>
+          <button onclick="closeContinueThread(); setReplyTarget('${safePathJs}', '${safeNameJs}')" class="font-semibold hover:underline">Responder</button>
+        </div>
       </div>
     </div>
   `;
     container.appendChild(div);
+    hydrateSheetCommentVote(div, fullPath);
 
     if (comment.replies) {
       const replyEntries = Object.entries(comment.replies)
@@ -13029,6 +13042,64 @@ function saveNote() {
       sortCommentEntries(replyEntries).forEach(([rId, reply]) => {
         renderContinueThreadComment(noteId, rId, reply, container, level + 1, fullPath + '/replies/' + rId);
       });
+    }
+  }
+
+  // El sheet de "continuar hilo" ya no es de solo lectura: like con la misma
+  // transacción que el voto normal (sin depender de IDs globales) y respuesta
+  // que salta al composer principal con el objetivo ya seleccionado.
+  function hydrateSheetCommentVote(rowEl, commentPath) {
+    const user = DrexCloud.auth().currentUser;
+    if (!user || !rowEl) return;
+    const safeVoteKey = String(commentPath || '').replace(/\//g, '__');
+    DrexCloud.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey).once('value').then(snap => {
+      if (snap.val() === 'up') {
+        const btn = rowEl.querySelector('.sheet-like-btn');
+        if (btn) {
+          btn.classList.remove('text-[#7b878f]');
+          btn.classList.add('text-[#ff4500]');
+          const svg = btn.querySelector('svg');
+          if (svg) svg.setAttribute('fill', 'currentColor');
+        }
+      }
+    }).catch(() => {});
+  }
+
+  async function voteSheetComment(btn, noteId, commentPath) {
+    const user = DrexCloud.auth().currentUser;
+    if (!user) { alert('Debes iniciar sesión para votar'); return; }
+    if (!btn || btn.disabled) return;
+    const lockKey = 'sheet::' + noteId + '::' + commentPath;
+    if (_commentVoteLocks.has(lockKey)) return;
+    _commentVoteLocks.add(lockKey);
+    btn.disabled = true;
+    try {
+      const safeVoteKey = String(commentPath || '').replace(/\//g, '__');
+      const userVoteRef = DrexCloud.database().ref('userCommentVotes/' + user.uid + '/' + safeVoteKey);
+      const currentVote = (await userVoteRef.once('value')).val();
+      const commentRef = DrexCloud.database().ref('postComments/' + noteId + '/' + commentPath);
+      const tx = await commentRef.transaction(c => {
+        if (!c) return c;
+        if (currentVote === 'up') c.upvotes = Math.max(0, (c.upvotes || 0) - 1);
+        else c.upvotes = (c.upvotes || 0) + 1;
+        return c;
+      });
+      const updated = tx && tx.snapshot ? tx.snapshot.val() : null;
+      const newVote = currentVote === 'up' ? null : 'up';
+      if (newVote) await userVoteRef.set(newVote);
+      else await userVoteRef.remove();
+      const score = updated ? (updated.upvotes || 0) - (updated.downvotes || 0) : 0;
+      const scoreEl = btn.querySelector('.sheet-score');
+      if (scoreEl) scoreEl.textContent = score > 0 ? formatVoteScore(score) : '';
+      btn.classList.toggle('text-[#ff4500]', newVote === 'up');
+      btn.classList.toggle('text-[#7b878f]', newVote !== 'up');
+      const svg = btn.querySelector('svg');
+      if (svg) svg.setAttribute('fill', newVote === 'up' ? 'currentColor' : 'none');
+    } catch (e) {
+      console.error('Error al votar desde el hilo:', e);
+    } finally {
+      _commentVoteLocks.delete(lockKey);
+      btn.disabled = false;
     }
   }
 
@@ -13092,7 +13163,7 @@ function saveNote() {
         commentsLoadedEntries = allEntries.filter(([, c]) => !isAccountBlockedForCurrentUser(c?.authorId || ''));
       }
 
-      _renderLoadedComments(noteId);
+      _renderLoadedComments(noteId, { preserveScroll: false });
       _updateLoadMoreArea();
     })
     .catch(() => {
@@ -13113,9 +13184,15 @@ function saveNote() {
     });
   }
 
-  function _renderLoadedComments(noteId) {
+  function _renderLoadedComments(noteId, opts = {}) {
     const commentsList = document.getElementById('comments-list-view');
     if (!commentsList) return;
+
+    // Preservar la posición de scroll en re-renders parciales (pin, publicar,
+    // editar, eliminar). La carga inicial y el cambio de orden sí vuelven arriba.
+    const preserveScroll = opts.preserveScroll !== false;
+    const scrollEl = document.getElementById('comments-scroll-container');
+    const prevScrollTop = (preserveScroll && scrollEl) ? scrollEl.scrollTop : 0;
 
     commentsList.innerHTML = '';
     let totalCount = 0;
@@ -13151,6 +13228,8 @@ function saveNote() {
       const plus = commentsHasMore ? '+' : '';
       countEl.textContent = totalCount + plus + (totalCount === 1 && !commentsHasMore ? ' comentario' : ' comentarios');
     }
+
+    if (preserveScroll && scrollEl) scrollEl.scrollTop = prevScrollTop;
   }
 
   function _updateLoadMoreArea() {
@@ -13220,6 +13299,7 @@ function saveNote() {
       if (btn)    btn.disabled = false;
       if (label)  label.textContent = 'Cargar más comentarios';
       if (spinner) spinner.classList.add('hidden');
+      if (typeof showMiniToast === 'function') showMiniToast('No se pudieron cargar más comentarios. Inténtalo de nuevo.');
     });
   }
 
@@ -13285,6 +13365,34 @@ function saveNote() {
     return count;
   }
 
+  // Modelo en memoria: publicar/editar/eliminar actualizan commentsLoadedEntries
+  // y re-renderizan sin recarga completa (sin skeleton ni pérdida de scroll).
+  function _getCommentValue(path) {
+    const segs = String(path || '').split('/');
+    if (!segs[0]) return undefined;
+    const topPair = commentsLoadedEntries.find(p => p[0] === segs[0]);
+    if (!topPair) return undefined;
+    let node = topPair[1];
+    for (let i = 1; i < segs.length; i += 2) {
+      if (segs[i] !== 'replies' || !segs[i + 1]) return undefined;
+      node = node && node.replies ? node.replies[segs[i + 1]] : undefined;
+      if (!node) return undefined;
+    }
+    return node;
+  }
+
+  function _removeCommentValue(path) {
+    const p = String(path || '');
+    const m = p.match(/\/replies\/[^/]+$/);
+    if (!m) {
+      const idx = commentsLoadedEntries.findIndex(e => e[0] === p);
+      if (idx >= 0) commentsLoadedEntries.splice(idx, 1);
+      return;
+    }
+    const parent = _getCommentValue(p.slice(0, m.index));
+    if (parent && parent.replies) delete parent.replies[p.slice(m.index + 9)]; // '/replies/'.length === 9
+  }
+
   function escapeSingleQuote(value) {
     return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   }
@@ -13338,6 +13446,7 @@ function saveNote() {
     </div>` : '';
 
     const commentDiv = document.createElement('div');
+    commentDiv.id = 'comment-card-' + commentPath;
 
     if (!isTopLevel) {
       const indent = Math.min(level, 4);
@@ -13366,7 +13475,7 @@ function saveNote() {
         ${pinnedBadgeHtml}
         <div class="bg-[#eef2f7] rounded-2xl px-3 py-2 inline-block max-w-full">
           <button ${commentAuthorId ? `onclick="openAuthorProfileFromComments('${safeCommentAuthorId}')"` : 'disabled'} class="font-semibold text-xs text-[#1c2b4a] hover:underline transition-colors text-left block ${commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${commentVerifiedIcon}</button>
-          <div class="break-words">
+          <div id="comment-content-${commentPath}" class="break-words">
             ${renderContentWithSticker(comment.content, 'text-sm text-[#1c2b4a] leading-relaxed')}
           </div>
         </div>
@@ -13588,14 +13697,27 @@ function saveNote() {
             }
 
             notificationJobs.push(mentionPromise);
-            return Promise.all(notificationJobs);
+            return Promise.all(notificationJobs).then(() => replyRef.key);
           });
-        }).then(() => {
+        }).then((replyKey) => {
           updateCommentsCount(noteId);
+          // Optimista: la respuesta aparece al instante, sin skeleton ni salto.
+          const replyPath = targetReply.commentId + '/replies/' + replyKey;
+          const parentVal = _getCommentValue(targetReply.commentId);
+          if (parentVal) {
+            parentVal.replies = parentVal.replies || {};
+            parentVal.replies[replyKey] = payload;
+          }
           clearCommentInput();
           clearReplyTarget();
           refreshHistorialIfVisible();
-          loadCommentsInView(noteId);
+          if (parentVal) {
+            _renderLoadedComments(noteId);
+            const el = document.getElementById('comment-card-' + replyPath);
+            if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          } else {
+            loadCommentsInView(noteId);
+          }
         });
       }
 
@@ -13610,13 +13732,17 @@ function saveNote() {
             notifications.push(addNotification(note.authorId, buildPostMessage(), typeForMedia, { actionType: 'post', actionId: noteId }));
           }
           notifications.push(mentionPromise);
-          return Promise.all(notifications);
+          return Promise.all(notifications).then(() => commentRef.key);
         });
-      }).then(() => {
+      }).then((commentKey) => {
         updateCommentsCount(noteId);
+        // Optimista: el comentario aparece al instante, sin skeleton.
+        commentsLoadedEntries.push([commentKey, payload]);
         clearCommentInput();
         refreshHistorialIfVisible();
-        loadCommentsInView(noteId);
+        _renderLoadedComments(noteId);
+        const el = document.getElementById('comment-card-' + commentKey);
+        if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       });
     }).catch(error => {
       console.error(targetReply ? 'Error al enviar respuesta:' : 'Error al comentar:', error);
@@ -13755,11 +13881,18 @@ function saveNote() {
         })
       : Promise.resolve();
 
+      // Edición en sitio: sin recarga completa ni pérdida de scroll.
+      const node = _getCommentValue(commentPath);
+      if (node) {
+        node.content = cleanedContent;
+        node.editedAt = editedAt;
+      }
       updateCommentEditedBadge(commentPath, editedAt);
-      return syncHistory.then(() => {
-        if (typeof loadCommentsInView === 'function') loadCommentsInView(noteId);
-        return refreshHistorialIfVisible();
-      });
+      const contentEl = document.getElementById('comment-content-' + commentPath);
+      if (contentEl && typeof renderContentWithSticker === 'function') {
+        contentEl.innerHTML = renderContentWithSticker(cleanedContent, 'text-sm text-[#1c2b4a] leading-relaxed');
+      }
+      return syncHistory.then(() => refreshHistorialIfVisible());
     });
   }
 
@@ -14166,8 +14299,9 @@ function saveNote() {
       });
     }).then(() => {
       closeCommentActionsSheet();
+      _removeCommentValue(commentPath);
+      _renderLoadedComments(noteId);
       updateCommentsCount(noteId);
-      if (typeof loadCommentsInView === 'function') loadCommentsInView(noteId);
     }).catch(error => {
       console.error('Error al eliminar comentario:', error);
       alert(error.message || 'No se pudo eliminar el comentario.');
