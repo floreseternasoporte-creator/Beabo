@@ -7,7 +7,6 @@
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
 const DREX_SW_VERSION = 'drex-v6';
-const DREX_BUILD = '1789337400';
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',
