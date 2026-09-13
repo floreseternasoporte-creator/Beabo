@@ -36,6 +36,64 @@
   };
   var IDP_ISSUER = 'cognito-idp.us-east-1.amazonaws.com/us-east-1_kDSYEBsnY';
 
+  // Restauración de sesión estilo Instagram: en <head> ya sabemos si hay un
+  // usuario guardado en localStorage. Mientras restorePending sea true, la
+  // app no debe mostrar el login: la sesión aún se está restaurando.
+  var restoreSeq = 0;
+  function quickHasStoredUser() {
+    try {
+      if (typeof localStorage === 'undefined') return false;
+      return !!localStorage.getItem('CognitoIdentityServiceProvider.' + AWS_CONFIG.userPoolClientId + '.LastAuthUser');
+    } catch (e) { return false; }
+  }
+  var restorePending = quickHasStoredUser();
+  function setRestorePending(v) { restorePending = !!v; }
+
+  // Extrae sub/email/etc. del ID token (JWT) sin usar la red: permite
+  // establecer la sesión aunque getUserAttributes falle (p. ej. abriendo la
+  // app sin conexión, con una sesión válida en caché).
+  function attrsFromIdToken(session) {
+    try {
+      var jwt = session.getIdToken().getJwtToken();
+      var parts = String(jwt).split('.');
+      if (parts.length < 2) return null;
+      var b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      var payload = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      var out = [];
+      ['sub', 'email', 'email_verified', 'name'].forEach(function (n) {
+        if (payload[n] === undefined || payload[n] === null) return;
+        out.push({
+          getName: function () { return n; },
+          getValue: function () { return String(payload[n]); }
+        });
+      });
+      return out.length ? out : null;
+    } catch (e) { return null; }
+  }
+
+  // Marca la sesión como expirada/no recuperada. Usa localStorage (además de
+  // sessionStorage) para que el aviso sobreviva al cierre de la pestaña y el
+  // usuario sí se entere de por qué volvió al login.
+  function flagSessionExpired(reason) {
+    var lang = 'es';
+    try {
+      var stored = (typeof localStorage !== 'undefined') && localStorage.getItem('drex_app_language_v1');
+      if (stored === 'en') lang = 'en';
+    } catch (e) {}
+    try { sessionStorage.setItem('drex_session_expired', lang); } catch (e2) {}
+    try { sessionStorage.setItem('drex_session_expired_reason', reason); } catch (e3) {}
+    try { localStorage.setItem('drex_session_expired', lang); } catch (e4) {}
+    try { localStorage.setItem('drex_session_expired_reason', reason); } catch (e5) {}
+  }
+
+  function clearSessionExpiredFlag() {
+    try { sessionStorage.removeItem('drex_session_expired'); } catch (e) {}
+    try { sessionStorage.removeItem('drex_session_expired_reason'); } catch (e2) {}
+    try { localStorage.removeItem('drex_session_expired'); } catch (e3) {}
+    try { localStorage.removeItem('drex_session_expired_reason'); } catch (e4) {}
+  }
+
   // utilidades
 
   function normalizePath(path) {
@@ -1047,14 +1105,9 @@
     if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
     _awsCredentials = null;
     _docClient = null;
-    try {
-      var lang = 'es';
-      try {
-        var stored = (typeof localStorage !== 'undefined') && localStorage.getItem('drex_app_language_v1');
-        if (stored === 'en') lang = 'en';
-      } catch (e2) {}
-      sessionStorage.setItem('drex_session_expired', lang);
-    } catch (e3) {}
+    restoreSeq++;
+    setRestorePending(false);
+    flagSessionExpired('expired');
     notifyAuthListeners();
   }
 
@@ -1079,18 +1132,30 @@
 
   function establishSession(cognitoUser, session) {
     currentCognitoUser = cognitoUser;
+    restoreSeq++;
     return new Promise(function (resolve, reject) {
+      // Los atributos enriquecen el usuario, pero una sesión válida no debe
+      // morir si esta llamada falla (sin red al abrir la app): se usan los
+      // datos del ID token como respaldo.
+      var tokenAttrs = attrsFromIdToken(session);
       cognitoUser.getUserAttributes(function (err, attrs) {
-        if (err) { reject(mapAuthError(err)); return; }
-        authInstance.currentUser = makeCurrentUser(cognitoUser, attrs);
+        var useAttrs = (!err && attrs && attrs.length) ? attrs : tokenAttrs;
+        if (err || !attrs || !attrs.length) {
+          try { console.warn('[DrexCloud] getUserAttributes no disponible; sesión establecida con datos del token.'); } catch (_) {}
+        }
+        authInstance.currentUser = makeCurrentUser(cognitoUser, useAttrs || []);
         configureAwsCredentials(session.getIdToken()).then(function () {
           scheduleTokenRefresh(cognitoUser, session);
+          clearSessionExpiredFlag();
+          setRestorePending(false);
           notifyAuthListeners();
           resolve(authInstance.currentUser);
         }, function (credErr) {
           // Sesión válida aunque las credenciales AWS fallen: se reintentan al usar la BD
           _awsCredentials = null;
           scheduleTokenRefresh(cognitoUser, session);
+          clearSessionExpiredFlag();
+          setRestorePending(false);
           notifyAuthListeners();
           resolve(authInstance.currentUser);
         });
@@ -1227,6 +1292,8 @@
 
   function signOutUser() {
     getAuth();
+    restoreSeq++;
+    setRestorePending(false);
     return new Promise(function (resolve) {
       try { if (currentCognitoUser) currentCognitoUser.signOut(); } catch (e) {}
       currentCognitoUser = null;
@@ -1370,15 +1437,53 @@
     try {
       getAuth();
       var C = cognitoLib();
-      if (!C) return;
-      var cu = getUserPool().getCurrentUser();
-      if (!cu) return;
+      if (!C) { setRestorePending(false); return; }
+      var cu;
+      try { cu = getUserPool().getCurrentUser(); } catch (e) { cu = null; }
+      if (!cu) { setRestorePending(false); return; }
+      var runId = ++restoreSeq;
+      attemptRestore(cu, 0, runId);
+    } catch (e) { setRestorePending(false); /* inicio sin sesión */ }
+  }
+
+  function attemptRestore(cu, attempt, runId) {
+    if (runId !== restoreSeq) return; // un login manual o signOut tomó el control
+    try {
       cu.getSession(function (err, session) {
+        if (runId !== restoreSeq) return;
+        try { if (getAuth().currentUser) { setRestorePending(false); return; } } catch (e) {}
         if (!err && session && session.isValid()) {
-          establishSession(cu, session).catch(function () {});
+          establishSession(cu, session).then(function () {
+            setRestorePending(false);
+          }, function () {
+            retryOrFail(cu, attempt, runId, 'network');
+          });
+          return;
         }
+        var msg = String((err && (err.message || '')) || '');
+        var reason = (err && (err.code === 'NotAuthorizedException' || /not authorized/i.test(msg))) ? 'expired' : 'network';
+        retryOrFail(cu, attempt, runId, reason);
       });
-    } catch (e) { /* inicio sin sesión */ }
+    } catch (e) {
+      retryOrFail(cu, attempt, runId, 'network');
+    }
+  }
+
+  function retryOrFail(cu, attempt, runId, reason) {
+    if (runId !== restoreSeq) return;
+    if (attempt < 1) {
+      // Un reintento: la red del teléfono a veces aún no está lista al abrir la app.
+      setTimeout(function () { attemptRestore(cu, attempt + 1, runId); }, 4000);
+      return;
+    }
+    signalRestoreFailed(reason);
+  }
+
+  function signalRestoreFailed(reason) {
+    setRestorePending(false);
+    try { if (getAuth().currentUser) return; } catch (e) {}
+    flagSessionExpired(reason);
+    notifyAuthListeners();
   }
 
   // DrexCloud
@@ -1549,6 +1654,9 @@
   DrexCloud.auth.GoogleProvider = makeProvider('Google');
   DrexCloud.auth.FacebookProvider = makeProvider('Facebook');
   DrexCloud.auth.TwitterProvider = makeProvider('X (Twitter)');
+
+  // La app lo usa para no mostrar el login mientras la sesión se restaura.
+  DrexCloud.authRestorePending = function () { return restorePending; };
 
   global.DrexCloud = DrexCloud;
 

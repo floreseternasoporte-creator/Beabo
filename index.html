@@ -17721,6 +17721,10 @@ function saveNote() {
         }
       });
     } else {
+      // La sesión aún se está restaurando (hay usuario guardado en este
+      // navegador): no mostrar el login todavía; el splash sigue visible
+      // hasta que la restauración se resuelva, estilo Instagram.
+      if (typeof DrexCloud !== 'undefined' && typeof DrexCloud.authRestorePending === 'function' && DrexCloud.authRestorePending()) return;
       clearNotificationsBadge();
       clearChatUnreadBadge();
       clearUserStats();
@@ -17737,16 +17741,27 @@ function saveNote() {
       window._drexUserName = null;
       submitButton.disabled = false;
       submitButton.textContent = isLogin ? translations[currentLanguage].btnIniciarSesion : 'Comenzar aventura';
-      // C12: si drex-cloud detectó sesión expirada, avisar en el login (ES/EN).
+      // C12: si drex-cloud detectó sesión expirada o no recuperada, avisar en
+      // el login (ES/EN). Se lee de sessionStorage y localStorage: el aviso
+      // debe sobrevivir al cierre de la pestaña.
       try {
-        const expiredLang = sessionStorage.getItem('drex_session_expired');
+        const expiredLang = sessionStorage.getItem('drex_session_expired') || localStorage.getItem('drex_session_expired');
+        const expiredReason = sessionStorage.getItem('drex_session_expired_reason') || localStorage.getItem('drex_session_expired_reason') || 'expired';
         if (expiredLang) {
-          sessionStorage.removeItem('drex_session_expired');
+          try {
+            sessionStorage.removeItem('drex_session_expired');
+            sessionStorage.removeItem('drex_session_expired_reason');
+            localStorage.removeItem('drex_session_expired');
+            localStorage.removeItem('drex_session_expired_reason');
+          } catch (_) {}
           const authErrorEl = document.getElementById('authError');
           if (authErrorEl) {
-            authErrorEl.textContent = expiredLang === 'en'
-              ? 'Your session has expired. Please sign in again.'
-              : 'Tu sesión ha expirado. Vuelve a iniciar sesión.';
+            const en = expiredLang === 'en';
+            authErrorEl.textContent = expiredReason === 'network'
+              ? (en ? 'We couldn\'t restore your session automatically. Check your connection and sign in again.'
+                    : 'No pudimos recuperar tu sesión automáticamente. Revisa tu conexión e inicia sesión de nuevo.')
+              : (en ? 'Your session has expired. Please sign in again.'
+                    : 'Tu sesión ha expirado. Vuelve a iniciar sesión.');
             authErrorEl.classList.remove('hidden');
           }
         }
