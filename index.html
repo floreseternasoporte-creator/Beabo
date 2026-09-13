@@ -3082,7 +3082,7 @@ document.addEventListener("DOMContentLoaded", function() {
       <h2 class="text-xl font-black text-[#1c2b4a] absolute left-1/2 -translate-x-1/2">Posts</h2>
       <div class="w-9"></div>
     </div>
-    <div id="author-posts-list" class="p-4 space-y-4">
+    <div id="author-posts-list" class="flex flex-col">
       <!-- Aquí se cargarán los posts del autor -->
     </div>
   </div>
@@ -6556,7 +6556,7 @@ if (scrollArea) {
       <div class="flex items-center justify-between mb-3 px-1">
         <h3 id="profile-posts-title" class="text-[15px] font-extrabold text-[#1c2b4a]">Tus publicaciones</h3>
       </div>
-      <div id="user-posts" class="flex flex-col gap-3"></div>
+      <div id="user-posts" class="flex flex-col"></div>
     </div>
   </div>
 
@@ -6658,7 +6658,7 @@ if (scrollArea) {
               </div>
 
               <!-- Lista de publicaciones -->
-              <div id="user-posts-desktop" class="space-y-4"></div>
+              <div id="user-posts-desktop" class="flex flex-col"></div>
             </div>
 
             <!-- Otros tabs (ocultos por defecto) -->
@@ -6813,8 +6813,6 @@ if (scrollArea) {
           <button onclick="openFollowersModal()" class="whitespace-nowrap active:opacity-60 transition"><span id="author-followers" class="font-bold text-black">0</span> seguidores</button>
           <span class="text-gray-300">·</span>
           <button onclick="openFollowingModal()" class="whitespace-nowrap active:opacity-60 transition"><span id="author-following" class="font-bold text-black">0</span> seguidos</button>
-          <span class="text-gray-300">·</span>
-          <span class="whitespace-nowrap"><span id="author-groups-count" class="font-bold text-black">0</span> grupos</span>
         </div>
 
         <!-- Botón de acción -->
@@ -8082,15 +8080,6 @@ function saveNote() {
     return groupsCount;
   }
 
-  function updateProfileGroupCountUI(groupsCount) {
-    const mobileCount = document.getElementById('profile-groups-count-mobile');
-    const desktopCount = document.getElementById('profile-groups-count-desktop');
-    const sidebarGroupsCount = document.getElementById('sidebar-groups-count');
-    if (mobileCount) mobileCount.textContent = formatNumber(groupsCount);
-    if (desktopCount) desktopCount.textContent = formatNumber(groupsCount);
-    if (sidebarGroupsCount) sidebarGroupsCount.textContent = formatNumber(groupsCount);
-  }
-
   function shareMyProfile() {
     const user = DrexCloud.auth().currentUser;
     const rawUsername = (document.getElementById('profile-username')?.textContent || '').trim();
@@ -8174,17 +8163,9 @@ function saveNote() {
       if (sidebarFollowersCount) sidebarFollowersCount.textContent = followersCount;
     });
 
-    // A29: el nodo "groups" de comunidades no se usa (cero escrituras); el
-    // listener permanente anterior era costoso e inútil. Se cuentan los
-    // chats grupales reales del usuario con una sola lectura.
-    DrexCloud.database().ref('userConversations/' + userId).once('value').then(snap => {
-      let n = 0;
-      snap.forEach(child => { if ((child.val() || {}).isGroup) n += 1; });
-      updateProfileGroupCountUI(n);
-    }).catch(() => updateProfileGroupCountUI(0));
   }
 
-  function loadUserPostsGrid(postsSnapshot) {
+  async function loadUserPostsGrid(postsSnapshot) {
     const userPostsDesktop = document.getElementById('user-posts-desktop');
     const userPostsMobile = document.getElementById('user-posts');
 
@@ -8220,58 +8201,64 @@ function saveNote() {
       return;
     }
 
+    const voteMaps = await _getProfileVoteMaps();
     postsSnapshot.forEach(child => {
       const post = { ...(child.val() || {}), id: child.key };
-      if (userPostsDesktop) userPostsDesktop.appendChild(createProfilePostCard(post));
-      if (userPostsMobile) userPostsMobile.appendChild(createProfilePostCard(post));
+      const voteCtx = {
+        user: voteMaps.user,
+        userVote: voteMaps.votes[child.key] || null,
+        hasReposted: Boolean(voteMaps.reposts[child.key])
+      };
+      if (userPostsDesktop) userPostsDesktop.appendChild(createProfilePostCard(post, voteCtx));
+      if (userPostsMobile) userPostsMobile.appendChild(createProfilePostCard(post, voteCtx));
     });
+    for (const container of [userPostsDesktop, userPostsMobile]) {
+      if (!container) continue;
+      if (typeof hydrateSaveButtons === 'function') hydrateSaveButtons(container);
+      if (typeof hydrateQuickFollowButtons === 'function') hydrateQuickFollowButtons(container);
+    }
   }
 
-  function createProfilePostCard(post) {
+  // Mapas de voto/repost del usuario actual para hidratar tarjetas de perfil
+  // (una sola lectura en bloque en vez de N lecturas por post).
+  async function _getProfileVoteMaps() {
+    const user = DrexCloud.auth().currentUser;
+    if (!user) return { user: null, votes: {}, reposts: {} };
+    try {
+      const [votesSnap, repostsSnap] = await Promise.all([
+        DrexCloud.database().ref('userVotes/' + user.uid).once('value'),
+        DrexCloud.database().ref('userReposts/' + user.uid).once('value')
+      ]);
+      return {
+        user,
+        votes: (votesSnap && votesSnap.val()) || {},
+        reposts: (repostsSnap && repostsSnap.val()) || {}
+      };
+    } catch (_) {
+      return { user, votes: {}, reposts: {} };
+    }
+  }
+
+  // Tarjeta de post en perfiles: usa el mismo constructor del feed para que el
+  // perfil se vea "suelto" y consistente (riel de votos, meta, acciones).
+  // voteCtx = { user, userVote, hasReposted }.
+  function createProfilePostCard(post, voteCtx) {
     const card = document.createElement('div');
-    card.className = 'profile-post-card bg-white p-4 hover:shadow-md transition-all w-full';
-    const upvotes = Number(post.upvotes || 0);
-    const downvotes = Number(post.downvotes || 0);
-    const score = upvotes - downvotes;
-    const commentsCount = Number(post.commentsCount || 0);
-    const repostsCount = Number(post.repostsCount || 0);
-    
-    const noteId = post.id || '';
-
-    card.innerHTML = `
-      <div class="flex items-start gap-2 cursor-pointer" onclick="openCommentsView('${escapeInlineSingleQuote(noteId)}')">
-        <img src="${getSafeMediaUrl(post.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-8 h-8 rounded-full object-cover flex-shrink-0" alt="${escapeHTML(post.authorName || 'Usuario')}">
-        <div class="flex-1 min-w-0">
-          <p class="font-semibold text-xs text-gray-800">${escapeHTML(post.authorName || 'Usuario')}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')}</p>
-          ${renderNoteAnchoredMeta(post)}
-          ${post.content ? renderContentWithSticker(post.content, 'text-xs text-gray-700 mt-1 line-clamp-3') : ''}
-          ${renderNoteImages(post, noteId)}
-          <div class="mt-2 flex items-center gap-2 text-xs text-gray-500">
-            <span>${formatRelativeTime(post.timestamp)}</span>
-          </div>
-        </div>
-      </div>
-      <div class="mt-3 pt-3 border-t border-[#eef2f7] flex items-center gap-3 text-[#6b7280]">
-        <button onclick="votePost('${escapeInlineSingleQuote(noteId)}', 'up')" class="vote-star flex items-center gap-1" aria-label="Dar Like">
-          <svg class="like-icon-sm" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 20.6C6.9 16.6 3.6 13.4 3.6 9.7 3.6 7.2 5.6 5.2 8.1 5.2c1.6 0 3 .8 3.9 2 .9-1.2 2.3-2 3.9-2 2.5 0 4.5 2 4.5 4.5 0 3.7-3.3 6.9-8.4 10.9z"/>
-          </svg>
-        </button>
-        <span class="text-xs font-bold">${formatVoteScore(score)}</span>
-        <button onclick="openCommentsView('${escapeInlineSingleQuote(noteId)}')" class="flex items-center gap-1 text-xs font-bold hover:text-[#5c6974]">${commentsCount}</button>
-        <button onclick="toggleRepost('${escapeInlineSingleQuote(noteId)}')" class="repost-btn" aria-label="Repostear publicación">
-          <svg class="repost-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path d="M17 1L21 5L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M3 11V9C3 7.93913 3.42143 6.92172 4.17157 6.17157C4.92172 5.42143 5.93913 5 7 5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M7 23L3 19L7 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span class="text-xs font-bold">${repostsCount}</span>
-        </button>
-
-      </div>
-    `;
-
+    card.className = 'drex-post w-full';
+    card.id = 'post-profile-' + (post.id || '');
+    card.dataset.noteId = post.id || '';
+    card.dataset.postType = post.postType || '';
+    const ctx = voteCtx || {};
+    try {
+      card.innerHTML = buildDrexPostCardHTML(post, {
+        user: ctx.user || null,
+        userVote: ctx.userVote || null,
+        hasReposted: Boolean(ctx.hasReposted),
+        avatarIdPrefix: 'profile-author-'
+      });
+    } catch (renderError) {
+      console.error('Error renderizando post de perfil:', post && post.id, renderError);
+    }
     return card;
   }
 
@@ -10029,6 +10016,139 @@ function saveNote() {
   // que dos eventos 'value' seguidos no pinten el feed dos veces ni dejen
   // tarjetas de una generación vieja.
   let _notesFeedGeneration = 0;
+  // Tarjeta de publicación estilo comunidad Drex: la comparten el feed,
+  // los perfiles y cualquier otra superficie.
+  // ctx = { user, userVote, hasReposted, avatarIdPrefix }.
+  function buildDrexPostCardHTML(note, ctx) {
+    const user = (ctx && ctx.user) || null;
+    const userVote = (ctx && ctx.userVote) || null;
+    const hasReposted = Boolean(ctx && ctx.hasReposted);
+        const upvotes = Number(note.upvotes || 0);
+        const downvotes = Number(note.downvotes || 0);
+        const score = upvotes - downvotes;
+        const commentsCount = Number(note.commentsCount || 0);
+                    const repostsCount = Number(note.repostsCount || 0);
+    
+
+
+        let pollHTML = '';
+        const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
+        if (note.poll && pollOptions.length) {
+          const totalVotes = pollOptions.reduce((sum, opt) => sum + Number(opt?.votes || 0), 0);
+          pollHTML = `
+          <div class="mt-3 p-3 bg-white rounded-lg border border-gray-300">
+            <h4 class="font-medium text-gray-900 mb-3 text-sm">${escapeHTML(note.poll.question)}</h4>
+            <div class="space-y-2">
+              ${pollOptions.map((option, index) => {
+                const votes = Number(option?.votes || 0);
+                const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+                const hasVoted = user && Array.isArray(option?.voters) && option.voters.includes(user.uid);
+                return `
+                  <button onclick="votePoll('${escapeInlineSingleQuote(note.id)}', ${index})" class="w-full text-left p-2.5 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#5c6974] bg-red-50' : 'border-gray-300 bg-white hover:border-gray-400'}">
+                    <div class="absolute inset-0 bg-[#5c6974]" style="width: ${percentage}%; opacity: 0.08"></div>
+                    <div class="relative flex justify-between items-center">
+                      <span class="text-sm font-medium text-gray-900">${escapeHTML(option?.text) || 'Opción'}</span>
+                      <span class="text-xs font-bold ${hasVoted ? 'text-[#5c6974]' : 'text-gray-500'}">${percentage}%</span>
+                    </div>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+            <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''} • Toca para votar</p>
+          </div>
+        `;
+        }
+
+        const safeTimestamp = Number(note.timestamp) || Date.now();
+        const safeAuthorId = escapeInlineSingleQuote(note.authorId || '');
+        const safeAuthorName = note.authorName || 'Usuario';
+        const safeAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', safeAuthorId);
+        const authorAvatarId = `${(ctx && ctx.avatarIdPrefix) || 'post-author-'}${note.id}`;
+        let safeAuthorImage = note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+
+        if (user && safeAuthorId === user.uid) {
+          const headerProfileImage = document.getElementById('header-profile-image');
+          if (headerProfileImage && headerProfileImage.src && !headerProfileImage.src.includes('placeholder')) {
+            safeAuthorImage = headerProfileImage.src;
+          }
+        }
+
+        let urlHTML = '';
+        if (note.url && !isStickerLikeUrl(note.url)) {
+          urlHTML = `
+            <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <a href="${note.url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 font-semibold text-sm hover:underline break-all">
+                ${note.url}
+              </a>
+            </div>
+          `;
+        }
+
+        return `
+            ${renderPostTopActions(note.id, 'Opciones de publicación')}
+            <div class="drex-vote-rail" role="group" aria-label="Votar publicación">
+              <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="drex-vote-btn drex-up ${userVote === 'up' ? 'active' : ''}" aria-label="Voto positivo" aria-pressed="${userVote === 'up'}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 14.5 12 8l6.5 6.5"/></svg>
+              </button>
+              <span id="score-${note.id}" class="drex-vote-score ${userVote === 'up' ? 'is-up' : ''}${userVote === 'down' ? 'is-down' : ''}">${formatVoteScore(score)}</span>
+              <button onclick="votePost('${note.id}', 'down')" id="downvote-${note.id}" class="drex-vote-btn drex-down ${userVote === 'down' ? 'active' : ''}" aria-label="Voto negativo" aria-pressed="${userVote === 'down'}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 9.5 12 16l6.5-6.5"/></svg>
+              </button>
+            </div>
+            <div class="drex-post-body">
+              <div class="drex-post-meta pr-10">
+                <div class="relative flex-shrink-0">
+                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-avatar-btn ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
+                  <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" src="${safeAuthorImage}" alt="${safeAuthorName}" onerror="this.onerror=null;this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='" class="w-full h-full object-cover">
+                </button>
+                ${getQuickFollowButtonMarkup(safeAuthorId, user?.uid || '')}
+              </div>
+                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}</button>
+                <span class="drex-post-time">· ${formatRelativeTime(safeTimestamp)}</span>
+                <span class="inline-flex items-center gap-1">${renderAuthorLanguageBadges(note, true)}</span>
+              </div>
+              ${renderNoteAnchoredMeta(note)}
+              ${note.content ? renderContentWithSticker(note.content, 'drex-post-title') : ''}
+            ${renderNoteImages(note, note.id)}
+            ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
+            ${note.taggedPeople && note.taggedPeople.length ? `<div class="mb-3 flex items-center gap-2 flex-wrap">
+              <span class="text-xs text-[#7b878f] font-semibold">Con:</span>
+              ${note.taggedPeople.map(p => `<span class="inline-flex items-center gap-1 text-xs bg-white border border-[#dce1e5] rounded-full px-2 py-0.5 font-semibold text-[#24324c] cursor-pointer" onclick="openAuthorProfile('${escapeInlineSingleQuote(p.uid||'')}')">
+                <img src="${escapeHtml(p.image||'')}" class="w-3.5 h-3.5 rounded-full object-cover" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='">
+                ${escapeHtml(p.name||'')}
+              </span>`).join('')}
+            </div>` : ''}
+            ${urlHTML}
+            ${pollHTML}
+            ${renderFiestaCardHTML(note)}
+
+            <div class="drex-post-actions">
+              <button onclick="openCommentsView('${note.id}')" class="drex-action-pill" aria-label="Ver comentarios">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.8c0 4.3-3.9 7.7-8.7 7.7-1 0-2-.2-2.9-.5L4 20.5l1.2-3.4c-.8-1.3-1.2-2.7-1.2-4.3 0-4.3 3.9-7.8 8.7-7.8S21 7.5 21 11.8z"/></svg>
+                <span>${commentsCount}</span>
+              </button>
+              <button onclick="toggleRepost('${note.id}')" id="repost-${note.id}" class="drex-action-pill repost-btn ${hasReposted ? 'active' : ''}" aria-label="Repostear publicación">
+                <svg class="repost-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M17 1L21 5L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M3 11V9C3 7.93913 3.42143 6.92172 4.17157 6.17157C4.92172 5.42143 5.93913 5 7 5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 23L3 19L7 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>${repostsCount}</span>
+              </button>
+              <button onclick="openPostShareMenu('${note.id}')" class="drex-action-icon" aria-label="Compartir">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              </button>
+              <button onclick="toggleSavePost('${note.id}', this)" id="save-${note.id}" class="drex-action-icon save-btn" aria-label="Guardar publicación">
+                <svg class="save-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6-3.8L6.5 21V4.5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        `;
+  }
+
   function _subscribeNotesFeed(feedContainer, user, userVotes, userReposts, feedMode = 'foryou', followingMap = null) {
     const notesRef = DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     notesRef.off();
@@ -10139,132 +10259,12 @@ function saveNote() {
             noteElement.dataset.noteId = note.id;
             noteElement.dataset.postType = note.postType || '';
 
-            const upvotes = Number(note.upvotes || 0);
-            const downvotes = Number(note.downvotes || 0);
-            const score = upvotes - downvotes;
-            const commentsCount = Number(note.commentsCount || 0);
-            const userVote = userVotes[note.id] || null;
-            const repostsCount = Number(note.repostsCount || 0);
-            const hasReposted = Boolean(userReposts[note.id]);
-            
-
-
-            let pollHTML = '';
-            const pollOptions = Array.isArray(note.poll?.options) ? note.poll.options : [];
-            if (note.poll && pollOptions.length) {
-              const totalVotes = pollOptions.reduce((sum, opt) => sum + Number(opt?.votes || 0), 0);
-              pollHTML = `
-              <div class="mt-3 p-3 bg-white rounded-lg border border-gray-300">
-                <h4 class="font-medium text-gray-900 mb-3 text-sm">${escapeHTML(note.poll.question)}</h4>
-                <div class="space-y-2">
-                  ${pollOptions.map((option, index) => {
-                    const votes = Number(option?.votes || 0);
-                    const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
-                    const hasVoted = user && Array.isArray(option?.voters) && option.voters.includes(user.uid);
-                    return `
-                      <button onclick="votePoll('${escapeInlineSingleQuote(note.id)}', ${index})" class="w-full text-left p-2.5 rounded border transition-all relative overflow-hidden ${hasVoted ? 'border-[#5c6974] bg-red-50' : 'border-gray-300 bg-white hover:border-gray-400'}">
-                        <div class="absolute inset-0 bg-[#5c6974]" style="width: ${percentage}%; opacity: 0.08"></div>
-                        <div class="relative flex justify-between items-center">
-                          <span class="text-sm font-medium text-gray-900">${escapeHTML(option?.text) || 'Opción'}</span>
-                          <span class="text-xs font-bold ${hasVoted ? 'text-[#5c6974]' : 'text-gray-500'}">${percentage}%</span>
-                        </div>
-                      </button>
-                    `;
-                  }).join('')}
-                </div>
-                <p class="text-xs text-gray-500 mt-2">${totalVotes} voto${totalVotes !== 1 ? 's' : ''} • Toca para votar</p>
-              </div>
-            `;
-            }
-
-            const safeTimestamp = Number(note.timestamp) || Date.now();
-            const safeAuthorId = escapeInlineSingleQuote(note.authorId || '');
-            const safeAuthorName = note.authorName || 'Usuario';
-            const safeAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', safeAuthorId);
-            const authorAvatarId = `feed-author-${note.id}`;
-            let safeAuthorImage = note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
-
-            if (user && safeAuthorId === user.uid) {
-              const headerProfileImage = document.getElementById('header-profile-image');
-              if (headerProfileImage && headerProfileImage.src && !headerProfileImage.src.includes('placeholder')) {
-                safeAuthorImage = headerProfileImage.src;
-              }
-            }
-
-            let urlHTML = '';
-            if (note.url && !isStickerLikeUrl(note.url)) {
-              urlHTML = `
-                <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <a href="${note.url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 font-semibold text-sm hover:underline break-all">
-                    ${note.url}
-                  </a>
-                </div>
-              `;
-            }
-
-            noteElement.innerHTML = `
-                ${renderPostTopActions(note.id, 'Opciones de publicación')}
-                <div class="drex-vote-rail" role="group" aria-label="Votar publicación">
-                  <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="drex-vote-btn drex-up ${userVote === 'up' ? 'active' : ''}" aria-label="Voto positivo" aria-pressed="${userVote === 'up'}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 14.5 12 8l6.5 6.5"/></svg>
-                  </button>
-                  <span id="score-${note.id}" class="drex-vote-score ${userVote === 'up' ? 'is-up' : ''}${userVote === 'down' ? 'is-down' : ''}">${formatVoteScore(score)}</span>
-                  <button onclick="votePost('${note.id}', 'down')" id="downvote-${note.id}" class="drex-vote-btn drex-down ${userVote === 'down' ? 'active' : ''}" aria-label="Voto negativo" aria-pressed="${userVote === 'down'}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 9.5 12 16l6.5-6.5"/></svg>
-                  </button>
-                </div>
-                <div class="drex-post-body">
-                  <div class="drex-post-meta pr-10">
-                    <div class="relative flex-shrink-0">
-                    <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-avatar-btn ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
-                      <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" src="${safeAuthorImage}" alt="${safeAuthorName}" onerror="this.onerror=null;this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='" class="w-full h-full object-cover">
-                    </button>
-                    ${getQuickFollowButtonMarkup(safeAuthorId, user?.uid || '')}
-                  </div>
-                    <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}</button>
-                    <span class="drex-post-time">· ${formatRelativeTime(safeTimestamp)}</span>
-                    <span class="inline-flex items-center gap-1">${renderAuthorLanguageBadges(note, true)}</span>
-                  </div>
-                  ${renderNoteAnchoredMeta(note)}
-                  ${note.content ? renderContentWithSticker(note.content, 'drex-post-title') : ''}
-                ${renderNoteImages(note, note.id)}
-                ${note.gifUrl ? `<div class="mb-3 rounded-2xl overflow-hidden border border-[#dce1e5]"><img src="${getSafeMediaUrl(note.gifUrl)}" class="w-full h-auto max-h-80 object-cover"></div>` : ''}
-                ${note.taggedPeople && note.taggedPeople.length ? `<div class="mb-3 flex items-center gap-2 flex-wrap">
-                  <span class="text-xs text-[#7b878f] font-semibold">Con:</span>
-                  ${note.taggedPeople.map(p => `<span class="inline-flex items-center gap-1 text-xs bg-white border border-[#dce1e5] rounded-full px-2 py-0.5 font-semibold text-[#24324c] cursor-pointer" onclick="openAuthorProfile('${escapeInlineSingleQuote(p.uid||'')}')">
-                    <img src="${escapeHtml(p.image||'')}" class="w-3.5 h-3.5 rounded-full object-cover" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='">
-                    ${escapeHtml(p.name||'')}
-                  </span>`).join('')}
-                </div>` : ''}
-                ${urlHTML}
-                ${pollHTML}
-                ${renderFiestaCardHTML(note)}
-
-                <div class="drex-post-actions">
-                  <button onclick="openCommentsView('${note.id}')" class="drex-action-pill" aria-label="Ver comentarios">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.8c0 4.3-3.9 7.7-8.7 7.7-1 0-2-.2-2.9-.5L4 20.5l1.2-3.4c-.8-1.3-1.2-2.7-1.2-4.3 0-4.3 3.9-7.8 8.7-7.8S21 7.5 21 11.8z"/></svg>
-                    <span>${commentsCount}</span>
-                  </button>
-                  <button onclick="toggleRepost('${note.id}')" id="repost-${note.id}" class="drex-action-pill repost-btn ${hasReposted ? 'active' : ''}" aria-label="Repostear publicación">
-                    <svg class="repost-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M17 1L21 5L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M3 11V9C3 7.93913 3.42143 6.92172 4.17157 6.17157C4.92172 5.42143 5.93913 5 7 5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M7 23L3 19L7 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    <span>${repostsCount}</span>
-                  </button>
-                  <button onclick="openPostShareMenu('${note.id}')" class="drex-action-icon" aria-label="Compartir">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                  </button>
-                  <button onclick="toggleSavePost('${note.id}', this)" id="save-${note.id}" class="drex-action-icon save-btn" aria-label="Guardar publicación">
-                    <svg class="save-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6-3.8L6.5 21V4.5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            `;
+            noteElement.innerHTML = buildDrexPostCardHTML(note, {
+              user: user,
+              userVote: userVotes[note.id] || null,
+              hasReposted: Boolean(userReposts[note.id]),
+              avatarIdPrefix: 'feed-author-'
+            });
             loadUserFrame(safeAuthorId, authorAvatarId);
             feedFragment.appendChild(noteElement);
           } catch (renderError) {
@@ -11378,9 +11378,14 @@ function saveNote() {
     if (_postVoteLocks.has(noteId)) return;
     _postVoteLocks.add(noteId);
 
-    const upvoteBtn = document.getElementById('upvote-' + noteId);
-    const downvoteBtn = document.getElementById('downvote-' + noteId);
-    const scoreLabel = document.getElementById('score-' + noteId);
+    // Un mismo post puede estar visible en varias superficies a la vez (feed,
+    // perfil, permalink): se actualizan TODAS sus instancias, no solo la primera.
+    const upvoteBtns = Array.from(document.querySelectorAll('[id="upvote-' + noteId + '"]'));
+    const downvoteBtns = Array.from(document.querySelectorAll('[id="downvote-' + noteId + '"]'));
+    const scoreLabels = Array.from(document.querySelectorAll('[id="score-' + noteId + '"]'));
+    const upvoteBtn = upvoteBtns[0] || null;
+    const downvoteBtn = downvoteBtns[0] || null;
+    const scoreLabel = scoreLabels[0] || null;
 
     const userVoteRef = DrexCloud.database().ref('userVotes/' + user.uid + '/' + noteId);
     const noteRef = DrexCloud.database().ref('communityNotes/' + noteId);
@@ -11391,19 +11396,19 @@ function saveNote() {
 
     // Pinta el estado de voto de un post (riel up/down + marcador).
     const paintVoteUI = (isUp, isDown, scoreValue) => {
-      if (upvoteBtn) {
-        upvoteBtn.classList.toggle('active', isUp);
-        upvoteBtn.setAttribute('aria-pressed', String(isUp));
-      }
-      if (downvoteBtn) {
-        downvoteBtn.classList.toggle('active', isDown);
-        downvoteBtn.setAttribute('aria-pressed', String(isDown));
-      }
-      if (scoreLabel) {
-        scoreLabel.textContent = formatVoteScore(scoreValue);
-        scoreLabel.classList.toggle('is-up', isUp);
-        scoreLabel.classList.toggle('is-down', isDown);
-      }
+      upvoteBtns.forEach(btn => {
+        btn.classList.toggle('active', isUp);
+        btn.setAttribute('aria-pressed', String(isUp));
+      });
+      downvoteBtns.forEach(btn => {
+        btn.classList.toggle('active', isDown);
+        btn.setAttribute('aria-pressed', String(isDown));
+      });
+      scoreLabels.forEach(label => {
+        label.textContent = formatVoteScore(scoreValue);
+        label.classList.toggle('is-up', isUp);
+        label.classList.toggle('is-down', isDown);
+      });
     };
 
     // UI optimista simétrica: votar 'up' retira un 'down' previo y viceversa,
@@ -25599,7 +25604,6 @@ function renderAccountsList(accounts) {
     const authorFollowersNode = document.getElementById('author-followers');
     const authorFollowingNode = document.getElementById('author-following');
     const authorPostsNode = document.getElementById('author-posts-count');
-    const authorGroupsNode = document.getElementById('author-groups-count');
     const authorLocationPill = document.getElementById('author-location-pill');
     const authorLanguagePill = document.getElementById('author-language-pill');
     const authorPronounsPill = document.getElementById('author-pronouns-pill');
@@ -25616,7 +25620,6 @@ function renderAccountsList(accounts) {
     if (authorFollowersNode) authorFollowersNode.textContent = '...';
     if (authorFollowingNode) authorFollowingNode.textContent = '...';
     if (authorPostsNode) authorPostsNode.textContent = '...';
-    if (authorGroupsNode) authorGroupsNode.textContent = '...';
     if (authorLocationPill) {
       authorLocationPill.textContent = '';
       authorLocationPill.classList.add('hidden');
@@ -25734,12 +25737,6 @@ function renderAccountsList(accounts) {
         if (currentViewedAuthorId !== authorId) return;
         const authorRepostsNode = document.getElementById('author-reposts-count');
         if (authorRepostsNode) authorRepostsNode.textContent = formatNumber(repostsSnap.numChildren() || 0);
-      });
-      DrexCloud.database().ref('userConversations/' + authorId).once('value').then(convoSnap => {
-        if (currentViewedAuthorId !== authorId) return;
-        let groupsCount = 0;
-        convoSnap.forEach(child => { if ((child.val() || {}).isGroup) groupsCount++; });
-        if (authorGroupsNode) authorGroupsNode.textContent = formatNumber(groupsCount);
       });
     }).catch(() => {
       if (currentViewedAuthorId !== authorId) return;
@@ -25992,7 +25989,7 @@ function renderAccountsList(accounts) {
   }
 
   function _loadAuthorPostsContent(authorId, container) {
-    DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value').then(snapshot => {
+    DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value').then(async snapshot => {
       if (currentViewedAuthorId !== authorId) return;
       container.innerHTML = "";
       if (!snapshot.exists()) {
@@ -26007,10 +26004,17 @@ function renderAccountsList(accounts) {
 
       posts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
+      const voteMaps = await _getProfileVoteMaps();
       posts.forEach(post => {
-        const postCard = createProfilePostCard(post);
+        const postCard = createProfilePostCard(post, {
+          user: voteMaps.user,
+          userVote: voteMaps.votes[post.id] || null,
+          hasReposted: Boolean(voteMaps.reposts[post.id])
+        });
         container.appendChild(postCard);
       });
+      if (typeof hydrateSaveButtons === 'function') hydrateSaveButtons(container);
+      if (typeof hydrateQuickFollowButtons === 'function') hydrateQuickFollowButtons(container);
     }).catch(error => {
       console.error("Error al cargar posts del autor:", error);
       container.innerHTML = `<div class="py-10 text-center text-red-500">Error al cargar las publicaciones.</div>`;
