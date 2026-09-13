@@ -89,7 +89,7 @@
   }
 
   // Aplana un valor a hojas: [{ segs: [...], value }]
-  // null equivale a BORRAR la clave (semántica Firebase): no genera hoja y,
+  // null equivale a BORRAR la clave (semántica de borrado con null): no genera hoja y,
   // si se pasa nullPaths, registra la ruta para que quien escriba la borre.
   function flatten(value, baseSegs, out, nullPaths) {
     out = out || [];
@@ -142,8 +142,8 @@
   }
 
   // Los arrays se aplanan como claves numéricas ("0","1",...); al reconstruir,
-  // los objetos con claves 0..n-1 consecutivas vuelven a ser arrays (igual que
-  // hace el SDK de Firebase). Sin esto las encuestas nunca se podían votar.
+  // los objetos con claves 0..n-1 consecutivas vuelven a ser arrays (comportamiento
+  // estándar de la plataforma). Sin esto las encuestas nunca se podían votar.
   function arraysBack(node) {
     if (Array.isArray(node)) {
       for (var i = 0; i < node.length; i++) node[i] = arraysBack(node[i]);
@@ -451,7 +451,7 @@
     });
     if (spec.limitFirst !== undefined) entries = entries.slice(0, spec.limitFirst);
     if (spec.limitLast !== undefined) entries = entries.slice(Math.max(0, entries.length - spec.limitLast));
-    // Sin coincidencias Firebase devuelve val() === null y exists() === false
+    // Sin coincidencias se devuelve val() === null y exists() === false
     // (nunca un objeto vacío). Devolver {} aquí rompía la verificación de
     // disponibilidad de usernames (todo aparecía "en uso"), los estados
     // "vacío" de solicitudes/notas y el bloqueo de correcciones duplicadas.
@@ -594,7 +594,7 @@
       var fullSegs = base.concat(relSegs);
       var nullSegs = [];
       var leaves = flatten(obj[k], fullSegs, [], nullSegs);
-      // null (en cualquier nivel) borra esa ruta, como en Firebase
+      // null (en cualquier nivel) borra esa ruta
       nullSegs.forEach(function (ns) { prefixDeletes[ns.join('/')] = ns; });
       leaves.forEach(function (l) {
         leafReqs.push(l);
@@ -1354,7 +1354,7 @@
   }
 
   // Login social: Google y Facebook van por Cognito; otros siguen pendientes
-  var SOCIAL_NAMES = { GoogleAuthProvider: 'Google', FacebookAuthProvider: 'Facebook', TwitterAuthProvider: 'X (Twitter)' };
+  var SOCIAL_NAMES = { GoogleProvider: 'Google', FacebookProvider: 'Facebook', TwitterProvider: 'X (Twitter)' };
   function signInWithPopup(provider) {
     getAuth();
     var name = (provider && (provider._socialName || SOCIAL_NAMES[provider.constructor && provider.constructor.name])) || 'esta red social';
@@ -1535,22 +1535,20 @@
     },
     auth: getAuth,
     support: supportApi,
-    totp: totpApiNs,
-    // Inicialización opcional por compatibilidad (la config vive arriba)
-    initializeApp: function () { return {}; }
+    totp: totpApiNs
   };
   // ServerValue también directo sobre DrexCloud.database (sin llamar),
   // porque el código migrado usa DrexCloud.database.ServerValue.TIMESTAMP
   DrexCloud.database.ServerValue = DrexCloud.database().ServerValue;
 
-  // Clases de proveedor para `new DrexCloud.auth.GoogleAuthProvider()` etc.
+  // Clases de proveedor para `new DrexCloud.auth.GoogleProvider()` etc.
   function makeProvider(socialName) {
     var P = function () { this._socialName = socialName; };
     return P;
   }
-  DrexCloud.auth.GoogleAuthProvider = makeProvider('Google');
-  DrexCloud.auth.FacebookAuthProvider = makeProvider('Facebook');
-  DrexCloud.auth.TwitterAuthProvider = makeProvider('X (Twitter)');
+  DrexCloud.auth.GoogleProvider = makeProvider('Google');
+  DrexCloud.auth.FacebookProvider = makeProvider('Facebook');
+  DrexCloud.auth.TwitterProvider = makeProvider('X (Twitter)');
 
   global.DrexCloud = DrexCloud;
 
