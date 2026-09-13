@@ -1,25 +1,38 @@
 /* Drex service worker — mínimo para instalabilidad de la PWA.
    Estrategia: network-first para navegación/HTML y JS (nunca bloquea updates),
-   cache-first con versión para estáticos inmutables (iconos, logo, manifest). */
-const DREX_SW_VERSION = 'drex-v2';
+   cache-first con versión para estáticos inmutables (iconos, logo, manifest).
+   NOTA: las rutas son relativas ('./...') porque la app vive en un subpath
+   (/Beabo/). Con rutas absolutas ('/...') el precache pedía el root del
+   dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
+   completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
+   en la versión vieja. */
+const DREX_SW_VERSION = 'drex-v3';
 const DREX_STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/drex-cloud.js',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/icon-maskable-192.png',
-  '/icon-maskable-512.png',
-  '/drex-logo.png'
+  './',
+  './index.html',
+  './drex-cloud.js',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-192.png',
+  './icon-maskable-512.png',
+  './drex-logo.png'
 ];
 
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(DREX_SW_VERSION)
-      .then(cache => cache.addAll(DREX_STATIC_ASSETS))
-      .then(() => self.skipWaiting())
+      .then(cache =>
+        // Cada recurso se guarda por separado: si uno falla (404, sin red),
+        // los demás igual quedan en caché. cache.addAll() rechazaba TODO por
+        // un solo fallo y dejaba la instalación a medias.
+        Promise.all(DREX_STATIC_ASSETS.map(url => cache.add(url).catch(() => {})))
+      )
       .catch(() => {})
+      // skipWaiting SIEMPRE, aunque el precache falle: lo importante es que
+      // el worker nuevo tome el control y su estrategia network-first deje
+      // pasar las actualizaciones.
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -53,14 +66,14 @@ self.addEventListener('fetch', event => {
   // Navegación / HTML: red primero, fallback a caché. Así una versión nueva
   // de index.html siempre llega sin que la caché la bloquee.
   if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
-    event.respondWith(networkFirst(req, '/index.html'));
+    event.respondWith(networkFirst(req, req));
     return;
   }
 
   // JavaScript de la plataforma: red primero. El SW anterior (drex-v1) usaba
   // cache-first para TODO y congelaba drex-cloud.js en la primera versión
   // descargada: los arreglos de la plataforma nunca llegaban a la PWA
-  // instalada. El cambio de versión a drex-v2 invalida esa caché vieja.
+  // instalada. El cambio de versión invalida esa caché vieja.
   try {
     if (new URL(req.url).pathname.endsWith('.js')) {
       event.respondWith(networkFirst(req, req));
