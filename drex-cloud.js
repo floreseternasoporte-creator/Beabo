@@ -89,20 +89,26 @@
   }
 
   // Aplana un valor a hojas: [{ segs: [...], value }]
-  function flatten(value, baseSegs, out) {
+  // null equivale a BORRAR la clave (semántica Firebase): no genera hoja y,
+  // si se pasa nullPaths, registra la ruta para que quien escriba la borre.
+  function flatten(value, baseSegs, out, nullPaths) {
     out = out || [];
     value = resolveValue(value);
     if (value === undefined) return out;
+    if (value === null) {
+      if (Array.isArray(nullPaths)) nullPaths.push(baseSegs.slice());
+      return out; // null borra la clave, no escribe tumba
+    }
     if (Array.isArray(value)) {
       if (value.length === 0) return out; // [] equivale a subárbol vacío
-      for (var i = 0; i < value.length; i++) flatten(value[i], baseSegs.concat([String(i)]), out);
+      for (var i = 0; i < value.length; i++) flatten(value[i], baseSegs.concat([String(i)]), out, nullPaths);
       return out;
     }
     if (isPlainObject(value)) {
       var keys = Object.keys(value);
       if (keys.length === 0) return out; // {} equivale a borrar el subárbol
       for (var k = 0; k < keys.length; k++) {
-        flatten(value[keys[k]], baseSegs.concat([keys[k]]), out);
+        flatten(value[keys[k]], baseSegs.concat([keys[k]]), out, nullPaths);
       }
       return out;
     }
@@ -586,7 +592,10 @@
     Object.keys(obj).forEach(function (k) {
       var relSegs = splitPath(k);
       var fullSegs = base.concat(relSegs);
-      var leaves = flatten(obj[k], fullSegs);
+      var nullSegs = [];
+      var leaves = flatten(obj[k], fullSegs, [], nullSegs);
+      // null (en cualquier nivel) borra esa ruta, como en Firebase
+      nullSegs.forEach(function (ns) { prefixDeletes[ns.join('/')] = ns; });
       leaves.forEach(function (l) {
         leafReqs.push(l);
         // Al escribir una hoja, los ancestros exactos (primitivas) y los
@@ -597,8 +606,9 @@
         }
         prefixDeletes[l.segs.join('/')] = l.segs;
       });
-      if (!leaves.length) {
-        // update({ruta: {}}) borra ese subárbol, como en el proveedor anterior
+      if (!leaves.length && !nullSegs.length) {
+        // update({ruta: {}}) o update({ruta: []}) borra ese subárbol, como en
+        // el proveedor anterior. (null se borra vía nullSegs, arriba.)
         prefixDeletes[fullSegs.join('/')] = fullSegs;
       }
     });
