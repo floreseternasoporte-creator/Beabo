@@ -1144,7 +1144,15 @@
           try { console.warn('[DrexCloud] getUserAttributes no disponible; sesión establecida con datos del token.'); } catch (_) {}
         }
         authInstance.currentUser = makeCurrentUser(cognitoUser, useAttrs || []);
-        configureAwsCredentials(session.getIdToken()).then(function () {
+        var credPromise;
+        try {
+          credPromise = configureAwsCredentials(session.getIdToken());
+        } catch (syncErr) {
+          // p. ej. SDK de AWS aún no cargado: la sesión sigue siendo válida,
+          // las credenciales se reintentan al usar la BD.
+          credPromise = Promise.reject(syncErr);
+        }
+        credPromise.then(function () {
           scheduleTokenRefresh(cognitoUser, session);
           clearSessionExpiredFlag();
           setRestorePending(false);
