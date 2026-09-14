@@ -1,4 +1,4 @@
-/* Drex service worker — mínimo para instalabilidad de la PWA.
+/* Beabo service worker — mínimo para instalabilidad de la PWA.
    Estrategia: network-first para navegación/HTML y JS (nunca bloquea updates),
    cache-first con versión para estáticos inmutables (iconos, logo, manifest).
    NOTA: las rutas son relativas ('./...') porque la app vive en un subpath
@@ -6,8 +6,8 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v6';
-const DREX_STATIC_ASSETS = [
+const BEABO_SW_VERSION = 'beabo-v7';
+const BEABO_STATIC_ASSETS = [
   './',
   './index.html',
   './drex-cloud.js',
@@ -21,12 +21,12 @@ const DREX_STATIC_ASSETS = [
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(DREX_SW_VERSION)
+    caches.open(BEABO_SW_VERSION)
       .then(cache =>
         // Cada recurso se guarda por separado: si uno falla (404, sin red),
         // los demás igual quedan en caché. cache.addAll() rechazaba TODO por
         // un solo fallo y dejaba la instalación a medias.
-        Promise.all(DREX_STATIC_ASSETS.map(url => cache.add(url).catch(() => {})))
+        Promise.all(BEABO_STATIC_ASSETS.map(url => cache.add(url).catch(() => {})))
       )
       .catch(() => {})
       // skipWaiting SIEMPRE, aunque el precache falle: lo importante es que
@@ -40,7 +40,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
-        keys.filter(k => k !== DREX_SW_VERSION).map(k => caches.delete(k))
+        keys.filter(k => k !== BEABO_SW_VERSION).map(k => caches.delete(k))
       ))
       .then(() => self.clients.claim())
       .catch(() => {})
@@ -49,22 +49,22 @@ self.addEventListener('activate', event => {
 
 // Aviso de versión a las pestañas (ver fetch handler): se limita a un chequeo
 // cada 2 minutos para no generar tráfico.
-let drexLastBuildNotified = '';
-let drexLastBuildCheck = 0;
-function drexBroadcastBuild() {
+let beaboLastBuildNotified = '';
+let beaboLastBuildCheck = 0;
+function beaboBroadcastBuild() {
   try {
     const now = Date.now();
-    if (now - drexLastBuildCheck < 120000) return;
-    drexLastBuildCheck = now;
+    if (now - beaboLastBuildCheck < 120000) return;
+    beaboLastBuildCheck = now;
     fetch('./version.json', { cache: 'no-store' })
       .then(res => (res && res.ok) ? res.json() : null)
       .then(data => {
         const build = data && data.build ? String(data.build) : '';
-        if (!build || build === drexLastBuildNotified) return;
-        drexLastBuildNotified = build;
+        if (!build || build === beaboLastBuildNotified) return;
+        beaboLastBuildNotified = build;
         self.clients.matchAll({ includeUncontrolled: true }).then(clients => {
           clients.forEach(c => {
-            try { c.postMessage({ type: 'DREX_BUILD', build }); } catch (e) {}
+            try { c.postMessage({ type: 'BEABO_BUILD', build }); } catch (e) {}
           });
         }).catch(() => {});
       })
@@ -78,7 +78,7 @@ function networkFirst(req, cacheKey) {
   return fetch(req)
     .then(res => {
       const copy = res.clone();
-      caches.open(DREX_SW_VERSION).then(cache => cache.put(cacheKey, copy)).catch(() => {});
+      caches.open(BEABO_SW_VERSION).then(cache => cache.put(cacheKey, copy)).catch(() => {});
       return res;
     })
     .catch(() => caches.match(cacheKey));
@@ -103,7 +103,7 @@ self.addEventListener('fetch', event => {
   // actualiza solo con cada navegación. Cuando detecta un build nuevo en
   // version.json, se lo anuncia a todas las pestañas para que muestren la
   // píldora de actualización aunque su propio chequeo no haya corrido.
-  drexBroadcastBuild();
+  beaboBroadcastBuild();
 
   // Navegación / HTML: red primero, fallback a caché. Así una versión nueva
   // de index.html siempre llega sin que la caché la bloquee.
@@ -112,7 +112,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // JavaScript de la plataforma: red primero. El SW anterior (drex-v1) usaba
+  // JavaScript de la plataforma: red primero. El SW anterior (beabo-v6) usaba
   // cache-first para TODO y congelaba drex-cloud.js en la primera versión
   // descargada: los arreglos de la plataforma nunca llegaban a la PWA
   // instalada. El cambio de versión invalida esa caché vieja.
@@ -127,7 +127,7 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(req).then(cached => cached || fetch(req).then(res => {
       const copy = res.clone();
-      caches.open(DREX_SW_VERSION).then(cache => cache.put(req, copy)).catch(() => {});
+      caches.open(BEABO_SW_VERSION).then(cache => cache.put(req, copy)).catch(() => {});
       return res;
     }))
   );
