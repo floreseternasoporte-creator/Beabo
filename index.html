@@ -9566,7 +9566,35 @@ function saveNote() {
   let _feedImageModalDetailsOpen = false;
   let _feedImageModalDetailsFullText = '';
   let _feedImageModalDetailsExpanded = false;
+  // Suscripción en vivo a los votos del post mientras la hoja está abierta.
+  let _feedImageModalDetailsVoteRef = null;
   const _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN = 220;
+
+  // Votos en vivo: mientras la hoja está abierta, el marcador se actualiza
+  // solo si alguien vota (propio o ajeno) sin reabrir la hoja.
+  function _unsubscribeFeedImageModalDetailsVotes() {
+    try { if (_feedImageModalDetailsVoteRef) _feedImageModalDetailsVoteRef.off(); } catch (_) {}
+    _feedImageModalDetailsVoteRef = null;
+  }
+  function _subscribeFeedImageModalDetailsVotes(noteId) {
+    _unsubscribeFeedImageModalDetailsVotes();
+    if (!noteId) return;
+    try {
+      const ref = DrexCloud.database().ref('communityNotes/' + noteId);
+      _feedImageModalDetailsVoteRef = ref;
+      ref.on('value', snap => {
+        if (!_feedImageModalDetailsOpen) return;
+        const note = snap.val() || {};
+        const content = document.getElementById('image-modal-details-content');
+        if (!content) return;
+        const scoreEl = content.querySelector('.drex-vote-score');
+        if (scoreEl) {
+          const up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
+          scoreEl.textContent = typeof formatVoteScore === 'function' ? formatVoteScore(up - down) : String(up - down);
+        }
+      });
+    } catch (_) { _feedImageModalDetailsVoteRef = null; }
+  }
 
   function _toggleFeedImageModalDetailsText() {
     _feedImageModalDetailsExpanded = !_feedImageModalDetailsExpanded;
@@ -9689,6 +9717,7 @@ function saveNote() {
       </div>`;
     requestAnimationFrame(() => { panel.style.transform = 'translateY(0)'; });
     if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
+    _subscribeFeedImageModalDetailsVotes(noteId);
     const user = DrexCloud.auth().currentUser;
     Promise.all([
       DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(s => s.val() || null).catch(() => null),
@@ -9737,6 +9766,7 @@ function saveNote() {
   function _closeFeedImageModalDetails(instant) {
     if (!_feedImageModalDetailsOpen) return;
     _feedImageModalDetailsOpen = false;
+    _unsubscribeFeedImageModalDetailsVotes();
     const wrap = document.getElementById('image-modal-details');
     const panel = document.getElementById('image-modal-details-panel');
     if (wrap) wrap.setAttribute('aria-modal', 'false');
