@@ -9571,6 +9571,8 @@ function saveNote() {
   let _feedImageModalDetailsVoteRef = null;
   let _feedImageModalDetailsCommentsRef = null;
   let _feedImageModalDetailsAuthorRef = null;
+  let _feedImageModalDetailsConnRef = null;
+  let _feedImageModalDetailsWasOffline = false;
   const _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN = 220;
 
   // Votos y comentarios en vivo: mientras la hoja está abierta, el marcador
@@ -9580,9 +9582,12 @@ function saveNote() {
     try { if (_feedImageModalDetailsVoteRef) _feedImageModalDetailsVoteRef.off(); } catch (_) {}
     try { if (_feedImageModalDetailsCommentsRef) _feedImageModalDetailsCommentsRef.off(); } catch (_) {}
     try { if (_feedImageModalDetailsAuthorRef) _feedImageModalDetailsAuthorRef.off(); } catch (_) {}
+    try { if (_feedImageModalDetailsConnRef) _feedImageModalDetailsConnRef.off(); } catch (_) {}
     _feedImageModalDetailsVoteRef = null;
     _feedImageModalDetailsCommentsRef = null;
     _feedImageModalDetailsAuthorRef = null;
+    _feedImageModalDetailsConnRef = null;
+    _feedImageModalDetailsWasOffline = false;
   }
   function _subscribeFeedImageModalDetailsLive(noteId) {
     _unsubscribeFeedImageModalDetailsLive();
@@ -9654,6 +9659,35 @@ function saveNote() {
           if (avatarEl && u.profileImage) avatarEl.src = u.profileImage;
         });
       }).catch(() => {});
+      // Recuperación ante desconexión: si se cae la red con la hoja abierta
+      // se muestra un aviso; al volver la conexión se re-suscribe todo para
+      // que los datos no queden congelados.
+      const connRef = DrexCloud.database().ref('.info/connected');
+      _feedImageModalDetailsConnRef = connRef;
+      connRef.on('value', cSnap => {
+        if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
+        const online = cSnap.val() === true;
+        const en = typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
+        const content = document.getElementById('image-modal-details-content');
+        let badge = document.getElementById('image-modal-details-offline');
+        if (!online) {
+          _feedImageModalDetailsWasOffline = true;
+          if (content && !badge && content.parentNode) {
+            badge = document.createElement('div');
+            badge.id = 'image-modal-details-offline';
+            badge.className = 'mx-4 mt-2 px-3 py-1.5 rounded-full bg-[#fff7e6] text-[#b45309] text-xs font-semibold text-center';
+            badge.textContent = en ? 'Offline — data will refresh when you reconnect' : 'Sin conexión — los datos se actualizarán al reconectar';
+            content.parentNode.insertBefore(badge, content);
+          }
+        } else {
+          if (badge) badge.remove();
+          if (_feedImageModalDetailsWasOffline) {
+            // Volvió la red: re-suscribir fuerza eventos frescos de nota,
+            // comentarios y autor en vez de dejar valores congelados.
+            _subscribeFeedImageModalDetailsLive(noteId);
+          }
+        }
+      });
     } catch (_) { _unsubscribeFeedImageModalDetailsLive(); }
   }
 
