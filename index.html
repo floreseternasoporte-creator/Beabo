@@ -9390,6 +9390,26 @@ function saveNote() {
   let _feedImageModalZoom = 1;
   let _feedImageModalPanX = 0;
   let _feedImageModalPanY = 0;
+  // Offset Y del arrastre visual "deslizar para cerrar" (0 = inactivo).
+  let _feedImageModalDismissY = 0;
+
+  // Feedback del gesto "deslizar abajo para cerrar": la foto sigue al dedo y
+  // el fondo se atenúa. Con dy = 0 la foto regresa a su lugar con animación.
+  function _setFeedImageModalDismissDrag(dy) {
+    const img = document.getElementById('modal-image');
+    const modal = document.getElementById('image-modal');
+    if (dy > 0) {
+      if (img) { img.style.transition = 'none'; img.style.transform = `translateY(${(dy * 0.85).toFixed(1)}px)`; }
+      if (modal) {
+        const f = Math.max(0, 1 - dy / (window.innerHeight * 0.55));
+        modal.style.transition = 'none';
+        modal.style.backgroundColor = `rgba(0,0,0,${f.toFixed(3)})`;
+      }
+    } else {
+      if (img) { img.style.transition = 'transform .22s ease-out'; img.style.transform = ''; }
+      if (modal) { modal.style.transition = 'background-color .22s ease-out'; modal.style.backgroundColor = ''; }
+    }
+  }
 
   // Una foto rota no debe quedar como slide fantasma: se elimina del carrusel
   // y el contador "1 / N" se recalcula con las fotos reales que quedan.
@@ -9467,8 +9487,12 @@ function saveNote() {
     const dots = document.getElementById('image-modal-dots');
     _feedImageModalPanX = 0;
     _feedImageModalPanY = 0;
+    _feedImageModalDismissY = 0;
     const total = _feedImageModalPhotos.length;
+    const _rModal = document.getElementById('image-modal');
+    if (_rModal) { _rModal.style.transition = ''; _rModal.style.backgroundColor = ''; }
     if (img) {
+      img.style.transition = '';
       img.style.transform = '';
       img.src = _feedImageModalPhotos[_feedImageModalIndex] || '';
       // Accesibilidad: el lector de pantalla anuncia "Foto 2 de 5" al navegar.
@@ -9553,6 +9577,11 @@ function saveNote() {
     stage.addEventListener('pointerdown', (e) => {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pointers.size === 1) { mode = 'touch'; startX = e.clientX; startY = e.clientY; lastX = e.clientX; lastY = e.clientY; moved = false; }
+      // Un snap-back previo no debe animar este gesto: transiciones fuera.
+      const _pdImg = document.getElementById('modal-image');
+      if (_pdImg) _pdImg.style.transition = '';
+      const _pdModal = document.getElementById('image-modal');
+      if (_pdModal) _pdModal.style.transition = '';
       else if (pointers.size === 2) {
         mode = 'pinch'; moved = true;
         const p = [...pointers.values()];
@@ -9580,6 +9609,17 @@ function saveNote() {
           _feedImageModalPanX += dxm;
           _feedImageModalPanY += dym;
           applyTransform();
+        } else if (_feedImageModalZoom === 1 && moved) {
+          // Sin zoom: arrastre hacia abajo = la foto sigue al dedo y el fondo
+          // se atenúa (feedback del gesto "deslizar para cerrar").
+          const tdx = e.clientX - startX, tdy = e.clientY - startY;
+          if (tdy > 12 && tdy > Math.abs(tdx) * 1.2) {
+            _feedImageModalDismissY = tdy;
+            _setFeedImageModalDismissDrag(tdy);
+          } else if (_feedImageModalDismissY > 0) {
+            _feedImageModalDismissY = 0;
+            _setFeedImageModalDismissDrag(0);
+          }
         }
       }
     });
@@ -9589,6 +9629,8 @@ function saveNote() {
       pointers.delete(e.pointerId);
       if (pointers.size === 0) {
         if (wasMode === 'touch' && !wasMoved) {
+          // Un snap-back a medio animar no debe dejar la foto desplazada.
+          if (_feedImageModalDismissY > 0) { _feedImageModalDismissY = 0; _setFeedImageModalDismissDrag(0); }
           const now = Date.now();
           if (now - lastTap < 300) {
             // Doble tap: alterna zoom 2x y revierte el toggle de chrome del primer tap
@@ -9607,7 +9649,11 @@ function saveNote() {
             _feedImageModalNav(dx < 0 ? 1 : -1);
           } else if (dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.4) {
             closeImageModal();
+          } else if (_feedImageModalDismissY > 0) {
+            // No llegó al umbral: la foto regresa a su lugar con animación.
+            _setFeedImageModalDismissDrag(0);
           }
+          _feedImageModalDismissY = 0;
         }
         mode = null;
       } else if (pointers.size === 1) {
@@ -10101,10 +10147,11 @@ function saveNote() {
   }
 
   function closeImageModal() {
-    document.getElementById('image-modal')?.classList.add('hidden');
+    const _cModal = document.getElementById('image-modal');
+    if (_cModal) { _cModal.classList.add('hidden'); _cModal.style.transition = ''; _cModal.style.backgroundColor = ''; }
     const modalImage = document.getElementById('modal-image');
-    if (modalImage) { modalImage.style.transform = ''; modalImage.src = ''; }
-    try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; } catch (_) {}
+    if (modalImage) { modalImage.style.transition = ''; modalImage.style.transform = ''; modalImage.src = ''; }
+    try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; _feedImageModalDismissY = 0; } catch (_) {}
     document.body.style.overflow = '';
   }
 
