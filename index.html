@@ -6277,9 +6277,19 @@ if (scrollArea) {
   </div>
 
   <!-- Escenario: swipe horizontal, pinch-to-zoom, doble tap, deslizar abajo para cerrar -->
+  <!-- Escenario: swipe horizontal, pinch-to-zoom, doble tap, deslizar abajo para cerrar -->
+  <!-- La pista de 3 fotos permite que la vecina asome al arrastrar lateralmente. -->
   <div id="image-modal-stage" class="absolute inset-0 overflow-hidden">
-    <div class="w-full h-full flex items-center justify-center">
-      <img id="modal-image" src="" alt="Foto" draggable="false" class="max-w-full max-h-full object-contain select-none" style="touch-action:none">
+    <div id="image-modal-track" class="h-full flex" style="width:300%;transform:translateX(-33.3333%)">
+      <div class="h-full flex items-center justify-center" style="width:33.3333%">
+        <img id="modal-image-prev" src="" alt="" aria-hidden="true" draggable="false" class="max-w-full max-h-full object-contain select-none" style="touch-action:none">
+      </div>
+      <div class="h-full flex items-center justify-center" style="width:33.3333%">
+        <img id="modal-image" src="" alt="Foto" draggable="false" class="max-w-full max-h-full object-contain select-none" style="touch-action:none">
+      </div>
+      <div class="h-full flex items-center justify-center" style="width:33.3333%">
+        <img id="modal-image-next" src="" alt="" aria-hidden="true" draggable="false" class="max-w-full max-h-full object-contain select-none" style="touch-action:none">
+      </div>
     </div>
   </div>
 
@@ -9392,10 +9402,13 @@ function saveNote() {
   let _feedImageModalPanY = 0;
   // Offset Y del arrastre visual "deslizar para cerrar" (0 = inactivo).
   let _feedImageModalDismissY = 0;
+  // Offset X del arrastre lateral del carrusel (0 = inactivo).
+  let _feedImageModalDragX = 0;
 
   // Feedback del gesto "deslizar abajo para cerrar": la foto sigue al dedo y
-  // el fondo se atenúa. Con dy = 0 la foto regresa a su lugar con animación.
-  function _setFeedImageModalDismissDrag(dy) {
+  // el fondo se atenúa. Con dy = 0 la foto regresa a su lugar (con animación,
+  // o al instante si instant es true).
+  function _setFeedImageModalDismissDrag(dy, instant) {
     const img = document.getElementById('modal-image');
     const modal = document.getElementById('image-modal');
     if (dy > 0) {
@@ -9406,9 +9419,31 @@ function saveNote() {
         modal.style.backgroundColor = `rgba(0,0,0,${f.toFixed(3)})`;
       }
     } else {
-      if (img) { img.style.transition = 'transform .22s ease-out'; img.style.transform = ''; }
-      if (modal) { modal.style.transition = 'background-color .22s ease-out'; modal.style.backgroundColor = ''; }
+      if (img) { img.style.transition = instant ? 'none' : 'transform .22s ease-out'; img.style.transform = ''; }
+      if (modal) { modal.style.transition = instant ? 'none' : 'background-color .22s ease-out'; modal.style.backgroundColor = ''; }
     }
+  }
+
+  // Feedback del swipe lateral: la pista del carrusel sigue al dedo y la foto
+  // vecina asoma. Con dx = 0 la pista regresa al centro (con animación, o al
+  // instante si instant es true).
+  function _setFeedImageModalSwipeDrag(dx, instant) {
+    const track = document.getElementById('image-modal-track');
+    if (!track) return;
+    track.style.transition = (instant || dx !== 0) ? 'none' : 'transform .22s ease-out';
+    track.style.transform = dx !== 0
+      ? `translateX(calc(-33.3333% + ${dx.toFixed(1)}px))`
+      : 'translateX(-33.3333%)';
+  }
+
+  // El swipe lateral anima la pista hasta la foto vecina y luego navega.
+  function _animateFeedImageModalSwipe(dir) {
+    const track = document.getElementById('image-modal-track');
+    if (track) {
+      track.style.transition = 'transform .2s ease-out';
+      track.style.transform = dir > 0 ? 'translateX(-66.6666%)' : 'translateX(0%)';
+    }
+    setTimeout(() => _feedImageModalNav(dir), 190);
   }
 
   // Una foto rota no debe quedar como slide fantasma: se elimina del carrusel
@@ -9488,9 +9523,16 @@ function saveNote() {
     _feedImageModalPanX = 0;
     _feedImageModalPanY = 0;
     _feedImageModalDismissY = 0;
+    _feedImageModalDragX = 0;
     const total = _feedImageModalPhotos.length;
     const _rModal = document.getElementById('image-modal');
     if (_rModal) { _rModal.style.transition = ''; _rModal.style.backgroundColor = ''; }
+    const _rTrack = document.getElementById('image-modal-track');
+    if (_rTrack) { _rTrack.style.transition = ''; _rTrack.style.transform = 'translateX(-33.3333%)'; }
+    const _rPrev = document.getElementById('modal-image-prev');
+    if (_rPrev) _rPrev.src = _feedImageModalPhotos[_feedImageModalIndex - 1] || '';
+    const _rNext = document.getElementById('modal-image-next');
+    if (_rNext) _rNext.src = _feedImageModalPhotos[_feedImageModalIndex + 1] || '';
     if (img) {
       img.style.transition = '';
       img.style.transform = '';
@@ -9582,6 +9624,8 @@ function saveNote() {
       if (_pdImg) _pdImg.style.transition = '';
       const _pdModal = document.getElementById('image-modal');
       if (_pdModal) _pdModal.style.transition = '';
+      const _pdTrack = document.getElementById('image-modal-track');
+      if (_pdTrack) _pdTrack.style.transition = '';
       else if (pointers.size === 2) {
         mode = 'pinch'; moved = true;
         const p = [...pointers.values()];
@@ -9610,15 +9654,30 @@ function saveNote() {
           _feedImageModalPanY += dym;
           applyTransform();
         } else if (_feedImageModalZoom === 1 && moved) {
-          // Sin zoom: arrastre hacia abajo = la foto sigue al dedo y el fondo
-          // se atenúa (feedback del gesto "deslizar para cerrar").
+          // Sin zoom: el carrusel sigue al dedo. Hacia abajo = feedback de
+          // "deslizar para cerrar" (la foto baja y el fondo se atenúa); a los
+          // lados = la foto vecina asoma (con resistencia de goma en los bordes).
           const tdx = e.clientX - startX, tdy = e.clientY - startY;
-          if (tdy > 12 && tdy > Math.abs(tdx) * 1.2) {
+          const downDrag = tdy > 12 && tdy > Math.abs(tdx) * 1.2;
+          const sideDrag = Math.abs(tdx) > 12 && Math.abs(tdx) > Math.abs(tdy) * 1.2;
+          if (downDrag) {
+            if (_feedImageModalDragX !== 0) { _feedImageModalDragX = 0; _setFeedImageModalSwipeDrag(0, true); }
             _feedImageModalDismissY = tdy;
             _setFeedImageModalDismissDrag(tdy);
-          } else if (_feedImageModalDismissY > 0) {
+          } else if (sideDrag) {
+            if (_feedImageModalDismissY > 0) { _feedImageModalDismissY = 0; _setFeedImageModalDismissDrag(0, true); }
+            const dirX = tdx < 0 ? 1 : -1;
+            const niX = _feedImageModalIndex + dirX;
+            // En los bordes no hay vecina: resistencia de goma.
+            const effDx = (niX >= 0 && niX < _feedImageModalPhotos.length) ? tdx : tdx * 0.35;
+            _feedImageModalDragX = effDx;
+            _setFeedImageModalSwipeDrag(effDx);
+          } else if (_feedImageModalDismissY > 0 || _feedImageModalDragX !== 0) {
+            // Zona muerta con el dedo aún moviéndose: suelta al instante.
             _feedImageModalDismissY = 0;
-            _setFeedImageModalDismissDrag(0);
+            _feedImageModalDragX = 0;
+            _setFeedImageModalDismissDrag(0, true);
+            _setFeedImageModalSwipeDrag(0, true);
           }
         }
       }
@@ -9628,9 +9687,21 @@ function saveNote() {
       const wasMode = mode, sx = startX, sy = startY, wasMoved = moved;
       pointers.delete(e.pointerId);
       if (pointers.size === 0) {
+        // Un pellizco (u otro gesto) no debe dejar un arrastre visual colgado.
+        if (wasMode !== 'touch' && (_feedImageModalDismissY > 0 || _feedImageModalDragX !== 0)) {
+          _feedImageModalDismissY = 0;
+          _feedImageModalDragX = 0;
+          _setFeedImageModalDismissDrag(0);
+          _setFeedImageModalSwipeDrag(0);
+        }
         if (wasMode === 'touch' && !wasMoved) {
           // Un snap-back a medio animar no debe dejar la foto desplazada.
-          if (_feedImageModalDismissY > 0) { _feedImageModalDismissY = 0; _setFeedImageModalDismissDrag(0); }
+          if (_feedImageModalDismissY > 0 || _feedImageModalDragX !== 0) {
+            _feedImageModalDismissY = 0;
+            _feedImageModalDragX = 0;
+            _setFeedImageModalDismissDrag(0);
+            _setFeedImageModalSwipeDrag(0);
+          }
           const now = Date.now();
           if (now - lastTap < 300) {
             // Doble tap: alterna zoom 2x y revierte el toggle de chrome del primer tap
@@ -9643,17 +9714,31 @@ function saveNote() {
             lastTap = now;
             _toggleFeedImageModalChrome();
           }
-        } else if (wasMode === 'touch' && wasMoved && _feedImageModalZoom === 1) {
+        } else if (wasMode === 'touch' && wasMoved) {
           const dx = e.clientX - sx, dy = e.clientY - sy;
-          if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) {
-            _feedImageModalNav(dx < 0 ? 1 : -1);
-          } else if (dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.4) {
+          const snapBackDrag = () => {
+            if (_feedImageModalDismissY > 0) _setFeedImageModalDismissDrag(0);
+            if (_feedImageModalDragX !== 0) _setFeedImageModalSwipeDrag(0);
+            _feedImageModalDismissY = 0;
+            _feedImageModalDragX = 0;
+          };
+          if (_feedImageModalZoom === 1 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+            const dir = dx < 0 ? 1 : -1;
+            const ni = _feedImageModalIndex + dir;
+            if (ni >= 0 && ni < _feedImageModalPhotos.length) {
+              // Anima la pista hasta la vecina y luego navega.
+              _feedImageModalDismissY = 0;
+              _feedImageModalDragX = 0;
+              _animateFeedImageModalSwipe(dir);
+            } else {
+              snapBackDrag(); // en el borde: rebote de goma
+            }
+          } else if (_feedImageModalZoom === 1 && dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.4) {
             closeImageModal();
-          } else if (_feedImageModalDismissY > 0) {
-            // No llegó al umbral: la foto regresa a su lugar con animación.
-            _setFeedImageModalDismissDrag(0);
+          } else {
+            // No llegó a ningún umbral (o hay zoom): todo regresa a su lugar.
+            snapBackDrag();
           }
-          _feedImageModalDismissY = 0;
         }
         mode = null;
       } else if (pointers.size === 1) {
@@ -10149,9 +10234,11 @@ function saveNote() {
   function closeImageModal() {
     const _cModal = document.getElementById('image-modal');
     if (_cModal) { _cModal.classList.add('hidden'); _cModal.style.transition = ''; _cModal.style.backgroundColor = ''; }
+    const _cTrack = document.getElementById('image-modal-track');
+    if (_cTrack) { _cTrack.style.transition = ''; _cTrack.style.transform = 'translateX(-33.3333%)'; }
     const modalImage = document.getElementById('modal-image');
     if (modalImage) { modalImage.style.transition = ''; modalImage.style.transform = ''; modalImage.src = ''; }
-    try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; _feedImageModalDismissY = 0; } catch (_) {}
+    try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; _feedImageModalDismissY = 0; _feedImageModalDragX = 0; } catch (_) {}
     document.body.style.overflow = '';
   }
 
