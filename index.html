@@ -6295,6 +6295,11 @@ if (scrollArea) {
 
   <!-- Puntos de página -->
   <div id="image-modal-dots" class="absolute bottom-10 left-0 right-0 z-20 flex flex-wrap justify-center gap-1.5 px-6 pointer-events-none transition-opacity duration-200"></div>
+
+  <!-- Spinner mientras la foto actual carga (redes móviles lentas) -->
+  <div id="image-modal-loading" class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none" style="display:none">
+    <div class="w-10 h-10 rounded-full border-[3px] border-white/20 border-t-white animate-spin"></div>
+  </div>
 </div>
 
 <!-- Vista de Búsqueda - Estilo rediseñado y organizado -->
@@ -9398,6 +9403,22 @@ function saveNote() {
   let _feedImageModalPhotos = [];
   let _feedImageModalIndex = 0;
   let _feedImageModalZoom = 1;
+  // Precarga de vecinas (el navegador las cachea; al navegar salen al instante).
+  const _feedImageModalPreloaded = new Set();
+  // Spinner de carga: se muestra solo si la foto tarda más de 180ms.
+  let _feedImageModalSpinT = null;
+  function _feedImageModalShowSpin() {
+    clearTimeout(_feedImageModalSpinT);
+    _feedImageModalSpinT = setTimeout(() => {
+      const s = document.getElementById('image-modal-loading');
+      if (s) s.style.display = '';
+    }, 180);
+  }
+  function _feedImageModalHideSpin() {
+    clearTimeout(_feedImageModalSpinT);
+    const s = document.getElementById('image-modal-loading');
+    if (s) s.style.display = 'none';
+  }
   let _feedImageModalPanX = 0;
   let _feedImageModalPanY = 0;
   // Offset Y del arrastre visual "deslizar para cerrar" (0 = inactivo).
@@ -9537,9 +9558,23 @@ function saveNote() {
     if (_rPrev) _rPrev.src = _feedImageModalPhotos[_feedImageModalIndex - 1] || '';
     const _rNext = document.getElementById('modal-image-next');
     if (_rNext) _rNext.src = _feedImageModalPhotos[_feedImageModalIndex + 1] || '';
+    // Precarga de las vecinas ±2 y ±3: en redes móviles lentas, pasar dos
+    // fotos seguidas mostraba un flash negro. Las ±1 ya las pide la pista.
+    if (_feedImageModalPreloaded.size > 80) _feedImageModalPreloaded.clear();
+    for (let _po = 2; _po <= 3; _po++) {
+      for (const _pi of [_feedImageModalIndex - _po, _feedImageModalIndex + _po]) {
+        const _pu = _feedImageModalPhotos[_pi];
+        if (_pu && !_feedImageModalPreloaded.has(_pu)) {
+          _feedImageModalPreloaded.add(_pu);
+          const _pimg = new Image();
+          _pimg.src = _pu;
+        }
+      }
+    }
     if (img) {
       img.style.transition = '';
       img.style.transform = '';
+      _feedImageModalShowSpin();
       img.src = _feedImageModalPhotos[_feedImageModalIndex] || '';
       // Accesibilidad: el lector de pantalla anuncia "Foto 2 de 5" al navegar.
       const _modalLangEn = typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
@@ -9612,6 +9647,8 @@ function saveNote() {
     if (!stage || !img || stage.dataset.gesturesBound) return;
     stage.dataset.gesturesBound = '1';
     document.addEventListener('keydown', _feedImageModalKeydown);
+    img.addEventListener('load', _feedImageModalHideSpin);
+    img.addEventListener('error', _feedImageModalHideSpin);
 
     const pointers = new Map();
     let mode = null; // 'touch' | 'pinch'
@@ -10338,6 +10375,7 @@ function saveNote() {
     if (_cTrack) { _cTrack.style.transition = ''; _cTrack.style.transform = 'translateX(-33.3333%)'; }
     const modalImage = document.getElementById('modal-image');
     if (modalImage) { modalImage.style.transition = ''; modalImage.style.transform = ''; modalImage.src = ''; }
+    _feedImageModalHideSpin();
     try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; _feedImageModalDismissY = 0; _feedImageModalDragX = 0; } catch (_) {}
     document.body.style.overflow = '';
     if (_feedImageModalPrevFocus && document.contains(_feedImageModalPrevFocus)) {
