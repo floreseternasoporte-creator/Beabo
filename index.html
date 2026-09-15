@@ -4189,6 +4189,8 @@ document.addEventListener("DOMContentLoaded", function() {
     @keyframes drex-vote-pulse { 50% { opacity: .45; } }
     /* Guardado en vuelo: mismo pulso en el botón de guardar. */
     .save-btn.is-pending { animation: drex-vote-pulse .8s ease-in-out infinite; }
+    /* Repost en vuelo: mismo pulso en la píldora de repostear. */
+    .repost-btn.is-pending { animation: drex-vote-pulse .8s ease-in-out infinite; }
     /* Hoja de detalles: objetivos táctiles de 44px (guía de Apple) para iPhone. */
     #image-modal-details .drex-vote-btn { width: 44px; height: 44px; }
     #image-modal-details .drex-vote-btn svg { width: 22px; height: 22px; }
@@ -9934,21 +9936,27 @@ function saveNote() {
   async function _toggleViewerDetailsRepost(btn) {
     const noteId = _feedImageModalNoteId;
     if (!noteId) return;
-    if (typeof toggleRepost === 'function') await toggleRepost(noteId);
+    // Estado "reposteando": pulso visible mientras se confirma la acción.
+    if (btn) btn.classList.add('is-pending');
     try {
-      const user = DrexCloud.auth().currentUser;
-      if (user) {
-        const [uSnap, nSnap] = await Promise.all([
-          DrexCloud.database().ref('userReposts/' + user.uid + '/' + noteId).once('value'),
-          DrexCloud.database().ref('communityNotes/' + noteId + '/repostsCount').once('value')
-        ]);
-        const active = uSnap.exists();
-        btn.classList.toggle('active', active);
-        btn.setAttribute('aria-pressed', String(active));
-        const span = btn.querySelector('span');
-        if (span) span.textContent = nSnap.val() || 0;
-      }
-    } catch (_) {}
+      if (typeof toggleRepost === 'function') await toggleRepost(noteId);
+      try {
+        const user = DrexCloud.auth().currentUser;
+        if (user) {
+          const [uSnap, nSnap] = await Promise.all([
+            DrexCloud.database().ref('userReposts/' + user.uid + '/' + noteId).once('value'),
+            DrexCloud.database().ref('communityNotes/' + noteId + '/repostsCount').once('value')
+          ]);
+          const active = uSnap.exists();
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-pressed', String(active));
+          const span = btn.querySelector('span');
+          if (span) span.textContent = nSnap.val() || 0;
+        }
+      } catch (_) {}
+    } finally {
+      if (btn) btn.classList.remove('is-pending');
+    }
   }
 
   // Opciones del post desde la hoja: el mismo menú de tres puntitos del feed
