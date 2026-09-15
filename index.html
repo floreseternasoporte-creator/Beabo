@@ -8656,8 +8656,13 @@ function saveNote() {
   // solo lectura, así que las selecciones se acumulan aquí para poder quitar
   // fotos individuales y publicar exactamente lo que muestra el preview.
   let notePostImageFiles = [];
+  // Candado: mientras hay una publicación en vuelo, los adjuntos no se pueden
+  // cambiar (el publish ya tomó su snapshot); evita que lo publicado difiera
+  // de lo que muestra el preview.
+  let notePostPublishing = false;
 
   function openNoteGifPicker() {
+    if (notePostPublishing) return;
     if (pendingStickers['note-content-fullscreen']) {
       showMiniToast('❌ Error: No puedes agregar un GIF si ya has seleccionado un sticker. Por favor, elimina el sticker primero.');
       return;
@@ -8667,6 +8672,7 @@ function saveNote() {
   }
 
   function setNotePostGif(url) {
+    if (notePostPublishing) return;
     selectedNotePostGif = url;
     removeImageFullscreen(true);
     const previewGrid = document.getElementById('preview-grid-fullscreen');
@@ -8996,6 +9002,7 @@ function saveNote() {
   function handleNoteImagePreviewFullscreen(event, source = 'gallery') {
     const selectedFiles = Array.from(event.target.files || []);
     if (!selectedFiles.length) return;
+    if (notePostPublishing) { event.target.value = ''; return; }
 
     const hasStickerSelected = pendingStickers['note-content-fullscreen'];
     if (hasStickerSelected) {
@@ -9039,6 +9046,8 @@ function saveNote() {
       removeBtn.setAttribute('aria-label', 'Quitar foto ' + (index + 1));
       removeBtn.className = 'absolute top-1.5 right-1.5 w-8 h-8 flex items-center justify-center rounded-full bg-black/65 text-white text-lg font-bold leading-none active:bg-black/85';
       removeBtn.textContent = '×';
+      // Sin ✕ visible mientras se publica: los adjuntos están congelados.
+      if (notePostPublishing) removeBtn.classList.add('hidden');
       removeBtn.onclick = () => removeNotePostPhotoAt(index);
       wrap.appendChild(previewEl);
       wrap.appendChild(removeBtn);
@@ -9053,12 +9062,14 @@ function saveNote() {
   }
 
   function removeNotePostPhotoAt(index) {
+    if (notePostPublishing) return;
     if (index < 0 || index >= notePostImageFiles.length) return;
     notePostImageFiles.splice(index, 1);
     renderNotePostPhotoPreviews();
   }
 
   function removeImageFullscreen(keepGifSelectionState = false) {
+    if (notePostPublishing) return;
     const galleryInput = document.getElementById('note-image-fullscreen-gallery');
     const cameraInput = document.getElementById('note-image-fullscreen-camera');
     if (galleryInput) galleryInput.value = '';
@@ -9086,6 +9097,9 @@ function saveNote() {
     const publishBtn = document.getElementById('publish-btn-fullscreen');
     publishBtn.disabled = true;
     publishBtn.innerHTML = `${getSpinnerMarkup()}`;
+    // Congelar adjuntos: lo que se publica es el snapshot tomado arriba.
+    notePostPublishing = true;
+    renderNotePostPhotoPreviews();
 
     DrexCloud.database().ref('users/' + user.uid).once('value').then(userSnap => {
       const userData = userSnap.val() || {};
@@ -9146,6 +9160,8 @@ function saveNote() {
         }).catch((error) => {
           console.error('Error al procesar imágenes:', error);
           showMiniToast('Error al procesar las imágenes. Inténtalo con fotos más ligeras.');
+          notePostPublishing = false;
+          renderNotePostPhotoPreviews();
           publishBtn.disabled = false;
           publishBtn.innerHTML = 'Publicar';
         });
@@ -9155,6 +9171,8 @@ function saveNote() {
     }).catch(error => {
       console.error('Error al obtener datos del usuario:', error);
       showMiniToast('Error al publicar. Inténtalo de nuevo.');
+      notePostPublishing = false;
+      renderNotePostPhotoPreviews();
       publishBtn.disabled = false;
       publishBtn.innerHTML = 'Publicar';
     });
@@ -9232,6 +9250,8 @@ function saveNote() {
     const preModeration = evaluateContentModeration(note.content || '', note.imageUrls || note.imageUrl || []);
     if (preModeration.flagged) {
       showMiniToast('Tu nota no puede ser publicada porque contiene contenido inapropiado.');
+      notePostPublishing = false;
+      renderNotePostPhotoPreviews();
       const publishBtn = document.getElementById('publish-btn-fullscreen');
       if (publishBtn) {
         publishBtn.disabled = false;
@@ -9245,6 +9265,7 @@ function saveNote() {
 
     const mentionPromise = sendMentionNotifications(note.content, note.authorId, note.authorName, 'publicación', [note.authorId]);
     Promise.all([p1, mentionPromise]).then(([ref1]) => {
+      notePostPublishing = false;
       if (note.content || note.imageUrls || note.imageUrl) {
         moderarContenidoAutomaticamente(ref1.key, `${note.content || ''} ${(note.imageUrls || []).join(' ')} ${note.imageUrl || ''}`);
       }
@@ -9279,6 +9300,8 @@ function saveNote() {
     }).catch(error => {
       console.error('Error al publicar:', error);
       showMiniToast('Error al publicar. Inténtalo de nuevo.');
+      notePostPublishing = false;
+      renderNotePostPhotoPreviews();
       const publishBtn = document.getElementById('publish-btn-fullscreen');
       if (publishBtn) {
         publishBtn.disabled = false;
