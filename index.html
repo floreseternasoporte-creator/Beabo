@@ -9014,6 +9014,28 @@ function saveNote() {
     });
   }
 
+  // Procesa varios archivos con concurrencia limitada. Decodificar 20 fotos
+  // a la vez con createImageBitmap (una de 48MP ocupa ~195MB en memoria)
+  // tumba la pestaña de Safari en el iPhone; de a 2 en 2 es seguro.
+  // Devuelve resultados con la misma forma que Promise.allSettled y en orden.
+  function processImageFilesLimited(files, limit = 2) {
+    const results = new Array(files.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < files.length) {
+        const i = next++;
+        try {
+          results[i] = { status: 'fulfilled', value: await processImageFile(files[i]) };
+        } catch (e) {
+          results[i] = { status: 'rejected', reason: e };
+        }
+      }
+    };
+    const workers = [];
+    for (let w = 0; w < Math.min(limit, files.length); w++) workers.push(worker());
+    return Promise.all(workers).then(() => results);
+  }
+
   function handleNoteImagePreviewFullscreen(event, source = 'gallery') {
     const selectedFiles = Array.from(event.target.files || []);
     if (!selectedFiles.length) return;
@@ -9170,7 +9192,9 @@ function saveNote() {
       } else if (imageFiles.length) {
         // allSettled: si una foto sale corrupta o tarda demasiado, se publica
         // con las que sí se procesaron en vez de tumbar todo el post.
-        Promise.allSettled(imageFiles.map(processImageFile)).then(results => {
+        // Con concurrencia limitada (2): 20 fotos de 48MP decodificadas a la
+        // vez tumbarían Safari en el iPhone por memoria.
+        processImageFilesLimited(imageFiles, 2).then(results => {
           const images = [];
           const failedIdx = [];
           results.forEach((r, i) => {
