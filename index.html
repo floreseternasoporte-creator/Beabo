@@ -9566,24 +9566,28 @@ function saveNote() {
   let _feedImageModalDetailsOpen = false;
   let _feedImageModalDetailsFullText = '';
   let _feedImageModalDetailsExpanded = false;
-  // Suscripción en vivo a los votos del post mientras la hoja está abierta.
+  // Suscripciones en vivo mientras la hoja está abierta: votos y comentarios.
   let _feedImageModalDetailsVoteRef = null;
+  let _feedImageModalDetailsCommentsRef = null;
   const _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN = 220;
 
-  // Votos en vivo: mientras la hoja está abierta, el marcador se actualiza
-  // solo si alguien vota (propio o ajeno) sin reabrir la hoja.
-  function _unsubscribeFeedImageModalDetailsVotes() {
+  // Votos y comentarios en vivo: mientras la hoja está abierta, el marcador
+  // y el conteo/pila de comentarios se actualizan solos si alguien vota o
+  // comenta (propio o ajeno) sin reabrir la hoja.
+  function _unsubscribeFeedImageModalDetailsLive() {
     try { if (_feedImageModalDetailsVoteRef) _feedImageModalDetailsVoteRef.off(); } catch (_) {}
+    try { if (_feedImageModalDetailsCommentsRef) _feedImageModalDetailsCommentsRef.off(); } catch (_) {}
     _feedImageModalDetailsVoteRef = null;
+    _feedImageModalDetailsCommentsRef = null;
   }
-  function _subscribeFeedImageModalDetailsVotes(noteId) {
-    _unsubscribeFeedImageModalDetailsVotes();
+  function _subscribeFeedImageModalDetailsLive(noteId) {
+    _unsubscribeFeedImageModalDetailsLive();
     if (!noteId) return;
     try {
-      const ref = DrexCloud.database().ref('communityNotes/' + noteId);
-      _feedImageModalDetailsVoteRef = ref;
-      ref.on('value', snap => {
-        if (!_feedImageModalDetailsOpen) return;
+      const noteRef = DrexCloud.database().ref('communityNotes/' + noteId);
+      _feedImageModalDetailsVoteRef = noteRef;
+      noteRef.on('value', snap => {
+        if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
         const note = snap.val() || {};
         const content = document.getElementById('image-modal-details-content');
         if (!content) return;
@@ -9592,8 +9596,24 @@ function saveNote() {
           const up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
           scoreEl.textContent = typeof formatVoteScore === 'function' ? formatVoteScore(up - down) : String(up - down);
         }
+        const cc = Number(note.commentsCount || 0);
+        const ccLabel = content.querySelector('#image-modal-details-comment-count');
+        if (ccLabel) ccLabel.textContent = cc + (cc === 1 ? ' comentario' : ' comentarios');
+        const ccBtn = content.querySelector('#image-modal-details-comments-count');
+        if (ccBtn) ccBtn.textContent = String(cc);
       });
-    } catch (_) { _feedImageModalDetailsVoteRef = null; }
+      const commentsRef = DrexCloud.database().ref('postComments/' + noteId).orderByKey().limitToLast(3);
+      _feedImageModalDetailsCommentsRef = commentsRef;
+      commentsRef.on('value', snap => {
+        if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
+        const stackEl = document.getElementById('image-modal-details-comment-avatars');
+        if (!stackEl) return;
+        const tmp = document.createElement('div');
+        tmp.innerHTML = _viewerDetailsAvatarStackHTML(_recentCommentAvatarsFromSnap(snap));
+        const fresh = tmp.firstChild;
+        if (fresh) stackEl.replaceWith(fresh);
+      });
+    } catch (_) { _unsubscribeFeedImageModalDetailsLive(); }
   }
 
   function _toggleFeedImageModalDetailsText() {
@@ -9629,6 +9649,31 @@ function saveNote() {
     }
   }
 
+  // HTML de la pila de avatares de comentaristas recientes (con id estable
+  // para poder refrescarla en vivo cuando llega un comentario nuevo).
+  function _viewerDetailsAvatarStackHTML(avatars) {
+    const _ph = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+    const imgs = (avatars && avatars.length)
+      ? avatars.map((a, i) => `<img src="${escapeHtmlAttr(a || _ph)}" alt="" class="w-6 h-6 rounded-full object-cover bg-[#dce1e5] ring-2 ring-white${i > 0 ? ' -ml-2' : ''}">`).join('')
+      : '';
+    return `<span id="image-modal-details-comment-avatars" class="flex items-center">${imgs}</span>`;
+  }
+
+  // Últimos 3 comentaristas (sin repetir usuario, filtrando bloqueados).
+  function _recentCommentAvatarsFromSnap(s) {
+    const arr = [];
+    try { s.forEach(ch => arr.push(ch.val() || {})); } catch (_) {}
+    const out = [], seen = new Set();
+    for (let i = arr.length - 1; i >= 0 && out.length < 3; i--) {
+      const c = arr[i], aid = c.authorId || '';
+      if (aid && seen.has(aid)) continue;
+      if (aid) seen.add(aid);
+      if (typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(aid)) continue;
+      out.push(c.authorImage || '');
+    }
+    return out;
+  }
+
   function _feedImageModalDetailsHTML(note, userVote, recentAvatars, hasReposted) {
     const up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
     const cc = Number(note.commentsCount || 0);
@@ -9636,12 +9681,9 @@ function saveNote() {
     const en = typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
     const avatar = note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
     const safeId = escapeHtml(note.id || '');
-    const _avatarPh = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
     // Pila de avatares de quienes comentaron último: se ve si hay conversación
     // sin abrir los comentarios.
-    const avatarStack = (recentAvatars && recentAvatars.length)
-      ? `<span class="flex items-center">${recentAvatars.map((a, i) => `<img src="${escapeHtmlAttr(a || _avatarPh)}" alt="" class="w-6 h-6 rounded-full object-cover bg-[#dce1e5] ring-2 ring-white${i > 0 ? ' -ml-2' : ''}">`).join('')}</span>`
-      : '';
+    const avatarStack = _viewerDetailsAvatarStackHTML(recentAvatars);
     const fullText = String(note.content || '');
     _feedImageModalDetailsFullText = fullText;
     _feedImageModalDetailsExpanded = false;
@@ -9682,10 +9724,10 @@ function saveNote() {
         </button>
         <button onclick="_openViewerComments()" class="flex items-center gap-2 active:opacity-70 transition" aria-label="${en ? 'View comments' : 'Ver comentarios'}">
           ${avatarStack}
-          <span class="text-[13px] text-[#7b878f] font-semibold">${cc} comentario${cc === 1 ? '' : 's'}</span>
+          <span id="image-modal-details-comment-count" class="text-[13px] text-[#7b878f] font-semibold">${cc} comentario${cc === 1 ? '' : 's'}</span>
         </button>
       </div>
-      <button onclick="_openViewerComments()" class="w-full py-3 rounded-2xl bg-[#0084FF] text-white font-bold text-[15px] active:scale-[.98] transition">Ver comentarios (${cc})</button>
+      <button onclick="_openViewerComments()" class="w-full py-3 rounded-2xl bg-[#0084FF] text-white font-bold text-[15px] active:scale-[.98] transition">Ver comentarios (<span id="image-modal-details-comments-count">${cc}</span>)</button>
     `;
   }
 
@@ -9717,25 +9759,13 @@ function saveNote() {
       </div>`;
     requestAnimationFrame(() => { panel.style.transform = 'translateY(0)'; });
     if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
-    _subscribeFeedImageModalDetailsVotes(noteId);
+    _subscribeFeedImageModalDetailsLive(noteId);
     const user = DrexCloud.auth().currentUser;
     Promise.all([
       DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(s => s.val() || null).catch(() => null),
       user ? DrexCloud.database().ref('userVotes/' + user.uid + '/' + noteId).once('value').then(s => s.val() || null).catch(() => null) : Promise.resolve(null),
       // Últimos 3 comentaristas (sin repetir usuario) para la pila de avatares.
-      DrexCloud.database().ref('postComments/' + noteId).orderByKey().limitToLast(3).once('value').then(s => {
-        const arr = [];
-        s.forEach(ch => arr.push(ch.val() || {}));
-        const out = [], seen = new Set();
-        for (let i = arr.length - 1; i >= 0 && out.length < 3; i--) {
-          const c = arr[i], aid = c.authorId || '';
-          if (aid && seen.has(aid)) continue;
-          if (aid) seen.add(aid);
-          if (typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(aid)) continue;
-          out.push(c.authorImage || '');
-        }
-        return out;
-      }).catch(() => []),
+      DrexCloud.database().ref('postComments/' + noteId).orderByKey().limitToLast(3).once('value').then(s => _recentCommentAvatarsFromSnap(s)).catch(() => []),
       // Estado "guardado" para pintar el botón de la hoja al abrir.
       (async () => {
         try {
@@ -9766,7 +9796,7 @@ function saveNote() {
   function _closeFeedImageModalDetails(instant) {
     if (!_feedImageModalDetailsOpen) return;
     _feedImageModalDetailsOpen = false;
-    _unsubscribeFeedImageModalDetailsVotes();
+    _unsubscribeFeedImageModalDetailsLive();
     const wrap = document.getElementById('image-modal-details');
     const panel = document.getElementById('image-modal-details-panel');
     if (wrap) wrap.setAttribute('aria-modal', 'false');
