@@ -6326,14 +6326,14 @@ if (scrollArea) {
        Se abre deslizando hacia arriba sobre la foto o con el botón de info.
        El contenedor no intercepta toques (la foto sigue recibiendo gestos);
        solo el panel es interactivo. -->
-  <div id="image-modal-details" class="absolute inset-0 z-30 hidden" style="pointer-events:none">
+  <div id="image-modal-details" class="absolute inset-0 z-30 hidden" style="pointer-events:none" role="dialog" aria-modal="false" aria-labelledby="image-modal-details-title">
     <div id="image-modal-details-panel" class="absolute inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-2xl flex flex-col" style="max-height:74%; transform:translateY(105%); transition:transform .28s ease-out; pointer-events:auto">
       <div id="image-modal-details-handle" class="pt-2.5 pb-1 flex justify-center shrink-0" style="touch-action:none;cursor:grab">
         <div class="w-10 h-1.5 rounded-full bg-black/15"></div>
       </div>
       <div class="flex items-center justify-between pl-4 pr-3 pb-1 shrink-0">
         <span id="image-modal-details-title" class="text-[15px] font-bold text-[#1c2b4a]">Detalles</span>
-        <button onclick="_closeFeedImageModalDetails()" aria-label="Cerrar detalles" class="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 text-[#1c2b4a] active:scale-95 transition">
+        <button id="image-modal-details-close" onclick="_closeFeedImageModalDetails()" aria-label="Cerrar detalles" class="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 text-[#1c2b4a] active:scale-95 transition">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
         </button>
       </div>
@@ -9619,6 +9619,11 @@ function saveNote() {
     _feedImageModalDetailsOpen = true;
     _bindFeedImageModalDetailsDrag();
     wrap.classList.remove('hidden');
+    wrap.setAttribute('aria-modal', 'true');
+    // El foco entra a la hoja de inmediato: el lector de pantalla y el
+    // tabulador empiezan en la hoja, no en los botones de detrás.
+    const _dcb = document.getElementById('image-modal-details-close');
+    if (_dcb) _dcb.focus({ preventScroll: true });
     content.innerHTML = `
       <div class="animate-pulse">
         <div class="flex items-center gap-3 mb-3">
@@ -9664,6 +9669,7 @@ function saveNote() {
     _feedImageModalDetailsOpen = false;
     const wrap = document.getElementById('image-modal-details');
     const panel = document.getElementById('image-modal-details-panel');
+    if (wrap) wrap.setAttribute('aria-modal', 'false');
     if (panel) {
       if (instant) panel.style.transition = 'none';
       panel.style.transform = 'translateY(105%)';
@@ -9672,6 +9678,13 @@ function saveNote() {
     if (wrap) {
       if (instant) wrap.classList.add('hidden');
       else setTimeout(() => { if (!_feedImageModalDetailsOpen) wrap.classList.add('hidden'); }, 300);
+    }
+    // Al cerrar por gesto/teclado, el foco vuelve al botón que abrió la hoja.
+    // (En cierres instantáneos —reapertura o cierre del visor— el foco lo
+    // maneja quien cierra, así que aquí no se toca.)
+    if (!instant && wrap && wrap.contains(document.activeElement)) {
+      const _ib = document.getElementById('image-modal-info');
+      if (_ib && _ib.offsetParent !== null) _ib.focus({ preventScroll: true });
     }
   }
 
@@ -9955,11 +9968,15 @@ function saveNote() {
     if (e.key === 'ArrowRight') { e.preventDefault(); _feedImageModalNav(1); return; }
     if (e.key === 'r' || e.key === 'R') { e.preventDefault(); _feedImageModalRotate(); return; }
     if (e.key !== 'Tab') return;
-    const focusables = Array.from(modal.querySelectorAll('button'))
+    // Con la hoja de detalles abierta, el tabulador queda confinado a la
+    // hoja (no salta a los botones del visor que quedan detrás).
+    const _detPanel = _feedImageModalDetailsOpen ? document.getElementById('image-modal-details-panel') : null;
+    const trapRoot = (_detPanel && !_detPanel.closest('.hidden')) ? _detPanel : modal;
+    const focusables = Array.from(trapRoot.querySelectorAll('button'))
       .filter(b => b.style.pointerEvents !== 'none' && b.offsetParent !== null);
     if (!focusables.length) return;
     const first = focusables[0], last = focusables[focusables.length - 1];
-    if (!modal.contains(document.activeElement)) {
+    if (!trapRoot.contains(document.activeElement)) {
       // El foco se perdió (ej. navegar por puntos destruyó el botón enfocado):
       // regresarlo al visor en vez de dejarlo escapar a la app detrás.
       e.preventDefault();
