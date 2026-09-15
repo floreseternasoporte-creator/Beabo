@@ -10036,22 +10036,43 @@ function saveNote() {
     const panel = document.getElementById('image-modal-details-panel');
     if (!handle || !panel || handle.dataset.bound) return;
     handle.dataset.bound = '1';
+    // Velocidad del arrastre en px/ms (positiva = hacia abajo), calculada con
+    // las muestras de los últimos 120 ms para detectar gestos rápidos.
+    function _dragFlickVelocity(samples) {
+      if (!samples || samples.length < 2) return 0;
+      const last = samples[samples.length - 1];
+      let first = samples[0];
+      for (let i = samples.length - 1; i >= 0; i--) {
+        if (last.t - samples[i].t > 120) break;
+        first = samples[i];
+      }
+      const dt = last.t - first.t;
+      if (dt <= 0) return 0;
+      return (last.y - first.y) / dt;
+    }
     let pid = null, sy = 0, dy = 0;
+    let _hvel = [];
     handle.addEventListener('pointerdown', (e) => {
       pid = e.pointerId; sy = e.clientY; dy = 0;
+      _hvel = [{ y: e.clientY, t: e.timeStamp }];
       panel.style.transition = 'none';
       try { handle.setPointerCapture(e.pointerId); } catch (_) {}
     });
     handle.addEventListener('pointermove', (e) => {
       if (e.pointerId !== pid) return;
       dy = Math.max(0, e.clientY - sy);
+      _hvel.push({ y: e.clientY, t: e.timeStamp });
+      if (_hvel.length > 12) _hvel.shift();
       panel.style.transform = `translateY(${dy.toFixed(1)}px)`;
     });
     const end = (e) => {
       if (e.pointerId !== pid) return;
       pid = null;
       panel.style.transition = '';
-      if (dy > 70) _closeFeedImageModalDetails();
+      // Un gesto rápido hacia abajo cierra aunque no llegue a 70px.
+      const _hv = _dragFlickVelocity(_hvel);
+      _hvel = [];
+      if (dy > 70 || _hv > 0.55) _closeFeedImageModalDetails();
       else panel.style.transform = 'translateY(0)';
     };
     handle.addEventListener('pointerup', end);
@@ -10063,6 +10084,7 @@ function saveNote() {
     if (panel.dataset.swipeBound) return;
     panel.dataset.swipeBound = '1';
     let swId = null, swY = 0, swDy = 0, swAtTop = false, swOn = false;
+    let _swVel = [];
     panel.addEventListener('touchstart', (e) => {
       if (e.touches.length !== 1 || swId !== null) return;
       if (e.target.closest && e.target.closest('#image-modal-details-handle')) return;
@@ -10070,6 +10092,7 @@ function saveNote() {
       swId = e.touches[0].identifier;
       swY = e.touches[0].clientY;
       swDy = 0; swOn = false;
+      _swVel = [{ y: e.touches[0].clientY, t: performance.now() }];
       swAtTop = !content || content.scrollTop <= 0;
     }, { passive: true });
     panel.addEventListener('touchmove', (e) => {
@@ -10077,6 +10100,8 @@ function saveNote() {
       const t = Array.from(e.touches).find(x => x.identifier === swId);
       if (!t) return;
       swDy = t.clientY - swY;
+      _swVel.push({ y: t.clientY, t: performance.now() });
+      if (_swVel.length > 12) _swVel.shift();
       if (swAtTop && swDy > 10) {
         if (!swOn) { swOn = true; panel.style.transition = 'none'; }
         e.preventDefault();
@@ -10091,7 +10116,9 @@ function saveNote() {
       if (swOn) {
         swOn = false;
         panel.style.transition = '';
-        if (swDy > 90) _closeFeedImageModalDetails();
+        const _sv = _dragFlickVelocity(_swVel);
+        _swVel = [];
+        if (swDy > 90 || _sv > 0.55) _closeFeedImageModalDetails();
         else panel.style.transform = 'translateY(0)';
       }
     };
