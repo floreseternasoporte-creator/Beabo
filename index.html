@@ -393,6 +393,11 @@ body {
   100% { transform: scale(1); }
 }
 
+/* Botón guardar de la hoja de detalles del visor: mismo idioma visual que
+   .save-btn, pero oscuro sobre la hoja clara. */
+#image-modal-details-save { color: #1c2b4a; }
+#image-modal-details-save.saved { color: #0084FF; }
+
 
 
 /* ===== TIPO DE PUBLICACIÓN ===== */
@@ -6337,6 +6342,11 @@ if (scrollArea) {
           <span id="image-modal-details-photo" class="hidden text-[11px] font-bold text-[#5c6974] bg-[#eef2f6] rounded-full px-2 py-0.5 whitespace-nowrap"></span>
         </div>
         <div class="flex items-center gap-2">
+          <button id="image-modal-details-save" onclick="_toggleFeedImageModalDetailsSave(this)" aria-label="Guardar publicación" aria-pressed="false" class="save-btn w-9 h-9 rounded-full active:scale-95 transition" style="padding:0;background:rgba(0,0,0,.05)">
+            <svg class="save-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="width:20px;height:20px">
+              <path d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6-3.8L6.5 21V4.5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
           <button id="image-modal-details-share" onclick="_shareFeedImageModalPost()" aria-label="Compartir publicación" class="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 text-[#1c2b4a] active:scale-95 transition">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/></svg>
           </button>
@@ -9678,9 +9688,23 @@ function saveNote() {
           out.push(c.authorImage || '');
         }
         return out;
-      }).catch(() => [])
-    ]).then(([note, userVote, recentAvatars]) => {
+      }).catch(() => []),
+      // Estado "guardado" para pintar el botón de la hoja al abrir.
+      (async () => {
+        try {
+          if (typeof _userSavedPosts !== 'undefined' && _userSavedPosts === null && typeof _loadUserSavedPosts === 'function') {
+            await _loadUserSavedPosts();
+          }
+        } catch (_) {}
+        return Boolean(typeof _userSavedPosts !== 'undefined' && _userSavedPosts && _userSavedPosts[noteId]);
+      })()
+    ]).then(([note, userVote, recentAvatars, isSaved]) => {
       if (!_feedImageModalDetailsOpen) return;
+      const _dsb = document.getElementById('image-modal-details-save');
+      if (_dsb) {
+        _dsb.classList.toggle('saved', !!isSaved);
+        _dsb.setAttribute('aria-pressed', String(!!isSaved));
+      }
       if (!note) {
         content.innerHTML = '<p class="text-center text-[#7b878f] text-sm font-semibold py-6">No se pudo cargar la publicación.</p>';
         return;
@@ -9712,6 +9736,17 @@ function saveNote() {
       const _ib = document.getElementById('image-modal-info');
       if (_ib && _ib.offsetParent !== null) _ib.focus({ preventScroll: true });
     }
+  }
+
+  // Guardar del post desde la hoja: reutiliza toggleSavePost y sincroniza
+  // la tarjeta del feed si está visible.
+  async function _toggleFeedImageModalDetailsSave(btn) {
+    const noteId = _feedImageModalNoteId;
+    if (!noteId || typeof toggleSavePost !== 'function') return;
+    await toggleSavePost(noteId, btn);
+    btn.setAttribute('aria-pressed', String(btn.classList.contains('saved')));
+    const cardBtn = document.querySelector('#post-' + noteId + ' [id^="save-"]');
+    if (cardBtn && cardBtn !== btn) cardBtn.classList.toggle('saved', btn.classList.contains('saved'));
   }
 
   // Compartir del post desde la hoja: abre el mismo menú que usa el feed.
@@ -9959,6 +9994,8 @@ function saveNote() {
       if (_detTitle) _detTitle.textContent = _modalLangEn ? 'Details' : 'Detalles';
       const _detShare = document.getElementById('image-modal-details-share');
       if (_detShare) _detShare.setAttribute('aria-label', _modalLangEn ? 'Share post' : 'Compartir publicación');
+      const _detSave = document.getElementById('image-modal-details-save');
+      if (_detSave) _detSave.setAttribute('aria-label', _modalLangEn ? 'Save post' : 'Guardar publicación');
     }
     if (count) {
       count.textContent = (_feedImageModalIndex + 1) + ' / ' + total;
