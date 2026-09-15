@@ -9334,6 +9334,8 @@ function saveNote() {
   let _feedImageModalPhotos = [];
   let _feedImageModalIndex = 0;
   let _feedImageModalZoom = 1;
+  let _feedImageModalPanX = 0;
+  let _feedImageModalPanY = 0;
 
   function openImageModal(imageUrl, noteId, clickedEl) {
     // Si el post tiene varias imágenes, permitimos navegar entre todas.
@@ -9348,6 +9350,8 @@ function saveNote() {
     _feedImageModalPhotos = allImgs.length ? allImgs : [imageUrl];
     _feedImageModalIndex = Math.max(0, _feedImageModalPhotos.indexOf(imageUrl));
     _feedImageModalZoom = 1;
+    _feedImageModalPanX = 0;
+    _feedImageModalPanY = 0;
     const modal = document.getElementById('image-modal');
     if (!modal) return;
     modal.classList.remove('hidden');
@@ -9369,6 +9373,8 @@ function saveNote() {
     const img = document.getElementById('modal-image');
     const count = document.getElementById('image-modal-count');
     const dots = document.getElementById('image-modal-dots');
+    _feedImageModalPanX = 0;
+    _feedImageModalPanY = 0;
     if (img) { img.style.transform = ''; img.src = _feedImageModalPhotos[_feedImageModalIndex] || ''; }
     const total = _feedImageModalPhotos.length;
     if (count) {
@@ -9404,14 +9410,30 @@ function saveNote() {
     const pointers = new Map();
     let mode = null; // 'touch' | 'pinch'
     let startX = 0, startY = 0, moved = false;
+    let lastX = 0, lastY = 0;
     let pinchStart = 0, zoomStart = 1;
     let lastTap = 0;
 
-    const applyZoom = () => { img.style.transform = _feedImageModalZoom > 1 ? `scale(${_feedImageModalZoom})` : ''; };
+    // El pan se limita para que la imagen ampliada no se escape del escenario.
+    const clampPan = () => {
+      const sw = stage.clientWidth || 1, sh = stage.clientHeight || 1;
+      const iw = img.clientWidth || 1, ih = img.clientHeight || 1;
+      const maxX = Math.max(0, (iw * _feedImageModalZoom - sw) / 2);
+      const maxY = Math.max(0, (ih * _feedImageModalZoom - sh) / 2);
+      _feedImageModalPanX = Math.max(-maxX, Math.min(maxX, _feedImageModalPanX));
+      _feedImageModalPanY = Math.max(-maxY, Math.min(maxY, _feedImageModalPanY));
+    };
+
+    const applyTransform = () => {
+      clampPan();
+      img.style.transform = _feedImageModalZoom > 1
+        ? `translate(${_feedImageModalPanX}px, ${_feedImageModalPanY}px) scale(${_feedImageModalZoom})`
+        : '';
+    };
 
     stage.addEventListener('pointerdown', (e) => {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pointers.size === 1) { mode = 'touch'; startX = e.clientX; startY = e.clientY; moved = false; }
+      if (pointers.size === 1) { mode = 'touch'; startX = e.clientX; startY = e.clientY; lastX = e.clientX; lastY = e.clientY; moved = false; }
       else if (pointers.size === 2) {
         mode = 'pinch'; moved = true;
         const p = [...pointers.values()];
@@ -9428,9 +9450,18 @@ function saveNote() {
         const p = [...pointers.values()];
         const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
         _feedImageModalZoom = Math.max(1, Math.min(4, zoomStart * d / pinchStart));
-        applyZoom();
+        if (_feedImageModalZoom === 1) { _feedImageModalPanX = 0; _feedImageModalPanY = 0; }
+        applyTransform();
       } else if (mode === 'touch') {
+        const dxm = e.clientX - lastX, dym = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
         if (Math.abs(e.clientX - startX) > 12 || Math.abs(e.clientY - startY) > 12) moved = true;
+        // Con zoom, arrastrar mueve la imagen en vez de navegar/cerrar.
+        if (_feedImageModalZoom > 1 && moved) {
+          _feedImageModalPanX += dxm;
+          _feedImageModalPanY += dym;
+          applyTransform();
+        }
       }
     });
 
@@ -9443,7 +9474,8 @@ function saveNote() {
           if (now - lastTap < 300) {
             // Doble tap: alterna zoom 2x y revierte el toggle de chrome del primer tap
             _feedImageModalZoom = _feedImageModalZoom > 1 ? 1 : 2;
-            applyZoom();
+            if (_feedImageModalZoom === 1) { _feedImageModalPanX = 0; _feedImageModalPanY = 0; }
+            applyTransform();
             _toggleFeedImageModalChrome();
             lastTap = 0;
           } else {
@@ -9461,7 +9493,7 @@ function saveNote() {
         mode = null;
       } else if (pointers.size === 1) {
         const p = [...pointers.values()][0];
-        mode = 'touch'; startX = p.x; startY = p.y; moved = true;
+        mode = 'touch'; startX = p.x; startY = p.y; lastX = p.x; lastY = p.y; moved = true;
       }
     };
     stage.addEventListener('pointerup', onUp);
@@ -9954,7 +9986,7 @@ function saveNote() {
     document.getElementById('image-modal')?.classList.add('hidden');
     const modalImage = document.getElementById('modal-image');
     if (modalImage) { modalImage.style.transform = ''; modalImage.src = ''; }
-    try { _feedImageModalZoom = 1; } catch (_) {}
+    try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; } catch (_) {}
     document.body.style.overflow = '';
   }
 
