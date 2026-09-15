@@ -1961,9 +1961,6 @@ document.addEventListener("DOMContentLoaded", function() {
   if (savedLang) {
     currentLanguage = savedLang;
     updateTranslations();
-  } else {
-    const langModal = document.getElementById("language-modal");
-    if (langModal) langModal.style.display = "flex";
   }
 });
 </script>
@@ -6621,12 +6618,6 @@ if (scrollArea) {
         if (tabName === 'notes') {
           loadUserNotes();
         }
-        if (tabName === 'reposts') {
-          const user = DrexCloud.auth().currentUser;
-          if (user) {
-            DrexCloud.database().ref('userReposts/' + user.uid).once('value').then(loadUserRepostsGrid);
-          }
-        }
       }
     });
   });
@@ -8028,12 +8019,10 @@ function saveNote() {
 
       const profilePostsHeader = document.getElementById('profile-posts-header');
       const sidebarPostsCount = document.getElementById('sidebar-posts-count');
-      const profilePostsCountDesktop = document.getElementById('profile-posts-count-desktop');
       const profilePostsCountMobile = document.getElementById('profile-posts-count-mobile');
 
       if (profilePostsHeader) profilePostsHeader.textContent = `${postsCount} posts`;
       if (sidebarPostsCount) sidebarPostsCount.textContent = postsCount;
-      if (profilePostsCountDesktop) profilePostsCountDesktop.textContent = postsCount;
       if (profilePostsCountMobile) profilePostsCountMobile.textContent = formatNumber(postsCount);
 
       const sidebarTotalViews = document.getElementById('sidebar-total-views');
@@ -8046,12 +8035,9 @@ function saveNote() {
     _userStatsRefs.push(_repostsRef);
     _repostsRef.on('value', repostsSnapshot => {
       const repostsCount = repostsSnapshot.numChildren();
-      const profileRepostsCountDesktop = document.getElementById('profile-reposts-count-desktop');
       const sidebarRepostsCount = document.getElementById('sidebar-reposts-count');
 
-      if (profileRepostsCountDesktop) profileRepostsCountDesktop.textContent = formatNumber(repostsCount);
       if (sidebarRepostsCount) sidebarRepostsCount.textContent = formatNumber(repostsCount);
-      loadUserRepostsGrid(repostsSnapshot);
     });
 
     const _followersRef = _db.ref('users/' + userId + '/followersCount');
@@ -8195,48 +8181,9 @@ function saveNote() {
     return card;
   }
 
-  function loadUserRepostsGrid(repostsSnapshot) {
-    const userRepostsDesktop = document.getElementById('user-reposts-desktop');
-    const userRepostsMobile = document.getElementById('user-reposts');
-    if (userRepostsDesktop) userRepostsDesktop.innerHTML = '';
-    if (userRepostsMobile) userRepostsMobile.innerHTML = '';
-
-    if (!repostsSnapshot.exists()) {
-      const emptyMarkup = `<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#7b878f]">Todavía no has hecho reposts.</div>`;
-      if (userRepostsDesktop) userRepostsDesktop.innerHTML = emptyMarkup;
-      if (userRepostsMobile) userRepostsMobile.innerHTML = emptyMarkup;
-      return;
-    }
-
-    const repostItems = [];
-    repostsSnapshot.forEach(child => repostItems.push({ ...(child.val() || {}), noteId: child.key }));
-    repostItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-    Promise.all(repostItems.map(item => DrexCloud.database().ref('communityNotes/' + item.noteId).once('value').then(s => ({
-      payload: item,
-      post: s.val() ? { ...s.val(), id: item.noteId } : null
-    })))).then(items => {
-      const validItems = items.filter(item => item.post);
-      if (!validItems.length) {
-        const emptyMarkup = `<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#7b878f]">No hay reposts disponibles.</div>`;
-        if (userRepostsDesktop) userRepostsDesktop.innerHTML = emptyMarkup;
-        if (userRepostsMobile) userRepostsMobile.innerHTML = emptyMarkup;
-        return;
-      }
-      validItems.forEach(item => {
-        if (userRepostsDesktop) userRepostsDesktop.appendChild(createProfileRepostCard(item.payload, item.post));
-        if (userRepostsMobile) userRepostsMobile.appendChild(createProfileRepostCard(item.payload, item.post));
-      });
-    }).catch(error => {
-      console.error('Error cargando reposts de perfil:', error);
-    });
-  }
-
-
   function openCreatorHub() {
     if (typeof window.closeOverlaysForTabSwitch === 'function') window.closeOverlaysForTabSwitch();
     // Oculta otras vistas de nivel superior, igual que el resto de vistas principales de la app
-    document.getElementById('community-view')?.classList.add('hidden');
     document.getElementById('profile-view')?.classList.add('hidden');
     document.getElementById('search-view')?.classList.add('hidden');
     document.getElementById('practicar-view')?.classList.add('hidden');
@@ -8244,10 +8191,7 @@ function saveNote() {
     document.getElementById('fab-practicar-btn')?.classList.add('hidden');
     document.getElementById('fab-create-btn')?.classList.toggle('hidden', !!document.getElementById('bottom-nav')?.classList.contains('hidden'));
     if (typeof closePracticarComposer === 'function') { closePracticarComposer(); closePracticarLang(); }
-    document.getElementById('groups-view')?.classList.add('hidden');
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
-    document.getElementById('games-view')?.classList.add('hidden');
-    document.getElementById('games-search-view')?.classList.add('hidden');
 
     document.getElementById('creator-hub-view')?.classList.remove('hidden');
     setBottomNavVisibility(false);
@@ -8399,8 +8343,6 @@ function saveNote() {
 
     if (draft.format && !forcedFormat) {
       currentNoteFormat = 'post';
-      const formatSelector = document.getElementById('note-format-selector');
-      if (formatSelector) formatSelector.value = currentNoteFormat;
       onNoteFormatChange(currentNoteFormat);
     }
 
@@ -8861,7 +8803,6 @@ function saveNote() {
   }
 
   function applyToolsByNoteFormat() {
-    const toolsRow = document.getElementById('note-tools-row');
     const counterWrap = document.getElementById('note-char-counter-wrap');
     setToolVisible('tool-photo', true);
 
@@ -8881,8 +8822,6 @@ function saveNote() {
     textarea.maxLength = maxLength;
     if (textarea.value.length > maxLength) textarea.value = textarea.value.slice(0, maxLength);
     updateCharRing(textarea.value.length, maxLength);
-    const formatSelector = document.getElementById('note-format-selector');
-    if (formatSelector) formatSelector.value = currentNoteFormat;
     const titleEl = document.getElementById('note-creation-title');
     if (titleEl) titleEl.textContent = 'Crear publicación';
     applyToolsByNoteFormat();
@@ -8898,8 +8837,6 @@ function saveNote() {
     clearGroupForNotePost();
     loadGroupsForNotePost();
 
-    const formatSelector = document.getElementById('note-format-selector');
-    if (formatSelector) formatSelector.value = startFormat;
     currentNoteFormat = startFormat;
     onNoteFormatChange(startFormat);
 
@@ -9235,11 +9172,9 @@ function saveNote() {
   }
 
   function switchCommunityTab(tab) {
-    const feedTab = document.getElementById('feed-tab');
     const notesFeed = document.getElementById('notes-feed');
 
     if (tab === 'feed') {
-      if (feedTab) feedTab.classList.add('text-[#1c2b4a]', 'border-b-2', 'border-[#0084FF]');
       if (notesFeed) notesFeed.classList.remove('hidden');
       loadNotes(false);
     }
@@ -9284,15 +9219,6 @@ function saveNote() {
         if (previewCounterFullscreen) previewCounterFullscreen.textContent = '';
         selectedNotePostGif = null;
         clearGroupForNotePost();
-
-        // Limpiar formularios antiguos (por compatibilidad)
-        const contentOld = document.getElementById('note-content');
-        const imageOld = document.getElementById('note-image');
-        const previewOld = document.getElementById('image-preview');
-
-        if (contentOld) contentOld.value = '';
-        if (imageOld) imageOld.value = '';
-        if (previewOld) previewOld.classList.add('hidden');
 
         clearCurrentNoteDraft();
 
@@ -9589,14 +9515,6 @@ function saveNote() {
   function getAdultContentPreference() {
     const raw = localStorage.getItem('drex_allow_adult_content');
     return raw === null ? true : raw === 'true';
-  }
-
-  function updateAdultContentToggleUI() {
-    const toggle = document.getElementById('adult-content-toggle');
-    const label = document.getElementById('adult-content-toggle-label');
-    const enabled = getAdultContentPreference();
-    if (toggle) toggle.checked = enabled;
-    if (label) label.textContent = enabled ? 'Activado' : 'Desactivado';
   }
 
   function normalizeForMatch(value) {
@@ -12492,8 +12410,8 @@ function saveNote() {
     const user = DrexCloud.auth().currentUser;
     const commentsView = document.getElementById('comments-view');
     const mainApp = document.getElementById('main-app');
-    const isCommunityDetailOpen = !document.getElementById('community-detail-view')?.classList.contains('hidden');
-    commentsOriginView = isCommunityDetailOpen ? 'community-detail' : 'main';
+    // Las vistas de comunidad ya no existen: los comentarios siempre se abren desde el feed principal.
+    commentsOriginView = 'main';
     const originalPostBlock = document.getElementById('original-post');
     if (originalPostBlock) originalPostBlock.classList.remove('hidden');
     if (commentsView) commentsView.style.zIndex = '';
@@ -17561,8 +17479,6 @@ function saveNote() {
           if (profileLocationDesktop) profileLocationDesktop.textContent = data.location || data.city || 'Ubicación no especificada';
 
           if (data.bio) {
-            const bioElement = document.getElementById('profile-bio');
-            if (bioElement) bioElement.value = data.bio;
             const bioDisplay = document.getElementById('profile-bio-display');
             if (bioDisplay) {
               bioDisplay.textContent = data.bio;
@@ -17899,7 +17815,7 @@ function saveNote() {
       if (spinner) spinner.style.display = 'none';
       window._drexSwitchAccountEmail = account.email;
       const authFormContainer = document.getElementById('auth-form');
-      const mainApp = document.getElementById('main-app') || document.getElementById('app');
+      const mainApp = document.getElementById('main-app');
       if (authFormContainer) authFormContainer.classList.remove('hidden');
       if (mainApp) mainApp.classList.add('hidden');
       try {
@@ -17953,7 +17869,7 @@ function saveNote() {
     DrexCloud.auth().signOut().then(() => {
       if (spinner) spinner.style.display = 'none';
       const authFormContainer = document.getElementById('auth-form');
-      const mainApp = document.getElementById('main-app') || document.getElementById('app');
+      const mainApp = document.getElementById('main-app');
       if (authFormContainer) authFormContainer.classList.remove('hidden');
       if (mainApp) mainApp.classList.add('hidden');
       showAuthSection(document.getElementById('login-options'));
@@ -19288,7 +19204,6 @@ o
       button.disabled = false;
       button.textContent = 'Liberar cach\u00e9 ahora';
     }
-    showSaveSuccessAnimation();
     showMiniToast('Caché eliminado en tiempo real correctamente.');
   }
 
@@ -19623,8 +19538,6 @@ o
     Promise.all([dbUpdate, authUpdate])
       .then(([saved]) => {
         if (saved) {
-          const nameEl = document.getElementById('profile-display-name');
-          if (nameEl) nameEl.textContent = displayName;
           closeNameConfigView();
         }
       })
@@ -20477,8 +20390,7 @@ o
     }
 
     user.updatePassword(nextPassword).then(() => {
-      showSaveSuccessAnimation();
-      showMiniToast("Contraseña actualizada.");
+        showMiniToast("Contraseña actualizada.");
       closePasswordConfigView();
     }).catch(error => {
       console.error("Error al actualizar la contraseña:", error);
@@ -20554,15 +20466,6 @@ o
     });
   }
 
-  function showSaveSuccessAnimation() {
-    const modal = document.getElementById('save-success');
-    if (!modal) return;
-    modal.classList.remove('hidden');
-    setTimeout(() => {
-      modal.classList.add('hidden');
-    }, 1200);
-  }
-
   function saveProfileField(partialUpdates, validateUsername = false) {
     const user = DrexCloud.auth().currentUser;
     if (!user) return Promise.resolve(false);
@@ -20615,19 +20518,12 @@ o
           if (usernameLabel) usernameLabel.innerHTML = newName;
           if (usernameLabel) syncProfileHeaderUsername(newName);
         }
-        if (Object.prototype.hasOwnProperty.call(updates, 'birthday')) {
-          const mobileBirthday = document.getElementById('edit-birthday');
-          const desktopBirthday = document.getElementById('edit-birthday-desktop');
-          if (mobileBirthday) mobileBirthday.value = updates.birthday || "";
-          if (desktopBirthday) desktopBirthday.value = updates.birthday || "";
-        }
         if (Object.prototype.hasOwnProperty.call(updates, 'city') || Object.prototype.hasOwnProperty.call(updates, 'location')) {
           const locationLabel = document.getElementById('profile-location-desktop');
           const nextLocation = updates.location ?? updates.city ?? '';
           if (locationLabel) locationLabel.textContent = nextLocation || 'Ubicación no especificada';
         }
-        showSaveSuccessAnimation();
-        showMiniToast("Perfil actualizado");
+            showMiniToast("Perfil actualizado");
         return true;
       }).catch(error => {
         console.error("Error al guardar cambios del perfil:", error);
@@ -20676,8 +20572,7 @@ o
 
       saveBtn.disabled = false;
       saveBtn.innerHTML = 'Guardar';
-      showSaveSuccessAnimation();
-      showMiniToast("¡Foto de perfil actualizada correctamente!");
+        showMiniToast("¡Foto de perfil actualizada correctamente!");
       closeUpdatePhotoView();
     } catch (err) {
       console.error("Error al guardar la foto:", err);
@@ -20690,9 +20585,6 @@ o
   function openHome() {
     if (typeof window.closeOverlaysForTabSwitch === 'function') window.closeOverlaysForTabSwitch();
     initFeedTabsIndicator();
-    document.getElementById('games-view')?.classList.add('hidden');
-    document.getElementById('games-search-view')?.classList.add('hidden');
-    document.getElementById('community-view')?.classList.add('hidden');
     document.getElementById('creator-hub-view')?.classList.add('hidden');
     document.getElementById('profile-view')?.classList.add('hidden');
     document.getElementById('search-view')?.classList.add('hidden');
@@ -20701,15 +20593,10 @@ o
     document.getElementById('fab-practicar-btn')?.classList.add('hidden');
     document.getElementById('fab-create-btn')?.classList.toggle('hidden', !!document.getElementById('bottom-nav')?.classList.contains('hidden'));
     if (typeof closePracticarComposer === 'function') { closePracticarComposer(); closePracticarLang(); }
-    document.getElementById('groups-view')?.classList.add('hidden');
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.add('hidden');
     detachChatMessagesListener();
-    document.getElementById('community-detail-view')?.classList.add('hidden');
-    document.getElementById('community-manage-view')?.classList.add('hidden');
-    document.getElementById('delete-community-confirm-view')?.classList.add('hidden');
-    document.getElementById('create-community-view')?.classList.add('hidden');
     document.getElementById('main-app')?.classList.remove('hidden');
     if (typeof window.setActiveNavTab === 'function') window.setActiveNavTab(0);
     loadNotes(false);
@@ -21156,9 +21043,7 @@ let chatTypingListener = null;
     if (!user) { requireSessionForView('tus chats'); return; }
     if (typeof window.closeOverlaysForTabSwitch === 'function') window.closeOverlaysForTabSwitch();
     document.getElementById('main-app')?.classList.add('hidden');
-    document.getElementById('groups-view')?.classList.add('hidden');
     document.getElementById('profile-view')?.classList.add('hidden');
-    document.getElementById('community-view')?.classList.add('hidden');
     document.getElementById('creator-hub-view')?.classList.add('hidden');
     document.getElementById('search-view')?.classList.add('hidden');
     document.getElementById('practicar-view')?.classList.add('hidden');
@@ -21702,24 +21587,8 @@ let chatTypingListener = null;
 
 
   function setChatTimer(secs) {
+    // La UI del temporizador (label/botón/selector) ya no existe: solo se guarda el estado.
     _chatTimerSecs = secs;
-    const label = document.getElementById('chat-timer-label');
-    const btn = document.getElementById('chat-timer-btn');
-    const picker = document.getElementById('chat-timer-picker');
-    document.querySelectorAll('.chat-timer-opt').forEach(b => {
-      b.classList.toggle('bg-[#0084FF]', parseInt(b.dataset.secs) === secs);
-      b.classList.toggle('text-white', parseInt(b.dataset.secs) === secs);
-      b.classList.toggle('border-[#0084FF]', parseInt(b.dataset.secs) === secs);
-    });
-    if (secs === 0) {
-      if (label) label.textContent = 'Temporizador';
-      if (btn) { btn.classList.remove('bg-[#0084FF]','text-white','border-[#0084FF]'); btn.classList.add('border-[#dce1e5]','text-[#5c6974]'); }
-      if (picker) picker.classList.add('hidden');
-    } else {
-      const txt = secs >= 3600 ? (secs/3600)+'h' : secs >= 60 ? (secs/60)+'min' : secs+'s';
-      if (label) label.textContent = txt;
-      if (btn) { btn.classList.add('bg-[#0084FF]','text-white','border-[#0084FF]'); btn.classList.remove('border-[#dce1e5]','text-[#5c6974]'); }
-    }
   }
 
   function _startMsgCountdown(msgId, destroyAt, conversationId) {
@@ -21748,16 +21617,8 @@ let chatTypingListener = null;
   let chatViewOnceActive = false;
 
   function toggleChatViewOnce() {
+    // La UI de "ver una vez" (barra/botón) ya no existe: solo se alterna el estado.
     chatViewOnceActive = !chatViewOnceActive;
-    const bar = document.getElementById('chat-viewonce-bar');
-    const btn = document.getElementById('chat-viewonce-btn');
-    if (bar) bar.classList.toggle('hidden', !chatViewOnceActive);
-    if (btn) {
-      btn.classList.toggle('bg-[#dce1e5]',   chatViewOnceActive);
-      btn.classList.toggle('text-[#1c2b4a]', chatViewOnceActive);
-      btn.classList.toggle('bg-[#eef2f7]',   !chatViewOnceActive);
-      btn.classList.toggle('text-[#5c6974]', !chatViewOnceActive);
-    }
   }
 
   function openViewOnceMessage(msgId, convoId, triggerEl) {
@@ -22753,26 +22614,8 @@ let chatTypingListener = null;
 
     
 
-  function updateScrollBottomButton() {
-    const container = document.getElementById('chat-room-messages');
-    const btn = document.getElementById('chat-scroll-bottom-btn');
-    if (!container || !btn) return;
-    
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    btn.classList.toggle('hidden', isNearBottom);
-  }
-
-  function initChatScrollButton() {
-    const container = document.getElementById('chat-room-messages');
-    if (!container) return;
-    container.removeEventListener('scroll', updateScrollBottomButton);
-    container.addEventListener('scroll', updateScrollBottomButton);
-    updateScrollBottomButton();
-  }
-
 const _startChatListeners = () => {
     _lastChatDateShown = null;
-    setTimeout(initChatScrollButton, 100);
 
       const cachedMessages = chatMessagesMemoryCache.get(conversationId) || [];
       if (cachedMessages.length) {
@@ -22901,8 +22744,6 @@ const _startChatListeners = () => {
     }));
 
     _renderChatPhotoThumbnails();
-    const voBtn = document.getElementById('chat-viewonce-btn');
-    if (voBtn) voBtn.classList.toggle('hidden', chatPhotoAttachments.length === 0);
     if (failedCount > 0) {
       showMiniToast(`No se pudieron subir ${failedCount} foto${failedCount > 1 ? 's' : ''}. Verifica tu conexión e intenta con imágenes más livianas.`);
     }
@@ -22916,8 +22757,6 @@ const _startChatListeners = () => {
     if (input) input.value = '';
     if (thumbnails) thumbnails.innerHTML = '';
     if (wrap) wrap.classList.add('hidden');
-    const voBtn = document.getElementById('chat-viewonce-btn');
-    if (voBtn) voBtn.classList.add('hidden');
     if (typeof chatViewOnceActive !== 'undefined' && chatViewOnceActive) toggleChatViewOnce();
   }
 
@@ -23580,7 +23419,6 @@ const _startChatListeners = () => {
       const now = Date.now();
       const othersTyping = Object.entries(data).filter(([uid, ts]) => uid !== user.uid && (now - Number(ts)) < 5000);
       const indicator = document.getElementById('chat-typing-indicator');
-      const textEl = document.getElementById('chat-typing-text');
       if (!indicator) return;
       if (!othersTyping.length) { indicator.classList.add('hidden'); return; }
 
@@ -23591,7 +23429,6 @@ const _startChatListeners = () => {
           if (names.length === 1) msg = names[0] + ' está escribiendo...';
           else if (names.length === 2) msg = names[0] + ' y ' + names[1] + ' están escribiendo...';
           else msg = names[0] + ', ' + names[1] + ' y más están escribiendo...';
-          if (textEl) textEl.textContent = msg;
           indicator.classList.remove('hidden');
         }).catch(() => {
           if (textEl) textEl.textContent = 'Alguien está escribiendo...';
@@ -24816,16 +24653,12 @@ function escapeHtml(value) {
 }
 
 function openSearchView() {
-  document.getElementById('community-view')?.classList.add('hidden');
   document.getElementById('creator-hub-view')?.classList.add('hidden');
   document.getElementById('profile-view')?.classList.add('hidden');
-  document.getElementById('groups-view')?.classList.add('hidden');
   document.getElementById('chat-inbox-view')?.classList.add('hidden');
   document.getElementById('new-chat-view')?.classList.add('hidden');
   document.getElementById('chat-room-view')?.classList.add('hidden');
   detachChatMessagesListener();
-  document.getElementById('community-detail-view')?.classList.add('hidden');
-  document.getElementById('create-community-view')?.classList.add('hidden');
 
   mainApp.classList.add('hidden');
   document.getElementById('search-view').classList.remove('hidden');
@@ -24919,8 +24752,6 @@ function resetSearchView() {
   if (loading) loading.classList.add('hidden');
   if (results) results.classList.add('hidden');
   if (tabs) tabs.classList.add('hidden');
-  const catSel = document.getElementById('search-category-select');
-  if (catSel) catSel.value = '';
   document.querySelectorAll('.search-cat-chip').forEach(c => c.classList.remove('active'));
   const allChip = document.querySelector('.search-cat-chip[data-cat="all"]');
   if (allChip) allChip.classList.add('active');
@@ -25231,8 +25062,6 @@ function renderAccountsList(accounts) {
       blockButton.classList.remove('opacity-40', 'cursor-not-allowed');
     }
 
-    const extraProfileIcon = document.getElementById('extra-profile-icon');
-    if (extraProfileIcon) extraProfileIcon.remove();
 
     DrexCloud.database().ref('profileNotes/' + authorId).once('value').then(snapshot => {
       if (currentViewedAuthorId !== authorId) return;
@@ -25318,8 +25147,6 @@ function renderAccountsList(accounts) {
       });
       DrexCloud.database().ref('userReposts/' + authorId).once('value').then(repostsSnap => {
         if (currentViewedAuthorId !== authorId) return;
-        const authorRepostsNode = document.getElementById('author-reposts-count');
-        if (authorRepostsNode) authorRepostsNode.textContent = formatNumber(repostsSnap.numChildren() || 0);
       });
       // Posts sueltos directo en el perfil (sin vista intermedia)
       _loadAuthorProfilePostsInline(authorId);
@@ -25346,7 +25173,6 @@ function renderAccountsList(accounts) {
       if (typeof openHome === 'function') {
         openHome();
       } else {
-        document.getElementById('community-view')?.classList.add('hidden');
         document.getElementById('creator-hub-view')?.classList.add('hidden');
         document.getElementById('profile-view')?.classList.add('hidden');
         document.getElementById('search-view')?.classList.add('hidden');
@@ -25355,8 +25181,6 @@ function renderAccountsList(accounts) {
     document.getElementById('fab-practicar-btn')?.classList.add('hidden');
     document.getElementById('fab-create-btn')?.classList.toggle('hidden', !!document.getElementById('bottom-nav')?.classList.contains('hidden'));
     if (typeof closePracticarComposer === 'function') { closePracticarComposer(); closePracticarLang(); }
-        document.getElementById('groups-view')?.classList.add('hidden');
-        document.getElementById('community-detail-view')?.classList.add('hidden');
         document.getElementById('main-app')?.classList.remove('hidden');
       }
     }
@@ -26816,7 +26640,6 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
       document.getElementById('notes-feed'),
       document.getElementById('home-community-feed'),
       document.getElementById('comments-list-view'),
-      document.getElementById('groups-list'),
     ].filter(Boolean);
 
     if (!targets.length) return;
@@ -29431,7 +29254,6 @@ function openPostPermalink(noteId, options = {}) {
   _currentPermalinkNoteId = noteId;
 
   document.getElementById('main-app')?.classList.add('hidden');
-  document.getElementById('community-view')?.classList.add('hidden');
   document.getElementById('creator-hub-view')?.classList.add('hidden');
   document.getElementById('profile-view')?.classList.add('hidden');
   document.getElementById('search-view')?.classList.add('hidden');
@@ -29440,10 +29262,7 @@ function openPostPermalink(noteId, options = {}) {
   document.getElementById('fab-practicar-btn')?.classList.add('hidden');
   document.getElementById('fab-create-btn')?.classList.toggle('hidden', !!document.getElementById('bottom-nav')?.classList.contains('hidden'));
   if (typeof closePracticarComposer === 'function') { closePracticarComposer(); closePracticarLang(); }
-  document.getElementById('groups-view')?.classList.add('hidden');
   document.getElementById('chat-inbox-view')?.classList.add('hidden');
-  document.getElementById('games-view')?.classList.add('hidden');
-  document.getElementById('games-search-view')?.classList.add('hidden');
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
 
   const view = document.getElementById('post-permalink-view');
