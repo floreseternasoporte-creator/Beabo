@@ -6291,7 +6291,9 @@ if (scrollArea) {
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round"/></svg>
       </button>
       <span id="image-modal-count" role="status" aria-live="polite" class="text-white text-sm font-bold bg-white/10 rounded-full px-3 py-1.5">1 / 1</span>
-      <span class="w-10 shrink-0"></span>
+      <button id="image-modal-rotate" onclick="_feedImageModalRotate()" aria-label="Rotar" class="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white active:scale-95 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+      </button>
     </div>
   </div>
 
@@ -9454,6 +9456,7 @@ function saveNote() {
   let _feedImageModalPhotos = [];
   let _feedImageModalIndex = 0;
   let _feedImageModalZoom = 1;
+  let _feedImageModalRotation = 0; // 0 | 90 | 180 | 270 (se resetea al navegar)
   // Precarga de vecinas (el navegador las cachea; al navegar salen al instante).
   const _feedImageModalPreloaded = new Set();
   // Spinner de carga: se muestra solo si la foto tarda más de 180ms.
@@ -9470,6 +9473,43 @@ function saveNote() {
     const s = document.getElementById('image-modal-loading');
     if (s) s.style.display = 'none';
   }
+
+  // Sufijo de rotación para los transforms del visor ('' si no hay rotación).
+  function _feedImageModalRotSuffix() {
+    return _feedImageModalRotation ? ` rotate(${_feedImageModalRotation}deg)` : '';
+  }
+
+  // Aplica pan + rotación + zoom a la foto del visor. Con rotación de 90/270
+  // el ancho y alto efectivos se intercambian para los límites del pan.
+  // Las matemáticas de anclaje del doble-tap y el pellizco siguen valiendo
+  // porque usan el centro del bounding rect (ya rotado) y la rotación se
+  // cancela en ambos lados de la ecuación.
+  function _feedImageModalApplyTransform() {
+    const img = document.getElementById('modal-image');
+    const stage = document.getElementById('image-modal-stage');
+    if (!img || !stage) return;
+    const sw = stage.clientWidth || 1, sh = stage.clientHeight || 1;
+    const _r90 = (_feedImageModalRotation % 180) !== 0;
+    const iw = (_r90 ? img.clientHeight : img.clientWidth) || 1;
+    const ih = (_r90 ? img.clientWidth : img.clientHeight) || 1;
+    const maxX = Math.max(0, (iw * _feedImageModalZoom - sw) / 2);
+    const maxY = Math.max(0, (ih * _feedImageModalZoom - sh) / 2);
+    _feedImageModalPanX = Math.max(-maxX, Math.min(maxX, _feedImageModalPanX));
+    _feedImageModalPanY = Math.max(-maxY, Math.min(maxY, _feedImageModalPanY));
+    img.style.transform = (_feedImageModalZoom > 1 || _feedImageModalRotation)
+      ? `translate(${_feedImageModalPanX}px, ${_feedImageModalPanY}px)${_feedImageModalRotSuffix()} scale(${_feedImageModalZoom})`
+      : '';
+  }
+
+  // Botón rotar: gira 90° con animación conservando pan y zoom.
+  function _feedImageModalRotate() {
+    _feedImageModalRotation = (_feedImageModalRotation + 90) % 360;
+    const img = document.getElementById('modal-image');
+    if (img) {
+      img.style.transition = 'transform .25s ease-out';
+      _feedImageModalApplyTransform();
+    }
+  }
   let _feedImageModalPanX = 0;
   let _feedImageModalPanY = 0;
   // Offset Y del arrastre visual "deslizar para cerrar" (0 = inactivo).
@@ -9484,14 +9524,15 @@ function saveNote() {
     const img = document.getElementById('modal-image');
     const modal = document.getElementById('image-modal');
     if (dy > 0) {
-      if (img) { img.style.transition = 'none'; img.style.transform = `translateY(${(dy * 0.85).toFixed(1)}px)`; }
+      if (img) { img.style.transition = 'none'; img.style.transform = `translateY(${(dy * 0.85).toFixed(1)}px)${_feedImageModalRotSuffix()}`; }
       if (modal) {
         const f = Math.max(0, 1 - dy / (window.innerHeight * 0.55));
         modal.style.transition = 'none';
         modal.style.backgroundColor = `rgba(0,0,0,${f.toFixed(3)})`;
       }
     } else {
-      if (img) { img.style.transition = instant ? 'none' : 'transform .22s ease-out'; img.style.transform = ''; }
+      // Al regresar se restaura el transform completo (incluye rotación).
+      if (img) { img.style.transition = instant ? 'none' : 'transform .22s ease-out'; _feedImageModalApplyTransform(); }
       if (modal) { modal.style.transition = instant ? 'none' : 'background-color .22s ease-out'; modal.style.backgroundColor = ''; }
     }
   }
@@ -9503,13 +9544,15 @@ function saveNote() {
     const img = document.getElementById('modal-image');
     const modal = document.getElementById('image-modal');
     if (scale < 1) {
-      if (img) { img.style.transition = 'none'; img.style.transform = `scale(${scale.toFixed(3)})`; }
+      const _rs = _feedImageModalRotSuffix();
+      if (img) { img.style.transition = 'none'; img.style.transform = (_rs ? _rs + ' ' : '') + `scale(${scale.toFixed(3)})`; }
       if (modal) {
         modal.style.transition = 'none';
         modal.style.backgroundColor = `rgba(0,0,0,${Math.max(0, Math.min(1, scale)).toFixed(3)})`;
       }
     } else {
-      if (img) { img.style.transition = instant ? 'none' : 'transform .22s ease-out'; img.style.transform = ''; }
+      // Al regresar se restaura el transform completo (incluye rotación).
+      if (img) { img.style.transition = instant ? 'none' : 'transform .22s ease-out'; _feedImageModalApplyTransform(); }
       if (modal) { modal.style.transition = instant ? 'none' : 'background-color .22s ease-out'; modal.style.backgroundColor = ''; }
     }
   }
@@ -9607,6 +9650,7 @@ function saveNote() {
     if (n < 0 || n >= _feedImageModalPhotos.length) return;
     _feedImageModalIndex = n;
     _feedImageModalZoom = 1;
+    _feedImageModalRotation = 0;
     _renderFeedImageModal();
   }
 
@@ -9618,6 +9662,7 @@ function saveNote() {
     _feedImageModalPanY = 0;
     _feedImageModalDismissY = 0;
     _feedImageModalDragX = 0;
+    _feedImageModalRotation = 0;
     const total = _feedImageModalPhotos.length;
     const _rModal = document.getElementById('image-modal');
     if (_rModal) { _rModal.style.transition = ''; _rModal.style.backgroundColor = ''; }
@@ -9650,6 +9695,8 @@ function saveNote() {
       img.setAttribute('aria-label', _modalLangEn
         ? `Photo ${_feedImageModalIndex + 1} of ${total}`
         : `Foto ${_feedImageModalIndex + 1} de ${total}`);
+      const _rotBtn = document.getElementById('image-modal-rotate');
+      if (_rotBtn) _rotBtn.setAttribute('aria-label', _modalLangEn ? 'Rotate photo' : 'Rotar foto');
     }
     if (count) {
       count.textContent = (_feedImageModalIndex + 1) + ' / ' + total;
@@ -9694,6 +9741,7 @@ function saveNote() {
     if (e.key === 'Escape') { e.preventDefault(); closeImageModal(); return; }
     if (e.key === 'ArrowLeft') { e.preventDefault(); _feedImageModalNav(-1); return; }
     if (e.key === 'ArrowRight') { e.preventDefault(); _feedImageModalNav(1); return; }
+    if (e.key === 'r' || e.key === 'R') { e.preventDefault(); _feedImageModalRotate(); return; }
     if (e.key !== 'Tab') return;
     const focusables = Array.from(modal.querySelectorAll('button'))
       .filter(b => b.style.pointerEvents !== 'none' && b.offsetParent !== null);
@@ -9753,7 +9801,10 @@ function saveNote() {
     // se puede estirar un poco pero regresa al centro con animación.
     const _panBounds = () => {
       const sw = stage.clientWidth || 1, sh = stage.clientHeight || 1;
-      const iw = img.clientWidth || 1, ih = img.clientHeight || 1;
+      // Con rotación de 90/270 el ancho y alto efectivos se intercambian.
+      const _r90 = (_feedImageModalRotation % 180) !== 0;
+      const iw = (_r90 ? img.clientHeight : img.clientWidth) || 1;
+      const ih = (_r90 ? img.clientWidth : img.clientHeight) || 1;
       return {
         maxX: Math.max(0, (iw * _feedImageModalZoom - sw) / 2),
         maxY: Math.max(0, (ih * _feedImageModalZoom - sh) / 2),
@@ -9769,12 +9820,7 @@ function saveNote() {
       return a <= max ? v : Math.sign(v) * (max + (a - max) * 0.35);
     };
 
-    const applyTransform = () => {
-      clampPan();
-      img.style.transform = _feedImageModalZoom > 1
-        ? `translate(${_feedImageModalPanX}px, ${_feedImageModalPanY}px) scale(${_feedImageModalZoom})`
-        : '';
-    };
+    const applyTransform = () => _feedImageModalApplyTransform();
 
     stage.addEventListener('pointerdown', (e) => {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -9858,7 +9904,7 @@ function saveNote() {
           _feedImageModalPanY += dym;
           const _pb = _panBounds();
           img.style.transition = 'none';
-          img.style.transform = `translate(${resistPan(_feedImageModalPanX, _pb.maxX).toFixed(1)}px, ${resistPan(_feedImageModalPanY, _pb.maxY).toFixed(1)}px) scale(${_feedImageModalZoom})`;
+          img.style.transform = `translate(${resistPan(_feedImageModalPanX, _pb.maxX).toFixed(1)}px, ${resistPan(_feedImageModalPanY, _pb.maxY).toFixed(1)}px)${_feedImageModalRotSuffix()} scale(${_feedImageModalZoom})`;
         } else if (_feedImageModalZoom === 1 && moved) {
           // Sin zoom: el carrusel sigue al dedo. Hacia abajo = feedback de
           // "deslizar para cerrar" (la foto baja y el fondo se atenúa); a los
@@ -10475,7 +10521,7 @@ function saveNote() {
     const modalImage = document.getElementById('modal-image');
     if (modalImage) { modalImage.style.transition = ''; modalImage.style.transform = ''; modalImage.src = ''; }
     _feedImageModalHideSpin();
-    try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; _feedImageModalDismissY = 0; _feedImageModalDragX = 0; } catch (_) {}
+    try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; _feedImageModalDismissY = 0; _feedImageModalDragX = 0; _feedImageModalRotation = 0; } catch (_) {}
     document.body.style.overflow = '';
     if (_feedImageModalPrevFocus && document.contains(_feedImageModalPrevFocus)) {
       try { _feedImageModalPrevFocus.focus({ preventScroll: true }); } catch (_) {}
