@@ -9581,6 +9581,9 @@ function saveNote() {
     let startX = 0, startY = 0, moved = false;
     let lastX = 0, lastY = 0;
     let pinchStart = 0, zoomStart = 1;
+    let pinchCX = 0, pinchCY = 0;       // centro de la imagen sin transformar
+    let pinchF0X = 0, pinchF0Y = 0;     // foco inicial (punto medio entre dedos)
+    let pinchPanX0 = 0, pinchPanY0 = 0; // pan al iniciar el pellizco
     let lastTap = 0;
 
     // Puntos de página: un solo listener delegado (sobrevive a los re-renders
@@ -9618,7 +9621,6 @@ function saveNote() {
 
     stage.addEventListener('pointerdown', (e) => {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pointers.size === 1) { mode = 'touch'; startX = e.clientX; startY = e.clientY; lastX = e.clientX; lastY = e.clientY; moved = false; }
       // Un snap-back previo no debe animar este gesto: transiciones fuera.
       const _pdImg = document.getElementById('modal-image');
       if (_pdImg) _pdImg.style.transition = '';
@@ -9626,11 +9628,26 @@ function saveNote() {
       if (_pdModal) _pdModal.style.transition = '';
       const _pdTrack = document.getElementById('image-modal-track');
       if (_pdTrack) _pdTrack.style.transition = '';
+      if (pointers.size === 1) { mode = 'touch'; startX = e.clientX; startY = e.clientY; lastX = e.clientX; lastY = e.clientY; moved = false; }
       else if (pointers.size === 2) {
         mode = 'pinch'; moved = true;
+        // El pellizco cancela los feedbacks de arrastre de un dedo.
+        if (_feedImageModalDismissY > 0) { _feedImageModalDismissY = 0; _setFeedImageModalDismissDrag(0, true); }
+        if (_feedImageModalDragX !== 0) { _feedImageModalDragX = 0; _setFeedImageModalSwipeDrag(0, true); }
         const p = [...pointers.values()];
         pinchStart = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
         zoomStart = _feedImageModalZoom;
+        pinchPanX0 = _feedImageModalPanX; pinchPanY0 = _feedImageModalPanY;
+        pinchF0X = (p[0].x + p[1].x) / 2; pinchF0Y = (p[0].y + p[1].y) / 2;
+        // Centro de la imagen sin transformar (el dismiss ya se limpió arriba).
+        const _pr = img.getBoundingClientRect();
+        if (zoomStart > 1) {
+          pinchCX = (_pr.left + _pr.width / 2) - _feedImageModalPanX;
+          pinchCY = (_pr.top + _pr.height / 2) - _feedImageModalPanY;
+        } else {
+          pinchCX = _pr.left + _pr.width / 2;
+          pinchCY = _pr.top + _pr.height / 2;
+        }
       }
       try { stage.setPointerCapture(e.pointerId); } catch (_) {}
     });
@@ -9641,8 +9658,17 @@ function saveNote() {
       if (mode === 'pinch' && pointers.size >= 2) {
         const p = [...pointers.values()];
         const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
-        _feedImageModalZoom = Math.max(1, Math.min(4, zoomStart * d / pinchStart));
-        if (_feedImageModalZoom === 1) { _feedImageModalPanX = 0; _feedImageModalPanY = 0; }
+        const s1 = Math.max(1, Math.min(4, zoomStart * d / pinchStart));
+        const f1x = (p[0].x + p[1].x) / 2, f1y = (p[0].y + p[1].y) / 2;
+        _feedImageModalZoom = s1;
+        if (s1 === 1) { _feedImageModalPanX = 0; _feedImageModalPanY = 0; }
+        else {
+          // Zoom anclado al punto medio entre los dedos: el contenido que
+          // estaba bajo el foco inicial se queda bajo el foco actual.
+          const k = s1 / zoomStart;
+          _feedImageModalPanX = f1x - pinchCX - k * (pinchF0X - pinchPanX0 - pinchCX);
+          _feedImageModalPanY = f1y - pinchCY - k * (pinchF0Y - pinchPanY0 - pinchCY);
+        }
         applyTransform();
       } else if (mode === 'touch') {
         const dxm = e.clientX - lastX, dym = e.clientY - lastY;
