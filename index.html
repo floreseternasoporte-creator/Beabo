@@ -6284,7 +6284,7 @@ if (scrollArea) {
   </div>
 
   <!-- Puntos de página -->
-  <div id="image-modal-dots" class="absolute bottom-10 left-0 right-0 z-20 flex justify-center gap-1.5 pointer-events-none transition-opacity duration-200"></div>
+  <div id="image-modal-dots" class="absolute bottom-10 left-0 right-0 z-20 flex flex-wrap justify-center gap-1.5 px-6 pointer-events-none transition-opacity duration-200"></div>
 </div>
 
 <!-- Vista de Búsqueda - Estilo rediseñado y organizado -->
@@ -9482,8 +9482,11 @@ function saveNote() {
       count.style.display = total > 1 ? '' : 'none';
     }
     if (dots) {
+      // Puntos como botones reales: se puede saltar directo a una foto
+      // tocándolos (área táctil 32px) y anuncian su destino al lector.
+      const _dotsEn = typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
       dots.innerHTML = total > 1
-        ? _feedImageModalPhotos.map((_, i) => `<span class="w-1.5 h-1.5 rounded-full ${i === _feedImageModalIndex ? 'bg-white' : 'bg-white/40'}"></span>`).join('')
+        ? _feedImageModalPhotos.map((_, i) => `<button type="button" data-dot="${i}" aria-label="${_dotsEn ? `Go to photo ${i + 1}` : `Ir a la foto ${i + 1}`}"${i === _feedImageModalIndex ? ' aria-current="true"' : ''} class="pointer-events-auto w-8 h-8 flex items-center justify-center active:scale-90 transition"><span class="w-1.5 h-1.5 rounded-full ${i === _feedImageModalIndex ? 'bg-white' : 'bg-white/40'}"></span></button>`).join('')
         : '';
     }
     _setFeedImageModalChrome(true);
@@ -9513,6 +9516,22 @@ function saveNote() {
     let lastX = 0, lastY = 0;
     let pinchStart = 0, zoomStart = 1;
     let lastTap = 0;
+
+    // Puntos de página: un solo listener delegado (sobrevive a los re-renders
+    // de los botones) para saltar directo a una foto.
+    const dotsEl = document.getElementById('image-modal-dots');
+    if (dotsEl && !dotsEl.dataset.dotsBound) {
+      dotsEl.dataset.dotsBound = '1';
+      dotsEl.addEventListener('click', (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest('[data-dot]') : null;
+        if (!btn) return;
+        const i = parseInt(btn.dataset.dot, 10);
+        if (Number.isNaN(i) || i === _feedImageModalIndex) return;
+        _feedImageModalIndex = i;
+        _feedImageModalZoom = 1;
+        _renderFeedImageModal();
+      });
+    }
 
     // El pan se limita para que la imagen ampliada no se escape del escenario.
     const clampPan = () => {
