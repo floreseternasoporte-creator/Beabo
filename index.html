@@ -8699,9 +8699,19 @@ function saveNote() {
   // Foto adjunta en comentarios: se procesa en local con processImageFile
   // (data URL que se guarda en la base de datos, sin Cloudinary).
   let selectedCommentPhoto = null;
+  // Token anti-carreras: cada selección lo incrementa; si el procesamiento
+  // termina tarde (otra foto elegida o la foto quitada con ✕), se descarta.
+  let commentPhotoToken = 0;
 
   function triggerCommentPhotoPicker() {
     document.getElementById('comment-photo-input')?.click();
+  }
+
+  function revokeCommentPhotoLocalUrl(img) {
+    if (img && img.dataset.localUrl) {
+      try { URL.revokeObjectURL(img.dataset.localUrl); } catch (_) {}
+      delete img.dataset.localUrl;
+    }
   }
 
   async function handleCommentPhotoSelected(event) {
@@ -8714,29 +8724,38 @@ function saveNote() {
     const uploadingBadge = document.getElementById('comment-photo-uploading-badge');
     if (!preview || !img) return;
 
+    const myToken = ++commentPhotoToken;
+
     // Vista previa local inmediata mientras se procesa la imagen
+    revokeCommentPhotoLocalUrl(img);
     const localUrl = URL.createObjectURL(file);
+    img.dataset.localUrl = localUrl;
     img.src = localUrl;
     preview.classList.remove('hidden');
     uploadingBadge?.classList.remove('hidden');
 
     try {
       const cloudUrl = await processImageFile(file);
+      if (myToken !== commentPhotoToken) return; // llegó otra foto o se quitó con ✕
       selectedCommentPhoto = cloudUrl;
+      revokeCommentPhotoLocalUrl(img);
       img.src = cloudUrl;
     } catch (err) {
+      if (myToken !== commentPhotoToken) return;
       console.error('Error al subir foto de comentario:', err);
       showMiniToast('No se pudo subir la foto. Inténtalo de nuevo.');
       removeCommentPhoto();
     } finally {
-      uploadingBadge?.classList.add('hidden');
+      if (myToken === commentPhotoToken) uploadingBadge?.classList.add('hidden');
     }
   }
 
   function removeCommentPhoto() {
+    commentPhotoToken++; // invalida cualquier procesamiento en vuelo
     selectedCommentPhoto = null;
     const preview = document.getElementById('comment-photo-preview');
     const img = document.getElementById('selected-comment-photo-img');
+    revokeCommentPhotoLocalUrl(img);
     if (preview) preview.classList.add('hidden');
     if (img) img.src = '';
   }
