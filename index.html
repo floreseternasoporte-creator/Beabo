@@ -9558,12 +9558,18 @@ function saveNote() {
     if (btn) btn.textContent = _feedImageModalDetailsExpanded ? (en ? 'See less' : 'Ver menos') : (en ? 'See more' : 'Ver más');
   }
 
-  function _feedImageModalDetailsHTML(note, userVote) {
+  function _feedImageModalDetailsHTML(note, userVote, recentAvatars) {
     const up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
     const cc = Number(note.commentsCount || 0);
     const avatar = note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
     const safeId = escapeHtml(note.id || '');
     const en = typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
+    const _avatarPh = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+    // Pila de avatares de quienes comentaron último: se ve si hay conversación
+    // sin abrir los comentarios.
+    const avatarStack = (recentAvatars && recentAvatars.length)
+      ? `<span class="flex items-center">${recentAvatars.map((a, i) => `<img src="${escapeHtmlAttr(a || _avatarPh)}" alt="" class="w-6 h-6 rounded-full object-cover bg-[#dce1e5] ring-2 ring-white${i > 0 ? ' -ml-2' : ''}">`).join('')}</span>`
+      : '';
     const fullText = String(note.content || '');
     _feedImageModalDetailsFullText = fullText;
     _feedImageModalDetailsExpanded = false;
@@ -9593,7 +9599,10 @@ function saveNote() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 9.5 12 16l6.5-6.5"/></svg>
           </button>
         </div>
-        <span class="text-[13px] text-[#7b878f] font-semibold">${cc} comentario${cc === 1 ? '' : 's'}</span>
+        <button onclick="_openViewerComments()" class="flex items-center gap-2 active:opacity-70 transition" aria-label="${en ? 'View comments' : 'Ver comentarios'}">
+          ${avatarStack}
+          <span class="text-[13px] text-[#7b878f] font-semibold">${cc} comentario${cc === 1 ? '' : 's'}</span>
+        </button>
       </div>
       <button onclick="_openViewerComments()" class="w-full py-3 rounded-2xl bg-[#0084FF] text-white font-bold text-[15px] active:scale-[.98] transition">Ver comentarios (${cc})</button>
     `;
@@ -9624,15 +9633,29 @@ function saveNote() {
     const user = DrexCloud.auth().currentUser;
     Promise.all([
       DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(s => s.val() || null).catch(() => null),
-      user ? DrexCloud.database().ref('userVotes/' + user.uid + '/' + noteId).once('value').then(s => s.val() || null).catch(() => null) : Promise.resolve(null)
-    ]).then(([note, userVote]) => {
+      user ? DrexCloud.database().ref('userVotes/' + user.uid + '/' + noteId).once('value').then(s => s.val() || null).catch(() => null) : Promise.resolve(null),
+      // Últimos 3 comentaristas (sin repetir usuario) para la pila de avatares.
+      DrexCloud.database().ref('postComments/' + noteId).orderByKey().limitToLast(3).once('value').then(s => {
+        const arr = [];
+        s.forEach(ch => arr.push(ch.val() || {}));
+        const out = [], seen = new Set();
+        for (let i = arr.length - 1; i >= 0 && out.length < 3; i--) {
+          const c = arr[i], aid = c.authorId || '';
+          if (aid && seen.has(aid)) continue;
+          if (aid) seen.add(aid);
+          if (typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(aid)) continue;
+          out.push(c.authorImage || '');
+        }
+        return out;
+      }).catch(() => [])
+    ]).then(([note, userVote, recentAvatars]) => {
       if (!_feedImageModalDetailsOpen) return;
       if (!note) {
         content.innerHTML = '<p class="text-center text-[#7b878f] text-sm font-semibold py-6">No se pudo cargar la publicación.</p>';
         return;
       }
       note.id = noteId;
-      content.innerHTML = _feedImageModalDetailsHTML(note, userVote);
+      content.innerHTML = _feedImageModalDetailsHTML(note, userVote, recentAvatars);
     });
   }
 
