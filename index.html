@@ -9603,13 +9603,25 @@ function saveNote() {
     }
 
     // El pan se limita para que la imagen ampliada no se escape del escenario.
-    const clampPan = () => {
+    // Límites duros (estado comprometido) y versión con resistencia de goma
+    // para el arrastre visual: si el contenido ampliado no llena el escenario,
+    // se puede estirar un poco pero regresa al centro con animación.
+    const _panBounds = () => {
       const sw = stage.clientWidth || 1, sh = stage.clientHeight || 1;
       const iw = img.clientWidth || 1, ih = img.clientHeight || 1;
-      const maxX = Math.max(0, (iw * _feedImageModalZoom - sw) / 2);
-      const maxY = Math.max(0, (ih * _feedImageModalZoom - sh) / 2);
+      return {
+        maxX: Math.max(0, (iw * _feedImageModalZoom - sw) / 2),
+        maxY: Math.max(0, (ih * _feedImageModalZoom - sh) / 2),
+      };
+    };
+    const clampPan = () => {
+      const { maxX, maxY } = _panBounds();
       _feedImageModalPanX = Math.max(-maxX, Math.min(maxX, _feedImageModalPanX));
       _feedImageModalPanY = Math.max(-maxY, Math.min(maxY, _feedImageModalPanY));
+    };
+    const resistPan = (v, max) => {
+      const a = Math.abs(v);
+      return a <= max ? v : Math.sign(v) * (max + (a - max) * 0.35);
     };
 
     const applyTransform = () => {
@@ -9627,7 +9639,10 @@ function saveNote() {
       const _pdModal = document.getElementById('image-modal');
       if (_pdModal) _pdModal.style.transition = '';
       const _pdTrack = document.getElementById('image-modal-track');
-      if (_pdTrack) _pdTrack.style.transition = '';
+      // Un snap-back o una animación de swipe a medio terminar no debe dejar
+      // la pista descentrada: el clamp del pan asume la foto al centro.
+      if (_pdTrack) { _pdTrack.style.transition = ''; _pdTrack.style.transform = 'translateX(-33.3333%)'; }
+      _feedImageModalDragX = 0;
       if (pointers.size === 1) { mode = 'touch'; startX = e.clientX; startY = e.clientY; lastX = e.clientX; lastY = e.clientY; moved = false; }
       else if (pointers.size === 2) {
         mode = 'pinch'; moved = true;
@@ -9675,10 +9690,14 @@ function saveNote() {
         lastX = e.clientX; lastY = e.clientY;
         if (Math.abs(e.clientX - startX) > 12 || Math.abs(e.clientY - startY) > 12) moved = true;
         // Con zoom, arrastrar mueve la imagen en vez de navegar/cerrar.
+        // Durante el arrastre se permite estirar con resistencia de goma; al
+        // soltar, el pan regresa a los límites con animación (ver onUp).
         if (_feedImageModalZoom > 1 && moved) {
           _feedImageModalPanX += dxm;
           _feedImageModalPanY += dym;
-          applyTransform();
+          const _pb = _panBounds();
+          img.style.transition = 'none';
+          img.style.transform = `translate(${resistPan(_feedImageModalPanX, _pb.maxX).toFixed(1)}px, ${resistPan(_feedImageModalPanY, _pb.maxY).toFixed(1)}px) scale(${_feedImageModalZoom})`;
         } else if (_feedImageModalZoom === 1 && moved) {
           // Sin zoom: el carrusel sigue al dedo. Hacia abajo = feedback de
           // "deslizar para cerrar" (la foto baja y el fondo se atenúa); a los
@@ -9774,8 +9793,14 @@ function saveNote() {
           } else if (_feedImageModalZoom === 1 && dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.4) {
             closeImageModal();
           } else {
-            // No llegó a ningún umbral (o hay zoom): todo regresa a su lugar.
+            // No llegó a ningún umbral: todo regresa a su lugar. Con zoom, el
+            // pan estirado con goma vuelve a los límites con animación.
             snapBackDrag();
+            if (_feedImageModalZoom > 1) {
+              clampPan();
+              img.style.transition = 'transform .22s ease-out';
+              applyTransform();
+            }
           }
         }
         mode = null;
