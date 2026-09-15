@@ -9589,6 +9589,10 @@ function saveNote() {
   let _feedImageModalDetailsAuthorRef = null;
   let _feedImageModalDetailsConnRef = null;
   let _feedImageModalDetailsWasOffline = false;
+  // Temporizador de carga lenta: si la hoja tarda demasiado en cargar,
+  // el esqueleto se reemplaza por un mensaje con botón de reintento.
+  let _feedImageModalDetailsLoadTimer = null;
+  const _FEED_IMAGE_MODAL_DETAILS_LOAD_TIMEOUT_MS = 8000;
   const _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN = 220;
 
   // Votos y comentarios en vivo: mientras la hoja está abierta, el marcador
@@ -9850,6 +9854,24 @@ function saveNote() {
     // tabulador empiezan en la hoja, no en los botones de detrás.
     const _dcb = document.getElementById('image-modal-details-close');
     if (_dcb) _dcb.focus({ preventScroll: true });
+    requestAnimationFrame(() => { panel.style.transform = 'translateY(0)'; });
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
+    _subscribeFeedImageModalDetailsLive(noteId);
+    _loadFeedImageModalDetailsContent(noteId);
+  }
+
+  function _clearFeedImageModalDetailsLoadTimer() {
+    if (_feedImageModalDetailsLoadTimer) {
+      clearTimeout(_feedImageModalDetailsLoadTimer);
+      _feedImageModalDetailsLoadTimer = null;
+    }
+  }
+
+  // Carga el contenido de la hoja: esqueleto animado mientras llegan los
+  // datos; si tarda demasiado, muestra un mensaje con botón de reintento.
+  async function _loadFeedImageModalDetailsContent(noteId) {
+    const content = document.getElementById('image-modal-details-content');
+    if (!content || !_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
     content.innerHTML = `
       <div class="animate-pulse">
         <div class="flex items-center gap-3 mb-3">
@@ -9869,11 +9891,18 @@ function saveNote() {
         </div>
         <div class="h-12 w-full rounded-2xl bg-[#dce1e5]"></div>
       </div>`;
-    requestAnimationFrame(() => { panel.style.transform = 'translateY(0)'; });
-    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
-    _subscribeFeedImageModalDetailsLive(noteId);
+    _clearFeedImageModalDetailsLoadTimer();
+    _feedImageModalDetailsLoadTimer = setTimeout(() => {
+      _feedImageModalDetailsLoadTimer = null;
+      if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
+      content.innerHTML = `
+        <div class="text-center py-10">
+          <p class="text-[#7b878f] text-sm font-semibold mb-4">Está tardando más de lo normal.<br>Revisa tu conexión.</p>
+          <button onclick="_loadFeedImageModalDetailsContent('${noteId}')" class="min-h-[44px] px-6 rounded-full bg-[#0084FF] text-white font-bold text-[15px] active:scale-[.97] transition">Reintentar</button>
+        </div>`;
+    }, _FEED_IMAGE_MODAL_DETAILS_LOAD_TIMEOUT_MS);
     const user = DrexCloud.auth().currentUser;
-    Promise.all([
+    const [note, userVote, recentAvatars, isSaved, hasReposted] = await Promise.all([
       DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(s => s.val() || null).catch(() => null),
       user ? DrexCloud.database().ref('userVotes/' + user.uid + '/' + noteId).once('value').then(s => s.val() || null).catch(() => null) : Promise.resolve(null),
       // Últimos 3 comentaristas (sin repetir usuario) para la pila de avatares.
@@ -9889,26 +9918,31 @@ function saveNote() {
       })(),
       // Estado de repost para pintar la píldora de la hoja al abrir.
       user ? DrexCloud.database().ref('userReposts/' + user.uid + '/' + noteId).once('value').then(s => s.exists()).catch(() => false) : Promise.resolve(false)
-    ]).then(([note, userVote, recentAvatars, isSaved, hasReposted]) => {
-      if (!_feedImageModalDetailsOpen) return;
-      const _dsb = document.getElementById('image-modal-details-save');
-      if (_dsb) {
-        _dsb.classList.toggle('saved', !!isSaved);
-        _dsb.setAttribute('aria-pressed', String(!!isSaved));
-      }
-      if (!note) {
-        content.innerHTML = '<p class="text-center text-[#7b878f] text-sm font-semibold py-6">No se pudo cargar la publicación.</p>';
-        return;
-      }
-      note.id = noteId;
-      content.innerHTML = _feedImageModalDetailsHTML(note, userVote, recentAvatars, hasReposted);
-    });
+    ]);
+    _clearFeedImageModalDetailsLoadTimer();
+    if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
+    const _dsb = document.getElementById('image-modal-details-save');
+    if (_dsb) {
+      _dsb.classList.toggle('saved', !!isSaved);
+      _dsb.setAttribute('aria-pressed', String(!!isSaved));
+    }
+    if (!note) {
+      content.innerHTML = `
+        <div class="text-center py-10">
+          <p class="text-[#7b878f] text-sm font-semibold mb-4">No se pudo cargar la publicación.</p>
+          <button onclick="_loadFeedImageModalDetailsContent('${noteId}')" class="min-h-[44px] px-6 rounded-full bg-[#0084FF] text-white font-bold text-[15px] active:scale-[.97] transition">Reintentar</button>
+        </div>`;
+      return;
+    }
+    note.id = noteId;
+    content.innerHTML = _feedImageModalDetailsHTML(note, userVote, recentAvatars, hasReposted);
   }
 
   function _closeFeedImageModalDetails(instant) {
     if (!_feedImageModalDetailsOpen) return;
     _feedImageModalDetailsOpen = false;
     _unsubscribeFeedImageModalDetailsLive();
+    _clearFeedImageModalDetailsLoadTimer();
     const wrap = document.getElementById('image-modal-details');
     const panel = document.getElementById('image-modal-details-panel');
     if (wrap) wrap.setAttribute('aria-modal', 'false');
