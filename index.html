@@ -9043,7 +9043,8 @@ function saveNote() {
   // a la vez con createImageBitmap (una de 48MP ocupa ~195MB en memoria)
   // tumba la pestaña de Safari en el iPhone; de a 2 en 2 es seguro.
   // Devuelve resultados con la misma forma que Promise.allSettled y en orden.
-  function processImageFilesLimited(files, limit = 2) {
+  // onEach(i, resultado) se llama cada vez que un archivo termina (opcional).
+  function processImageFilesLimited(files, limit = 2, onEach = null) {
     const results = new Array(files.length);
     let next = 0;
     const worker = async () => {
@@ -9054,6 +9055,7 @@ function saveNote() {
         } catch (e) {
           results[i] = { status: 'rejected', reason: e };
         }
+        if (typeof onEach === 'function') { try { onEach(i, results[i]); } catch (_) {} }
       }
     };
     const workers = [];
@@ -23215,22 +23217,23 @@ const _startChatListeners = () => {
     _renderChatPhotoThumbnails();
 
     let failedCount = 0;
-    await Promise.all(files.map(async (file, fi) => {
+    // Concurrencia limitada (2): varias fotos pesadas decodificadas a la vez
+    // tumban Safari en el iPhone. onEach actualiza cada miniatura al terminar.
+    await processImageFilesLimited(files, 2, (fi, r) => {
       const entryId = newEntries[fi].id;
-      try {
-        const url = await processImageFile(file);
+      if (r.status === 'fulfilled' && r.value) {
         const idx = chatPhotoAttachments.findIndex(a => a.id === entryId);
         if (idx !== -1) {
-          chatPhotoAttachments[idx].cloudUrl = url;
+          chatPhotoAttachments[idx].cloudUrl = r.value;
           chatPhotoAttachments[idx].uploading = false;
         }
-      } catch (e) {
+      } else {
         failedCount++;
         const idx = chatPhotoAttachments.findIndex(a => a.id === entryId);
         if (idx !== -1) { _revokeChatPhotoLocalUrl(chatPhotoAttachments[idx]); chatPhotoAttachments.splice(idx, 1); }
       }
       _renderChatPhotoThumbnails();
-    }));
+    });
 
     _renderChatPhotoThumbnails();
     if (failedCount > 0) {
