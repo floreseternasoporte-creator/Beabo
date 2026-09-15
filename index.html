@@ -9423,18 +9423,24 @@ function saveNote() {
     // Alcance preciso primero: solo las fotos del carrusel donde se hizo clic.
     // Un query a toda la tarjeta (#post-id) podría colar en el visor imágenes
     // ajenas al carrusel si algún día comparten el mismo patrón de alt.
-    let allImgs = [];
+    let scopedImgs = [];
     if (clickedEl && clickedEl.closest) {
       const scope = clickedEl.closest('.feed-carousel-wrap') || clickedEl.closest('.feed-post-media');
-      if (scope) allImgs = Array.from(scope.querySelectorAll('img[alt^="Imagen "]')).map(img => img.getAttribute('src'));
+      if (scope) scopedImgs = Array.from(scope.querySelectorAll('img[alt^="Imagen "]'));
     }
+    let allImgs = scopedImgs.map(img => img.getAttribute('src'));
+    // El índice inicial sale del elemento clicado, no de indexOf(url): si la
+    // misma foto aparece dos veces en el carrusel, indexOf siempre caería en
+    // la primera y el visor abriría la foto equivocada.
+    let startIndex = scopedImgs.length ? Math.max(0, scopedImgs.indexOf(clickedEl)) : 0;
     // Fallback: si no hay elemento clicado (llamada programática), la tarjeta completa.
     if (!allImgs.length) {
       const postEl = noteId ? document.getElementById('post-' + noteId) : null;
       if (postEl) allImgs = Array.from(postEl.querySelectorAll('img[alt^="Imagen "]')).map(img => img.getAttribute('src'));
+      startIndex = Math.max(0, allImgs.indexOf(imageUrl));
     }
     _feedImageModalPhotos = allImgs.length ? allImgs : [imageUrl];
-    _feedImageModalIndex = Math.max(0, _feedImageModalPhotos.indexOf(imageUrl));
+    _feedImageModalIndex = startIndex;
     _feedImageModalZoom = 1;
     _feedImageModalPanX = 0;
     _feedImageModalPanY = 0;
