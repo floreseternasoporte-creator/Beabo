@@ -4193,6 +4193,8 @@ document.addEventListener("DOMContentLoaded", function() {
     .repost-btn.is-pending { animation: drex-vote-pulse .8s ease-in-out infinite; }
     /* Comentario en vuelo: mismo pulso en el botón de enviar. */
     #comment-submit-btn.is-pending { animation: drex-vote-pulse .8s ease-in-out infinite; }
+    /* Comentarios largos colapsados: máximo 4 líneas hasta tocar "Ver más". */
+    .comment-clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
     /* Hoja de detalles: objetivos táctiles de 44px (guía de Apple) para iPhone. */
     #image-modal-details-panel { transition: transform .28s ease-out; }
     #image-modal-details .drex-vote-btn { width: 44px; height: 44px; }
@@ -14181,6 +14183,10 @@ function saveNote() {
   function igCommentRowHTML(o) {
     const c = o.comment;
     const score = (c.upvotes || 0) - (c.downvotes || 0);
+    const en = typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
+    // Comentarios largos colapsados a 4 líneas con "Ver más / Ver menos".
+    const rawText = String(c.content || '');
+    const isLongText = rawText.length > 180 && !rawText.startsWith(STICKER_PREFIX);
     const replyToHtml = o.replyToName
       ? (o.safeReplyToId
         ? `<button onclick="openAuthorProfileFromComments('${o.safeReplyToId}')" class="font-semibold text-[#0084FF] hover:underline">${escapeHTML('@' + o.replyToName)}</button> `
@@ -14195,10 +14201,11 @@ function saveNote() {
       </button>
       <div class="flex-1 min-w-0">
         ${o.pinnedBadgeHtml || ''}
-        <div class="text-sm text-[#1c2b4a] leading-snug break-words">
+        <div id="comment-textbox-${o.commentPath}" class="text-sm text-[#1c2b4a] leading-snug break-words${isLongText ? ' comment-clamp' : ''}">
           <button ${o.commentAuthorId ? `onclick="openAuthorProfileFromComments('${o.safeCommentAuthorId}')"` : 'disabled'} class="drex-post-author ${o.commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${o.safeAuthorName}</button>${o.commentVerifiedIcon}${o.quickFollowHtml}
           ${replyToHtml}<span id="comment-content-${o.commentPath}">${renderContentWithSticker(c.content, 'text-sm text-[#1c2b4a] leading-snug')}</span>
         </div>
+        ${isLongText ? `<button onclick="toggleCommentTextCollapse(this, '${o.safeCommentPath}')" class="mt-0.5 text-[13px] font-bold text-[#0084FF] active:opacity-70">${en ? 'See more' : 'Ver más'}</button>` : ''}
         ${o.safeGifUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[220px]"><img src="${o.safeGifUrl}" class="w-full max-h-60 object-cover" loading="lazy"></div>` : ''}
         ${o.safePhotoUrl ? `<div class="mt-1.5 mb-1 rounded-xl overflow-hidden border border-[#dce1e5] max-w-[260px] cursor-pointer" onclick="window.open('${o.safePhotoUrlJs}','_blank','noopener')"><img src="${o.safePhotoUrl}" class="w-full max-h-72 object-cover" loading="lazy"></div>` : ''}
         <div class="flex items-center gap-2.5 mt-1.5">
@@ -14220,6 +14227,14 @@ function saveNote() {
         </button>
       </div>
     </div>`;
+  }
+
+  function toggleCommentTextCollapse(btn, commentPath) {
+    const box = document.getElementById('comment-textbox-' + commentPath);
+    if (!box) return;
+    const en = typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
+    const collapsed = box.classList.toggle('comment-clamp');
+    btn.textContent = collapsed ? (en ? 'See more' : 'Ver más') : (en ? 'See less' : 'Ver menos');
   }
 
   function igRowOpts(noteId, commentPath, comment, pinnedBadgeHtml) {
