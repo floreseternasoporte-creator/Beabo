@@ -10936,6 +10936,9 @@ function saveNote() {
 
 
   let currentReportNoteId = null;
+  // Si el reporte se envía desde el visor, aquí queda el noteId para saber
+  // a dónde volver cuando se cierre la pantalla de respuesta.
+  let _reportFromViewerNoteId = null;
   let currentCommentReportTarget = null;
   let currentBlockAccountTarget = null;
   let currentPostOptionsNoteId = null;
@@ -11736,6 +11739,18 @@ function saveNote() {
   function closePostReportResponse() {
     document.getElementById('post-report-response').classList.add('hidden');
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
+    // Si el reporte se hizo desde el visor y el post sigue existiendo,
+    // volver a la hoja de detalles en vez de dejar la pantalla gris.
+    try {
+      const _vm = document.getElementById('image-modal');
+      if (_reportFromViewerNoteId && _vm && !_vm.classList.contains('hidden')
+          && typeof _feedImageModalNoteId !== 'undefined'
+          && _feedImageModalNoteId === _reportFromViewerNoteId
+          && typeof _openFeedImageModalDetails === 'function') {
+        _openFeedImageModalDetails();
+      }
+    } catch (_) {}
+    _reportFromViewerNoteId = null;
   }
 
   async function submitPostReport() {
@@ -11770,6 +11785,7 @@ function saveNote() {
 
       const reportId = DrexCloud.database().ref().push().key;
       const noteId = currentReportNoteId;
+      _reportFromViewerNoteId = noteId;
       const contentText = note.content || '';
       const noteAuthorId = note.authorId || note.userId || '';
 
@@ -11786,6 +11802,9 @@ function saveNote() {
       if (verdict.flagged) {
         // C11: cascada completa también en la eliminación por reporte.
         await cascadeDeleteNote(noteId);
+        // Si el post se eliminó mientras se veía en el visor, cerrar el visor.
+        if (typeof _closeViewerIfShowingNote === 'function') _closeViewerIfShowingNote(noteId);
+        _reportFromViewerNoteId = null;
         await DrexCloud.database().ref('postReports/' + reportId).update({ status: 'removed', aiVerdict: verdict.reason });
         notifMsg = '✅ Tomamos medidas sobre el contenido que reportaste. ¡Gracias por proteger a la comunidad de Drex!';
       } else {
@@ -11805,6 +11824,7 @@ function saveNote() {
     } catch (error) {
       console.error('Error al enviar reporte de publicación:', error);
       document.getElementById('post-report-processing').classList.add('hidden');
+      _reportFromViewerNoteId = null;
       if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
       showMiniToast('No se pudo enviar el reporte. Inténtalo de nuevo.');
       submitBtn.disabled = false;
