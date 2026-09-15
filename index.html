@@ -9989,6 +9989,47 @@ function saveNote() {
     };
     handle.addEventListener('pointerup', end);
     handle.addEventListener('pointercancel', end);
+
+    // Deslizar hacia abajo desde el contenido para cerrar (iPhone): si el
+    // contenido está arriba del todo y el gesto va hacia abajo, la hoja
+    // sigue al dedo; si el contenido está desplazado, se desplaza normal.
+    if (panel.dataset.swipeBound) return;
+    panel.dataset.swipeBound = '1';
+    let swId = null, swY = 0, swDy = 0, swAtTop = false, swOn = false;
+    panel.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1 || swId !== null) return;
+      if (e.target.closest && e.target.closest('#image-modal-details-handle')) return;
+      const content = document.getElementById('image-modal-details-content');
+      swId = e.touches[0].identifier;
+      swY = e.touches[0].clientY;
+      swDy = 0; swOn = false;
+      swAtTop = !content || content.scrollTop <= 0;
+    }, { passive: true });
+    panel.addEventListener('touchmove', (e) => {
+      if (swId === null) return;
+      const t = Array.from(e.touches).find(x => x.identifier === swId);
+      if (!t) return;
+      swDy = t.clientY - swY;
+      if (swAtTop && swDy > 10) {
+        if (!swOn) { swOn = true; panel.style.transition = 'none'; }
+        e.preventDefault();
+        panel.style.transform = `translateY(${swDy.toFixed(1)}px)`;
+      } else if (swOn && swDy <= 10) {
+        panel.style.transform = 'translateY(0px)';
+      }
+    }, { passive: false });
+    const swEnd = () => {
+      if (swId === null) return;
+      swId = null;
+      if (swOn) {
+        swOn = false;
+        panel.style.transition = '';
+        if (swDy > 90) _closeFeedImageModalDetails();
+        else panel.style.transform = 'translateY(0)';
+      }
+    };
+    panel.addEventListener('touchend', swEnd);
+    panel.addEventListener('touchcancel', swEnd);
   }
   let _feedImageModalPanX = 0;
   let _feedImageModalPanY = 0;
