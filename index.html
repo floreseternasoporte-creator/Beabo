@@ -9506,6 +9506,10 @@ function saveNote() {
     document.body.style.overflow = 'hidden';
     _renderFeedImageModal();
     _bindFeedImageModalGestures();
+    // Foco inicial dentro del diálogo; al cerrar se devuelve a quien lo abrió.
+    _feedImageModalPrevFocus = document.activeElement;
+    const _imClose = modal.querySelector('#image-modal-topbar button');
+    if (_imClose) _imClose.focus({ preventScroll: true });
   }
 
   function _feedImageModalNav(dir) {
@@ -9576,11 +9580,36 @@ function saveNote() {
     _setFeedImageModalChrome(!bar || bar.style.opacity === '0');
   }
 
+  // Trampa de foco del visor: con el modal abierto, el Tab circula solo entre
+  // sus controles (cerrar + puntos de foto) y Escape lo cierra. Los botones
+  // del chrome oculto se excluyen (tienen pointer-events:none en línea).
+  let _feedImageModalPrevFocus = null;
+  function _feedImageModalKeydown(e) {
+    const modal = document.getElementById('image-modal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeImageModal(); return; }
+    if (e.key !== 'Tab') return;
+    const focusables = Array.from(modal.querySelectorAll('button'))
+      .filter(b => b.style.pointerEvents !== 'none' && b.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0], last = focusables[focusables.length - 1];
+    if (!modal.contains(document.activeElement)) {
+      // El foco se perdió (ej. navegar por puntos destruyó el botón enfocado):
+      // regresarlo al visor en vez de dejarlo escapar a la app detrás.
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+      return;
+    }
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+
   function _bindFeedImageModalGestures() {
     const stage = document.getElementById('image-modal-stage');
     const img = document.getElementById('modal-image');
     if (!stage || !img || stage.dataset.gesturesBound) return;
     stage.dataset.gesturesBound = '1';
+    document.addEventListener('keydown', _feedImageModalKeydown);
 
     const pointers = new Map();
     let mode = null; // 'touch' | 'pinch'
@@ -10309,6 +10338,10 @@ function saveNote() {
     if (modalImage) { modalImage.style.transition = ''; modalImage.style.transform = ''; modalImage.src = ''; }
     try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; _feedImageModalDismissY = 0; _feedImageModalDragX = 0; } catch (_) {}
     document.body.style.overflow = '';
+    if (_feedImageModalPrevFocus && document.contains(_feedImageModalPrevFocus)) {
+      try { _feedImageModalPrevFocus.focus({ preventScroll: true }); } catch (_) {}
+    }
+    _feedImageModalPrevFocus = null;
   }
 
 
