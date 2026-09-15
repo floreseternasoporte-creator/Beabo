@@ -9153,17 +9153,30 @@ function saveNote() {
         note.isGif = true;
         publishWithAudienceScope().then(() => publishNoteToDatabase(note));
       } else if (imageFiles.length) {
-        Promise.all(imageFiles.map(processImageFile)).then(images => {
+        // allSettled: si una foto sale corrupta o tarda demasiado, se publica
+        // con las que sí se procesaron en vez de tumbar todo el post.
+        Promise.allSettled(imageFiles.map(processImageFile)).then(results => {
+          const images = [];
+          const failedIdx = [];
+          results.forEach((r, i) => {
+            if (r.status === 'fulfilled' && r.value) images.push(r.value);
+            else failedIdx.push(i + 1);
+          });
+          if (!images.length) {
+            console.error('Error al procesar imágenes: ninguna pudo procesarse');
+            showMiniToast('Error al procesar las imágenes. Inténtalo con fotos más ligeras.');
+            notePostPublishing = false;
+            renderNotePostPhotoPreviews();
+            publishBtn.disabled = false;
+            publishBtn.innerHTML = 'Publicar';
+            return;
+          }
+          if (failedIdx.length) {
+            showMiniToast(`Se publicarán ${images.length} de ${imageFiles.length} fotos (no se pudo procesar ${failedIdx.length === 1 ? 'la foto' : 'las fotos'} ${failedIdx.join(', ')}).`);
+          }
           note.imageUrls = images;
           note.imageUrl = images[0];
           publishWithAudienceScope().then(() => publishNoteToDatabase(note));
-        }).catch((error) => {
-          console.error('Error al procesar imágenes:', error);
-          showMiniToast('Error al procesar las imágenes. Inténtalo con fotos más ligeras.');
-          notePostPublishing = false;
-          renderNotePostPhotoPreviews();
-          publishBtn.disabled = false;
-          publishBtn.innerHTML = 'Publicar';
         });
       } else {
         publishWithAudienceScope().then(() => publishNoteToDatabase(note));
