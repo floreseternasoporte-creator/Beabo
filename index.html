@@ -4191,6 +4191,12 @@ document.addEventListener("DOMContentLoaded", function() {
     .save-btn.is-pending { animation: drex-vote-pulse .8s ease-in-out infinite; }
     /* Repost en vuelo: mismo pulso en la píldora de repostear. */
     .repost-btn.is-pending { animation: drex-vote-pulse .8s ease-in-out infinite; }
+    /* Región de anuncios para lectores de pantalla (VoiceOver): informa de
+       votos y comentarios nuevos en la hoja de detalles. */
+    .drex-sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
     /* Hoja de detalles: objetivos táctiles de 44px (guía de Apple) para iPhone. */
     #image-modal-details .drex-vote-btn { width: 44px; height: 44px; }
     #image-modal-details .drex-vote-btn svg { width: 22px; height: 22px; }
@@ -6354,6 +6360,7 @@ if (scrollArea) {
        solo el panel es interactivo. -->
   <div id="image-modal-details" class="absolute inset-0 z-30 hidden" style="pointer-events:none" role="dialog" aria-modal="false" aria-labelledby="image-modal-details-title">
     <div id="image-modal-details-panel" class="absolute inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-2xl flex flex-col" style="max-height:74%; transform:translateY(105%); transition:transform .28s ease-out; pointer-events:auto">
+      <div id="image-modal-details-live" class="drex-sr-only" role="status" aria-live="polite"></div>
       <div id="image-modal-details-handle" class="pt-2.5 pb-1 flex justify-center shrink-0" style="touch-action:none;cursor:grab">
         <div class="w-10 h-1.5 rounded-full bg-black/15"></div>
       </div>
@@ -9589,6 +9596,17 @@ function saveNote() {
   let _feedImageModalDetailsAuthorRef = null;
   let _feedImageModalDetailsConnRef = null;
   let _feedImageModalDetailsWasOffline = false;
+  // Últimos valores anunciados a VoiceOver (null = primer evento, no anunciar).
+  let _feedImageModalDetailsLastScore = null;
+  let _feedImageModalDetailsLastCC = null;
+
+  // Anuncia un mensaje a los lectores de pantalla (VoiceOver) en la hoja.
+  function _announceFeedImageModalDetails(msg) {
+    const el = document.getElementById('image-modal-details-live');
+    if (!el || !msg) return;
+    el.textContent = '';
+    setTimeout(() => { el.textContent = msg; }, 30);
+  }
   const _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN = 220;
 
   // Votos y comentarios en vivo: mientras la hoja está abierta, el marcador
@@ -9604,6 +9622,8 @@ function saveNote() {
     _feedImageModalDetailsAuthorRef = null;
     _feedImageModalDetailsConnRef = null;
     _feedImageModalDetailsWasOffline = false;
+    _feedImageModalDetailsLastScore = null;
+    _feedImageModalDetailsLastCC = null;
   }
   function _subscribeFeedImageModalDetailsLive(noteId) {
     _unsubscribeFeedImageModalDetailsLive();
@@ -9615,6 +9635,7 @@ function saveNote() {
         if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
         const content = document.getElementById('image-modal-details-content');
         if (!content) return;
+        const en = typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
         if (!snap.exists()) {
           // El post se eliminó (p. ej. desde otro dispositivo): la hoja ya
           // no tiene sentido, se cierra con aviso.
@@ -9623,16 +9644,28 @@ function saveNote() {
           return;
         }
         const note = snap.val() || {};
+        const up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
+        const score = up - down;
         const scoreEl = content.querySelector('.drex-vote-score');
         if (scoreEl) {
-          const up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
-          scoreEl.textContent = typeof formatVoteScore === 'function' ? formatVoteScore(up - down) : String(up - down);
+          scoreEl.textContent = typeof formatVoteScore === 'function' ? formatVoteScore(score) : String(score);
         }
+        // Anunciar a VoiceOver solo cuando el marcador CAMBIA (no en el
+        // primer evento de la suscripción).
+        if (_feedImageModalDetailsLastScore !== null && _feedImageModalDetailsLastScore !== score) {
+          const s = typeof formatVoteScore === 'function' ? formatVoteScore(score) : String(score);
+          _announceFeedImageModalDetails(en ? 'Votes: ' + s : 'Votos: ' + s);
+        }
+        _feedImageModalDetailsLastScore = score;
         const cc = Number(note.commentsCount || 0);
         const ccLabel = content.querySelector('#image-modal-details-comment-count');
         if (ccLabel) ccLabel.textContent = cc + (cc === 1 ? ' comentario' : ' comentarios');
         const ccBtn = content.querySelector('#image-modal-details-comments-count');
         if (ccBtn) ccBtn.textContent = String(cc);
+        if (_feedImageModalDetailsLastCC !== null && _feedImageModalDetailsLastCC !== cc) {
+          _announceFeedImageModalDetails(en ? 'Comments: ' + cc : 'Comentarios: ' + cc);
+        }
+        _feedImageModalDetailsLastCC = cc;
         const rc = Number(note.repostsCount || 0);
         const rcEl = content.querySelector('#image-modal-details-repost-count');
         if (rcEl) rcEl.textContent = String(rc);
