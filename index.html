@@ -9588,9 +9588,16 @@ function saveNote() {
       _feedImageModalDetailsVoteRef = noteRef;
       noteRef.on('value', snap => {
         if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
-        const note = snap.val() || {};
         const content = document.getElementById('image-modal-details-content');
         if (!content) return;
+        if (!snap.exists()) {
+          // El post se eliminó (p. ej. desde otro dispositivo): la hoja ya
+          // no tiene sentido, se cierra con aviso.
+          if (typeof showMiniToast === 'function') showMiniToast('Esta publicación ya no existe.');
+          _closeFeedImageModalDetails();
+          return;
+        }
+        const note = snap.val() || {};
         const scoreEl = content.querySelector('.drex-vote-score');
         if (scoreEl) {
           const up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
@@ -9601,6 +9608,13 @@ function saveNote() {
         if (ccLabel) ccLabel.textContent = cc + (cc === 1 ? ' comentario' : ' comentarios');
         const ccBtn = content.querySelector('#image-modal-details-comments-count');
         if (ccBtn) ccBtn.textContent = String(cc);
+        // Texto en vivo: si el autor editó el post, se refresca sin perder
+        // el estado Ver más/menos y sin importar si antes no había texto.
+        const newText = String(note.content || '');
+        if (newText !== _feedImageModalDetailsFullText) {
+          const wrap = document.getElementById('image-modal-details-text-wrap');
+          if (wrap) wrap.innerHTML = _viewerDetailsTextHTML(newText);
+        }
       });
       const commentsRef = DrexCloud.database().ref('postComments/' + noteId).orderByKey().limitToLast(3);
       _feedImageModalDetailsCommentsRef = commentsRef;
@@ -9674,6 +9688,25 @@ function saveNote() {
     return out;
   }
 
+  // HTML del texto del post (con Ver más/menos). Se reutiliza en la carga
+  // inicial y cuando el autor edita el texto con la hoja abierta: respeta
+  // el estado expandido actual en vez de resetearlo.
+  function _viewerDetailsTextHTML(fullText) {
+    const en = typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
+    _feedImageModalDetailsFullText = fullText;
+    if (!fullText) return '';
+    const needsMore = fullText.length > _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN;
+    const shown = (!_feedImageModalDetailsExpanded && needsMore)
+      ? fullText.slice(0, _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN).replace(/\s+\S*$/, '') + '…'
+      : fullText;
+    const moreLabel = _feedImageModalDetailsExpanded
+      ? (en ? 'See less' : 'Ver menos')
+      : (en ? 'See more' : 'Ver más');
+    return `
+      <p id="image-modal-details-text" class="text-[#1c2b4a] text-[15px] leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(shown)}</p>
+      ${needsMore ? `<button id="image-modal-details-more" onclick="_toggleFeedImageModalDetailsText()" class="mt-1 mb-3 text-[14px] font-bold text-[#0084FF] active:opacity-70">${moreLabel}</button>` : '<div class="mb-3"></div>'}`;
+  }
+
   function _feedImageModalDetailsHTML(note, userVote, recentAvatars, hasReposted) {
     const up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
     const cc = Number(note.commentsCount || 0);
@@ -9684,16 +9717,8 @@ function saveNote() {
     // Pila de avatares de quienes comentaron último: se ve si hay conversación
     // sin abrir los comentarios.
     const avatarStack = _viewerDetailsAvatarStackHTML(recentAvatars);
-    const fullText = String(note.content || '');
-    _feedImageModalDetailsFullText = fullText;
     _feedImageModalDetailsExpanded = false;
-    const needsMore = fullText.length > _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN;
-    const preview = needsMore
-      ? fullText.slice(0, _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN).replace(/\s+\S*$/, '') + '…'
-      : fullText;
-    const textHTML = fullText ? `
-      <p id="image-modal-details-text" class="text-[#1c2b4a] text-[15px] leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(preview)}</p>
-      ${needsMore ? `<button id="image-modal-details-more" onclick="_toggleFeedImageModalDetailsText()" class="mt-1 mb-3 text-[14px] font-bold text-[#0084FF] active:opacity-70">${en ? 'See more' : 'Ver más'}</button>` : '<div class="mb-3"></div>'}` : '';
+    const textHTML = `<div id="image-modal-details-text-wrap">${_viewerDetailsTextHTML(String(note.content || ''))}</div>`;
     return `
       <div class="flex items-center gap-3 mb-3">
         <img src="${escapeHtmlAttr(avatar)}" alt="" class="w-11 h-11 rounded-full object-cover bg-[#dce1e5] shrink-0">
