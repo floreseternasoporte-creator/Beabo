@@ -14964,6 +14964,8 @@ function saveNote() {
     overlay.classList.add('active');
     sheet.classList.add('active');
     overlay.onclick = closeCommentActionsSheet;
+    // El botón atrás del teléfono debe cerrar este menú, no navegar.
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
 
     updateSaveCommentActionState(noteId, commentPath);
   }
@@ -30965,6 +30967,11 @@ function closeSubpageView() {
   function closeTopmostOverlayForBack() {
     const candidates = [
       // Orden de arriba hacia abajo: lo último que se abrió se cierra primero.
+      // El menú de acciones del comentario (z-9998) flota sobre todo.
+      // OJO: usa la clase .active (no .hidden) para mostrarse, así que su
+      // chequeo de visibilidad es propio.
+      ['comment-actions-sheet', () => typeof closeCommentActionsSheet === 'function' && closeCommentActionsSheet(),
+        (el) => el.classList.contains('active')],
       // El picker de GIF (z-121) flota sobre todo, incluso sobre los comentarios.
       ['gif-picker-sheet', () => typeof closeGifPicker === 'function' && closeGifPicker()],
       // El picker de stickers (z-121) también flota sobre todo.
@@ -30987,9 +30994,12 @@ function closeSubpageView() {
       ['fiesta-room-view', () => typeof leaveFiesta === 'function' && leaveFiesta(true)],
       ['historial-view', () => typeof closeHistorialView === 'function' && closeHistorialView()],
     ];
-    for (const [id, closeFn] of candidates) {
+    for (const [id, closeFn, isOpenFn] of candidates) {
       const el = document.getElementById(id);
-      if (el && !el.classList.contains('hidden') && el.style.display !== 'none') {
+      const isOpen = typeof isOpenFn === 'function'
+        ? isOpenFn(el)
+        : (el && !el.classList.contains('hidden') && el.style.display !== 'none');
+      if (isOpen) {
         try { closeFn(); } catch (_) {}
         return true;
       }
