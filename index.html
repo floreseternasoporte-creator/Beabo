@@ -1797,19 +1797,24 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
     .feed-post-carousel .feed-post-carousel-slide {
       width: 100% !important;
       min-width: 100% !important;
-      aspect-ratio: 4 / 5;
+      /* Sin recorte: la foto se muestra completa (contain) con su proporción
+         natural, igual que las publicaciones de una sola foto. El fondo
+         rellena el espacio sobrante en vez de recortar la imagen. */
       max-height: 480px;
       overflow: hidden;
       border-radius: 14px !important;
       background: #eef2f7;
       flex-shrink: 0;
       scroll-snap-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .feed-post-carousel .feed-post-carousel-slide img {
       width: 100% !important;
-      height: 100% !important;
-      max-height: none !important;
-      object-fit: cover;
+      height: auto !important;
+      max-height: 480px !important;
+      object-fit: contain;
       border-radius: 14px !important;
       display: block;
     }
@@ -8968,51 +8973,62 @@ function saveNote() {
       // (la data URL en base64 pesa ~4/3 del binario).
       const MAX_URL_LENGTH = 300 * 1024;
 
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-          try {
-            const attempts = [
-              { maxSide: 1200, quality: 0.75 },
-              { maxSide: 1000, quality: 0.70 },
-              { maxSide: 800,  quality: 0.65 },
-              { maxSide: 640,  quality: 0.60 }
-            ];
-            let dataUrl = '';
-            for (const attempt of attempts) {
-              const scale = Math.min(1, attempt.maxSide / Math.max(img.width, img.height));
-              const canvas = document.createElement('canvas');
-              canvas.width = Math.max(1, Math.round(img.width * scale));
-              canvas.height = Math.max(1, Math.round(img.height * scale));
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              dataUrl = canvas.toDataURL('image/jpeg', attempt.quality);
-              if (dataUrl.length < MAX_URL_LENGTH) break;
-            }
-            if (!dataUrl || dataUrl.length >= MAX_URL_LENGTH) {
-              clearTimeout(timeoutId);
-              reject(new Error('La imagen es demasiado grande incluso comprimida.'));
-              return;
-            }
-            clearTimeout(timeoutId);
-            resolve(dataUrl);
-          } catch (error) {
-            clearTimeout(timeoutId);
-            reject(error);
+      const finishOk = (dataUrl) => { clearTimeout(timeoutId); resolve(dataUrl); };
+      const finishFail = (err) => { clearTimeout(timeoutId); reject(err); };
+
+      const compressAndResolve = (source, srcW, srcH) => {
+        try {
+          const attempts = [
+            { maxSide: 1200, quality: 0.75 },
+            { maxSide: 1000, quality: 0.70 },
+            { maxSide: 800,  quality: 0.65 },
+            { maxSide: 640,  quality: 0.60 }
+          ];
+          let dataUrl = '';
+          for (const attempt of attempts) {
+            const scale = Math.min(1, attempt.maxSide / Math.max(srcW, srcH));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(srcW * scale));
+            canvas.height = Math.max(1, Math.round(srcH * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+            dataUrl = canvas.toDataURL('image/jpeg', attempt.quality);
+            if (dataUrl.length < MAX_URL_LENGTH) break;
           }
-        };
-        img.onerror = function() {
-          clearTimeout(timeoutId);
-          reject(new Error('No se pudo cargar la imagen seleccionada'));
-        };
-        img.src = e.target.result;
+          if (source && typeof source.close === 'function') { try { source.close(); } catch (_) {} }
+          if (!dataUrl || dataUrl.length >= MAX_URL_LENGTH) {
+            finishFail(new Error('La imagen es demasiado grande incluso comprimida.'));
+            return;
+          }
+          finishOk(dataUrl);
+        } catch (error) {
+          finishFail(error);
+        }
       };
-      reader.onerror = function() {
-        clearTimeout(timeoutId);
-        reject(new Error('No se pudo leer una de las imágenes'));
+
+      const loadWithImgTag = () => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.onload = function() { compressAndResolve(img, img.width, img.height); };
+          img.onerror = function() { finishFail(new Error('No se pudo cargar la imagen seleccionada')); };
+          img.src = e.target.result;
+        };
+        reader.onerror = function() { finishFail(new Error('No se pudo leer una de las imágenes')); };
+        reader.readAsDataURL(file);
       };
-      reader.readAsDataURL(file);
+
+      // Las fotos verticales del iPhone guardan los píxeles rotados y la
+      // orientación real en el EXIF. drawImage() ignora ese EXIF y la foto
+      // publicada salía rotada 90°. createImageBitmap con
+      // imageOrientation:'from-image' aplica la orientación antes de dibujar.
+      if (typeof createImageBitmap === 'function') {
+        createImageBitmap(file, { imageOrientation: 'from-image' })
+          .then(bmp => compressAndResolve(bmp, bmp.width, bmp.height))
+          .catch(() => loadWithImgTag());
+      } else {
+        loadWithImgTag();
+      }
     });
   }
 
