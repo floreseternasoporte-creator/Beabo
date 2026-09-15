@@ -6291,9 +6291,14 @@ if (scrollArea) {
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round"/></svg>
       </button>
       <span id="image-modal-count" role="status" aria-live="polite" class="text-white text-sm font-bold bg-white/10 rounded-full px-3 py-1.5">1 / 1</span>
-      <button id="image-modal-rotate" onclick="_feedImageModalRotate()" aria-label="Rotar" class="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white active:scale-95 transition">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
-      </button>
+      <div class="flex items-center gap-2">
+        <button id="image-modal-info" onclick="_openFeedImageModalDetails()" aria-label="Detalles" class="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white active:scale-95 transition">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+        </button>
+        <button id="image-modal-rotate" onclick="_feedImageModalRotate()" aria-label="Rotar" class="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white active:scale-95 transition">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -6316,6 +6321,25 @@ if (scrollArea) {
 
   <!-- Puntos de página -->
   <div id="image-modal-dots" class="absolute bottom-10 left-0 right-0 z-20 flex flex-wrap justify-center gap-1.5 px-6 pointer-events-none transition-opacity duration-200"></div>
+
+  <!-- Hoja de detalles del post: autor, texto, votos y acceso a comentarios.
+       Se abre deslizando hacia arriba sobre la foto o con el botón de info.
+       El contenedor no intercepta toques (la foto sigue recibiendo gestos);
+       solo el panel es interactivo. -->
+  <div id="image-modal-details" class="absolute inset-0 z-30 hidden" style="pointer-events:none">
+    <div id="image-modal-details-panel" class="absolute inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-2xl flex flex-col" style="max-height:74%; transform:translateY(105%); transition:transform .28s ease-out; pointer-events:auto">
+      <div id="image-modal-details-handle" class="pt-2.5 pb-1 flex justify-center shrink-0" style="touch-action:none;cursor:grab">
+        <div class="w-10 h-1.5 rounded-full bg-black/15"></div>
+      </div>
+      <div class="flex items-center justify-between pl-4 pr-3 pb-1 shrink-0">
+        <span id="image-modal-details-title" class="text-[15px] font-bold text-[#1c2b4a]">Detalles</span>
+        <button onclick="_closeFeedImageModalDetails()" aria-label="Cerrar detalles" class="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 text-[#1c2b4a] active:scale-95 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+      <div id="image-modal-details-content" class="overflow-y-auto px-4 pb-6" style="overscroll-behavior:contain"></div>
+    </div>
+  </div>
 
   <!-- Spinner mientras la foto actual carga (redes móviles lentas) -->
   <div id="image-modal-loading" class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none" style="display:none">
@@ -9510,6 +9534,131 @@ function saveNote() {
       _feedImageModalApplyTransform();
     }
   }
+
+  // ---- Hoja de detalles del post dentro del visor ----
+  let _feedImageModalNoteId = null;
+  let _feedImageModalDetailsOpen = false;
+
+  function _feedImageModalDetailsHTML(note, userVote) {
+    const up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
+    const cc = Number(note.commentsCount || 0);
+    const avatar = note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+    const safeId = escapeHtml(note.id || '');
+    return `
+      <div class="flex items-center gap-3 mb-3">
+        <img src="${escapeHtmlAttr(avatar)}" alt="" class="w-11 h-11 rounded-full object-cover bg-[#dce1e5] shrink-0">
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-[#1c2b4a] text-[15px] truncate">${escapeHtml(note.authorName || 'Usuario')}</div>
+          <div class="text-xs text-[#7b878f]">${escapeHtml(formatRelativeTime(Number(note.timestamp) || Date.now()))}</div>
+        </div>
+      </div>
+      ${note.content ? `<p class="text-[#1c2b4a] text-[15px] leading-relaxed whitespace-pre-wrap break-words mb-4">${escapeHtml(note.content)}</p>` : ''}
+      <div class="flex items-center gap-4 mb-4">
+        <div class="drex-vote-rail" role="group" aria-label="Votar publicación">
+          <button onclick="votePost('${safeId}', 'up')" id="upvote-${safeId}" class="drex-vote-btn drex-up ${userVote === 'up' ? 'active' : ''}" aria-label="Voto positivo" aria-pressed="${userVote === 'up'}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 14.5 12 8l6.5 6.5"/></svg>
+          </button>
+          <span id="score-${safeId}" class="drex-vote-score ${userVote === 'up' ? 'is-up' : ''}${userVote === 'down' ? 'is-down' : ''}">${formatVoteScore(up - down)}</span>
+          <button onclick="votePost('${safeId}', 'down')" id="downvote-${safeId}" class="drex-vote-btn drex-down ${userVote === 'down' ? 'active' : ''}" aria-label="Voto negativo" aria-pressed="${userVote === 'down'}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 9.5 12 16l6.5-6.5"/></svg>
+          </button>
+        </div>
+        <span class="text-[13px] text-[#7b878f] font-semibold">${cc} comentario${cc === 1 ? '' : 's'}</span>
+      </div>
+      <button onclick="_openViewerComments()" class="w-full py-3 rounded-2xl bg-[#0084FF] text-white font-bold text-[15px] active:scale-[.98] transition">Ver comentarios (${cc})</button>
+    `;
+  }
+
+  function _openFeedImageModalDetails() {
+    if (_feedImageModalDetailsOpen) return;
+    const noteId = _feedImageModalNoteId;
+    if (!noteId) return;
+    const wrap = document.getElementById('image-modal-details');
+    const panel = document.getElementById('image-modal-details-panel');
+    const content = document.getElementById('image-modal-details-content');
+    if (!wrap || !panel || !content) return;
+    _feedImageModalDetailsOpen = true;
+    _bindFeedImageModalDetailsDrag();
+    wrap.classList.remove('hidden');
+    content.innerHTML = `
+      <div class="animate-pulse">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-11 h-11 rounded-full bg-[#dce1e5] shrink-0"></div>
+          <div class="flex-1"><div class="h-3 w-28 rounded bg-[#dce1e5] mb-2"></div><div class="h-3 w-16 rounded bg-[#dce1e5]"></div></div>
+        </div>
+        <div class="h-3 w-full rounded bg-[#dce1e5] mb-2"></div>
+        <div class="h-3 w-2/3 rounded bg-[#dce1e5]"></div>
+      </div>`;
+    requestAnimationFrame(() => { panel.style.transform = 'translateY(0)'; });
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
+    const user = DrexCloud.auth().currentUser;
+    Promise.all([
+      DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(s => s.val() || null).catch(() => null),
+      user ? DrexCloud.database().ref('userVotes/' + user.uid + '/' + noteId).once('value').then(s => s.val() || null).catch(() => null) : Promise.resolve(null)
+    ]).then(([note, userVote]) => {
+      if (!_feedImageModalDetailsOpen) return;
+      if (!note) {
+        content.innerHTML = '<p class="text-center text-[#7b878f] text-sm font-semibold py-6">No se pudo cargar la publicación.</p>';
+        return;
+      }
+      note.id = noteId;
+      content.innerHTML = _feedImageModalDetailsHTML(note, userVote);
+    });
+  }
+
+  function _closeFeedImageModalDetails(instant) {
+    if (!_feedImageModalDetailsOpen) return;
+    _feedImageModalDetailsOpen = false;
+    const wrap = document.getElementById('image-modal-details');
+    const panel = document.getElementById('image-modal-details-panel');
+    if (panel) {
+      if (instant) panel.style.transition = 'none';
+      panel.style.transform = 'translateY(105%)';
+      if (instant) panel.style.transition = '';
+    }
+    if (wrap) {
+      if (instant) wrap.classList.add('hidden');
+      else setTimeout(() => { if (!_feedImageModalDetailsOpen) wrap.classList.add('hidden'); }, 300);
+    }
+  }
+
+  // Abrir los comentarios POR ENCIMA del visor: al cerrarlos, el visor sigue ahí.
+  function _openViewerComments() {
+    const noteId = _feedImageModalNoteId;
+    if (!noteId) return;
+    window._commentsFromViewer = true;
+    openCommentsView(noteId);
+    const cv = document.getElementById('comments-view');
+    if (cv) cv.style.zIndex = '95';
+  }
+
+  // Arrastre del asa para cerrar la hoja (solo el asa; el contenido se desplaza normal).
+  function _bindFeedImageModalDetailsDrag() {
+    const handle = document.getElementById('image-modal-details-handle');
+    const panel = document.getElementById('image-modal-details-panel');
+    if (!handle || !panel || handle.dataset.bound) return;
+    handle.dataset.bound = '1';
+    let pid = null, sy = 0, dy = 0;
+    handle.addEventListener('pointerdown', (e) => {
+      pid = e.pointerId; sy = e.clientY; dy = 0;
+      panel.style.transition = 'none';
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== pid) return;
+      dy = Math.max(0, e.clientY - sy);
+      panel.style.transform = `translateY(${dy.toFixed(1)}px)`;
+    });
+    const end = (e) => {
+      if (e.pointerId !== pid) return;
+      pid = null;
+      panel.style.transition = '';
+      if (dy > 70) _closeFeedImageModalDetails();
+      else panel.style.transform = 'translateY(0)';
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
   let _feedImageModalPanX = 0;
   let _feedImageModalPanY = 0;
   // Offset Y del arrastre visual "deslizar para cerrar" (0 = inactivo).
@@ -9632,6 +9781,12 @@ function saveNote() {
     _feedImageModalZoom = 1;
     _feedImageModalPanX = 0;
     _feedImageModalPanY = 0;
+    // La hoja de detalles pertenece al post: se guarda su id y se cierra
+    // al instante por si el visor se reabre con otro post.
+    _feedImageModalNoteId = noteId || null;
+    _closeFeedImageModalDetails(true);
+    const _infoBtn = document.getElementById('image-modal-info');
+    if (_infoBtn) _infoBtn.classList.toggle('hidden', !noteId);
     const modal = document.getElementById('image-modal');
     if (!modal) return;
     modal.classList.remove('hidden');
@@ -9697,6 +9852,10 @@ function saveNote() {
         : `Foto ${_feedImageModalIndex + 1} de ${total}`);
       const _rotBtn = document.getElementById('image-modal-rotate');
       if (_rotBtn) _rotBtn.setAttribute('aria-label', _modalLangEn ? 'Rotate photo' : 'Rotar foto');
+      const _infoBtn = document.getElementById('image-modal-info');
+      if (_infoBtn) _infoBtn.setAttribute('aria-label', _modalLangEn ? 'Post details' : 'Detalles de la publicación');
+      const _detTitle = document.getElementById('image-modal-details-title');
+      if (_detTitle) _detTitle.textContent = _modalLangEn ? 'Details' : 'Detalles';
     }
     if (count) {
       count.textContent = (_feedImageModalIndex + 1) + ' / ' + total;
@@ -9738,7 +9897,7 @@ function saveNote() {
   function _feedImageModalKeydown(e) {
     const modal = document.getElementById('image-modal');
     if (!modal || modal.classList.contains('hidden')) return;
-    if (e.key === 'Escape') { e.preventDefault(); closeImageModal(); return; }
+    if (e.key === 'Escape') { e.preventDefault(); const _cv = document.getElementById('comments-view'); if (_cv && !_cv.classList.contains('hidden')) return; if (_feedImageModalDetailsOpen) _closeFeedImageModalDetails(); else closeImageModal(); return; }
     if (e.key === 'ArrowLeft') { e.preventDefault(); _feedImageModalNav(-1); return; }
     if (e.key === 'ArrowRight') { e.preventDefault(); _feedImageModalNav(1); return; }
     if (e.key === 'r' || e.key === 'R') { e.preventDefault(); _feedImageModalRotate(); return; }
@@ -9963,6 +10122,12 @@ function saveNote() {
             _setFeedImageModalDismissDrag(0);
             _setFeedImageModalSwipeDrag(0);
           }
+          // Con la hoja de detalles abierta, un tap en la foto la cierra
+          // (no alterna el chrome ni hace zoom).
+          if (_feedImageModalDetailsOpen) {
+            _closeFeedImageModalDetails();
+            lastTap = 0;
+          } else {
           const now = Date.now();
           if (now - lastTap < 300) {
             // Doble tap: alterna el zoom 2x centrado en el punto tocado
@@ -9987,6 +10152,7 @@ function saveNote() {
             lastTap = now;
             _toggleFeedImageModalChrome();
           }
+          }
         } else if (wasMode === 'touch' && wasMoved) {
           const dx = e.clientX - sx, dy = e.clientY - sy;
           const snapBackDrag = () => {
@@ -10008,6 +10174,9 @@ function saveNote() {
             }
           } else if (_feedImageModalZoom === 1 && dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.4) {
             closeImageModal();
+          } else if (_feedImageModalZoom === 1 && dy < -90 && Math.abs(dy) > Math.abs(dx) * 1.4) {
+            // Deslizar hacia arriba: hoja con autor, texto, votos y comentarios.
+            _openFeedImageModalDetails();
           } else {
             // No llegó a ningún umbral: todo regresa a su lugar. Con zoom, el
             // pan estirado con goma vuelve a los límites con animación.
@@ -10034,7 +10203,7 @@ function saveNote() {
     document.addEventListener('keydown', (e) => {
       const modal = document.getElementById('image-modal');
       if (!modal || modal.classList.contains('hidden')) return;
-      if (e.key === 'Escape') closeImageModal();
+      if (e.key === 'Escape') { const _cv = document.getElementById('comments-view'); if (_cv && !_cv.classList.contains('hidden')) return; if (_feedImageModalDetailsOpen) _closeFeedImageModalDetails(); else closeImageModal(); }
       else if (e.key === 'ArrowRight') _feedImageModalNav(1);
       else if (e.key === 'ArrowLeft') _feedImageModalNav(-1);
     });
@@ -10521,6 +10690,8 @@ function saveNote() {
     const modalImage = document.getElementById('modal-image');
     if (modalImage) { modalImage.style.transition = ''; modalImage.style.transform = ''; modalImage.src = ''; }
     _feedImageModalHideSpin();
+    _closeFeedImageModalDetails(true);
+    _feedImageModalNoteId = null;
     try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; _feedImageModalDismissY = 0; _feedImageModalDragX = 0; _feedImageModalRotation = 0; } catch (_) {}
     document.body.style.overflow = '';
     if (_feedImageModalPrevFocus && document.contains(_feedImageModalPrevFocus)) {
@@ -13062,6 +13233,12 @@ function saveNote() {
 
   function closeCommentsView() {
     document.getElementById('comments-view').classList.add('hidden');
+    // Si los comentarios se abrieron encima del visor, se restaura su z-index.
+    if (window._commentsFromViewer) {
+      window._commentsFromViewer = false;
+      const _cv = document.getElementById('comments-view');
+      if (_cv) _cv.style.zIndex = '';
+    }
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
     document.body.classList.remove('comments-view-open');
     if (commentsOriginView === 'main') {
@@ -30123,8 +30300,11 @@ function closeSubpageView() {
   }
   function closeTopmostOverlayForBack() {
     const candidates = [
-      ['image-modal', () => typeof closeImageModal === 'function' && closeImageModal()],
+      // La hoja de detalles y los comentarios se abren ENCIMA del visor:
+      // el botón atrás debe cerrarlos primero, de arriba hacia abajo.
+      ['image-modal-details', () => typeof _closeFeedImageModalDetails === 'function' && _closeFeedImageModalDetails()],
       ['comments-view', () => typeof closeCommentsView === 'function' && closeCommentsView()],
+      ['image-modal', () => typeof closeImageModal === 'function' && closeImageModal()],
       ['author-profile-view', () => typeof closeAuthorProfile === 'function' && closeAuthorProfile()],
       ['user-actions-sheet', () => typeof closeUserActionsSheet === 'function' && closeUserActionsSheet()],
       ['post-options-sheet', () => typeof closePostOptionsSheet === 'function' && closePostOptionsSheet()],
