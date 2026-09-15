@@ -8652,6 +8652,10 @@ function saveNote() {
 
   // GIF en el editor de publicaciones: se publica como imagen.
   let selectedNotePostGif = null;
+  // Fuente de verdad de las fotos del creador: FileList de los inputs es de
+  // solo lectura, así que las selecciones se acumulan aquí para poder quitar
+  // fotos individuales y publicar exactamente lo que muestra el preview.
+  let notePostImageFiles = [];
 
   function openNoteGifPicker() {
     if (pendingStickers['note-content-fullscreen']) {
@@ -8841,13 +8845,10 @@ function saveNote() {
     onNoteFormatChange(startFormat);
 
     selectNoteAudience('public');
-    document.getElementById('image-preview-fullscreen').classList.add('hidden');
-    document.getElementById('preview-grid-fullscreen').innerHTML = '';
-    document.getElementById('image-preview-counter-fullscreen').textContent = '';
-    const galleryInput = document.getElementById('note-image-fullscreen-gallery');
-    const cameraInput = document.getElementById('note-image-fullscreen-camera');
-    if (galleryInput) galleryInput.value = '';
-    if (cameraInput) cameraInput.value = '';
+    // El editor siempre arranca sin fotos ni GIF heredados: un adjunto
+    // descartado antes no debe publicarse invisiblemente con el siguiente
+    // post (los borradores no guardan GIFs).
+    removeImageFullscreen();
 
     const user = DrexCloud.auth().currentUser;
     if (user) {
@@ -8866,11 +8867,6 @@ function saveNote() {
     const publishBtn = document.getElementById('publish-btn-fullscreen');
     publishBtn.disabled = false;
     publishBtn.innerHTML = 'Publicar';
-
-    // Sin GIF heredado: un GIF adjuntado y descartado antes no debe
-    // publicarse invisiblemente con el siguiente post (los borradores
-    // no guardan GIFs, así que el editor siempre arranca sin GIF).
-    selectedNotePostGif = null;
 
     const textarea = document.getElementById('note-content-fullscreen');
     textarea.oninput = function() {
@@ -8980,10 +8976,7 @@ function saveNote() {
 
   function handleNoteImagePreviewFullscreen(event, source = 'gallery') {
     const selectedFiles = Array.from(event.target.files || []);
-    const isCameraSource = source === 'camera';
-    const maxFiles = isCameraSource ? 1 : 20;
-    const files = selectedFiles.slice(0, maxFiles);
-    if (!files.length) return;
+    if (!selectedFiles.length) return;
 
     const hasStickerSelected = pendingStickers['note-content-fullscreen'];
     if (hasStickerSelected) {
@@ -8992,27 +8985,58 @@ function saveNote() {
       return;
     }
 
-    if (!isCameraSource && selectedFiles.length > 20) {
+    // Las fotos reemplazan al GIF (exclusión mutua en ambos sentidos: elegir
+    // un GIF también limpia las fotos), para que lo publicado sea siempre lo
+    // que muestra el preview.
+    if (selectedNotePostGif) selectedNotePostGif = null;
+
+    const room = 20 - notePostImageFiles.length;
+    const accepted = selectedFiles.slice(0, Math.max(0, room));
+    const dropped = selectedFiles.length - accepted.length;
+    notePostImageFiles = notePostImageFiles.concat(accepted);
+    event.target.value = '';
+    if (dropped > 0) {
       showMiniToast('Solo puedes subir un máximo de 20 fotos por publicación.');
     }
+    renderNotePostPhotoPreviews();
+  }
 
+  // Dibuja las miniaturas del creador, cada una con su ✕ para quitarla sin
+  // borrar las demás.
+  function renderNotePostPhotoPreviews() {
     const previewGrid = document.getElementById('preview-grid-fullscreen');
     const counter = document.getElementById('image-preview-counter-fullscreen');
+    const section = document.getElementById('image-preview-fullscreen');
+    if (!previewGrid || !counter || !section) return;
     previewGrid.innerHTML = '';
-
-    files.forEach(file => {
+    notePostImageFiles.forEach((file, index) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'relative';
+      const previewEl = document.createElement('img');
+      previewEl.alt = 'Foto ' + (index + 1);
+      previewEl.className = 'w-full h-auto object-contain bg-black/5 rounded-lg border border-gray-300';
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.setAttribute('aria-label', 'Quitar foto ' + (index + 1));
+      removeBtn.className = 'absolute top-1.5 right-1.5 w-8 h-8 flex items-center justify-center rounded-full bg-black/65 text-white text-lg font-bold leading-none active:bg-black/85';
+      removeBtn.textContent = '×';
+      removeBtn.onclick = () => removeNotePostPhotoAt(index);
+      wrap.appendChild(previewEl);
+      wrap.appendChild(removeBtn);
+      previewGrid.appendChild(wrap);
       const reader = new FileReader();
-      reader.onload = function(e) {
-        const previewEl = document.createElement('img');
-        previewEl.src = e.target.result;
-        previewEl.className = 'w-full h-auto object-contain bg-black/5 rounded-lg border border-gray-300';
-        previewGrid.appendChild(previewEl);
-      };
+      reader.onload = function(e) { previewEl.src = e.target.result; };
       reader.readAsDataURL(file);
     });
+    const n = notePostImageFiles.length;
+    counter.textContent = n ? `${n} foto${n === 1 ? '' : 's'} seleccionada${n === 1 ? '' : 's'} (máximo 20)` : '';
+    section.classList.toggle('hidden', n === 0);
+  }
 
-    counter.textContent = `${files.length} foto${files.length === 1 ? '' : 's'} seleccionada${files.length === 1 ? '' : 's'} (máximo ${isCameraSource ? 1 : 20})`;
-    document.getElementById('image-preview-fullscreen').classList.remove('hidden');
+  function removeNotePostPhotoAt(index) {
+    if (index < 0 || index >= notePostImageFiles.length) return;
+    notePostImageFiles.splice(index, 1);
+    renderNotePostPhotoPreviews();
   }
 
   function removeImageFullscreen(keepGifSelectionState = false) {
@@ -9020,18 +9044,14 @@ function saveNote() {
     const cameraInput = document.getElementById('note-image-fullscreen-camera');
     if (galleryInput) galleryInput.value = '';
     if (cameraInput) cameraInput.value = '';
-    document.getElementById('preview-grid-fullscreen').innerHTML = '';
-    document.getElementById('image-preview-counter-fullscreen').textContent = '';
-    document.getElementById('image-preview-fullscreen').classList.add('hidden');
+    notePostImageFiles = [];
+    renderNotePostPhotoPreviews();
     if (!keepGifSelectionState) selectedNotePostGif = null;
   }
 
   function publishNoteFromFullscreen() {
     const content = resolveCommentContent('note-content-fullscreen');
-    const galleryFiles = Array.from(document.getElementById('note-image-fullscreen-gallery')?.files || []);
-    const cameraFiles = Array.from(document.getElementById('note-image-fullscreen-camera')?.files || []);
-    const allFiles = [...galleryFiles, ...cameraFiles];
-    const imageFiles = allFiles.slice(0, 20);
+    const imageFiles = notePostImageFiles.slice(0, 20);
     const gifUrl = selectedNotePostGif;
     if (!content && !imageFiles.length && !gifUrl) {
       showMiniToast('Por favor escribe algo o agrega una foto o GIF');
@@ -9214,19 +9234,11 @@ function saveNote() {
         const publishedGroupId = note.groupId || null;
 
         const contentFullscreen = document.getElementById('note-content-fullscreen');
-        const imageFullscreenGallery = document.getElementById('note-image-fullscreen-gallery');
-        const imageFullscreenCamera = document.getElementById('note-image-fullscreen-camera');
         const previewFullscreen = document.getElementById('image-preview-fullscreen');
 
         if (contentFullscreen) contentFullscreen.value = '';
-        if (imageFullscreenGallery) imageFullscreenGallery.value = '';
-        if (imageFullscreenCamera) imageFullscreenCamera.value = '';
+        removeImageFullscreen();
         if (previewFullscreen) previewFullscreen.classList.add('hidden');
-        const previewGridFullscreen = document.getElementById('preview-grid-fullscreen');
-        const previewCounterFullscreen = document.getElementById('image-preview-counter-fullscreen');
-        if (previewGridFullscreen) previewGridFullscreen.innerHTML = '';
-        if (previewCounterFullscreen) previewCounterFullscreen.textContent = '';
-        selectedNotePostGif = null;
         clearGroupForNotePost();
 
         clearCurrentNoteDraft();
@@ -12270,11 +12282,7 @@ function saveNote() {
     if (!targetInput) return;
 
     if (stickerTargetInputId === 'note-content-fullscreen') {
-      const galleryInput = document.getElementById('note-image-fullscreen-gallery');
-      const cameraInput = document.getElementById('note-image-fullscreen-camera');
-      const hasGalleryFiles = Boolean(galleryInput && galleryInput.files && galleryInput.files.length > 0);
-      const hasCameraFiles = Boolean(cameraInput && cameraInput.files && cameraInput.files.length > 0);
-      if (hasGalleryFiles || hasCameraFiles) {
+      if (notePostImageFiles.length > 0) {
         showMiniToast('❌ Error: No puedes agregar un sticker si ya has seleccionado imágenes. Por favor, elimina las imágenes primero.');
         return;
       }
