@@ -9392,14 +9392,18 @@ function saveNote() {
   let _feedImageModalPanY = 0;
 
   function openImageModal(imageUrl, noteId, clickedEl) {
-    // Si el post tiene varias imágenes, permitimos navegar entre todas.
-    const postEl = noteId ? document.getElementById('post-' + noteId) : null;
-    let allImgs = postEl ? Array.from(postEl.querySelectorAll('img[alt^="Imagen "]')).map(img => img.getAttribute('src')) : [];
-    // Fallback: las tarjetas de perfil/comentarios/comunidad no siempre tienen id "post-".
-    // En ese caso tomamos las fotos del contenedor del carrusel donde se hizo clic.
-    if (!allImgs.length && clickedEl && clickedEl.closest) {
+    // Alcance preciso primero: solo las fotos del carrusel donde se hizo clic.
+    // Un query a toda la tarjeta (#post-id) podría colar en el visor imágenes
+    // ajenas al carrusel si algún día comparten el mismo patrón de alt.
+    let allImgs = [];
+    if (clickedEl && clickedEl.closest) {
       const scope = clickedEl.closest('.feed-carousel-wrap') || clickedEl.closest('.feed-post-media');
       if (scope) allImgs = Array.from(scope.querySelectorAll('img[alt^="Imagen "]')).map(img => img.getAttribute('src'));
+    }
+    // Fallback: si no hay elemento clicado (llamada programática), la tarjeta completa.
+    if (!allImgs.length) {
+      const postEl = noteId ? document.getElementById('post-' + noteId) : null;
+      if (postEl) allImgs = Array.from(postEl.querySelectorAll('img[alt^="Imagen "]')).map(img => img.getAttribute('src'));
     }
     _feedImageModalPhotos = allImgs.length ? allImgs : [imageUrl];
     _feedImageModalIndex = Math.max(0, _feedImageModalPhotos.indexOf(imageUrl));
