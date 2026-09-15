@@ -9566,9 +9566,11 @@ function saveNote() {
   let _feedImageModalDetailsOpen = false;
   let _feedImageModalDetailsFullText = '';
   let _feedImageModalDetailsExpanded = false;
-  // Suscripciones en vivo mientras la hoja está abierta: votos y comentarios.
+  // Suscripciones en vivo mientras la hoja está abierta: votos, comentarios
+  // y datos del autor.
   let _feedImageModalDetailsVoteRef = null;
   let _feedImageModalDetailsCommentsRef = null;
+  let _feedImageModalDetailsAuthorRef = null;
   const _FEED_IMAGE_MODAL_DETAILS_PREVIEW_LEN = 220;
 
   // Votos y comentarios en vivo: mientras la hoja está abierta, el marcador
@@ -9577,8 +9579,10 @@ function saveNote() {
   function _unsubscribeFeedImageModalDetailsLive() {
     try { if (_feedImageModalDetailsVoteRef) _feedImageModalDetailsVoteRef.off(); } catch (_) {}
     try { if (_feedImageModalDetailsCommentsRef) _feedImageModalDetailsCommentsRef.off(); } catch (_) {}
+    try { if (_feedImageModalDetailsAuthorRef) _feedImageModalDetailsAuthorRef.off(); } catch (_) {}
     _feedImageModalDetailsVoteRef = null;
     _feedImageModalDetailsCommentsRef = null;
+    _feedImageModalDetailsAuthorRef = null;
   }
   function _subscribeFeedImageModalDetailsLive(noteId) {
     _unsubscribeFeedImageModalDetailsLive();
@@ -9627,6 +9631,26 @@ function saveNote() {
         const fresh = tmp.firstChild;
         if (fresh) stackEl.replaceWith(fresh);
       });
+      // Autor en vivo: los cambios de perfil no se propagan a los posts
+      // viejos, así que se escucha directo el registro del autor.
+      DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(nSnap => {
+        const n = nSnap.val() || {};
+        const authorId = n.authorId || n.userId || '';
+        if (!authorId || !_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
+        const userRef = DrexCloud.database().ref('users/' + authorId);
+        _feedImageModalDetailsAuthorRef = userRef;
+        userRef.on('value', uSnap => {
+          if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
+          const u = uSnap.val() || {};
+          const content = document.getElementById('image-modal-details-content');
+          if (!content) return;
+          const nameEl = content.querySelector('#image-modal-details-author-name');
+          const nextName = u.username || u.displayName || '';
+          if (nameEl && nextName) nameEl.textContent = nextName;
+          const avatarEl = content.querySelector('#image-modal-details-author-avatar');
+          if (avatarEl && u.profileImage) avatarEl.src = u.profileImage;
+        });
+      }).catch(() => {});
     } catch (_) { _unsubscribeFeedImageModalDetailsLive(); }
   }
 
@@ -9721,9 +9745,9 @@ function saveNote() {
     const textHTML = `<div id="image-modal-details-text-wrap">${_viewerDetailsTextHTML(String(note.content || ''))}</div>`;
     return `
       <div class="flex items-center gap-3 mb-3">
-        <img src="${escapeHtmlAttr(avatar)}" alt="" class="w-11 h-11 rounded-full object-cover bg-[#dce1e5] shrink-0">
+        <img id="image-modal-details-author-avatar" src="${escapeHtmlAttr(avatar)}" alt="" class="w-11 h-11 rounded-full object-cover bg-[#dce1e5] shrink-0">
         <div class="flex-1 min-w-0">
-          <div class="font-bold text-[#1c2b4a] text-[15px] truncate">${escapeHtml(note.authorName || 'Usuario')}</div>
+          <div id="image-modal-details-author-name" class="font-bold text-[#1c2b4a] text-[15px] truncate">${escapeHtml(note.authorName || 'Usuario')}</div>
           <div class="text-xs text-[#7b878f]">${escapeHtml(formatRelativeTime(Number(note.timestamp) || Date.now()))}</div>
         </div>
       </div>
