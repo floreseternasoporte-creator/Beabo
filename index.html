@@ -4183,6 +4183,10 @@ document.addEventListener("DOMContentLoaded", function() {
     }
     .drex-vote-btn:hover { background: #e4eaf3; color: #1c2b4a; }
     .drex-vote-btn:active { transform: scale(0.88); }
+    /* Voto en vuelo: pulso sutil mientras la transacción se confirma
+       (conexiones lentas), para que no parezca que el toque no funcionó. */
+    .drex-vote-btn.is-pending { animation: drex-vote-pulse .8s ease-in-out infinite; }
+    @keyframes drex-vote-pulse { 50% { opacity: .45; } }
     /* Hoja de detalles: objetivos táctiles de 44px (guía de Apple) para iPhone. */
     #image-modal-details .drex-vote-btn { width: 44px; height: 44px; }
     #image-modal-details .drex-vote-btn svg { width: 22px; height: 22px; }
@@ -12233,6 +12237,13 @@ function saveNote() {
     }
 
     paintVoteUI(optimisticUpvoted, optimisticDownvoted, optimisticScore);
+    // Estado "votando": pulso visible en los botones mientras la transacción
+    // se confirma (conexiones lentas). Se retira al terminar, gane o pierda.
+    const setVotePending = (on) => {
+      upvoteBtns.forEach(btn => btn.classList.toggle('is-pending', on));
+      downvoteBtns.forEach(btn => btn.classList.toggle('is-pending', on));
+    };
+    setVotePending(true);
 
     userVoteRef.once('value').then(snapshot => {
       const currentVote = snapshot.val();
@@ -12292,6 +12303,7 @@ function saveNote() {
 
         refreshHistorialIfVisible();
       }).finally(() => {
+        setVotePending(false);
         _postVoteLocks.delete(noteId);
       });
     }).catch(err => {
@@ -12299,6 +12311,7 @@ function saveNote() {
       // A19: revertir el cambio optimista para no mostrar un estado falso.
       paintVoteUI(wasUpvoted, wasDownvoted, currentScore);
       showMiniToast('No se pudo votar. Intenta de nuevo.');
+      setVotePending(false);
       _postVoteLocks.delete(noteId);
     });
   }
