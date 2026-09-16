@@ -1802,69 +1802,69 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
        cualquier vista donde se rendericen fotos (comentarios, permalink,
        comunidades, etc.). Las reglas específicas de .post-instagram-card y
        .profile-post-card conservan sus propios márgenes por especificidad. */
+    /* Medios del post estilo X/Threads: la foto manda, sin marcos.
+       - 1 foto: ancho completo con su proporción natural, sin fondo ni recorte.
+       - 2 a 4 fotos: retícula tipo X (con 3, la primera ocupa dos filas);
+         cada celda se rellena con cover y ningún fondo queda visible.
+       - 5 o más: se muestran 4 y la cuarta lleva la insignia "+N"; las demás
+         viajan ocultas en el DOM para que el visor las incluya al navegar. */
     .feed-carousel-wrap {
       position: relative;
       margin: 0 0 12px !important;
-      border-radius: 14px;
     }
-    .feed-post-media--single {
+    .drex-media-single {
       margin: 0 0 12px !important;
-    }
-    .feed-post-carousel {
-      display: flex !important;
-      overflow-x: auto !important;
-      scroll-snap-type: x mandatory;
-      gap: 0 !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      border-radius: 14px !important;
-      scrollbar-width: none;
-    }
-    .feed-post-carousel::-webkit-scrollbar { display: none; }
-    .feed-post-carousel .feed-post-carousel-slide {
-      width: 100% !important;
-      min-width: 100% !important;
-      /* Sin recorte: la foto se muestra completa (contain) con su proporción
-         natural, igual que las publicaciones de una sola foto. El fondo
-         rellena el espacio sobrante en vez de recortar la imagen. */
-      max-height: 480px;
+      border-radius: 14px;
       overflow: hidden;
+      background: transparent !important;
+    }
+    .drex-media-single img {
+      display: block !important;
+      width: 100% !important;
+      height: auto !important;
+      max-height: none !important;
       border-radius: 14px !important;
+      cursor: pointer;
+    }
+    .drex-media-grid {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px;
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .drex-media-grid--2 { aspect-ratio: 2 / 1; grid-template-rows: 1fr; }
+    .drex-media-grid--3 { aspect-ratio: 2 / 1; grid-template-rows: 1fr 1fr; }
+    .drex-media-grid--4 { aspect-ratio: 1 / 1; grid-template-rows: 1fr 1fr; }
+    .drex-media-grid--3 .drex-media-cell:first-child { grid-row: span 2; }
+    .drex-media-cell {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
       background: #eef2f7;
-      flex-shrink: 0;
-      scroll-snap-align: center;
+    }
+    body.theme-dark .drex-media-cell { background: #141a26; }
+    .drex-media-cell img {
+      display: block !important;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover;
+      cursor: pointer;
+    }
+    .drex-media-cell--hidden { display: none !important; }
+    .drex-media-more {
+      position: absolute;
+      inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-    }
-    .feed-post-carousel .feed-post-carousel-slide img {
-      width: 100% !important;
-      height: auto !important;
-      max-height: 480px !important;
-      object-fit: contain;
-      border-radius: 14px !important;
-      display: block;
-    }
-    .feed-post-media--single img {
-      border-radius: 14px !important;
-      display: block;
-    }
-    .feed-carousel-count {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(0,0,0,.55);
+      background: rgba(8, 13, 22, 0.55);
       color: #fff;
-      font-size: 11px;
-      font-weight: 700;
-      line-height: 1;
-      padding: 6px 10px;
-      border-radius: 999px;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
       pointer-events: none;
-      z-index: 2;
-    }
-    body.theme-dark .feed-post-carousel .feed-post-carousel-slide {
-      background: #141a26;
     }
     /* El chrome del visor no debe bloquear los gestos sobre la foto */
     #image-modal-topbar, #image-modal-dots { pointer-events: none; }
@@ -9556,6 +9556,10 @@ function saveNote() {
   }
 
 
+  // Medios del post estilo X/Threads: la foto manda, sin marcos.
+  // - 1 foto: ancho completo con su proporción natural, sin fondo ni recorte.
+  // - 2 a 4 fotos: retícula tipo X (con 3, la primera ocupa dos filas).
+  // - 5 o más: se muestran 4 y la cuarta lleva la insignia "+N".
   function renderNoteImages(note, noteIdForModal) {
     const images = Array.isArray(note.imageUrls) && note.imageUrls.length ? note.imageUrls.slice() : (note.imageUrl ? [note.imageUrl] : []);
     // Legado: publicaciones viejas que guardaban el GIF en note.gifUrl en vez
@@ -9564,54 +9568,33 @@ function saveNote() {
     if (note.gifUrl && !images.includes(note.gifUrl)) images.push(note.gifUrl);
     if (!images.length) return '';
 
-    const renderImageContainer = (img, index, total) => {
+    const safeNoteIdJs = escapeInlineSingleQuote(noteIdForModal);
+    const imgTag = (img, index) => {
       const safeImg = escapeHtml(img);
       // Para el handler inline se usa la URL validada y escapada para string
       // JS (escapeHtml dejaría &#039; que el parser HTML decodifica antes de
       // compilar el handler y rompería la cadena).
       const safeImgJs = getSafeMediaUrlInlineJs(img);
-      const safeNoteIdJs = escapeInlineSingleQuote(noteIdForModal);
-      return `
-      <div class="feed-post-media feed-post-carousel-slide w-full flex-shrink-0 snap-center relative">
-        <img src="${safeImg}" alt="Imagen ${index + 1}" onclick="event.stopPropagation(); openImageModal('${safeImgJs}', '${safeNoteIdJs}', this)" onerror="this.onerror=null;handleFeedImageError(this)" class="w-full h-auto max-h-[80vh] object-contain cursor-pointer">
-      </div>
-    `;
+      return `<img src="${safeImg}" alt="Imagen ${index + 1}" onclick="event.stopPropagation(); openImageModal('${safeImgJs}', '${safeNoteIdJs}', this)" onerror="this.onerror=null;handleFeedImageError(this)">`;
     };
 
     if (images.length === 1) {
-      return `<div class="feed-post-media feed-post-media--single mb-3">${renderImageContainer(images[0], 0, 1)}</div>`;
+      return `<div class="feed-post-media drex-media-single">${imgTag(images[0], 0)}</div>`;
     }
 
-    const slides = images.map((img, index) => renderImageContainer(img, index, images.length)).join('');
+    const VISIBLE = 4;
+    const extraCount = images.length - VISIBLE;
+    const cells = images.map((img, index) => {
+      const hidden = index >= VISIBLE;
+      const isMore = extraCount > 0 && index === VISIBLE - 1;
+      return `<div class="drex-media-cell${hidden ? ' drex-media-cell--hidden' : ''}" data-media-cell>${imgTag(img, index)}${isMore ? `<span class="drex-media-more">+${extraCount}</span>` : ''}</div>`;
+    }).join('');
 
     return `
-      <div class="feed-carousel-wrap relative mb-3" data-feed-carousel-wrap>
-        <div class="feed-post-carousel feed-post-media overflow-x-auto flex snap-x snap-mandatory" data-feed-carousel>
-          ${slides}
-        </div>
-        <span class="feed-carousel-count" data-feed-carousel-count>1 / ${images.length}</span>
+      <div class="feed-carousel-wrap drex-media-grid drex-media-grid--${Math.min(VISIBLE, images.length)}" data-media-grid data-note-id="${escapeHtml(noteIdForModal || '')}">
+        ${cells}
       </div>
     `;
-  }
-
-  // Contador "1 / N" del carrusel del feed: un solo listener delegado con
-  // capture (los eventos scroll no burbujean). Cada diapositiva mide el 100%
-  // del carrusel, asi el indice es scrollLeft / ancho de diapositiva.
-  if (!window.__drexFeedCarouselCount) {
-    window.__drexFeedCarouselCount = true;
-    document.addEventListener('scroll', (e) => {
-      const car = e.target && e.target.closest ? e.target.closest('[data-feed-carousel]') : null;
-      if (!car) return;
-      const slide = car.querySelector('.feed-post-carousel-slide');
-      const w = slide ? slide.getBoundingClientRect().width : 0;
-      if (!w) return;
-      const total = car.querySelectorAll('.feed-post-carousel-slide').length;
-      if (!total) return;
-      const idx = Math.max(0, Math.min(total - 1, Math.round(car.scrollLeft / w)));
-      const wrap = car.closest('[data-feed-carousel-wrap]');
-      const badge = wrap ? wrap.querySelector('[data-feed-carousel-count]') : null;
-      if (badge) badge.textContent = (idx + 1) + ' / ' + total;
-    }, true);
   }
 
   // Negro puro, chrome mínimo (X + contador + puntos), swipe horizontal entre
@@ -10338,31 +10321,30 @@ function saveNote() {
     setTimeout(() => _feedImageModalNav(dir), 190);
   }
 
-  // Una foto rota no debe quedar como slide fantasma: se elimina del carrusel
-  // y el contador "1 / N" se recalcula con las fotos reales que quedan.
+  // Una foto rota no debe dejar un hueco fantasma: se retira su celda y el
+  // bloque se vuelve a renderizar con las fotos que sí cargan (la retícula
+  // se reajusta sola: 1 foto -> natural, 2/3/4 -> retícula, 5+ -> "+N").
   // Si era la única foto, se muestra el aviso en su contenedor.
   function handleFeedImageError(img) {
     try {
-      const wrap = img.closest('[data-feed-carousel-wrap]');
-      const slide = img.closest('.feed-post-carousel-slide');
-      if (!wrap || !slide) {
-        const single = img.closest('.feed-post-media');
-        if (single) single.innerHTML = '<div class="w-full h-40 flex items-center justify-center bg-[#f0f4f9] text-[#9aa4ae] text-xs font-semibold">Imagen no disponible</div>';
+      const grid = img.closest('[data-media-grid]');
+      if (grid) {
+        const cell = img.closest('[data-media-cell]');
+        if (cell) cell.remove();
+        const urls = Array.from(grid.querySelectorAll('[data-media-cell] img'))
+          .map(i => i.getAttribute('src')).filter(Boolean);
+        const noteId = grid.getAttribute('data-note-id') || '';
+        const tmp = document.createElement('div');
+        tmp.innerHTML = renderNoteImages({ imageUrls: urls }, noteId);
+        if (tmp.firstElementChild) {
+          grid.replaceWith(tmp.firstElementChild);
+        } else {
+          grid.innerHTML = '<div class="w-full h-40 flex items-center justify-center bg-[#f0f4f9] text-[#9aa4ae] text-xs font-semibold">Imagen no disponible</div>';
+        }
         return;
       }
-      const car = wrap.querySelector('[data-feed-carousel]');
-      slide.remove();
-      const remaining = car ? car.querySelectorAll('.feed-post-carousel-slide') : [];
-      if (!remaining.length) {
-        wrap.innerHTML = '<div class="w-full h-40 flex items-center justify-center bg-[#f0f4f9] text-[#9aa4ae] text-xs font-semibold mb-3">Imagen no disponible</div>';
-        return;
-      }
-      const badge = wrap.querySelector('[data-feed-carousel-count]');
-      if (badge && car) {
-        const w = remaining[0].getBoundingClientRect().width || 1;
-        const idx = Math.max(0, Math.min(remaining.length - 1, Math.round(car.scrollLeft / w)));
-        badge.textContent = (idx + 1) + ' / ' + remaining.length;
-      }
+      const single = img.closest('.feed-post-media');
+      if (single) single.innerHTML = '<div class="w-full h-40 flex items-center justify-center bg-[#f0f4f9] text-[#9aa4ae] text-xs font-semibold">Imagen no disponible</div>';
     } catch (_) {}
   }
 
