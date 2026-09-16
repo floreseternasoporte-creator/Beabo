@@ -24316,6 +24316,11 @@ const _startChatListeners = () => {
     const stillUploading = chatPhotoAttachments.some(a => a.uploading);
     if (stillUploading) return;
 
+    // Anti-doble-envío: en iPhone un doble tap llegaba a enviar el mensaje dos
+    // veces (el input se limpia después del await de verificación de bloqueo).
+    if (window._drexChatSending) return;
+    window._drexChatSending = true;
+
     if (!currentChatIsGroup && currentChatRecipient) {
       try {
         const [iBlockedThem, theyBlockedMe] = await Promise.all([
@@ -24324,10 +24329,12 @@ const _startChatListeners = () => {
         ]);
         if (iBlockedThem.exists()) {
           showMiniToast('Has bloqueado a este usuario. Desbloquéalo para poder enviarle mensajes.');
+          window._drexChatSending = false;
           return;
         }
         if (theyBlockedMe.exists()) {
           showMiniToast('No puedes enviar mensajes a este usuario.');
+          window._drexChatSending = false;
           return;
         }
       } catch (e) {
@@ -24426,6 +24433,7 @@ const _startChatListeners = () => {
     }
 
     msgRef.set(payload).then(() => {
+      window._drexChatSending = false;
       const sentEl = document.getElementById(tempMsgId);
       if (sentEl) {
         const statusEl = sentEl.querySelector('.opt-send-status');
@@ -24461,6 +24469,7 @@ const _startChatListeners = () => {
         groupMembers
       }).catch(() => {});
     }).catch((err) => {
+      window._drexChatSending = false;
       console.error('Error al enviar mensaje:', err);
       document.getElementById(tempMsgId)?.remove();
       const inputEl = document.getElementById('chat-room-input');
@@ -26733,6 +26742,11 @@ function renderAccountsList(accounts) {
       showMiniToast(translations[currentLanguage].followSelfError);
       return;
     }
+    // Anti-doble-tap: seguir/dejar de seguir es un toggle; dos taps rápidos
+    // dejaban el estado final invertido.
+    if (window._drexFollowBusy) return;
+    window._drexFollowBusy = true;
+    setTimeout(() => { window._drexFollowBusy = false; }, 2500);
 
     const followRef = DrexCloud.database().ref('followers/' + currentViewedAuthorId + '/' + currentUser.uid);
     const authorFollowersRef = DrexCloud.database().ref('users/' + currentViewedAuthorId + '/followersCount');
