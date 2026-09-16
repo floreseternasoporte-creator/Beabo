@@ -6,7 +6,7 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v7';
+const DREX_SW_VERSION = 'drex-v8';
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',
@@ -69,6 +69,15 @@ self.addEventListener('fetch', event => {
     event.respondWith(networkFirst(req, req));
     return;
   }
+
+  // version.json (marcador de build para el auto-actualizador silencioso):
+  // red primero, nunca bloquea la detección de una versión nueva.
+  try {
+    if (new URL(req.url).pathname.endsWith('version.json')) {
+      event.respondWith(networkFirst(req, req));
+      return;
+    }
+  } catch (e) { /* sigue al fallback de estáticos */ }
 
   // JavaScript de la plataforma: red primero. El SW anterior (drex-v1) usaba
   // cache-first para TODO y congelaba drex-cloud.js en la primera versión

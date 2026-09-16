@@ -2,7 +2,7 @@
 <html lang="es">
 
 <head>
-<meta name="drex-build" content="1789349083">
+<meta name="drex-build" content="1789568909">
 <style>
 /* Fuente Optimistic no incluida en el despliegue: se usa system-ui de respaldo. */
 :where(html) {
@@ -4216,7 +4216,11 @@ document.addEventListener("DOMContentLoaded", function() {
       inset: -8px;
     }
     /* Utilidad: extiende el área táctil a 44px sin alterar el diseño visual.
-       Úsala en botones de 28-32px que deben verse compactos. */
+       Úsala en botones de 28-32px que deben verse compactos.
+       position:relative es OBLIGATORIO: sin él, el ::after absolute se ancla
+       al ancestro posicionado más cercano (toda la vista) y su caja invisible
+       tapa la vista entera robando los taps de los demás botones. */
+    .tap44 { position: relative; }
     .tap44::after {
       content: '';
       position: absolute;
@@ -5877,7 +5881,7 @@ if (scrollArea) {
     </div>
 
     <!-- Barra de herramientas inferior — estilo Grok con carrusel horizontal -->
-    <div class="border-t border-[#dce1e5] bg-[#f0f4f9] flex-shrink-0">
+    <div class="border-t border-[#dce1e5] bg-[#f0f4f9] flex-shrink-0" style="padding-bottom:max(0.5rem,env(safe-area-inset-bottom));">
       <!-- Carrusel de herramientas deslizable -->
       <div id="note-tools-carousel" class="flex items-center gap-1 px-4 py-3 overflow-x-auto overflow-y-hidden scrollbar-none" style="-webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;">
         <input type="file" id="note-image-fullscreen-gallery" accept="image/*" class="hidden" onchange="handleNoteImagePreviewFullscreen(event, 'gallery')" multiple>
@@ -10363,6 +10367,31 @@ function saveNote() {
     } catch (_) {}
   }
 
+// Bloqueo de scroll con conteo de referencias: varios overlays pueden apilarse
+  // (ej. guardados + modal de imagen encima). Sin conteo, cerrar el de arriba
+  // desbloqueaba el fondo aunque otro siguiera abierto.
+  window._bodyScrollLocks = window._bodyScrollLocks || 0;
+  function lockBodyScroll() { window._bodyScrollLocks++; document.body.style.overflow = 'hidden'; }
+  function unlockBodyScroll() { window._bodyScrollLocks = Math.max(0, window._bodyScrollLocks - 1); if (!window._bodyScrollLocks) document.body.style.overflow = ''; }
+  // iOS: Safari no redimensiona el layout viewport al abrir el teclado, así que
+  // una vista "fixed inset-0" quedaría con su barra inferior detrás del teclado.
+  // Se encoge la vista del chat a la altura del visualViewport mientras está visible.
+  (function () {
+    var vv = window.visualViewport;
+    if (!vv) return;
+    var rafId = 0;
+    function applyChatViewport() {
+      var v = document.getElementById('chat-room-view');
+      if (!v || v.classList.contains('hidden')) return;
+      v.style.height = vv.height + 'px';
+    }
+    function scheduleApply() {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(applyChatViewport);
+    }
+    vv.addEventListener('resize', scheduleApply);
+    vv.addEventListener('scroll', scheduleApply);
+  })();
   function openImageModal(imageUrl, noteId, clickedEl) {
     // Alcance preciso primero: solo las fotos del carrusel donde se hizo clic.
     // Un query a toda la tarjeta (#post-id) podría colar en el visor imágenes
@@ -10398,7 +10427,7 @@ function saveNote() {
     if (!modal) return;
     modal.classList.remove('hidden');
     if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
     // Los menús del post (opciones, reportar) deben flotar sobre el visor.
     document.body.classList.add('drex-viewer-open');
     _renderFeedImageModal();
@@ -11337,7 +11366,7 @@ function saveNote() {
     _closeFeedImageModalDetails(true);
     _feedImageModalNoteId = null;
     try { _feedImageModalZoom = 1; _feedImageModalPanX = 0; _feedImageModalPanY = 0; _feedImageModalDismissY = 0; _feedImageModalDragX = 0; _feedImageModalRotation = 0; } catch (_) {}
-    document.body.style.overflow = '';
+    unlockBodyScroll();
     document.body.classList.remove('drex-viewer-open');
     if (_feedImageModalPrevFocus && document.contains(_feedImageModalPrevFocus)) {
       try { _feedImageModalPrevFocus.focus({ preventScroll: true }); } catch (_) {}
@@ -12623,11 +12652,15 @@ function saveNote() {
     return _userSavedPosts;
   }
 
+  // Evita doble-tap: mientras un guardado está en vuelo se ignoran nuevos toques.
+  const _savePostLocks = new Set();
   async function toggleSavePost(noteId, btnEl) {
     const user = DrexCloud.auth().currentUser;
     if (!user) { showMiniToast('Debes iniciar sesión para guardar publicaciones'); return; }
     const ref = _getSavedPostsRef();
     if (!ref) return;
+    if (_savePostLocks.has(noteId)) return;
+    _savePostLocks.add(noteId);
 
     if (_userSavedPosts === null) await _loadUserSavedPosts();
 
@@ -12659,7 +12692,7 @@ function saveNote() {
       showMiniToast('No se pudo guardar. Intenta de nuevo.');
       return;
     } finally {
-      if (btnEl) btnEl.classList.remove('is-pending');
+      _savePostLocks.delete(noteId); if (btnEl) btnEl.classList.remove('is-pending');
     }
     refreshHistorialIfVisible();
   }
@@ -12799,8 +12832,9 @@ function saveNote() {
   async function openSavedPostsView() {
     const view = document.getElementById('saved-posts-view');
     if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     view.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
     _currentSavedFolderId = null;
 
@@ -12940,7 +12974,7 @@ function saveNote() {
   function closeSavedPostsView() {
     const view = document.getElementById('saved-posts-view');
     if (view) view.classList.add('hidden');
-    document.body.style.overflow = '';
+    unlockBodyScroll();
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
     _currentSavedFolderId = null;
   }
@@ -16699,6 +16733,8 @@ function saveNote() {
   function setAppLanguage(lang) { const next = lang === 'en' ? 'en' : 'es'; applyAppLanguage(next); refreshVisibleLocationPickerLanguage(); const user=DrexCloud.auth().currentUser; if (user) DrexCloud.database().ref('userSettings/' + user.uid + '/appLanguage').set(next).catch(() => {}); }
   function openAppLanguageSettings() {
     const view = document.getElementById('app-language-settings-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) { view.classList.remove('hidden'); view.style.display = 'flex'; }
     try { syncAppLanguageUI(getAppLanguage()); } catch (_) {}
   }
@@ -16732,6 +16768,8 @@ function saveNote() {
   }
   function openLearningLanguageSettings() {
     const view = document.getElementById('learning-language-settings-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) { view.classList.remove('hidden'); view.style.display = 'flex'; }
     const user = DrexCloud.auth().currentUser;
     const code = window._drexLearningLanguage || '';
@@ -19681,7 +19719,7 @@ o
     const modal = document.getElementById('support-modal');
     if (!modal) return;
     modal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
     _helpNavStack = [{ view: 'help-home' }];
     _helpNavRender();
     renderHelpHome();
@@ -19691,7 +19729,7 @@ o
     const modal = document.getElementById('support-modal');
     if (!modal) return;
     modal.style.display = 'none';
-    document.body.style.overflow = '';
+    unlockBodyScroll();
   }
 
   const _helpViews = ['help-home', 'help-center', 'help-topic', 'help-article', 'help-report'];
@@ -19906,7 +19944,7 @@ o
       requestAnimationFrame(() => overlay.classList.remove('opacity-0'));
     }
     if (drawer) drawer.classList.remove('-translate-x-full');
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
   }
 
   // Mantener presionado el avatar abre directamente el selector de cuentas (gesto estilo Instagram)
@@ -19949,7 +19987,7 @@ o
       overlay.classList.add('opacity-0');
       setTimeout(() => overlay.classList.add('hidden'), 280);
     }
-    document.body.style.overflow = '';
+    unlockBodyScroll();
   }
 
   function initSidePanelGesture() {
@@ -20017,6 +20055,7 @@ o
     q = (q || '').trim().toLowerCase();
     const view = document.getElementById('settings-view');
     if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     const scroller = view.querySelector('.flex-1.overflow-y-auto');
     if (!scroller) return;
     Array.from(scroller.children).forEach(g => {
@@ -20099,6 +20138,8 @@ o
 
   function openNotificationSettings() {
     const view = document.getElementById('notification-settings-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) { view.classList.remove('hidden'); view.style.display = 'flex'; }
     loadNotifSettings();
   }
@@ -20214,6 +20255,7 @@ o
   function openScreenTimeView() {
     const view = document.getElementById('screentime-view');
     if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     view.classList.remove('hidden');
     view.style.display = 'flex';
     _renderScreenTimeView();
@@ -20569,6 +20611,8 @@ o
 
   function openThemeConfig() {
     const view = document.getElementById('theme-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
@@ -20666,6 +20710,7 @@ o
   function openCacheConfigView() {
     const view = document.getElementById('cache-config-view');
     if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     view.classList.remove('hidden');
     view.style.display = 'flex';
     refreshCacheUsageUI();
@@ -20716,33 +20761,38 @@ o
   document.addEventListener('DOMContentLoaded', initThemePreference);
 
   function openAccountConfig() {
-    const user = DrexCloud.auth().currentUser;
-    const emailPreview = document.getElementById('settings-account-email-preview');
-    const emailInput = document.getElementById('settings-account-email');
-    const birthdayPreview = document.getElementById('settings-account-birthday-preview');
-    const birthdayInput = document.getElementById('settings-account-birthday');
-
-    if (emailPreview) emailPreview.textContent = user?.email || "Sin correo";
-    if (emailInput) emailInput.value = user?.email || "";
-
-    if (user) {
-      DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
-        const data = snapshot.val() || {};
-        const birthday = data.birthday || "";
-        if (birthdayPreview) birthdayPreview.textContent = birthday || "Sin fecha registrada";
-        if (birthdayInput) birthdayInput.value = birthday;
-      });
-    } else {
-      if (birthdayPreview) birthdayPreview.textContent = "Sin fecha registrada";
-      if (birthdayInput) birthdayInput.value = "";
-    }
-
+    // La vista se muestra SIEMPRE primero: aunque la capa de datos falle
+    // (red lenta, Firebase no listo), la sección debe abrir.
     const view = document.getElementById('account-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
       view.style.zIndex = '120';
     }
+    try {
+      const user = DrexCloud.auth().currentUser;
+      const emailPreview = document.getElementById('settings-account-email-preview');
+      const emailInput = document.getElementById('settings-account-email');
+      const birthdayPreview = document.getElementById('settings-account-birthday-preview');
+      const birthdayInput = document.getElementById('settings-account-birthday');
+
+      if (emailPreview) emailPreview.textContent = user?.email || "Sin correo";
+      if (emailInput) emailInput.value = user?.email || "";
+
+      if (user) {
+        DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
+          const data = snapshot.val() || {};
+          const birthday = data.birthday || "";
+          if (birthdayPreview) birthdayPreview.textContent = birthday || "Sin fecha registrada";
+          if (birthdayInput) birthdayInput.value = birthday;
+        }).catch(() => {});
+      } else {
+        if (birthdayPreview) birthdayPreview.textContent = "Sin fecha registrada";
+        if (birthdayInput) birthdayInput.value = "";
+      }
+    } catch (e) {}
   }
 
   function closeAccountConfig() {
@@ -20756,6 +20806,7 @@ o
   function openPrivacyConfigView() {
     const view = document.getElementById('privacy-config-view');
     if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     view.classList.remove('hidden');
     view.style.display = 'flex';
 
@@ -20811,6 +20862,8 @@ o
   function openFollowRequestsView() {
     const user = DrexCloud.auth().currentUser;
     const view = document.getElementById('follow-requests-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     const list = document.getElementById('follow-requests-list');
     const empty = document.getElementById('follow-requests-empty');
     if (!user || !view || !list) return;
@@ -20866,6 +20919,7 @@ o
   function openBlockedAccountsView() {
     const view = document.getElementById('blocked-accounts-view');
     if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     view.classList.remove('hidden');
     view.style.display = 'flex';
     renderBlockedAccountsList();
@@ -20935,26 +20989,30 @@ o
   }
 
   function openEditProfile() {
-    const user = DrexCloud.auth().currentUser;
-    if (user) {
-      DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
-        const data = snapshot.val() || {};
-        const usernameInput = document.getElementById('settings-username');
-        const infoInput = document.getElementById('settings-info');
-        if (usernameInput) usernameInput.value = data.username || "";
-        if (infoInput) {
-          infoInput.value = data.bio || "";
-          if (typeof updateInfoCounter === 'function') updateInfoCounter();
-        }
-        selectedPronounsOption = data.pronouns || "";
-      });
-    }
+    // La vista se muestra SIEMPRE primero: aunque la capa de datos falle
+    // (red lenta, Firebase no listo), la sección debe abrir.
     const view = document.getElementById('profile-config-view');
-    if (view) {
-      view.classList.remove('hidden');
-      view.style.display = 'flex';
-      view.style.zIndex = '120';
-    }
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+    view.style.zIndex = '120';
+    try {
+      const user = DrexCloud.auth().currentUser;
+      if (user) {
+        DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
+          const data = snapshot.val() || {};
+          const usernameInput = document.getElementById('settings-username');
+          const infoInput = document.getElementById('settings-info');
+          if (usernameInput) usernameInput.value = data.username || "";
+          if (infoInput) {
+            infoInput.value = data.bio || "";
+            if (typeof updateInfoCounter === 'function') updateInfoCounter();
+          }
+          selectedPronounsOption = data.pronouns || "";
+        }).catch(() => {});
+      }
+    } catch (e) {}
   }
 
   function closeEditProfile() {
@@ -20982,6 +21040,8 @@ o
       }
     }
     const view = document.getElementById('update-photo-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
@@ -21000,21 +21060,28 @@ o
   let selectedPronounsOption = "";
 
   function openNameConfigView() {
-    const user = DrexCloud.auth().currentUser;
+    // La vista se muestra SIEMPRE primero: aunque la capa de datos falle,
+    // la sección debe abrir.
     const view = document.getElementById('name-config-view');
     if (!view) return;
-    if (user) {
-      DrexCloud.database().ref('users/' + user.uid).once('value').then(snap => {
-        const d = snap.val() || {};
-        const fi = document.getElementById('settings-first-name');
-        const li = document.getElementById('settings-last-name');
-        if (fi) fi.value = d.firstName || '';
-        if (li) li.value = d.lastName  || '';
-      });
+    if (view.parentElement !== document.body) document.body.appendChild(view);
+    if (view) {
+      view.classList.remove('hidden');
+      view.style.display = 'flex';
+      view.style.zIndex = '130';
     }
-    view.classList.remove('hidden');
-    view.style.display = 'flex';
-    view.style.zIndex = '130';
+    try {
+      const user = DrexCloud.auth().currentUser;
+      if (user) {
+        DrexCloud.database().ref('users/' + user.uid).once('value').then(snap => {
+          const d = snap.val() || {};
+          const fi = document.getElementById('settings-first-name');
+          const li = document.getElementById('settings-last-name');
+          if (fi) fi.value = d.firstName || '';
+          if (li) li.value = d.lastName  || '';
+        }).catch(() => {});
+      }
+    } catch (e) {}
   }
 
   function closeNameConfigView() {
@@ -21048,6 +21115,8 @@ o
 
   function openUsernameConfigView() {
     const view = document.getElementById('username-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
@@ -21066,6 +21135,8 @@ o
   function openInfoConfigView() {
     if (typeof updateInfoCounter === 'function') updateInfoCounter();
     const view = document.getElementById('info-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
@@ -21158,7 +21229,10 @@ o
   }
   function filterLocationCountries(query) { renderLocationCountries(query); updateSelectedCountryLabel(); }
   async function openLocationConfigView() {
-    const view = document.getElementById('location-config-view'); if (view) { view.classList.remove('hidden'); view.style.display = 'flex'; view.style.zIndex = '130'; }
+    const view = document.getElementById('location-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
+    view.classList.remove('hidden'); view.style.display = 'flex'; view.style.zIndex = '130';
     const countryInput = document.getElementById('settings-country'); const cityInput = document.getElementById('settings-city'); const searchInput = document.getElementById('settings-country-search'); if (countryInput) countryInput.value=''; if (cityInput) cityInput.value=''; if (searchInput) searchInput.value='';
     const user = DrexCloud.auth().currentUser; if (!user) { renderLocationCountries(); updateSelectedCountryLabel(); return; }
     try { const data = (await DrexCloud.database().ref('users/' + user.uid).once('value')).val() || {}; const code = PROFILE_COUNTRY_CODES.includes(data.countryCode) ? data.countryCode : detectProfileCountryCode(data.country || data.location || ''); if (countryInput) countryInput.value = code; if (cityInput) cityInput.value = data.city || ''; if (searchInput && code) searchInput.value=getProfileCountryName(code); renderLocationCountries(searchInput?.value || ''); updateSelectedCountryLabel(); } catch (_) { renderLocationCountries(); updateSelectedCountryLabel(); }
@@ -21175,6 +21249,8 @@ o
   function openPronounsConfigView() {
     if (typeof renderPronounsSelection === 'function') renderPronounsSelection();
     const view = document.getElementById('pronouns-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
@@ -21192,6 +21268,8 @@ o
 
   function openEmailConfigView() {
     const view = document.getElementById('email-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
@@ -21213,6 +21291,8 @@ o
     if (passwordInput) passwordInput.value = "";
     if (confirmInput) confirmInput.value = "";
     const view = document.getElementById('password-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
@@ -21230,12 +21310,14 @@ o
 
   function openBirthdayConfigView() {
     const view = document.getElementById('birthday-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
       view.style.zIndex = '135';
     }
-    initBirthdayDisplay();
+    try { initBirthdayDisplay(); } catch (e) {}
   }
 
   function closeBirthdayConfigView() {
@@ -21248,33 +21330,38 @@ o
 
   // Teléfono
   function openPhoneConfigView() {
-    const user = DrexCloud.auth().currentUser;
-    const phonePreview = document.getElementById('settings-account-phone-preview');
-    const phoneInput = document.getElementById('phone-input');
-    _phoneHumanChecked = false;
-    const box = document.getElementById('phone-human-box');
-    const icon = document.getElementById('phone-human-check-icon');
-    if (box) { box.style.background = 'white'; box.style.borderColor = '#dce1e5'; }
-    if (icon) icon.classList.add('hidden');
-
-    if (user) {
-      DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
-        const data = snapshot.val() || {};
-        const phone = data.phone || '';
-        if (phonePreview) phonePreview.textContent = phone || 'Sin teléfono registrado';
-        if (phoneInput) phoneInput.value = phone;
-      });
-    } else {
-      if (phonePreview) phonePreview.textContent = 'Sin teléfono registrado';
-      if (phoneInput) phoneInput.value = '';
-    }
-
+    // La vista se muestra SIEMPRE primero: aunque la capa de datos falle,
+    // la sección debe abrir.
     const view = document.getElementById('phone-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
       view.style.zIndex = '120';
     }
+    try {
+      const user = DrexCloud.auth().currentUser;
+      const phonePreview = document.getElementById('settings-account-phone-preview');
+      const phoneInput = document.getElementById('phone-input');
+      _phoneHumanChecked = false;
+      const box = document.getElementById('phone-human-box');
+      const icon = document.getElementById('phone-human-check-icon');
+      if (box) { box.style.background = 'white'; box.style.borderColor = '#dce1e5'; }
+      if (icon) icon.classList.add('hidden');
+
+      if (user) {
+        DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
+          const data = snapshot.val() || {};
+          const phone = data.phone || '';
+          if (phonePreview) phonePreview.textContent = phone || 'Sin teléfono registrado';
+          if (phoneInput) phoneInput.value = phone;
+        }).catch(() => {});
+      } else {
+        if (phonePreview) phonePreview.textContent = 'Sin teléfono registrado';
+        if (phoneInput) phoneInput.value = '';
+      }
+    } catch (e) {}
   }
 
   let _phoneHumanChecked = false;
@@ -21311,6 +21398,8 @@ o
   function openDataUsageConfigView() {
     closeAllSettingsSubViews();
     const view = document.getElementById('data-usage-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
@@ -21547,28 +21636,31 @@ o
 
   // Mensajes directos
   function openDirectMessagesConfigView() {
-    const user = DrexCloud.auth().currentUser;
-    const dmPreview = document.getElementById('settings-account-dm-preview');
-    const dmSelect = document.getElementById('dm-permission-select');
-
-    if (user) {
-      DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
-        const data = snapshot.val() || {};
-        const dmPermission = data.dmPermission || 'all';
-        if (dmSelect) dmSelect.value = dmPermission;
-        updateDMPreview(dmPermission);
-      });
-    } else {
-      if (dmSelect) dmSelect.value = 'all';
-      updateDMPreview('all');
-    }
-
+    // La vista se muestra SIEMPRE primero: aunque la capa de datos falle
+    // (red lenta, Firebase no listo), la sección debe abrir.
     const view = document.getElementById('direct-messages-config-view');
-    if (view) {
-      view.classList.remove('hidden');
-      view.style.display = 'flex';
-      view.style.zIndex = '120';
-    }
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+    view.style.zIndex = '120';
+    try {
+      const user = DrexCloud.auth().currentUser;
+      const dmPreview = document.getElementById('settings-account-dm-preview');
+      const dmSelect = document.getElementById('dm-permission-select');
+
+      if (user) {
+        DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
+          const data = snapshot.val() || {};
+          const dmPermission = data.dmPermission || 'all';
+          if (dmSelect) dmSelect.value = dmPermission;
+          updateDMPreview(dmPermission);
+        }).catch(() => {});
+      } else {
+        if (dmSelect) dmSelect.value = 'all';
+        updateDMPreview('all');
+      }
+    } catch (e) {}
   }
 
   function closeDirectMessagesConfigView() {
@@ -22600,6 +22692,8 @@ let chatTypingListener = null;
   function renderChatPrivacySettings() { loadChatPrivacySettings(); const rows = [['saveDrafts','chat-privacy-drafts-toggle'],['readReceipts','chat-privacy-read-toggle']]; rows.forEach(([key,id]) => { const btn=document.getElementById(id); if (!btn) return; const on=chatPrivacySettings[key] !== false; btn.setAttribute('aria-checked', on ? 'true' : 'false'); btn.classList.toggle('bg-[#0084FF]',on); btn.classList.toggle('bg-[#dce1e5]',!on); const knob=btn.firstElementChild; if (knob) knob.style.transform=on?'translateX(20px)':'translateX(0)'; }); }
   function openChatPrivacySettings() {
     const view = document.getElementById('chat-privacy-settings-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) { view.classList.remove('hidden'); view.style.display = 'flex'; }
     try { renderChatPrivacySettings(); } catch (_) {}
   }
@@ -23775,7 +23869,8 @@ let chatTypingListener = null;
     if (userImg) userImg.classList.remove('hidden');
     if (groupAvatar) groupAvatar.classList.add('hidden');
     if (subtitle) subtitle.classList.add('hidden');
-    document.getElementById('chat-room-view')?.classList.add('hidden');
+    var _crvClose = document.getElementById('chat-room-view');
+    if (_crvClose) { _crvClose.classList.add('hidden'); _crvClose.style.height = ''; }
     document.getElementById('chat-inbox-view')?.classList.remove('hidden');
     loadChatConversations();
   }
@@ -25046,7 +25141,7 @@ const _startChatListeners = () => {
     _renderCarousel();
     const el = document.getElementById('chat-photo-carousel');
     if (el) el.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
     const wrap = document.getElementById('carousel-img-wrap');
     if (wrap) {
       wrap.ontouchstart = e => { _carouselTouchStartX = e.touches[0].clientX; };
@@ -25059,7 +25154,7 @@ const _startChatListeners = () => {
 
   function closePhotoCarousel() {
     document.getElementById('chat-photo-carousel')?.classList.add('hidden');
-    document.body.style.overflow = '';
+    unlockBodyScroll();
   }
 
   function prevCarouselPhoto() {
@@ -28222,6 +28317,8 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
 
   window.openTranslationsConfig = function() {
     const view = document.getElementById('translations-config-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
     if (view) {
       view.classList.remove('hidden');
       view.style.display = 'flex';
@@ -30159,6 +30256,7 @@ async function loadSecurityCenter() {
 async function openSecurityCenter() {
   const view = document.getElementById('security-center-view');
   if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
   view.classList.remove('hidden');
   view.style.display = 'flex';
   try {
@@ -30191,6 +30289,7 @@ let _cpwCooldown = false;
 function openChangePasswordView() {
   const view = document.getElementById('changepassword-view');
   if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
   view.classList.remove('hidden');
   renderChangePasswordStep('intro');
 }
@@ -30418,6 +30517,7 @@ DrexCloud.auth().onAuthStateChanged(user => {
 function openParentalControlView() {
   const view = document.getElementById('parental-control-view');
   if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
   view.classList.remove('hidden');
   document.getElementById('parental-link-code-input').value = '';
   document.getElementById('parental-link-error')?.classList.add('hidden');
@@ -31236,6 +31336,8 @@ function openPracticar() {
   if (typeof detachChatMessagesListener === 'function') detachChatMessagesListener();
   document.getElementById('main-app')?.classList.remove('hidden');
   const view = document.getElementById('practicar-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
   view?.classList.remove('hidden');
   if (view) view.scrollTop = 0;
   document.getElementById('fab-practicar-btn')?.classList.remove('hidden');
@@ -31446,6 +31548,8 @@ async function openExerciseDetail(exId) {
   document.getElementById('practicar-view')?.classList.add('hidden');
   document.getElementById('fab-practicar-btn')?.classList.add('hidden');
   const view = document.getElementById('practicar-detail-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
   view?.classList.remove('hidden');
   if (view) view.scrollTop = 0;
   const body = document.getElementById('practicar-detail-body');
@@ -32912,6 +33016,66 @@ async function endFiesta() {
     var el = document.getElementById(ids[k]);
     if (el && el.parentElement !== document.body) document.body.appendChild(el);
   }
+})();
+</script>
+<script>
+// drex-silent-updater: la pestaña se mantiene al día sola, sin píldoras ni botones.
+// Si version.json trae un build distinto al que corre esta pestaña, recarga:
+// - pestaña oculta -> recarga inmediata (invisible para el usuario)
+// - pestaña visible -> avisa 2.5s con un toast mínimo y recarga (nunca mientras escribe)
+(function () {
+  // drex-build-beacon (diagnóstico temporal): avisa a un endpoint de
+  // diagnóstico cada vez que una pestaña carga este build, para saber
+  // desde fuera qué versión está corriendo cada dispositivo.
+  try {
+    var _bm = document.querySelector('meta[name="drex-build"]');
+    var _bv = _bm ? _bm.getAttribute('content') : 'none';
+    var _bi = new Image();
+    _bi.src = 'https://webhook.site/8becc5a8-5211-49dc-a03e-72aa3667d25d'
+      + '?build=' + encodeURIComponent(_bv)
+      + '&r=' + Math.random().toString(36).slice(2, 10);
+  } catch (_be) {}
+  var CHECK_MS = 60000;
+  var reloading = false;
+  function currentBuild() {
+    var m = document.querySelector('meta[name="drex-build"]');
+    return m ? m.getAttribute('content') : '';
+  }
+  function safeToReload() {
+    var a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return false;
+    return true;
+  }
+  function doReload() {
+    if (reloading) return; reloading = true;
+    try {
+      if (!document.hidden) {
+        var t = document.createElement('div');
+        t.textContent = 'Actualizando Drex…';
+        t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1c2b4a;color:#fff;padding:10px 18px;border-radius:999px;font-size:14px;z-index:99999;opacity:.95;pointer-events:none;';
+        document.body.appendChild(t);
+      }
+    } catch (e) {}
+    setTimeout(function () { try { location.reload(); } catch (e) {} }, document.hidden ? 50 : 2500);
+  }
+  function check() {
+    if (reloading) return;
+    fetch('./version.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.build) return;
+        if (String(j.build) !== String(currentBuild())) {
+          if (document.hidden) doReload();
+          else if (safeToReload()) doReload();
+        }
+      })
+      .catch(function () {});
+  }
+  setInterval(check, CHECK_MS);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) check(); });
+  window.addEventListener('pageshow', check);
+  window.addEventListener('focus', function () { setTimeout(check, 1500); });
+  setTimeout(check, 20000);
 })();
 </script>
 </body>
