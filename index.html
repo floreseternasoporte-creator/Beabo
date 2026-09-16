@@ -4115,6 +4115,15 @@ document.addEventListener("DOMContentLoaded", function() {
     body.comments-view-open #bottom-nav { display: none !important; }
     body.comments-view-open #fab-create-btn { display: none !important; }
 
+    /* La barra inferior y el botón flotante nunca deben flotar sobre el visor
+       de fotos ni sobre ningún modal/pantalla completa (todos tienen z-index
+       menor que ellos: el visor va en z-91 y la barra en z-100). Con el visor
+       abierto se ocultan igual que en la vista de comentarios. */
+    body.drex-viewer-open #bottom-nav,
+    body.drex-overlay-open #bottom-nav,
+    body.drex-viewer-open #fab-create-btn,
+    body.drex-overlay-open #fab-create-btn { display: none !important; }
+
     /* ===== PESTAÑAS DE FEED ESTILO DOUYIN ===== */
     .feed-tab-btn {
       position: relative;
@@ -4466,6 +4475,57 @@ function setBottomNavVisibility(show) {
   // para que no quede invadiendo secciones (Configuración, cambiar de cuenta, etc.)
   fabCreateBtn?.classList.toggle("hidden", !show);
 }
+
+/* La barra inferior (y el botón flotante) no deben flotar sobre el visor de
+   fotos del chat ni sobre ningún modal/pantalla completa con z-index menor
+   que ellos. Un observador vigila esos overlays y alterna la clase
+   body.drex-overlay-open; el CSS oculta la barra mientras alguno esté visible.
+   No toca las clases propias de la barra, así que no pelea con
+   setBottomNavVisibility ni con el comportamiento al hacer scroll. */
+(function initOverlayBottomNavGuard() {
+  const OVERLAY_IDS = [
+    'chat-photo-carousel',        // visor de fotos del chat (z-90)
+    'notifications-modal',        // z-80
+    'chat-edit-modal',            // z-97
+    'chat-forward-dialog',        // z-96
+    'group-mute-panel',           // z-99
+    'group-search-panel',         // z-99
+    'edit-group-name-modal',      // z-97
+    'group-member-actions-sheet', // z-98
+    'add-member-panel',           // z-80
+    'conv-options-sheet',         // z-95
+    'chat-sender-profile-panel',  // z-90
+    'drafts-list-view',           // z-85
+    'post-report-response',       // z-95
+    'comment-report-fullscreen',  // z-95
+    'block-account-confirm-modal',  // z-90
+    'block-account-success-modal'   // z-91
+  ];
+  // El visor de fotos del feed ya usa body.drex-viewer-open
+  // (openImageModal/closeImageModal); el CSS lo cubre sin más cambios.
+  function isOverlayVisible(el) {
+    return !!el && !el.classList.contains('hidden') && el.style.display !== 'none' && !el.hasAttribute('hidden');
+  }
+  function refreshOverlayNavState() {
+    let anyOpen = false;
+    for (const id of OVERLAY_IDS) {
+      if (isOverlayVisible(document.getElementById(id))) { anyOpen = true; break; }
+    }
+    document.body.classList.toggle('drex-overlay-open', anyOpen);
+  }
+  const observer = new MutationObserver(refreshOverlayNavState);
+  function watchOverlays() {
+    OVERLAY_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && !el._drexNavGuardWatched) {
+        el._drexNavGuardWatched = true;
+        observer.observe(el, { attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
+      }
+    });
+  }
+  watchOverlays();
+  refreshOverlayNavState();
+})();
 
 if (scrollArea) {
   scrollArea.addEventListener("scroll", () => {
