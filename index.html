@@ -5002,15 +5002,6 @@ if (scrollArea) {
 </div>
 
 <!-- STICKER PANEL -->
-<div id="chat-sticker-overlay" class="hidden fixed inset-0 z-[69]" onclick="closeStickerPanel()"></div>
-<div id="chat-sticker-panel" class="hidden fixed left-0 right-0 bottom-0 z-[70] bg-white rounded-t-3xl shadow-2xl border-t border-[#dce1e5]" style="max-height:52vh;display:none;padding-bottom:env(safe-area-inset-bottom,0px)">
-  <div class="flex items-center justify-between px-5 pt-4 pb-2">
-    <span class="text-sm font-bold text-[#1c2b4a]">Stickers</span>
-    <button onclick="closeStickerPanel()" class="tap44 relative w-7 h-7 rounded-full bg-[#eef2f7] flex items-center justify-center text-[#5c6974] text-xs font-bold active:scale-90 transition"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6 6 18"/></svg></button>
-  </div>
-  <div id="chat-sticker-tabs" class="flex gap-2 px-4 pb-2 overflow-x-auto scrollbar-none"></div>
-  <div id="chat-sticker-grid" class="grid grid-cols-6 gap-1 px-3 pb-4 overflow-y-auto" style="max-height:calc(52vh - 90px)"></div>
-</div>
 
 <!-- VISTA CÁMARA CHAT (TikTok-style) -->
 
@@ -23106,80 +23097,9 @@ let chatTypingListener = null;
   }
 
   /* ══════════════════════════════════════════════════════════════
-     STICKERS
-  ══════════════════════════════════════════════════════════════ */
-  const STICKER_PACKS = {
-    '😀 Caras':   ['😀','😂','🥹','😍','🤩','😎','🥳','😭','😤','🤯','🥺','😏','😴','🤔','🤭','😇','🤗','🫠','😶','🤡','😆','😅','🤣','😊','😋'],
-    '👍 Gestos':  ['👍','👎','👏','🙌','🤝','🫶','✌️','🤞','🤙','💪','🙏','🤌','👌','🫰','🤘','👈','👉','👆','☝️','🫵'],
-    '🐶 Animales':['🐶','🐱','🐼','🐨','🦊','🐯','🦁','🐸','🐙','🦋','🐬','🦄','🐘','🦒','🐧','🦜','🐝','🐉','🦋','🐠','🦔','🦦','🐺','🦅','🐢'],
-    '🍕 Comida':  ['🍕','🍔','🌮','🍜','🍣','🍦','🎂','🍩','☕','🧋','🍓','🍑','🥑','🍰','🍫','🥐','🍿','🧁','🍭','🥤','🍷','🍺','🎃','🥨','🫐'],
-    '❤️ Amor':   ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💗','💖','💝','💘','💌','💋','🫀','💓','💞','🥰','😘','💍','💒','🌹','✨','🔥'],
-  };
-  let _activeStickerPack = Object.keys(STICKER_PACKS)[0];
-
-
-  function closeStickerPanel() {
-    const panel = document.getElementById('chat-sticker-panel');
-    const overlay = document.getElementById('chat-sticker-overlay');
-    panel?.classList.add('hidden');
-    if (panel) panel.style.display = 'none';
-    overlay?.classList.add('hidden');
-  }
-
-  function _renderStickerTabs() {
-    const tabs = document.getElementById('chat-sticker-tabs');
-    if (!tabs) return;
-    tabs.innerHTML = Object.keys(STICKER_PACKS).map(name =>
-      `<button onclick="_renderStickerGrid('${name.replace(/'/g,"\\'")}');this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('bg-[#0084FF]','text-white'));this.classList.add('bg-[#0084FF]','text-white')"
-        class="shrink-0 text-xs font-semibold px-3 py-1.5 min-h-[44px] inline-flex items-center rounded-full border border-[#dce1e5] text-[#5c6974] active:scale-95 transition ${name===_activeStickerPack?'bg-[#0084FF] text-white':'bg-[#f0f4f9]'}">${name}</button>`
-    ).join('');
-  }
-
-  function _renderStickerGrid(packName) {
-    _activeStickerPack = packName;
-    const grid = document.getElementById('chat-sticker-grid');
-    if (!grid) return;
-    const stickers = STICKER_PACKS[packName] || [];
-    grid.innerHTML = stickers.map(s =>
-      `<button onclick="sendSticker(this.textContent.trim())" class="text-3xl w-full aspect-square flex items-center justify-center rounded-2xl hover:bg-[#eef2f7] active:scale-90 transition leading-none">${s}</button>`
-    ).join('');
-  }
-
-  async function sendSticker(emoji) {
-    closeStickerPanel();
-    const user = DrexCloud.auth().currentUser;
-    if (!user || !currentChatRoomId) return;
-    const conversationId = currentChatRoomId;
-    const recipientId = currentChatRecipient;
-    const isGroup = currentChatIsGroup;
-    const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
-    const payload = {
-      senderId: user.uid,
-      type: 'sticker',
-      sticker: emoji,
-      text: '',
-      timestamp: DrexCloud.database.ServerValue.TIMESTAMP
-    };
-    if (isGroup) {
-      try {
-        const snap = await DrexCloud.database().ref('users/' + user.uid).once('value');
-        const d = snap.val() || {};
-        payload.senderName = d.username || d.displayName || 'Usuario';
-      } catch(_) { payload.senderName = 'Usuario'; }
-    }
-    try {
-      await DrexCloud.database().ref('conversationMessages/' + conversationId).push(payload)._writePromise;
-      await updateChatConversationPreview(emoji || 'Sticker', payload, { conversationId, recipientId, isGroup, groupMembers });
-    } catch (_) {
-      showMiniToast('No se pudo enviar el sticker. Inténtalo de nuevo.');
-    }
-  }
-
-  /* ══════════════════════════════════════════════════════════════
      GIF SEARCH (Tenor) — usa el selector unificado (openGifPicker/searchGifs)
   ══════════════════════════════════════════════════════════════ */
   function openGifPanel() {
-    closeStickerPanel();
     window.__gifPickerContext = 'chat';
     if (typeof openGifPicker === 'function') openGifPicker();
   }
