@@ -70,15 +70,6 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // version.json (marcador de build para el auto-actualizador silencioso):
-  // red primero, nunca bloquea la detección de una versión nueva.
-  try {
-    if (new URL(req.url).pathname.endsWith('version.json')) {
-      event.respondWith(networkFirst(req, req));
-      return;
-    }
-  } catch (e) { /* sigue al fallback de estáticos */ }
-
   // JavaScript de la plataforma: red primero. El SW anterior (drex-v1) usaba
   // cache-first para TODO y congelaba drex-cloud.js en la primera versión
   // descargada: los arreglos de la plataforma nunca llegaban a la PWA
