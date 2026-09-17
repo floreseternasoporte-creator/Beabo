@@ -6736,9 +6736,13 @@ if (scrollArea) {
     </div>
 
     <!-- Portada personal Drex -->
-    <div class="relative h-28 overflow-hidden" style="background: radial-gradient(120% 170% at 15% 0%, #33507f 0%, #1c2b4a 48%, #0e1a33 100%);">
+    <div id="my-profile-cover" class="relative h-28 overflow-hidden cursor-pointer" style="background: radial-gradient(120% 170% at 15% 0%, #33507f 0%, #1c2b4a 48%, #0e1a33 100%);" onclick="openCoverFullscreen(document.getElementById('my-profile-cover-img').src)">
       <div class="absolute inset-0" style="background: radial-gradient(55% 100% at 88% 10%, rgba(0,132,255,.38) 0%, rgba(0,132,255,0) 62%);"></div>
       <div class="absolute inset-0 opacity-[.13]" style="background-image: radial-gradient(rgba(255,255,255,.9) 1px, transparent 1.4px); background-size: 22px 22px;"></div>
+      <img id="my-profile-cover-img" src="" alt="Portada" class="hidden absolute inset-0 w-full h-full object-cover">
+      <button onclick="event.stopPropagation(); openUpdateCoverView()" class="tap44 absolute bottom-2 right-2 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center active:opacity-70 transition" title="Editar portada" aria-label="Editar portada">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </button>
     </div>
 
     <!-- Tarjeta de identidad -->
@@ -6995,10 +6999,11 @@ if (scrollArea) {
     </div>
 
     <div id="author-profile-content">
-      <!-- Portada personal Drex -->
-      <div class="relative h-24 overflow-hidden" style="background: radial-gradient(120% 170% at 15% 0%, #33507f 0%, #1c2b4a 48%, #0e1a33 100%);">
+      <!-- Portada del autor -->
+      <div id="author-profile-cover" class="relative h-24 overflow-hidden cursor-pointer" style="background: radial-gradient(120% 170% at 15% 0%, #33507f 0%, #1c2b4a 48%, #0e1a33 100%);" onclick="openCoverFullscreen(document.getElementById('author-profile-cover-img').src)">
         <div class="absolute inset-0" style="background: radial-gradient(55% 100% at 88% 10%, rgba(0,132,255,.38) 0%, rgba(0,132,255,0) 62%);"></div>
         <div class="absolute inset-0 opacity-[.13]" style="background-image: radial-gradient(rgba(255,255,255,.9) 1px, transparent 1.4px); background-size: 22px 22px;"></div>
+        <img id="author-profile-cover-img" src="" alt="Portada" class="hidden absolute inset-0 w-full h-full object-cover">
       </div>
 
       <div class="px-4 pb-4">
@@ -19079,6 +19084,13 @@ function saveNote() {
             const headerProfileImage = document.getElementById('header-profile-image');
             if (headerProfileImage) headerProfileImage.src = data.profileImage;
           }
+          if (data.coverPhoto) {
+            const coverImg = document.getElementById('my-profile-cover-img');
+            if (coverImg) {
+              coverImg.src = data.coverPhoto;
+              coverImg.classList.remove('hidden');
+            }
+          }
 
           loadUserFrame(user.uid, 'profile-frame');
           loadUserFrame(user.uid, 'profile-frame-desktop');
@@ -20145,6 +20157,8 @@ o
       'delete-reason-view',
       'delete-confirmation-view',
       'update-photo-view',
+      'update-cover-view',
+      'cover-fullscreen-view',
       'chat-privacy-settings-view',
       'app-language-settings-view',
       'translations-config-view'
@@ -22087,6 +22101,104 @@ o
       saveBtn.disabled = false;
       saveBtn.innerHTML = 'Guardar';
       showMiniToast("Hubo un error al guardar la foto.");
+    }
+  }
+
+  // ── Portada ──
+  function openUpdateCoverView() {
+    const currentCover = document.getElementById('my-profile-cover-img')?.src || '';
+    const preview = document.getElementById('new-cover-preview');
+    const icon = document.getElementById('new-cover-preview-icon');
+    const hasCover = currentCover && !currentCover.includes('data:') && currentCover !== window.location.href;
+    if (preview) {
+      if (hasCover) {
+        preview.src = currentCover;
+        preview.classList.remove('hidden');
+        icon?.classList.add('hidden');
+      } else {
+        preview.classList.add('hidden');
+        preview.removeAttribute('src');
+        icon?.classList.remove('hidden');
+      }
+    }
+    const view = document.getElementById('update-cover-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+    view.style.zIndex = '140';
+  }
+
+  function closeUpdateCoverView() {
+    const view = document.getElementById('update-cover-view');
+    if (view) {
+      view.classList.add('hidden');
+      view.style.display = 'none';
+    }
+  }
+
+  function previewNewCover(event) {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const preview = document.getElementById('new-cover-preview');
+        preview.src = e.target.result;
+        preview.classList.remove('hidden');
+        document.getElementById('new-cover-preview-icon')?.classList.add('hidden');
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  async function saveNewCoverPhoto() {
+    const user = DrexCloud.auth().currentUser;
+    if (!user) return;
+    const fileInput = document.getElementById('new-cover-image-input');
+    const saveBtn = document.getElementById('save-cover-btn');
+    if (!fileInput.files.length) {
+      showMiniToast("No has seleccionado ninguna portada nueva.");
+      return;
+    }
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...';
+    try {
+      const file = fileInput.files[0];
+      const cloudUrl = await processImageFile(file);
+      await DrexCloud.database().ref('users/' + user.uid).update({ coverPhoto: cloudUrl });
+      const coverImg = document.getElementById('my-profile-cover-img');
+      if (coverImg) {
+        coverImg.src = cloudUrl;
+        coverImg.classList.remove('hidden');
+      }
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = 'Guardar';
+      showMiniToast("¡Portada actualizada correctamente!");
+      closeUpdateCoverView();
+    } catch (err) {
+      console.error("Error al guardar la portada:", err);
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = 'Guardar';
+      showMiniToast("Hubo un error al guardar la portada.");
+    }
+  }
+
+  function openCoverFullscreen(src) {
+    if (!src || src.includes('data:') || src === window.location.href) return;
+    const view = document.getElementById('cover-fullscreen-view');
+    const img = document.getElementById('cover-fullscreen-img');
+    if (!view || !img) return;
+    img.src = src;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+  }
+
+  function closeCoverFullscreen() {
+    const view = document.getElementById('cover-fullscreen-view');
+    if (view) {
+      view.classList.add('hidden');
+      view.style.display = 'none';
     }
   }
 
@@ -26581,6 +26693,16 @@ function renderAccountsList(accounts) {
         authorHandleNode.onclick = () => copyAuthorUsername(usernameForCopy, authorHandleNode);
       }
       authorImageNode.src = authorData.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+      const authorCoverImg = document.getElementById('author-profile-cover-img');
+      if (authorCoverImg) {
+        if (authorData.coverPhoto) {
+          authorCoverImg.src = authorData.coverPhoto;
+          authorCoverImg.classList.remove('hidden');
+        } else {
+          authorCoverImg.classList.add('hidden');
+          authorCoverImg.removeAttribute('src');
+        }
+      }
       authorFollowersNode.textContent = formatNumber(authorData.followersCount || 0);
       authorFollowingNode.textContent = formatNumber(authorData.followingCount || 0);
       authorBioNode.textContent = authorData.bio || authorData.info || 'Este usuario aún no ha agregado información.';
@@ -32825,6 +32947,40 @@ async function endFiesta() {
     </div>
   </div>
 
+  <div id="update-cover-view" class="fixed inset-0 bg-[#f0f4f9] z-[140] hidden flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-[#dce1e5] bg-white" style="padding-top:max(1rem,env(safe-area-inset-top));">
+      <button onclick="closeUpdateCoverView()" class="tap44 text-[#5c6974] p-1" aria-label="Volver">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[#1c2b4a] absolute left-1/2 -translate-x-1/2">Portada</h2>
+      <div class="w-9"></div>
+    </div>
+    <div class="flex-1 flex flex-col items-center justify-center p-6">
+      <button type="button" onclick="document.getElementById('new-cover-image-input').click()" class="relative block w-full max-w-md" aria-label="Elegir foto de portada">
+        <div class="relative w-full h-48 rounded-2xl border-4 border-white shadow-xl overflow-hidden bg-[#eef2f7] flex items-center justify-center">
+          <svg id="new-cover-preview-icon" xmlns="http://www.w3.org/2000/svg" class="w-16 h-16 text-[#b6c0d1]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <img id="new-cover-preview" src="" alt="Vista previa" class="hidden absolute inset-0 w-full h-full object-cover">
+        </div>
+        <span class="absolute bottom-2 right-2 w-12 h-12 rounded-full bg-[#0084FF] border-4 border-[#f0f4f9] flex items-center justify-center shadow-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </span>
+      </button>
+      <p class="mt-6 text-[#6b7280] font-medium text-center">Toca la imagen para elegir una portada nueva</p>
+      <input type="file" id="new-cover-image-input" accept="image/*" class="hidden" onchange="previewNewCover(event)">
+    </div>
+    <div class="p-6 pb-10">
+      <button onclick="saveNewCoverPhoto()" id="save-cover-btn" class="w-full p-4 font-bold rounded-full text-white bg-[#0084FF] active:opacity-80 transition">Guardar</button>
+    </div>
+  </div>
+
+  <!-- Visor de portada en pantalla completa -->
+  <div id="cover-fullscreen-view" class="fixed inset-0 bg-black z-[200] hidden flex-col items-center justify-center" onclick="closeCoverFullscreen()">
+    <button class="tap44 absolute top-4 right-4 w-11 h-11 rounded-full bg-white/20 text-white flex items-center justify-center" aria-label="Cerrar">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+    <img id="cover-fullscreen-img" src="" alt="Portada" class="max-w-full max-h-full object-contain">
+  </div>
+
 
 <script>
 // reubican-perfil-body: las 13 vistas de edición de perfil deben vivir como
@@ -32833,7 +32989,7 @@ async function endFiesta() {
 // se renderiza, por eso "Editar perfil" no mostraba nada al tocarlo.
 // Se reubican al body al cargar la página (antes de cualquier interacción).
 (function () {
-  var ids = ['profile-config-view','name-config-view','username-config-view','info-config-view','location-config-view','pronouns-config-view','email-config-view','password-config-view','birthday-config-view','app-language-settings-view','learning-language-settings-view','translations-config-view','update-photo-view'];
+  var ids = ['profile-config-view','name-config-view','username-config-view','info-config-view','location-config-view','pronouns-config-view','email-config-view','password-config-view','birthday-config-view','app-language-settings-view','learning-language-settings-view','translations-config-view','update-photo-view','update-cover-view','cover-fullscreen-view'];
   for (var k = 0; k < ids.length; k++) {
     var el = document.getElementById(ids[k]);
     if (el && el.parentElement !== document.body) document.body.appendChild(el);
