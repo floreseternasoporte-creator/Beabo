@@ -9,10 +9,14 @@
  *   atributo "v" = valor de la hoja serializado en JSON.
  *   Ej: ref('users/abc/name').set('Zed') -> pk='users', sk='abc/name', v='"Zed"'
  *
- * NOTA: la verificación de email por código está DESACTIVADA: el User Pool
- * no exige verificación en el registro (las cuentas se autoconfirman) y la
- * app ya no muestra pantalla de código. La recuperación de contraseña sí
- * sigue usando código por correo (sendPasswordResetEmail/confirmPasswordReset).
+ * NOTA (verificado 2026-09-17): el User Pool SÍ exige verificación de email en
+ * el registro ("Cognito-assisted verification: verify email address"); las
+ * cuentas quedan UNCONFIRMED hasta ingresar el código de 6 dígitos y la app
+ * (web y nativa) muestra la pantalla de código con reenvío. Los correos los
+ * envía Cognito con su remitente por defecto (COGNITO_DEFAULT,
+ * no-reply@verificationemail.com): límite de 50/día y entregabilidad pobre
+ * (suele caer en spam en Gmail). Si los códigos dejan de llegar, revisar ese
+ * límite o migrar el pool a SES con remitente propio verificado.
  */
 (function (global) {
   'use strict';
