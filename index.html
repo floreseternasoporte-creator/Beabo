@@ -16064,10 +16064,13 @@ function saveNote() {
   function getVerificationBadgeMarkup(uid, px) {
     const safeUid = String(uid || '');
     const sizeStyle = px ? ` style="width:${px}px;height:${px}px;"` : '';
+    // NOTA: es <span> y no <button> a propósito — la insignia vive dentro de
+    // otros <button> (cabecera del post, item de la bandeja de chats) y un
+    // <button> anidado hace que el parser cierre el botón exterior y rompa el layout.
     return `
-      <button type="button" class="drex-verified-badge"${sizeStyle} data-verify-uid="${escapeHTML(safeUid)}" title="Cuenta verificada" aria-label="Cuenta verificada. Toca para ver los detalles.">
+      <span role="button" tabindex="0" class="drex-verified-badge"${sizeStyle} data-verify-uid="${escapeHTML(safeUid)}" title="Cuenta verificada" aria-label="Cuenta verificada. Toca para ver los detalles.">
         <svg class="w-full h-full" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="24" cy="24" r="24" fill="#262c8e"/><path d="M15.5 24.5l6 6L32.5 19" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      </span>
     `;
   }
 
@@ -16233,7 +16236,7 @@ function saveNote() {
   }
 
   document.addEventListener('click', function (e) {
-    const badge = e.target && e.target.closest ? e.target.closest('button.drex-verified-badge') : null;
+    const badge = e.target && e.target.closest ? e.target.closest('.drex-verified-badge') : null;
     if (badge) {
       e.preventDefault();
       e.stopPropagation();
@@ -16242,6 +16245,16 @@ function saveNote() {
     }
     if (e.target && e.target.closest && e.target.closest('#verify-sheet-overlay')) {
       closeVerificationSheet();
+    }
+  }, true);
+  // La insignia es un <span role="button">: activar también con teclado.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const badge = e.target && e.target.closest ? e.target.closest('.drex-verified-badge') : null;
+    if (badge) {
+      e.preventDefault();
+      e.stopPropagation();
+      openVerificationSheet(badge.getAttribute('data-verify-uid') || '');
     }
   }, true);
 
