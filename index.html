@@ -7333,14 +7333,32 @@ function saveNote() {
         </div>
       </div>
 
-      <!-- GRÁFICO 7 DÍAS -->
-      <div class="bg-white px-4 pt-2">
-        <div class="flex items-center justify-between mb-4">
-          <p class="text-[17px] font-semibold text-[#1c2b4a]">Últimos 7 días</p>
-          <p id="st-week-avg" class="text-xs font-semibold text-[#6b7280]"></p>
+      <!-- ESTADÍSTICAS MODERNAS -->
+      <div class="px-4 pt-4">
+        <div class="bg-white rounded-[24px] p-5 shadow-[0_10px_30px_-18px_rgba(28,43,74,0.25)]">
+          <div class="flex items-center justify-between mb-4">
+            <p class="text-[17px] font-extrabold text-[#1c2b4a]">Actividad semanal</p>
+            <p id="st-week-avg" class="text-xs font-semibold text-[#6b7280]"></p>
+          </div>
+          <!-- Tarjetas de resumen -->
+          <div class="grid grid-cols-3 gap-2.5 mb-5">
+            <div class="bg-[#f0f4f9] rounded-2xl p-3 text-center">
+              <p id="st-stat-total" class="text-[18px] font-black text-[#1c2b4a] leading-tight">0</p>
+              <p class="text-[10px] font-semibold text-[#6b7280] mt-0.5">Total</p>
+            </div>
+            <div class="bg-[#f0f4f9] rounded-2xl p-3 text-center">
+              <p id="st-stat-avg" class="text-[18px] font-black text-[#1c2b4a] leading-tight">0</p>
+              <p class="text-[10px] font-semibold text-[#6b7280] mt-0.5">Promedio/día</p>
+            </div>
+            <div class="bg-[#f0f4f9] rounded-2xl p-3 text-center">
+              <p id="st-stat-peak" class="text-[18px] font-black text-[#1c2b4a] leading-tight">-</p>
+              <p class="text-[10px] font-semibold text-[#6b7280] mt-0.5">Día pico</p>
+            </div>
+          </div>
+          <!-- Gráfico de barras moderno -->
+          <div id="st-bar-chart" class="flex items-end justify-between gap-2 h-32"></div>
+          <div id="st-bar-labels" class="flex justify-between mt-2.5"></div>
         </div>
-        <div id="st-bar-chart" class="flex items-end justify-between gap-1.5 h-24"></div>
-        <div id="st-bar-labels" class="flex justify-between mt-2"></div>
       </div>
 
       <!-- LÍMITE DIARIO -->
@@ -20468,13 +20486,32 @@ o
     const avgMins = days.reduce((s, d) => s + d.mins, 0) / 7;
     const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 
+    // Tarjetas de resumen
+    const totalMins = days.reduce((s, d) => s + d.mins, 0);
+    const totalEl = document.getElementById('st-stat-total');
+    const avgEl = document.getElementById('st-stat-avg');
+    const peakEl = document.getElementById('st-stat-peak');
+    if (totalEl) totalEl.textContent = _stFormatTime(totalMins).full;
+    if (avgEl) avgEl.textContent = _stFormatTime(avgMins).full;
+    if (peakEl) {
+      let peakIdx = 0;
+      days.forEach((d, i) => { if (d.mins > days[peakIdx].mins) peakIdx = i; });
+      const peakDate = new Date(days[peakIdx].key + 'T12:00:00');
+      peakEl.textContent = peakIdx === 6 ? 'Hoy' : dayNames[peakDate.getDay()];
+    }
+
     if (chartEl) {
       chartEl.innerHTML = days.map((d, i) => {
         const isToday = i === 6;
-        const pct = Math.max(4, (d.mins / maxMins) * 100);
-        const bg = isToday ? '#0ea5e9' : '#d4e8f5';
-        return `<div class="flex-1 flex flex-col items-center justify-end gap-1 group">
-          <div class="w-full rounded-t-lg transition-all duration-500 relative" style="height:${pct}%;background:${bg};" title="${_stFormatTime(d.mins).full}"></div>
+        const pct = Math.max(6, (d.mins / maxMins) * 100);
+        const bg = isToday
+          ? 'linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%)'
+          : 'linear-gradient(180deg, #e0f2fe 0%, #bae6fd 100%)';
+        const valFmt = _stFormatTime(d.mins);
+        const valText = d.mins >= 60 ? valFmt.value + 'h' : (d.mins > 0 ? d.mins + '' : '');
+        return `<div class="flex-1 flex flex-col items-center justify-end h-full">
+          <span class="text-[9px] font-bold ${isToday ? 'text-[#0284c7]' : 'text-[#94a3b8]'} mb-1 leading-none">${valText}</span>
+          <div class="w-full rounded-full transition-all duration-500 shadow-sm" style="height:${pct}%;background:${bg};min-height:8px;"></div>
         </div>`;
       }).join('');
     }
@@ -20484,12 +20521,12 @@ o
         const isToday = i === 6;
         const date = new Date(d.key + 'T12:00:00');
         const name = isToday ? 'Hoy' : dayNames[date.getDay()];
-        return `<span class="flex-1 text-center text-[10px] font-${isToday ? 'black' : 'semibold'} ${isToday ? 'text-[#0ea5e9]' : 'text-[#6b7280]'}">${name}</span>`;
+        return `<span class="flex-1 text-center text-[10px] ${isToday ? 'font-black text-[#0284c7]' : 'font-semibold text-[#94a3b8]'}">${name}</span>`;
       }).join('');
     }
 
     if (weekAvgEl) {
-      weekAvgEl.textContent = 'Promedio: ' + _stFormatTime(avgMins).full + '/día';
+      weekAvgEl.textContent = 'Últimos 7 días';
     }
 
     const limitSelect = document.getElementById('st-limit-select');
