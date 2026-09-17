@@ -19885,7 +19885,13 @@ function saveNote() {
           if (followersDesktop) followersDesktop.textContent = formatNumber(data.followersCount || 0);
           if (followingDesktop) followingDesktop.textContent = formatNumber(data.followingCount || 0);
           const profileLocationDesktop = document.getElementById('profile-location-desktop');
-          if (profileLocationDesktop) profileLocationDesktop.textContent = data.location || data.city || 'Ubicación no especificada';
+          if (profileLocationDesktop) {
+            const myCountryCode = String(data.authorCountryCode || data.countryCode || '').toUpperCase();
+            const myLocationText = stripCountryFromLocation(data.location || data.city || '', myCountryCode);
+            // Si solo había país (ya lo muestra el chip con bandera), no se repite el texto.
+            profileLocationDesktop.textContent = myLocationText || (myCountryCode ? '' : 'Ubicación no especificada');
+            profileLocationDesktop.classList.toggle('hidden', !profileLocationDesktop.textContent);
+          }
 
           if (data.bio) {
             const bioDisplay = document.getElementById('profile-bio-display');
@@ -22104,6 +22110,24 @@ o
   function selectLocationCountry(code) { if (!PROFILE_COUNTRY_CODES.includes(code)) return; const input=document.getElementById('settings-country'); const search=document.getElementById('settings-country-search'); if (input) input.value=code; if (search) search.value=getProfileCountryName(code); renderLocationCountries(search?.value || ''); updateSelectedCountryLabel(); }
   function clearSelectedCountry() { const input=document.getElementById('settings-country'); const search=document.getElementById('settings-country-search'); if (input) input.value=''; if (search) { search.value=''; search.focus(); } renderLocationCountries(''); updateSelectedCountryLabel(); }
   function detectProfileCountryCode(location) { const normalized = normalizeCountryQuery(location); return PROFILE_COUNTRY_CODES.find(code => { const es=normalizeCountryQuery(getCountryNameForLocale(code,'es')); const en=normalizeCountryQuery(getCountryNameForLocale(code,'en')); return normalized === es || normalized === en || normalized.endsWith(', ' + es) || normalized.endsWith(', ' + en); }) || ''; }
+  /**
+   * Quita el país del texto de ubicación para no repetirlo junto al chip con
+   * bandera. "México" (con countryCode MX) -> ""; "Guadalajara, México" -> "Guadalajara".
+   */
+  function stripCountryFromLocation(location, countryCode) {
+    const loc = String(location || '').trim();
+    if (!loc) return '';
+    const cc = String(countryCode || '').toUpperCase();
+    if (!/^[A-Z]{2}$/.test(cc)) return loc;
+    const names = [getCountryNameForLocale(cc, 'es'), getCountryNameForLocale(cc, 'en')].filter(Boolean);
+    const norm = s => normalizeCountryQuery(s);
+    if (names.some(n => norm(loc) === norm(n))) return '';
+    const comma = loc.lastIndexOf(',');
+    if (comma > 0 && names.some(n => norm(loc.slice(comma + 1).trim()) === norm(n))) {
+      return loc.slice(0, comma).trim();
+    }
+    return loc;
+  }
   function updateSelectedCountryLabel() {
     const input = document.getElementById('settings-country'); const city = document.getElementById('settings-city')?.value.trim() || ''; const status = document.getElementById('settings-country-status'); const preview = document.getElementById('settings-location-preview'); const selectedCard=document.getElementById('settings-country-selected'); const selectedName=document.getElementById('settings-country-selected-name'); const country = input?.value ? getProfileCountryName(input.value) : ''; const english=typeof getAppLanguage === 'function' && getAppLanguage() === 'en';
     const value = country ? (city ? `${city}, ${country}` : country) : (english ? 'Location not specified' : 'Ubicación no especificada'); if (status) status.textContent = country ? (english ? `Selected country: ${country}` : `País seleccionado: ${country}`) : (english ? 'Type or tap a country to select it.' : 'Escribe o toca un país para seleccionarlo.'); if (preview) preview.textContent = value; if (selectedCard) { selectedCard.classList.toggle('hidden', !country); selectedCard.classList.toggle('flex', Boolean(country)); } if (selectedName) selectedName.textContent=country;
@@ -22870,8 +22894,12 @@ o
         }
         if (Object.prototype.hasOwnProperty.call(updates, 'city') || Object.prototype.hasOwnProperty.call(updates, 'location')) {
           const locationLabel = document.getElementById('profile-location-desktop');
-          const nextLocation = updates.location ?? updates.city ?? '';
-          if (locationLabel) locationLabel.textContent = nextLocation || 'Ubicación no especificada';
+          const nextCountryCode = String(updates.countryCode || '').toUpperCase();
+          const nextLocation = stripCountryFromLocation(updates.location ?? updates.city ?? '', nextCountryCode);
+          if (locationLabel) {
+            locationLabel.textContent = nextLocation || (nextCountryCode ? '' : 'Ubicación no especificada');
+            locationLabel.classList.toggle('hidden', !locationLabel.textContent);
+          }
         }
             showMiniToast("Perfil actualizado");
         return true;
@@ -27539,10 +27567,15 @@ function renderAccountsList(accounts) {
       authorFollowersNode.textContent = formatNumber(authorData.followersCount || 0);
       authorFollowingNode.textContent = formatNumber(authorData.followingCount || 0);
       authorBioNode.textContent = authorData.bio || authorData.info || 'Este usuario aún no ha agregado información.';
-      const authorLocation = authorData.location || authorData.city || "";
+      const authorCountryCode = String(authorData.authorCountryCode || authorData.countryCode || '').toUpperCase();
+      // La píldora de ubicación solo muestra lo que el chip de país no dice ya
+      // (p. ej. la ciudad): evita el "México … 🇲🇽 México" duplicado.
+      const authorLocation = stripCountryFromLocation(authorData.location || authorData.city || "", authorCountryCode);
       const authorPronouns = authorData.pronouns || "";
       if (authorLocationPill) {
-        authorLocationPill.textContent = authorLocation;
+        authorLocationPill.innerHTML = authorLocation
+          ? '<i class="fa-solid fa-location-dot mr-1"></i>' + escapeHtml(authorLocation)
+          : '';
         authorLocationPill.classList.toggle('hidden', !authorLocation);
       }
       if (authorLanguagePill) {
