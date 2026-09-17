@@ -543,6 +543,43 @@
   function safeJson(v) {
     try { return JSON.stringify(v); } catch (e) { return null; }
   }
+  // Huella de cambio liviana para oyentes: las fotos se guardan como data
+  // URLs en base64 (hasta ~300 KB cada una) y un feed con posts de varias
+  // fotos suma decenas de MB. Comparar con JSON.stringify del snapshot
+  // completo en cada ciclo de polling (3 s) reventaba la memoria y el CPU
+  // del iPhone: los ciclos se apilaban, los .catch tragaban los fallos y el
+  // feed dejaba de actualizarse (posts recién publicados que "no aparecían").
+  // La huella reemplaza cada cadena larga por longitud+hash de sus bordes;
+  // los campos escalares (votos, timestamps, contenido) se comparan exactos.
+  function _hashStr(s) {
+    var h1 = 0x811c9dc5, h2 = 0x01000193;
+    for (var i = 0; i < s.length; i++) {
+      h1 = Math.imul(h1 ^ s.charCodeAt(i), 16777619);
+      h2 = Math.imul(h2 + s.charCodeAt(i), 31);
+    }
+    return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
+  }
+  function _fingerprintValue(v) {
+    if (typeof v === 'string') {
+      if (v.length > 2048) return '~BLOB:' + v.length + ':' + _hashStr(v.slice(0, 64) + v.slice(-64));
+      return v;
+    }
+    if (Array.isArray(v)) {
+      var a = new Array(v.length);
+      for (var i = 0; i < v.length; i++) a[i] = _fingerprintValue(v[i]);
+      return a;
+    }
+    if (v !== null && typeof v === 'object') {
+      var o = {};
+      var ks = Object.keys(v);
+      for (var k = 0; k < ks.length; k++) o[ks[k]] = _fingerprintValue(v[ks[k]]);
+      return o;
+    }
+    return v;
+  }
+  function _changeFingerprint(v) {
+    try { return JSON.stringify(_fingerprintValue(v)); } catch (e) { return null; }
+  }
   function callCb(cb, arg) {
     try { cb(arg); } catch (e) { setTimeout(function () { throw e; }, 0); }
   }
@@ -555,9 +592,15 @@
 
   // Dispara un oyente según su tipo de evento ('value' | 'child_added' | 'child_changed')
   function fireListener(l) {
+    // No apilar lecturas: si la anterior aún no terminó (lectura pesada con
+    // muchas fotos), se marca un re-disparo pendiente en vez de lanzar otra
+    // lectura encima. Sin esto, los ciclos de polling se solapaban y la
+    // pestaña del iPhone se quedaba sin memoria.
+    if (l._reading) { l._pendingFire = true; return Promise.resolve(); }
+    l._reading = true;
     return readRefValue(l.ref).then(function (snap) {
       if (l.eventType === 'value') {
-        var j = safeJson(snap.val());
+        var j = _changeFingerprint(snap.val());
         if (j !== l.lastJson) { l.lastJson = j; callCb(l.cb, snap); }
         return;
       }
@@ -565,12 +608,12 @@
       if (l.eventType === 'child_added') {
         if (!l.kids) {
           l.kids = {};
-          entries.forEach(function (e) { l.kids[e[0]] = safeJson(e[1]); callCb(l.cb, snap.child(e[0])); });
+          entries.forEach(function (e) { l.kids[e[0]] = _changeFingerprint(e[1]); callCb(l.cb, snap.child(e[0])); });
         } else {
           var seen = {};
           entries.forEach(function (e) {
             seen[e[0]] = 1;
-            var ej = safeJson(e[1]);
+            var ej = _changeFingerprint(e[1]);
             if (!(e[0] in l.kids)) { l.kids[e[0]] = ej; callCb(l.cb, snap.child(e[0])); }
             else l.kids[e[0]] = ej;
           });
@@ -579,16 +622,19 @@
       } else if (l.eventType === 'child_changed') {
         if (!l.kids) {
           l.kids = {};
-          entries.forEach(function (e) { l.kids[e[0]] = safeJson(e[1]); });
+          entries.forEach(function (e) { l.kids[e[0]] = _changeFingerprint(e[1]); });
         } else {
           entries.forEach(function (e) {
-            var ej = safeJson(e[1]);
+            var ej = _changeFingerprint(e[1]);
             if ((e[0] in l.kids) && l.kids[e[0]] !== ej) callCb(l.cb, snap.child(e[0]));
             l.kids[e[0]] = ej;
           });
         }
       }
-    }).catch(function () { /* el próximo ciclo reintenta */ });
+    }).catch(function () { /* el próximo ciclo reintenta */ }).then(function () {
+      l._reading = false;
+      if (l._pendingFire) { l._pendingFire = false; fireListener(l); }
+    });
   }
 
   var fastPolling = false;
@@ -714,6 +760,19 @@
       });
     }
     return r;
+  };
+
+  // pushAsync(value): como push(), pero DEVUELVE la promesa de la escritura
+  // real: resuelve con el Ref hijo cuando la escritura termina de verdad y
+  // RECHAZA si la escritura falla. (push() traga el error en un .catch que
+  // solo avisa por consola: el llamador mostraba "éxito" aunque nada se
+  // hubiera guardado, p. ej. publicar 9 fotos veía "¡Publicación creada
+  // exitosamente!" y el post no aparecía en el feed ni en ningún lado.)
+  Ref.prototype.pushAsync = function (value) {
+    var r = this.child(newPushId());
+    if (value === undefined) return Promise.resolve(r);
+    r._writePromise = r.set(value);
+    return r._writePromise.then(function () { return r; });
   };
 
   // NOTA: se eliminó Ref.prototype.then (hacía al Ref "thenable" y provocaba
@@ -1003,6 +1062,7 @@
       },
       signInWithEmailAndPassword: signInWithEmailAndPassword,
       createUserWithEmailAndPassword: createUserWithEmailAndPassword,
+      signUpOrResendConfirmation: signUpOrResendConfirmation,
       confirmRegistration: confirmRegistration,
       resendConfirmation: resendConfirmation,
       sendPasswordResetEmail: sendPasswordResetEmail,
@@ -1257,6 +1317,40 @@
           // pero si algún día vuelve a exigirla, la app muestra un error.
           resolve({ user: null, needsConfirmation: true, email: cleanEmail });
         }
+      });
+    });
+  }
+
+  // Registro tolerante a registros abandonados: si el correo ya existe en
+  // Cognito pero la cuenta sigue SIN confirmar (el usuario abandonó el
+  // registro en la pantalla del código, cerró la app o el código venció),
+  // reenvía el código de verificación y retoma el registro en vez de
+  // mostrar "correo ya registrado". Solo si la cuenta ya está confirmada
+  // se conserva el error auth/email-already-in-use (ahí sí pertenece a
+  // otra cuenta y corresponde iniciar sesión / recuperar contraseña).
+  // Resuelve igual que createUserWithEmailAndPassword, con `resumed: true`
+  // cuando se retomó un registro previo sin confirmar.
+  function signUpOrResendConfirmation(email, password) {
+    return createUserWithEmailAndPassword(email, password).catch(function (err) {
+      if (!err || err.code !== 'auth/email-already-in-use') throw err;
+      var C = cognitoLib();
+      if (!C) throw err;
+      var cleanEmail = String(email).trim();
+      var cognitoUser = new C.CognitoUser({ Username: cleanEmail, Pool: getUserPool() });
+      return new Promise(function (resolve, reject) {
+        cognitoUser.resendConfirmationCode(function (rerr) {
+          if (!rerr) {
+            resolve({ user: null, needsConfirmation: true, email: cleanEmail, resumed: true });
+            return;
+          }
+          // Cuenta ya confirmada: el correo pertenece a una cuenta existente.
+          var msg = String((rerr && rerr.message) || '').toLowerCase();
+          if (rerr.code === 'InvalidParameterException' || /already confirm/i.test(msg)) {
+            reject(err);
+            return;
+          }
+          reject(mapAuthError(rerr));
+        });
       });
     });
   }

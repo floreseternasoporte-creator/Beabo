@@ -9890,11 +9890,17 @@ function saveNote() {
       return;
     }
 
-    // Publicar en la base de datos (un solo push: antes se duplicaba con la base anterior)
-    const p1 = DrexCloud.database().ref('communityNotes').push(note);
+    // Publicar en la base de datos (un solo push: antes se duplicaba con la base anterior).
+    // Se espera a la escritura REAL antes de mostrar éxito: push() tragaba los
+    // errores en segundo plano y el toast de "éxito" salía aunque nada se
+    // hubiera guardado (el post no aparecía en el feed ni en ningún lado).
+    const notesRef = DrexCloud.database().ref('communityNotes');
+    const writePromise = (typeof notesRef.pushAsync === 'function')
+      ? notesRef.pushAsync(note)
+      : Promise.resolve(notesRef.push(note)).then(r => (r && r._writePromise) || r);
 
     const mentionPromise = sendMentionNotifications(note.content, note.authorId, note.authorName, 'publicación', [note.authorId]);
-    Promise.all([p1, mentionPromise]).then(([ref1]) => {
+    Promise.all([writePromise, mentionPromise]).then(([ref1]) => {
       notePostPublishing = false;
       if (note.content || note.imageUrls || note.imageUrl) {
         moderarContenidoAutomaticamente(ref1.key, `${note.content || ''} ${(note.imageUrls || []).join(' ')} ${note.imageUrl || ''}`);
@@ -9929,7 +9935,9 @@ function saveNote() {
       showMiniToast('¡Publicación creada exitosamente!');
     }).catch(error => {
       console.error('Error al publicar:', error);
-      showMiniToast('Error al publicar. Inténtalo de nuevo.');
+      // El composer NO se limpia: las fotos y el texto se conservan para
+      // reintentar sin perder nada.
+      showMiniToast('No se pudo publicar. Revisa tu conexión e inténtalo de nuevo (no perdiste tus fotos).');
       notePostPublishing = false;
       renderNotePostPhotoPreviews();
       const publishBtn = document.getElementById('publish-btn-fullscreen');
@@ -18968,14 +18976,25 @@ function saveNote() {
     btn.disabled = true;
     btn.innerHTML = `<span class="inline-flex items-center gap-2 justify-center">${DREX_SPINNER_HTML}<span>Creando cuenta...</span></span>`;
 
-    DrexCloud.auth().createUserWithEmailAndPassword(email, password)
+    // signUpOrResendConfirmation: si el correo ya existe en Cognito pero sin
+    // confirmar (registro abandonado a medias), reenvía el código y retoma el
+    // registro en vez de bloquear con "correo ya registrado".
+    const _auth = DrexCloud.auth();
+    const signUpFn = (typeof _auth.signUpOrResendConfirmation === 'function')
+      ? _auth.signUpOrResendConfirmation.bind(_auth)
+      : _auth.createUserWithEmailAndPassword.bind(_auth);
+
+    signUpFn(email, password)
       .then(userCredential => {
         btn.disabled = false;
         btn.textContent = 'Continuar';
         if (userCredential && userCredential.needsConfirmation) {
           regData.email    = email;
           regData.password = password;
-          showVerifyCodeScreen(userCredential.email || email, password, 'register');
+          showVerifyCodeScreen(userCredential.email || email, password, 'register',
+            userCredential.resumed
+              ? 'Ya habías empezado este registro antes. Te reenviamos el código de verificación a tu correo.'
+              : '');
         } else if (userCredential && userCredential.user) {
           regData.email    = email;
           regData.password = password;
@@ -18997,7 +19016,7 @@ function saveNote() {
   let pendingVerifyPassword = '';
   let verifyReturnTo = 'register'; // 'register' | 'login'
 
-  function showVerifyCodeScreen(email, password, returnTo) {
+  function showVerifyCodeScreen(email, password, returnTo, infoMsg) {
     pendingVerifyEmail = email || '';
     pendingVerifyPassword = password || '';
     verifyReturnTo = returnTo || 'register';
@@ -19005,7 +19024,13 @@ function saveNote() {
     const input = document.getElementById('regVerifyCode');
     input.value = '';
     const msg = document.getElementById('regVerifyMsg');
-    msg.classList.add('hidden');
+    if (infoMsg) {
+      msg.textContent = infoMsg;
+      msg.style.color = '#1a7f37';
+      msg.classList.remove('hidden');
+    } else {
+      msg.classList.add('hidden');
+    }
     const btn = document.getElementById('regVerifyCodeBtn');
     btn.disabled = false;
     btn.textContent = 'Verificar';
@@ -19051,7 +19076,14 @@ function saveNote() {
         // Si viene del login, el observador de sesión (onAuthStateChanged) lleva a la app.
       })
       .catch(error => {
-        msg.textContent = getFriendlyErrorMessage(error);
+        // Si el código era correcto pero la contraseña no coincide con la del
+        // registro original (registro retomado con otra contraseña), el
+        // usuario no queda atascado: se le indica recuperar la contraseña.
+        let friendly = getFriendlyErrorMessage(error);
+        if ((error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') && verifyReturnTo === 'register') {
+          friendly = 'El código es correcto, pero esta contraseña no coincide con la del registro original. Vuelve al inicio e inicia sesión con "Recuperar contraseña".';
+        }
+        msg.textContent = friendly;
         msg.style.color = '#ff4d4f';
         msg.classList.remove('hidden');
         btn.disabled = false;
