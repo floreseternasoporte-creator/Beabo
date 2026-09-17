@@ -590,15 +590,26 @@
     }).catch(function () { /* el próximo ciclo reintenta */ });
   }
 
+  var fastPolling = false;
   function ensurePolling() {
     if (!pollTimer && listeners.length) {
       pollTimer = setInterval(function () {
         listeners.slice().forEach(function (l) { fireListener(l); });
-      }, 3000);
+      }, fastPolling ? 800 : 3000);
     }
   }
   function maybeStopPolling() {
     if (pollTimer && !listeners.length) { clearInterval(pollTimer); pollTimer = null; }
+  }
+  // Activa/desactiva polling rápido (800ms) para señalización WebRTC en fiestas.
+  // El polling normal de 3s es muy lento para offers/answers/ICE candidates.
+  function setFastPolling(enabled) {
+    fastPolling = !!enabled;
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      ensurePolling();
+    }
   }
 
   // Avisa a los oyentes afectados por una escritura propia (eco local inmediato)
@@ -1673,7 +1684,8 @@
     },
     auth: getAuth,
     support: supportApi,
-    totp: totpApiNs
+    totp: totpApiNs,
+    setFastPolling: setFastPolling
   };
   // ServerValue también directo sobre DrexCloud.database (sin llamar),
   // porque el código migrado usa DrexCloud.database.ServerValue.TIMESTAMP
