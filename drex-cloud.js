@@ -9,13 +9,10 @@
  *   atributo "v" = valor de la hoja serializado en JSON.
  *   Ej: ref('users/abc/name').set('Zed') -> pk='users', sk='abc/name', v='"Zed"'
  *
- * NOTA: la verificación de email por código la resuelve el backend, no este
- * archivo: el User Pool debe exigir verificación (sin lambda PreSignUp de
- * autoconfirmación) y usar la plantilla de correo de Drex
- * (ver ~/workspace/beabo-aws/verify-email-template.md).
- * Flujo en app: createUser -> { needsConfirmation: true } -> pantalla de
- * código -> confirmRegistration -> signIn. Login sin confirmar ->
- * error auth/needs-confirmation -> pantalla de código.
+ * NOTA: la verificación de email por código está DESACTIVADA: el User Pool
+ * no exige verificación en el registro (las cuentas se autoconfirman) y la
+ * app ya no muestra pantalla de código. La recuperación de contraseña sí
+ * sigue usando código por correo (sendPasswordResetEmail/confirmPasswordReset).
  */
 (function (global) {
   'use strict';
@@ -1002,8 +999,6 @@
       },
       signInWithEmailAndPassword: signInWithEmailAndPassword,
       createUserWithEmailAndPassword: createUserWithEmailAndPassword,
-      confirmRegistration: confirmRegistration,
-      resendConfirmation: resendConfirmation,
       sendPasswordResetEmail: sendPasswordResetEmail,
       confirmPasswordReset: confirmPasswordReset,
       signOut: signOutUser,
@@ -1252,54 +1247,10 @@
           // Autoconfirmado: entrar de inmediato
           signInWithEmailAndPassword(cleanEmail, String(password)).then(resolve, reject);
         } else {
-          // Cognito envió el código de verificación al correo automáticamente.
-          // La app muestra la pantalla de código y luego llama a confirmRegistration.
+          // El User Pool no debería exigir verificación (está desactivada),
+          // pero si algún día vuelve a exigirla, la app muestra un error.
           resolve({ user: null, needsConfirmation: true, email: cleanEmail });
         }
-      });
-    });
-  }
-
-  // Confirma la cuenta con el código de 6 dígitos enviado al correo.
-  // Resuelve con 'CONFIRMED' (o 'ALREADY_CONFIRMED' si ya estaba verificada).
-  function confirmRegistration(email, code) {
-    getAuth();
-    var C = cognitoLib();
-    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
-    var cleanEmail = String(email).trim();
-    var cleanCode = String(code).trim();
-    if (!/^\d{6}$/.test(cleanCode)) {
-      var bad = new Error('Escribe el código de 6 dígitos que recibiste por correo.');
-      bad.code = 'auth/invalid-verification-code';
-      return Promise.reject(bad);
-    }
-    var cognitoUser = new C.CognitoUser({ Username: cleanEmail, Pool: getUserPool() });
-    return new Promise(function (resolve, reject) {
-      cognitoUser.confirmRegistration(cleanCode, true, function (err, result) {
-        if (err) {
-          // Si ya estaba confirmada (p. ej. doble envío), no es un error real.
-          var msg = String((err && err.message) || '');
-          if (err.code === 'NotAuthorizedException' && /confirm/i.test(msg)) {
-            resolve('ALREADY_CONFIRMED');
-            return;
-          }
-          reject(mapAuthError(err));
-          return;
-        }
-        resolve(result || 'CONFIRMED');
-      });
-    });
-  }
-
-  function resendConfirmation(email) {
-    getAuth();
-    var C = cognitoLib();
-    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
-    var cleanEmail = String(email).trim();
-    var cognitoUser = new C.CognitoUser({ Username: cleanEmail, Pool: getUserPool() });
-    return new Promise(function (resolve, reject) {
-      cognitoUser.resendConfirmationCode(function (err, result) {
-        if (err) reject(mapAuthError(err)); else resolve(result);
       });
     });
   }
