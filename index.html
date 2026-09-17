@@ -4518,6 +4518,29 @@ document.addEventListener("DOMContentLoaded", function() {
       position: relative;
       background: #e6ebf3;
     }
+    /* Colaboración estilo Instagram: dos fotos de perfil superpuestas */
+    .drex-collab-avatars {
+      position: relative;
+      width: 36px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .drex-collab-avatars .drex-collab-avatar-btn {
+      position: absolute;
+      top: 0;
+      width: 24px;
+      height: 24px;
+      border-radius: 9999px;
+      overflow: hidden;
+      background: #e6ebf3;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.18);
+      padding: 0;
+      cursor: pointer;
+    }
+    .drex-collab-avatars .drex-collab-avatar-btn:first-child { left: 0; z-index: 1; }
+    .drex-collab-avatars .drex-collab-avatar-btn:last-child { left: 12px; z-index: 2; }
+    .drex-collab-avatars img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .drex-post-author {
       font-weight: 700;
       color: #3c4451;
@@ -6541,6 +6564,22 @@ if (scrollArea) {
         <i class="fas fa-chevron-right text-gray-400"></i>
       </button>
 
+      <button id="collab-post-btn" onclick="inviteCollabFromOptions()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left transition hidden">
+        <div class="flex items-center gap-3">
+          <i class="fas fa-user-group text-lg text-[#2F33B8]"></i>
+          <p class="text-base font-semibold text-black">Colaborar</p>
+        </div>
+        <i class="fas fa-chevron-right text-gray-400"></i>
+      </button>
+
+      <button id="uncollab-post-btn" onclick="removeCollabFromOptions()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left transition hidden">
+        <div class="flex items-center gap-3">
+          <i class="fas fa-user-group text-lg text-gray-400"></i>
+          <p class="text-base font-semibold text-black">Quitar colaboración</p>
+        </div>
+        <i class="fas fa-chevron-right text-gray-400"></i>
+      </button>
+
       <button id="report-post-btn" onclick="openReportFromPostOptions()" class="w-full flex items-center justify-between p-4 hover:bg-red-50 text-left transition">
         <div class="flex items-center gap-3">
           <i class="fas fa-exclamation-circle text-lg text-red-600"></i>
@@ -8510,8 +8549,10 @@ function saveNote() {
 
     const _postsRef = _db.ref('communityNotes').orderByChild('authorId').equalTo(userId);
     _userStatsRefs.push(_postsRef);
-    _postsRef.on('value', postsSnapshot => {
-      const postsCount = postsSnapshot.numChildren();
+    _postsRef.on('value', async postsSnapshot => {
+      let collabPosts = [];
+      try { collabPosts = await fetchCollabPosts(userId); } catch (_) {}
+      const postsCount = postsSnapshot.numChildren() + collabPosts.length;
 
       const profilePostsTitle = document.getElementById('profile-posts-title');
       if (profilePostsTitle) profilePostsTitle.textContent = `${postsCount} posts`;
@@ -8527,7 +8568,7 @@ function saveNote() {
       const sidebarTotalViews = document.getElementById('sidebar-total-views');
       if (sidebarTotalViews) sidebarTotalViews.textContent = postsCount;
 
-      loadUserPostsGrid(postsSnapshot);
+      loadUserPostsGrid(postsSnapshot, collabPosts);
     });
 
     const _repostsRef = _db.ref('userReposts/' + userId);
@@ -8549,7 +8590,7 @@ function saveNote() {
 
   }
 
-  async function loadUserPostsGrid(postsSnapshot) {
+  async function loadUserPostsGrid(postsSnapshot, extraPosts) {
     const userPostsDesktop = document.getElementById('user-posts-desktop');
     const userPostsMobile = document.getElementById('user-posts');
 
@@ -8560,7 +8601,23 @@ function saveNote() {
       userPostsMobile.innerHTML = '';
     }
 
-    if (!postsSnapshot.exists()) {
+    const voteMaps = await _getProfileVoteMaps();
+    const items = [];
+    const seen = new Set();
+    if (postsSnapshot && typeof postsSnapshot.forEach === 'function') {
+      postsSnapshot.forEach(child => {
+        const post = { ...(child.val() || {}), id: child.key };
+        items.push(post);
+        seen.add(child.key);
+      });
+    }
+    // Colaboraciones aceptadas: también aparecen en este perfil.
+    (Array.isArray(extraPosts) ? extraPosts : []).forEach(post => {
+      if (post && post.id && !seen.has(post.id)) { items.push(post); seen.add(post.id); }
+    });
+    items.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+
+    if (!items.length) {
       const noStoriesMessage = `
         <div class="col-span-full text-center py-12">
           <div class="text-gray-400 mb-4">
@@ -8585,13 +8642,11 @@ function saveNote() {
       return;
     }
 
-    const voteMaps = await _getProfileVoteMaps();
-    postsSnapshot.forEach(child => {
-      const post = { ...(child.val() || {}), id: child.key };
+    items.forEach(post => {
       const voteCtx = {
         user: voteMaps.user,
-        userVote: voteMaps.votes[child.key] || null,
-        hasReposted: Boolean(voteMaps.reposts[child.key])
+        userVote: voteMaps.votes[post.id] || null,
+        hasReposted: Boolean(voteMaps.reposts[post.id])
       };
       if (userPostsDesktop) userPostsDesktop.appendChild(createProfilePostCard(post, voteCtx));
       if (userPostsMobile) userPostsMobile.appendChild(createProfilePostCard(post, voteCtx));
@@ -11447,6 +11502,11 @@ function saveNote() {
           }
         }
 
+        // Colaboración aceptada: dos fotos de perfil superpuestas (estilo Instagram).
+        const collabList = getPostCollaborators(note);
+        const primaryCollab = collabList.length ? collabList[0] : null;
+        const AVATAR_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+
         let urlHTML = '';
         if (note.url && !isStickerLikeUrl(note.url)) {
           urlHTML = `
@@ -11471,13 +11531,22 @@ function saveNote() {
             </div>
             <div class="drex-post-body">
               <div class="drex-post-meta pr-10">
+                ${primaryCollab ? `
+                <div class="drex-collab-avatars" role="group" aria-label="Publicación en colaboración">
+                  <button class="drex-collab-avatar-btn" ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} aria-label="Ver perfil de ${escapeHtml(safeAuthorName)}">
+                    <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" src="${safeAuthorImage}" alt="${escapeHtml(safeAuthorName)}" onerror="this.onerror=null;this.src='${AVATAR_PLACEHOLDER}'">
+                  </button>
+                  <button class="drex-collab-avatar-btn" onclick="openAuthorProfile('${escapeInlineSingleQuote(primaryCollab.uid || '')}')" aria-label="Ver perfil de ${escapeHtml(primaryCollab.name || 'Colaborador')}">
+                    <img id="${authorAvatarId}-collab" data-author-id="${escapeHtml(primaryCollab.uid || '')}" src="${getSafeMediaUrl(primaryCollab.image) || AVATAR_PLACEHOLDER}" alt="${escapeHtml(primaryCollab.name || 'Colaborador')}" onerror="this.onerror=null;this.src='${AVATAR_PLACEHOLDER}'">
+                  </button>
+                </div>` : `
                 <div class="relative flex-shrink-0">
                 <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-avatar-btn ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
                   <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" src="${safeAuthorImage}" alt="${safeAuthorName}" onerror="this.onerror=null;this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='" class="w-full h-full object-cover">
                 </button>
                 ${getQuickFollowButtonMarkup(safeAuthorId, user?.uid || '')}
-              </div>
-                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}</button>
+              </div>`}
+                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}${primaryCollab ? `<span class="font-normal text-[#7b878f]"> y </span>${escapeHtml(primaryCollab.name || 'Colaborador')}${getVerificationIconByAuthor('', primaryCollab.uid || '', 12)}` : ''}</button>
                 <span class="drex-post-time">· ${formatRelativeTime(safeTimestamp)}</span>
                 <span class="inline-flex items-center gap-1">${renderAuthorLanguageBadges(note, true)}</span>
               </div>
@@ -11967,6 +12036,8 @@ function saveNote() {
     const editBtn = document.getElementById('edit-post-btn');
     const copyBtn = document.getElementById('copy-post-text-btn');
     const reportBtn = document.getElementById('report-post-btn');
+    const collabBtn = document.getElementById('collab-post-btn');
+    const uncollabBtn = document.getElementById('uncollab-post-btn');
     const authorRowWrap = document.getElementById('post-options-author-row-wrap');
     if (!overlay || !sheet) return;
 
@@ -11975,10 +12046,12 @@ function saveNote() {
     if (deleteBtn) deleteBtn.classList.add('hidden');
     if (editBtn) editBtn.classList.add('hidden');
     if (reportBtn) reportBtn.classList.remove('hidden');
+    if (collabBtn) collabBtn.classList.add('hidden');
+    if (uncollabBtn) uncollabBtn.classList.add('hidden');
     currentPostOptionsNoteData = null;
 
     if (user) {
-      DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
+      DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(async snapshot => {
         const note = snapshot.val() || {};
         currentPostOptionsNoteData = note;
         const isOwner = !!note && (note.authorId === user.uid || note.userId === user.uid);
@@ -11987,6 +12060,22 @@ function saveNote() {
         if (editBtn) editBtn.classList.toggle('hidden', !isOwner || !hasText);
         if (reportBtn) reportBtn.classList.toggle('hidden', isOwner);
         if (copyBtn) copyBtn.classList.toggle('hidden', !hasText);
+
+        // "Colaborar" solo existe para la cuenta drexcreators, sobre posts ajenos.
+        try {
+          const authorId = note.authorId || note.userId;
+          const amDrexCreators = !!user.uid && (await getDrexCreatorsUid()) === user.uid;
+          const collabs = note.collaborators || {};
+          const alreadyCollab = !!collabs[user.uid];
+          const inviteSt = (note.collabInvites && note.collabInvites[authorId] && note.collabInvites[authorId].status) || null;
+          if (amDrexCreators && authorId && authorId !== user.uid) {
+            if (alreadyCollab) {
+              if (uncollabBtn) uncollabBtn.classList.remove('hidden');
+            } else if (inviteSt !== 'pending') {
+              if (collabBtn) collabBtn.classList.remove('hidden');
+            }
+          }
+        } catch (_) {}
 
         const authorId = note.authorId || note.userId;
         if (authorId && authorId !== user.uid) {
@@ -12036,6 +12125,244 @@ function saveNote() {
       if (!noteId || typeof _feedImageModalNoteId === 'undefined' || _feedImageModalNoteId !== noteId) return;
       const _vm = document.getElementById('image-modal');
       if (_vm && !_vm.classList.contains('hidden') && typeof closeImageModal === 'function') closeImageModal();
+    } catch (_) {}
+  }
+
+  /* ============ COLABORACIONES — solo la cuenta drexcreators ============
+   * Drex Creators puede invitar a colaborar en la publicación de cualquier
+   * usuario. Al autor le llega una notificación + un mensaje automático en
+   * el chat. Si acepta, el post aparece en ambos perfiles con las dos fotos
+   * de perfil superpuestas (estilo Instagram).
+   */
+  let _drexCreatorsUid = null;
+  let _drexCreatorsUidTs = 0;
+  async function getDrexCreatorsUid(forceRefresh) {
+    const now = Date.now();
+    if (!forceRefresh && _drexCreatorsUid && (now - _drexCreatorsUidTs) < 5 * 60 * 1000) return _drexCreatorsUid;
+    try {
+      const snap = await DrexCloud.database().ref('usernames/drexcreators').once('value');
+      _drexCreatorsUid = snap.val() || null;
+      _drexCreatorsUidTs = now;
+    } catch (_) { /* se reintenta en la próxima llamada */ }
+    return _drexCreatorsUid;
+  }
+  async function isCurrentUserDrexCreators() {
+    try {
+      const me = DrexCloud.auth().currentUser;
+      if (!me || !me.uid) return false;
+      return (await getDrexCreatorsUid()) === me.uid;
+    } catch (_) { return false; }
+  }
+  function getPostCollaborators(note) {
+    if (!note || !note.collaborators) return [];
+    return Object.keys(note.collaborators).map(uid => ({ uid, ...((note.collaborators || {})[uid] || {}) }));
+  }
+  async function fetchCollabPosts(uid) {
+    if (!uid) return [];
+    try {
+      const idxSnap = await DrexCloud.database().ref('userCollabs/' + uid).once('value');
+      const ids = Object.keys(idxSnap.val() || {});
+      if (!ids.length) return [];
+      const posts = await Promise.all(ids.map(noteId =>
+        DrexCloud.database().ref('communityNotes/' + noteId).once('value')
+          .then(s => (s.exists() ? { ...(s.val() || {}), id: noteId } : null))
+          .catch(() => null)
+      ));
+      return posts.filter(Boolean);
+    } catch (_) { return []; }
+  }
+
+  // Drex Creators toca "Colaborar" en las opciones de un post ajeno:
+  // crea la invitación, avisa en notificaciones y manda el mensaje automático.
+  async function inviteCollabFromOptions() {
+    const noteId = currentPostOptionsNoteId;
+    const note = currentPostOptionsNoteData;
+    const me = DrexCloud.auth().currentUser;
+    if (!noteId || !note || !me) return;
+    const authorId = note.authorId || note.userId;
+    if (!authorId || authorId === me.uid) return;
+    if (!(await isCurrentUserDrexCreators())) {
+      showMiniToast('Solo Drex Creators puede invitar a colaborar.');
+      return;
+    }
+    closePostOptionsSheet();
+    showMiniToast('Enviando invitación de colaboración…');
+    try {
+      const [meSnap, authorSnap] = await Promise.all([
+        DrexCloud.database().ref('users/' + me.uid).once('value'),
+        DrexCloud.database().ref('users/' + authorId).once('value')
+      ]);
+      const meData = meSnap.val() || {};
+      const authorData = authorSnap.val() || {};
+      const inviterName = meData.username || meData.displayName || 'Drex Creators';
+      const inviterImage = meData.profileImage || '';
+      const authorName = authorData.username || authorData.displayName || 'Usuario';
+      const ts = Date.now();
+      await DrexCloud.database().ref('communityNotes/' + noteId + '/collabInvites/' + authorId).set({
+        status: 'pending', invitedAt: ts, inviterUid: me.uid, inviterName, inviterImage
+      });
+      await addNotification(authorId, 'Drex Creators quiere colaborar contigo en tu publicación.', 'collab_invite', {
+        actionType: 'collab_invite', actionId: noteId,
+        collabNoteId: noteId, collabInviterUid: me.uid, collabStatus: 'pending',
+        actorId: me.uid, actorName: inviterName, actorImage: inviterImage
+      });
+      await ensureConversationExists(me.uid, authorId);
+      const conversationId = getDirectConversationId(me.uid, authorId);
+      const text = '¡Hola ' + authorName + '! 👋 Drex Creators quiere colaborar contigo en tu publicación. Puedes aceptar o rechazar la invitación desde aquí o desde tus notificaciones.';
+      const msgRef = DrexCloud.database().ref('conversationMessages/' + conversationId).push();
+      await msgRef.set({ senderId: me.uid, text, timestamp: ts, collabInvite: { noteId, inviterUid: me.uid, inviterName } });
+      if (typeof updateChatConversationPreview === 'function') {
+        await updateChatConversationPreview(text, { senderName: inviterName }, { conversationId, recipientId: authorId, isGroup: false }).catch(() => {});
+      }
+      showMiniToast('Invitación de colaboración enviada.');
+    } catch (e) {
+      console.error('Error invitando a colaborar:', e);
+      showMiniToast('No se pudo enviar la invitación. Intenta de nuevo.');
+    }
+  }
+
+  // El autor acepta o rechaza (desde la notificación o desde el mensaje).
+  async function respondCollabInvite(noteId, inviterUid, accept) {
+    const me = DrexCloud.auth().currentUser;
+    if (!me || !noteId || !inviterUid) return;
+    let invite = null;
+    try {
+      const snap = await DrexCloud.database().ref('communityNotes/' + noteId + '/collabInvites/' + me.uid).once('value');
+      invite = snap.val();
+    } catch (_) {}
+    if (!invite || invite.status !== 'pending') {
+      showMiniToast('Esta invitación ya no está disponible.');
+      return;
+    }
+    try {
+      const meSnap = await DrexCloud.database().ref('users/' + me.uid).once('value');
+      const meData = meSnap.val() || {};
+      const myName = meData.username || meData.displayName || 'Usuario';
+      const myImage = meData.profileImage || '';
+      const ts = Date.now();
+      const updates = {};
+      updates['communityNotes/' + noteId + '/collabInvites/' + me.uid + '/status'] = accept ? 'accepted' : 'declined';
+      updates['communityNotes/' + noteId + '/collabInvites/' + me.uid + '/respondedAt'] = ts;
+      if (accept) {
+        // Vincula las dos cuentas: el post sale en ambos perfiles.
+        updates['communityNotes/' + noteId + '/collaborators/' + inviterUid] = {
+          name: invite.inviterName || 'Drex Creators', image: invite.inviterImage || '', acceptedAt: ts
+        };
+        updates['userCollabs/' + inviterUid + '/' + noteId] = { acceptedAt: ts, authorId: me.uid };
+      }
+      await DrexCloud.database().ref().update(updates);
+      await markCollabInviteNotificationsDone(noteId, accept ? 'accepted' : 'declined');
+      await addNotification(inviterUid,
+        accept ? myName + ' aceptó tu invitación de colaboración. 🎉' : myName + ' rechazó la invitación de colaboración.',
+        accept ? 'collab_accept' : 'collab_decline',
+        { actionType: 'post', actionId: noteId, actorId: me.uid, actorName: myName, actorImage: myImage });
+      try {
+        await ensureConversationExists(me.uid, inviterUid);
+        const conversationId = getDirectConversationId(me.uid, inviterUid);
+        const text = accept
+          ? '¡Acepté la colaboración! 🎉 Nuestra publicación ahora aparece en ambos perfiles.'
+          : 'Gracias por la invitación, pero esta vez prefiero no colaborar.';
+        await DrexCloud.database().ref('conversationMessages/' + conversationId).push()
+          .set({ senderId: me.uid, text, timestamp: Date.now() });
+        if (typeof updateChatConversationPreview === 'function') {
+          await updateChatConversationPreview(text, { senderName: myName }, { conversationId, recipientId: inviterUid, isGroup: false }).catch(() => {});
+        }
+      } catch (_) {}
+      showMiniToast(accept ? 'Colaboración aceptada. 🎉' : 'Invitación rechazada.');
+      try { if (typeof renderNotificationsList === 'function') renderNotificationsList(me.uid); } catch (_) {}
+      if (typeof refreshVisiblePostFeeds === 'function') refreshVisiblePostFeeds();
+    } catch (e) {
+      console.error('Error respondiendo invitación de colaboración:', e);
+      showMiniToast('No se pudo procesar tu respuesta. Intenta de nuevo.');
+    }
+  }
+
+  async function markCollabInviteNotificationsDone(noteId, status) {
+    const me = DrexCloud.auth().currentUser;
+    if (!me || !noteId) return;
+    try {
+      const local = getLocalNotifications(me.uid);
+      const targets = local.filter(n => n && n.type === 'collab_invite' && (n.collabNoteId === noteId || n.actionId === noteId) && n.notificationId);
+      const updated = local.map(n => (n && n.type === 'collab_invite' && (n.collabNoteId === noteId || n.actionId === noteId))
+        ? { ...n, collabStatus: status, read: true } : n);
+      saveLocalNotifications(me.uid, updated);
+      if (targets.length) {
+        const updates = {};
+        targets.forEach(n => {
+          updates['notifications/' + me.uid + '/' + n.notificationId + '/collabStatus'] = status;
+          updates['notifications/' + me.uid + '/' + n.notificationId + '/read'] = true;
+        });
+        await DrexCloud.database().ref().update(updates).catch(() => {});
+      }
+      if (typeof updateBadgeCount === 'function') updateBadgeCount(me.uid);
+    } catch (_) {}
+  }
+
+  // Drex Creators quita su colaboración de un post (desde sus opciones).
+  async function removeCollabFromOptions() {
+    const noteId = currentPostOptionsNoteId;
+    const note = currentPostOptionsNoteData;
+    const me = DrexCloud.auth().currentUser;
+    if (!noteId || !note || !me) return;
+    const authorId = note.authorId || note.userId;
+    if (!(await isCurrentUserDrexCreators())) return;
+    closePostOptionsSheet();
+    try {
+      const updates = {};
+      updates['communityNotes/' + noteId + '/collaborators/' + me.uid] = null;
+      updates['userCollabs/' + me.uid + '/' + noteId] = null;
+      await DrexCloud.database().ref().update(updates);
+      if (authorId && authorId !== me.uid) {
+        const meSnap = await DrexCloud.database().ref('users/' + me.uid).once('value').catch(() => null);
+        const meData = (meSnap && meSnap.val()) || {};
+        await addNotification(authorId, 'Drex Creators retiró la colaboración de tu publicación.', 'collab_removed', {
+          actionType: 'post', actionId: noteId,
+          actorId: me.uid, actorName: meData.username || meData.displayName || 'Drex Creators', actorImage: meData.profileImage || ''
+        });
+      }
+      showMiniToast('Colaboración eliminada.');
+      if (typeof refreshVisiblePostFeeds === 'function') refreshVisiblePostFeeds();
+    } catch (e) {
+      console.error('Error quitando colaboración:', e);
+      showMiniToast('No se pudo quitar la colaboración. Intenta de nuevo.');
+    }
+  }
+
+  // Tarjeta Aceptar/Rechazar dentro del mensaje automático del chat.
+  function attachCollabInviteCard(wrapper, invite) {
+    try {
+      const me = DrexCloud.auth().currentUser;
+      if (!me || !invite || !invite.noteId || !wrapper) return;
+      DrexCloud.database().ref('communityNotes/' + invite.noteId + '/collabInvites/' + me.uid).once('value').then(snap => {
+        const status = (snap.val() || {}).status || 'pending';
+        const card = document.createElement('div');
+        card.className = 'mt-1.5 w-full flex flex-col items-start';
+        const doneHTML = ok => `<div class="bg-[#f0f4f9] border border-[#dce1e5] rounded-2xl px-3 py-2 max-w-[85%]"><p class="text-xs font-bold ${ok ? 'text-[#16a34a]' : 'text-[#7b878f]'}">${ok ? '🤝 Colaboración aceptada' : 'Invitación de colaboración rechazada'}</p></div>`;
+        if (status !== 'pending') {
+          card.innerHTML = doneHTML(status === 'accepted');
+        } else {
+          card.innerHTML = `
+            <div class="bg-white border-2 border-[#2F33B8]/25 rounded-2xl p-3 max-w-[85%] shadow-sm">
+              <p class="text-[13px] font-extrabold text-[#1c2b4a] mb-1">🤝 Invitación de colaboración</p>
+              <p class="text-xs text-[#7b878f] leading-snug mb-2.5">Drex Creators quiere que esta publicación aparezca también en su perfil, con ambas fotos de perfil.</p>
+              <div class="flex gap-2">
+                <button class="collab-accept-btn flex-1 bg-[#2F33B8] text-white text-xs font-bold py-2 rounded-xl active:opacity-80 transition">Aceptar</button>
+                <button class="collab-decline-btn flex-1 bg-[#f0f4f9] text-[#5c6974] text-xs font-bold py-2 rounded-xl active:opacity-80 transition">Rechazar</button>
+              </div>
+            </div>`;
+          card.querySelector('.collab-accept-btn').addEventListener('click', async () => {
+            card.querySelectorAll('button').forEach(b => { b.disabled = true; });
+            await respondCollabInvite(invite.noteId, invite.inviterUid, true);
+            card.innerHTML = doneHTML(true);
+          });
+          card.querySelector('.collab-decline-btn').addEventListener('click', async () => {
+            card.querySelectorAll('button').forEach(b => { b.disabled = true; });
+            await respondCollabInvite(invite.noteId, invite.inviterUid, false);
+            card.innerHTML = doneHTML(false);
+          });
+        }
+        wrapper.appendChild(card);
+      }).catch(() => {});
     } catch (_) {}
   }
 
@@ -15920,6 +16247,19 @@ function saveNote() {
 
   const APP_LANGUAGE_STORAGE_KEY = 'drex_app_language_v1';
   const APP_ENGLISH_TEXT = {
+"Colaborar":"Collaborate",
+"Quitar colaboración":"Remove collaboration",
+"Aceptar":"Accept",
+"Rechazar":"Decline",
+"Invitación de colaboración":"Collaboration invite",
+"🤝 Invitación de colaboración":"🤝 Collaboration invite",
+"Drex Creators quiere que esta publicación aparezca también en su perfil, con ambas fotos de perfil.":"Drex Creators wants this post to also appear on their profile, with both profile photos.",
+"Drex Creators quiere colaborar contigo en tu publicación.":"Drex Creators wants to collaborate with you on your post.",
+"Enviando invitación de colaboración…":"Sending collaboration invite…",
+"Invitación de colaboración enviada.":"Collaboration invite sent.",
+"Colaboración aceptada. 🎉":"Collaboration accepted. 🎉",
+"Invitación rechazada.":"Invite declined.",
+"Colaboración eliminada.":"Collaboration removed.",
 "No se pudo cargar tu perfil. Revisa tu conexión e inténtalo de nuevo.":"We couldn't load your profile. Check your connection and try again.",
 "Reintentar":"Retry",
 "No se pudo cargar este perfil. Revisa tu conexión.":"We couldn't load this profile. Check your connection.",
@@ -17774,6 +18114,10 @@ function saveNote() {
       message:   { icon: 'fa-envelope',    color: '#2F33B8' },
       mention:   { icon: 'fa-at',          color: '#8b5cf6' },
       repost:    { icon: 'fa-retweet',     color: '#16a34a' },
+      collab_invite:  { icon: 'fa-user-group',   color: '#2F33B8' },
+      collab_accept:   { icon: 'fa-circle-check', color: '#16a34a' },
+      collab_decline:  { icon: 'fa-circle-xmark', color: '#7b878f' },
+      collab_removed:  { icon: 'fa-user-group',   color: '#7b878f' },
       moderation:{ icon: 'fa-shield-alt',  color: '#f59e0b' },
       support_response: { icon: 'fa-headset', color: '#2F33B8' },
       info:      { icon: 'fa-circle-info', color: '#5c6974' }
@@ -17838,6 +18182,22 @@ function saveNote() {
           hydrateNotifActor(userId, notification, row);
         }
 
+        // Invitación de colaboración: botones Aceptar / Rechazar en la fila.
+        try {
+          const collabStatus = notification.collabStatus || 'pending';
+          if (notification.type === 'collab_invite' && collabStatus === 'pending' && notification.collabNoteId && notification.collabInviterUid) {
+            const actionsWrap = document.createElement('div');
+            actionsWrap.className = 'flex items-center gap-2 mt-2';
+            const noteIdQ = escapeInlineSingleQuote(notification.collabNoteId);
+            const inviterQ = escapeInlineSingleQuote(notification.collabInviterUid);
+            actionsWrap.innerHTML = `
+              <button onclick="event.stopPropagation();respondCollabInvite('${noteIdQ}','${inviterQ}',true)" class="tap44 px-4 py-2 rounded-full bg-[#2F33B8] text-white text-xs font-bold active:opacity-80 transition">Aceptar</button>
+              <button onclick="event.stopPropagation();respondCollabInvite('${noteIdQ}','${inviterQ}',false)" class="tap44 px-4 py-2 rounded-full bg-[#eef2f7] text-[#5c6974] text-xs font-bold active:opacity-80 transition">Rechazar</button>`;
+            const textCol = row.querySelector('.flex-1.min-w-0');
+            if (textCol) textCol.appendChild(actionsWrap);
+          }
+        } catch (_) {}
+
         row.addEventListener('click', () => {
           if (!notification.read) {
             let localNotes = getLocalNotifications(userId);
@@ -17870,6 +18230,7 @@ function saveNote() {
         return;
       }
       switch (actionType) {
+        case 'collab_invite':
         case 'post':
           if (actionId) {
             if (typeof openCommentsView === 'function') {
@@ -24499,6 +24860,11 @@ let chatTypingListener = null;
         `;
       }
 
+      // Invitación de colaboración: tarjeta Aceptar/Rechazar bajo el mensaje automático.
+      if (msg.collabInvite && msg.collabInvite.noteId && !mine && !currentChatIsGroup) {
+        attachCollabInviteCard(wrapper, msg.collabInvite);
+      }
+
       const bubble = wrapper.querySelector('.msg-bubble');
       if (bubble && resolvedId) {
         let pressTimer = null;
@@ -27155,9 +27521,12 @@ function renderAccountsList(accounts) {
       socialLinksNode.innerHTML = socialLinksHTML;
 
 
-      DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value').then(postsSnap => {
+      DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value').then(async postsSnap => {
         if (currentViewedAuthorId !== authorId) return;
-        if (authorPostsNode) authorPostsNode.textContent = formatNumber(postsSnap.numChildren() || 0);
+        let collabCount = 0;
+        try { collabCount = (await fetchCollabPosts(authorId)).length; } catch (_) {}
+        if (currentViewedAuthorId !== authorId) return;
+        if (authorPostsNode) authorPostsNode.textContent = formatNumber((postsSnap.numChildren() || 0) + collabCount);
       });
       DrexCloud.database().ref('userReposts/' + authorId).once('value').then(repostsSnap => {
         if (currentViewedAuthorId !== authorId) return;
@@ -27440,18 +27809,28 @@ function renderAccountsList(accounts) {
   }
 
   function _loadAuthorPostsContent(authorId, container) {
-    DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value').then(async snapshot => {
+    Promise.all([
+      DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value'),
+      fetchCollabPosts(authorId)
+    ]).then(async ([snapshot, collabPosts]) => {
       if (currentViewedAuthorId !== authorId) return;
       container.innerHTML = "";
-      if (!snapshot.exists()) {
+      const posts = [];
+      const seen = new Set();
+      if (snapshot.exists()) {
+        snapshot.forEach(child => {
+          posts.push({ ...child.val(), id: child.key });
+          seen.add(child.key);
+        });
+      }
+      // Colaboraciones aceptadas: el post también vive en este perfil.
+      (collabPosts || []).forEach(p => {
+        if (p && p.id && !seen.has(p.id)) { posts.push(p); seen.add(p.id); }
+      });
+      if (!posts.length) {
         container.innerHTML = `<div class="py-10 text-center text-[#6b7280]">Este autor aún no tiene publicaciones.</div>`;
         return;
       }
-
-      const posts = [];
-      snapshot.forEach(child => {
-        posts.push({ ...child.val(), id: child.key });
-      });
 
       posts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
