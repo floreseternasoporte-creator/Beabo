@@ -24632,6 +24632,19 @@ const _startChatListeners = () => {
     const imageUrls = pendingPhotos.map(a => a.cloudUrl);
     const sentAt = Date.now();
 
+    // FIX: si algo falla construyendo el mensaje, liberar el candado para no bloquear envíos futuros
+    try {
+      await _sendChatMessageBuildAndPush(user, input, text, imageUrls, sentAt, pendingPhotos);
+    } catch (e) {
+      console.error('Error construyendo mensaje:', e);
+      window._drexChatSending = false;
+      showMiniToast('No se pudo enviar el mensaje. Inténtalo de nuevo.');
+      return;
+    }
+    return;
+  }
+
+  async function _sendChatMessageBuildAndPush(user, input, text, imageUrls, sentAt, pendingPhotos) {
     const payload = {
       senderId: user.uid,
       text: text || '',
