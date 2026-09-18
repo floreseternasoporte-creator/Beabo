@@ -35920,6 +35920,7 @@ async function endFiesta() {
       <div class="flex items-center justify-between mb-2">
         <p class="text-[11px] font-extrabold uppercase tracking-widest text-[#7b878f]">A continuación <span id="music-queue-mix-label" class="hidden text-[#2F33B8]">· Mix Drex</span></p>
         <div class="flex items-center gap-2">
+          <button id="music-xfade-btn" onclick="musicXfadeSheetOpen()" class="px-3 h-8 rounded-full text-[12px] font-extrabold active:opacity-80 bg-black/5 text-[#1c2b4a] flex items-center gap-1" aria-label="Fundido entre canciones"></button>
           <button id="music-sleep-btn" onclick="musicSleepSheetOpen()" class="px-3 h-8 rounded-full text-[12px] font-extrabold active:opacity-80 bg-black/5 text-[#1c2b4a] flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></button>
           <button id="music-mix-btn" onclick="musicToggleMix()" class="px-3 h-8 rounded-full text-[12px] font-extrabold active:opacity-80 bg-[#2F33B8] text-white flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg><span>Mix</span></button>
         </div>
@@ -35966,6 +35967,23 @@ async function endFiesta() {
       <button onclick="musicSleepSet(60)" class="h-12 rounded-2xl bg-white border border-[#e7ecf3] font-extrabold text-[14px] text-[#1c2b4a] active:opacity-80">1 hora</button>
     </div>
     <button onclick="musicSleepCancel()" class="w-full h-12 rounded-2xl font-extrabold text-[14px] text-red-500 active:opacity-80">Cancelar temporizador</button>
+  </div>
+</div>
+
+<!-- Fundido entre canciones -->
+<div id="music-xfade-sheet" class="hidden fixed inset-0 z-[170]">
+  <div class="absolute inset-0 bg-black/45" onclick="musicXfadeSheetClose()"></div>
+  <div class="absolute bottom-0 left-0 right-0 bg-[#f0f4f9] rounded-t-3xl p-5" style="padding-bottom:calc(1.25rem + env(safe-area-inset-bottom));">
+    <h3 class="text-[16px] font-extrabold text-[#1c2b4a] mb-1">Fundido entre canciones</h3>
+    <p class="text-[13px] text-[#7b878f] font-semibold mb-4">Mezcla el final de una canción con el inicio de la siguiente, sin cortes.</p>
+    <div class="grid grid-cols-2 gap-2 mb-2">
+      <button onclick="musicXfadeSet(0)" class="h-12 rounded-2xl bg-white border border-[#e7ecf3] font-extrabold text-[14px] text-[#1c2b4a] active:opacity-80">Desactivado</button>
+      <button onclick="musicXfadeSet(3)" class="h-12 rounded-2xl bg-white border border-[#e7ecf3] font-extrabold text-[14px] text-[#1c2b4a] active:opacity-80">3 segundos</button>
+      <button onclick="musicXfadeSet(5)" class="h-12 rounded-2xl bg-white border border-[#e7ecf3] font-extrabold text-[14px] text-[#1c2b4a] active:opacity-80">5 segundos</button>
+      <button onclick="musicXfadeSet(8)" class="h-12 rounded-2xl bg-white border border-[#e7ecf3] font-extrabold text-[14px] text-[#1c2b4a] active:opacity-80">8 segundos</button>
+      <button onclick="musicXfadeSet(12)" class="h-12 rounded-2xl bg-white border border-[#e7ecf3] font-extrabold text-[14px] text-[#1c2b4a] active:opacity-80">12 segundos</button>
+    </div>
+    <button onclick="musicXfadeSheetClose()" class="w-full h-12 rounded-2xl font-extrabold text-[14px] text-[#1c2b4a] active:opacity-80">Cerrar</button>
   </div>
 </div>
 
@@ -37312,7 +37330,7 @@ function musicEnsureAudio() {
   musicAudioEl.addEventListener('play', musicSyncPlayUI);
   musicAudioEl.addEventListener('pause', musicSyncPlayUI);
   musicAudioEl.addEventListener('timeupdate', musicOnTimeUpdate);
-  musicAudioEl.addEventListener('ended', () => musicNext(true));
+  musicAudioEl.addEventListener('ended', musicOnEnded);
   musicAudioEl.addEventListener('loadedmetadata', () => {
     const d = document.getElementById('music-time-dur');
     if (d && isFinite(musicAudioEl.duration)) d.textContent = musicFmtTime(musicAudioEl.duration);
@@ -37353,10 +37371,9 @@ window.openMusicTrackFromFeed = function (trackId) {
     if (typeof showMiniToast === 'function') showMiniToast('No se pudo cargar la canción.');
   });
 };
-function musicStartTrack(t) {
+function musicPaintTrackUI(t) {
   if (!t || !t.id) return;
   try { musicHistoryRecord(t); } catch (_) {}
-  const audio = musicEnsureAudio();
   // UI del reproductor
   document.getElementById('music-player-title').textContent = t.title || 'Sin título';
   document.getElementById('music-player-artist').textContent = t.artistName || t.authorName || 'Artista';
@@ -37387,7 +37404,14 @@ function musicStartTrack(t) {
     const nAd = Math.max(2, (typeof ADSTERRA !== 'undefined' && ADSTERRA && (ADSTERRA.musicAdEveryN | 0)) || 3);
     if (typeof musicSongsSinceAd !== 'undefined' && musicSongsSinceAd === nAd - 1 && typeof musicPreloadAdBreak === 'function') musicPreloadAdBreak();
   } catch (_) {}
+  try { musicPaintXfadeBtn(); } catch (_) {}
   openMusicPlayerFull();
+}
+function musicStartTrack(t) {
+  if (!t || !t.id) return;
+  try { musicCancelCrossfade(); } catch (_) {}
+  const audio = musicEnsureAudio();
+  musicPaintTrackUI(t);
   // Cargar y reproducir
   const playBtn = document.getElementById('music-play-btn');
   if (playBtn) playBtn.innerHTML = '<span class="drex-spinner" style="width:22px;height:22px"></span>';
@@ -37423,6 +37447,15 @@ window.musicPlayQueueIndex = function (i) {
 };
 window.musicTogglePlay = function () {
   const audio = musicEnsureAudio();
+  if (musicXfading && musicFadeEl) {
+    const bothPaused = audio.paused && musicFadeEl.paused;
+    try {
+      if (bothPaused) { audio.play().catch(() => {}); musicFadeEl.play().catch(() => {}); }
+      else { audio.pause(); musicFadeEl.pause(); }
+    } catch (_) {}
+    musicSyncPlayUI();
+    return;
+  }
   if (!audio.src) return;
   if (audio.paused) audio.play().catch(() => {}); else audio.pause();
 };
@@ -37448,12 +37481,15 @@ function renderExploreMusicSoft() {
     sEl.innerHTML = musicSearchCache.map((t, i) => musicTrackRowHTML(t, i, 'search', false)).join('');
   }
 }
-function musicOnTimeUpdate() {
+function musicOnTimeUpdate(e) {
+  const audio = (e && e.target) || musicAudioEl;
+  if (audio !== musicAudioEl) return;
   if (!musicAudioEl || !isFinite(musicAudioEl.duration) || !musicAudioEl.duration) return;
   const seek = document.getElementById('music-seek');
   if (seek && document.activeElement !== seek) seek.value = Math.round((musicAudioEl.currentTime / musicAudioEl.duration) * 1000);
   const cur = document.getElementById('music-time-cur');
   if (cur) cur.textContent = musicFmtTime(musicAudioEl.currentTime);
+  try { musicXfadeMaybe(); } catch (_) {}
 }
 (function initMusicSeek() {
   document.addEventListener('DOMContentLoaded', () => {
@@ -37553,6 +37589,7 @@ function musicCloseAdBreak() {
   if (next) { try { next(); } catch (_) {} }
 }
 window.musicNext = function (auto) {
+  try { musicCancelCrossfade(); } catch (_) {}
   if (!musicQueue.length) return;
   let nxt;
   if (musicRepeatMode === 'one' && auto) {
@@ -37787,6 +37824,7 @@ window.musicSleepSet = function (mins) {
   musicSleepTimerEnd = Date.now() + mins * 60000;
   musicSleepTimerId = setTimeout(function () {
     musicSleepTimerId = null; musicSleepTimerEnd = 0;
+    try { musicCancelCrossfade(); } catch (_) {}
     try { if (typeof musicAudioEl !== 'undefined' && musicAudioEl) musicAudioEl.pause(); } catch (_) {}
     musicPaintSleepBtn();
     if (typeof showMiniToast === 'function') showMiniToast('Temporizador: música pausada');
@@ -37803,6 +37841,136 @@ window.musicSleepCancel = function () {
   musicSleepSheetClose();
   if (typeof showMiniToast === 'function') showMiniToast('Temporizador cancelado');
 };
+/* ---------- Fundido entre canciones (crossfade) ---------- */
+var musicFadeEl = null;
+var musicXfading = false;
+var musicXfadeTimerId = null;
+var MUSIC_ICON_XFADE = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 8h10l-3-3m3 3l-3 3M17 16H7l3-3m-3 3l3 3"/></svg>';
+function musicCrossfadeSec() {
+  try {
+    const v = parseInt(localStorage.getItem('drex_music_crossfade') || '5', 10);
+    return [0, 3, 5, 8, 12].indexOf(v) >= 0 ? v : 5;
+  } catch (_) { return 5; }
+}
+function musicPaintXfadeBtn() {
+  const btn = document.getElementById('music-xfade-btn');
+  if (!btn) return;
+  const sec = musicCrossfadeSec();
+  if (sec > 0) {
+    btn.innerHTML = MUSIC_ICON_XFADE + '<span>' + sec + 's</span>';
+    btn.className = 'px-3 h-8 rounded-full text-[12px] font-extrabold active:opacity-80 bg-[#2F33B8] text-white flex items-center gap-1';
+  } else {
+    btn.innerHTML = MUSIC_ICON_XFADE;
+    btn.className = 'px-3 h-8 rounded-full text-[12px] font-extrabold active:opacity-80 bg-black/5 text-[#1c2b4a] flex items-center gap-1';
+  }
+}
+window.musicXfadeSheetOpen = function () { document.getElementById('music-xfade-sheet')?.classList.remove('hidden'); };
+window.musicXfadeSheetClose = function () { document.getElementById('music-xfade-sheet')?.classList.add('hidden'); };
+window.musicXfadeSet = function (sec) {
+  try { localStorage.setItem('drex_music_crossfade', String(sec)); } catch (_) {}
+  musicPaintXfadeBtn();
+  musicXfadeSheetClose();
+  if (typeof showMiniToast === 'function') showMiniToast(sec > 0 ? 'Fundido entre canciones: ' + sec + ' s' : 'Fundido desactivado');
+};
+function musicEnsureFadeEl() {
+  if (musicFadeEl) return musicFadeEl;
+  musicFadeEl = new Audio();
+  musicFadeEl.preload = 'auto';
+  musicFadeEl.addEventListener('play', musicSyncPlayUI);
+  musicFadeEl.addEventListener('pause', musicSyncPlayUI);
+  musicFadeEl.addEventListener('timeupdate', musicOnTimeUpdate);
+  musicFadeEl.addEventListener('ended', musicOnEnded);
+  musicFadeEl.addEventListener('loadedmetadata', () => {
+    const d = document.getElementById('music-time-dur');
+    if (d && musicFadeEl === musicAudioEl && isFinite(musicFadeEl.duration)) d.textContent = musicFmtTime(musicFadeEl.duration);
+  });
+  return musicFadeEl;
+}
+function musicOnEnded(e) {
+  const audio = (e && e.target) || musicAudioEl;
+  if (audio !== musicAudioEl) return;
+  if (musicXfading) return;
+  musicNext(true);
+}
+function musicPeekNextIndex() {
+  if (!musicQueue.length) return -1;
+  if (musicRepeatMode === 'one') return musicQueueIdx;
+  if (musicShuffleOn && musicQueue.length > 1) {
+    let nxt = musicQueueIdx, guard = 0;
+    do { nxt = (Math.random() * musicQueue.length) | 0; guard++; } while (nxt === musicQueueIdx && guard < 20);
+    return nxt === musicQueueIdx ? -1 : nxt;
+  }
+  if (musicQueueIdx < musicQueue.length - 1) return musicQueueIdx + 1;
+  if (musicRepeatMode === 'all') return 0;
+  return -1;
+}
+function musicAdBreakDue() {
+  try {
+    const n = Math.max(2, (typeof ADSTERRA !== 'undefined' && (ADSTERRA.musicAdEveryN | 0)) || 3);
+    return (musicSongsSinceAd + 1) >= n && typeof ADSTERRA !== 'undefined' && ADSTERRA && ADSTERRA.bannerKey;
+  } catch (_) { return false; }
+}
+function musicXfadeMaybe() {
+  const fade = musicCrossfadeSec();
+  const audio = musicAudioEl;
+  if (!fade || musicXfading || !audio || audio.paused) return;
+  const dur = audio.duration;
+  if (!isFinite(dur) || !dur || dur < fade * 2 + 1) return;
+  const remain = dur - audio.currentTime;
+  if (remain > fade || remain < 0.4) return;
+  if (musicAdBreakDue()) return;
+  const ni = musicPeekNextIndex();
+  if (ni < 0 || !musicQueue[ni] || !musicQueue[ni].id) return;
+  musicBeginCrossfade(ni, fade);
+}
+function musicBeginCrossfade(ni, fade) {
+  const oldEl = musicEnsureAudio();
+  const next = musicQueue[ni];
+  if (!next || !next.id) return;
+  musicXfading = true;
+  musicQueueIdx = ni;
+  musicPaintTrackUI(next);
+  const fadeEl = musicEnsureFadeEl();
+  try { fadeEl.pause(); } catch (_) {}
+  musicGetAudioUrl(next.id).then(url => {
+    if (!musicXfading) return;
+    try { fadeEl.src = url; fadeEl.volume = 0; fadeEl.currentTime = 0; }
+    catch (_) { musicCancelCrossfade(); return; }
+    fadeEl.play().catch(() => { musicCancelCrossfade(); });
+    const steps = Math.max(1, Math.round(fade * 10));
+    let i = 0;
+    try { clearInterval(musicXfadeTimerId); } catch (_) {}
+    musicXfadeTimerId = setInterval(() => {
+      i++;
+      const k = Math.min(1, i / steps);
+      try { oldEl.volume = Math.max(0, 1 - k); } catch (_) {}
+      try { fadeEl.volume = Math.min(1, k); } catch (_) {}
+      if (k >= 1) {
+        try { clearInterval(musicXfadeTimerId); } catch (_) {}
+        musicXfadeTimerId = null;
+        try { oldEl.pause(); } catch (_) {}
+        try { oldEl.volume = 1; } catch (_) {}
+        musicAudioEl = fadeEl;
+        musicFadeEl = oldEl;
+        try { fadeEl.volume = 1; } catch (_) {}
+        musicXfading = false;
+        try { musicSongsSinceAd++; } catch (_) {}
+        try { musicDb().ref('musicTracks/' + next.id + '/plays').transaction(c => (c || 0) + 1); } catch (_) {}
+        try { musicDb().ref('musicWeekly/' + musicWeekId() + '/' + next.id + '/plays').transaction(c => ((c | 0) || 0) + 1); } catch (_) {}
+        musicSyncPlayUI();
+        renderMusicQueueList();
+      }
+    }, 100);
+  }).catch(() => { musicXfading = false; });
+}
+function musicCancelCrossfade() {
+  if (!musicXfading && !musicXfadeTimerId) return;
+  try { clearInterval(musicXfadeTimerId); } catch (_) {}
+  musicXfadeTimerId = null;
+  musicXfading = false;
+  try { if (musicFadeEl) { musicFadeEl.pause(); musicFadeEl.removeAttribute('src'); } } catch (_) {}
+  try { if (musicAudioEl) musicAudioEl.volume = 1; } catch (_) {}
+}
 /* ---------- Mix Drex: radio continua ---------- */
 var musicMixOn = true;
 var musicMixActive = false;
@@ -37962,6 +38130,7 @@ window.minimizeMusicPlayer = function () {
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
 };
 window.musicStopAndHide = function () {
+  try { musicCancelCrossfade(); } catch (_) {}
   if (musicAudioEl) { try { musicAudioEl.pause(); } catch (_) {} musicAudioEl.removeAttribute('src'); musicAudioEl.load(); }
   musicQueue = []; musicQueueIdx = -1;
   document.getElementById('music-mini-player')?.classList.add('hidden');
