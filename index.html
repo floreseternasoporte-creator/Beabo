@@ -12696,6 +12696,8 @@ function saveNote() {
   let _notesFeedGeneration = 0;
   // Paginación infinita del feed: observer del centinela de "cargar más".
   let _feedOlderObserver = null;
+  // Contadores en vivo de tarjetas paginadas: teardown de la generación anterior.
+  let _feedCardsTeardown = null;
   // Tarjeta de publicación estilo comunidad Drex: la comparten el feed,
   // los perfiles y cualquier otra superficie.
   // ctx = { user, userVote, hasReposted, avatarIdPrefix }.
@@ -12862,6 +12864,12 @@ function saveNote() {
     let olderSentinel = null;
     try { if (_feedOlderObserver) _feedOlderObserver.disconnect(); } catch (_) {}
     _feedOlderObserver = null;
+    // Contadores en vivo solo para tarjetas paginadas (las 50 en vivo ya las
+    // cubre child_changed): 3 listeners diminutos por tarjeta visible.
+    let postCounterSubs = new Map();
+    let cardVisibilityObserver = null;
+    try { if (typeof _feedCardsTeardown === 'function') _feedCardsTeardown(); } catch (_) {}
+    _feedCardsTeardown = null;
     // Si el contenedor conserva tarjetas de una suscripción previa del mismo
     // modo, reconstruir el estado de paginación desde el DOM en vez de
     // partir de cero (si no, el scroll infinito quedaría roto).
@@ -13030,6 +13038,10 @@ function saveNote() {
         hydrateSaveButtons(noteElement);
         applyFeedTypeFilter();
         initFeedDoubleTapLike();
+        if (appendAtBottom) {
+          noteElement.dataset.feedPaginated = '1';
+          try { ensureCardVisibilityObserver().observe(noteElement); } catch (_) {}
+        }
       } catch (renderError) {
         console.error('Error renderizando publicación:', note && note.id, renderError);
       }
@@ -13043,7 +13055,7 @@ function saveNote() {
         if (!alive()) { maybeShowEmptyState(); return; }
         if (!note) { maybeShowEmptyState(); return; }
         if (!updateFeedPostCounters(note)) mountFeedPost(note);
-        else clearEmptyState();
+        else { clearEmptyState(); adoptLiveCard(note.id); }
         maybeShowEmptyState();
       });
     });
@@ -13060,6 +13072,7 @@ function saveNote() {
           return;
         }
         if (!updateFeedPostCounters(note)) mountFeedPost(note);
+        else adoptLiveCard(note.id);
       });
     });
 
@@ -13158,6 +13171,96 @@ function saveNote() {
           if (alive()) setOlderLoading(false);
         });
     }
+
+    // Observa la visibilidad de las tarjetas paginadas: solo mientras se ven
+    // en pantalla mantienen sus 3 listeners de contadores.
+    function ensureCardVisibilityObserver() {
+      if (cardVisibilityObserver) return cardVisibilityObserver;
+      cardVisibilityObserver = new IntersectionObserver((entries) => {
+        if (!alive()) return;
+        for (const entry of entries) {
+          const el = entry.target;
+          const pid = el.dataset ? el.dataset.noteId : null;
+          if (!pid) continue;
+          if (entry.isIntersecting) attachPostCounterSubs(pid, el);
+          else detachPostCounterSubs(pid);
+        }
+      }, { rootMargin: '300px' });
+      return cardVisibilityObserver;
+    }
+
+    function attachPostCounterSubs(pid, el) {
+      if (!alive() || postCounterSubs.has(pid)) return;
+      if (!el || !el.isConnected || !el.dataset.feedPaginated) return;
+      const state = { up: null, down: null, comments: null };
+      const baseRef = DrexCloud.database().ref('communityNotes/' + pid);
+      const subs = [];
+      const pushCounter = () => {
+        const card = document.getElementById('post-' + pid);
+        if (!card) { detachPostCounterSubs(pid); return; }
+        updateFeedPostCounters({
+          id: pid,
+          upvotes: state.up || 0,
+          downvotes: state.down || 0,
+          commentsCount: state.comments || 0
+        });
+      };
+      const checkGone = () => {
+        // Fuera de la ventana en vivo no llega child_removed: si los 3 campos
+        // son null, el post fue borrado.
+        if (state.up == null && state.down == null && state.comments == null) {
+          const card = document.getElementById('post-' + pid);
+          if (card) { try { card.remove(); } catch (_) {} }
+          feedLoadedIds.delete(pid);
+          detachPostCounterSubs(pid);
+          maybeShowEmptyState();
+          return true;
+        }
+        return false;
+      };
+      [['upvotes', 'up'], ['downvotes', 'down'], ['commentsCount', 'comments']].forEach(([field, key]) => {
+        const r = baseRef.child(field);
+        const cb = (snap) => {
+          if (!alive()) return;
+          state[key] = snap.val();
+          if (checkGone()) return;
+          pushCounter();
+        };
+        try { r.on('value', cb); } catch (_) {}
+        subs.push({ ref: r, cb: cb });
+      });
+      postCounterSubs.set(pid, subs);
+    }
+
+    function detachPostCounterSubs(pid) {
+      const subs = postCounterSubs.get(pid);
+      if (!subs) return;
+      postCounterSubs.delete(pid);
+      subs.forEach(({ ref, cb }) => { try { ref.off('value', cb); } catch (_) {} });
+    }
+
+    // La ventana en vivo adoptó esta tarjeta: ya la cubre child_changed.
+    function adoptLiveCard(pid) {
+      if (!pid || !postCounterSubs.has(pid)) return;
+      detachPostCounterSubs(pid);
+      try {
+        const card = document.getElementById('post-' + pid);
+        if (card) {
+          delete card.dataset.feedPaginated;
+          if (cardVisibilityObserver) cardVisibilityObserver.unobserve(card);
+        }
+      } catch (_) {}
+    }
+
+    function teardownCardObservers() {
+      try { if (cardVisibilityObserver) cardVisibilityObserver.disconnect(); } catch (_) {}
+      cardVisibilityObserver = null;
+      postCounterSubs.forEach((subs) => {
+        subs.forEach(({ ref, cb }) => { try { ref.off('value', cb); } catch (_) {} });
+      });
+      postCounterSubs = new Map();
+    }
+    _feedCardsTeardown = teardownCardObservers;
   }
 
   function closeImageModal() {
