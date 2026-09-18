@@ -1025,6 +1025,8 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
   0%, 39%, 100% { opacity: 0.15; }
   40% { opacity: 1; }
 }
+/* Variante clara del spinner de la plataforma para fondos oscuros (visor de video). */
+.drex-spinner.drex-spinner-light .drex-spoke::before { background-color: #fff; }
 
 @keyframes nativeSpin {
   to {
@@ -4757,7 +4759,8 @@ function setBottomNavVisibility(show) {
     'post-report-response',       // z-95
     'comment-report-fullscreen',  // z-95
     'block-account-confirm-modal',  // z-90
-    'block-account-success-modal'   // z-91
+    'block-account-success-modal',   // z-91
+    'video-modal'                     // visor de video a pantalla completa (z-92 < z-100 de la barra)
   ];
   // El visor de fotos del feed ya usa body.drex-viewer-open
   // (openImageModal/closeImageModal); el CSS lo cubre sin más cambios.
@@ -6889,14 +6892,17 @@ if (scrollArea) {
     </div>
   </div>
 
-  <!-- Escenario: tocar muestra/oculta los controles -->
-  <div id="video-modal-stage" class="absolute inset-0 flex items-center justify-center" onclick="toggleVideoModalChrome()">
+  <!-- Escenario: tocar muestra/oculta los controles; mantener presionado = 2x estilo Instagram -->
+  <div id="video-modal-stage" class="absolute inset-0 flex items-center justify-center" style="-webkit-touch-callout:none;user-select:none;-webkit-user-select:none">
     <video id="video-modal-player" class="max-w-full max-h-full w-full h-full object-contain" playsinline preload="auto" style="background:#000"></video>
   </div>
 
-  <!-- Spinner mientras se descargan los trozos -->
+  <!-- Indicador de velocidad 2x -->
+  <div id="video-modal-2x" class="absolute top-24 left-1/2 -translate-x-1/2 z-20 hidden px-3 py-1.5 rounded-full bg-white text-[#1c2b4a] text-sm font-black pointer-events-none">2x</div>
+
+  <!-- Spinner de la plataforma mientras se descargan los trozos -->
   <div id="video-modal-loading" class="absolute inset-0 z-10 hidden items-center justify-center pointer-events-none">
-    <div class="w-12 h-12 rounded-full border-4 border-white/20 border-t-white animate-spin"></div>
+    <div class="drex-spinner drex-spinner-lg drex-spinner-light" role="status" aria-label="Cargando video"><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span><span class="drex-spoke"></span></div>
   </div>
 
   <!-- Botón central (pausado / listo para reproducir) -->
@@ -6919,7 +6925,7 @@ if (scrollArea) {
         <span id="video-modal-cur" class="text-white text-xs font-bold tabular-nums w-10 text-center">0:00</span>
         <input id="video-modal-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Buscar en el video"
           class="flex-1 h-1.5 cursor-pointer" style="accent-color:#fff">
-        <span id="video-modal-dur" class="text-white/70 text-xs font-bold tabular-nums w-10 text-center">0:00</span>
+        <span id="video-modal-dur" onclick="toggleVideoModalDurMode()" title="Toca para ver total/restante" class="text-white/70 text-xs font-bold tabular-nums w-12 text-center cursor-pointer select-none">0:00</span>
         <button id="video-modal-mute" onclick="toggleVideoModalMute()" aria-label="Silenciar o activar sonido"
           class="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-full bg-white/10 text-white active:opacity-80 transition">
           <svg id="video-modal-icon-vol" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg>
@@ -9816,6 +9822,26 @@ function saveNote() {
   // que quepa en la base de datos. Sin esto, un clip de iPhone (.mov de
   // decenas de MB, además irreproducible fuera de Safari) haría inútil la
   // función. Conserva el audio. Si falla, el llamador usa el original.
+  // iOS/Chrome solo permiten arrancar el AudioContext dentro del gesto del
+  // usuario. Si se crea más tarde (en onloadedmetadata, ya fuera del gesto)
+  // queda suspendido y la transcodificación graba silencio. Por eso se
+  // pre-calienta aquí, en el tap de seleccionar/publicar, y transcodeVideoFile
+  // reutiliza este contexto en vez de crear uno nuevo.
+  let notePostAudioCtx = null;
+  function warmNoteAudioContext() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!notePostAudioCtx || notePostAudioCtx.state === 'closed') {
+        notePostAudioCtx = new AC();
+      }
+      if (notePostAudioCtx.state === 'suspended' && notePostAudioCtx.resume) {
+        const pr = notePostAudioCtx.resume();
+        if (pr && pr.catch) pr.catch(() => {});
+      }
+    } catch (_) {}
+  }
+
   function transcodeVideoFile(file) {
     return new Promise((resolve, reject) => {
       try {
@@ -9842,7 +9868,9 @@ function saveNote() {
           try { video.pause(); } catch (_) {}
           try { video.removeAttribute('src'); video.load(); } catch (_) {}
           try { URL.revokeObjectURL(url); } catch (_) {}
-          try { if (audioCtx && audioCtx.close) audioCtx.close(); } catch (_) {}
+          // El contexto compartido (pre-calentado en el gesto) NO se cierra:
+          // se reutiliza entre publicaciones de la sesión.
+          try { if (audioCtx && audioCtx !== notePostAudioCtx && audioCtx.close) audioCtx.close(); } catch (_) {}
         };
         video.onloadedmetadata = () => {
           try {
@@ -9857,7 +9885,9 @@ function saveNote() {
               const canvasStream = canvas.captureStream(30);
               const AC = window.AudioContext || window.webkitAudioContext;
               if (AC) {
-                audioCtx = new AC();
+                // Reutiliza el contexto pre-calentado en el gesto del usuario
+                // (si iOS lo dejó correr, la captura trae audio real).
+                audioCtx = (notePostAudioCtx && notePostAudioCtx.state !== 'closed') ? notePostAudioCtx : new AC();
                 const msrc = audioCtx.createMediaElementSource(video);
                 const mdest = audioCtx.createMediaStreamDestination();
                 msrc.connect(mdest);
@@ -10065,6 +10095,7 @@ function saveNote() {
   }
 
   function handleNoteVideoSelected(event) {
+    warmNoteAudioContext(); // gesto del usuario: deja el AudioContext listo para la transcodificación
     const file = (event.target.files || [])[0];
     event.target.value = '';
     if (!file || notePostPublishing) return;
@@ -10116,6 +10147,7 @@ function saveNote() {
   }
 
   function publishNoteFromFullscreen() {
+    warmNoteAudioContext(); // el tap de Publicar es gesto válido para arrancar el AudioContext
     const content = resolveCommentContent('note-content-fullscreen');
     const imageFiles = notePostImageFiles.slice(0, 20);
     const gifUrl = selectedNotePostGif;
@@ -10514,8 +10546,7 @@ function saveNote() {
       _videoModalPlayIcon(true);
     });
     player.addEventListener('loadedmetadata', () => {
-      const d = _videoModalEl('video-modal-dur');
-      if (d) d.textContent = formatVideoDuration(player.duration);
+      _videoModalRenderDur();
     });
     player.addEventListener('timeupdate', () => {
       const dur = player.duration || 0;
@@ -10524,6 +10555,7 @@ function saveNote() {
       }
       const c = _videoModalEl('video-modal-cur');
       if (c) c.textContent = formatVideoDuration(player.currentTime);
+      _videoModalRenderDur();
     });
     player.addEventListener('error', () => {
       _videoModalLoading(false);
@@ -10537,6 +10569,15 @@ function saveNote() {
           try { player.currentTime = (Number(seek.value) / 1000) * dur; } catch (_) {}
         }
       });
+    }
+    // Mantener presionado el escenario = 2x estilo Instagram (pointer events
+    // unifican touch y mouse; el modal ya trae touch-action:none).
+    const stage = _videoModalEl('video-modal-stage');
+    if (stage) {
+      stage.addEventListener('pointerdown', _videoModalStageDown);
+      stage.addEventListener('pointermove', _videoModalStageMove);
+      stage.addEventListener('pointerup', _videoModalStageUp);
+      stage.addEventListener('pointercancel', _videoModalStageUp);
     }
   }
 
@@ -10574,6 +10615,72 @@ function saveNote() {
 
   function toggleVideoModalChrome() { _videoModalSetChrome(!_videoModalChrome); }
 
+  // ---- 2x al mantener presionado (estilo Instagram) ----
+  let _videoModalPressTimer = null;
+  let _videoModalPress2x = false;
+  let _videoModalPressMoved = false;
+  let _videoModalPressX = 0;
+  let _videoModalPressY = 0;
+
+  function _videoModalStageDown(e) {
+    _videoModalPressMoved = false;
+    _videoModalPress2x = false;
+    try { _videoModalPressX = e.clientX || 0; _videoModalPressY = e.clientY || 0; } catch (_) {}
+    // Captura el pointer: el pointerup siempre llega aunque el dedo se
+    // deslice fuera del escenario (evita que el 2x se quede trabado).
+    try { _videoModalEl('video-modal-stage')?.setPointerCapture(e.pointerId); } catch (_) {}
+    clearTimeout(_videoModalPressTimer);
+    _videoModalPressTimer = setTimeout(() => {
+      if (_videoModalPressMoved) return;
+      const player = _videoModalEl('video-modal-player');
+      if (!player || !player.src || player.paused) return;
+      _videoModalPress2x = true;
+      try { player.playbackRate = 2; } catch (_) {}
+      const badge = _videoModalEl('video-modal-2x');
+      if (badge) badge.classList.remove('hidden');
+    }, 450);
+  }
+  function _videoModalStageMove(e) {
+    try {
+      const dx = Math.abs((e.clientX || 0) - _videoModalPressX);
+      const dy = Math.abs((e.clientY || 0) - _videoModalPressY);
+      if (dx > 12 || dy > 12) {
+        _videoModalPressMoved = true;
+        clearTimeout(_videoModalPressTimer);
+      }
+    } catch (_) {}
+  }
+  function _videoModalStageUp() {
+    clearTimeout(_videoModalPressTimer);
+    if (_videoModalPress2x) {
+      const player = _videoModalEl('video-modal-player');
+      try { if (player) player.playbackRate = 1; } catch (_) {}
+      const badge = _videoModalEl('video-modal-2x');
+      if (badge) badge.classList.add('hidden');
+      _videoModalPress2x = false;
+      return; // fue 2x: no alternar los controles con este gesto
+    }
+    if (!_videoModalPressMoved) toggleVideoModalChrome();
+  }
+
+  // ---- Tiempo restante / total (tocar el número alterna) ----
+  let _videoModalDurTotal = false;
+  function _videoModalRenderDur() {
+    const player = _videoModalEl('video-modal-player');
+    const d = _videoModalEl('video-modal-dur');
+    if (!player || !d) return;
+    const dur = player.duration || 0;
+    if (_videoModalDurTotal || !(dur > 0)) {
+      d.textContent = formatVideoDuration(dur);
+    } else {
+      d.textContent = '-' + formatVideoDuration(Math.max(0, dur - player.currentTime));
+    }
+  }
+  function toggleVideoModalDurMode() {
+    _videoModalDurTotal = !_videoModalDurTotal;
+    _videoModalRenderDur();
+  }
+
   function toggleVideoModalPlay(fromBig) {
     const player = _videoModalEl('video-modal-player');
     if (!player || !player.src) return;
@@ -10610,6 +10717,12 @@ function saveNote() {
     try { player.pause(); } catch (_) {}
     try { player.removeAttribute('src'); player.load(); } catch (_) {}
     player.muted = false;
+    try { player.playbackRate = 1; } catch (_) {}
+    _videoModalDurTotal = false;
+    clearTimeout(_videoModalPressTimer);
+    _videoModalPress2x = false;
+    const badge2x = _videoModalEl('video-modal-2x');
+    if (badge2x) badge2x.classList.add('hidden');
     const vv = _videoModalEl('video-modal-icon-vol');
     const mm = _videoModalEl('video-modal-icon-mute');
     if (vv) vv.classList.remove('hidden');
@@ -10661,8 +10774,13 @@ function saveNote() {
     const player = _videoModalEl('video-modal-player');
     if (player) {
       try { player.pause(); } catch (_) {}
+      try { player.playbackRate = 1; } catch (_) {}
       try { player.removeAttribute('src'); player.load(); } catch (_) {}
     }
+    clearTimeout(_videoModalPressTimer);
+    _videoModalPress2x = false;
+    const badge2x = _videoModalEl('video-modal-2x');
+    if (badge2x) badge2x.classList.add('hidden');
     _videoModalLoading(false);
     _videoModalBigPlay(false);
     if (modal) modal.classList.add('hidden');
