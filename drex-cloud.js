@@ -1333,39 +1333,55 @@
     getAuth();
     var C = cognitoLib();
     if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
-    var cognitoUser = new C.CognitoUser({ Username: String(email).trim(), Pool: getUserPool() });
-    var authDetails = new C.AuthenticationDetails({ Username: String(email).trim(), Password: String(password) });
-    return new Promise(function (resolve, reject) {
-      cognitoUser.authenticateUser(authDetails, {
-        onSuccess: function (session) {
-          establishSession(cognitoUser, session).then(function (user) {
-            resolve({ user: user });
-          }, reject);
-        },
-        onFailure: function (err) {
-          if (err && err.code === 'UserNotConfirmedException') {
-            // La cuenta existe pero el email no está verificado: la app debe
-            // llevar al usuario a la pantalla de código de verificación.
-            var need = new Error('Tu correo aún no está verificado. Escribe el código que te enviamos.');
-            need.code = 'auth/needs-confirmation';
-            need.email = String(email).trim();
-            reject(need);
-            return;
-          }
-          reject(mapAuthError(err));
-        },
-        newPasswordRequired: function () {
-          reject(Object.assign(new Error('Debes restablecer tu contraseña.'), { code: 'auth/password-reset-required' }));
-        }
-      });
+    var cleanEmail = String(email).trim();
+    var lowerEmail = cleanEmail.toLowerCase();
+    // Cognito distingue mayúsculas/minúsculas en el nombre de usuario: si el
+    // correo se escribió con distintas mayúsculas que en el registro, el
+    // primer intento devuelve "no autorizado" y la app lo mostraba como
+    // "contraseña incorrecta". Se reintenta una vez en minúsculas antes de
+    // reportar el error, sin cambiar el comportamiento de cuentas existentes.
+    return attemptSignIn(cleanEmail).catch(function (err) {
+      var wrongPw = err && (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-login-credentials');
+      if (wrongPw && lowerEmail !== cleanEmail) return attemptSignIn(lowerEmail);
+      throw err;
     });
+    function attemptSignIn(em) {
+      var cognitoUser = new C.CognitoUser({ Username: em, Pool: getUserPool() });
+      var authDetails = new C.AuthenticationDetails({ Username: em, Password: String(password) });
+      return new Promise(function (resolve, reject) {
+        cognitoUser.authenticateUser(authDetails, {
+          onSuccess: function (session) {
+            establishSession(cognitoUser, session).then(function (user) {
+              resolve({ user: user });
+            }, reject);
+          },
+          onFailure: function (err) {
+            if (err && err.code === 'UserNotConfirmedException') {
+              // La cuenta existe pero el email no está verificado: la app debe
+              // llevar al usuario a la pantalla de código de verificación.
+              var need = new Error('Tu correo aún no está verificado. Escribe el código que te enviamos.');
+              need.code = 'auth/needs-confirmation';
+              need.email = em;
+              reject(need);
+              return;
+            }
+            reject(mapAuthError(err));
+          },
+          newPasswordRequired: function () {
+            reject(Object.assign(new Error('Debes restablecer tu contraseña.'), { code: 'auth/password-reset-required' }));
+          }
+        });
+      });
+    }
   }
 
   function createUserWithEmailAndPassword(email, password) {
     getAuth();
     var C = cognitoLib();
     if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
-    var cleanEmail = String(email).trim();
+    // El correo se guarda en minúsculas: Cognito distingue mayúsculas en el
+    // nombre de usuario y Gmail (y la mayoría de proveedores) no.
+    var cleanEmail = String(email).trim().toLowerCase();
     var attrs = [new C.CognitoUserAttribute({ Name: 'email', Value: cleanEmail })];
     return new Promise(function (resolve, reject) {
       getUserPool().signUp(cleanEmail, String(password), attrs, null, function (err, result) {
@@ -1396,7 +1412,7 @@
       if (!err || err.code !== 'auth/email-already-in-use') throw err;
       var C = cognitoLib();
       if (!C) throw err;
-      var cleanEmail = String(email).trim();
+      var cleanEmail = String(email).trim().toLowerCase();
       var cognitoUser = new C.CognitoUser({ Username: cleanEmail, Pool: getUserPool() });
       return new Promise(function (resolve, reject) {
         cognitoUser.resendConfirmationCode(function (rerr) {
@@ -1422,7 +1438,7 @@
     getAuth();
     var C = cognitoLib();
     if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
-    var cleanEmail = String(email).trim();
+    var cleanEmail = String(email).trim().toLowerCase();
     var cleanCode = String(code).trim();
     if (!/^\d{6}$/.test(cleanCode)) {
       var bad = new Error('Escribe el código de 6 dígitos que recibiste por correo.');
@@ -1451,7 +1467,7 @@
     getAuth();
     var C = cognitoLib();
     if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
-    var cleanEmail = String(email).trim();
+    var cleanEmail = String(email).trim().toLowerCase();
     var cognitoUser = new C.CognitoUser({ Username: cleanEmail, Pool: getUserPool() });
     return new Promise(function (resolve, reject) {
       cognitoUser.resendConfirmationCode(function (err, result) {
@@ -1467,7 +1483,7 @@
     getAuth();
     var C = cognitoLib();
     if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
-    var cleanEmail = String(email).trim();
+    var cleanEmail = String(email).trim().toLowerCase();
     var cognitoUser = new C.CognitoUser({ Username: cleanEmail, Pool: getUserPool() });
     return new Promise(function (resolve, reject) {
       cognitoUser.forgotPassword({
@@ -1481,7 +1497,7 @@
     getAuth();
     var C = cognitoLib();
     if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
-    var cognitoUser = new C.CognitoUser({ Username: String(email).trim(), Pool: getUserPool() });
+    var cognitoUser = new C.CognitoUser({ Username: String(email).trim().toLowerCase(), Pool: getUserPool() });
     return new Promise(function (resolve, reject) {
       cognitoUser.confirmPassword(String(code).trim(), String(newPassword), {
         onSuccess: function () { resolve(); },
