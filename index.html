@@ -113,14 +113,18 @@ button, a, select, [role="button"] {
 
 /* Espacios de anuncios (Adsterra). Ocultos hasta configurar las keys. */
 .adsterra-slot {
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
   overflow: hidden;
+  min-height: 50px;
+  width: 100%;
 }
-.adsterra-slot iframe { max-width: 100%; }
-/* Skeleton mientras el anuncio carga: nunca se ve un hueco vacío */
-.ad-shimmer{position:relative;overflow:hidden;background:#e8edf3;border-radius:10px;min-height:50px;width:100%;max-width:340px;margin:0 auto}
+.adsterra-slot iframe { display: block; max-width: 100%; border: 0; margin: 0 auto; }
+/* Skeleton mientras el anuncio carga: overlay absoluto para que nunca
+   compita con el iframe en el layout ni lo empuje a un lado */
+.ad-shimmer{position:absolute;inset:0;overflow:hidden;background:#e8edf3;border-radius:10px;min-height:50px;width:100%;max-width:340px;margin:0 auto}
 .ad-shimmer::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 25%,rgba(255,255,255,.75) 50%,transparent 75%);animation:ad-shimmer-slide 1.1s infinite}
 @keyframes ad-shimmer-slide{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 
@@ -41511,18 +41515,29 @@ window.musicStopAndHide = function () {
 function adsterraWatchShimmer(slot) {
   try {
     if (!slot) return;
-    if (slot.querySelector('iframe')) { const s0 = slot.querySelector('.ad-shimmer'); if (s0) s0.remove(); return; }
-    const mo = new MutationObserver(function () {
-      try {
-        if (slot.querySelector('iframe')) {
-          const sh = slot.querySelector('.ad-shimmer');
-          if (sh) sh.remove();
-          mo.disconnect();
-        }
-      } catch (_) {}
-    });
-    mo.observe(slot, { childList: true, subtree: true });
-    setTimeout(function () { try { mo.disconnect(); } catch (_) {} }, 15000);
+    var mo = null;
+    var poller = null;
+    var done = false;
+    function clearShimmer() {
+      if (done) return;
+      done = true;
+      try { var sh = slot.querySelector('.ad-shimmer'); if (sh) sh.remove(); } catch (_) {}
+      try { if (mo) mo.disconnect(); } catch (_) {}
+      try { if (poller) clearInterval(poller); } catch (_) {}
+    }
+    if (slot.querySelector('iframe')) { clearShimmer(); return; }
+    try {
+      mo = new MutationObserver(function () {
+        try { if (slot.querySelector('iframe')) clearShimmer(); } catch (_) {}
+      });
+      mo.observe(slot, { childList: true, subtree: true });
+    } catch (_) { mo = null; }
+    // Respaldo por si el observer no dispara: el esqueleto nunca debe
+    // quedarse visible junto al anuncio ya cargado.
+    poller = setInterval(function () {
+      try { if (slot.querySelector('iframe')) clearShimmer(); } catch (_) {}
+    }, 400);
+    setTimeout(function () { try { clearShimmer(); } catch (_) {} }, 15000);
   } catch (_) {}
 }
 /* Precarga del banner de la pausa publicitaria durante la canción anterior:
