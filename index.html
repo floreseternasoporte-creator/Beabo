@@ -19205,6 +19205,18 @@ function saveNote() {
     }
   }
 
+  // Lectura con timeout: el SDK de DynamoDB en el navegador no tiene timeout
+  // propio; si la red se queda colgada la promesa nunca se resuelve ni se
+  // rechaza y la pantalla se atoraba para siempre en "Verificando
+  // disponibilidad…". Con el timeout se muestra el error de conexión y el
+  // usuario puede reintentar editando el nombre.
+  function onceWithTimeout(ref, ms) {
+    return Promise.race([
+      ref.once('value'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout de lectura')), ms))
+    ]);
+  }
+
   document.getElementById('regUsername').addEventListener('input', () => {
     clearTimeout(usernameCheckTimer);
     // Invalidar de inmediato cualquier verificación en curso: la secuencia se
@@ -19237,13 +19249,13 @@ function saveNote() {
     setUsernameUI('checking', 'Verificando disponibilidad…');
 
     usernameCheckTimer = setTimeout(() => {
-      DrexCloud.database().ref('usernames/' + raw).once('value').then(snap => {
+      onceWithTimeout(DrexCloud.database().ref('usernames/' + raw), 12000).then(snap => {
         if (mySeq !== usernameCheckSeq) return; // obsoleto: el usuario siguió escribiendo
         if (snap.exists()) {
           setUsernameUI('taken', '@' + raw + ' ya está en uso. Prueba otro.');
         } else {
           // Respaldo: buscar en users por username (por si no se usa el índice)
-          DrexCloud.database().ref('users').orderByChild('username').equalTo(raw).once('value').then(snap2 => {
+          onceWithTimeout(DrexCloud.database().ref('users').orderByChild('username').equalTo(raw), 15000).then(snap2 => {
             if (mySeq !== usernameCheckSeq) return; // obsoleto
             if (snap2.exists()) {
               setUsernameUI('taken', '@' + raw + ' ya está en uso. Prueba otro.');
@@ -19251,11 +19263,11 @@ function saveNote() {
               setUsernameUI('available', '@' + raw + ' está disponible ✓');
             }
           }).catch(() => {
-            setUsernameUI('taken', 'No se pudo verificar. Revisa tu conexión.');
+            setUsernameUI('taken', 'No se pudo verificar. Revisa tu conexión y edita el nombre para reintentarlo.');
           });
         }
       }).catch(() => {
-        setUsernameUI('taken', 'No se pudo verificar. Revisa tu conexión.');
+        setUsernameUI('taken', 'No se pudo verificar. Revisa tu conexión y edita el nombre para reintentarlo.');
       });
     }, 400);
   });
