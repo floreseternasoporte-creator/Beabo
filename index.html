@@ -4333,7 +4333,6 @@ document.addEventListener("DOMContentLoaded", function() {
         </button>
       </div>
       <div id="adsterra-feed-top" class="adsterra-slot max-w-[680px] mx-auto" style="display:none;"></div>
-      <div id="drex-spotlight" class="max-w-[680px] mx-auto px-4 hidden"></div>
       <div id="feed-pull-indicator" class="hidden py-1 text-center"></div>
       <div id="notes-feed" class="drex-feed-list max-w-[680px] mx-auto pb-24"></div>
     </section>
@@ -39389,6 +39388,7 @@ async function endFiesta() {
       </div>
     </div>
     <div id="music-explore-pane" class="px-4">
+      <div id="music-spotlight" class="hidden mb-5"></div>
       <div id="music-top-section" class="hidden mb-5">
         <div class="flex items-center justify-between mb-2 px-1">
           <h3 class="text-[15px] font-extrabold text-[#1c2b4a]">Top Drex</h3>
@@ -39976,6 +39976,7 @@ function musicEmptyHTML(msg) {
 function loadExploreMusic() {
   const list = document.getElementById('music-explore-list');
   if (!list) return;
+  try { if (typeof drexSpotlightRender === 'function') drexSpotlightRender(); } catch (_) {}
   list.innerHTML = `<div class="py-10 text-center text-[#7b878f] text-sm font-semibold">Cargando música…</div>`;
   musicDb().ref('musicTracks').orderByChild('createdAt').limitToLast(120).once('value').then(snap => {
     const arr = [];
@@ -40079,8 +40080,9 @@ function renderMusicTop() {
       d) Anti-repetición: excluye a los artistas destacados de las 3 semanas anteriores
          (salvo que queden menos de 3 elegibles: entonces se permite repetir).
       e) Top 3 → se guarda en spotlight/<semana> {week, artists[], computedAt}.
-   4. Se pinta la sección "Destacados de la semana" en el homepage con portada, reproducciones
-      y botones para escuchar su mejor canción y ver su perfil. */
+   4. Se pinta la repisa "Sonando fuerte" en la sección de música (Explorar), con el mismo
+      lenguaje visual del resto: portada grande, nombre, su canción top y reproducciones
+      de la semana. Tocar la tarjeta abre el perfil del artista; el botón ▶ reproduce. */
 var drexSpotlightTracks = [];
 var drexSpotlightData = null;
 var drexSpotlightRunning = false;
@@ -40089,7 +40091,7 @@ function drexSpotlightWeekAgo(n) {
   catch (_) { return ''; }
 }
 function drexSpotlightRender() {
-  const box = document.getElementById('drex-spotlight');
+  const box = document.getElementById('music-spotlight');
   if (!box || typeof musicDb !== 'function' || typeof musicWeekId !== 'function') return;
   if (drexSpotlightRunning) return;
   const wid = musicWeekId();
@@ -40161,42 +40163,35 @@ function drexSpotlightCompute(wid) {
   } catch (_) { finish(); }
 }
 function drexSpotlightPaint(data) {
-  const box = document.getElementById('drex-spotlight');
+  const box = document.getElementById('music-spotlight');
   if (!box || !data || !data.artists || !data.artists.length) { if (box) box.classList.add('hidden'); return; }
   drexSpotlightData = data;
   drexSpotlightTracks = data.artists.map(a => ({ id: a.trackId, title: a.title, artistName: a.name, authorId: a.uid, coverImage: a.cover }));
   const T = (typeof appT === 'function') ? appT : (s => s);
-  const medals = ['#FFC83C', '#C0C7D1', '#E09A5A'];
   const cards = data.artists.map((a, i) => {
     const cover = a.cover
-      ? `<img src="${musicEsc(a.cover)}" class="w-14 h-14 rounded-2xl object-cover shrink-0 bg-white/10" alt="">`
-      : `<div class="w-14 h-14 rounded-2xl shrink-0 flex items-center justify-center text-white/70 bg-white/10 text-2xl">♫</div>`;
+      ? `<img src="${musicEsc(a.cover)}" class="w-full aspect-square object-cover bg-[#eef2f7]" alt="">`
+      : `<div class="w-full aspect-square flex items-center justify-center text-[#2F33B8] bg-[#2F33B8]/10 text-4xl">♫</div>`;
     const canProfile = !!a.uid;
     return `
-    <div class="flex items-center gap-3 rounded-2xl p-2.5" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);">
-      <span class="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-extrabold shrink-0 text-black" style="background:${medals[i] || '#FFC83C'}">${i + 1}</span>
-      ${cover}
-      <div class="min-w-0 flex-1 ${canProfile ? 'cursor-pointer' : ''}" ${canProfile ? `onclick="musicOpenArtistProfile('${musicEscJs(a.uid)}')"` : ''}>
-        <p class="text-[14px] font-extrabold text-white truncate leading-tight">${musicEsc(a.name)}</p>
-        <p class="text-[12px] text-white/60 font-semibold truncate">▶ ${musicFmtNum(a.plays)} · ${a.tracks} ${T(a.tracks === 1 ? 'canción' : 'canciones')}</p>
+    <article class="w-[128px] shrink-0 ${canProfile ? 'cursor-pointer' : ''}" ${canProfile ? `onclick="musicOpenArtistProfile('${musicEscJs(a.uid)}')"` : ''}>
+      <div class="relative rounded-2xl overflow-hidden">
+        ${cover}
+        <button onclick="event.stopPropagation();drexSpotlightPlay(${i})" class="tap44 absolute bottom-2 right-2 w-10 h-10 rounded-full bg-white shadow-lg flex items-center justify-center text-[#1c2b4a] active:opacity-80" aria-label="${T('Escuchar')}">
+          <svg class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </button>
       </div>
-      <button onclick="event.stopPropagation();drexSpotlightPlay(${i})" class="tap44 w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-black active:opacity-80" style="background:#FFC83C" aria-label="${T('Escuchar')}">
-        <svg class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-      </button>
-    </div>`;
+      <p class="mt-2 text-[13px] font-extrabold text-[#1c2b4a] truncate leading-tight">${musicEsc(a.name)}</p>
+      <p class="text-[11px] text-[#7b878f] font-semibold truncate">«${musicEsc(a.title)}»</p>
+      <p class="text-[11px] text-[#7b878f] font-semibold">▶ ${musicFmtNum(a.plays)} ${T('esta semana')}</p>
+    </article>`;
   }).join('');
   box.innerHTML = `
-  <div class="rounded-3xl p-4 mb-3 text-white" style="background:linear-gradient(150deg,#3438a8,#191c5e);box-shadow:0 12px 30px rgba(47,51,184,.35);">
-    <div class="flex items-center justify-between mb-3">
-      <div>
-        <p class="text-[10px] font-extrabold uppercase tracking-[.2em]" style="color:#FFC83C">${T('Drex Spotlight')}</p>
-        <h3 class="text-[17px] font-extrabold leading-tight">${T('Destacados de la semana')}</h3>
-      </div>
-      <span class="text-[11px] font-bold text-white/60">${musicEsc(data.week || '')}</span>
+    <div class="flex items-baseline justify-between mb-2 px-1">
+      <h3 class="text-[15px] font-extrabold text-[#1c2b4a]">${T('Sonando fuerte')}</h3>
+      <span class="text-[11px] text-[#7b878f] font-semibold">${T('Tres artistas que la están rompiendo')}</span>
     </div>
-    <div class="flex flex-col gap-2">${cards}</div>
-    <p class="mt-3 text-[11px] text-white/50 text-center font-semibold">${T('Elegidos automáticamente por su impulso · Se renueva cada semana')}</p>
-  </div>`;
+    <div class="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4" style="scrollbar-width:none;">${cards}</div>`;
   box.classList.remove('hidden');
   try { if (typeof translateAppSubtree === 'function') translateAppSubtree(box, typeof getAppLanguage === 'function' ? getAppLanguage() : 'es'); } catch (_) {}
 }
