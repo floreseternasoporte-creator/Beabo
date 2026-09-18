@@ -35672,7 +35672,7 @@ async function endFiesta() {
       <div id="music-top-section" class="hidden mb-5">
         <div class="flex items-center justify-between mb-2 px-1">
           <h3 class="text-[15px] font-extrabold text-[#1c2b4a]">Top Drex</h3>
-          <span class="text-[11px] text-[#7b878f] font-semibold">Lo más votado de la semana</span>
+          <span id="music-top-sub" class="text-[11px] text-[#7b878f] font-semibold">Lo más votado de la semana</span>
         </div>
         <div id="music-top-list" class="space-y-2"></div>
       </div>
@@ -35691,6 +35691,10 @@ async function endFiesta() {
       <button onclick="openMusicUpload()" class="w-full h-12 rounded-full bg-[#2F33B8] text-white font-extrabold text-[15px] active:opacity-80 transition shadow-lg shadow-[#2F33B8]/25 mb-2">+ Subir música</button>
       <p class="text-xs text-[#7b878f] mb-4 text-center">Puedes subir hasta 2 canciones por día.</p>
       <div id="music-mine-list" class="space-y-2"></div>
+      <div class="mt-6 mb-2 px-1">
+        <h3 class="text-[15px] font-extrabold text-[#1c2b4a]">Guardadas</h3>
+      </div>
+      <div id="music-fav-list" class="space-y-2"></div>
       <div class="mt-6 mb-2 px-1 flex items-center justify-between">
         <h3 class="text-[15px] font-extrabold text-[#1c2b4a]">Historial</h3>
         <button onclick="musicClearHistory()" class="text-[12px] font-bold text-[#7b878f] active:opacity-80">Borrar</button>
@@ -35785,9 +35789,12 @@ async function endFiesta() {
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
       </button>
       <span class="text-[11px] font-extrabold uppercase tracking-widest text-[#7b878f]">Reproduciendo</span>
+      <div class="flex items-center gap-2">
+      <button id="music-fav-btn" onclick="musicToggleFavoritePlayer()" class="tap44 w-10 h-10 rounded-full bg-black/5 flex items-center justify-center text-[#1c2b4a] active:opacity-80" aria-label="Guardar canción"></button>
       <button onclick="musicShareTrack()" class="tap44 w-10 h-10 rounded-full bg-black/5 flex items-center justify-center text-[#1c2b4a] active:opacity-80" aria-label="Compartir canción">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.59 13.59l6.83 3.98m-.01-10.15l-6.82 3.98M21 5a3 3 0 11-6 0 3 3 0 016 0zM3 13a3 3 0 116 0 3 3 0 01-6 0zm18 8a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
       </button>
+      </div>
     </div>
     <div class="flex-1 flex flex-col items-center justify-center py-6 min-h-[320px]">
       <div class="relative">
@@ -36122,6 +36129,7 @@ window.musicSwitchTab = function (tab) {
   document.getElementById('music-explore-searchbar')?.classList.toggle('hidden', !exp);
   document.getElementById('music-tab-btn-explore')?.classList.toggle('active', exp);
   document.getElementById('music-tab-btn-mine')?.classList.toggle('active', !exp);
+  try { musicFavoritesLoad(); } catch (_) {}
   if (exp) loadExploreMusic(); else loadMyMusic();
 };
 
@@ -36142,6 +36150,7 @@ function musicTrackRowHTML(t, i, ctx, withActions) {
       <p class="text-[12px] text-[#7b878f] font-semibold truncate">${musicEsc(t.artistName || t.authorName || 'Artista')} ${badge}${t.duration ? ' · ' + musicFmtTime(t.duration) : ''}${ctx === 'mine' ? ' · ▶ ' + musicFmtNum((t.plays | 0) || 0) + ' · ▲ ' + (((t.upvotes | 0) || 0) - (((t.downvotes | 0) || 0))) : ''}</p>
     </div>
     ${playing ? '<span class="music-eq" aria-hidden="true"><span></span><span></span><span></span></span>' : ''}
+    <button data-fav-btn="${musicEsc(t.id)}" onclick="event.stopPropagation();musicToggleFavorite('${ctx}', ${i})" class="tap44 w-10 h-10 flex items-center justify-center rounded-full shrink-0 active:opacity-80 ${musicIsFav(t.id) ? 'text-[#2F33B8]' : 'text-[#7b878f]'}" aria-label="Guardar canción">${musicFavIcon(musicIsFav(t.id))}</button>
     <button onclick="event.stopPropagation();musicShowPlaylistSheet('${musicEscJs(t.id)}')" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[#2F33B8] active:bg-[#2F33B8]/10 shrink-0" aria-label="Agregar a playlist">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
     </button>
@@ -36184,6 +36193,15 @@ function renderExploreMusic() {
 }
 window.musicFilterExplore = function () { renderExploreMusic(); try { renderMusicTop(); } catch (_) {} };
 var musicTopCache = [];
+function musicWeekId(d) {
+  d = d || new Date();
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return date.getUTCFullYear() + '-W' + String(week).padStart(2, '0');
+}
 function musicTopRowHTML(t, i) {
   const rankCls = i < 3 ? 'bg-[#2F33B8] text-white' : 'bg-[#e8edf3] text-[#7b878f]';
   return `
@@ -36194,29 +36212,55 @@ function musicTopRowHTML(t, i) {
       <p class="text-[14px] font-extrabold text-[#1c2b4a] truncate leading-tight">${musicEsc(t.title || 'Sin título')}</p>
       <p class="text-[12px] text-[#7b878f] font-semibold truncate">${musicEsc(t.artistName || t.authorName || 'Artista')}</p>
     </div>
+    <button data-fav-btn="${musicEsc(t.id)}" onclick="event.stopPropagation();musicToggleFavorite('top', ${i})" class="tap44 w-10 h-10 flex items-center justify-center rounded-full shrink-0 active:opacity-80 ${musicIsFav(t.id) ? 'text-[#2F33B8]' : 'text-[#7b878f]'}" aria-label="Guardar canción">${musicFavIcon(musicIsFav(t.id))}</button>
     <button onclick="event.stopPropagation();musicShowPlaylistSheet('${musicEscJs(t.id)}')" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[#2F33B8] active:bg-[#2F33B8]/10 shrink-0" aria-label="Agregar a playlist">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
     </button>
   </div>`;
 }
-function renderMusicTop() {
-  const sec = document.getElementById('music-top-section');
-  const list = document.getElementById('music-top-list');
-  if (!sec || !list) return;
-  const q = (document.getElementById('music-explore-input')?.value || '').trim();
-  if (q) { sec.classList.add('hidden'); return; }
-  const arr = musicExploreCache || [];
+function musicGlobalTop(arr) {
   const now = Date.now();
-  const scored = arr.map(t => {
+  return arr.map(t => {
     const up = Number(t.upvotes || 0), down = Number(t.downvotes || 0), plays = Number(t.plays || 0);
     const daysOld = t.createdAt ? Math.max(0, (now - Number(t.createdAt)) / 86400000) : 30;
     const recency = Math.max(0, 7 - daysOld) * 5;
     return { t, score: (up - down) * 10 + plays + recency };
   }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
+}
+function musicPaintTopList(scored, sub) {
+  const sec = document.getElementById('music-top-section');
+  const list = document.getElementById('music-top-list');
+  if (!sec || !list) return;
   if (!scored.length) { sec.classList.add('hidden'); return; }
   musicTopCache = scored.map(x => x.t);
+  const subEl = document.getElementById('music-top-sub');
+  if (subEl) subEl.textContent = sub;
   sec.classList.remove('hidden');
   list.innerHTML = scored.map((x, i) => musicTopRowHTML(x.t, i)).join('');
+}
+function renderMusicTop() {
+  const sec = document.getElementById('music-top-section');
+  if (!sec) return;
+  const q = (document.getElementById('music-explore-input')?.value || '').trim();
+  if (q) { sec.classList.add('hidden'); return; }
+  const arr = musicExploreCache || [];
+  const wid = musicWeekId();
+  try {
+    musicDb().ref('musicWeekly/' + wid).once('value').then(snap => {
+      const weekly = snap.val() || {};
+      const scored = arr.map(t => {
+        const w = weekly[t.id] || {};
+        const plays = ((w.plays | 0) || 0), up = ((w.up | 0) || 0), down = ((w.down | 0) || 0);
+        return { t, score: (up - down) * 10 + plays };
+      }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
+      if (scored.length) musicPaintTopList(scored, 'Lo más votado de la semana');
+      else musicPaintTopList(musicGlobalTop(arr), 'Lo más votado · histórico');
+    }).catch(() => {
+      musicPaintTopList(musicGlobalTop(arr), 'Lo más votado · histórico');
+    });
+  } catch (_) {
+    musicPaintTopList(musicGlobalTop(arr), 'Lo más votado · histórico');
+  }
 }
 
 /* ---------- Compartir canción ---------- */
@@ -37005,7 +37049,7 @@ function musicGetAudioUrl(trackId) {
   });
 }
 window.musicPlayFromList = function (ctx, idx) {
-  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicMineCache : ctx === 'top' ? musicTopCache : ctx === 'history' ? musicHistoryCache : ctx === 'playlist' ? (musicPlaylistDetailCache ? musicPlaylistDetailCache.tracks : []) : musicSearchCache;
+  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicMineCache : ctx === 'top' ? musicTopCache : ctx === 'favorites' ? musicFavArrForCtx('favorites') : ctx === 'history' ? musicHistoryCache : ctx === 'playlist' ? (musicPlaylistDetailCache ? musicPlaylistDetailCache.tracks : []) : musicSearchCache;
   if (!arr || !arr[idx]) return;
   musicQueue = arr.slice();
   musicQueueIdx = idx;
@@ -37050,6 +37094,7 @@ function musicStartTrack(t) {
   try { musicPaintMixBtn(); } catch (_) {}
   try { musicPaintSleepBtn(); } catch (_) {}
   try { musicLoadTrackLyrics(); } catch (_) {}
+  try { musicPaintFavUI(); } catch (_) {}
   try { document.getElementById('music-queue-mix-label')?.classList.toggle('hidden', !musicMixActive); } catch (_) {}
   musicSyncShuffleRepeatUI();
   adsterraInjectMusicSlot();
@@ -37065,8 +37110,9 @@ function musicStartTrack(t) {
     if (musicCurrentTrackId() !== t.id) return; // el usuario ya cambió de canción
     audio.src = url;
     audio.play().catch(() => {});
-    // Contar reproducción
+    // Contar reproducción (global + semanal para el Top Drex)
     try { musicDb().ref('musicTracks/' + t.id + '/plays').transaction(c => (c || 0) + 1); } catch (_) {}
+    try { musicDb().ref('musicWeekly/' + musicWeekId() + '/' + t.id + '/plays').transaction(c => ((c | 0) || 0) + 1); } catch (_) {}
   }).catch(() => {
     if (typeof showMiniToast === 'function') showMiniToast('No se pudo cargar el audio.');
     musicSyncPlayUI();
@@ -37298,6 +37344,111 @@ window.musicClearHistory = function () {
   renderMusicHistory();
   if (typeof showMiniToast === 'function') showMiniToast('Historial borrado');
 };
+/* ---------- Favoritos / Guardadas ---------- */
+var musicFavoritesCache = [];
+function musicFavDbKey() {
+  try { const u = DrexCloud.auth().currentUser; return u ? 'musicFavorites/' + u.uid : null; } catch (_) { return null; }
+}
+function musicFavIcon(fav) {
+  return fav
+    ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M6 3h12a1 1 0 011 1v17l-7-4-7 4V4a1 1 0 011-1z"/></svg>'
+    : '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>';
+}
+function musicIsFav(trackId) {
+  return !!trackId && musicFavoritesCache.some(f => f && f.trackId === trackId);
+}
+function musicFavoritesLoad() {
+  const key = musicFavDbKey();
+  if (!key) { musicFavoritesCache = []; try { renderMusicFavorites(); } catch (_) {} return; }
+  musicDb().ref(key).once('value').then(snap => {
+    const obj = snap.val() || {};
+    musicFavoritesCache = Object.values(obj).filter(f => f && f.trackId)
+      .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+    try { renderMusicFavorites(); } catch (_) {}
+    try { musicPaintFavUI(); } catch (_) {}
+    try { musicRefreshFavRowIcons(); } catch (_) {}
+  }).catch(() => {});
+}
+function musicTrackSnapshot(t) {
+  return {
+    trackId: t.id, title: t.title || 'Sin título',
+    artistName: t.artistName || t.authorName || '',
+    coverImage: t.coverImage || '', genre: t.genre || '',
+    duration: t.duration || 0, savedAt: Date.now()
+  };
+}
+function musicToggleFavoriteByTrack(t) {
+  if (!t || !t.id) return;
+  const key = musicFavDbKey();
+  if (!key) { if (typeof showMiniToast === 'function') showMiniToast('Debes iniciar sesión para guardar'); return; }
+  const ref = musicDb().ref(key + '/' + t.id);
+  if (musicIsFav(t.id)) {
+    try { ref.remove(); } catch (_) {}
+    musicFavoritesCache = musicFavoritesCache.filter(f => f.trackId !== t.id);
+    if (typeof showMiniToast === 'function') showMiniToast('Eliminada de tus guardadas');
+  } else {
+    const snap = musicTrackSnapshot(t);
+    try { ref.set(snap); } catch (_) {}
+    musicFavoritesCache.unshift(snap);
+    if (typeof showMiniToast === 'function') showMiniToast('Guardada en tu biblioteca');
+  }
+  try { musicPaintFavUI(); } catch (_) {}
+  try { renderMusicFavorites(); } catch (_) {}
+  try { musicRefreshFavRowIcons(); } catch (_) {}
+}
+function musicFavArrForCtx(ctx) {
+  if (ctx === 'explore') return musicExploreCache;
+  if (ctx === 'mine') return musicMineCache;
+  if (ctx === 'top') return musicTopCache;
+  if (ctx === 'history') return musicHistoryCache;
+  if (ctx === 'favorites') return musicFavoritesCache.map(f => Object.assign({}, f, { id: f.trackId }));
+  return musicSearchCache;
+}
+window.musicToggleFavorite = function (ctx, i) {
+  const arr = musicFavArrForCtx(ctx);
+  const t = arr && arr[i];
+  if (t) musicToggleFavoriteByTrack(t);
+};
+window.musicToggleFavoritePlayer = function () {
+  const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
+  if (t) musicToggleFavoriteByTrack(t);
+};
+function musicPaintFavUI() {
+  const btn = document.getElementById('music-fav-btn');
+  if (!btn) return;
+  const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
+  btn.innerHTML = musicFavIcon(musicIsFav(t && t.id));
+  btn.classList.toggle('text-[#2F33B8]', !!(t && musicIsFav(t.id)));
+  btn.classList.toggle('text-[#1c2b4a]', !(t && musicIsFav(t.id)));
+}
+function musicRefreshFavRowIcons() {
+  try {
+    document.querySelectorAll('[data-fav-btn]').forEach(el => {
+      const id = el.getAttribute('data-fav-btn');
+      const fav = musicIsFav(id);
+      el.innerHTML = musicFavIcon(fav);
+      el.classList.toggle('text-[#2F33B8]', fav);
+      el.classList.toggle('text-[#7b878f]', !fav);
+    });
+  } catch (_) {}
+}
+function renderMusicFavorites() {
+  const box = document.getElementById('music-fav-list');
+  if (!box) return;
+  if (!musicFavoritesCache.length) {
+    box.innerHTML = '<p class="text-[12px] text-[#7b878f] font-semibold px-1 py-2">Toca el marcador en cualquier canción para guardarla aquí.</p>';
+    return;
+  }
+  box.innerHTML = musicFavoritesCache.map((f, i) => `
+    <div class="music-track-row" onclick="musicPlayFromList('favorites', ${i})">
+      ${musicCoverHTML(f, 'w-11 h-11 rounded-xl')}
+      <div class="min-w-0 flex-1">
+        <p class="text-[14px] font-extrabold text-[#1c2b4a] truncate leading-tight">${musicEsc(f.title)}</p>
+        <p class="text-[12px] text-[#7b878f] font-semibold truncate">${musicEsc(f.artistName || '')}</p>
+      </div>
+      <button onclick="event.stopPropagation();musicToggleFavorite('favorites', ${i})" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[#2F33B8] active:opacity-80" aria-label="Quitar de guardadas">${musicFavIcon(true)}</button>
+    </div>`).join('');
+}
 /* ---------- Letras de canciones ---------- */
 function musicLoadTrackLyrics() {
   const row = document.getElementById('music-player-lyrics-row');
@@ -37471,6 +37622,14 @@ window.voteMusicTrack = function (voteType) {
       _musicVoteLock = false;
       if (!res || !res.committed) { musicPaintVoteUI(wasUp, wasDown, curScore); return; }
       const newVote = (serverVote === voteType) ? null : voteType;
+      // Votos semanales (Top Drex semanal real)
+      try {
+        const wref = musicDb().ref('musicWeekly/' + musicWeekId() + '/' + trackId);
+        if (serverVote === 'up') wref.child('up').transaction(c => Math.max(0, ((c | 0) || 0) - 1));
+        if (serverVote === 'down') wref.child('down').transaction(c => Math.max(0, ((c | 0) || 0) - 1));
+        if (newVote === 'up') wref.child('up').transaction(c => ((c | 0) || 0) + 1);
+        if (newVote === 'down') wref.child('down').transaction(c => ((c | 0) || 0) + 1);
+      } catch (_) {}
       if (newVote === null) { try { userVoteRef.remove(); } catch (_) {} }
       else { try { userVoteRef.set(newVote); } catch (_) {} }
       const un = res.snapshot ? res.snapshot.val() : null;
