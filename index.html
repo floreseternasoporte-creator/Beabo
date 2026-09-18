@@ -35686,7 +35686,7 @@ async function endFiesta() {
         </div>
         <div id="music-playlists-carousel" class="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4" style="scrollbar-width:none;-webkit-overflow-scrolling:touch;"></div>
       </div>
-      <div class="mb-5">
+      <div id="music-followed-section" class="mb-5">
         <div class="flex items-center justify-between mb-2 px-1">
           <h3 class="text-[15px] font-extrabold text-[#1c2b4a]">Artistas que sigues</h3>
         </div>
@@ -36566,34 +36566,42 @@ window.musicOpenFollowerProfile = function (uid) {
 };
 /* ---------- Artistas que sigues ---------- */
 function loadMusicFollowedArtists() {
+  const sec = document.getElementById('music-followed-section');
   const box = document.getElementById('music-followed-carousel');
   if (!box) return;
   const me = musicCurrentUid();
-  if (!me) { box.innerHTML = ''; return; }
+  if (!me) { if (sec) sec.style.display = 'none'; return; }
   box.innerHTML = '<div class="py-4 text-center text-[#7b878f] text-xs font-semibold w-full">Cargando…</div>';
   try {
     const db = musicDb();
     db.ref('following/' + me).limitToFirst(40).once('value').then(snap => {
       const uids = [];
       snap.forEach(ch => uids.push(ch.key));
-      if (!uids.length) {
-        box.innerHTML = '<p class="text-[12px] text-[#7b878f] font-semibold py-3">Sigue a tus artistas favoritos para verlos aquí.</p>';
-        return;
-      }
-      Promise.all(uids.map(aid => db.ref('users/' + aid).once('value').then(us => ({ uid: aid, u: us.val() || {} })).catch(() => ({ uid: aid, u: {} })))).then(rows => {
+      if (!uids.length) { if (sec) sec.style.display = 'none'; return; }
+      // Solo quienes SI han publicado musica: no son artistas si no tienen canciones
+      Promise.all(uids.map(aid =>
+        db.ref('musicTracks').orderByChild('authorId').equalTo(aid).limitToFirst(1).once('value')
+          .then(ts => ts.exists()
+            ? db.ref('users/' + aid).once('value').then(us => ({ uid: aid, u: us.val() || {} })).catch(() => null)
+            : null)
+          .catch(() => null)
+      )).then(rows => {
+        rows = rows.filter(Boolean);
+        if (!rows.length) { if (sec) sec.style.display = 'none'; return; }
+        if (sec) sec.style.display = '';
         box.innerHTML = rows.map(r => {
           const name = r.u.artistName || r.u.username || 'Artista';
           const safeUid = String(r.uid).replace(/[^A-Za-z0-9_-]/g, '');
           const av = r.u.profileImage
             ? '<img src="' + musicEsc(r.u.profileImage) + '" class="w-14 h-14 rounded-full object-cover" alt="">'
             : '<div class="w-14 h-14 rounded-full bg-[#2F33B8]/10 flex items-center justify-center text-xl font-extrabold text-[#2F33B8]">' + musicEsc((name || 'A').charAt(0).toUpperCase()) + '</div>';
-          return '<button onclick="musicOpenArtistProfile(\'' + safeUid + '\')" class="flex flex-col items-center gap-1.5 w-[72px] shrink-0 active:opacity-80">'
+          return '<button onclick="musicOpenArtistProfile(\'' + safeUid + '\')" class="flex flex-col items-center gap-1.5 w-[76px] shrink-0 active:opacity-80">'
             + av
-            + '<span class="text-[11px] font-bold text-[#1c2b4a] text-center leading-tight line-clamp-2">' + musicEsc(name) + '</span>'
+            + '<span class="text-[11px] font-bold text-[#1c2b4a] text-center leading-tight truncate w-full">' + musicEsc(name) + '</span>'
             + '</button>';
         }).join('');
       });
-    }).catch(() => { box.innerHTML = ''; });
+    }).catch(() => { if (sec) sec.style.display = 'none'; });
   } catch (_) {}
 }
 window.musicCloseArtistProfile = function () {
