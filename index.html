@@ -35686,6 +35686,7 @@ async function endFiesta() {
         <div id="music-playlists-carousel" class="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4" style="scrollbar-width:none;-webkit-overflow-scrolling:touch;"></div>
       </div>
       <h3 class="text-[15px] font-extrabold text-[#1c2b4a] mb-2 px-1">Tus canciones</h3>
+      <div id="music-stats-card" class="mb-3"></div>
       <button onclick="openMusicUpload()" class="w-full h-12 rounded-full bg-[#2F33B8] text-white font-extrabold text-[15px] active:opacity-80 transition shadow-lg shadow-[#2F33B8]/25 mb-2">+ Subir música</button>
       <p class="text-xs text-[#7b878f] mb-4 text-center">Puedes subir hasta 2 canciones por día.</p>
       <div id="music-mine-list" class="space-y-2"></div>
@@ -36089,7 +36090,7 @@ function musicTrackRowHTML(t, i, ctx, withActions) {
     ${musicCoverHTML(t)}
     <div class="min-w-0 flex-1">
       <p class="text-[14px] font-extrabold text-[#1c2b4a] truncate leading-tight">${musicEsc(t.title || 'Sin título')}</p>
-      <p class="text-[12px] text-[#7b878f] font-semibold truncate">${musicEsc(t.artistName || t.authorName || 'Artista')} ${badge}${t.duration ? ' · ' + musicFmtTime(t.duration) : ''}</p>
+      <p class="text-[12px] text-[#7b878f] font-semibold truncate">${musicEsc(t.artistName || t.authorName || 'Artista')} ${badge}${t.duration ? ' · ' + musicFmtTime(t.duration) : ''}${ctx === 'mine' ? ' · ▶ ' + musicFmtNum((t.plays | 0) || 0) + ' · ▲ ' + (((t.upvotes | 0) || 0) - (((t.downvotes | 0) || 0))) : ''}</p>
     </div>
     ${playing ? '<span class="music-eq" aria-hidden="true"><span></span><span></span><span></span></span>' : ''}
     <button onclick="event.stopPropagation();musicShowPlaylistSheet('${musicEscJs(t.id)}')" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[#2F33B8] active:bg-[#2F33B8]/10 shrink-0" aria-label="Agregar a playlist">
@@ -36218,6 +36219,36 @@ window.loadMusicPlaylists = function () {
     try { renderMusicSheetList(); } catch (_) {}
   }).catch(() => {});
 };
+function musicFmtNum(n) {
+  n = Number(n) || 0;
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace('.0', '') + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1).replace('.0', '') + 'k';
+  return String(n);
+}
+function renderMusicStats(arr) {
+  const card = document.getElementById('music-stats-card');
+  if (!card) return;
+  if (!arr.length) { card.innerHTML = ''; return; }
+  let plays = 0, votes = 0, top = null, topScore = -Infinity;
+  arr.forEach(t => {
+    plays += ((t.plays | 0) || 0);
+    const sc = (((t.upvotes | 0) || 0) - (((t.downvotes | 0) || 0)));
+    votes += sc;
+    const heat = sc * 10 + (((t.plays | 0) || 0));
+    if (heat > topScore) { topScore = heat; top = t; }
+  });
+  card.innerHTML = `
+  <div class="bg-white rounded-2xl border border-[#e7ecf3] p-4">
+    <div class="flex items-center justify-around text-center">
+      <div><p class="text-[18px] font-extrabold text-[#1c2b4a]">${musicFmtNum(plays)}</p><p class="text-[11px] text-[#7b878f] font-bold">Reproducciones</p></div>
+      <div class="w-px h-9 bg-[#e7ecf3]"></div>
+      <div><p class="text-[18px] font-extrabold text-[#1c2b4a]">${musicFmtNum(votes)}</p><p class="text-[11px] text-[#7b878f] font-bold">Votos netos</p></div>
+      <div class="w-px h-9 bg-[#e7ecf3]"></div>
+      <div><p class="text-[18px] font-extrabold text-[#1c2b4a]">${arr.length}</p><p class="text-[11px] text-[#7b878f] font-bold">Canciones</p></div>
+    </div>
+    ${top ? `<p class="mt-3 pt-3 border-t border-[#eef1f5] text-[12px] text-[#7b878f] font-semibold truncate">🔥 Tu mejor canción: <span class="text-[#1c2b4a] font-extrabold">${musicEsc(top.title || 'Sin título')}</span></p>` : ''}
+  </div>`;
+}
 function musicPlaylistCardHTML(pl) {
   const cnt = pl.tracks ? Object.keys(pl.tracks).length : 0;
   return `
@@ -36409,6 +36440,7 @@ function loadMyMusic() {
     snap.forEach(ch => arr.push({ ...(ch.val() || {}), id: ch.key }));
     arr.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     musicMineCache = arr;
+    try { renderMusicStats(arr); } catch (_) {}
     try { loadMusicPlaylists(); } catch (_) {}
     list.innerHTML = arr.length ? arr.map((t, i) => musicTrackRowHTML(t, i, 'mine', true)).join('') : musicEmptyHTML('Aún no publicas música. ¡Sube tu primera canción!');
   }).catch(() => {
@@ -37100,6 +37132,15 @@ window.voteMusicTrack = function (voteType) {
       if (un) {
         t.upvotes = (un.upvotes | 0) || 0; t.downvotes = (un.downvotes | 0) || 0;
         musicPaintVoteUI(newVote === 'up', newVote === 'down', t.upvotes - t.downvotes);
+        if (newVote === 'up' && serverVote !== 'up' && un.authorId && un.authorId !== user.uid && typeof addNotification === 'function') {
+          try {
+            DrexCloud.database().ref('users/' + user.uid).once('value').then(us => {
+              const uName = (us.val() || {}).username || user.displayName || 'Alguien';
+              const act = un.announceNoteId ? { actionType: 'post', actionId: un.announceNoteId } : {};
+              addNotification(un.authorId, `A ${uName} le dio un voto a tu canción.`, 'vote', act);
+            }).catch(() => {});
+          } catch (_) {}
+        }
       }
     });
   }).catch(() => { _musicVoteLock = false; musicPaintVoteUI(wasUp, wasDown, curScore); });
