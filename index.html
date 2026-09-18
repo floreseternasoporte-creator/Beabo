@@ -8623,6 +8623,28 @@ function saveNote() {
   }
 
   function maybeInsertFeedAd(feedFragment, postIndex) {
+    // Anuncios Adsterra intercalados en el feed: un bloque cada N posts,
+    // con carga diferida (el banner se pide solo cuando el bloque se acerca
+    // a la pantalla al hacer scroll). Reutiliza la key del banner 320x50.
+    try {
+      if (typeof ADSTERRA !== 'undefined' && ADSTERRA && ADSTERRA.bannerKey) {
+        const n = Math.max(2, (ADSTERRA.inFeedEveryN | 0) || 3);
+        if (((postIndex + 1) % n) === 0) {
+          const label = 'Anuncio';
+          const wrap = document.createElement('div');
+          wrap.className = 'drex-ad-slot';
+          wrap.setAttribute('aria-label', label);
+          wrap.innerHTML = '<span class="drex-ad-label">' + label + '</span>' +
+            '<div class="adsterra-slot" style="min-height:50px"></div>';
+          feedFragment.appendChild(wrap);
+          try {
+            const obs = ensureAdsterraInFeedObserver();
+            if (obs) obs.observe(wrap); else loadAdsterraInFeedSlot(wrap);
+          } catch (_) { /* el bloque queda como marcador visible */ }
+          return;
+        }
+      }
+    } catch (_) {}
     if (!drexAdsActive()) return;
     const n = Math.max(4, DREX_ADS.feedEveryN | 0 || 8);
     if (((postIndex + 1) % n) !== 0) return;
@@ -8632,6 +8654,38 @@ function saveNote() {
     wrap.innerHTML = html;
     const slot = wrap.firstElementChild;
     if (slot) feedFragment.appendChild(slot);
+  }
+
+  /* Observador único para los bloques in-feed: carga el banner de Adsterra
+     cuando el bloque está por entrar en pantalla (rootMargin amplio para
+     que el anuncio ya esté listo al llegar). */
+  var adsterraInFeedObserver = null;
+  function ensureAdsterraInFeedObserver() {
+    if (adsterraInFeedObserver) return adsterraInFeedObserver;
+    try {
+      adsterraInFeedObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          try { adsterraInFeedObserver.unobserve(en.target); } catch (_) {}
+          loadAdsterraInFeedSlot(en.target);
+        });
+      }, { rootMargin: '500px 0px' });
+    } catch (_) { adsterraInFeedObserver = null; }
+    return adsterraInFeedObserver;
+  }
+  function loadAdsterraInFeedSlot(wrap) {
+    if (!wrap || wrap.dataset.adLoaded === '1') return;
+    if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.bannerKey) return;
+    wrap.dataset.adLoaded = '1';
+    try {
+      const slot = wrap.querySelector('.adsterra-slot');
+      if (!slot) return;
+      window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
+      const s = document.createElement('script');
+      s.type = 'text/javascript';
+      s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
+      slot.appendChild(s);
+    } catch (_) {}
   }
 
   function loadUserFrame(userId, targetElementId) { /* feature removed */ }
@@ -17811,20 +17865,22 @@ function saveNote() {
 
   /* ================= ADSTERRA (monetización con anuncios) =================
      ACTIVO desde 2026-09-17: cuenta Publisher "drexapp", sitio aprobado
-     (floreseternasoporte-creator.github.io), Banner 320x50 arriba del feed
-     + Social Bar. El Popunder y el segundo banner del menú quedan
-     desactivados por ahora. Mientras una key/URL esté vacía, ese formato
-     no se carga y la app funciona igual. */
+     (floreseternasoporte-creator.github.io). Desde 2026-09-18: banner 320x50
+     INTERCALADO en el feed (un anuncio cada inFeedEveryN posts, con carga
+     diferida al hacer scroll) + banner en el reproductor de música + Social
+     Bar. El banner fijo de arriba del feed se retiró. El Popunder y el
+     segundo banner del menú quedan desactivados por ahora. Mientras una
+     key/URL esté vacía, ese formato no se carga y la app funciona igual. */
   const ADSTERRA = {
-    bannerKey: '8aacab904ecc055711c41dd09a35aa83',     // 'key' del banner 320x50 (arriba del feed)
+    bannerKey: '8aacab904ecc055711c41dd09a35aa83',     // 'key' del banner 320x50 (feed in-feed + reproductor de música)
     bannerKey2: '',    // 'key' del segundo banner 320x50 (menú lateral, opcional)
+    inFeedEveryN: 3,   // un anuncio intercalado cada N posts del feed
     socialBarUrl: 'https://pl31383679.profitableratecpmnetwork.com/17/30/14/173014f0a7698ccca010be076ff0f01a.js',  // URL completa del script de Social Bar
     popunderUrl: ''    // URL completa del script Popunder
   };
 
   function adsterraInjectBanners() {
     const units = [];
-    if (ADSTERRA.bannerKey) units.push({ slotId: 'adsterra-feed-top', key: ADSTERRA.bannerKey });
     if (ADSTERRA.bannerKey2) units.push({ slotId: 'adsterra-menu-slot', key: ADSTERRA.bannerKey2 });
     // Se cargan en cadena para que cada banner use su propia key (atOptions).
     let i = 0;
