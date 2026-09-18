@@ -20018,6 +20018,14 @@ function saveNote() {
 "✓ Teléfono guardado":"✓ Phone saved",
 "[Silencio] Drex":"[Silence] Drex",
 "Visto":"Seen",
+"Traducción automática del chat":"Automatic chat translation",
+"Los mensajes del chat escritos en otros idiomas se traducirán solos al llegar, sin que tengas que tocar nada.":"Chat messages written in other languages will be translated automatically on arrival, without you having to tap anything.",
+"Traducir mensajes del chat":"Translate chat messages",
+"Automático al recibir cada mensaje":"Automatic when each message arrives",
+"Idioma de traducción del chat":"Chat translation language",
+"Automático (igual que publicaciones)":"Automatic (same as posts)",
+"Traducido · ver original":"Translated · view original",
+"Ver traducción":"View translation",
 };
   const APP_CHINESE_TEXT = {
 "Colaborar":"合作",
@@ -21951,6 +21959,14 @@ function saveNote() {
 "✓ Teléfono guardado":"✓ 电话已保存",
 "[Silencio] Drex":"[静音] Drex",
 "Visto":"已读",
+"Traducción automática del chat":"自动聊天翻译",
+"Los mensajes del chat escritos en otros idiomas se traducirán solos al llegar, sin que tengas que tocar nada.":"用其他语言书写的聊天消息将在到达时自动翻译，无需你手动操作。",
+"Traducir mensajes del chat":"翻译聊天消息",
+"Automático al recibir cada mensaje":"每条消息到达时自动翻译",
+"Idioma de traducción del chat":"聊天翻译语言",
+"Automático (igual que publicaciones)":"自动（与帖子相同）",
+"Traducido · ver original":"已翻译 · 查看原文",
+"Ver traducción":"查看译文",
   };
   const APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
@@ -29583,7 +29599,7 @@ let chatTypingListener = null;
         const label = secsLeft >= 3600 ? Math.ceil(secsLeft/3600)+'h' : secsLeft >= 60 ? Math.ceil(secsLeft/60)+'min' : secsLeft+'s';
         const innerContent = msg.images?.length
           ? `<img src="${escapeHtml(msg.images[0])}" class="rounded-2xl block" style="max-width:200px;max-height:200px;object-fit:cover" alt="Foto">`
-          : `<p class="text-[15px] leading-snug break-words">${escapeHtml(msg.text || '')}</p>`;
+          : `<p class="text-[15px] leading-snug break-words chat-msg-text" data-chat-mine="${mine ? 1 : 0}">${escapeHtml(msg.text || '')}</p>`;
         content = `<div class="relative">${innerContent}<div class="flex items-center gap-1 mt-1 opacity-70"><svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5" stroke-linecap="round"/></svg><span class="text-[10px] font-bold" id="timer-${resolvedId}">${label}</span></div></div>`;
         setTimeout(() => _startMsgCountdown(resolvedId, msg.autoDestroyAt, conversationId), 100);
       } else if (msg.autoDestroyAt && msg.autoDestroyAt <= Date.now()) {
@@ -29615,8 +29631,8 @@ let chatTypingListener = null;
         }
       } else {
         content = msgImages.length
-          ? (hasText ? `<div class="flex flex-col gap-1.5">${imagesHtml}<p class="text-[15px] leading-snug break-words">${escapeHtml(msg.text)}</p></div>` : imagesHtml)
-          : `<p class="text-[15px] leading-snug break-words">${escapeHtml(msg.text || '')}</p>`;
+          ? (hasText ? `<div class="flex flex-col gap-1.5">${imagesHtml}<p class="text-[15px] leading-snug break-words chat-msg-text" data-chat-mine="${mine ? 1 : 0}">${escapeHtml(msg.text)}</p></div>` : imagesHtml)
+          : `<p class="text-[15px] leading-snug break-words chat-msg-text" data-chat-mine="${mine ? 1 : 0}">${escapeHtml(msg.text || '')}</p>`;
       }
       const timeStr = formatMsgTime(msg.timestamp);
 
@@ -33637,6 +33653,8 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
 
   let autoTranslateEnabled = true;
   let userPreferredLang = DEFAULT_LANG;
+  let chatTranslateEnabled = true;
+  let chatTranslationLang = 'auto'; // 'auto' = igual que el idioma de publicaciones
 
   const WORLD_LANGUAGES = [
     { code: 'es', name: 'Español' },
@@ -33737,16 +33755,21 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
         const settings = JSON.parse(saved);
         autoTranslateEnabled = settings.autoTranslate !== false;
         userPreferredLang = settings.lang || DEFAULT_LANG;
+        chatTranslateEnabled = settings.chatAutoTranslate !== false;
+        chatTranslationLang = settings.chatLang || 'auto';
       }
     } catch (e) {}
     updateTranslationUI();
+    updateChatTranslationUI();
   }
 
   function saveTranslationSettings() {
     try {
       localStorage.setItem('drex_translation_settings', JSON.stringify({
         autoTranslate: autoTranslateEnabled,
-        lang: userPreferredLang
+        lang: userPreferredLang,
+        chatAutoTranslate: chatTranslateEnabled,
+        chatLang: chatTranslationLang
       }));
     } catch (e) {}
   }
@@ -33863,12 +33886,12 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
       document.getElementById('notes-feed'),
       document.getElementById('home-community-feed'),
       document.getElementById('comments-list-view'),
+      document.getElementById('chat-room-messages'),
     ].filter(Boolean);
 
     if (!targets.length) return;
 
     translationObserver = new MutationObserver((mutations) => {
-      if (!autoTranslateEnabled) return;
       mutations.forEach(mutation => {
         mutation.addedNodes.forEach(node => {
           if (node.nodeType === 1) {
@@ -33884,6 +33907,20 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
   }
 
   function processNodeForTranslation(node) {
+    const inChat = node.id === 'chat-room-messages' || (node.closest && node.closest('#chat-room-messages'));
+    if (inChat) {
+      if (!chatTranslateEnabled) return;
+      const list = (node.matches && node.matches('.chat-msg-text'))
+        ? [node]
+        : Array.from(node.querySelectorAll ? node.querySelectorAll('.chat-msg-text') : []);
+      list.forEach(p => {
+        if (p && !p.dataset.chatT) {
+          // Pequeño delay para no bloquear el render
+          setTimeout(() => processChatMessageForTranslation(p), 250);
+        }
+      });
+      return;
+    }
     if (!autoTranslateEnabled) return;
 
     const paragraphs = node.querySelectorAll ? node.querySelectorAll('p, .post-text') : [];
@@ -33926,7 +33963,9 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
       view.style.zIndex = '135';
     }
     try { renderLanguageList(); } catch (_) {}
+    try { renderChatLanguageList(); } catch (_) {}
     try { updateTranslationUI(); } catch (_) {}
+    try { updateChatTranslationUI(); } catch (_) {}
   };
 
   window.closeTranslationsConfig = function() {
@@ -33968,7 +34007,7 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
     if (autoTranslateEnabled) {
       startTranslationObserver();
     } else {
-      if (translationObserver) translationObserver.disconnect();
+      if (!chatTranslateEnabled && translationObserver) translationObserver.disconnect();
       document.querySelectorAll('.translation-wrapper').forEach(el => {
         el.style.display = 'none';
       });
@@ -33987,6 +34026,12 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
     });
 
     updateTranslationUI();
+    // Si el chat sigue al idioma de publicaciones, re-traducir con el nuevo idioma
+    if (chatTranslationLang === 'auto') {
+      updateChatTranslationUI();
+      resetChatTranslations();
+      if (chatTranslateEnabled) translateExistingChatMessages();
+    }
   };
 
   function renderLanguageList() {
@@ -34054,6 +34099,22 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
     }
+
+    .chat-translation-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #7b878f;
+      background: transparent;
+      border: none;
+      padding: 5px 0 0;
+      margin: 0;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .chat-translation-toggle:active { opacity: .6; }
   `;
   document.head.appendChild(style);
 
@@ -34069,13 +34130,158 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
 
   init();
 
+  /* ═════════════════════════════════════════════
+     TRADUCCIÓN AUTOMÁTICA DEL CHAT (mensajería)
+     Los mensajes entrantes en otros idiomas se traducen solos
+     al idioma configurado, sin que el usuario toque nada.
+     (chatTranslateEnabled/chatTranslationLang se declaran arriba,
+      junto a autoTranslateEnabled, para que init() pueda usarlos.)
+  ══════════════════════════════════════════════ */
+
+  function getChatTranslationTarget() {
+    if (!chatTranslateEnabled) return null;
+    const code = chatTranslationLang === 'auto' ? userPreferredLang : chatTranslationLang;
+    return code || null;
+  }
+
+  function resetChatTranslations() {
+    document.querySelectorAll('#chat-room-messages .chat-msg-text').forEach(p => {
+      if (p.dataset.originalText) {
+        p.textContent = p.dataset.originalText;
+        const b = p.parentNode ? p.parentNode.querySelector(':scope > .chat-translation-toggle') : null;
+        if (b) b.remove();
+      }
+      delete p.dataset.chatT;
+      delete p.dataset.showing;
+      delete p.dataset.originalText;
+      delete p.dataset.translatedText;
+    });
+  }
+
+  window.translateExistingChatMessages = function() {
+    if (!chatTranslateEnabled) return;
+    const container = document.getElementById('chat-room-messages');
+    if (!container) return;
+    container.querySelectorAll('.chat-msg-text:not([data-chat-t])').forEach((p, i) => {
+      setTimeout(() => processChatMessageForTranslation(p), i * 120);
+    });
+  };
+
+  async function processChatMessageForTranslation(p) {
+    if (!p || p.dataset.chatT) return;
+    p.dataset.chatT = '1';
+    try {
+      if (p.dataset.chatMine === '1') return; // no traducir mis propios mensajes
+      const target = getChatTranslationTarget();
+      if (!target) return;
+      const originalText = (p.textContent || '').trim();
+      if (originalText.length < 2) return;
+      // Saltar mensajes que son solo emojis, números o puntuación
+      if (/^[\p{Extended_Pictographic}\u200D\uFE0F\s\d\p{P}\p{S}]+$/u.test(originalText)) return;
+      const detected = await detectLanguage(originalText);
+      const norm = s => String(s || '').toLowerCase().split('-')[0];
+      if (norm(detected) === norm(target)) return; // ya está en mi idioma
+      const translated = await translateText(originalText, detected, target);
+      if (!translated || translated.trim() === originalText) return;
+      if (!document.contains(p)) return;
+      p.dataset.originalText = originalText;
+      p.dataset.translatedText = translated;
+      p.dataset.showing = 't';
+      p.textContent = translated;
+      const badge = document.createElement('button');
+      badge.type = 'button';
+      badge.className = 'chat-translation-toggle';
+      const paintBadge = () => {
+        const isT = p.dataset.showing === 't';
+        badge.innerHTML = '<span aria-hidden="true">🌐</span> ' + escapeHtml(appT(isT ? 'Traducido · ver original' : 'Ver traducción'));
+      };
+      badge.addEventListener('click', e => {
+        e.stopPropagation();
+        const isT = p.dataset.showing === 't';
+        p.dataset.showing = isT ? 'o' : 't';
+        p.textContent = isT ? p.dataset.originalText : p.dataset.translatedText;
+        paintBadge();
+      });
+      paintBadge();
+      p.parentNode.insertBefore(badge, p.nextSibling);
+    } catch (e) {
+      console.warn('Traducción de chat fallida:', e.message);
+    }
+  }
+
+  window.toggleChatTranslate = function() {
+    chatTranslateEnabled = !chatTranslateEnabled;
+    saveTranslationSettings();
+    updateChatTranslationUI();
+    if (chatTranslateEnabled) {
+      startTranslationObserver();
+      translateExistingChatMessages();
+    } else {
+      if (!autoTranslateEnabled && translationObserver) translationObserver.disconnect();
+      resetChatTranslations();
+    }
+  };
+
+  window.selectChatLanguage = function(code) {
+    chatTranslationLang = code;
+    saveTranslationSettings();
+    updateChatTranslationUI();
+    renderChatLanguageList();
+    resetChatTranslations();
+    if (chatTranslateEnabled) {
+      startTranslationObserver();
+      translateExistingChatMessages();
+    }
+  };
+
+  function updateChatTranslationUI() {
+    const toggle = document.getElementById('chat-translate-toggle');
+    const thumb = document.getElementById('chat-translate-thumb');
+    if (toggle && thumb) {
+      toggle.classList.toggle('bg-gray-300', !chatTranslateEnabled);
+      toggle.classList.toggle('bg-[#2F33B8]', chatTranslateEnabled);
+      thumb.classList.toggle('translate-x-6', chatTranslateEnabled);
+      thumb.classList.toggle('translate-x-0', !chatTranslateEnabled);
+    }
+    const preview = document.getElementById('chat-translations-lang-preview');
+    if (preview) {
+      if (chatTranslationLang === 'auto') {
+        preview.textContent = appT('Automático (igual que publicaciones)');
+      } else {
+        const lang = WORLD_LANGUAGES.find(l => l.code === chatTranslationLang);
+        preview.textContent = lang ? lang.name : chatTranslationLang;
+      }
+    }
+  }
+
+  function renderChatLanguageList() {
+    const list = document.getElementById('chat-language-list');
+    if (!list) return;
+    const autoBtn = `
+      <button class="chat-lang-option-btn w-full flex items-center justify-between px-4 py-3 text-left active:bg-[#f5f5f5]" data-chat-lang-code="auto" onclick="selectChatLanguage('auto')">
+        <span class="text-[16px] text-[#1c2b4a]">${escapeHtml(appT('Automático (igual que publicaciones)'))}</span>
+        <span class="chat-lang-check text-[#2F33B8] text-xl font-bold" style="display:${chatTranslationLang === 'auto' ? 'inline' : 'none'}">✓</span>
+      </button>
+      <div class="ml-4 h-px bg-[#efefef]"></div>`;
+    list.innerHTML = autoBtn + WORLD_LANGUAGES.map((lang, i, arr) => `
+      <button class="chat-lang-option-btn w-full flex items-center justify-between px-4 py-3 text-left active:bg-[#f5f5f5]" data-chat-lang-code="${lang.code}" onclick="selectChatLanguage('${lang.code}')">
+        <span class="text-[16px] text-[#1c2b4a]">${lang.name}</span>
+        <span class="chat-lang-check text-[#2F33B8] text-xl font-bold" style="display:${lang.code === chatTranslationLang ? 'inline' : 'none'}">✓</span>
+      </button>${i < arr.length - 1 ? '\n      <div class="ml-4 h-px bg-[#efefef]"></div>' : ''}`).join('');
+  }
+
   // API pública que usa el resto del código (window.drexTranslate)
   window.drexTranslate = {
     translateText,
     detectLanguage,
     processTextForTranslation,
+    processChatMessageForTranslation,
+    getChatTranslationTarget,
+    resetChatTranslations,
     isEnabled: () => autoTranslateEnabled,
+    isChatEnabled: () => chatTranslateEnabled,
     getLang: () => userPreferredLang,
+    getChatLang: () => chatTranslationLang,
   };
 
 })();
@@ -38485,6 +38691,26 @@ async function endFiesta() {
       <div class="bg-white mt-6">
         <p class="px-4 pt-4 pb-2 text-[17px] font-semibold text-[#1c2b4a]">Seleccionar idioma</p>
         <div id="language-list" class="max-h-[50vh] overflow-y-auto">
+          <!-- Los idiomas se generan dinámicamente -->
+        </div>
+      </div>
+
+      <!-- Traducción automática del chat -->
+      <div class="bg-white mt-6">
+        <p class="px-4 pt-4 pb-1 text-[17px] font-semibold text-[#1c2b4a]">Traducción automática del chat</p>
+        <p class="px-4 pb-2 text-[14px] text-[#606d77] leading-relaxed">Los mensajes del chat escritos en otros idiomas se traducirán solos al llegar, sin que tengas que tocar nada.</p>
+        <div class="px-4 py-3 flex items-center justify-between gap-4">
+          <div>
+            <p class="text-[16px] text-[#1c2b4a]">Traducir mensajes del chat</p>
+            <p class="text-[13px] text-[#7b8794] mt-0.5">Automático al recibir cada mensaje</p>
+          </div>
+          <button id="chat-translate-toggle" onclick="toggleChatTranslate()" class="tap-expand relative w-12 h-6 rounded-full transition-colors duration-300 bg-[#2F33B8] focus:outline-none">
+            <span id="chat-translate-thumb" class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-300 translate-x-6"></span>
+          </button>
+        </div>
+        <p class="px-4 pt-3 pb-1 text-[15px] font-semibold text-[#1c2b4a]">Idioma de traducción del chat</p>
+        <p class="px-4 pb-2 text-[13px] text-[#7b8794]"><span id="chat-translations-lang-preview">Automático (igual que publicaciones)</span></p>
+        <div id="chat-language-list" class="max-h-[40vh] overflow-y-auto">
           <!-- Los idiomas se generan dinámicamente -->
         </div>
       </div>
