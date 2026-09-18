@@ -309,7 +309,7 @@
       function loop(lastKey) {
         var p = Object.assign({}, params, { ConsistentRead: true });
         if (lastKey) p.ExclusiveStartKey = lastKey;
-        return dc.query(p).promise().then(function (res) {
+        return dbTimeout(dc.query(p).promise(), 'db-query-timeout').then(function (res) {
           items = items.concat(res.Items || []);
           if (res.LastEvaluatedKey) return loop(res.LastEvaluatedKey);
           return items;
@@ -328,7 +328,7 @@
       function sendBatch(batch) {
         var params = { RequestItems: {} };
         params.RequestItems[TABLE] = batch;
-        return dc.batchWrite(params).promise().then(function (res) {
+        return dbTimeout(dc.batchWrite(params).promise(), 'db-write-timeout').then(function (res) {
           var unp = (res.UnprocessedItems && res.UnprocessedItems[TABLE]) || [];
           if (unp.length && attempt < 3) { attempt++; return sendBatch(unp); }
           if (unp.length) throw new Error('DynamoDB: quedaron escrituras sin procesar');
@@ -376,7 +376,7 @@
     } else {
       params.ConditionExpression = '#v = :exp';
     }
-    return withCredRetry(function () { return getDocClient().put(params).promise(); });
+    return withCredRetry(function () { return dbTimeout(getDocClient().put(params).promise(), 'db-put-timeout'); });
   }
 
   // Transacción multi-hoja con atomicidad real (DynamoDB transact_write_items):
@@ -422,7 +422,7 @@
     }
     if (!items.length) return Promise.resolve();
     return withCredRetry(function () {
-      return getDocClient().transactWrite({ TransactItems: items }).promise();
+      return dbTimeout(getDocClient().transactWrite({ TransactItems: items }).promise(), 'db-transact-timeout');
     });
   }
 
@@ -447,11 +447,11 @@
           ExpressionAttributeValues: { ':pk': pk, ':pfx': skExact + '/' }
         }),
         withCredRetry(function () {
-          return getDocClient().get({
+          return dbTimeout(getDocClient().get({
             TableName: AWS_CONFIG.tableName,
             Key: { pk: pk, sk: skExact },
             ConsistentRead: true
-          }).promise().then(function (res) { return res.Item ? [res.Item] : []; });
+          }).promise(), 'db-get-timeout').then(function (res) { return res.Item ? [res.Item] : []; });
         })
       ];
     }
@@ -1265,8 +1265,7 @@
 
   // Una promesa con tiempo límite: si la red se queda colgada, se continúa
   // con el flujo en vez de dejar la sesión atascada.
-  function promiseTimeout(promise, ms, label) {
-    return new Promise(function (resolve, reject) {
+  function promiseTimeout(promise, ms, label) {    return new Promise(function (resolve, reject) {
       var settled = false;
       var timer = setTimeout(function () {
         if (!settled) { settled = true; reject(new Error(label || 'timeout')); }
@@ -1277,6 +1276,15 @@
         if (!settled) { settled = true; clearTimeout(timer); reject(e); }
       });
     });
+  }
+
+  // FIX 2026-09-18: las operaciones de DynamoDB no tenían ningún timeout.
+  // Si la red se colgaba a mitad de la petición (típico en datos móviles),
+  // la promesa jamás se resolvía y el login se quedaba en "Iniciando..."
+  // para siempre, sin mostrar ningún error. Ahora fallan a los 25 s y el
+  // flujo de login muestra el error con botón Reintentar en vez de atorarse.
+  function dbTimeout(promise, label) {
+    return promiseTimeout(promise, 25000, label || 'db-timeout');
   }
 
   function establishSession(cognitoUser, session) {
@@ -1348,7 +1356,11 @@
     function attemptSignIn(em) {
       var cognitoUser = new C.CognitoUser({ Username: em, Pool: getUserPool() });
       var authDetails = new C.AuthenticationDetails({ Username: em, Password: String(password) });
-      return new Promise(function (resolve, reject) {
+      // FIX 2026-09-18: authenticateUser no tenía timeout. Si el endpoint de
+      // Cognito se colgaba, el botón se quedaba en "Iniciando..." para
+      // siempre sin mostrar ningún error. Ahora falla a los 30 s con mensaje
+      // de conexión.
+      return promiseTimeout(new Promise(function (resolve, reject) {
         cognitoUser.authenticateUser(authDetails, {
           onSuccess: function (session) {
             establishSession(cognitoUser, session).then(function (user) {
@@ -1371,6 +1383,15 @@
             reject(Object.assign(new Error('Debes restablecer tu contraseña.'), { code: 'auth/password-reset-required' }));
           }
         });
+      }), 30000, 'auth-timeout').catch(function (err) {
+        // El timeout se reporta como error de red para que la UI muestre
+        // "Error de conexión. Revisa tu internet." en vez de un error genérico.
+        if (err && err.message === 'auth-timeout') {
+          var t = new Error('Tiempo de espera agotado. Revisa tu conexión.');
+          t.code = 'auth/network-request-failed';
+          throw t;
+        }
+        throw err;
       });
     }
   }
@@ -1563,11 +1584,14 @@
       + '&client_id=' + encodeURIComponent(AWS_CONFIG.userPoolClientId)
       + '&code=' + encodeURIComponent(code)
       + '&redirect_uri=' + encodeURIComponent(AWS_CONFIG.oauthRedirectUri);
-    return global.fetch('https://' + AWS_CONFIG.oauthDomain + '/oauth2/token', {
+    // FIX 2026-09-18: el fetch al token endpoint no tenía timeout. Si se
+    // colgaba, el login social se quedaba en spinner eterno (se había
+    // disparado drex:oauth-pending pero la promesa jamás se resolvía).
+    return promiseTimeout(global.fetch('https://' + AWS_CONFIG.oauthDomain + '/oauth2/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body
-    }).then(function (resp) { return resp.json(); }).then(function (tok) {
+    }), 25000, 'oauth-token-timeout').then(function (resp) { return resp.json(); }).then(function (tok) {
       if (!tok || !tok.id_token) throw new Error('oauth/token-failed');
       var payload;
       try { payload = JSON.parse(base64UrlDecode(String(tok.id_token).split('.')[1])); }
@@ -1665,7 +1689,19 @@
   function attemptRestore(cu, attempt, runId) {
     if (runId !== restoreSeq) return; // un login manual o signOut tomó el control
     try {
+      // FIX 2026-09-18: getSession no tenía timeout. Si la red se colgaba,
+      // el callback jamás llegaba, restorePending quedaba en true y el
+      // splash se quedaba visible para siempre ("app atorada en el logo").
+      var _rsSettled = false;
+      var _rsTimer = setTimeout(function () {
+        if (_rsSettled || runId !== restoreSeq) return;
+        _rsSettled = true;
+        retryOrFail(cu, attempt, runId, 'network');
+      }, 20000);
       cu.getSession(function (err, session) {
+        if (_rsSettled) return;
+        _rsSettled = true;
+        clearTimeout(_rsTimer);
         if (runId !== restoreSeq) return;
         try { if (getAuth().currentUser) { setRestorePending(false); return; } } catch (e) {}
         if (!err && session && session.isValid()) {
@@ -1711,7 +1747,8 @@
   function totpApi(path, body) {
     var base = (AWS_CONFIG.totpFunctionUrl || '').replace(/\/$/, '');
     if (!base) return Promise.reject(new Error('totp-not-configured'));
-    return getAuth().getIdToken().then(function (jwt) {
+    // FIX 2026-09-18: timeout para no dejar la verificación 2FA colgada.
+    return promiseTimeout(getAuth().getIdToken().then(function (jwt) {
       if (!jwt) throw new Error('totp-no-session');
       return fetch(base + path, {
         method: 'POST',
@@ -1721,7 +1758,7 @@
         if (!res.ok) throw new Error('totp-http-' + res.status);
         return res.json();
       });
-    });
+    }), 25000, 'totp-timeout');
   }
   function totpSetupStart() { return totpApi('/totp/setup/start', {}); }
   function totpSetupConfirm(code) { return totpApi('/totp/setup/confirm', { code: code }); }
