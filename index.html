@@ -122,6 +122,25 @@ button, a, select, [role="button"] {
   width: 100%;
 }
 .adsterra-slot iframe { display: block; max-width: 100%; border: 0; margin: 0 auto; }
+/* Banner fijo inferior (sticky footer) con auto-refresh: vive sobre la
+   barra de navegación, se cierra con la X (solo en la sesión actual) y se
+   oculta solo si el anuncio no carga. */
+#drex-sticky-ad {
+  position: fixed; left: 0; right: 0; z-index: 90;
+  display: none; justify-content: center; pointer-events: none;
+}
+#drex-sticky-ad-inner {
+  position: relative; pointer-events: auto;
+  background: #fff; border: 1px solid #e7ecf3; border-bottom: 0;
+  border-radius: 10px 10px 0 0; padding: 4px 6px 2px;
+  box-shadow: 0 -4px 18px rgba(20, 40, 80, .10);
+}
+#drex-sticky-ad-close {
+  position: absolute; top: -11px; right: -8px; width: 24px; height: 24px;
+  border-radius: 9999px; background: #1c2b4a; color: #fff; border: 0;
+  font-size: 14px; line-height: 1; cursor: pointer; padding: 0;
+}
+#drex-sticky-ad .drex-ad-label { margin-bottom: 2px; }
 /* Skeleton mientras el anuncio carga: overlay absoluto para que nunca
    compita con el iframe en el layout ni lo empuje a un lado */
 .ad-shimmer{position:absolute;inset:0;overflow:hidden;background:#e8edf3;border-radius:10px;min-height:50px;width:100%;max-width:340px;margin:0 auto}
@@ -4320,6 +4339,14 @@ document.addEventListener("DOMContentLoaded", function() {
   </div>
 
   <!-- NAVEGACIÓN INFERIOR REDISEÑADA -->
+  <!-- Banner fijo inferior Adsterra (sticky): se llena por JS con auto-refresh -->
+  <div id="drex-sticky-ad" aria-label="Anuncio">
+    <div id="drex-sticky-ad-inner">
+      <div class="drex-ad-label">Anuncio</div>
+      <div id="drex-sticky-ad-slot" class="adsterra-slot" style="min-height:50px;min-width:300px;"><div class="ad-shimmer"></div></div>
+      <button id="drex-sticky-ad-close" aria-label="Cerrar anuncio" title="Cerrar anuncio">×</button>
+    </div>
+  </div>
   <div id="bottom-nav" class="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white transition-transform duration-300 z-[100]" style="padding-bottom:env(safe-area-inset-bottom,0px);">
     <!-- Indicador de posición activa deslizante -->
     <div id="nav-active-indicator" style="display:none;"></div>
@@ -8745,19 +8772,27 @@ function saveNote() {
   }
 
   function maybeInsertFeedAd(feedFragment, postIndex) {
-    // Anuncios Adsterra intercalados en el feed: un bloque cada N posts,
-    // con carga diferida (el banner se pide solo cuando el bloque se acerca
-    // a la pantalla al hacer scroll). Reutiliza la key del banner 320x50.
+    // Anuncios Adsterra intercalados en el feed: el primero aparece tras
+    // inFeedFirstAt posts y luego uno cada N posts, con carga diferida (el
+    // banner se pide solo cuando el bloque se acerca a la pantalla al hacer
+    // scroll). Alterna 300x250 (medium rectangle, eCPM mayor) y 320x50
+    // cuando inFeedRectKey tiene valor; si está vacío todo usa el 320x50.
     try {
       if (typeof ADSTERRA !== 'undefined' && ADSTERRA && ADSTERRA.bannerKey) {
         const n = Math.max(2, (ADSTERRA.inFeedEveryN | 0) || 3);
-        if (((postIndex + 1) % n) === 0) {
+        const firstAt = Math.max(1, (ADSTERRA.inFeedFirstAt | 0) || 2);
+        const idx = postIndex + 1;
+        const isAdSlot = (idx === firstAt) || (idx > firstAt && ((idx - firstAt) % n) === 0);
+        if (isAdSlot) {
+          window.__adsterraFeedAdCount = (window.__adsterraFeedAdCount | 0) + 1;
+          const useRect = !!(ADSTERRA.inFeedRectKey && (window.__adsterraFeedAdCount % 2 === 0));
           const label = 'Anuncio';
           const wrap = document.createElement('div');
           wrap.className = 'drex-ad-slot';
           wrap.setAttribute('aria-label', label);
+          wrap.dataset.adFormat = useRect ? 'rect' : 'banner';
           wrap.innerHTML = '<span class="drex-ad-label">' + label + '</span>' +
-            '<div class="adsterra-slot" style="min-height:50px"><div class="ad-shimmer"></div></div>';
+            '<div class="adsterra-slot" style="min-height:' + (useRect ? '250' : '50') + 'px"><div class="ad-shimmer"></div></div>';
           feedFragment.appendChild(wrap);
           try {
             const obs = ensureAdsterraInFeedObserver();
@@ -8802,10 +8837,14 @@ function saveNote() {
     try {
       const slot = wrap.querySelector('.adsterra-slot');
       if (!slot) return;
-      window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
+      // Formato rect (300x250) solo si hay key dedicada; si no, banner 320x50.
+      const wantRect = wrap.dataset.adFormat === 'rect' && ADSTERRA.inFeedRectKey;
+      const key = wantRect ? ADSTERRA.inFeedRectKey : ADSTERRA.bannerKey;
+      const w = wantRect ? 300 : 320, h = wantRect ? 250 : 50;
+      window.atOptions = { 'key': key, 'format': 'iframe', 'height': h, 'width': w, 'params': {} };
       const s = document.createElement('script');
       s.type = 'text/javascript';
-      s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
+      s.src = 'https://www.highrevenueformat.com/' + key + '/invoke.js';
       slot.appendChild(s);
       if (typeof adsterraWatchShimmer === 'function') adsterraWatchShimmer(slot);
       setTimeout(function () {
@@ -18311,14 +18350,26 @@ function saveNote() {
      INTERCALADO en el feed (un anuncio cada inFeedEveryN posts, con carga
      diferida al hacer scroll) + banner en el reproductor de música + Social
      Bar. El banner fijo de arriba del feed se retiró. El Popunder y el
-     segundo banner del menú quedan desactivados por ahora. Mientras una
-     key/URL esté vacía, ese formato no se carga y la app funciona igual. */
+     segundo banner del menú quedan desactivados por ahora. Desde 2026-09-18
+     (optimización agresiva): banner STICKY inferior 320x50 con auto-refresh
+     cada stickyRefreshSec + botón de cierre, primer anuncio del feed más
+     temprano (inFeedFirstAt), y soporte de 300x250 (medium rectangle, eCPM
+     2-4x mayor) intercalado en el feed cuando inFeedRectKey tenga valor.
+     Interstitial listo: basta pegar interstitialUrl del panel de Adsterra.
+     Mientras una key/URL esté vacía, ese formato no se carga y la app
+     funciona igual. */
   const ADSTERRA = {
-    bannerKey: '8aacab904ecc055711c41dd09a35aa83',     // 'key' del banner 320x50 (feed in-feed + reproductor de música)
+    bannerKey: '8aacab904ecc055711c41dd09a35aa83',     // 'key' del banner 320x50 (feed in-feed + reproductor de música + sticky)
     bannerKey2: '',    // 'key' del segundo banner 320x50 (menú lateral, opcional)
+    inFeedRectKey: '', // 'key' del banner 300x250 (medium rectangle) para el feed; vacío = usa el 320x50
     inFeedEveryN: 3,   // un anuncio intercalado cada N posts del feed
+    inFeedFirstAt: 2,  // el primer anuncio aparece tras el post N (más impresiones en sesiones cortas)
     musicAdEveryN: 3,  // pausa publicitaria cada N canciones (estilo plan gratis)
     musicAdSeconds: 8, // segundos que dura la pausa publicitaria
+    stickyFooter: true,  // banner 320x50 fijo sobre la barra inferior, con auto-refresh
+    stickyRefreshSec: 45, // segundos entre cada refresh del banner fijo
+    interstitialUrl: '',  // URL completa del script Interstitial de Adsterra (vacío = desactivado)
+    interstitialMinSec: 180, // mínimo de segundos entre interstitials
     socialBarUrl: 'https://pl31383679.profitableratecpmnetwork.com/17/30/14/173014f0a7698ccca010be076ff0f01a.js',  // URL completa del script de Social Bar
     popunderUrl: ''    // URL completa del script Popunder
   };
@@ -18343,6 +18394,112 @@ function saveNote() {
       s.onerror = next;
       slot.appendChild(s);
     })();
+  }
+
+  /* Banner fijo inferior (sticky footer) 320x50 con auto-refresh.
+     Vive sobre la barra de navegación, sigue su ocultar/mostrar al hacer
+     scroll, trae botón X (cierra solo la sesión actual) y se esconde solo
+     si el anuncio no carga. Cada refresh cuenta como impresión nueva. */
+  var drexStickyAdTimer = null;
+  function drexStickyAdClosed() {
+    try { return sessionStorage.getItem('drexStickyAdClosed') === '1'; } catch (_) { return false; }
+  }
+  /* Sube los botones flotantes (FAB) cuando el banner fijo está visible,
+     para que el anuncio nunca los tape; los baja al ocultarse. */
+  function drexStickyAdLiftFabs(on) {
+    try {
+      ['fab-create-btn', 'fab-practicar-btn'].forEach(function (id) {
+        var b = document.getElementById(id);
+        if (b) b.style.bottom = on ? '152px' : '';
+      });
+    } catch (_) {}
+  }
+  function drexStickyAdLoad() {
+    try {
+      if (drexStickyAdClosed()) return;
+      if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.bannerKey) return;
+      var bar = document.getElementById('drex-sticky-ad');
+      var slot = document.getElementById('drex-sticky-ad-slot');
+      if (!bar || !slot) return;
+      slot.innerHTML = '<div class="ad-shimmer"></div>';
+      window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
+      var s = document.createElement('script');
+      s.type = 'text/javascript';
+      s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
+      slot.appendChild(s);
+      setTimeout(function () {
+        try {
+          if (drexStickyAdClosed()) { bar.style.display = 'none'; drexStickyAdLiftFabs(false); return; }
+          var ifr = slot.querySelector('iframe');
+          var ok = !!(ifr && ifr.getBoundingClientRect().width > 10);
+          bar.style.display = ok ? 'flex' : 'none';
+          drexStickyAdLiftFabs(ok);
+        } catch (_) {}
+      }, 8000);
+    } catch (_) {}
+  }
+  function drexStickyAdInit() {
+    try {
+      if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.stickyFooter || !ADSTERRA.bannerKey) return;
+      if (drexStickyAdClosed()) return;
+      var bar = document.getElementById('drex-sticky-ad');
+      if (!bar) return;
+      var closeBtn = document.getElementById('drex-sticky-ad-close');
+      if (closeBtn) closeBtn.onclick = function () {
+        try { sessionStorage.setItem('drexStickyAdClosed', '1'); } catch (_) {}
+        bar.style.display = 'none';
+        drexStickyAdLiftFabs(false);
+        if (drexStickyAdTimer) { clearInterval(drexStickyAdTimer); drexStickyAdTimer = null; }
+      };
+      // Seguir a la barra inferior: si se oculta al bajar, el anuncio baja con ella.
+      var nav = document.getElementById('bottom-nav');
+      function syncNav() {
+        try {
+          var hidden = !!(nav && nav.classList.contains('hide'));
+          bar.style.bottom = hidden ? '0px' : 'calc(64px + env(safe-area-inset-bottom,0px))';
+        } catch (_) {}
+      }
+      try {
+        if (nav && window.MutationObserver) new MutationObserver(syncNav).observe(nav, { attributes: true, attributeFilter: ['class'] });
+      } catch (_) {}
+      syncNav();
+      drexStickyAdLoad();
+      var sec = Math.max(30, (ADSTERRA.stickyRefreshSec | 0) || 45);
+      if (drexStickyAdTimer) clearInterval(drexStickyAdTimer);
+      drexStickyAdTimer = setInterval(drexStickyAdLoad, sec * 1000);
+    } catch (_) {}
+  }
+
+  /* Interstitial de Adsterra con control de frecuencia: se dispara solo con
+     la app visible, el usuario activo recientemente y respetando el cooldown
+     (interstitialMinSec). Requiere pegar interstitialUrl del panel. */
+  var adsterraLastInterstitial = 0;
+  var adsterraLastInteract = Date.now();
+  function adsterraMaybeInterstitial() {
+    try {
+      if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.interstitialUrl) return;
+      var now = Date.now();
+      var minMs = Math.max(60, (ADSTERRA.interstitialMinSec | 0) || 180) * 1000;
+      if (now - adsterraLastInterstitial < minMs) return;
+      if (document.visibilityState !== 'visible') return;
+      if (now - adsterraLastInteract > 90000) return; // usuario inactivo: no molestar
+      adsterraLastInterstitial = now;
+      var s = document.createElement('script');
+      s.type = 'text/javascript';
+      s.async = true;
+      s.src = ADSTERRA.interstitialUrl;
+      document.body.appendChild(s);
+      setTimeout(function () { try { s.remove(); } catch (_) {} }, 12000);
+    } catch (_) {}
+  }
+  function adsterraInterstitialEngine() {
+    try {
+      if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.interstitialUrl) return;
+      ['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function (ev) {
+        window.addEventListener(ev, function () { adsterraLastInteract = Date.now(); }, { passive: true });
+      });
+      setInterval(adsterraMaybeInterstitial, 15000);
+    } catch (_) {}
   }
 
   function adsterraPreload() {
@@ -18376,6 +18533,8 @@ function saveNote() {
         document.body.appendChild(s);
       }
       adsterraInjectBanners();
+      drexStickyAdInit();
+      adsterraInterstitialEngine();
     } catch (_) {}
   }
   initAdsterra();
