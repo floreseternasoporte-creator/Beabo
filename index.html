@@ -35691,6 +35691,11 @@ async function endFiesta() {
       <button onclick="openMusicUpload()" class="w-full h-12 rounded-full bg-[#2F33B8] text-white font-extrabold text-[15px] active:opacity-80 transition shadow-lg shadow-[#2F33B8]/25 mb-2">+ Subir música</button>
       <p class="text-xs text-[#7b878f] mb-4 text-center">Puedes subir hasta 2 canciones por día.</p>
       <div id="music-mine-list" class="space-y-2"></div>
+      <div class="mt-6 mb-2 px-1 flex items-center justify-between">
+        <h3 class="text-[15px] font-extrabold text-[#1c2b4a]">Historial</h3>
+        <button onclick="musicClearHistory()" class="text-[12px] font-bold text-[#7b878f] active:opacity-80">Borrar</button>
+      </div>
+      <div id="music-history-list" class="space-y-2 pb-6"></div>
     </div>
   </div>
 </div>
@@ -35830,7 +35835,10 @@ async function endFiesta() {
       <div id="adsterra-music-slot" class="adsterra-slot justify-center" style="min-height:50px"><div class="ad-shimmer"></div></div>
     </div>
     <div class="mt-4">
-      <p class="text-[11px] font-extrabold uppercase tracking-widest text-[#7b878f] mb-2">A continuación</p>
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-[11px] font-extrabold uppercase tracking-widest text-[#7b878f]">A continuación <span id="music-queue-mix-label" class="hidden text-[#2F33B8]">· 🔀 Mix Drex</span></p>
+        <button id="music-mix-btn" onclick="musicToggleMix()" class="px-3 h-8 rounded-full text-[12px] font-extrabold active:opacity-80 bg-[#2F33B8] text-white">🔀 Mix</button>
+      </div>
       <div id="music-queue-list" class="space-y-1 max-h-52 overflow-y-auto"></div>
     </div>
   </div>
@@ -36549,6 +36557,7 @@ function loadMyMusic() {
     snap.forEach(ch => arr.push({ ...(ch.val() || {}), id: ch.key }));
     arr.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     musicMineCache = arr;
+    try { musicHistoryLoad(); renderMusicHistory(); } catch (_) {}
     try { renderMusicStats(arr); } catch (_) {}
     try { loadMusicPlaylists(); } catch (_) {}
     list.innerHTML = arr.length ? arr.map((t, i) => musicTrackRowHTML(t, i, 'mine', true)).join('') : musicEmptyHTML('Aún no publicas música. ¡Sube tu primera canción!');
@@ -36956,10 +36965,11 @@ function musicGetAudioUrl(trackId) {
   });
 }
 window.musicPlayFromList = function (ctx, idx) {
-  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicMineCache : ctx === 'top' ? musicTopCache : ctx === 'playlist' ? (musicPlaylistDetailCache ? musicPlaylistDetailCache.tracks : []) : musicSearchCache;
+  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicMineCache : ctx === 'top' ? musicTopCache : ctx === 'history' ? musicHistoryCache : ctx === 'playlist' ? (musicPlaylistDetailCache ? musicPlaylistDetailCache.tracks : []) : musicSearchCache;
   if (!arr || !arr[idx]) return;
   musicQueue = arr.slice();
   musicQueueIdx = idx;
+  musicMixActive = false;
   musicStartTrack(musicQueue[musicQueueIdx]);
 };
 window.openMusicTrackFromFeed = function (trackId) {
@@ -36968,6 +36978,7 @@ window.openMusicTrackFromFeed = function (trackId) {
     if (!t) { if (typeof showMiniToast === 'function') showMiniToast('Esta canción ya no está disponible.'); return; }
     musicQueue = [{ ...t, id: trackId }];
     musicQueueIdx = 0;
+    musicMixActive = false;
     musicStartTrack(musicQueue[0]);
   }).catch(() => {
     if (typeof showMiniToast === 'function') showMiniToast('No se pudo cargar la canción.');
@@ -36975,6 +36986,7 @@ window.openMusicTrackFromFeed = function (trackId) {
 };
 function musicStartTrack(t) {
   if (!t || !t.id) return;
+  try { musicHistoryRecord(t); } catch (_) {}
   const audio = musicEnsureAudio();
   // UI del reproductor
   document.getElementById('music-player-title').textContent = t.title || 'Sin título';
@@ -36995,6 +37007,8 @@ function musicStartTrack(t) {
   musicLoadVoteState();
   try { musicLoadTrackComments(); } catch (_) {}
   try { musicLoadFollowState(); } catch (_) {}
+  try { musicPaintMixBtn(); } catch (_) {}
+  try { document.getElementById('music-queue-mix-label')?.classList.toggle('hidden', !musicMixActive); } catch (_) {}
   musicSyncShuffleRepeatUI();
   adsterraInjectMusicSlot();
   try {
@@ -37176,6 +37190,9 @@ window.musicNext = function (auto) {
     nxt = musicQueueIdx + 1;
   } else if (!auto || musicRepeatMode === 'all') {
     nxt = 0;
+  } else if (musicMixOn) {
+    musicStartMix();
+    return;
   } else {
     // fin de la cola: pausar
     if (musicAudioEl) musicAudioEl.pause();
@@ -37185,6 +37202,99 @@ window.musicNext = function (auto) {
   if (auto && musicMaybeAdBreak(go)) return; // pausa publicitaria antes de seguir
   go();
 };
+/* ---------- Historial de reproducción ---------- */
+var musicHistoryCache = [];
+function musicHistoryLoad() {
+  try {
+    const raw = localStorage.getItem('drex_music_history');
+    musicHistoryCache = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(musicHistoryCache)) musicHistoryCache = [];
+  } catch (_) { musicHistoryCache = []; }
+}
+function musicHistoryAgo(ts) {
+  const m = Math.max(1, Math.round((Date.now() - ts) / 60000));
+  if (m < 60) return 'hace ' + m + ' min';
+  const h = Math.round(m / 60);
+  if (h < 24) return 'hace ' + h + ' h';
+  return 'hace ' + Math.round(h / 24) + ' d';
+}
+function musicHistoryRecord(t) {
+  if (!t || !t.id) return;
+  try {
+    musicHistoryLoad();
+    musicHistoryCache = musicHistoryCache.filter(h => h && h.id !== t.id);
+    musicHistoryCache.unshift({
+      id: t.id, title: t.title || 'Sin título',
+      artistName: t.artistName || t.authorName || '',
+      coverImage: t.coverImage || '', duration: t.duration || 0,
+      playedAt: Date.now()
+    });
+    musicHistoryCache = musicHistoryCache.slice(0, 50);
+    localStorage.setItem('drex_music_history', JSON.stringify(musicHistoryCache));
+    renderMusicHistory();
+  } catch (_) {}
+}
+function renderMusicHistory() {
+  const box = document.getElementById('music-history-list');
+  if (!box) return;
+  if (!musicHistoryCache.length) {
+    box.innerHTML = '<p class="text-[12px] text-[#7b878f] font-semibold px-1 py-2">Aún no has escuchado nada.</p>';
+    return;
+  }
+  box.innerHTML = musicHistoryCache.map((t, i) => `
+    <div class="music-track-row" onclick="musicPlayFromList('history', ${i})">
+      ${musicCoverHTML(t, 'w-11 h-11 rounded-xl')}
+      <div class="min-w-0 flex-1">
+        <p class="text-[14px] font-extrabold text-[#1c2b4a] truncate leading-tight">${musicEsc(t.title)}</p>
+        <p class="text-[12px] text-[#7b878f] font-semibold truncate">${musicEsc(t.artistName || '')}${t.playedAt ? ' · ' + musicHistoryAgo(t.playedAt) : ''}</p>
+      </div>
+    </div>`).join('');
+}
+window.musicClearHistory = function () {
+  musicHistoryCache = [];
+  try { localStorage.removeItem('drex_music_history'); } catch (_) {}
+  renderMusicHistory();
+  if (typeof showMiniToast === 'function') showMiniToast('Historial borrado');
+};
+/* ---------- Mix Drex: radio continua ---------- */
+var musicMixOn = true;
+var musicMixActive = false;
+function musicPaintMixBtn() {
+  const btn = document.getElementById('music-mix-btn');
+  if (!btn) return;
+  btn.style.opacity = musicMixOn ? '1' : '.4';
+  btn.classList.toggle('bg-[#2F33B8]', musicMixOn);
+  btn.classList.toggle('text-white', musicMixOn);
+  btn.classList.toggle('bg-black/5', !musicMixOn);
+  btn.classList.toggle('text-[#1c2b4a]', !musicMixOn);
+}
+window.musicToggleMix = function () {
+  musicMixOn = !musicMixOn;
+  musicPaintMixBtn();
+  if (typeof showMiniToast === 'function') showMiniToast(musicMixOn ? '🔀 Mix Drex activado' : 'Mix Drex desactivado');
+};
+function musicStartMix() {
+  const lastT = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
+  const pool = ((typeof musicExploreCache !== 'undefined' && musicExploreCache.length) ? musicExploreCache : [])
+    .filter(t => t && t.id && (!lastT || t.id !== lastT.id));
+  if (!pool.length) { if (typeof musicAudioEl !== 'undefined' && musicAudioEl) musicAudioEl.pause(); return; }
+  const genre = lastT && lastT.genre;
+  const scored = pool.map(t => {
+    let sc = ((((t.upvotes | 0) || 0) - (((t.downvotes | 0) || 0))) * 10) + (((t.plays | 0) || 0));
+    if (genre && t.genre && t.genre === genre) sc += 500;
+    return { t, sc: sc + Math.random() * 300 };
+  });
+  scored.sort((a, b) => b.sc - a.sc);
+  const mix = scored.slice(0, 20).map(x => x.t);
+  for (let i = mix.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const tmp = mix[i]; mix[i] = mix[j]; mix[j] = tmp; }
+  musicQueue = mix;
+  musicQueueIdx = 0;
+  musicMixActive = true;
+  if (typeof showMiniToast === 'function') showMiniToast('🔀 Mix Drex: música sin parar');
+  const go = function () { musicStartTrack(musicQueue[0]); };
+  if (typeof musicMaybeAdBreak === 'function' && musicMaybeAdBreak(go)) return;
+  go();
+}
 /* ---------- Votos en canciones (igual que las publicaciones) ---------- */
 var _musicVoteLock = false;
 function musicPaintVoteUI(isUp, isDown, score) {
