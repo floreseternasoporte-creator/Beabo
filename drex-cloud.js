@@ -254,40 +254,92 @@
     return _docClient;
   }
 
-  function queryAll(params) {
-    var dc = getDocClient();
-    var items = [];
-    function loop(lastKey) {
-      var p = Object.assign({}, params, { ConsistentRead: true });
-      if (lastKey) p.ExclusiveStartKey = lastKey;
-      return dc.query(p).promise().then(function (res) {
-        items = items.concat(res.Items || []);
-        if (res.LastEvaluatedKey) return loop(res.LastEvaluatedKey);
-        return items;
-      });
+  // --- Auto-reparación de credenciales AWS (fix 2026-09-17) ---
+  // Causa del bug "No se pudo enviar el mensaje": si el configure inicial de
+  // credenciales fallaba (red inestable al abrir la app) o el refresh del
+  // token no lograba reconfigurarlas, el usuario quedaba "logueado" pero con
+  // credenciales anónimas/rotas cacheadas: TODA lectura y escritura a DynamoDB
+  // fallaba con AccessDenied hasta reinstalar o reloguear. El comentario viejo
+  // decía "se reintentan al usar la BD" pero nada lo implementaba.
+  // Ahora: cualquier operación que falle por credenciales refresca la sesión
+  // Cognito, reconfigura las credenciales y reintenta la operación UNA vez.
+  var _credsRefreshPromise = null;
+
+  function isCredError(err) {
+    if (!err) return false;
+    var code = String((err && err.code) || '');
+    var msg = String((err && err.message) || '');
+    return /CredentialsError|AccessDenied|UnrecognizedClient|InvalidSignature|ExpiredToken|TokenRefresh/i.test(code)
+        || /credential/i.test(msg);
+  }
+
+  function refreshAwsCredentialsNow() {
+    if (_credsRefreshPromise) return _credsRefreshPromise;
+    _credsRefreshPromise = promiseTimeout(new Promise(function (resolve, reject) {
+      try {
+        if (!currentCognitoUser) return reject(new Error('no-session'));
+        // getSession refresca solo con el refresh token si el ID token venció
+        currentCognitoUser.getSession(function (err, session) {
+          if (err || !session) return reject(err || new Error('no-session'));
+          resolve(configureAwsCredentials(session.getIdToken()));
+        });
+      } catch (e) { reject(e); }
+    }), 20000, 'aws-creds-timeout');
+    function clear() { _credsRefreshPromise = null; }
+    _credsRefreshPromise.then(clear, clear);
+    return _credsRefreshPromise;
+  }
+
+  function withCredRetry(opFn) {
+    function run() {
+      try { return opFn(); }
+      catch (e) { return Promise.reject(e); }
     }
-    return loop(null);
+    return run().catch(function (err) {
+      if (!isCredError(err)) throw err;
+      if (!currentCognitoUser) throw err;
+      return refreshAwsCredentialsNow().then(run, function () { throw err; });
+    });
+  }
+
+  function queryAll(params) {
+    return withCredRetry(function () {
+      var dc = getDocClient();
+      var items = [];
+      function loop(lastKey) {
+        var p = Object.assign({}, params, { ConsistentRead: true });
+        if (lastKey) p.ExclusiveStartKey = lastKey;
+        return dc.query(p).promise().then(function (res) {
+          items = items.concat(res.Items || []);
+          if (res.LastEvaluatedKey) return loop(res.LastEvaluatedKey);
+          return items;
+        });
+      }
+      return loop(null);
+    });
   }
 
   function batchWriteAll(requests) {
     if (!requests.length) return Promise.resolve();
-    var dc = getDocClient();
-    var TABLE = AWS_CONFIG.tableName;
-    var attempt = 0;
-    function sendBatch(batch) {
-      var params = { RequestItems: {} };
-      params.RequestItems[TABLE] = batch;
-      return dc.batchWrite(params).promise().then(function (res) {
-        var unp = (res.UnprocessedItems && res.UnprocessedItems[TABLE]) || [];
-        if (unp.length && attempt < 3) { attempt++; return sendBatch(unp); }
-        if (unp.length) throw new Error('DynamoDB: quedaron escrituras sin procesar');
-      });
-    }
-    var chain = Promise.resolve();
-    for (var i = 0; i < requests.length; i += 25) {
-      (function (batch) { chain = chain.then(function () { return sendBatch(batch); }); })(requests.slice(i, i + 25));
-    }
-    return chain;
+    return withCredRetry(function () {
+      var dc = getDocClient();
+      var TABLE = AWS_CONFIG.tableName;
+      var attempt = 0;
+      function sendBatch(batch) {
+        var params = { RequestItems: {} };
+        params.RequestItems[TABLE] = batch;
+        return dc.batchWrite(params).promise().then(function (res) {
+          var unp = (res.UnprocessedItems && res.UnprocessedItems[TABLE]) || [];
+          if (unp.length && attempt < 3) { attempt++; return sendBatch(unp); }
+          if (unp.length) throw new Error('DynamoDB: quedaron escrituras sin procesar');
+        });
+      }
+      var chain = Promise.resolve();
+      for (var i = 0; i < requests.length; i += 25) {
+        (function (batch) { chain = chain.then(function () { return sendBatch(batch); }); })(requests.slice(i, i + 25));
+      }
+      return chain;
+    });
   }
 
   // DynamoDB no permite cadenas vacías en las claves: las rutas de un solo
@@ -308,7 +360,6 @@
   // siendo expectedJson (o si la hoja no existe cuando expectedJson es null).
   // Es la primitiva que da atomicidad real a transaction() en hojas escalares.
   function putLeafConditional(pk, sk, jsonValue, expectedJson) {
-    var dc = getDocClient();
     var params = {
       TableName: AWS_CONFIG.tableName,
       Item: { pk: pk, sk: normSk(sk), v: jsonValue },
@@ -325,7 +376,7 @@
     } else {
       params.ConditionExpression = '#v = :exp';
     }
-    return dc.put(params).promise();
+    return withCredRetry(function () { return getDocClient().put(params).promise(); });
   }
 
   // Transacción multi-hoja con atomicidad real (DynamoDB transact_write_items):
@@ -333,7 +384,6 @@
   // se leyó; si otra escritura se adelantó, toda la transacción se aborta de
   // forma atómica. Límite de DynamoDB: 100 hojas por transacción.
   function transactObjectLeaves(segs, oldLeaves, newValue) {
-    var dc = getDocClient();
     var oldMap = {}; // sk relativo a segs -> json crudo almacenado
     oldLeaves.forEach(function (l) {
       oldMap[l.segs.slice(segs.length).join('/')] = JSON.stringify(l.value);
@@ -371,7 +421,9 @@
       } });
     }
     if (!items.length) return Promise.resolve();
-    return dc.transactWrite({ TransactItems: items }).promise();
+    return withCredRetry(function () {
+      return getDocClient().transactWrite({ TransactItems: items }).promise();
+    });
   }
 
   // Lee todas las hojas bajo una ruta (hoja exacta + descendientes).
@@ -388,18 +440,19 @@
         ExpressionAttributeValues: { ':pk': pk }
       })];
     } else {
-      var dc = getDocClient();
       jobs = [
         queryAll({
           TableName: AWS_CONFIG.tableName,
           KeyConditionExpression: 'pk = :pk AND begins_with(sk, :pfx)',
           ExpressionAttributeValues: { ':pk': pk, ':pfx': skExact + '/' }
         }),
-        dc.get({
-          TableName: AWS_CONFIG.tableName,
-          Key: { pk: pk, sk: skExact },
-          ConsistentRead: true
-        }).promise().then(function (res) { return res.Item ? [res.Item] : []; })
+        withCredRetry(function () {
+          return getDocClient().get({
+            TableName: AWS_CONFIG.tableName,
+            Key: { pk: pk, sk: skExact },
+            ConsistentRead: true
+          }).promise().then(function (res) { return res.Item ? [res.Item] : []; });
+        })
       ];
     }
     return Promise.all(jobs).then(function (parts) {
@@ -1192,7 +1245,15 @@
       refreshTimer = setTimeout(function () {
         cognitoUser.refreshSession(session.getRefreshToken(), function (err, newSession) {
           if (!err && newSession) {
-            configureAwsCredentials(newSession.getIdToken()).catch(function () {});
+            configureAwsCredentials(newSession.getIdToken()).catch(function (credErr) {
+              // Fix 2026-09-17: NO tragar el fallo en silencio. Se anulan las
+              // credenciales para no dejar un objeto a medias cacheado; la
+              // próxima operación de BD las reconstruye vía withCredRetry
+              // (auto-reparación sin reloguear).
+              _awsCredentials = null;
+              _docClient = null;
+              try { if (typeof console !== 'undefined' && console.warn) console.warn('[DrexCloud] configureAwsCredentials falló tras refresh:', credErr && (credErr.code || credErr.message)); } catch (_) {}
+            });
             scheduleTokenRefresh(cognitoUser, newSession);
           } else {
             handleExpiredSession();
