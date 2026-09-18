@@ -4333,6 +4333,7 @@ document.addEventListener("DOMContentLoaded", function() {
         </button>
       </div>
       <div id="adsterra-feed-top" class="adsterra-slot max-w-[680px] mx-auto" style="display:none;"></div>
+      <div id="drex-spotlight" class="max-w-[680px] mx-auto px-4 hidden"></div>
       <div id="feed-pull-indicator" class="hidden py-1 text-center"></div>
       <div id="notes-feed" class="drex-feed-list max-w-[680px] mx-auto pb-24"></div>
     </section>
@@ -40067,6 +40068,143 @@ function renderMusicTop() {
   }
 }
 
+/* ================= Drex Spotlight: 3 artistas destacados por semana, 100% automático ================
+   Algoritmo (nadie tiene que hacer nada a mano):
+   1. Semana actual con musicWeekId() (ISO, empieza en lunes).
+   2. Si spotlight/<semana> ya existe en la DB, se usa tal cual (un solo cálculo por semana).
+   3. Si no existe, el primer cliente que abra el home la calcula:
+      a) Lee las canciones (últimas 200) y las stats semanales musicWeekly/<semana>.
+      b) Puntaje por canción = (up-down)*10 + plays (semanal si hay datos; si no, histórico + recency).
+      c) Agrupa por artista (authorId || artistName): score = suma de sus canciones.
+      d) Anti-repetición: excluye a los artistas destacados de las 3 semanas anteriores
+         (salvo que queden menos de 3 elegibles: entonces se permite repetir).
+      e) Top 3 → se guarda en spotlight/<semana> {week, artists[], computedAt}.
+   4. Se pinta la sección "Destacados de la semana" en el homepage con portada, reproducciones
+      y botones para escuchar su mejor canción y ver su perfil. */
+var drexSpotlightTracks = [];
+var drexSpotlightData = null;
+var drexSpotlightRunning = false;
+function drexSpotlightWeekAgo(n) {
+  try { const d = new Date(); d.setDate(d.getDate() - n * 7); return musicWeekId(d); }
+  catch (_) { return ''; }
+}
+function drexSpotlightRender() {
+  const box = document.getElementById('drex-spotlight');
+  if (!box || typeof musicDb !== 'function' || typeof musicWeekId !== 'function') return;
+  if (drexSpotlightRunning) return;
+  const wid = musicWeekId();
+  try {
+    musicDb().ref('spotlight/' + wid).once('value').then(snap => {
+      const val = snap.val();
+      if (val && val.artists && val.artists.length) { drexSpotlightPaint(val); return; }
+      drexSpotlightCompute(wid);
+    }).catch(() => {});
+  } catch (_) {}
+}
+function drexSpotlightCompute(wid) {
+  if (drexSpotlightRunning) return;
+  drexSpotlightRunning = true;
+  const finish = () => { drexSpotlightRunning = false; };
+  try {
+    const tracksP = musicDb().ref('musicTracks').orderByChild('createdAt').limitToLast(200).once('value');
+    const weeklyP = musicDb().ref('musicWeekly/' + wid).once('value');
+    const prevP = Promise.all([1, 2, 3].map(n => musicDb().ref('spotlight/' + drexSpotlightWeekAgo(n)).once('value').catch(() => null)));
+    Promise.all([tracksP, weeklyP, prevP]).then(([tsnap, wsnap, prevSnaps]) => {
+      try {
+        const weekly = wsnap.val() || {};
+        const arr = [];
+        tsnap.forEach(ch => arr.push({ ...(ch.val() || {}), id: ch.key }));
+        const now = Date.now();
+        const scored = arr.map(t => {
+          const w = weekly[t.id] || {};
+          let score, wplays = 0;
+          if (w.plays || w.up || w.down) {
+            wplays = (w.plays | 0) || 0;
+            score = (((w.up | 0) || 0) - ((w.down | 0) || 0)) * 10 + wplays;
+          } else {
+            const up = Number(t.upvotes || 0), down = Number(t.downvotes || 0), plays = Number(t.plays || 0);
+            wplays = plays;
+            const daysOld = t.createdAt ? Math.max(0, (now - Number(t.createdAt)) / 86400000) : 30;
+            score = (up - down) * 10 + plays + Math.max(0, 7 - daysOld) * 5;
+          }
+          return { t, score, wplays };
+        }).filter(x => x.score > 0 && (x.t.artistName || x.t.authorName));
+        const byArtist = {};
+        scored.forEach(x => {
+          const key = x.t.authorId || ('name:' + (x.t.artistName || x.t.authorName));
+          if (!byArtist[key]) byArtist[key] = { key, uid: x.t.authorId || '', name: x.t.artistName || x.t.authorName || 'Artista', score: 0, plays: 0, tracks: 0, top: null };
+          const a = byArtist[key];
+          a.score += x.score; a.plays += x.wplays; a.tracks++;
+          if (!a.top || x.score > a.top.score) a.top = x;
+        });
+        let artists = Object.values(byArtist).sort((a, b) => b.score - a.score);
+        const prevKeys = new Set();
+        (prevSnaps || []).forEach(s => {
+          try { const v = s && s.val(); (v && v.artists || []).forEach(a => { if (a && a.key) prevKeys.add(a.key); }); } catch (_) {}
+        });
+        let eligible = artists.filter(a => !prevKeys.has(a.key));
+        if (eligible.length < 3) eligible = artists;
+        const top3 = eligible.slice(0, 3).map(a => ({
+          key: a.key, uid: a.uid, name: a.name,
+          trackId: a.top.t.id, title: a.top.t.title || 'Sin título',
+          cover: a.top.t.coverImage || '', plays: a.plays, tracks: a.tracks,
+          score: Math.round(a.score)
+        }));
+        const record = { week: wid, computedAt: Date.now(), artists: top3 };
+        musicDb().ref('spotlight/' + wid).once('value').then(s2 => {
+          const done = () => { drexSpotlightPaint(record); finish(); };
+          if (s2.val() && s2.val().artists && s2.val().artists.length) { drexSpotlightPaint(s2.val()); finish(); return; }
+          musicDb().ref('spotlight/' + wid).set(record).then(done).catch(done);
+        }).catch(() => { drexSpotlightPaint(record); finish(); });
+      } catch (_) { finish(); }
+    }).catch(() => finish());
+  } catch (_) { finish(); }
+}
+function drexSpotlightPaint(data) {
+  const box = document.getElementById('drex-spotlight');
+  if (!box || !data || !data.artists || !data.artists.length) { if (box) box.classList.add('hidden'); return; }
+  drexSpotlightData = data;
+  drexSpotlightTracks = data.artists.map(a => ({ id: a.trackId, title: a.title, artistName: a.name, authorId: a.uid, coverImage: a.cover }));
+  const T = (typeof appT === 'function') ? appT : (s => s);
+  const medals = ['#FFC83C', '#C0C7D1', '#E09A5A'];
+  const cards = data.artists.map((a, i) => {
+    const cover = a.cover
+      ? `<img src="${musicEsc(a.cover)}" class="w-14 h-14 rounded-2xl object-cover shrink-0 bg-white/10" alt="">`
+      : `<div class="w-14 h-14 rounded-2xl shrink-0 flex items-center justify-center text-white/70 bg-white/10 text-2xl">♫</div>`;
+    const canProfile = !!a.uid;
+    return `
+    <div class="flex items-center gap-3 rounded-2xl p-2.5" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);">
+      <span class="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-extrabold shrink-0 text-black" style="background:${medals[i] || '#FFC83C'}">${i + 1}</span>
+      ${cover}
+      <div class="min-w-0 flex-1 ${canProfile ? 'cursor-pointer' : ''}" ${canProfile ? `onclick="musicOpenArtistProfile('${musicEscJs(a.uid)}')"` : ''}>
+        <p class="text-[14px] font-extrabold text-white truncate leading-tight">${musicEsc(a.name)}</p>
+        <p class="text-[12px] text-white/60 font-semibold truncate">▶ ${musicFmtNum(a.plays)} · ${a.tracks} ${T(a.tracks === 1 ? 'canción' : 'canciones')}</p>
+      </div>
+      <button onclick="event.stopPropagation();drexSpotlightPlay(${i})" class="tap44 w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-black active:opacity-80" style="background:#FFC83C" aria-label="${T('Escuchar')}">
+        <svg class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+    </div>`;
+  }).join('');
+  box.innerHTML = `
+  <div class="rounded-3xl p-4 mb-3 text-white" style="background:linear-gradient(150deg,#3438a8,#191c5e);box-shadow:0 12px 30px rgba(47,51,184,.35);">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <p class="text-[10px] font-extrabold uppercase tracking-[.2em]" style="color:#FFC83C">${T('Drex Spotlight')}</p>
+        <h3 class="text-[17px] font-extrabold leading-tight">${T('Destacados de la semana')}</h3>
+      </div>
+      <span class="text-[11px] font-bold text-white/60">${musicEsc(data.week || '')}</span>
+    </div>
+    <div class="flex flex-col gap-2">${cards}</div>
+    <p class="mt-3 text-[11px] text-white/50 text-center font-semibold">${T('Elegidos automáticamente por su impulso · Se renueva cada semana')}</p>
+  </div>`;
+  box.classList.remove('hidden');
+  try { if (typeof translateAppSubtree === 'function') translateAppSubtree(box, typeof getAppLanguage === 'function' ? getAppLanguage() : 'es'); } catch (_) {}
+}
+window.drexSpotlightPlay = function (i) { try { musicPlayFromList('spotlight', i); } catch (_) {} };
+window.drexSpotlightRender = drexSpotlightRender;
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(drexSpotlightRender, 2500));
+else setTimeout(drexSpotlightRender, 2500);
+
 /* ---------- Compartir canción ---------- */
 window.musicShareTrack = function () {
   const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
@@ -41110,7 +41248,7 @@ function musicGetAudioUrl(trackId) {
   });
 }
 window.musicPlayFromList = function (ctx, idx) {
-  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicSortedMine() : ctx === 'top' ? musicTopCache : ctx === 'favorites' ? musicFavArrForCtx('favorites') : ctx === 'history' ? musicHistoryCache : ctx === 'artist' ? musicArtistCache : ctx === 'playlist' ? (musicPlaylistDetailCache ? musicPlaylistDetailCache.tracks : []) : musicSearchCache;
+  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicSortedMine() : ctx === 'top' ? musicTopCache : ctx === 'favorites' ? musicFavArrForCtx('favorites') : ctx === 'history' ? musicHistoryCache : ctx === 'artist' ? musicArtistCache : ctx === 'playlist' ? (musicPlaylistDetailCache ? musicPlaylistDetailCache.tracks : []) : ctx === 'spotlight' ? (typeof drexSpotlightTracks !== 'undefined' ? drexSpotlightTracks : []) : musicSearchCache;
   if (!arr || !arr[idx]) return;
   musicQueue = arr.slice();
   musicQueueIdx = idx;
