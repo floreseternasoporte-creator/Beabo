@@ -19657,6 +19657,8 @@ function saveNote() {
     const mainAppEl = document.getElementById('main-app');
     if (authFormContainerEl) authFormContainerEl.classList.add('hidden');
     if (mainAppEl) mainAppEl.classList.remove('hidden');
+    // Banner de cuenta verificada (registro nuevo): una sola vez por cuenta.
+    if (typeof maybeShowVerifiedBanner === 'function') maybeShowVerifiedBanner();
 
     // Aseguramos que el resto de la app (perfil, contadores, feed) se
     // inicialice igual que en un inicio de sesión normal.
@@ -19815,6 +19817,41 @@ function saveNote() {
     frame = requestAnimationFrame(draw);
   }
 
+  // ── Banner de cuenta verificada: se muestra UNA sola vez ──────────────
+  // Solo a cuentas con isVerified === true. Se marca verifiedBannerSeen en
+  // la BD (vale en todos los dispositivos) y además en localStorage como
+  // respaldo por si la escritura falla.
+  function showVerifiedBanner() {
+    const ov = document.getElementById('verified-banner-overlay');
+    if (!ov || !ov.classList.contains('hidden')) return;
+    ov.classList.remove('hidden');
+    requestAnimationFrame(() => requestAnimationFrame(() => ov.classList.add('vb-open')));
+  }
+  function hideVerifiedBanner() {
+    const ov = document.getElementById('verified-banner-overlay');
+    if (!ov) return;
+    ov.classList.remove('vb-open');
+    setTimeout(() => ov.classList.add('hidden'), 380);
+  }
+  function maybeShowVerifiedBanner(data) {
+    try {
+      const user = DrexCloud.auth().currentUser;
+      if (!user) return;
+      const lsKey = 'drex_verified_banner_' + user.uid;
+      try { if (localStorage.getItem(lsKey) === '1') return; } catch (_) {}
+      const check = (d) => {
+        if (!d || d.isVerified !== true || d.verifiedBannerSeen === true) return;
+        try { localStorage.setItem(lsKey, '1'); } catch (_) {}
+        DrexCloud.database().ref('users/' + user.uid).update({ verifiedBannerSeen: true }).catch(() => {});
+        setTimeout(showVerifiedBanner, 900);
+      };
+      if (data) { check(data); return; }
+      DrexCloud.database().ref('users/' + user.uid).once('value')
+        .then(snap => check(snap.val())).catch(() => {});
+    } catch (_) {}
+  }
+  document.getElementById('verifiedBannerOk').addEventListener('click', hideVerifiedBanner);
+
   DrexCloud.auth().onAuthStateChanged(user => {
     if (user) {
       // Si el usuario está en mitad del flujo de registro, no redirigir aún
@@ -19902,6 +19939,8 @@ function saveNote() {
 
         authFormContainer.classList.add('hidden');
         mainApp.classList.remove('hidden');
+        // Banner de cuenta verificada: una sola vez por cuenta.
+        maybeShowVerifiedBanner(data);
         try {
           if (sessionStorage.getItem('drex_reactivated') === '1') {
             sessionStorage.removeItem('drex_reactivated');
@@ -33896,5 +33935,60 @@ async function endFiesta() {
   }
 })();
 </script>
+
+<!-- ══════════════════════════════════════════════════════════
+     BANNER DE CUENTA VERIFICADA — se muestra UNA sola vez a las
+     cuentas con isVerified === true (ver maybeShowVerifiedBanner).
+═══════════════════════════════════════════════════════════ -->
+<style>
+#verified-banner-overlay{position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(13,20,36,.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);opacity:0;transition:opacity .35s ease}
+#verified-banner-overlay.hidden{display:none}
+#verified-banner-overlay.vb-open{opacity:1}
+#verified-banner-card{position:relative;width:100%;max-width:360px;background:#fff;border-radius:28px;padding:40px 28px 30px;text-align:center;box-shadow:0 30px 80px rgba(13,20,36,.35);overflow:hidden;opacity:0}
+#verified-banner-overlay.vb-open #verified-banner-card{animation:vbPop .55s cubic-bezier(.34,1.56,.64,1) .05s forwards}
+@keyframes vbPop{0%{transform:scale(.7) translateY(20px);opacity:0}60%{transform:scale(1.04) translateY(0);opacity:1}100%{transform:scale(1) translateY(0);opacity:1}}
+.vb-shine{position:absolute;top:-20%;bottom:-20%;left:-90px;width:70px;background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-18deg);animation:vbShine 3.2s ease-in-out infinite;pointer-events:none}
+@keyframes vbShine{0%{left:-90px}55%,100%{left:115%}}
+.vb-badge-wrap{position:relative;width:104px;height:104px;margin:0 auto 18px;animation:vbBadgeIn .65s cubic-bezier(.34,1.56,.64,1) .18s both}
+@keyframes vbBadgeIn{0%{transform:scale(0) rotate(-25deg)}70%{transform:scale(1.18) rotate(7deg)}100%{transform:scale(1) rotate(0)}}
+.vb-badge-float{animation:vbFloat 3.2s ease-in-out 1s infinite}
+@keyframes vbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+.vb-ring{position:absolute;inset:0;border-radius:9999px;border:3px solid #2f80ed;opacity:0;animation:vbRing 2.4s ease-out 1s infinite;pointer-events:none}
+.vb-ring.vb-ring-2{animation-delay:2.2s}
+@keyframes vbRing{0%{transform:scale(.75);opacity:.55}100%{transform:scale(1.45);opacity:0}}
+.vb-title{font-size:30px;font-weight:800;color:#24324c;margin:0 0 6px;animation:vbFadeUp .5s ease .35s both}
+.vb-sub{display:flex;align-items:center;justify-content:center;gap:6px;font-size:16px;font-weight:700;color:#2f80ed;margin:0 0 12px;animation:vbFadeUp .5s ease .45s both}
+.vb-body{font-size:14.5px;line-height:1.55;color:#5c6974;margin:0 0 24px;animation:vbFadeUp .5s ease .55s both}
+.vb-body strong{color:#24324c}
+@keyframes vbFadeUp{0%{opacity:0;transform:translateY(12px)}100%{opacity:1;transform:translateY(0)}}
+#verifiedBannerOk{animation:vbFadeUp .5s ease .65s both;width:100%;padding:15px;border:none;border-radius:9999px;font-size:16px;font-weight:800;color:#fff;cursor:pointer;background:linear-gradient(135deg,#24324c,#3b5a8f);box-shadow:0 10px 24px rgba(36,50,76,.35);transition:transform .15s ease,box-shadow .15s ease;font-family:inherit}
+#verifiedBannerOk:active{transform:scale(.96);box-shadow:0 4px 12px rgba(36,50,76,.3)}
+</style>
+<div id="verified-banner-overlay" class="hidden">
+  <div id="verified-banner-card">
+    <div class="vb-shine"></div>
+    <div class="vb-badge-wrap">
+      <span class="vb-ring"></span>
+      <span class="vb-ring vb-ring-2"></span>
+      <svg viewBox="0 0 100 100" class="vb-badge-float" style="width:104px;height:104px;display:block;position:relative">
+        <defs>
+          <linearGradient id="vbGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#4aa8f0"/>
+            <stop offset="1" stop-color="#1d4ed8"/>
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r="46" fill="url(#vbGrad)"/>
+        <circle cx="50" cy="50" r="39" fill="none" stroke="#ffffff" stroke-width="2.5" opacity=".4"/>
+        <path d="M31 51.5l13 13 25-27" fill="none" stroke="#fff" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h2 class="vb-title">¡Felicidades!</h2>
+    <p class="vb-sub">Tu cuenta ha sido verificada
+      <svg viewBox="0 0 24 24" style="width:18px;height:18px;flex:none"><circle cx="12" cy="12" r="10" fill="#2f80ed"/><path d="M8 12.5l2.8 2.8L16.5 9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </p>
+    <p class="vb-body">Ahora tienes acceso a más funcionalidades en la plataforma y <strong>prioridad en el soporte</strong>.</p>
+    <button id="verifiedBannerOk" type="button">¡Genial!</button>
+  </div>
+</div>
 </body>
 </html>
