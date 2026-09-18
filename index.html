@@ -19217,13 +19217,34 @@ function saveNote() {
     ]);
   }
 
+  // Normalización y validación de nombres de usuario (registro y ajustes).
+  // Se permite casi todo: letras de cualquier idioma (incluye acentos y ñ),
+  // números, punto, guion y guion bajo. Solo se bloquean los caracteres que
+  // romperían la app: "/" separa rutas en la base de datos
+  // ("usernames/<nombre>") y <>&"'` se inyectarían como HTML al mostrar el
+  // nombre. La unicidad (que no exista ya) se verifica aparte con la
+  // consulta de disponibilidad: eso no cambia.
+  function normalizeUsername(raw) {
+    return String(raw == null ? '' : raw).trim().toLowerCase()
+      .replace(/^@+/, '')   // el campo ya muestra el @ como prefijo
+      .replace(/\s+/g, '');
+  }
+  function usernameInvalidReason(raw) {
+    const s = normalizeUsername(raw);
+    if (!s) return 'empty';
+    if (s.length < 3) return 'short';
+    if (s.length > 30) return 'long';
+    if (!/^[\p{L}\p{N}._-]+$/u.test(s)) return 'chars';
+    return null;
+  }
+
   document.getElementById('regUsername').addEventListener('input', () => {
     clearTimeout(usernameCheckTimer);
     // Invalidar de inmediato cualquier verificación en curso: la secuencia se
     // incrementa aquí (no dentro del setTimeout) para que un check antiguo en
     // vuelo nunca actualice la UI después de que el usuario siguió escribiendo.
     const mySeq = ++usernameCheckSeq;
-    const raw      = document.getElementById('regUsername').value.trim().toLowerCase().replace(/\s+/g, '');
+    const raw      = normalizeUsername(document.getElementById('regUsername').value);
     const icon     = document.getElementById('regUsernameIcon');
     const status   = document.getElementById('regUsernameStatus');
     const errDiv   = document.getElementById('regUsernameError');
@@ -19241,8 +19262,8 @@ function saveNote() {
       setUsernameUI('invalid', 'Mínimo 3 caracteres.');
       return;
     }
-    if (!/^[a-z0-9._]+$/.test(raw)) {
-      setUsernameUI('invalid', 'Solo letras, números, puntos y guiones bajos.');
+    if (usernameInvalidReason(raw) === 'chars') {
+      setUsernameUI('invalid', 'Solo letras, números, puntos y guiones (sin espacios ni símbolos).');
       return;
     }
 
@@ -19275,15 +19296,15 @@ function saveNote() {
   document.getElementById('backFromRegUsername').addEventListener('click', () => { showAuthSection(regData.socialCompletion ? regBirthdateStep : regCredStep); });
 
   document.getElementById('regUsernameContinue').addEventListener('click', async () => {
-    const username = document.getElementById('regUsername').value.trim().replace(/\s+/g,'').toLowerCase();
+    const username = normalizeUsername(document.getElementById('regUsername').value);
     const err      = document.getElementById('regUsernameError');
     if (!username || username.length < 3) {
       err.textContent = 'El nombre de usuario debe tener al menos 3 caracteres.';
       err.classList.remove('hidden');
       return;
     }
-    if (!/^[a-z0-9._]+$/.test(username)) {
-      err.textContent = 'Solo letras, números, puntos y guiones bajos.';
+    if (usernameInvalidReason(username) === 'chars') {
+      err.textContent = 'Solo letras, números, puntos y guiones (sin espacios ni símbolos).';
       err.classList.remove('hidden');
       return;
     }
@@ -22887,13 +22908,16 @@ o
       const updates = { ...partialUpdates };
 
       if (validateUsername) {
-        const nextUsername = (updates.username || "").trim().replace(/\s+/g, '').toLowerCase();
+        const nextUsername = normalizeUsername(updates.username || "");
         if (!nextUsername) {
           showMiniToast("El nombre de usuario no puede estar vacío.");
           return false;
         }
-        if (!/^[a-z0-9._]+$/.test(nextUsername) || nextUsername.length < 3) {
-          showMiniToast("El nombre de usuario solo puede tener letras, números, puntos y guiones bajos (mínimo 3 caracteres).");
+        const _uReason = usernameInvalidReason(nextUsername);
+        if (_uReason) {
+          showMiniToast(_uReason === 'chars'
+            ? "El nombre de usuario solo puede tener letras, números, puntos y guiones (sin espacios ni símbolos)."
+            : "El nombre de usuario debe tener entre 3 y 30 caracteres.");
           return false;
         }
         updates.username = nextUsername;
@@ -26336,14 +26360,15 @@ const _startChatListeners = () => {
     const ref = DrexCloud.database().ref('users/' + user.uid);
     return ref.once('value').then(snapshot => {
       const existing = snapshot.val() || {};
-      // C4: el username temporal se sanitiza (solo [a-z0-9._], minúsculas) y se
+      // C4: el username temporal se sanitiza (se quitan solo los caracteres
+      // peligrosos: "/" rompe rutas, <>&"'` se inyectarían como HTML) y se
       // hace único por usuario con un sufijo de su uid. No se escribe en el
       // índice usernames/ (la reserva real ocurre en el flujo de registro con
       // transacción atómica). Si ya hay username, se respeta.
       let fallbackUsername = existing.username || '';
       if (!fallbackUsername) {
         const raw = user.displayName || (user.email ? user.email.split('@')[0] : 'usuario');
-        const clean = String(raw).toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 20) || 'usuario';
+        const clean = String(raw).toLowerCase().replace(/^@+/, '').replace(/[\/<>&"'`\s\u0000-\u001f\u007f]/g, '').slice(0, 20) || 'usuario';
         const suffix = String(user.uid).replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase() || 'x';
         fallbackUsername = clean + '_' + suffix;
       }
@@ -32048,12 +32073,12 @@ document.addEventListener('DOMContentLoaded', handleSubpageHash);
     const q = new URLSearchParams(location.search);
     let touched = false;
     const ref = q.get('ref');
-    if (ref && /^[a-z0-9._]{3,30}$/i.test(ref)) {
+    if (ref && /^[\p{L}\p{N}._-]{3,30}$/u.test(ref)) {
       sessionStorage.setItem('drex_ref', ref.toLowerCase());
       touched = true;
     }
     const sharedUser = q.get('user');
-    if (sharedUser && /^[a-z0-9._]{3,30}$/i.test(sharedUser)) {
+    if (sharedUser && /^[\p{L}\p{N}._-]{3,30}$/u.test(sharedUser)) {
       sessionStorage.setItem('drex_pending_open_user', sharedUser.toLowerCase());
       touched = true;
     }
