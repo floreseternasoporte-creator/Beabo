@@ -6236,6 +6236,17 @@ if (scrollArea) {
         <div id="preview-grid-fullscreen" class="grid grid-cols-2 gap-2"></div>
       </div>
 
+      <!-- VIDEO-POSTS: Preview de video -->
+      <div id="video-preview-fullscreen" class="hidden mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <p id="video-preview-info-fullscreen" class="text-sm font-medium text-[#7b878f]"></p>
+          <button onclick="removeNoteVideo()" class="tap44 relative bg-black/60 text-white rounded-full p-2 active:bg-black/80" title="Eliminar video">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <video id="video-preview-player" controls playsinline class="w-full max-h-[320px] rounded-xl bg-black"></video>
+      </div>
+
     </div>
 
     <!-- Barra de herramientas inferior — estilo Grok con carrusel horizontal -->
@@ -6244,6 +6255,8 @@ if (scrollArea) {
       <div id="note-tools-carousel" class="flex items-center gap-1 px-4 py-3 overflow-x-auto overflow-y-hidden scrollbar-none" style="-webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;">
         <input type="file" id="note-image-fullscreen-gallery" accept="image/*" class="hidden" onchange="handleNoteImagePreviewFullscreen(event, 'gallery')" multiple>
         <input type="file" id="note-image-fullscreen-camera" accept="image/*" capture="environment" class="hidden" onchange="handleNoteImagePreviewFullscreen(event, 'camera')">
+        <!-- VIDEO-POSTS: adjuntar video a la publicación -->
+        <input type="file" id="note-video-fullscreen" accept="video/*" class="hidden" onchange="handleNoteVideoSelected(event)">
 
         <!-- Foto (galería) -->
         <button id="tool-photo" onclick="pickNoteImageFromGallery()" class="min-h-[44px] flex-shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-2xl active:bg-[#e7ecf3] transition" style="scroll-snap-align: start;">
@@ -6259,6 +6272,14 @@ if (scrollArea) {
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#5c6974]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           </div>
           <span class="text-[10px] font-semibold text-[#6b7280]">Cámara</span>
+        </button>
+
+        <!-- VIDEO-POSTS: Video -->
+        <button id="tool-video" onclick="pickNoteVideo()" class="min-h-[44px] flex-shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-2xl active:bg-[#e7ecf3] transition" style="scroll-snap-align: start;">
+          <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#5c6974]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          </div>
+          <span class="text-[10px] font-semibold text-[#6b7280]">Video</span>
         </button>
 
         <!-- GIF -->
@@ -9258,6 +9279,11 @@ function saveNote() {
   // solo lectura, así que las selecciones se acumulan aquí para poder quitar
   // fotos individuales y publicar exactamente lo que muestra el preview.
   let notePostImageFiles = [];
+  // VIDEO-POSTS: video adjunto del creador. Solo uno por publicación y
+  // excluyente con fotos, GIF y sticker (igual que las fotos entre sí).
+  let notePostVideoFile = null;
+  let notePostVideoObjectUrl = null;
+  let notePostVideoDuration = 0;
   // Candado: mientras hay una publicación en vuelo, los adjuntos no se pueden
   // cambiar (el publish ya tomó su snapshot); evita que lo publicado difiera
   // de lo que muestra el preview.
@@ -9631,6 +9657,242 @@ function saveNote() {
     return Promise.all(workers).then(() => results);
   }
 
+  // ============ VIDEO-POSTS: procesamiento y almacenamiento ============
+  // Los videos se guardan en la misma infraestructura actual (DynamoDB
+  // drex-kv vía DrexCloud, sin cuentas ni claves nuevas): la data URL del
+  // video se parte en trozos de ~300 KB (margen bajo el límite de 400 KB
+  // por ítem) bajo la ruta `noteVideos/<noteId>/chunk_00000…`, y la nota
+  // solo guarda metadatos livianos en `note.video` (mime, duración, tamaño,
+  // nº de trozos y miniatura). El feed nunca descarga los trozos: el video
+  // se reensambla bajo demanda al pulsar reproducir.
+  const VIDEO_POSTS_MAX_DURATION_S = 60;
+  const VIDEO_POSTS_DIRECT_MAX_BYTES = 4 * 1024 * 1024;  // ≤4 MB: se sube tal cual
+  const VIDEO_POSTS_ABS_MAX_BYTES = 12 * 1024 * 1024;    // tope absoluto tras comprimir
+  const VIDEO_POSTS_CHUNK_CHARS = 300 * 1024;            // margen bajo 400 KB/ítem
+
+  function formatVideoDuration(sec) {
+    const s = Math.max(0, Math.round(Number(sec) || 0));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  function formatVideoBytes(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return Math.round(n / 1024) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+  }
+
+  // Duración del video sin descargarlo entero (solo metadatos).
+  function probeVideoDuration(file) {
+    return new Promise((resolve, reject) => {
+      let url = '';
+      try { url = URL.createObjectURL(file); } catch (e) { reject(e); return; }
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.muted = true;
+      v.playsInline = true;
+      let done = false;
+      const cleanup = () => {
+        try { v.removeAttribute('src'); v.load(); } catch (_) {}
+        try { URL.revokeObjectURL(url); } catch (_) {}
+      };
+      const timer = setTimeout(() => { if (!done) { done = true; cleanup(); reject(new Error('timeout')); } }, 15000);
+      v.onloadedmetadata = () => { if (!done) { done = true; clearTimeout(timer); const d = v.duration; cleanup(); resolve(d); } };
+      v.onerror = () => { if (!done) { done = true; clearTimeout(timer); cleanup(); reject(new Error('load')); } };
+      v.src = url;
+    });
+  }
+
+  // Miniatura para el feed (se guarda en la nota, ~15-40 KB).
+  function captureVideoThumb(file) {
+    return new Promise((resolve) => {
+      let url = '';
+      try { url = URL.createObjectURL(file); } catch (_) { resolve(''); return; }
+      const v = document.createElement('video');
+      v.muted = true;
+      v.playsInline = true;
+      v.preload = 'auto';
+      let done = false;
+      const finishOk = (du) => { if (!done) { done = true; cleanup(); resolve(du || ''); } };
+      const cleanup = () => {
+        clearTimeout(timer);
+        try { v.removeAttribute('src'); v.load(); } catch (_) {}
+        try { URL.revokeObjectURL(url); } catch (_) {}
+      };
+      const timer = setTimeout(() => finishOk(''), 10000);
+      const grab = () => {
+        try {
+          const scale = Math.min(1, 320 / (v.videoWidth || 320));
+          const c = document.createElement('canvas');
+          c.width = Math.max(2, Math.round((v.videoWidth || 320) * scale));
+          c.height = Math.max(2, Math.round((v.videoHeight || 180) * scale));
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          finishOk(c.toDataURL('image/jpeg', 0.7));
+        } catch (_) { finishOk(''); }
+      };
+      v.onloadeddata = () => {
+        try {
+          const seekTo = Math.min(1, (v.duration || 2) / 2);
+          v.onseeked = grab;
+          v.currentTime = seekTo;
+          setTimeout(() => { if (!done && v.readyState >= 2) grab(); }, 4000);
+        } catch (_) { grab(); }
+      };
+      v.onerror = () => finishOk('');
+      v.src = url;
+    });
+  }
+
+  // Recomprime el video en el propio teléfono (canvas + MediaRecorder) para
+  // que quepa en la base de datos. Sin esto, un clip de iPhone (.mov de
+  // decenas de MB, además irreproducible fuera de Safari) haría inútil la
+  // función. Conserva el audio. Si falla, el llamador usa el original.
+  function transcodeVideoFile(file) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (!('MediaRecorder' in window)) { reject(new Error('norecoder')); return; }
+        const candidates = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+        let mime = '';
+        for (const t of candidates) {
+          try { if (MediaRecorder.isTypeSupported(t)) { mime = t; break; } } catch (_) {}
+        }
+        if (!mime) { reject(new Error('norecoder')); return; }
+        const url = URL.createObjectURL(file);
+        const video = document.createElement('video');
+        video.preload = 'auto';
+        video.playsInline = true;
+        video.muted = true; // el audio real viaja por MediaStreamDestination
+        let done = false;
+        let audioCtx = null;
+        const timer = setTimeout(() => { finish(() => { cleanup(); reject(new Error('timeout')); }); }, 120000);
+        const finish = (fn) => { if (!done) { done = true; try { clearTimeout(timer); } catch (_) {} fn(); } };
+        const cleanup = () => {
+          try { video.pause(); } catch (_) {}
+          try { video.removeAttribute('src'); video.load(); } catch (_) {}
+          try { URL.revokeObjectURL(url); } catch (_) {}
+          try { if (audioCtx && audioCtx.close) audioCtx.close(); } catch (_) {}
+        };
+        video.onloadedmetadata = () => {
+          try {
+            const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
+            const scale = Math.min(1, 720 / Math.max(vw, vh));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(2, Math.round(vw * scale / 2) * 2);
+            canvas.height = Math.max(2, Math.round(vh * scale / 2) * 2);
+            const ctx = canvas.getContext('2d');
+            let stream;
+            try {
+              const canvasStream = canvas.captureStream(30);
+              const AC = window.AudioContext || window.webkitAudioContext;
+              if (AC) {
+                audioCtx = new AC();
+                const msrc = audioCtx.createMediaElementSource(video);
+                const mdest = audioCtx.createMediaStreamDestination();
+                msrc.connect(mdest);
+                stream = new MediaStream([...canvasStream.getVideoTracks(), ...mdest.stream.getAudioTracks()]);
+              } else {
+                stream = canvasStream;
+              }
+            } catch (_) {
+              stream = canvas.captureStream(30);
+            }
+            const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1000000 });
+            const parts = [];
+            rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+            rec.onerror = () => { finish(() => { cleanup(); reject(new Error('recorder')); }); };
+            rec.onstop = () => {
+              finish(() => {
+                cleanup();
+                const blob = new Blob(parts, { type: mime });
+                if (!blob.size) reject(new Error('empty'));
+                else resolve({ blob, mime });
+              });
+            };
+            const drawTimer = setInterval(() => {
+              try { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); } catch (_) {}
+            }, 1000 / 30);
+            video.onended = () => {
+              clearInterval(drawTimer);
+              setTimeout(() => { try { rec.stop(); } catch (_) {} }, 400);
+            };
+            if (audioCtx && audioCtx.resume) { audioCtx.resume().catch(() => {}); }
+            rec.start(1000);
+            const playP = video.play();
+            if (playP && playP.catch) playP.catch(() => { clearInterval(drawTimer); finish(() => { cleanup(); reject(new Error('play')); }); });
+          } catch (e) {
+            finish(() => { cleanup(); reject(e); });
+          }
+        };
+        video.onerror = () => { finish(() => { cleanup(); reject(new Error('load')); }); };
+        video.src = url;
+        video.load();
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  function readFileAsDataURL(blob, mime) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      const timer = setTimeout(() => reject(new Error('No se pudo leer el video.')), 60000);
+      reader.onload = () => {
+        clearTimeout(timer);
+        let du = String(reader.result || '');
+        const want = 'data:' + String(mime || 'video/mp4').split(';')[0];
+        if (du && !du.startsWith(want)) {
+          const comma = du.indexOf(',');
+          if (comma > 0) du = want + ';base64,' + du.slice(comma + 1);
+        }
+        if (!du) reject(new Error('No se pudo leer el video.'));
+        else resolve(du);
+      };
+      reader.onerror = () => { clearTimeout(timer); reject(new Error('No se pudo leer el video.')); };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // Valida, comprime si hace falta y devuelve la data URL lista para trocear.
+  function processVideoFile(file) {
+    return (async () => {
+      const duration = await probeVideoDuration(file);
+      if (!isFinite(duration) || duration <= 0) throw new Error('No se pudo leer el video. Prueba con otro archivo.');
+      if (duration > VIDEO_POSTS_MAX_DURATION_S) throw new Error('El video debe durar máximo 60 segundos.');
+      const thumb = await captureVideoThumb(file).catch(() => '');
+      const origMime = String(file.type || '');
+      const broadlyPlayable = /^video\/(mp4|webm)/i.test(origMime);
+      let blob = file;
+      let mime = origMime || 'video/mp4';
+      // Se comprime si pesa >4 MB o si es un formato poco portable
+      // (p. ej. .mov de iPhone, que Chrome no reproduce).
+      if (file.size > VIDEO_POSTS_DIRECT_MAX_BYTES || !broadlyPlayable) {
+        const t = await transcodeVideoFile(file).catch(() => null);
+        if (t && t.blob && t.blob.size) { blob = t.blob; mime = t.mime || mime; }
+      }
+      if (blob.size > VIDEO_POSTS_ABS_MAX_BYTES) {
+        throw new Error('El video es demasiado pesado incluso comprimido. Prueba con un clip más corto.');
+      }
+      const dataUrl = await readFileAsDataURL(blob, mime);
+      return { dataUrl, mime, duration, size: blob.size, thumb };
+    })();
+  }
+
+  function splitDataUrlIntoChunks(dataUrl) {
+    const out = [];
+    for (let i = 0; i < dataUrl.length; i += VIDEO_POSTS_CHUNK_CHARS) {
+      out.push(dataUrl.slice(i, i + VIDEO_POSTS_CHUNK_CHARS));
+    }
+    return out;
+  }
+
+  // Guarda los trozos bajo noteVideos/<noteId>/chunk_00000… con set()
+  // (un solo deleteSubtree + puts en batch, en vez de N updates secuenciales).
+  function writeVideoChunksToDb(noteId, chunks) {
+    const obj = {};
+    chunks.forEach((c, i) => { obj['chunk_' + String(i).padStart(5, '0')] = c; });
+    return DrexCloud.database().ref('noteVideos/' + noteId).set(obj);
+  }
+
   function handleNoteImagePreviewFullscreen(event, source = 'gallery') {
     const selectedFiles = Array.from(event.target.files || []);
     if (!selectedFiles.length) return;
@@ -9647,6 +9909,8 @@ function saveNote() {
     // un GIF también limpia las fotos), para que lo publicado sea siempre lo
     // que muestra el preview.
     if (selectedNotePostGif) selectedNotePostGif = null;
+    // VIDEO-POSTS: las fotos también reemplazan al video.
+    if (notePostVideoFile) clearNoteVideoState();
 
     const room = 20 - notePostImageFiles.length;
     const accepted = selectedFiles.slice(0, Math.max(0, room));
@@ -9708,15 +9972,89 @@ function saveNote() {
     if (cameraInput) cameraInput.value = '';
     notePostImageFiles = [];
     renderNotePostPhotoPreviews();
+    // VIDEO-POSTS: limpiar también el video (lo usa setNotePostGif para la
+    // exclusión mutua GIF <-> video).
+    clearNoteVideoState();
     if (!keepGifSelectionState) selectedNotePostGif = null;
+  }
+
+  // ============ VIDEO-POSTS: selección y preview en el creador ============
+  function pickNoteVideo() {
+    if (notePostPublishing) return;
+    document.getElementById('note-video-fullscreen')?.click();
+  }
+
+  function clearNoteVideoState() {
+    notePostVideoFile = null;
+    notePostVideoDuration = 0;
+    const input = document.getElementById('note-video-fullscreen');
+    if (input) input.value = '';
+    renderNoteVideoPreview();
+  }
+
+  function removeNoteVideo() {
+    if (notePostPublishing) return;
+    clearNoteVideoState();
+  }
+
+  function handleNoteVideoSelected(event) {
+    const file = (event.target.files || [])[0];
+    event.target.value = '';
+    if (!file || notePostPublishing) return;
+    if (pendingStickers['note-content-fullscreen']) {
+      showMiniToast('❌ Error: No puedes agregar un video si ya has seleccionado un sticker. Por favor, elimina el sticker primero.');
+      return;
+    }
+    if (!String(file.type || '').startsWith('video/')) {
+      showMiniToast('El archivo seleccionado no es un video.');
+      return;
+    }
+    const info = document.getElementById('video-preview-info-fullscreen');
+    // La sección del preview se muestra solo si la duración es válida.
+    probeVideoDuration(file).then(d => {
+      if (!isFinite(d) || d <= 0) throw new Error('nodur');
+      if (d > VIDEO_POSTS_MAX_DURATION_S) {
+        showMiniToast('El video debe durar máximo 60 segundos. Elige un clip más corto.');
+        return;
+      }
+      // Exclusión mutua: el video reemplaza fotos y GIF.
+      notePostImageFiles = [];
+      renderNotePostPhotoPreviews();
+      selectedNotePostGif = null;
+      clearNoteVideoState();
+      notePostVideoFile = file;
+      notePostVideoDuration = d;
+      renderNoteVideoPreview();
+    }).catch(() => {
+      showMiniToast('No se pudo leer el video. Prueba con otro archivo.');
+    });
+  }
+
+  function renderNoteVideoPreview() {
+    const section = document.getElementById('video-preview-fullscreen');
+    const player = document.getElementById('video-preview-player');
+    const info = document.getElementById('video-preview-info-fullscreen');
+    if (!section || !player) return;
+    if (!notePostVideoFile) {
+      section.classList.add('hidden');
+      try { player.removeAttribute('src'); player.load(); } catch (_) {}
+      if (notePostVideoObjectUrl) { try { URL.revokeObjectURL(notePostVideoObjectUrl); } catch (_) {} notePostVideoObjectUrl = null; }
+      return;
+    }
+    section.classList.remove('hidden');
+    if (notePostVideoObjectUrl) { try { URL.revokeObjectURL(notePostVideoObjectUrl); } catch (_) {} }
+    notePostVideoObjectUrl = URL.createObjectURL(notePostVideoFile);
+    player.src = notePostVideoObjectUrl;
+    if (info) info.textContent = `Video · ${formatVideoDuration(notePostVideoDuration)} · ${formatVideoBytes(notePostVideoFile.size)} (máx. 60 s y 12 MB)`;
   }
 
   function publishNoteFromFullscreen() {
     const content = resolveCommentContent('note-content-fullscreen');
     const imageFiles = notePostImageFiles.slice(0, 20);
     const gifUrl = selectedNotePostGif;
-    if (!content && !imageFiles.length && !gifUrl) {
-      showMiniToast('Por favor escribe algo o agrega una foto o GIF');
+    const videoFile = notePostVideoFile; // VIDEO-POSTS
+    if (!content && !imageFiles.length && !gifUrl && !videoFile) {
+      showMiniToast('Por favor escribe algo o agrega una foto, video o GIF');
       return;
     }
 
@@ -9812,6 +10150,37 @@ function saveNote() {
           note.imageUrl = images[0];
           publishWithAudienceScope().then(() => publishNoteToDatabase(note));
         });
+      } else if (videoFile) {
+        // VIDEO-POSTS: validar + comprimir, subir los trozos y luego crear
+        // la nota con la key ya reservada (así la nota nunca apunta a un
+        // video inexistente).
+        publishBtn.innerHTML = `${getSpinnerMarkup()}<span class="ml-2">Comprimiendo video…</span>`;
+        showMiniToast('Procesando el video, esto puede tardar unos segundos…');
+        let reservedVideoRef = null;
+        processVideoFile(videoFile).then(({ dataUrl, mime, duration, size, thumb }) => {
+          const chunks = splitDataUrlIntoChunks(dataUrl);
+          note.video = {
+            mime: mime,
+            duration: Math.round(duration),
+            size: size,
+            chunks: chunks.length,
+            thumb: thumb || ''
+          };
+          const notesRef = DrexCloud.database().ref('communityNotes');
+          reservedVideoRef = notesRef.push(); // reserva la key sin escribir nada
+          return writeVideoChunksToDb(reservedVideoRef.key, chunks)
+            .then(() => publishWithAudienceScope().then(() => publishNoteToDatabase(note, reservedVideoRef)));
+        }).catch(err => {
+          console.error('Error al procesar/subir el video:', err);
+          // Limpieza best-effort de trozos parciales sin nota.
+          if (reservedVideoRef) DrexCloud.database().ref('noteVideos/' + reservedVideoRef.key).remove().catch(() => {});
+          showMiniToast((err && err.message) || 'No se pudo procesar el video. Inténtalo de nuevo.');
+          notePostPublishing = false;
+          renderNotePostPhotoPreviews();
+          renderNoteVideoPreview();
+          publishBtn.disabled = false;
+          publishBtn.innerHTML = 'Publicar';
+        });
       } else {
         publishWithAudienceScope().then(() => publishNoteToDatabase(note));
       }
@@ -9893,7 +10262,7 @@ function saveNote() {
     }
   }
 
-  function publishNoteToDatabase(note) {
+  function publishNoteToDatabase(note, preReservedRef) {
     const preModeration = evaluateContentModeration(note.content || '', note.imageUrls || note.imageUrl || []);
     if (preModeration.flagged) {
       showMiniToast('Tu nota no puede ser publicada porque contiene contenido inapropiado.');
@@ -9912,14 +10281,22 @@ function saveNote() {
     // errores en segundo plano y el toast de "éxito" salía aunque nada se
     // hubiera guardado (el post no aparecía en el feed ni en ningún lado).
     const notesRef = DrexCloud.database().ref('communityNotes');
-    const writePromise = (typeof notesRef.pushAsync === 'function')
-      ? notesRef.pushAsync(note)
-      : Promise.resolve(notesRef.push(note)).then(r => (r && r._writePromise) || r);
+    // VIDEO-POSTS: si la key ya se reservó (video: los trozos se subieron
+    // primero), se escribe con set() y la promesa resuelve con el ref, igual
+    // que pushAsync. Si falla, se limpian los trozos huérfanos.
+    const writePromise = preReservedRef
+      ? preReservedRef.set(note).then(() => preReservedRef).catch(err => {
+          if (note.video) DrexCloud.database().ref('noteVideos/' + preReservedRef.key).remove().catch(() => {});
+          throw err;
+        })
+      : (typeof notesRef.pushAsync === 'function')
+        ? notesRef.pushAsync(note)
+        : Promise.resolve(notesRef.push(note)).then(r => (r && r._writePromise) || r);
 
     const mentionPromise = sendMentionNotifications(note.content, note.authorId, note.authorName, 'publicación', [note.authorId]);
     Promise.all([writePromise, mentionPromise]).then(([ref1]) => {
       notePostPublishing = false;
-      if (note.content || note.imageUrls || note.imageUrl) {
+      if (note.content || note.imageUrls || note.imageUrl || note.video) {
         moderarContenidoAutomaticamente(ref1.key, `${note.content || ''} ${(note.imageUrls || []).join(' ')} ${note.imageUrl || ''}`);
       }
 
@@ -9952,11 +10329,12 @@ function saveNote() {
       showMiniToast('¡Publicación creada exitosamente!');
     }).catch(error => {
       console.error('Error al publicar:', error);
-      // El composer NO se limpia: las fotos y el texto se conservan para
+      // El composer NO se limpia: fotos/video y texto se conservan para
       // reintentar sin perder nada.
-      showMiniToast('No se pudo publicar. Revisa tu conexión e inténtalo de nuevo (no perdiste tus fotos).');
+      showMiniToast('No se pudo publicar. Revisa tu conexión e inténtalo de nuevo (no perdiste tu contenido).');
       notePostPublishing = false;
       renderNotePostPhotoPreviews();
+      renderNoteVideoPreview();
       const publishBtn = document.getElementById('publish-btn-fullscreen');
       if (publishBtn) {
         publishBtn.disabled = false;
@@ -10005,6 +10383,62 @@ function saveNote() {
         ${cells}
       </div>
     `;
+  }
+
+  // ============ VIDEO-POSTS: reproductor en la tarjeta del feed ============
+  // El video vive troceado en `noteVideos/<noteId>` (fuera de la nota para
+  // no inflar el snapshot del feed). Aquí solo se pinta el <video> con su
+  // miniatura; los trozos se descargan y reensamblan al pulsar reproducir.
+  function renderNoteVideo(note) {
+    const v = note && note.video;
+    if (!v || !v.chunks) return '';
+    const safeId = escapeInlineSingleQuote(note.id || '');
+    if (!safeId) return '';
+    let posterAttr = '';
+    const thumb = (typeof v.thumb === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v.thumb)) ? v.thumb : '';
+    if (thumb) posterAttr = ` poster="${thumb}"`;
+    const durLabel = formatVideoDuration(v.duration);
+    return `
+      <div class="mb-3 relative overflow-hidden rounded-xl bg-black" data-video-wrap="${safeId}">
+        <video class="w-full max-h-[480px] bg-black" controls playsinline preload="metadata"${posterAttr}></video>
+        <button type="button" onclick="playNoteVideo(this)" data-note-id="${safeId}" aria-label="Reproducir video"
+          class="absolute inset-0 w-full h-full flex items-center justify-center bg-black/35 active:bg-black/50 transition">
+          <span class="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+            <svg class="w-8 h-8 text-[#1c2b4a] ml-1" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+          </span>
+          ${durLabel ? `<span class="absolute bottom-2 right-2 text-[11px] font-bold text-white bg-black/70 rounded-md px-1.5 py-0.5">${durLabel}</span>` : ''}
+        </button>
+      </div>`;
+  }
+
+  // Descarga los trozos, reensambla la data URL y reproduce. El src solo se
+  // asigna por propiedad (nunca en HTML) y se valida el prefijo data:video/.
+  function playNoteVideo(btn) {
+    const noteId = btn && btn.getAttribute('data-note-id');
+    const wrap = btn && btn.closest('[data-video-wrap]');
+    const video = wrap ? wrap.querySelector('video') : null;
+    if (!noteId || !video) return;
+    if (video.dataset.videoLoaded === '1') {
+      btn.classList.add('hidden');
+      video.play().catch(() => {});
+      return;
+    }
+    btn.disabled = true;
+    showMiniToast('Cargando video…');
+    DrexCloud.database().ref('noteVideos/' + noteId).once('value').then(snap => {
+      const obj = snap.val() || {};
+      const keys = Object.keys(obj).filter(k => /^chunk_\d+$/.test(k)).sort();
+      if (!keys.length) throw new Error('empty');
+      const dataUrl = keys.map(k => String(obj[k] || '')).join('');
+      if (!/^data:video\/[a-z0-9+.-]+;base64,/i.test(dataUrl)) throw new Error('bad');
+      video.src = dataUrl;
+      video.dataset.videoLoaded = '1';
+      btn.classList.add('hidden');
+      return video.play();
+    }).catch(() => {
+      btn.disabled = false;
+      showMiniToast('No se pudo cargar el video. Revisa tu conexión.');
+    });
   }
 
   // Negro puro, chrome mínimo (X + contador + puntos), swipe horizontal entre
@@ -11583,6 +12017,7 @@ function saveNote() {
               ${renderNoteAnchoredMeta(note)}
               ${note.content ? renderContentWithSticker(note.content, 'drex-post-title') : ''}
             ${renderNoteImages(note, note.id)}
+            ${renderNoteVideo(note)}
             ${note.taggedPeople && note.taggedPeople.length ? `<div class="mb-3 flex items-center gap-2 flex-wrap">
               <span class="text-xs text-[#7b878f] font-semibold">Con:</span>
               ${note.taggedPeople.map(p => `<span class="inline-flex items-center gap-1 text-xs bg-white border border-[#dce1e5] rounded-full px-2 py-0.5 font-semibold text-[#24324c] cursor-pointer" onclick="openAuthorProfile('${escapeInlineSingleQuote(p.uid||'')}')">
@@ -12695,6 +13130,8 @@ function saveNote() {
     const noteSnap = await db.ref('communityNotes/' + noteId).once('value').catch(() => null);
     const authorId = (noteSnap && noteSnap.val() && (noteSnap.val().authorId || noteSnap.val().userId)) || '';
     await db.ref('communityNotes/' + noteId).remove().catch(() => {});
+    // VIDEO-POSTS: borrar también los trozos del video, si existen.
+    await db.ref('noteVideos/' + noteId).remove().catch(() => {});
     const [voteSnap, repostSnap, savedBySnap] = await Promise.all([
       db.ref('postVotes/' + noteId).once('value').catch(() => null),
       db.ref('postReposts/' + noteId).once('value').catch(() => null),
