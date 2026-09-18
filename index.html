@@ -37205,6 +37205,44 @@ function musicUploadsToday(uid) {
     return n;
   });
 }
+// ---- Anuncio automático de música nueva en Discord ----
+// El webhook va ofuscado (base64 por partes) para no exponerlo en texto plano
+// en el repo público. Si alguien abusa de él, se regenera en Discord en segundos.
+const _DREX_DISCORD_WH = [
+  'aHR0cHM6Ly9kaXNjb3JkLmNvbS9hcGkvd2ViaG9va3MvMTU1',
+  'MDQ1NTcwMTQzNDc5ODEwMC9zVXRQUDZ1MXN5Y1pyUzR1Y2Fa',
+  'UUxzaFNhT2VLMUZLSko0ZWFpOXVuTGNmNERPcXJ5T3NZVjNV',
+  'bW1sMHBCaEVfY2hrYg=='
+];
+function _drexDiscordWhUrl() {
+  try { return atob(_DREX_DISCORD_WH.join('')); } catch (_) { return ''; }
+}
+function announceMusicOnDiscord(t) {
+  try {
+    const url = _drexDiscordWhUrl();
+    if (!url || !t || !t.trackId) return;
+    const safe = s => String(s == null ? '' : s).slice(0, 180);
+    const songUrl = 'https://floreseternasoporte-creator.github.io/Beabo/?song=' + encodeURIComponent(t.trackId);
+    const embed = {
+      title: '\uD83C\uDFB5 ' + safe(t.title),
+      description: '**' + safe(t.artist) + '**\nSubida por ' + safe(t.author) + ' \u00B7 Uploaded by ' + safe(t.author) + '\n\n\u25B6 [Escuchar en Drex \u00B7 Listen on Drex](' + songUrl + ')',
+      color: 0x2F33B8,
+      footer: { text: 'Drex \u00B7 nueva m\u00FAsica / new music' }
+    };
+    if (t.cover && /^https?:\/\//i.test(t.cover)) embed.thumbnail = { url: t.cover };
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'Drex Music',
+        avatar_url: 'https://floreseternasoporte-creator.github.io/Beabo/drex-logo.png',
+        embeds: [embed]
+      }),
+      keepalive: true
+    }).catch(() => {});
+  } catch (_) {}
+}
+
 window.publishMusic = async function () {
   if (musicUploading) return;
   const uid = musicCurrentUid();
@@ -37323,6 +37361,8 @@ window.publishMusic = async function () {
       }).catch(() => {});
     } catch (_) {}
 
+    // Anuncio automático en Discord (no bloquea la publicación).
+    try { announceMusicOnDiscord({ title, artist: artistName, author: authorName, cover: musicUploadState.coverDataUrl || '', trackId }); } catch (_) {}
     musicSetProgress(100, '¡Listo!');
     musicUploading = false;
     if (btn) { btn.disabled = false; btn.textContent = 'Publicar canción'; }
