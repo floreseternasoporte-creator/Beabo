@@ -35651,8 +35651,9 @@ async function endFiesta() {
               <span class="text-sm font-bold text-[#1c2b4a]">Elegir archivo de audio</span>
               <span class="text-xs text-[#7b878f]">MP3, M4A, WAV… máx. 15 MB</span>
             </button>
+            <p class="text-[11px] text-[#7b878f] text-center mt-2">¿No ves tus MP3? Al elegir el archivo toca «Explorar» en lugar de «Fototeca».</p>
           </div>
-          <input type="file" id="music-audio-input" accept="audio/*" class="hidden" onchange="handleMusicAudioSelect(event)">
+          <input type="file" id="music-audio-input" accept="audio/mpeg,audio/mp3,audio/x-mp3,audio/m4a,audio/x-m4a,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/flac,.mp3,.m4a,.aac,.wav,.ogg,.opus,.flac" class="hidden" onchange="handleMusicAudioSelect(event)">
           <div id="music-audio-info" class="hidden mt-1 items-center gap-3 bg-[#f0f4f9] rounded-2xl p-3">
             <div class="w-10 h-10 rounded-xl bg-[#2F33B8]/10 flex items-center justify-center text-[#2F33B8] text-xl shrink-0">♪</div>
             <div class="min-w-0 flex-1">
@@ -35829,12 +35830,28 @@ function musicEscJs(s) { return (typeof escapeInlineSingleQuote === 'function') 
 
 /* ---------- Navegación ---------- */
 window.openMusicSection = function () {
+  if (window.__musicOpenGuard) { clearInterval(window.__musicOpenGuard); window.__musicOpenGuard = null; }
   document.getElementById('creator-hub-view')?.classList.add('hidden');
-  document.getElementById('music-view')?.classList.remove('hidden');
+  const mv = document.getElementById('music-view');
+  if (mv) { mv.classList.remove('hidden'); try { mv.scrollTop = 0; } catch (_) {} }
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
   musicSwitchTab('explore');
+  // Red de seguridad: si algún otro manejador volviera a ocultar la vista en
+  // los próximos instantes, reabrirla para que el tap siempre deje la sección visible.
+  let tries = 0;
+  window.__musicOpenGuard = setInterval(function () {
+    tries++;
+    const vv = document.getElementById('music-view');
+    const hh = document.getElementById('creator-hub-view');
+    let fixed = false;
+    if (vv && vv.classList.contains('hidden')) { vv.classList.remove('hidden'); fixed = true; }
+    if (hh && !hh.classList.contains('hidden')) { hh.classList.add('hidden'); fixed = true; }
+    if (fixed && typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
+    if (tries >= 3) { clearInterval(window.__musicOpenGuard); window.__musicOpenGuard = null; }
+  }, 500);
 };
 window.closeMusicSection = function () {
+  if (window.__musicOpenGuard) { clearInterval(window.__musicOpenGuard); window.__musicOpenGuard = null; }
   document.getElementById('music-view')?.classList.add('hidden');
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
 };
@@ -36060,7 +36077,9 @@ window.handleMusicAudioSelect = function (event) {
   const file = (event.target.files || [])[0];
   event.target.value = '';
   if (!file) return;
-  if (!/^audio\//i.test(file.type || '')) { if (typeof showMiniToast === 'function') showMiniToast('El archivo debe ser de audio'); return; }
+  const __audioTypeOk = /^audio\//i.test(file.type || '');
+  const __audioExtOk = /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i.test(file.name || '');
+  if (!__audioTypeOk && !__audioExtOk) { if (typeof showMiniToast === 'function') showMiniToast('El archivo debe ser de audio'); return; }
   if (file.size > MUSIC_MAX_BYTES) { if (typeof showMiniToast === 'function') showMiniToast('El audio supera los 15 MB'); return; }
   const reader = new FileReader();
   reader.onload = function (e) {
