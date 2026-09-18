@@ -35829,13 +35829,24 @@ function musicEsc(s) { return (typeof escapeHtml === 'function') ? escapeHtml(s)
 function musicEscJs(s) { return (typeof escapeInlineSingleQuote === 'function') ? escapeInlineSingleQuote(s) : String(s == null ? '' : s).replace(/'/g, "\\'"); }
 
 /* ---------- Navegación ---------- */
+/* Cierra las vistas de pantalla completa que están POR ENCIMA de music-view (z-50)
+   y la taparían: Configuración (z-110), sus sub-vistas (z-120/121/130/145) y otras
+   vistas altas. Sin esto, si Configuración quedó abierta, el tap en Música parece
+   "abrir Configuración" porque settings-view cubre a music-view. */
+window.musicCloseCoveringViews = function () {
+  try { if (typeof closeSettingsView === 'function') closeSettingsView(); } catch (_) {}
+  ['settings-view','chat-privacy-settings-view','notification-settings-view','screentime-view','theme-config-view','cache-config-view','account-config-view','privacy-config-view','phone-config-view','direct-messages-config-view','deactivate-delete-account-view','follow-requests-view','blocked-accounts-view','deactivate-confirmation-view','delete-reason-view','delete-confirmation-view','security-center-view','author-posts-view','chat-inbox-view','new-chat-view','create-group-chat-view','chat-room-view','fiesta-room-view','comments-view'].forEach(function (id) {
+    try { document.getElementById(id)?.classList.add('hidden'); } catch (_) {}
+  });
+};
 window.openMusicSection = function () {
   if (window.__musicOpenGuard) { clearInterval(window.__musicOpenGuard); window.__musicOpenGuard = null; }
+  window.musicCloseCoveringViews();
   document.getElementById('creator-hub-view')?.classList.add('hidden');
   const mv = document.getElementById('music-view');
   if (mv) { mv.classList.remove('hidden'); try { mv.scrollTop = 0; } catch (_) {} }
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
-  musicSwitchTab('explore');
+  try { musicSwitchTab('explore'); } catch (_) {}
   // Red de seguridad: si algún otro manejador volviera a ocultar la vista en
   // los próximos instantes, reabrirla para que el tap siempre deje la sección visible.
   let tries = 0;
@@ -35846,7 +35857,7 @@ window.openMusicSection = function () {
     let fixed = false;
     if (vv && vv.classList.contains('hidden')) { vv.classList.remove('hidden'); fixed = true; }
     if (hh && !hh.classList.contains('hidden')) { hh.classList.add('hidden'); fixed = true; }
-    if (fixed && typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
+    if (fixed) { window.musicCloseCoveringViews(); if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false); }
     if (tries >= 3) { clearInterval(window.__musicOpenGuard); window.__musicOpenGuard = null; }
   }, 500);
 };
