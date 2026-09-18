@@ -6253,17 +6253,16 @@ if (scrollArea) {
     <div class="border-t border-[#dce1e5] bg-[#f0f4f9] flex-shrink-0" style="padding-bottom:max(0.5rem,env(safe-area-inset-bottom));">
       <!-- Carrusel de herramientas deslizable -->
       <div id="note-tools-carousel" class="flex items-center gap-1 px-4 py-3 overflow-x-auto overflow-y-hidden scrollbar-none" style="-webkit-overflow-scrolling: touch; scroll-snap-type: x proximity;">
-        <input type="file" id="note-image-fullscreen-gallery" accept="image/*" class="hidden" onchange="handleNoteImagePreviewFullscreen(event, 'gallery')" multiple>
         <input type="file" id="note-image-fullscreen-camera" accept="image/*" capture="environment" class="hidden" onchange="handleNoteImagePreviewFullscreen(event, 'camera')">
-        <!-- VIDEO-POSTS: adjuntar video a la publicación -->
-        <input type="file" id="note-video-fullscreen" accept="video/*" class="hidden" onchange="handleNoteVideoSelected(event)">
+        <!-- Un solo selector estilo Twitter/X: abre la galería y el usuario elige foto(s) o video -->
+        <input type="file" id="note-media-fullscreen" accept="image/*,video/*" class="hidden" onchange="handleNoteMediaSelected(event)" multiple>
 
-        <!-- Foto (galería) -->
-        <button id="tool-photo" onclick="pickNoteImageFromGallery()" class="min-h-[44px] flex-shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-2xl active:bg-[#e7ecf3] transition" style="scroll-snap-align: start;">
+        <!-- Foto/video (galería) -->
+        <button id="tool-media" onclick="pickNoteMedia()" class="min-h-[44px] flex-shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-2xl active:bg-[#e7ecf3] transition" style="scroll-snap-align: start;">
           <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#5c6974]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
           </div>
-          <span class="text-[10px] font-semibold text-[#6b7280]">Foto</span>
+          <span class="text-[10px] font-semibold text-[#6b7280]">Foto/video</span>
         </button>
 
         <!-- Cámara (directa, sin salir a otra app) -->
@@ -6272,14 +6271,6 @@ if (scrollArea) {
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#5c6974]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           </div>
           <span class="text-[10px] font-semibold text-[#6b7280]">Cámara</span>
-        </button>
-
-        <!-- VIDEO-POSTS: Video -->
-        <button id="tool-video" onclick="pickNoteVideo()" class="min-h-[44px] flex-shrink-0 flex flex-col items-center gap-1.5 px-3 py-2 rounded-2xl active:bg-[#e7ecf3] transition" style="scroll-snap-align: start;">
-          <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#5c6974]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-          </div>
-          <span class="text-[10px] font-semibold text-[#6b7280]">Video</span>
         </button>
 
         <!-- GIF -->
@@ -6880,6 +6871,62 @@ if (scrollArea) {
   <!-- Spinner mientras la foto actual carga (redes móviles lentas) -->
   <div id="image-modal-loading" class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none" style="display:none">
     <div class="w-10 h-10 rounded-full border-[3px] border-white/20 border-t-white animate-spin"></div>
+  </div>
+</div>
+
+<!-- Visor de video a pantalla completa — VIDEO-POSTS.
+     Reproductor propio estilo app (sin controles nativos del navegador):
+     se abre al tocar el video en el feed, igual que las fotos. -->
+<div id="video-modal" class="fixed inset-0 bg-black hidden z-[92]" style="touch-action:none" role="dialog" aria-modal="true" aria-label="Reproductor de video">
+  <!-- Barra superior: cerrar -->
+  <div id="video-modal-topbar" class="absolute top-0 left-0 right-0 z-20 transition-opacity duration-200">
+    <div class="flex items-center justify-between px-4 pt-12 pb-6" style="background:linear-gradient(to bottom, rgba(0,0,0,.55), rgba(0,0,0,0))">
+      <button onclick="closeVideoModal()" aria-label="Cerrar" class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 text-white active:opacity-80 transition">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round"/></svg>
+      </button>
+      <span id="video-modal-title" class="text-white text-sm font-bold">Video</span>
+      <span class="w-11"></span>
+    </div>
+  </div>
+
+  <!-- Escenario: tocar muestra/oculta los controles -->
+  <div id="video-modal-stage" class="absolute inset-0 flex items-center justify-center" onclick="toggleVideoModalChrome()">
+    <video id="video-modal-player" class="max-w-full max-h-full w-full h-full object-contain" playsinline preload="auto" style="background:#000"></video>
+  </div>
+
+  <!-- Spinner mientras se descargan los trozos -->
+  <div id="video-modal-loading" class="absolute inset-0 z-10 hidden items-center justify-center pointer-events-none">
+    <div class="w-12 h-12 rounded-full border-4 border-white/20 border-t-white animate-spin"></div>
+  </div>
+
+  <!-- Botón central (pausado / listo para reproducir) -->
+  <button id="video-modal-bigplay" onclick="toggleVideoModalPlay(true)" aria-label="Reproducir"
+    class="absolute inset-0 z-10 hidden items-center justify-center" style="background:rgba(0,0,0,.25)">
+    <span class="w-20 h-20 rounded-full bg-white/95 flex items-center justify-center shadow-xl active:scale-95 transition">
+      <svg class="w-9 h-9 text-[#1c2b4a] ml-1" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+    </span>
+  </button>
+
+  <!-- Barra inferior de controles propios -->
+  <div id="video-modal-controls" class="absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-200">
+    <div class="px-4 pt-10" style="background:linear-gradient(to top, rgba(0,0,0,.65), rgba(0,0,0,0));padding-bottom:max(2rem, env(safe-area-inset-bottom))">
+      <div class="flex items-center gap-3">
+        <button id="video-modal-playpause" onclick="toggleVideoModalPlay()" aria-label="Reproducir o pausar"
+          class="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-full bg-white/10 text-white active:opacity-80 transition">
+          <svg id="video-modal-icon-pause" class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+          <svg id="video-modal-icon-play" class="w-6 h-6 hidden" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+        </button>
+        <span id="video-modal-cur" class="text-white text-xs font-bold tabular-nums w-10 text-center">0:00</span>
+        <input id="video-modal-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Buscar en el video"
+          class="flex-1 h-1.5 cursor-pointer" style="accent-color:#fff">
+        <span id="video-modal-dur" class="text-white/70 text-xs font-bold tabular-nums w-10 text-center">0:00</span>
+        <button id="video-modal-mute" onclick="toggleVideoModalMute()" aria-label="Silenciar o activar sonido"
+          class="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-full bg-white/10 text-white active:opacity-80 transition">
+          <svg id="video-modal-icon-vol" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg>
+          <svg id="video-modal-icon-mute" class="w-6 h-6 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5z"/><path stroke-linecap="round" d="M22 9l-6 6M16 9l6 6"/></svg>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -9552,8 +9599,30 @@ function saveNote() {
 
 
 
-  function pickNoteImageFromGallery() {
-    document.getElementById('note-image-fullscreen-gallery')?.click();
+  // Selector unificado estilo Twitter/X: un solo icono abre la galería y el
+  // usuario elige foto(s) o video; aquí se deriva por MIME a cada flujo.
+  function pickNoteMedia() {
+    if (notePostPublishing) return;
+    document.getElementById('note-media-fullscreen')?.click();
+  }
+  function handleNoteMediaSelected(event) {
+    const input = event.target;
+    const files = Array.from((input && input.files) || []);
+    try { input.value = ''; } catch (_) {}
+    if (!files.length || notePostPublishing) return;
+    const videos = files.filter(f => /^video\//i.test(String(f.type || '')));
+    const images = files.filter(f => /^image\//i.test(String(f.type || '')));
+    if (videos.length) {
+      if (images.length) showMiniToast('Se usará el video (un video por publicación).');
+      // Reutiliza el flujo de video con el primer video elegido.
+      handleNoteVideoSelected({ target: { files: [videos[0]], value: '' } });
+      return;
+    }
+    if (images.length) {
+      handleNoteImagePreviewFullscreen({ target: { files: images, value: '' } }, 'gallery');
+      return;
+    }
+    showMiniToast('Ese archivo no es foto ni video.');
   }
   function pickNoteImageFromCamera() {
     document.getElementById('note-image-fullscreen-camera')?.click();
@@ -9761,7 +9830,10 @@ function saveNote() {
         const video = document.createElement('video');
         video.preload = 'auto';
         video.playsInline = true;
-        video.muted = true; // el audio real viaja por MediaStreamDestination
+        // NO mutear: createMediaElementSource re-enruta el audio del elemento
+        // al AudioContext (deja de salir por las bocinas), así se graba con
+        // sonido sin que el usuario lo escuche durante la compresión.
+        // (Antes: video.muted = true silenciaba también la captura -> videos sin audio.)
         let done = false;
         let audioCtx = null;
         const timer = setTimeout(() => { finish(() => { cleanup(); reject(new Error('timeout')); }); }, 120000);
@@ -9966,7 +10038,7 @@ function saveNote() {
 
   function removeImageFullscreen(keepGifSelectionState = false) {
     if (notePostPublishing) return;
-    const galleryInput = document.getElementById('note-image-fullscreen-gallery');
+    const galleryInput = document.getElementById('note-media-fullscreen');
     const cameraInput = document.getElementById('note-image-fullscreen-camera');
     if (galleryInput) galleryInput.value = '';
     if (cameraInput) cameraInput.value = '';
@@ -9979,15 +10051,10 @@ function saveNote() {
   }
 
   // ============ VIDEO-POSTS: selección y preview en el creador ============
-  function pickNoteVideo() {
-    if (notePostPublishing) return;
-    document.getElementById('note-video-fullscreen')?.click();
-  }
-
   function clearNoteVideoState() {
     notePostVideoFile = null;
     notePostVideoDuration = 0;
-    const input = document.getElementById('note-video-fullscreen');
+    const input = document.getElementById('note-media-fullscreen');
     if (input) input.value = '';
     renderNoteVideoPreview();
   }
@@ -10385,60 +10452,220 @@ function saveNote() {
     `;
   }
 
-  // ============ VIDEO-POSTS: reproductor en la tarjeta del feed ============
+  // ============ VIDEO-POSTS: tarjeta del feed + visor pantalla completa ============
   // El video vive troceado en `noteVideos/<noteId>` (fuera de la nota para
-  // no inflar el snapshot del feed). Aquí solo se pinta el <video> con su
-  // miniatura; los trozos se descargan y reensamblan al pulsar reproducir.
+  // no inflar el snapshot del feed). La tarjeta solo muestra la miniatura con
+  // botón de play; al tocarla se abre el visor a pantalla completa (igual que
+  // las fotos), con reproductor propio estilo app — sin controles nativos del
+  // navegador. Los trozos se descargan y reensamblan al abrir el visor.
   function renderNoteVideo(note) {
     const v = note && note.video;
     if (!v || !v.chunks) return '';
     const safeId = escapeInlineSingleQuote(note.id || '');
     if (!safeId) return '';
-    let posterAttr = '';
     const thumb = (typeof v.thumb === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v.thumb)) ? v.thumb : '';
-    if (thumb) posterAttr = ` poster="${thumb}"`;
     const durLabel = formatVideoDuration(v.duration);
+    const poster = thumb
+      ? `<img src="${thumb}" alt="Video" draggable="false" class="w-full max-h-[480px] object-cover select-none">`
+      : `<div class="w-full h-52 flex items-center justify-center bg-[#0b1220]">
+           <svg class="w-12 h-12 text-white/40" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+         </div>`;
     return `
-      <div class="mb-3 relative overflow-hidden rounded-xl bg-black" data-video-wrap="${safeId}">
-        <video class="w-full max-h-[480px] bg-black" controls playsinline preload="metadata"${posterAttr}></video>
-        <button type="button" onclick="playNoteVideo(this)" data-note-id="${safeId}" aria-label="Reproducir video"
-          class="absolute inset-0 w-full h-full flex items-center justify-center bg-black/35 active:bg-black/50 transition">
-          <span class="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
-            <svg class="w-8 h-8 text-[#1c2b4a] ml-1" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+      <div class="mb-3 relative overflow-hidden rounded-xl bg-black">
+        <button type="button" onclick="openVideoModal('${safeId}')" aria-label="Ver video" class="block w-full active:opacity-90 transition">
+          ${poster}
+          <span class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span class="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+              <svg class="w-8 h-8 text-[#1c2b4a] ml-1" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+            </span>
           </span>
-          ${durLabel ? `<span class="absolute bottom-2 right-2 text-[11px] font-bold text-white bg-black/70 rounded-md px-1.5 py-0.5">${durLabel}</span>` : ''}
+          ${durLabel ? `<span class="absolute bottom-2 right-2 text-[11px] font-bold text-white bg-black/70 rounded-md px-1.5 py-0.5 pointer-events-none">${durLabel}</span>` : ''}
         </button>
       </div>`;
   }
 
-  // Descarga los trozos, reensambla la data URL y reproduce. El src solo se
-  // asigna por propiedad (nunca en HTML) y se valida el prefijo data:video/.
-  function playNoteVideo(btn) {
-    const noteId = btn && btn.getAttribute('data-note-id');
-    const wrap = btn && btn.closest('[data-video-wrap]');
-    const video = wrap ? wrap.querySelector('video') : null;
-    if (!noteId || !video) return;
-    if (video.dataset.videoLoaded === '1') {
-      btn.classList.add('hidden');
-      video.play().catch(() => {});
-      return;
+  // ---- Visor de video a pantalla completa (reproductor propio) ----
+  let _videoModalNoteId = null;
+  let _videoModalCache = {};   // noteId -> dataUrl (solo en memoria, por sesión)
+  let _videoModalChrome = true;
+  let _videoModalWired = false;
+
+  function _videoModalEl(id) { return document.getElementById(id); }
+
+  function _videoModalWireOnce() {
+    if (_videoModalWired) return;
+    _videoModalWired = true;
+    const player = _videoModalEl('video-modal-player');
+    const seek = _videoModalEl('video-modal-seek');
+    if (!player) return;
+    player.addEventListener('playing', () => {
+      _videoModalLoading(false);
+      _videoModalBigPlay(false);
+      _videoModalPlayIcon(false);
+    });
+    player.addEventListener('pause', () => {
+      _videoModalBigPlay(true);
+      _videoModalPlayIcon(true);
+    });
+    player.addEventListener('waiting', () => _videoModalLoading(true));
+    player.addEventListener('ended', () => {
+      _videoModalLoading(false);
+      _videoModalBigPlay(true);
+      _videoModalPlayIcon(true);
+    });
+    player.addEventListener('loadedmetadata', () => {
+      const d = _videoModalEl('video-modal-dur');
+      if (d) d.textContent = formatVideoDuration(player.duration);
+    });
+    player.addEventListener('timeupdate', () => {
+      const dur = player.duration || 0;
+      if (dur > 0 && document.activeElement !== seek) {
+        seek.value = Math.round((player.currentTime / dur) * 1000);
+      }
+      const c = _videoModalEl('video-modal-cur');
+      if (c) c.textContent = formatVideoDuration(player.currentTime);
+    });
+    player.addEventListener('error', () => {
+      _videoModalLoading(false);
+      showMiniToast('No se pudo reproducir el video.');
+      _videoModalBigPlay(true);
+    });
+    if (seek) {
+      seek.addEventListener('input', () => {
+        const dur = player.duration || 0;
+        if (dur > 0) {
+          try { player.currentTime = (Number(seek.value) / 1000) * dur; } catch (_) {}
+        }
+      });
     }
-    btn.disabled = true;
+  }
+
+  function _videoModalLoading(on) {
+    const el = _videoModalEl('video-modal-loading');
+    if (!el) return;
+    el.classList.toggle('hidden', !on);
+    el.classList.toggle('flex', on);
+  }
+
+  function _videoModalBigPlay(show) {
+    const el = _videoModalEl('video-modal-bigplay');
+    if (!el) return;
+    el.classList.toggle('hidden', !show);
+    el.classList.toggle('flex', show);
+  }
+
+  function _videoModalPlayIcon(showPlay) {
+    const p = _videoModalEl('video-modal-icon-play');
+    const pa = _videoModalEl('video-modal-icon-pause');
+    if (p) p.classList.toggle('hidden', !showPlay);
+    if (pa) pa.classList.toggle('hidden', showPlay);
+  }
+
+  function _videoModalSetChrome(show) {
+    _videoModalChrome = show;
+    const top = _videoModalEl('video-modal-topbar');
+    const ctl = _videoModalEl('video-modal-controls');
+    [top, ctl].forEach(el => {
+      if (!el) return;
+      el.classList.toggle('opacity-0', !show);
+      el.classList.toggle('pointer-events-none', !show);
+    });
+  }
+
+  function toggleVideoModalChrome() { _videoModalSetChrome(!_videoModalChrome); }
+
+  function toggleVideoModalPlay(fromBig) {
+    const player = _videoModalEl('video-modal-player');
+    if (!player || !player.src) return;
+    if (player.paused) {
+      if (player.ended) { try { player.currentTime = 0; } catch (_) {} }
+      const pr = player.play();
+      if (pr && pr.catch) pr.catch(() => { _videoModalBigPlay(true); _videoModalPlayIcon(true); });
+    } else {
+      try { player.pause(); } catch (_) {}
+      if (fromBig) { _videoModalBigPlay(true); _videoModalPlayIcon(true); }
+    }
+  }
+
+  function toggleVideoModalMute() {
+    const player = _videoModalEl('video-modal-player');
+    if (!player) return;
+    player.muted = !player.muted;
+    const v = _videoModalEl('video-modal-icon-vol');
+    const m = _videoModalEl('video-modal-icon-mute');
+    if (v) v.classList.toggle('hidden', player.muted);
+    if (m) m.classList.toggle('hidden', !player.muted);
+  }
+
+  // Abre el visor: descarga los trozos (o usa caché), reensambla la data URL
+  // y reproduce con sonido. El src solo se asigna por propiedad y se valida.
+  function openVideoModal(noteId) {
+    noteId = String(noteId || '');
+    if (!noteId) return;
+    _videoModalWireOnce();
+    const modal = _videoModalEl('video-modal');
+    const player = _videoModalEl('video-modal-player');
+    if (!modal || !player) return;
+    _videoModalNoteId = noteId;
+    try { player.pause(); } catch (_) {}
+    try { player.removeAttribute('src'); player.load(); } catch (_) {}
+    player.muted = false;
+    const vv = _videoModalEl('video-modal-icon-vol');
+    const mm = _videoModalEl('video-modal-icon-mute');
+    if (vv) vv.classList.remove('hidden');
+    if (mm) mm.classList.add('hidden');
+    const seek = _videoModalEl('video-modal-seek');
+    if (seek) seek.value = 0;
+    const cur = _videoModalEl('video-modal-cur');
+    if (cur) cur.textContent = '0:00';
+    const dur = _videoModalEl('video-modal-dur');
+    if (dur) dur.textContent = '0:00';
+    _videoModalSetChrome(true);
+    _videoModalBigPlay(false);
+    _videoModalLoading(true);
+    modal.classList.remove('hidden');
+    const cached = _videoModalCache[noteId];
+    const startPlayback = (dataUrl) => {
+      if (_videoModalNoteId !== noteId) return; // se cerró antes de terminar
+      _videoModalCache[noteId] = dataUrl;
+      try { player.src = dataUrl; } catch (_) {}
+      const pr = player.play();
+      if (pr && pr.catch) pr.catch(() => {
+        // Autoplay bloqueado (p. ej. gesto expirado): mostrar botón grande.
+        _videoModalLoading(false);
+        _videoModalBigPlay(true);
+        _videoModalPlayIcon(true);
+      });
+    };
+    if (cached) { startPlayback(cached); return; }
     showMiniToast('Cargando video…');
     DrexCloud.database().ref('noteVideos/' + noteId).once('value').then(snap => {
+      if (_videoModalNoteId !== noteId) return;
       const obj = snap.val() || {};
       const keys = Object.keys(obj).filter(k => /^chunk_\d+$/.test(k)).sort();
       if (!keys.length) throw new Error('empty');
       const dataUrl = keys.map(k => String(obj[k] || '')).join('');
       if (!/^data:video\/[a-z0-9+.-]+;base64,/i.test(dataUrl)) throw new Error('bad');
-      video.src = dataUrl;
-      video.dataset.videoLoaded = '1';
-      btn.classList.add('hidden');
-      return video.play();
+      startPlayback(dataUrl);
     }).catch(() => {
-      btn.disabled = false;
+      if (_videoModalNoteId !== noteId) return;
+      _videoModalLoading(false);
       showMiniToast('No se pudo cargar el video. Revisa tu conexión.');
+      closeVideoModal();
     });
+  }
+
+  function closeVideoModal() {
+    _videoModalNoteId = null;
+    const modal = _videoModalEl('video-modal');
+    const player = _videoModalEl('video-modal-player');
+    if (player) {
+      try { player.pause(); } catch (_) {}
+      try { player.removeAttribute('src'); player.load(); } catch (_) {}
+    }
+    _videoModalLoading(false);
+    _videoModalBigPlay(false);
+    if (modal) modal.classList.add('hidden');
   }
 
   // Negro puro, chrome mínimo (X + contador + puntos), swipe horizontal entre
