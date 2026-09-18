@@ -6048,7 +6048,7 @@ if (scrollArea) {
         </button>
 
         <!-- Tarjeta: Música -->
-        <button onclick="if(window.openMusicSection){openMusicSection()}else if(window.showMiniToast){showMiniToast('Hay una versión nueva de Drex: cierra la app y vuelve a abrirla.')}else{alert('Hay una versión nueva de Drex: cierra la app y vuelve a abrirla.')}" class="flex flex-col items-center text-center gap-3 active:opacity-80 transition-transform">
+        <button onclick="if(window.musicCardTap){musicCardTap()}else if(window.openMusicSection){openMusicSection()}else if(window.showMiniToast){showMiniToast('Hay una versión nueva de Drex: cierra la app y vuelve a abrirla.')}else{alert('Hay una versión nueva de Drex: cierra la app y vuelve a abrirla.')}" class="flex flex-col items-center text-center gap-3 active:opacity-80 transition-transform">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-[#24324c]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 18V5l12-2v13"/>
             <circle cx="6" cy="18" r="3"/>
@@ -35829,6 +35829,41 @@ function musicEsc(s) { return (typeof escapeHtml === 'function') ? escapeHtml(s)
 function musicEscJs(s) { return (typeof escapeInlineSingleQuote === 'function') ? escapeInlineSingleQuote(s) : String(s == null ? '' : s).replace(/'/g, "\\'"); }
 
 /* ---------- Navegación ---------- */
+window.__drexMusicBuild = 'd2-conflict-diag';
+/* Tap instrumentado de la tarjeta Música: abre la sección y verifica que quedó
+   visible. Si algo falla, muestra un diagnóstico para reportar. */
+window.musicCardTap = function () {
+  var diag = ['build=' + window.__drexMusicBuild];
+  diag.push('openMusicSection=' + typeof window.openMusicSection);
+  try {
+    if (window.openMusicSection) { window.openMusicSection(); }
+    else if (window.showMiniToast) { window.showMiniToast('Hay una versión nueva de Drex: cierra la app y vuelve a abrirla.'); }
+    else { alert('Hay una versión nueva de Drex: cierra la app y vuelve a abrirla.'); }
+  } catch (e) { diag.push('tapThrow=' + ((e && e.message) || String(e))); }
+  setTimeout(function () {
+    try {
+      var mv = document.getElementById('music-view');
+      var vis = !!mv && !mv.classList.contains('hidden') && mv.style.display !== 'none' && window.getComputedStyle(mv).display !== 'none';
+      if (!vis) {
+        diag.push('musicHiddenCls=' + !!(mv && mv.classList.contains('hidden')));
+        diag.push('musicInlineDisplay=' + (mv ? String(mv.style.display) : 'n/a'));
+        diag.push('musicComputed=' + (mv ? window.getComputedStyle(mv).display + '/z' + window.getComputedStyle(mv).zIndex : 'n/a'));
+        var sv = document.getElementById('settings-view');
+        diag.push('settingsVisible=' + (!!sv && !sv.classList.contains('hidden')));
+        var hv = document.getElementById('creator-hub-view');
+        diag.push('hubVisible=' + (!!hv && !hv.classList.contains('hidden')));
+        try {
+          var el = document.elementFromPoint(Math.floor(window.innerWidth / 2), 200);
+          var chain = [], nn = el, dd = 0;
+          while (nn && dd < 3) { chain.push(nn.id || nn.tagName); nn = nn.parentElement; dd++; }
+          diag.push('topEnY200=' + chain.join('>'));
+        } catch (_) {}
+        try { diag.push('sw=' + (navigator.serviceWorker && navigator.serviceWorker.controller ? navigator.serviceWorker.controller.scriptURL : 'none')); } catch (_) {}
+        alert('Diagnóstico Música Drex:\n' + diag.join('\n') + '\n\nMándame captura de esto por favor.');
+      }
+    } catch (_) {}
+  }, 1500);
+};
 /* Cierra las vistas de pantalla completa que están POR ENCIMA de music-view (z-50)
    y la taparían: Configuración (z-110), sus sub-vistas (z-120/121/130/145) y otras
    vistas altas. Sin esto, si Configuración quedó abierta, el tap en Música parece
@@ -35844,7 +35879,7 @@ window.openMusicSection = function () {
   window.musicCloseCoveringViews();
   document.getElementById('creator-hub-view')?.classList.add('hidden');
   const mv = document.getElementById('music-view');
-  if (mv) { mv.classList.remove('hidden'); try { mv.scrollTop = 0; } catch (_) {} }
+  if (mv) { mv.classList.remove('hidden'); try { mv.style.display = ''; mv.scrollTop = 0; } catch (_) {} }
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
   try { musicSwitchTab('explore'); } catch (_) {}
   // Red de seguridad: si algún otro manejador volviera a ocultar la vista en
