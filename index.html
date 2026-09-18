@@ -9741,7 +9741,7 @@ function saveNote() {
   // nº de trozos y miniatura). El feed nunca descarga los trozos: el video
   // se reensambla bajo demanda al pulsar reproducir.
   const VIDEO_POSTS_MAX_DURATION_S = 60;
-  const VIDEO_POSTS_DIRECT_MAX_BYTES = 4 * 1024 * 1024;  // ≤4 MB: se sube tal cual
+  const VIDEO_POSTS_DIRECT_MAX_BYTES = 8 * 1024 * 1024;  // ≤8 MB: se sube tal cual (mp4/webm ya portables, sin recomprimir)
   const VIDEO_POSTS_ABS_MAX_BYTES = 12 * 1024 * 1024;    // tope absoluto tras comprimir
   const VIDEO_POSTS_CHUNK_CHARS = 300 * 1024;            // margen bajo 400 KB/ítem
 
@@ -9842,7 +9842,7 @@ function saveNote() {
     } catch (_) {}
   }
 
-  function transcodeVideoFile(file) {
+  function transcodeVideoFile(file, onProgress) {
     return new Promise((resolve, reject) => {
       try {
         if (!('MediaRecorder' in window)) { reject(new Error('norecoder')); return; }
@@ -9862,10 +9862,12 @@ function saveNote() {
         // (Antes: video.muted = true silenciaba también la captura -> videos sin audio.)
         let done = false;
         let audioCtx = null;
+        let progressTimer = null; // intervalo del reporte de progreso (onProgress)
         const timer = setTimeout(() => { finish(() => { cleanup(); reject(new Error('timeout')); }); }, 120000);
         const finish = (fn) => { if (!done) { done = true; try { clearTimeout(timer); } catch (_) {} fn(); } };
         const cleanup = () => {
           try { video.pause(); } catch (_) {}
+          try { if (progressTimer) { clearInterval(progressTimer); progressTimer = null; } } catch (_) {}
           try { video.removeAttribute('src'); video.load(); } catch (_) {}
           try { URL.revokeObjectURL(url); } catch (_) {}
           // El contexto compartido (pre-calentado en el gesto) NO se cierra:
@@ -9919,6 +9921,20 @@ function saveNote() {
             };
             if (audioCtx && audioCtx.resume) { audioCtx.resume().catch(() => {}); }
             rec.start(1000);
+            // NOTA: no se usa playbackRate>1 aquí: MediaRecorder graba en
+            // tiempo de reloj real, así que acelerar el video produciría un
+            // archivo en cámara rápida. La compresión corre en tiempo real.
+            // Progreso real (opcional): fracción del video ya reproducida/grabada.
+            if (typeof onProgress === 'function') {
+              try { onProgress(0); } catch (_) {}
+              progressTimer = setInterval(() => {
+                try {
+                  const d = video.duration || 0;
+                  const p = d > 0 ? video.currentTime / d : 0;
+                  onProgress(Math.max(0, Math.min(1, p)));
+                } catch (_) {}
+              }, 250);
+            }
             const playP = video.play();
             if (playP && playP.catch) playP.catch(() => { clearInterval(drawTimer); finish(() => { cleanup(); reject(new Error('play')); }); });
           } catch (e) {
@@ -9955,7 +9971,7 @@ function saveNote() {
   }
 
   // Valida, comprime si hace falta y devuelve la data URL lista para trocear.
-  function processVideoFile(file) {
+  function processVideoFile(file, onProgress) {
     return (async () => {
       const duration = await probeVideoDuration(file);
       if (!isFinite(duration) || duration <= 0) throw new Error('No se pudo leer el video. Prueba con otro archivo.');
@@ -9965,10 +9981,10 @@ function saveNote() {
       const broadlyPlayable = /^video\/(mp4|webm)/i.test(origMime);
       let blob = file;
       let mime = origMime || 'video/mp4';
-      // Se comprime si pesa >4 MB o si es un formato poco portable
-      // (p. ej. .mov de iPhone, que Chrome no reproduce).
+      // Se comprime si supera el umbral directo (8 MB) o si es un formato
+      // poco portable (p. ej. .mov de iPhone, que Chrome no reproduce).
       if (file.size > VIDEO_POSTS_DIRECT_MAX_BYTES || !broadlyPlayable) {
-        const t = await transcodeVideoFile(file).catch(() => null);
+        const t = await transcodeVideoFile(file, onProgress).catch(() => null);
         if (t && t.blob && t.blob.size) { blob = t.blob; mime = t.mime || mime; }
       }
       if (blob.size > VIDEO_POSTS_ABS_MAX_BYTES) {
@@ -10256,7 +10272,11 @@ function saveNote() {
         publishBtn.innerHTML = `${getSpinnerMarkup()}<span class="ml-2">Comprimiendo video…</span>`;
         showMiniToast('Procesando el video, esto puede tardar unos segundos…');
         let reservedVideoRef = null;
-        processVideoFile(videoFile).then(({ dataUrl, mime, duration, size, thumb }) => {
+        processVideoFile(videoFile, (p) => {
+          try {
+            publishBtn.innerHTML = getSpinnerMarkup() + '<span class="ml-2">Comprimiendo video… ' + Math.round(p * 100) + '%</span>';
+          } catch (_) {}
+        }).then(({ dataUrl, mime, duration, size, thumb }) => {
           const chunks = splitDataUrlIntoChunks(dataUrl);
           note.video = {
             mime: mime,
@@ -12400,6 +12420,29 @@ function saveNote() {
         `;
   }
 
+  // ARREGLO 4: cache de perfiles de autores. Cada ciclo de polling (3 s)
+  // re-leía el perfil completo de cada autor del feed (~30-50 lecturas con
+  // fotos en base64); ahora se reutiliza por 120 s. Solo alimenta banderas
+  // cosméticas (país/idioma); la privacidad ya tiene sus propios caches
+  // (_privacyAccountCache, _followApprovedCache) y no se toca.
+  const _authorProfileCache = new Map();
+  const AUTHOR_PROFILE_CACHE_TTL_MS = 120000;
+  function _invalidateAuthorProfileCache(authorId) {
+    if (authorId) _authorProfileCache.delete(authorId);
+  }
+  function _fetchAuthorProfileCached(authorId) {
+    const hit = _authorProfileCache.get(authorId);
+    if (hit && (Date.now() - hit.ts) < AUTHOR_PROFILE_CACHE_TTL_MS) return Promise.resolve(hit.data);
+    return DrexCloud.database().ref('users/' + authorId).once('value').then(
+      function (snap) {
+        const data = snap.val() || {};
+        _authorProfileCache.set(authorId, { data: data, ts: Date.now() });
+        return data;
+      },
+      function () { return {}; }
+    );
+  }
+
   function _subscribeNotesFeed(feedContainer, user, userVotes, userReposts, feedMode = 'foryou', followingMap = null) {
     const notesRef = DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     notesRef.off();
@@ -12444,12 +12487,7 @@ function saveNote() {
       // perfil, también para publicaciones antiguas que no tenían estos datos.
       const authorProfiles = {};
       await Promise.all(Array.from(new Set(notes.map(note => note.authorId || note.userId).filter(Boolean))).map(async authorId => {
-        try {
-          const profileSnapshot = await DrexCloud.database().ref('users/' + authorId).once('value');
-          authorProfiles[authorId] = profileSnapshot.val() || {};
-        } catch (_) {
-          authorProfiles[authorId] = {};
-        }
+        authorProfiles[authorId] = await _fetchAuthorProfileCached(authorId);
       }));
       notes.forEach(note => {
         const profile = authorProfiles[note.authorId || note.userId] || {};
@@ -14815,6 +14853,10 @@ function saveNote() {
 
 
   let currentPostId = null;
+  // ARREGLO 1: valor de communityNotes/<id>/commentsCount leído al abrir la
+  // vista de comentarios (permite auto-reparar si difiere de la realidad).
+  let currentPostStoredCommentsCount = null;
+  const _commentsRepairLastTs = {};
   let currentPostAuthorId = null;
   let replyTarget = null;
   let editingCommentTarget = null;
@@ -15423,6 +15465,7 @@ function saveNote() {
         return;
       }
       const note = { ...(snapshot.val() || {}), id: noteId };
+      currentPostStoredCommentsCount = (note.commentsCount === undefined || note.commentsCount === null) ? null : Number(note.commentsCount) || 0;
       const upvotes = note.upvotes || 0;
       const downvotes = note.downvotes || 0;
       const score = upvotes - downvotes;
@@ -15605,6 +15648,22 @@ function saveNote() {
       const plus = commentsHasMore ? '+' : '';
       countEl.textContent = totalCount + plus + (totalCount === 1 && !commentsHasMore ? ' comentario' : ' comentarios');
     }
+
+    // ARREGLO 1: la tarjeta muestra la verdad contada en esta vista (el campo
+    // guardado puede estar desactualizado). Si difiere del valor guardado, se
+    // repara en segundo plano, máximo 1 vez cada 30 s por nota. Silencioso.
+    if (!commentsHasMore) setCommentsCountUI(noteId, totalCount);
+    try {
+      if (noteId === currentPostId && !commentsHasMore &&
+          typeof currentPostStoredCommentsCount === 'number' &&
+          currentPostStoredCommentsCount !== totalCount) {
+        const _now = Date.now();
+        if (!_commentsRepairLastTs[noteId] || _now - _commentsRepairLastTs[noteId] >= 30000) {
+          _commentsRepairLastTs[noteId] = _now;
+          updateCommentsCount(noteId);
+        }
+      }
+    } catch (_) {}
 
     if (preserveScroll && scrollEl) scrollEl.scrollTop = prevScrollTop;
   }
@@ -16116,7 +16175,7 @@ function saveNote() {
             return Promise.all(notificationJobs).then(() => replyRef.key);
           });
         }).then((replyKey) => {
-          updateCommentsCount(noteId);
+          bumpStoredCommentsCount(noteId, 1);
           // Optimista: la respuesta aparece al instante, sin skeleton ni salto.
           const replyPath = targetReply.commentId + '/replies/' + replyKey;
           const parentVal = _getCommentValue(targetReply.commentId);
@@ -16154,7 +16213,7 @@ function saveNote() {
           return Promise.all(notifications).then(() => commentRef.key);
         });
       }).then((commentKey) => {
-        updateCommentsCount(noteId);
+        bumpStoredCommentsCount(noteId, 1);
         // Optimista: el comentario aparece al instante, sin skeleton.
         commentsLoadedEntries.push([commentKey, payload]);
         clearCommentInput();
@@ -16181,6 +16240,22 @@ function saveNote() {
     });
   }
 
+  // ARREGLO 2: el contador se mantiene con transacción atómica (Put
+  // condicional con reintentos en DrexCloud) al momento de escribir, en vez
+  // del recount lectura-modificación-escritura que perdía incrementos
+  // concurrentes. updateCommentsCount queda como función de reparación.
+  function bumpStoredCommentsCount(noteId, delta) {
+    if (!noteId || !delta) return;
+    try {
+      DrexCloud.database().ref('communityNotes/' + noteId + '/commentsCount')
+        .transaction(function (cur) {
+          const next = (Number(cur) || 0) + delta;
+          return next < 0 ? 0 : next;
+        })
+        .catch(function () { /* silencioso: la vista de comentarios lo repara */ });
+    } catch (_) {}
+  }
+
   function updateCommentsCount(noteId) {
     DrexCloud.database().ref('postComments/' + noteId).once('value').then(snapshot => {
       let totalCount = 0;
@@ -16196,6 +16271,7 @@ function saveNote() {
       DrexCloud.database().ref('communityNotes/' + noteId).update({
         commentsCount: totalCount
       });
+      if (noteId === currentPostId) currentPostStoredCommentsCount = totalCount;
       // Optimista: la UI se actualiza al instante sin esperar el eco del listener.
       setCommentsCountUI(noteId, totalCount);
 
@@ -16713,6 +16789,7 @@ function saveNote() {
   function deleteComment(noteId, commentPath) {
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
+    let removedCommentsDelta = 0;
 
     const commentRef = DrexCloud.database().ref('postComments/' + noteId + '/' + commentPath);
     const noteRef = DrexCloud.database().ref('communityNotes/' + noteId);
@@ -16721,6 +16798,7 @@ function saveNote() {
     noteRef.once('value')
     ]).then(([snapshot, noteSnap]) => {
       const comment = snapshot.val();
+      removedCommentsDelta = 1 + countReplies(comment ? comment.replies : null);
       const note = noteSnap.val() || {};
       const noteAuthorId = note.authorId;
       if (!comment) throw new Error('Comentario no encontrado');
@@ -16738,7 +16816,7 @@ function saveNote() {
       closeCommentActionsSheet();
       _removeCommentValue(commentPath);
       _renderLoadedComments(noteId);
-      updateCommentsCount(noteId);
+      bumpStoredCommentsCount(noteId, -removedCommentsDelta);
     }).catch(error => {
       console.error('Error al eliminar comentario:', error);
       showMiniToast(error.message || 'No se pudo eliminar el comentario.');
@@ -28403,22 +28481,26 @@ function renderAccountsList(accounts) {
         document.getElementById('blocked-error-modal').style.display = "flex";
         return;
       }
-      let authorNameHTML = authorData.username || 'Autor desconocido';
-      if (authorData.founder) {
-        authorNameHTML += ' <span class="founder-tag">Fundador</span>';
-      }
-      authorNameHTML += getVerificationIcon(authorData.email || "", authorId);
-      authorNameNode.innerHTML = authorNameHTML;
-      if (authorHandleNode) {
-        authorHandleNode.textContent = `@${authorData.username || 'autor'}`;
-      }
-      const usernameForCopy = authorData.username || 'autor';
-      _currentAuthorUsername = usernameForCopy;
-      if (authorNameNode) {
-        authorNameNode.onclick = () => copyAuthorUsername(usernameForCopy, authorNameNode);
-      }
-      if (authorHandleNode) {
-        authorHandleNode.onclick = () => copyAuthorUsername(usernameForCopy, authorHandleNode);
+      // ARREGLO 3: nunca pisar un nombre bueno con el respaldo. Si la lectura
+      // de users/ viene sin username, se conserva el DOM (nombre del post).
+      const fetchedUsername = (authorData.username || '').trim();
+      if (fetchedUsername) {
+        let authorNameHTML = fetchedUsername;
+        if (authorData.founder) {
+          authorNameHTML += ' <span class="founder-tag">Fundador</span>';
+        }
+        authorNameHTML += getVerificationIcon(authorData.email || "", authorId);
+        authorNameNode.innerHTML = authorNameHTML;
+        if (authorHandleNode) {
+          authorHandleNode.textContent = `@${fetchedUsername}`;
+        }
+        _currentAuthorUsername = fetchedUsername;
+        if (authorNameNode) {
+          authorNameNode.onclick = () => copyAuthorUsername(fetchedUsername, authorNameNode);
+        }
+        if (authorHandleNode) {
+          authorHandleNode.onclick = () => copyAuthorUsername(fetchedUsername, authorHandleNode);
+        }
       }
       authorImageNode.src = authorData.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
       const authorCoverImg = document.getElementById('author-profile-cover-img');
@@ -28483,7 +28565,7 @@ function renderAccountsList(accounts) {
       _loadAuthorProfilePostsInline(authorId);
     }).catch(() => {
       if (currentViewedAuthorId !== authorId) return;
-      if (authorNameNode) authorNameNode.textContent = 'Autor desconocido';
+      // ARREGLO 3: en fallo de lectura se conserva el nombre ya mostrado.
       window.paintLoadError(authorBioNode, 'No se pudo cargar este perfil. Revisa tu conexión.', () => openAuthorProfile(authorId, origin));
     });
 
