@@ -10485,6 +10485,56 @@ function saveNote() {
     });
   }
 
+  // Miniatura del video: captura un cuadro (~10% del clip) y lo pone como
+  // poster del reproductor, para ver de qué se trata antes de publicar.
+  // Si la captura falla, el preview sigue funcionando sin miniatura.
+  function captureNoteVideoThumbnail(file) {
+    const player = document.getElementById('video-preview-player');
+    try { if (player) player.removeAttribute('poster'); } catch (_) {}
+    if (!file || !player) return;
+    try {
+      const tmp = document.createElement('video');
+      tmp.muted = true;
+      tmp.playsInline = true;
+      tmp.preload = 'auto';
+      const url = URL.createObjectURL(file);
+      let done = false;
+      const finish = (dataUrl) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { URL.revokeObjectURL(url); } catch (_) {}
+        try { tmp.removeAttribute('src'); tmp.load(); } catch (_) {}
+        // Solo aplicarla si el usuario no cambió de video mientras tanto.
+        if (dataUrl && notePostVideoFile === file) {
+          try { player.poster = dataUrl; } catch (_) {}
+        }
+      };
+      const timer = setTimeout(() => finish(null), 8000);
+      tmp.addEventListener('loadedmetadata', () => {
+        try {
+          const d = tmp.duration || 0;
+          if (!(d > 0)) { finish(null); return; }
+          tmp.currentTime = Math.min(Math.max(0.1, d * 0.1), Math.max(0.1, d - 0.1));
+        } catch (_) { finish(null); }
+      });
+      tmp.addEventListener('seeked', () => {
+        try {
+          const w = tmp.videoWidth || 0, h = tmp.videoHeight || 0;
+          if (!w || !h) { finish(null); return; }
+          const k = Math.min(1, 480 / w);
+          const cv = document.createElement('canvas');
+          cv.width = Math.max(2, Math.round(w * k));
+          cv.height = Math.max(2, Math.round(h * k));
+          cv.getContext('2d').drawImage(tmp, 0, 0, cv.width, cv.height);
+          finish(cv.toDataURL('image/jpeg', 0.7));
+        } catch (_) { finish(null); }
+      });
+      tmp.addEventListener('error', () => finish(null));
+      tmp.src = url;
+    } catch (_) {}
+  }
+
   function renderNoteVideoPreview() {
     const section = document.getElementById('video-preview-fullscreen');
     const player = document.getElementById('video-preview-player');
@@ -10493,6 +10543,7 @@ function saveNote() {
     if (!notePostVideoFile) {
       section.classList.add('hidden');
       try { player.removeAttribute('src'); player.load(); } catch (_) {}
+      try { player.removeAttribute('poster'); } catch (_) {}
       if (notePostVideoObjectUrl) { try { URL.revokeObjectURL(notePostVideoObjectUrl); } catch (_) {} notePostVideoObjectUrl = null; }
       return;
     }
@@ -10500,6 +10551,7 @@ function saveNote() {
     if (notePostVideoObjectUrl) { try { URL.revokeObjectURL(notePostVideoObjectUrl); } catch (_) {} }
     notePostVideoObjectUrl = URL.createObjectURL(notePostVideoFile);
     player.src = notePostVideoObjectUrl;
+    captureNoteVideoThumbnail(notePostVideoFile);
     if (info) info.textContent = `Video · ${formatVideoDuration(notePostVideoDuration)} · ${formatVideoBytes(notePostVideoFile.size)} (máx. 60 s y 12 MB)`;
   }
 
@@ -12784,150 +12836,201 @@ function saveNote() {
     );
   }
 
+  // FEED LIGERO: antes un solo listener 'value' re-descargaba los 50 posts
+  // completos (con fotos en base64) ante CUALQUIER cambio (un voto, un
+  // comentario, un post nuevo). Ahora con listeners granulares
+  // (child_added/changed/removed) cada evento solo descarga el post que
+  // cambió: mucho menos datos y batería.
   function _subscribeNotesFeed(feedContainer, user, userVotes, userReposts, feedMode = 'foryou', followingMap = null) {
     const notesRef = DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     notesRef.off();
     const myGeneration = ++_notesFeedGeneration;
-    notesRef.on('value', async snapshot => {
-      if (myGeneration !== _notesFeedGeneration) return;
-      const rawEntries = [];
-      snapshot.forEach(child => {
-        const rawNote = child.val() || {};
-        if (rawNote.groupId) return;
-        if (feedMode === 'following' && followingMap && !(rawNote.authorId && followingMap[rawNote.authorId])) return;
-        rawEntries.push({ key: child.key, rawNote });
-      });
+    const alive = () => myGeneration === _notesFeedGeneration;
+    const currentUserId = (user && user.uid) || '';
+    let adCount = 0;
+    let pendingInitial = 0;
+    let initialValueSeen = false;
 
-      // Cuentas privadas: resolvemos en batch (una sola pasada) qué autores
-      // de este lote son privados y si el usuario actual tiene acceso
-      // aprobado a cada uno, para no bloquear el render con N consultas
-      // secuenciales ni tener que hacer shouldHideNoteForCurrentUser async
-      // en todo el resto del código que ya la usa de forma síncrona.
-      const uniqueAuthorIds = Array.from(new Set(rawEntries.map(e => e.rawNote.authorId || e.rawNote.userId).filter(Boolean)));
-      const currentUserId = user?.uid || '';
-      const hiddenPrivateAuthors = new Set();
-      if (uniqueAuthorIds.length) {
-        await Promise.all(uniqueAuthorIds.map(async authorId => {
-          if (authorId === currentUserId) return;
-          const isPrivate = await isAccountPrivate(authorId);
-          if (!isPrivate) return;
-          const canView = await canCurrentUserViewPrivateAccount(authorId);
-          if (!canView) hiddenPrivateAuthors.add(authorId);
-        }));
-      }
+    // Si venimos de otra pestaña, reconstruimos desde cero para no arrastrar
+    // orden o contenido del modo previo.
+    if (feedContainer.dataset.feedMode !== feedMode) {
+      feedContainer.innerHTML = '';
+      feedContainer.dataset.feedMode = feedMode;
+    }
 
-      const notes = [];
-      rawEntries.forEach(({ key, rawNote }) => {
-        const authorId = rawNote.authorId || rawNote.userId || '';
-        if (hiddenPrivateAuthors.has(authorId)) return;
-        if (shouldHideNoteForCurrentUser(key, rawNote)) return;
-        notes.unshift({ ...rawNote, id: key });
-      });
+    function feedEmptyHTML() {
+      return feedMode === 'following'
+        ? '<div class="feed-empty-state bg-white border border-[#dce1e5] rounded-3xl p-6 text-center text-sm text-[#7b878f] shadow-sm">Todavía no sigues a nadie que haya publicado. Explora perfiles y sigue a alguien para ver sus posts aquí.</div>'
+        : '<div class="feed-empty-state bg-white border border-[#dce1e5] rounded-3xl p-6 text-center text-sm text-[#7b878f] shadow-sm">Aún no hay posts. Sé la primera persona en publicar.</div>';
+    }
 
-      // Añadir al feed la bandera del país y del idioma seleccionado en el
-      // perfil, también para publicaciones antiguas que no tenían estos datos.
-      const authorProfiles = {};
-      await Promise.all(Array.from(new Set(notes.map(note => note.authorId || note.userId).filter(Boolean))).map(async authorId => {
-        authorProfiles[authorId] = await _fetchAuthorProfileCached(authorId);
-      }));
-      notes.forEach(note => {
-        const profile = authorProfiles[note.authorId || note.userId] || {};
-        note.authorLearningLanguage = note.authorLearningLanguage || profile.learningLanguage || '';
-        note.authorLearningLanguageName = note.authorLearningLanguageName || profile.learningLanguageName || '';
-        note.authorCountryCode = note.authorCountryCode || profile.countryCode || detectProfileCountryCode(profile.country || profile.location || '');
-      });
-
-      if (feedMode === 'popular') {
-        notes.sort((a, b) => {
-          const scoreA = Number(a.upvotes || 0) - Number(a.downvotes || 0);
-          const scoreB = Number(b.upvotes || 0) - Number(b.downvotes || 0);
-          return scoreB - scoreA;
-        });
-      }
-
-      // Si venimos de otra pestaña, el DOM tiene posts de ese modo con el
-      // mismo orden/selección anteriores: al cambiar de modo reconstruimos
-      // desde cero para no arrastrar orden o contenido de la pestaña previa.
-      if (feedContainer.dataset.feedMode !== feedMode) {
-        feedContainer.innerHTML = '';
-        feedContainer.dataset.feedMode = feedMode;
-      }
-
-      if (!notes.length) {
-        feedContainer.innerHTML = feedMode === 'following'
-          ? '<div class="feed-empty-state bg-white border border-[#dce1e5] rounded-3xl p-6 text-center text-sm text-[#7b878f] shadow-sm">Todavía no sigues a nadie que haya publicado. Explora perfiles y sigue a alguien para ver sus posts aquí.</div>'
-          : '<div class="feed-empty-state bg-white border border-[#dce1e5] rounded-3xl p-6 text-center text-sm text-[#7b878f] shadow-sm">Aún no hay posts. Sé la primera persona en publicar.</div>';
-        return;
-      }
-
-      const feedFragment = document.createDocumentFragment();
-      const feedAdCounter = { count: 0 };
-
-      notes.forEach(note => {
-          // Si el elemento ya existe, solo actualizar contadores para evitar parpadeo
-          const existingPost = document.getElementById(`post-${note.id}`);
-          if (existingPost) {
-              const scoreSpan = existingPost.querySelector(`#score-${note.id}`);
-              const repostBtn = existingPost.querySelector(`#repost-${note.id}`);
-              const repostSpan = repostBtn ? repostBtn.querySelector('span') : null;
-
-              if (scoreSpan) scoreSpan.textContent = formatVoteScore(Number(note.upvotes || 0) - Number(note.downvotes || 0));
-              
-              // Solo actualizar repost si no está en medio de una animación local (UI optimista)
-              if (repostBtn && !repostBtn.classList.contains('animating')) {
-                  const hasReposted = Boolean(userReposts[note.id]);
-                  repostBtn.classList.toggle('active', hasReposted);
-                  if (repostSpan) repostSpan.textContent = Number(note.repostsCount || 0);
-              }
-
-              // Comentarios en tiempo real: el conteo también llega por el
-              // listener; se propaga a todas las instancias visibles.
-              setCommentsCountUI(note.id, note.commentsCount);
-
-              return;
-          }
-
-          try {
-            const noteElement = document.createElement('div');
-            noteElement.id = `post-${note.id}`;
-            noteElement.className = 'drex-post w-full';
-            noteElement.dataset.noteId = note.id;
-            noteElement.dataset.postType = note.postType || '';
-
-            noteElement.innerHTML = buildDrexPostCardHTML(note, {
-              user: user,
-              userVote: userVotes[note.id] || null,
-              hasReposted: Boolean(userReposts[note.id]),
-              avatarIdPrefix: 'feed-author-'
-            });
-            feedFragment.appendChild(noteElement);
-            maybeInsertFeedAd(feedFragment, feedAdCounter.count++);
-          } catch (renderError) {
-            console.error('Error renderizando publicación:', note?.id, renderError);
-          }
-      });
-
-      // A15: quitar del DOM las tarjetas de posts que ya no existen en el
-      // snapshot (borrados por el autor u otro dispositivo).
+    function maybeShowEmptyState() {
+      if (!alive() || !initialValueSeen || pendingInitial > 0) return;
       try {
-        const liveIds = new Set(notes.map(n => 'post-' + n.id));
-        feedContainer.querySelectorAll(':scope > div[id^="post-"]').forEach(el => {
-          if (!liveIds.has(el.id)) el.remove();
-        });
+        const hasPosts = !!feedContainer.querySelector(':scope > div[id^="post-"]');
+        const hasEmpty = !!feedContainer.querySelector(':scope > .feed-empty-state');
+        if (!hasPosts && !hasEmpty) feedContainer.innerHTML = feedEmptyHTML();
       } catch (_) {}
+    }
 
-      if (myGeneration !== _notesFeedGeneration) return;
-      if (feedFragment.children.length > 0) {
-          if (feedContainer.querySelector(':scope > .feed-empty-state')) {
-              feedContainer.innerHTML = '';
+    function clearEmptyState() {
+      try {
+        const es = feedContainer.querySelector(':scope > .feed-empty-state');
+        if (es) es.remove();
+      } catch (_) {}
+    }
+
+    // Convierte un child crudo en nota lista para render, o null si se filtra
+    // (grupo, no seguido, cuenta privada sin acceso, oculto por moderación).
+    async function prepareFeedNote(key, rawNote) {
+      try {
+        if (!rawNote || rawNote.groupId) return null;
+        if (feedMode === 'following' && followingMap && !(rawNote.authorId && followingMap[rawNote.authorId])) return null;
+        const authorId = rawNote.authorId || rawNote.userId || '';
+        if (authorId && authorId !== currentUserId) {
+          const isPrivate = await isAccountPrivate(authorId);
+          if (isPrivate) {
+            const canView = await canCurrentUserViewPrivateAccount(authorId);
+            if (!canView) return null;
           }
-          feedContainer.prepend(feedFragment);
-          pushDrexAdSlots(feedContainer);
-          hydrateQuickFollowButtons(feedContainer);
-          hydrateSaveButtons(feedContainer);
-          applyFeedTypeFilter();
-          initFeedDoubleTapLike();
+        }
+        if (shouldHideNoteForCurrentUser(key, rawNote)) return null;
+        const note = { ...rawNote, id: key };
+        if (authorId) {
+          const profile = await _fetchAuthorProfileCached(authorId).catch(() => ({})) || {};
+          note.authorLearningLanguage = note.authorLearningLanguage || profile.learningLanguage || '';
+          note.authorLearningLanguageName = note.authorLearningLanguageName || profile.learningLanguageName || '';
+          note.authorCountryCode = note.authorCountryCode || profile.countryCode || detectProfileCountryCode(profile.country || profile.location || '');
+        }
+        return note;
+      } catch (_) { return null; }
+    }
+
+    // Actualiza solo contadores de una tarjeta existente (sin parpadeo).
+    // Devuelve true si la tarjeta existía.
+    function updateFeedPostCounters(note) {
+      const existingPost = document.getElementById(`post-${note.id}`);
+      if (!existingPost) return false;
+      const scoreSpan = existingPost.querySelector(`#score-${note.id}`);
+      const repostBtn = existingPost.querySelector(`#repost-${note.id}`);
+      const repostSpan = repostBtn ? repostBtn.querySelector('span') : null;
+      if (scoreSpan) scoreSpan.textContent = formatVoteScore(Number(note.upvotes || 0) - Number(note.downvotes || 0));
+      if (repostBtn && !repostBtn.classList.contains('animating')) {
+        const hasReposted = Boolean(userReposts[note.id]);
+        repostBtn.classList.toggle('active', hasReposted);
+        if (repostSpan) repostSpan.textContent = Number(note.repostsCount || 0);
       }
+      setCommentsCountUI(note.id, note.commentsCount);
+      if (feedMode === 'popular') {
+        const newScore = Number(note.upvotes || 0) - Number(note.downvotes || 0);
+        existingPost.dataset.feedScore = String(newScore);
+        // Recolocar la tarjeta para mantener el orden por puntaje (mayor primero).
+        const kids = feedContainer.querySelectorAll(':scope > div[id^="post-"]');
+        let placed = false;
+        for (const kid of kids) {
+          if (kid === existingPost) continue;
+          if (newScore > parseFloat(kid.dataset.feedScore || '0')) {
+            feedContainer.insertBefore(existingPost, kid);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) feedContainer.appendChild(existingPost);
+      }
+      return true;
+    }
+
+    function mountFeedPost(note) {
+      try {
+        clearEmptyState();
+        const noteElement = document.createElement('div');
+        noteElement.id = `post-${note.id}`;
+        noteElement.className = 'drex-post w-full';
+        noteElement.dataset.noteId = note.id;
+        noteElement.dataset.postType = note.postType || '';
+        if (feedMode === 'popular') {
+          noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0));
+        }
+        noteElement.innerHTML = buildDrexPostCardHTML(note, {
+          user: user,
+          userVote: userVotes[note.id] || null,
+          hasReposted: Boolean(userReposts[note.id]),
+          avatarIdPrefix: 'feed-author-'
+        });
+        if (feedMode === 'popular') {
+          // Insertar ordenado por puntaje (mayor primero).
+          const score = Number(note.upvotes || 0) - Number(note.downvotes || 0);
+          const kids = feedContainer.querySelectorAll(':scope > div[id^="post-"]');
+          let placed = false;
+          for (const kid of kids) {
+            if (score > parseFloat(kid.dataset.feedScore || '0')) {
+              feedContainer.insertBefore(noteElement, kid);
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) feedContainer.appendChild(noteElement);
+        } else {
+          // Lo nuevo arriba (child_added llega en orden ascendente de fecha).
+          feedContainer.prepend(noteElement);
+        }
+        const adFrag = document.createDocumentFragment();
+        maybeInsertFeedAd(adFrag, adCount++);
+        if (adFrag.children.length) {
+          noteElement.after(adFrag);
+          pushDrexAdSlots(feedContainer);
+        }
+        hydrateQuickFollowButtons(noteElement);
+        hydrateSaveButtons(noteElement);
+        applyFeedTypeFilter();
+        initFeedDoubleTapLike();
+      } catch (renderError) {
+        console.error('Error renderizando publicación:', note && note.id, renderError);
+      }
+    }
+
+    notesRef.on('child_added', (snap) => {
+      if (!alive()) return;
+      pendingInitial++;
+      prepareFeedNote(snap.key, snap.val() || {}).then((note) => {
+        pendingInitial--;
+        if (!alive()) { maybeShowEmptyState(); return; }
+        if (!note) { maybeShowEmptyState(); return; }
+        if (!updateFeedPostCounters(note)) mountFeedPost(note);
+        else clearEmptyState();
+        maybeShowEmptyState();
+      });
+    });
+
+    notesRef.on('child_changed', (snap) => {
+      if (!alive()) return;
+      prepareFeedNote(snap.key, snap.val() || {}).then((note) => {
+        if (!alive()) return;
+        if (!note) {
+          // El post dejó de ser visible (p. ej. la cuenta se hizo privada).
+          const el = document.getElementById(`post-${snap.key}`);
+          if (el) { try { el.remove(); } catch (_) {} }
+          maybeShowEmptyState();
+          return;
+        }
+        if (!updateFeedPostCounters(note)) mountFeedPost(note);
+      });
+    });
+
+    notesRef.on('child_removed', (snap) => {
+      if (!alive()) return;
+      try {
+        const el = document.getElementById(`post-${snap.key}`);
+        if (el) el.remove();
+      } catch (_) {}
+      maybeShowEmptyState();
+    });
+
+    // Marca el fin de la carga inicial (se dispara tras los child_added
+    // iniciales): si no llegó ningún post visible, mostrar estado vacío.
+    notesRef.once('value', () => {
+      initialValueSeen = true;
+      maybeShowEmptyState();
     });
   }
 
@@ -14280,6 +14383,36 @@ function saveNote() {
 
   const _postVoteLocks = new Set();
 
+  // REINTENTO AUTOMÁTICO: si un voto o comentario falla por red, se reintenta
+  // solo (hasta 2 veces, con espera creciente) en vez de mostrar el error y ya.
+  // No reintenta errores de permisos ni de validación. Las escrituras núcleo
+  // usan claves pre-generadas para que el reintento sea idempotente.
+  const _commentCoreDone = new Set(); // claves de comentarios/respuestas ya escritas
+  function _isRetryableNetError(err) {
+    try {
+      const code = String((err && (err.code || err.name)) || '').toLowerCase();
+      const msg = String((err && err.message) || '').toLowerCase();
+      if (/permission|denied|unauthorized|invalid|ya no existe|no existe/.test(code + ' ' + msg)) return false;
+      return true;
+    } catch (_) { return true; }
+  }
+  function _runWithAutoRetry(operation, label) {
+    const delays = [1500, 4000];
+    let attempt = 0;
+    const run = () => {
+      attempt++;
+      return Promise.resolve().then(() => operation(attempt)).catch(err => {
+        if (attempt <= delays.length && _isRetryableNetError(err)) {
+          const wait = delays[attempt - 1];
+          try { showMiniToast('Conexión inestable. Reintentando…'); } catch (_) {}
+          return new Promise(res => setTimeout(res, wait)).then(run);
+        }
+        throw err;
+      });
+    };
+    return run();
+  }
+
 
   function votePost(noteId, voteType) {
     const user = DrexCloud.auth().currentUser;
@@ -14351,10 +14484,12 @@ function saveNote() {
     };
     setVotePending(true);
 
-    userVoteRef.once('value').then(snapshot => {
-      const currentVote = snapshot.val();
+    // Voto final deseado, fijado con la lectura del primer intento: si un
+    // intento sí llegó al servidor pero se perdió la respuesta, el reintento
+    // lo detecta y no aplica el voto dos veces.
+    let intendedVote = voteType;
 
-      return noteRef.transaction(note => {
+    const runVoteTransaction = (currentVote) => noteRef.transaction(note => {
         // A16: si el post ya no existe, abortar (devolver undefined) en lugar
         // de escribir sobre la nada o dejar votos huérfanos.
         if (!note) return undefined;
@@ -14374,9 +14509,10 @@ function saveNote() {
       }).then(transactionResult => {
         if (!transactionResult || !transactionResult.committed) {
           // A16: el post desapareció entre la lectura y la escritura.
+          // No se reintenta: no es un error de red.
           paintVoteUI(wasUpvoted, wasDownvoted, currentScore);
           showMiniToast('Esta publicación ya no existe.');
-          return;
+          return { postGone: true };
         }
         const updatedNote = transactionResult && transactionResult.snapshot ? transactionResult.snapshot.val() : null;
         const newVote = currentVote === voteType ? null : voteType;
@@ -14408,15 +14544,37 @@ function saveNote() {
         }
 
         refreshHistorialIfVisible();
-      }).finally(() => {
-        setVotePending(false);
-        _postVoteLocks.delete(noteId);
+        return { ok: true };
       });
-    }).catch(err => {
+
+    const attemptVoteCore = (attempt) => userVoteRef.once('value').then(snapshot => {
+      const serverVote = snapshot.val() || null;
+      if (attempt === 1) {
+        intendedVote = (serverVote === voteType) ? null : voteType;
+        return runVoteTransaction(serverVote);
+      }
+      // Reintento: si el intento anterior sí se aplicó en el servidor pero
+      // se perdió la respuesta, el voto deseado ya está guardado: no tocar
+      // nada y sincronizar la UI con el servidor.
+      if (serverVote === intendedVote) {
+        return noteRef.once('value').then(noteSnap => {
+          const serverNote = noteSnap.val();
+          if (serverNote) {
+            paintVoteUI(intendedVote === 'up', intendedVote === 'down',
+              Number(serverNote.upvotes || 0) - Number(serverNote.downvotes || 0));
+          }
+          return { alreadyApplied: true };
+        });
+      }
+      return runVoteTransaction(serverVote);
+    });
+
+    _runWithAutoRetry(attemptVoteCore, 'voto').catch(err => {
       console.error('Error al votar publicación:', err);
       // A19: revertir el cambio optimista para no mostrar un estado falso.
       paintVoteUI(wasUpvoted, wasDownvoted, currentScore);
       showMiniToast('No se pudo votar. Intenta de nuevo.');
+    }).finally(() => {
       setVotePending(false);
       _postVoteLocks.delete(noteId);
     });
@@ -16413,7 +16571,7 @@ function saveNote() {
         return;
       }
       setCommentSubmitting(true);
-      updateExistingComment(editTarget.noteId, editTarget.commentPath, resolvedContent).then(() => {
+      _runWithAutoRetry(() => updateExistingComment(editTarget.noteId, editTarget.commentPath, resolvedContent), 'edición').then(() => {
         input.value = '';
         updateCommentCharCounter();
         cancelCommentEdit();
@@ -16426,8 +16584,24 @@ function saveNote() {
       return;
     }
 
+    // Claves pre-generadas para la escritura: el núcleo usa set() con la misma
+    // clave, así los reintentos son idempotentes y nunca duplican el comentario.
+    const _newCommentKey = DrexCloud.database().ref('postComments/' + noteId).push().key;
+    const _newReplyKey = (targetReply && targetReply.commentId)
+      ? DrexCloud.database().ref('postComments/' + noteId + '/' + targetReply.commentId + '/replies').push().key
+      : null;
+
+    const clearCommentInput = () => {
+      input.value = '';
+      clearStickerSelection('comment-input-main');
+      removeCommentGif();
+      removeCommentPhoto();
+      updateCommentCharCounter();
+    };
+
     setCommentSubmitting(true);
 
+    // Una sola lectura del perfil (fuera del reintento).
     DrexCloud.database().ref('users/' + user.uid).once('value').then(userSnap => {
       const userData = userSnap.val() || {};
       const actorName = userData.username || user.displayName || user.email || 'Alguien';
@@ -16473,96 +16647,115 @@ function saveNote() {
 
       const mentionPromise = sendMentionNotifications(resolvedContent, user.uid, actorName, 'comentario', [user.uid]);
 
-      const clearCommentInput = () => {
-        input.value = '';
-        clearStickerSelection('comment-input-main');
-        removeCommentGif();
-        removeCommentPhoto();
-        updateCommentCharCounter();
+      // Región reintentable: lecturas + escritura núcleo + notificaciones.
+      // El núcleo es idempotente (clave pre-generada con set()): si un reintento
+      // ocurre tras un fallo tardío, alguna notificación podría duplicarse
+      // (raro y solo cosmético); el comentario jamás se duplica.
+      const doCommentWrite = () => {
+        if (targetReply && targetReply.commentId) {
+          const repliesRef = DrexCloud.database().ref('postComments/' + noteId + '/' + targetReply.commentId + '/replies');
+          const writeReplyCore = () => {
+            if (_commentCoreDone.has(_newReplyKey)) return Promise.resolve({ key: _newReplyKey });
+            return repliesRef.child(_newReplyKey).set(payload).then(() => {
+              _commentCoreDone.add(_newReplyKey);
+              if (_commentCoreDone.size > 1000) _commentCoreDone.delete(_commentCoreDone.values().next().value);
+              return { key: _newReplyKey };
+            });
+          };
+          return Promise.all([
+          DrexCloud.database().ref('communityNotes/' + noteId).once('value'),
+          DrexCloud.database().ref('postComments/' + noteId + '/' + targetReply.commentId).once('value')
+          ]).then(([noteSnap, parentCommentSnap]) => {
+            const note = noteSnap.val() || {};
+            const parentComment = parentCommentSnap.val() || {};
+            if (!parentCommentSnap.exists()) throw new Error('El comentario al que respondes ya no existe');
+
+            return writeReplyCore().then(replyRef => {
+              const notificationJobs = [];
+              notificationJobs.push(DrexCloud.database().ref('userComments/' + user.uid + '/' + replyRef.key).set(buildUserCommentEntry(note, resolvedContent, payload.timestamp)));
+
+              if (note.authorId && note.authorId !== user.uid) {
+                notificationJobs.push(addNotification(note.authorId, buildPostMessage(), typeForMedia, { actionType: 'post', actionId: noteId }));
+              }
+
+              if (parentComment.authorId && parentComment.authorId !== user.uid && parentComment.authorId !== note.authorId) {
+                let replyMessage = `${actorName} respondió tu comentario.`;
+                let replyType = 'reply';
+                if (hasGif) {
+                  replyMessage = `${actorName} envió un GIF en respuesta a tu comentario.`;
+                  replyType = 'gif';
+                } else if (hasSticker) {
+                  replyMessage = `${actorName} envió un sticker en respuesta a tu comentario.`;
+                  replyType = 'sticker';
+                }
+                notificationJobs.push(addNotification(parentComment.authorId, replyMessage, replyType, { actionType: 'post', actionId: noteId }));
+              }
+
+              notificationJobs.push(mentionPromise);
+              return Promise.all(notificationJobs).then(() => ({ key: replyRef.key, isReply: true, payload: payload }));
+            });
+          });
+        }
+
+        const commentsRef = DrexCloud.database().ref('postComments/' + noteId);
+        const writeCommentCore = () => {
+          if (_commentCoreDone.has(_newCommentKey)) return Promise.resolve({ key: _newCommentKey });
+          return commentsRef.child(_newCommentKey).set(payload).then(() => {
+            _commentCoreDone.add(_newCommentKey);
+            if (_commentCoreDone.size > 1000) _commentCoreDone.delete(_commentCoreDone.values().next().value);
+            return { key: _newCommentKey };
+          });
+        };
+        return DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(noteSnap => {
+          const note = noteSnap.val() || {};
+
+          return writeCommentCore().then(commentRef => {
+            const notifications = [];
+            notifications.push(DrexCloud.database().ref('userComments/' + user.uid + '/' + commentRef.key).set(buildUserCommentEntry(note, resolvedContent, payload.timestamp)));
+            if (note.authorId && note.authorId !== user.uid) {
+              notifications.push(addNotification(note.authorId, buildPostMessage(), typeForMedia, { actionType: 'post', actionId: noteId }));
+            }
+            notifications.push(mentionPromise);
+            return Promise.all(notifications).then(() => ({ key: commentRef.key, isReply: false, payload: payload }));
+          });
+        });
       };
 
-      if (targetReply && targetReply.commentId) {
-        return Promise.all([
-        DrexCloud.database().ref('communityNotes/' + noteId).once('value'),
-        DrexCloud.database().ref('postComments/' + noteId + '/' + targetReply.commentId).once('value')
-        ]).then(([noteSnap, parentCommentSnap]) => {
-          const note = noteSnap.val() || {};
-          const parentComment = parentCommentSnap.val() || {};
-          if (!parentCommentSnap.exists()) throw new Error('El comentario al que respondes ya no existe');
-
-          // DrexCloud: push() devuelve el Ref de forma sincrona (no promesa); se envuelve para mantener la cadena.
-          return Promise.resolve(DrexCloud.database().ref('postComments/' + noteId + '/' + targetReply.commentId + '/replies').push(payload)).then(replyRef => {
-            const notificationJobs = [];
-            notificationJobs.push(DrexCloud.database().ref('userComments/' + user.uid + '/' + replyRef.key).set(buildUserCommentEntry(note, resolvedContent, payload.timestamp)));
-
-            if (note.authorId && note.authorId !== user.uid) {
-              notificationJobs.push(addNotification(note.authorId, buildPostMessage(), typeForMedia, { actionType: 'post', actionId: noteId }));
-            }
-
-            if (parentComment.authorId && parentComment.authorId !== user.uid && parentComment.authorId !== note.authorId) {
-              let replyMessage = `${actorName} respondió tu comentario.`;
-              let replyType = 'reply';
-              if (hasGif) {
-                replyMessage = `${actorName} envió un GIF en respuesta a tu comentario.`;
-                replyType = 'gif';
-              } else if (hasSticker) {
-                replyMessage = `${actorName} envió un sticker en respuesta a tu comentario.`;
-                replyType = 'sticker';
-              }
-              notificationJobs.push(addNotification(parentComment.authorId, replyMessage, replyType, { actionType: 'post', actionId: noteId }));
-            }
-
-            notificationJobs.push(mentionPromise);
-            return Promise.all(notificationJobs).then(() => replyRef.key);
-          });
-        }).then((replyKey) => {
-          bumpStoredCommentsCount(noteId, 1);
-          // Optimista: la respuesta aparece al instante, sin skeleton ni salto.
-          const replyPath = targetReply.commentId + '/replies/' + replyKey;
-          const parentVal = _getCommentValue(targetReply.commentId);
-          if (parentVal) {
-            parentVal.replies = parentVal.replies || {};
-            parentVal.replies[replyKey] = payload;
-          }
-          clearCommentInput();
-          clearReplyTarget();
-          refreshHistorialIfVisible();
-          if (parentVal) {
-            _renderLoadedComments(noteId);
-            const topAncestor = String(targetReply.commentId || '').split('/')[0];
-            const repliesBox = document.getElementById('replies-' + topAncestor);
-            if (repliesBox && repliesBox.classList.contains('hidden')) toggleIgReplies(topAncestor);
-            const el = document.getElementById('comment-card-' + replyPath);
-            if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-          } else {
-            loadCommentsInView(noteId);
-          }
-        });
-      }
-
-      return DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(noteSnap => {
-        const note = noteSnap.val() || {};
-
-        // DrexCloud: push() devuelve el Ref de forma sincrona (no promesa); se envuelve para mantener la cadena.
-        return Promise.resolve(DrexCloud.database().ref('postComments/' + noteId).push(payload)).then(commentRef => {
-          const notifications = [];
-          notifications.push(DrexCloud.database().ref('userComments/' + user.uid + '/' + commentRef.key).set(buildUserCommentEntry(note, resolvedContent, payload.timestamp)));
-          if (note.authorId && note.authorId !== user.uid) {
-            notifications.push(addNotification(note.authorId, buildPostMessage(), typeForMedia, { actionType: 'post', actionId: noteId }));
-          }
-          notifications.push(mentionPromise);
-          return Promise.all(notifications).then(() => commentRef.key);
-        });
-      }).then((commentKey) => {
-        bumpStoredCommentsCount(noteId, 1);
+      return _runWithAutoRetry(doCommentWrite, targetReply ? 'respuesta' : 'comentario');
+    }).then((result) => {
+      if (!result || !result.key) return;
+      // UI y contador: una sola vez, fuera de la región reintentable.
+      bumpStoredCommentsCount(noteId, 1);
+      if (result.isReply) {
+        // Optimista: la respuesta aparece al instante, sin skeleton ni salto.
+        const replyPath = targetReply.commentId + '/replies/' + result.key;
+        const parentVal = _getCommentValue(targetReply.commentId);
+        if (parentVal) {
+          parentVal.replies = parentVal.replies || {};
+          parentVal.replies[result.key] = result.payload;
+        }
+        clearCommentInput();
+        clearReplyTarget();
+        refreshHistorialIfVisible();
+        if (parentVal) {
+          _renderLoadedComments(noteId);
+          const topAncestor = String(targetReply.commentId || '').split('/')[0];
+          const repliesBox = document.getElementById('replies-' + topAncestor);
+          if (repliesBox && repliesBox.classList.contains('hidden')) toggleIgReplies(topAncestor);
+          const el = document.getElementById('comment-card-' + replyPath);
+          if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else {
+          loadCommentsInView(noteId);
+        }
+      } else {
         // Optimista: el comentario aparece al instante, sin skeleton.
-        commentsLoadedEntries.push([commentKey, payload]);
+        commentsLoadedEntries.push([result.key, result.payload]);
         clearCommentInput();
         refreshHistorialIfVisible();
         _renderLoadedComments(noteId);
-        const el = document.getElementById('comment-card-' + commentKey);
+        const el = document.getElementById('comment-card-' + result.key);
         if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      });
+      }
     }).catch(error => {
       console.error(targetReply ? 'Error al enviar respuesta:' : 'Error al comentar:', error);
       showMiniToast(targetReply ? 'No se pudo enviar tu respuesta. Inténtalo de nuevo.' : 'No se pudo enviar tu comentario. Inténtalo de nuevo.');
