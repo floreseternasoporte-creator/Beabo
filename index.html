@@ -12694,6 +12694,8 @@ function saveNote() {
   // que dos eventos 'value' seguidos no pinten el feed dos veces ni dejen
   // tarjetas de una generación vieja.
   let _notesFeedGeneration = 0;
+  // Paginación infinita del feed: observer del centinela de "cargar más".
+  let _feedOlderObserver = null;
   // Tarjeta de publicación estilo comunidad Drex: la comparten el feed,
   // los perfiles y cualquier otra superficie.
   // ctx = { user, userVote, hasReposted, avatarIdPrefix }.
@@ -12850,12 +12852,44 @@ function saveNote() {
     let adCount = 0;
     let pendingInitial = 0;
     let initialValueSeen = false;
+    // Paginación infinita: el feed en vivo cubre los últimos 50; al llegar al
+    // fondo se cargan páginas anteriores de 50 con una lectura única.
+    const FEED_PAGE_SIZE = 50;
+    let feedLoadedIds = new Set();
+    let oldestLoadedTs = Infinity;
+    let loadingOlder = false;
+    let olderExhausted = false;
+    let olderSentinel = null;
+    try { if (_feedOlderObserver) _feedOlderObserver.disconnect(); } catch (_) {}
+    _feedOlderObserver = null;
+    // Si el contenedor conserva tarjetas de una suscripción previa del mismo
+    // modo, reconstruir el estado de paginación desde el DOM en vez de
+    // partir de cero (si no, el scroll infinito quedaría roto).
+    try {
+      const prevSentinel = feedContainer.querySelector('#feed-older-sentinel');
+      if (prevSentinel) {
+        if (prevSentinel.querySelector('.feed-end-of-list')) olderExhausted = true;
+        prevSentinel.remove();
+      }
+      olderSentinel = null;
+      feedContainer.querySelectorAll(':scope > div[id^="post-"]').forEach(el => {
+        const pid = el.dataset.noteId || String(el.id || '').replace(/^post-/, '');
+        if (pid) feedLoadedIds.add(pid);
+        const ts = Number(el.dataset.feedTs || 0);
+        if (ts > 0 && ts < oldestLoadedTs) oldestLoadedTs = ts;
+      });
+    } catch (_) {}
 
     // Si venimos de otra pestaña, reconstruimos desde cero para no arrastrar
     // orden o contenido del modo previo.
     if (feedContainer.dataset.feedMode !== feedMode) {
       feedContainer.innerHTML = '';
       feedContainer.dataset.feedMode = feedMode;
+      feedLoadedIds = new Set();
+      oldestLoadedTs = Infinity;
+      loadingOlder = false;
+      olderExhausted = false;
+      olderSentinel = null;
     }
 
     function feedEmptyHTML() {
@@ -12940,14 +12974,19 @@ function saveNote() {
       return true;
     }
 
-    function mountFeedPost(note) {
+    function mountFeedPost(note, appendAtBottom = false) {
       try {
+        if (!note || !note.id || feedLoadedIds.has(note.id)) return;
+        feedLoadedIds.add(note.id);
+        const noteTs = Number(note.timestamp || 0);
+        if (noteTs > 0 && noteTs < oldestLoadedTs) oldestLoadedTs = noteTs;
         clearEmptyState();
         const noteElement = document.createElement('div');
         noteElement.id = `post-${note.id}`;
         noteElement.className = 'drex-post w-full';
         noteElement.dataset.noteId = note.id;
         noteElement.dataset.postType = note.postType || '';
+        noteElement.dataset.feedTs = String(noteTs);
         if (feedMode === 'popular') {
           noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0));
         }
@@ -12969,7 +13008,14 @@ function saveNote() {
               break;
             }
           }
-          if (!placed) feedContainer.appendChild(noteElement);
+          if (!placed) {
+            if (olderSentinel) feedContainer.insertBefore(noteElement, olderSentinel);
+            else feedContainer.appendChild(noteElement);
+          }
+        } else if (appendAtBottom) {
+          // Paginación: los más viejos van al fondo, antes del centinela.
+          if (olderSentinel) feedContainer.insertBefore(noteElement, olderSentinel);
+          else feedContainer.appendChild(noteElement);
         } else {
           // Lo nuevo arriba (child_added llega en orden ascendente de fecha).
           feedContainer.prepend(noteElement);
@@ -13019,6 +13065,7 @@ function saveNote() {
 
     notesRef.on('child_removed', (snap) => {
       if (!alive()) return;
+      feedLoadedIds.delete(snap.key);
       try {
         const el = document.getElementById(`post-${snap.key}`);
         if (el) el.remove();
@@ -13031,7 +13078,86 @@ function saveNote() {
     notesRef.once('value', () => {
       initialValueSeen = true;
       maybeShowEmptyState();
+      setupOlderSentinel();
     });
+
+    function setOlderLoading(on) {
+      if (!olderSentinel) return;
+      const loader = olderSentinel.querySelector('.older-loader');
+      if (loader) loader.style.display = on ? '' : 'none';
+    }
+
+    function finishOlderSentinel() {
+      try { if (_feedOlderObserver) _feedOlderObserver.disconnect(); } catch (_) {}
+      _feedOlderObserver = null;
+      if (olderSentinel && olderSentinel.isConnected) {
+        olderSentinel.innerHTML = '<div class="feed-end-of-list text-xs text-[#9aa5ad] py-2">Estás al día</div>';
+      }
+      olderSentinel = null;
+    }
+
+    function setupOlderSentinel() {
+      if (!alive() || olderSentinel || olderExhausted) return;
+      olderSentinel = document.createElement('div');
+      olderSentinel.id = 'feed-older-sentinel';
+      olderSentinel.className = 'py-6 text-center';
+      olderSentinel.innerHTML = `<div class="older-loader" style="display:none">${getSpinnerMarkup()}</div>`;
+      feedContainer.appendChild(olderSentinel);
+      try { if (_feedOlderObserver) _feedOlderObserver.disconnect(); } catch (_) {}
+      _feedOlderObserver = new IntersectionObserver((entries) => {
+        if (!alive()) return;
+        for (const entry of entries) {
+          if (entry.isIntersecting) { loadOlderPosts(); break; }
+        }
+      }, { rootMargin: '600px' });
+      _feedOlderObserver.observe(olderSentinel);
+    }
+
+    // Carga una página de posts anteriores a los ya visibles (lectura única,
+    // sin suscripción en vivo: los contadores de esas tarjetas se actualizan
+    // con el voto optimista local).
+    function loadOlderPosts(depth = 0) {
+      if (!alive() || loadingOlder || olderExhausted || !initialValueSeen || pendingInitial > 0) return;
+      if (!isFinite(oldestLoadedTs)) return;
+      loadingOlder = true;
+      setOlderLoading(true);
+      DrexCloud.database().ref('communityNotes')
+        .orderByChild('timestamp').endAt(oldestLoadedTs - 1).limitToLast(FEED_PAGE_SIZE)
+        .once('value').then(async (snap) => {
+          if (!alive()) { loadingOlder = false; return; }
+          const raw = [];
+          snap.forEach(child => { raw.push([child.key, child.val() || {}]); });
+          if (raw.length) {
+            const minTs = Math.min(...raw.map(([k, v]) => Number(v.timestamp || 0)).filter(t => t > 0));
+            if (isFinite(minTs) && minTs < oldestLoadedTs) oldestLoadedTs = minTs;
+          }
+          // Orden visual de más nuevo a más viejo, igual que la primera página.
+          raw.sort((a, b) => Number(b[1].timestamp || 0) - Number(a[1].timestamp || 0));
+          let mounted = 0;
+          for (const [key, val] of raw) {
+            if (!alive()) break;
+            const note = await prepareFeedNote(key, val).catch(() => null);
+            if (note && alive()) { mountFeedPost(note, true); mounted++; }
+          }
+          if (!alive()) { loadingOlder = false; return; }
+          loadingOlder = false;
+          setOlderLoading(false);
+          if (raw.length < FEED_PAGE_SIZE) {
+            olderExhausted = true;
+            finishOlderSentinel();
+          } else if (mounted === 0 && depth < 5) {
+            // Página llena pero todo filtrado (p. ej. privados): seguir con la
+            // siguiente sin mostrar otro spinner.
+            loadOlderPosts(depth + 1);
+            return;
+          }
+          maybeShowEmptyState();
+        }).catch(err => {
+          console.error('Error cargando posts anteriores:', err);
+          loadingOlder = false;
+          if (alive()) setOlderLoading(false);
+        });
+    }
   }
 
   function closeImageModal() {
