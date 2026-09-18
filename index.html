@@ -119,6 +119,10 @@ button, a, select, [role="button"] {
   overflow: hidden;
 }
 .adsterra-slot iframe { max-width: 100%; }
+/* Skeleton mientras el anuncio carga: nunca se ve un hueco vacío */
+.ad-shimmer{position:relative;overflow:hidden;background:#e8edf3;border-radius:10px;min-height:50px;width:100%;max-width:340px;margin:0 auto}
+.ad-shimmer::after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 25%,rgba(255,255,255,.75) 50%,transparent 75%);animation:ad-shimmer-slide 1.1s infinite}
+@keyframes ad-shimmer-slide{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 
 /* Bloques de anuncios (AdSense): siempre etiquetados y separados del contenido */
 .drex-ad-slot {
@@ -8635,7 +8639,7 @@ function saveNote() {
           wrap.className = 'drex-ad-slot';
           wrap.setAttribute('aria-label', label);
           wrap.innerHTML = '<span class="drex-ad-label">' + label + '</span>' +
-            '<div class="adsterra-slot" style="min-height:50px"></div>';
+            '<div class="adsterra-slot" style="min-height:50px"><div class="ad-shimmer"></div></div>';
           feedFragment.appendChild(wrap);
           try {
             const obs = ensureAdsterraInFeedObserver();
@@ -8669,7 +8673,7 @@ function saveNote() {
           try { adsterraInFeedObserver.unobserve(en.target); } catch (_) {}
           loadAdsterraInFeedSlot(en.target);
         });
-      }, { rootMargin: '500px 0px' });
+      }, { rootMargin: '900px 0px' });
     } catch (_) { adsterraInFeedObserver = null; }
     return adsterraInFeedObserver;
   }
@@ -8685,6 +8689,7 @@ function saveNote() {
       s.type = 'text/javascript';
       s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
       slot.appendChild(s);
+      if (typeof adsterraWatchShimmer === 'function') adsterraWatchShimmer(slot);
       setTimeout(function () {
         try {
           var ifr = slot.querySelector('iframe');
@@ -35653,6 +35658,7 @@ async function endFiesta() {
       <!-- Tabs estilo borradores -->
       <div class="px-4 pb-2 flex gap-2">
         <button id="music-tab-btn-explore" onclick="musicSwitchTab('explore')" class="music-tab-btn active">Explorar</button>
+        <button id="music-tab-btn-playlists" onclick="musicSwitchTab('playlists')" class="music-tab-btn">Playlists</button>
         <button id="music-tab-btn-mine" onclick="musicSwitchTab('mine')" class="music-tab-btn">Mi música</button>
       </div>
       <div id="music-explore-searchbar" class="px-4 pb-3">
@@ -35663,7 +35669,18 @@ async function endFiesta() {
       </div>
     </div>
     <div id="music-explore-pane" class="px-4">
+      <div id="music-top-section" class="hidden mb-5">
+        <div class="flex items-center justify-between mb-2 px-1">
+          <h3 class="text-[15px] font-extrabold text-[#1c2b4a]">Top Drex</h3>
+          <span class="text-[11px] text-[#7b878f] font-semibold">Lo más votado de la semana</span>
+        </div>
+        <div id="music-top-list" class="space-y-2"></div>
+      </div>
       <div id="music-explore-list" class="space-y-2"></div>
+    </div>
+    <div id="music-playlists-pane" class="hidden px-4">
+      <button onclick="musicShowPlaylistSheet(null)" class="w-full h-12 rounded-full bg-[#2F33B8] text-white font-extrabold text-[14px] active:opacity-80 mb-4">＋ Nueva playlist</button>
+      <div id="music-playlists-list" class="space-y-2"></div>
     </div>
     <div id="music-mine-pane" class="hidden px-4">
       <button onclick="openMusicUpload()" class="w-full h-12 rounded-full bg-[#2F33B8] text-white font-extrabold text-[15px] active:opacity-80 transition shadow-lg shadow-[#2F33B8]/25 mb-2">+ Subir música</button>
@@ -35798,7 +35815,7 @@ async function endFiesta() {
     </div>
     <div class="mt-5 rounded-2xl bg-white border border-[#e7ecf3] px-3 pt-2 pb-3" id="adsterra-music-card" style="display:none;">
       <p class="text-[10px] font-extrabold uppercase tracking-widest text-[#7b878f] text-center mb-1">Anuncio</p>
-      <div id="adsterra-music-slot" class="adsterra-slot justify-center" style="min-height:50px"></div>
+      <div id="adsterra-music-slot" class="adsterra-slot justify-center" style="min-height:50px"><div class="ad-shimmer"></div></div>
     </div>
     <div class="mt-4">
       <p class="text-[11px] font-extrabold uppercase tracking-widest text-[#7b878f] mb-2">A continuación</p>
@@ -35813,8 +35830,51 @@ async function endFiesta() {
     <div class="w-12 h-12 mx-auto rounded-2xl flex items-center justify-center text-2xl mb-3 text-white" style="background:linear-gradient(135deg,#2F33B8,#5b5ff0)">♫</div>
     <p class="text-[11px] font-extrabold uppercase tracking-widest text-[#7b878f] mb-1">Anuncio &middot; Drex Música</p>
     <p class="text-sm font-bold mb-3">Drex Música es gratis gracias a los anuncios</p>
-    <div id="music-adbreak-slot" class="adsterra-slot flex justify-center" style="min-height:50px"></div>
+    <div id="music-adbreak-slot" class="adsterra-slot flex justify-center" style="min-height:50px"><div class="ad-shimmer"></div></div>
     <p id="music-adbreak-count" class="mt-4 text-[13px] font-bold text-[#7b878f]"></p>
+  </div>
+</div>
+
+<div id="music-adbreak-preload" aria-hidden="true" style="position:fixed;left:-9999px;top:0;width:320px;height:60px;overflow:hidden;pointer-events:none;"></div>
+
+<!-- Vista detalle de playlist -->
+<div id="music-playlist-view" class="fixed inset-0 bg-[#f0f4f9] text-[#1c2b4a] z-[55] overflow-y-auto hidden">
+  <div class="max-w-3xl mx-auto pb-16">
+    <div class="sticky top-0 bg-[#f0f4f9]/95 backdrop-blur-sm z-10">
+      <div class="flex items-center gap-2 px-3 py-2">
+        <button onclick="musicClosePlaylist()" class="tap44 w-11 h-11 flex items-center justify-center rounded-full active:bg-black/5" aria-label="Atrás">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        </button>
+        <h2 class="text-lg font-extrabold">Playlist</h2>
+        <div class="flex-1"></div>
+        <button onclick="musicDeletePlaylist()" class="tap44 w-11 h-11 flex items-center justify-center rounded-full text-red-500 active:bg-red-50" aria-label="Eliminar playlist">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="px-4">
+      <h3 id="music-playlist-name" class="text-[20px] font-extrabold truncate">Playlist</h3>
+      <p id="music-playlist-count" class="text-[12px] text-[#7b878f] font-semibold mb-4">0 canciones</p>
+      <div class="flex gap-2 mb-4">
+        <button onclick="musicPlayPlaylist(false)" class="flex-1 h-12 rounded-full bg-[#2F33B8] text-white font-extrabold text-[14px] active:opacity-80">▶ Reproducir</button>
+        <button onclick="musicPlayPlaylist(true)" class="flex-1 h-12 rounded-full bg-white border border-[#e7ecf3] text-[#1c2b4a] font-extrabold text-[14px] active:opacity-80">Aleatorio</button>
+      </div>
+      <div id="music-playlist-tracks" class="space-y-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Hoja inferior: agregar a playlist -->
+<div id="music-playlist-sheet" class="fixed inset-0 z-[165] hidden">
+  <div class="absolute inset-0 bg-black/40" onclick="musicHidePlaylistSheet()"></div>
+  <div class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 pb-8 max-h-[78vh] overflow-y-auto">
+    <div class="w-10 h-1 rounded-full bg-[#e7ecf3] mx-auto mb-4"></div>
+    <h3 id="music-sheet-title" class="text-[16px] font-extrabold text-[#1c2b4a] mb-3">Agregar a playlist</h3>
+    <div class="flex gap-2 mb-4">
+      <input id="music-newplaylist-name" type="text" maxlength="60" placeholder="Nombre de la nueva playlist…" class="flex-1 h-11 px-4 rounded-full bg-[#f0f4f9] border border-[#e7ecf3] text-[14px] font-semibold text-[#1c2b4a] outline-none focus:border-[#2F33B8]">
+      <button onclick="musicSheetCreate()" class="h-11 px-5 rounded-full bg-[#2F33B8] text-white font-extrabold text-[14px] active:opacity-80 shrink-0">Crear</button>
+    </div>
+    <div id="music-sheet-list"></div>
   </div>
 </div>
 
@@ -35978,6 +36038,7 @@ window.openMusicSection = function () {
   if (mv) { mv.classList.remove('hidden'); try { mv.style.display = ''; mv.scrollTop = 0; } catch (_) {} }
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
   try { musicSwitchTab('explore'); } catch (_) {}
+  try { if (typeof adsterraInjectMusicSlot === 'function') adsterraInjectMusicSlot(); } catch (_) {}
   // Red de seguridad: si algún otro manejador volviera a ocultar la vista en
   // los próximos instantes, reabrirla para que el tap siempre deje la sección visible.
   let tries = 0;
@@ -35998,13 +36059,15 @@ window.closeMusicSection = function () {
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
 };
 window.musicSwitchTab = function (tab) {
-  const exp = tab === 'explore';
+  const exp = tab === 'explore', pl = tab === 'playlists', mine = tab === 'mine';
   document.getElementById('music-explore-pane')?.classList.toggle('hidden', !exp);
-  document.getElementById('music-mine-pane')?.classList.toggle('hidden', exp);
+  document.getElementById('music-playlists-pane')?.classList.toggle('hidden', !pl);
+  document.getElementById('music-mine-pane')?.classList.toggle('hidden', !mine);
   document.getElementById('music-explore-searchbar')?.classList.toggle('hidden', !exp);
   document.getElementById('music-tab-btn-explore')?.classList.toggle('active', exp);
-  document.getElementById('music-tab-btn-mine')?.classList.toggle('active', !exp);
-  if (exp) loadExploreMusic(); else loadMyMusic();
+  document.getElementById('music-tab-btn-playlists')?.classList.toggle('active', pl);
+  document.getElementById('music-tab-btn-mine')?.classList.toggle('active', mine);
+  if (exp) loadExploreMusic(); else if (pl) loadMusicPlaylists(); else loadMyMusic();
 };
 
 /* ---------- Filas de canciones ---------- */
@@ -36024,6 +36087,9 @@ function musicTrackRowHTML(t, i, ctx, withActions) {
       <p class="text-[12px] text-[#7b878f] font-semibold truncate">${musicEsc(t.artistName || t.authorName || 'Artista')} ${badge}${t.duration ? ' · ' + musicFmtTime(t.duration) : ''}</p>
     </div>
     ${playing ? '<span class="music-eq" aria-hidden="true"><span></span><span></span><span></span></span>' : ''}
+    <button onclick="event.stopPropagation();musicShowPlaylistSheet('${musicEscJs(t.id)}')" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[#2F33B8] active:bg-[#2F33B8]/10 shrink-0" aria-label="Agregar a playlist">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    </button>
     ${withActions ? `
     <button onclick="event.stopPropagation();editMusicTrack('${musicEscJs(t.id)}')" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[#5c6974] active:bg-[#e7ecf3]" aria-label="Editar">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.5-9.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -36055,12 +36121,241 @@ function loadExploreMusic() {
 function renderExploreMusic() {
   const list = document.getElementById('music-explore-list');
   if (!list) return;
+  try { renderMusicTop(); } catch (_) {}
   const q = (document.getElementById('music-explore-input')?.value || '').trim().toLowerCase();
   let arr = musicExploreCache;
   if (q) arr = arr.filter(t => ((t.title || '') + ' ' + (t.artistName || '') + ' ' + (t.authorName || '')).toLowerCase().includes(q));
   list.innerHTML = arr.length ? arr.map((t, i) => musicTrackRowHTML(t, i, 'explore', false)).join('') : musicEmptyHTML(q ? 'Sin resultados para tu búsqueda.' : 'Aún no hay canciones. ¡Sube la primera!');
 }
-window.musicFilterExplore = function () { renderExploreMusic(); };
+window.musicFilterExplore = function () { renderExploreMusic(); try { renderMusicTop(); } catch (_) {} };
+var musicTopCache = [];
+function musicTopRowHTML(t, i) {
+  const rankCls = i < 3 ? 'bg-[#2F33B8] text-white' : 'bg-[#e8edf3] text-[#7b878f]';
+  return `
+  <div class="music-track-row"" onclick="musicPlayFromList('top', ${i})">
+    <span class="w-7 h-7 rounded-full ${rankCls} flex items-center justify-center text-[12px] font-extrabold shrink-0">${i + 1}</span>
+    ${musicCoverHTML(t)}
+    <div class="min-w-0 flex-1">
+      <p class="text-[14px] font-extrabold text-[#1c2b4a] truncate leading-tight">${musicEsc(t.title || 'Sin título')}</p>
+      <p class="text-[12px] text-[#7b878f] font-semibold truncate">${musicEsc(t.artistName || t.authorName || 'Artista')}</p>
+    </div>
+    <button onclick="event.stopPropagation();musicShowPlaylistSheet('${musicEscJs(t.id)}')" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[#2F33B8] active:bg-[#2F33B8]/10 shrink-0" aria-label="Agregar a playlist">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    </button>
+  </div>`;
+}
+function renderMusicTop() {
+  const sec = document.getElementById('music-top-section');
+  const list = document.getElementById('music-top-list');
+  if (!sec || !list) return;
+  const q = (document.getElementById('music-explore-input')?.value || '').trim();
+  if (q) { sec.classList.add('hidden'); return; }
+  const arr = musicExploreCache || [];
+  const now = Date.now();
+  const scored = arr.map(t => {
+    const up = Number(t.upvotes || 0), down = Number(t.downvotes || 0), plays = Number(t.plays || 0);
+    const daysOld = t.createdAt ? Math.max(0, (now - Number(t.createdAt)) / 86400000) : 30;
+    const recency = Math.max(0, 7 - daysOld) * 5;
+    return { t, score: (up - down) * 10 + plays + recency };
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
+  if (!scored.length) { sec.classList.add('hidden'); return; }
+  musicTopCache = scored.map(x => x.t);
+  sec.classList.remove('hidden');
+  list.innerHTML = scored.map((x, i) => musicTopRowHTML(x.t, i)).join('');
+}
+
+/* ---------- Playlists ---------- */
+var musicPlaylistsCache = [];
+var musicPlaylistDetailCache = null;
+var musicSheetTrackId = null;
+const MUSIC_PLAYLIST_ICON = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg>';
+window.loadMusicPlaylists = function () {
+  const list = document.getElementById('music-playlists-list');
+  if (!list) return;
+  const uid = musicCurrentUid();
+  if (!uid) { list.innerHTML = musicEmptyHTML('Inicia sesión para crear playlists.'); return; }
+  list.innerHTML = '<div class="py-10 text-center text-[#7b878f] text-sm font-semibold">Cargando playlists…</div>';
+  musicDb().ref('musicPlaylists').orderByChild('uid').equalTo(uid).once('value').then(snap => {
+    const arr = [];
+    snap.forEach(ch => arr.push({ ...(ch.val() || {}), id: ch.key }));
+    arr.sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0));
+    musicPlaylistsCache = arr;
+    renderMusicPlaylists();
+  }).catch(() => { list.innerHTML = musicEmptyHTML('No se pudieron cargar las playlists.'); });
+};
+function renderMusicPlaylists() {
+  const list = document.getElementById('music-playlists-list');
+  if (!list) return;
+  const arr = musicPlaylistsCache;
+  if (!arr.length) { list.innerHTML = musicEmptyHTML('Aún no tienes playlists. Crea la primera con el botón de arriba.'); return; }
+  list.innerHTML = arr.map(pl => {
+    const cnt = pl.tracks ? Object.keys(pl.tracks).length : 0;
+    return `
+    <div onclick="musicOpenPlaylist('${musicEscJs(pl.id)}')" class="bg-white rounded-2xl border border-[#e7ecf3] p-3 flex items-center gap-3 active:opacity-80 cursor-pointer">
+      <div class="w-12 h-12 rounded-xl bg-[#2F33B8]/10 text-[#2F33B8] flex items-center justify-center shrink-0">${MUSIC_PLAYLIST_ICON}</div>
+      <div class="min-w-0 flex-1">
+        <p class="text-[14px] font-extrabold text-[#1c2b4a] truncate">${musicEsc(pl.name || 'Sin nombre')}</p>
+        <p class="text-[12px] text-[#7b878f] font-semibold">${cnt} ${cnt === 1 ? 'canción' : 'canciones'}</p>
+      </div>
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#b6c0d1] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>`;
+  }).join('');
+}
+window.musicCreatePlaylist = async function (name) {
+  const uid = musicCurrentUid();
+  if (!uid) { if (typeof showMiniToast === 'function') showMiniToast('Inicia sesión para crear playlists'); return null; }
+  name = (name || '').trim().slice(0, 60);
+  if (!name) { if (typeof showMiniToast === 'function') showMiniToast('Ponle un nombre a la playlist'); return null; }
+  try {
+    let authorName = 'Usuario';
+    try { const us = await musicDb().ref('users/' + uid).once('value'); authorName = (us.val() || {}).username || authorName; } catch (_) {}
+    const ref = musicDb().ref('musicPlaylists').push();
+    await ref.set({ name, uid, authorName, createdAt: Date.now(), updatedAt: Date.now(), tracks: {} });
+    if (typeof showMiniToast === 'function') showMiniToast('Playlist creada');
+    loadMusicPlaylists();
+    return ref.key;
+  } catch (_) { if (typeof showMiniToast === 'function') showMiniToast('No se pudo crear la playlist'); return null; }
+};
+window.musicOpenPlaylist = async function (id) {
+  const v = document.getElementById('music-playlist-view');
+  const list = document.getElementById('music-playlist-tracks');
+  if (!v || !list) return;
+  v.classList.remove('hidden');
+  document.getElementById('music-playlist-name').textContent = 'Playlist';
+  document.getElementById('music-playlist-count').textContent = '';
+  list.innerHTML = '<div class="py-10 text-center text-[#7b878f] text-sm font-semibold">Cargando…</div>';
+  try {
+    const snap = await musicDb().ref('musicPlaylists/' + id).once('value');
+    const pl = snap.val();
+    if (!pl) { musicClosePlaylist(); return; }
+    const ids = pl.tracks ? Object.keys(pl.tracks).sort((a, b) => Number(pl.tracks[a] || 0) - Number(pl.tracks[b] || 0)) : [];
+    const tracks = [];
+    for (const tid of ids) {
+      try {
+        const ts = await musicDb().ref('musicTracks/' + tid).once('value');
+        const t = ts.val();
+        if (t) tracks.push({ ...t, id: tid });
+      } catch (_) {}
+    }
+    musicPlaylistDetailCache = { id, name: pl.name || 'Playlist', tracks };
+    document.getElementById('music-playlist-name').textContent = musicPlaylistDetailCache.name;
+    document.getElementById('music-playlist-count').textContent = tracks.length + (tracks.length === 1 ? ' canción' : ' canciones');
+    renderPlaylistDetailTracks();
+  } catch (_) { list.innerHTML = musicEmptyHTML('No se pudo abrir la playlist.'); }
+};
+window.musicClosePlaylist = function () {
+  document.getElementById('music-playlist-view')?.classList.add('hidden');
+  musicPlaylistDetailCache = null;
+};
+function renderPlaylistDetailTracks() {
+  const list = document.getElementById('music-playlist-tracks');
+  if (!list) return;
+  const d = musicPlaylistDetailCache;
+  const arr = d ? d.tracks : [];
+  list.innerHTML = arr.length ? arr.map((t, i) => `
+  <div class="music-track-row" onclick="musicPlayFromList('playlist', ${i})">
+    ${musicCoverHTML(t)}
+    <div class="min-w-0 flex-1">
+      <p class="text-[14px] font-extrabold text-[#1c2b4a] truncate leading-tight">${musicEsc(t.title || 'Sin título')}</p>
+      <p class="text-[12px] text-[#7b878f] font-semibold truncate">${musicEsc(t.artistName || t.authorName || 'Artista')}</p>
+    </div>
+    <button onclick="event.stopPropagation();musicRemoveTrackFromPlaylist('${musicEscJs(t.id)}')" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-red-500 active:bg-red-50 shrink-0" aria-label="Quitar de la playlist">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+  </div>`).join('') : musicEmptyHTML('Esta playlist aún no tiene canciones. Agrégalas con el botón ＋ de cualquier canción.');
+}
+window.musicPlayPlaylist = function (shuffle) {
+  const d = musicPlaylistDetailCache;
+  if (!d || !d.tracks.length) { if (typeof showMiniToast === 'function') showMiniToast('La playlist está vacía'); return; }
+  const arr = d.tracks.slice();
+  if (shuffle) { for (let i = arr.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp; } }
+  try { musicShuffleOn = !!shuffle; musicSyncShuffleRepeatUI(); } catch (_) {}
+  musicQueue = arr; musicQueueIdx = 0;
+  musicStartTrack(arr[0]);
+  musicClosePlaylist();
+};
+window.musicRemoveTrackFromPlaylist = async function (trackId) {
+  const d = musicPlaylistDetailCache;
+  if (!d) return;
+  if (!confirm('¿Quitar esta canción de la playlist?')) return;
+  try {
+    await musicDb().ref('musicPlaylists/' + d.id + '/tracks/' + trackId).remove();
+    await musicDb().ref('musicPlaylists/' + d.id).update({ updatedAt: Date.now() });
+    d.tracks = d.tracks.filter(t => t.id !== trackId);
+    document.getElementById('music-playlist-count').textContent = d.tracks.length + (d.tracks.length === 1 ? ' canción' : ' canciones');
+    renderPlaylistDetailTracks();
+    loadMusicPlaylists();
+    if (typeof showMiniToast === 'function') showMiniToast('Canción eliminada de la playlist');
+  } catch (_) { if (typeof showMiniToast === 'function') showMiniToast('No se pudo quitar la canción'); }
+};
+window.musicDeletePlaylist = async function () {
+  const d = musicPlaylistDetailCache;
+  if (!d) return;
+  if (!confirm('¿Eliminar esta playlist? Las canciones no se borrarán.')) return;
+  try {
+    await musicDb().ref('musicPlaylists/' + d.id).remove();
+    musicClosePlaylist();
+    loadMusicPlaylists();
+    if (typeof showMiniToast === 'function') showMiniToast('Playlist eliminada');
+  } catch (_) { if (typeof showMiniToast === 'function') showMiniToast('No se pudo eliminar'); }
+};
+/* Hoja inferior: agregar canción a playlist */
+window.musicShowPlaylistSheet = function (trackId) {
+  const uid = musicCurrentUid();
+  if (!uid) { if (typeof showMiniToast === 'function') showMiniToast('Inicia sesión para usar playlists'); return; }
+  musicSheetTrackId = trackId || null;
+  const title = document.getElementById('music-sheet-title');
+  if (title) title.textContent = trackId ? 'Agregar a playlist' : 'Nueva playlist';
+  renderMusicSheetList();
+  document.getElementById('music-playlist-sheet')?.classList.remove('hidden');
+};
+window.musicHidePlaylistSheet = function () {
+  document.getElementById('music-playlist-sheet')?.classList.add('hidden');
+  musicSheetTrackId = null;
+  const inp = document.getElementById('music-newplaylist-name');
+  if (inp) inp.value = '';
+};
+function renderMusicSheetList() {
+  const list = document.getElementById('music-sheet-list');
+  if (!list) return;
+  const arr = musicPlaylistsCache;
+  list.innerHTML = arr.length ? arr.map(pl => {
+    const cnt = pl.tracks ? Object.keys(pl.tracks).length : 0;
+    return `
+    <button onclick="musicSheetAdd('${musicEscJs(pl.id)}')" class="w-full text-left bg-[#f0f4f9] rounded-2xl p-3 flex items-center gap-3 active:opacity-80 mb-2">
+      <div class="w-10 h-10 rounded-xl bg-[#2F33B8]/10 text-[#2F33B8] flex items-center justify-center shrink-0">${MUSIC_PLAYLIST_ICON}</div>
+      <div class="min-w-0 flex-1">
+        <p class="text-[14px] font-extrabold text-[#1c2b4a] truncate">${musicEsc(pl.name || 'Sin nombre')}</p>
+        <p class="text-[11px] text-[#7b878f] font-semibold">${cnt} ${cnt === 1 ? 'canción' : 'canciones'}</p>
+      </div>
+    </button>`;
+  }).join('') : '<p class="text-center text-[#7b878f] text-sm font-semibold py-4">Crea tu primera playlist arriba.</p>';
+}
+window.musicSheetAdd = function (playlistId) {
+  if (musicSheetTrackId) musicAddTrackToPlaylist(playlistId, musicSheetTrackId);
+};
+window.musicAddTrackToPlaylist = async function (playlistId, trackId) {
+  try {
+    const ref = musicDb().ref('musicPlaylists/' + playlistId);
+    const snap = await ref.once('value');
+    const pl = snap.val();
+    if (!pl || pl.uid !== musicCurrentUid()) { if (typeof showMiniToast === 'function') showMiniToast('No se pudo agregar'); return; }
+    const tracks = pl.tracks || {};
+    if (tracks[trackId]) { if (typeof showMiniToast === 'function') showMiniToast('Ya está en esa playlist'); musicHidePlaylistSheet(); return; }
+    tracks[trackId] = Date.now();
+    await ref.update({ tracks, updatedAt: Date.now() });
+    if (typeof showMiniToast === 'function') showMiniToast('Agregada a la playlist');
+    musicHidePlaylistSheet();
+    loadMusicPlaylists();
+  } catch (_) { if (typeof showMiniToast === 'function') showMiniToast('No se pudo agregar'); }
+};
+window.musicSheetCreate = async function () {
+  const inp = document.getElementById('music-newplaylist-name');
+  const id = await musicCreatePlaylist((inp?.value || '').trim());
+  if (!id) return;
+  if (musicSheetTrackId) await musicAddTrackToPlaylist(id, musicSheetTrackId);
+  else musicHidePlaylistSheet();
+};
 
 /* ---------- Mi música ---------- */
 function loadMyMusic() {
@@ -36462,7 +36757,7 @@ function musicGetAudioUrl(trackId) {
   });
 }
 window.musicPlayFromList = function (ctx, idx) {
-  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicMineCache : musicSearchCache;
+  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicMineCache : ctx === 'top' ? musicTopCache : ctx === 'playlist' ? (musicPlaylistDetailCache ? musicPlaylistDetailCache.tracks : []) : musicSearchCache;
   if (!arr || !arr[idx]) return;
   musicQueue = arr.slice();
   musicQueueIdx = idx;
@@ -36501,6 +36796,10 @@ function musicStartTrack(t) {
   musicLoadVoteState();
   musicSyncShuffleRepeatUI();
   adsterraInjectMusicSlot();
+  try {
+    const nAd = Math.max(2, (typeof ADSTERRA !== 'undefined' && ADSTERRA && (ADSTERRA.musicAdEveryN | 0)) || 3);
+    if (typeof musicSongsSinceAd !== 'undefined' && musicSongsSinceAd === nAd - 1 && typeof musicPreloadAdBreak === 'function') musicPreloadAdBreak();
+  } catch (_) {}
   openMusicPlayerFull();
   // Cargar y reproducir
   const playBtn = document.getElementById('music-play-btn');
@@ -36621,8 +36920,20 @@ function musicShowAdBreak(next) {
   const v = document.getElementById('music-adbreak-view');
   const slot = document.getElementById('music-adbreak-slot');
   if (!v || !slot) { musicCloseAdBreak(); return; }
-  slot.innerHTML = '';
+  slot.innerHTML = '<div class="ad-shimmer"></div>';
+  let adMoved = false;
   try {
+    const pre = document.getElementById('music-adbreak-preload');
+    const preIfr = pre ? pre.querySelector('iframe') : null;
+    if (preIfr && preIfr.offsetWidth > 0) {
+      slot.appendChild(preIfr); /* mover: el anuncio ya cargó, aparece al instante */
+      adMoved = true;
+    }
+    if (pre) pre.innerHTML = '';
+  } catch (_) {}
+  try { musicAdBreakPreloaded = false; } catch (_) {}
+  try { if (typeof adsterraWatchShimmer === 'function') adsterraWatchShimmer(slot); } catch (_) {}
+  if (!adMoved) try {
     window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
     const sc = document.createElement('script');
     sc.type = 'text/javascript';
@@ -36784,6 +37095,42 @@ window.musicStopAndHide = function () {
   musicSyncPlayUI();
 };
 
+/* ---------- Anuncios instantáneos: shimmer + precarga ---------- */
+function adsterraWatchShimmer(slot) {
+  try {
+    if (!slot) return;
+    if (slot.querySelector('iframe')) { const s0 = slot.querySelector('.ad-shimmer'); if (s0) s0.remove(); return; }
+    const mo = new MutationObserver(function () {
+      try {
+        if (slot.querySelector('iframe')) {
+          const sh = slot.querySelector('.ad-shimmer');
+          if (sh) sh.remove();
+          mo.disconnect();
+        }
+      } catch (_) {}
+    });
+    mo.observe(slot, { childList: true, subtree: true });
+    setTimeout(function () { try { mo.disconnect(); } catch (_) {} }, 15000);
+  } catch (_) {}
+}
+/* Precarga del banner de la pausa publicitaria durante la canción anterior:
+   cuando llegue la pausa, el iframe ya está listo y se muestra al instante. */
+var musicAdBreakPreloaded = false;
+function musicPreloadAdBreak() {
+  try {
+    if (musicAdBreakPreloaded) return;
+    if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.bannerKey) return;
+    const pre = document.getElementById('music-adbreak-preload');
+    if (!pre) return;
+    if (pre.querySelector('iframe') || pre.querySelector('script')) { musicAdBreakPreloaded = true; return; }
+    musicAdBreakPreloaded = true;
+    window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
+    const sc = document.createElement('script');
+    sc.type = 'text/javascript';
+    sc.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
+    pre.appendChild(sc);
+  } catch (_) {}
+}
 /* ---------- Adsterra en el reproductor ---------- */
 function adsterraInjectMusicSlot() {
   if (adsterraMusicInjected) return;
@@ -36794,6 +37141,7 @@ function adsterraInjectMusicSlot() {
   const card = document.getElementById('adsterra-music-card');
   if (card) card.style.display = 'block';
   slot.style.display = 'flex';
+  adsterraWatchShimmer(slot);
   window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
   const s = document.createElement('script');
   s.type = 'text/javascript';
