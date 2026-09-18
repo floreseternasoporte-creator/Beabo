@@ -35658,7 +35658,6 @@ async function endFiesta() {
       <!-- Tabs estilo borradores -->
       <div class="px-4 pb-2 flex gap-2">
         <button id="music-tab-btn-explore" onclick="musicSwitchTab('explore')" class="music-tab-btn active">Explorar</button>
-        <button id="music-tab-btn-playlists" onclick="musicSwitchTab('playlists')" class="music-tab-btn">Playlists</button>
         <button id="music-tab-btn-mine" onclick="musicSwitchTab('mine')" class="music-tab-btn">Mi música</button>
       </div>
       <div id="music-explore-searchbar" class="px-4 pb-3">
@@ -35678,11 +35677,15 @@ async function endFiesta() {
       </div>
       <div id="music-explore-list" class="space-y-2"></div>
     </div>
-    <div id="music-playlists-pane" class="hidden px-4">
-      <button onclick="musicShowPlaylistSheet(null)" class="w-full h-12 rounded-full bg-[#2F33B8] text-white font-extrabold text-[14px] active:opacity-80 mb-4">＋ Nueva playlist</button>
-      <div id="music-playlists-list" class="space-y-2"></div>
-    </div>
     <div id="music-mine-pane" class="hidden px-4">
+      <div class="mb-5">
+        <div class="flex items-center justify-between mb-2 px-1">
+          <h3 class="text-[15px] font-extrabold text-[#1c2b4a]">Tus playlists</h3>
+          <button onclick="musicShowPlaylistSheet(null)" class="text-[13px] font-extrabold text-[#2F33B8] active:opacity-80">＋ Nueva</button>
+        </div>
+        <div id="music-playlists-carousel" class="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4" style="scrollbar-width:none;-webkit-overflow-scrolling:touch;"></div>
+      </div>
+      <h3 class="text-[15px] font-extrabold text-[#1c2b4a] mb-2 px-1">Tus canciones</h3>
       <button onclick="openMusicUpload()" class="w-full h-12 rounded-full bg-[#2F33B8] text-white font-extrabold text-[15px] active:opacity-80 transition shadow-lg shadow-[#2F33B8]/25 mb-2">+ Subir música</button>
       <p class="text-xs text-[#7b878f] mb-4 text-center">Puedes subir hasta 2 canciones por día.</p>
       <div id="music-mine-list" class="space-y-2"></div>
@@ -35792,6 +35795,10 @@ async function endFiesta() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
         </button>
       </div>
+      <button id="music-player-comments-row" onclick="musicOpenTrackComments()" class="hidden mt-3 items-center gap-2 px-4 h-10 rounded-full bg-white border border-[#e7ecf3] text-[13px] font-bold text-[#1c2b4a] active:opacity-80 shadow-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[#2F33B8]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        <span id="music-player-comments-label">Comentarios</span>
+      </button>
     </div>
     <div>
       <input id="music-seek" type="range" min="0" max="1000" value="0" class="music-seek w-full" aria-label="Progreso">
@@ -36059,15 +36066,13 @@ window.closeMusicSection = function () {
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
 };
 window.musicSwitchTab = function (tab) {
-  const exp = tab === 'explore', pl = tab === 'playlists', mine = tab === 'mine';
+  const exp = tab === 'explore';
   document.getElementById('music-explore-pane')?.classList.toggle('hidden', !exp);
-  document.getElementById('music-playlists-pane')?.classList.toggle('hidden', !pl);
-  document.getElementById('music-mine-pane')?.classList.toggle('hidden', !mine);
+  document.getElementById('music-mine-pane')?.classList.toggle('hidden', exp);
   document.getElementById('music-explore-searchbar')?.classList.toggle('hidden', !exp);
   document.getElementById('music-tab-btn-explore')?.classList.toggle('active', exp);
-  document.getElementById('music-tab-btn-playlists')?.classList.toggle('active', pl);
-  document.getElementById('music-tab-btn-mine')?.classList.toggle('active', mine);
-  if (exp) loadExploreMusic(); else if (pl) loadMusicPlaylists(); else loadMyMusic();
+  document.getElementById('music-tab-btn-mine')?.classList.toggle('active', !exp);
+  if (exp) loadExploreMusic(); else loadMyMusic();
 };
 
 /* ---------- Filas de canciones ---------- */
@@ -36164,42 +36169,77 @@ function renderMusicTop() {
   list.innerHTML = scored.map((x, i) => musicTopRowHTML(x.t, i)).join('');
 }
 
+/* ---------- Comentarios de la cancion = comentarios de su post ---------- */
+function musicLoadTrackComments() {
+  const row = document.getElementById('music-player-comments-row');
+  const label = document.getElementById('music-player-comments-label');
+  if (!row) return;
+  const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
+  const annId = t && t.announceNoteId;
+  if (!annId) { row.classList.add('hidden'); row.classList.remove('flex'); return; }
+  row.classList.remove('hidden'); row.classList.add('flex');
+  if (label) label.textContent = 'Comentarios';
+  try {
+    musicDb().ref('communityNotes/' + annId + '/commentsCount').once('value').then(snap => {
+      const c = Number(snap.val() || 0);
+      if (label) label.textContent = c + (c === 1 ? ' comentario' : ' comentarios');
+    }).catch(() => {});
+  } catch (_) {}
+}
+window.musicOpenTrackComments = function () {
+  const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
+  const annId = t && t.announceNoteId;
+  if (!annId) { if (typeof showMiniToast === 'function') showMiniToast('Esta canción aún no tiene publicación'); return; }
+  try { if (typeof minimizeMusicPlayer === 'function') minimizeMusicPlayer(); } catch (_) {}
+  try {
+    if (typeof openCommentsView === 'function') {
+      openCommentsView(annId);
+      const cv = document.getElementById('comments-view');
+      if (cv) cv.style.zIndex = '170';
+    }
+  } catch (_) {}
+};
 /* ---------- Playlists ---------- */
 var musicPlaylistsCache = [];
 var musicPlaylistDetailCache = null;
 var musicSheetTrackId = null;
 const MUSIC_PLAYLIST_ICON = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg>';
 window.loadMusicPlaylists = function () {
-  const list = document.getElementById('music-playlists-list');
-  if (!list) return;
+  const car = document.getElementById('music-playlists-carousel');
+  if (!car) return;
   const uid = musicCurrentUid();
-  if (!uid) { list.innerHTML = musicEmptyHTML('Inicia sesión para crear playlists.'); return; }
-  list.innerHTML = '<div class="py-10 text-center text-[#7b878f] text-sm font-semibold">Cargando playlists…</div>';
+  if (!uid) { car.innerHTML = ''; return; }
   musicDb().ref('musicPlaylists').orderByChild('uid').equalTo(uid).once('value').then(snap => {
     const arr = [];
     snap.forEach(ch => arr.push({ ...(ch.val() || {}), id: ch.key }));
     arr.sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0));
     musicPlaylistsCache = arr;
     renderMusicPlaylists();
-  }).catch(() => { list.innerHTML = musicEmptyHTML('No se pudieron cargar las playlists.'); });
+    try { renderMusicSheetList(); } catch (_) {}
+  }).catch(() => {});
 };
+function musicPlaylistCardHTML(pl) {
+  const cnt = pl.tracks ? Object.keys(pl.tracks).length : 0;
+  return `
+  <div onclick="musicOpenPlaylist('${musicEscJs(pl.id)}')" class="shrink-0 w-32 cursor-pointer active:opacity-80">
+    <div class="w-32 h-32 rounded-2xl bg-[#2F33B8]/10 text-[#2F33B8] flex items-center justify-center mb-2">${MUSIC_PLAYLIST_ICON}</div>
+    <p class="text-[13px] font-extrabold text-[#1c2b4a] truncate">${musicEsc(pl.name || 'Sin nombre')}</p>
+    <p class="text-[11px] text-[#7b878f] font-semibold">${cnt} ${cnt === 1 ? 'canción' : 'canciones'}</p>
+  </div>`;
+}
 function renderMusicPlaylists() {
-  const list = document.getElementById('music-playlists-list');
-  if (!list) return;
-  const arr = musicPlaylistsCache;
-  if (!arr.length) { list.innerHTML = musicEmptyHTML('Aún no tienes playlists. Crea la primera con el botón de arriba.'); return; }
-  list.innerHTML = arr.map(pl => {
-    const cnt = pl.tracks ? Object.keys(pl.tracks).length : 0;
-    return `
-    <div onclick="musicOpenPlaylist('${musicEscJs(pl.id)}')" class="bg-white rounded-2xl border border-[#e7ecf3] p-3 flex items-center gap-3 active:opacity-80 cursor-pointer">
-      <div class="w-12 h-12 rounded-xl bg-[#2F33B8]/10 text-[#2F33B8] flex items-center justify-center shrink-0">${MUSIC_PLAYLIST_ICON}</div>
-      <div class="min-w-0 flex-1">
-        <p class="text-[14px] font-extrabold text-[#1c2b4a] truncate">${musicEsc(pl.name || 'Sin nombre')}</p>
-        <p class="text-[12px] text-[#7b878f] font-semibold">${cnt} ${cnt === 1 ? 'canción' : 'canciones'}</p>
-      </div>
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#b6c0d1] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-    </div>`;
-  }).join('');
+  const car = document.getElementById('music-playlists-carousel');
+  if (!car) return;
+  const newCard = `
+  <button onclick="musicShowPlaylistSheet(null)" class="shrink-0 w-32 text-left active:opacity-80">
+    <div class="w-32 h-32 rounded-2xl bg-white border-2 border-dashed border-[#c9d4e2] text-[#2F33B8] flex flex-col items-center justify-center gap-1 mb-2">
+      <span class="text-[26px] leading-none font-extrabold">＋</span>
+      <span class="text-[11px] font-bold">Nueva</span>
+    </div>
+    <p class="text-[13px] font-extrabold text-[#1c2b4a]">Crear playlist</p>
+    <p class="text-[11px] text-[#7b878f] font-semibold">&nbsp;</p>
+  </button>`;
+  car.innerHTML = newCard + musicPlaylistsCache.map(musicPlaylistCardHTML).join('');
 }
 window.musicCreatePlaylist = async function (name) {
   const uid = musicCurrentUid();
@@ -36369,6 +36409,7 @@ function loadMyMusic() {
     snap.forEach(ch => arr.push({ ...(ch.val() || {}), id: ch.key }));
     arr.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     musicMineCache = arr;
+    try { loadMusicPlaylists(); } catch (_) {}
     list.innerHTML = arr.length ? arr.map((t, i) => musicTrackRowHTML(t, i, 'mine', true)).join('') : musicEmptyHTML('Aún no publicas música. ¡Sube tu primera canción!');
   }).catch(() => {
     list.innerHTML = musicEmptyHTML('No se pudo cargar tu música.');
@@ -36794,6 +36835,7 @@ function musicStartTrack(t) {
   if (miniCover) { if (t.coverImage) miniCover.src = t.coverImage; else miniCover.removeAttribute('src'); }
   renderMusicQueueList();
   musicLoadVoteState();
+  try { musicLoadTrackComments(); } catch (_) {}
   musicSyncShuffleRepeatUI();
   adsterraInjectMusicSlot();
   try {
