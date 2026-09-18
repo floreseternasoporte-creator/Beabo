@@ -20023,6 +20023,10 @@ function saveNote() {
 "8 segundos":"8 seconds",
 "12 segundos":"12 seconds",
 "Playlist":"Playlist",
+"Traducir":"Translate",
+"Ver original":"View original",
+"Traducido del ":"Translated from ",
+"Escuchar":"Listen",
 "Agregar a playlist":"Add to playlist",
 "Cuenta verificada":"Verified account",
 "Esta cuenta es auténtica y está verificada por Drex.":"This account is authentic and verified by Drex.",
@@ -21968,6 +21972,10 @@ function saveNote() {
 "8 segundos":"8 秒",
 "12 segundos":"12 秒",
 "Playlist":"歌单",
+"Traducir":"翻译",
+"Ver original":"查看原文",
+"Traducido del ":"译自",
+"Escuchar":"收听",
 "Agregar a playlist":"添加到歌单",
 "Cuenta verificada":"已验证账号",
 "Esta cuenta es auténtica y está verificada por Drex.":"此账号真实有效，已通过 Drex 验证。",
@@ -34524,6 +34532,20 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
     });
   };
 
+  // Puente para que otras secciones (p. ej. la letra de canciones) usen la misma
+  // detección + traducción de Google que las publicaciones.
+  window.drexTranslateContent = async function (text) {
+    try {
+      if (!autoTranslateEnabled || !text || text.trim().length < 10) return null;
+      const detected = await detectLanguage(text);
+      if (!detected || detected === userPreferredLang) return null;
+      const translated = await translateText(text, detected, userPreferredLang);
+      if (!translated || translated === text) return null;
+      const info = WORLD_LANGUAGES.find(l => l.code === detected);
+      return { detected, translated, langName: info ? info.name.split(' ')[0] : detected.toUpperCase() };
+    } catch (_) { return null; }
+  };
+
   window.openTranslationsConfig = function() {
     const view = document.getElementById('translations-config-view');
     if (!view) return;
@@ -39666,11 +39688,18 @@ async function endFiesta() {
   <div class="absolute bottom-0 left-0 right-0 max-h-[78vh] flex flex-col bg-[#f0f4f9] rounded-t-3xl p-5 overflow-hidden" style="padding-bottom:calc(1.25rem + env(safe-area-inset-bottom));">
     <div class="flex items-center justify-between mb-1">
       <h3 class="text-[16px] font-extrabold text-[#1c2b4a]">Letra</h3>
-      <button onclick="musicCloseLyrics()" class="tap44 w-9 h-9 flex items-center justify-center rounded-full bg-black/5 text-[#1c2b4a] active:opacity-80" aria-label="Cerrar">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-      </button>
+      <div class="flex items-center gap-2">
+        <button id="music-lyrics-translate-btn" onclick="musicToggleLyricsTranslation()" class="hidden h-9 px-3 items-center gap-1.5 rounded-full bg-[#2F33B8]/10 text-[#2F33B8] text-[12px] font-extrabold active:opacity-80">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>
+          <span id="music-lyrics-translate-label">Traducir</span>
+        </button>
+        <button onclick="musicCloseLyrics()" class="tap44 w-9 h-9 flex items-center justify-center rounded-full bg-black/5 text-[#1c2b4a] active:opacity-80" aria-label="Cerrar">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
     </div>
-    <p id="music-lyrics-title" class="text-[13px] text-[#7b878f] font-semibold mb-3"></p>
+    <p id="music-lyrics-title" class="text-[13px] text-[#7b878f] font-semibold mb-2"></p>
+    <div id="music-lyrics-trans-badge" class="hidden mb-2"><span class="inline-flex items-center gap-1 text-[10px] font-semibold text-[#6b7280] bg-white px-2 py-0.5 rounded-full"></span></div>
     <div class="overflow-y-auto"><p id="music-lyrics-text" class="whitespace-pre-wrap text-[14px] leading-relaxed text-[#1c2b4a]"></p></div>
   </div>
 </div>
@@ -41704,15 +41733,61 @@ function musicLoadTrackLyrics() {
   if (lyrics) { row.classList.remove('hidden'); row.classList.add('flex'); }
   else { row.classList.add('hidden'); row.classList.remove('flex'); }
 }
+var musicLyricsState = { original: '', translated: null, showing: 'original', langName: '' };
+function musicPaintLyrics() {
+  const textEl = document.getElementById('music-lyrics-text');
+  const badgeWrap = document.getElementById('music-lyrics-trans-badge');
+  const btn = document.getElementById('music-lyrics-translate-btn');
+  const label = document.getElementById('music-lyrics-translate-label');
+  const T = (typeof appT === 'function') ? appT : (s => s);
+  if (!textEl) return;
+  if (musicLyricsState.showing === 'translated' && musicLyricsState.translated) {
+    textEl.textContent = musicLyricsState.translated;
+    if (badgeWrap) {
+      badgeWrap.classList.remove('hidden');
+      const sp = badgeWrap.querySelector('span');
+      if (sp) sp.textContent = T('Traducido del ') + musicLyricsState.langName;
+    }
+    if (btn) { btn.classList.remove('hidden'); btn.classList.add('flex'); }
+    if (label) label.textContent = T('Ver original');
+  } else {
+    textEl.textContent = musicLyricsState.original;
+    if (badgeWrap) badgeWrap.classList.add('hidden');
+    if (musicLyricsState.translated) {
+      if (btn) { btn.classList.remove('hidden'); btn.classList.add('flex'); }
+      if (label) label.textContent = T('Traducir');
+    } else {
+      if (btn) { btn.classList.add('hidden'); btn.classList.remove('flex'); }
+    }
+  }
+}
+window.musicToggleLyricsTranslation = function () {
+  if (!musicLyricsState.translated) return;
+  musicLyricsState.showing = musicLyricsState.showing === 'translated' ? 'original' : 'translated';
+  musicPaintLyrics();
+};
 window.musicOpenLyrics = function () {
   const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
   const lyrics = t && t.lyrics ? String(t.lyrics).trim() : '';
   if (!lyrics) return;
+  musicLyricsState = { original: lyrics, translated: null, showing: 'original', langName: '' };
   const titleEl = document.getElementById('music-lyrics-title');
-  const textEl = document.getElementById('music-lyrics-text');
   if (titleEl) titleEl.textContent = (t.title || 'Sin título') + ' — ' + (t.artistName || t.authorName || '');
-  if (textEl) textEl.textContent = lyrics;
+  musicPaintLyrics();
   document.getElementById('music-lyrics-sheet')?.classList.remove('hidden');
+  // Misma traducción automática de las publicaciones: si la letra está en otro idioma,
+  // se traduce sola y se puede volver al original con el botón.
+  if (typeof window.drexTranslateContent === 'function') {
+    window.drexTranslateContent(lyrics).then(res => {
+      if (!res || !res.translated) return;
+      if (musicLyricsState.original !== lyrics) return; // ya abrió otra letra
+      if (document.getElementById('music-lyrics-sheet')?.classList.contains('hidden')) return;
+      musicLyricsState.translated = res.translated;
+      musicLyricsState.langName = res.langName;
+      musicLyricsState.showing = 'translated';
+      musicPaintLyrics();
+    }).catch(() => {});
+  }
 };
 window.musicCloseLyrics = function () { document.getElementById('music-lyrics-sheet')?.classList.add('hidden'); };
 /* ---------- Temporizador de apagado ---------- */
