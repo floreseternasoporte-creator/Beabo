@@ -12258,7 +12258,7 @@ function saveNote() {
             <div class="drex-post-actions">
               <button onclick="openCommentsView('${note.id}')" class="drex-action-pill" aria-label="Ver comentarios">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.8c0 4.3-3.9 7.7-8.7 7.7-1 0-2-.2-2.9-.5L4 20.5l1.2-3.4c-.8-1.3-1.2-2.7-1.2-4.3 0-4.3 3.9-7.8 8.7-7.8S21 7.5 21 11.8z"/></svg>
-                <span>${commentsCount}</span>
+                <span id="commentscount-${note.id}">${commentsCount}</span>
               </button>
               <button onclick="toggleRepost('${note.id}')" id="repost-${note.id}" class="drex-action-pill repost-btn ${hasReposted ? 'active' : ''}" aria-label="Repostear publicación">
                 <svg class="repost-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -12382,6 +12382,10 @@ function saveNote() {
                   repostBtn.classList.toggle('active', hasReposted);
                   if (repostSpan) repostSpan.textContent = Number(note.repostsCount || 0);
               }
+
+              // Comentarios en tiempo real: el conteo también llega por el
+              // listener; se propaga a todas las instancias visibles.
+              setCommentsCountUI(note.id, note.commentsCount);
 
               return;
           }
@@ -16048,6 +16052,17 @@ function saveNote() {
       setCommentSubmitting(false);
     });
   }
+  // COMENTARIOS EN TIEMPO REAL: actualiza el número en TODAS las instancias
+  // visibles de la tarjeta (feed, vista de comentarios, permalink, perfil),
+  // siguiendo el mismo patrón que votePost usa con [id="score-..."].
+  function setCommentsCountUI(noteId, count) {
+    if (!noteId) return;
+    const n = String(Math.max(0, Number(count) || 0));
+    document.querySelectorAll('[id="commentscount-' + noteId + '"]').forEach(el => {
+      el.textContent = n;
+    });
+  }
+
   function updateCommentsCount(noteId) {
     DrexCloud.database().ref('postComments/' + noteId).once('value').then(snapshot => {
       let totalCount = 0;
@@ -16063,6 +16078,8 @@ function saveNote() {
       DrexCloud.database().ref('communityNotes/' + noteId).update({
         commentsCount: totalCount
       });
+      // Optimista: la UI se actualiza al instante sin esperar el eco del listener.
+      setCommentsCountUI(noteId, totalCount);
 
     });
   }
@@ -32508,7 +32525,7 @@ function _renderPostPermalinkCard(note) {
             </div>
             <button onclick="openCommentsView('${note.id}')" class="flex items-center gap-1.5 hover:text-[#5c6974] transition-colors text-[#6b7280]" min-h-[44px]">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.8c0 4.3-3.9 7.7-8.7 7.7-1 0-2-.2-2.9-.5L4 20.5l1.2-3.4c-.8-1.3-1.2-2.7-1.2-4.3 0-4.3 3.9-7.8 8.7-7.8S21 7.5 21 11.8z"/><circle cx="8.6" cy="11.8" r="1.2" fill="currentColor" stroke="none"/><circle cx="12.7" cy="11.8" r="1.2" fill="currentColor" stroke="none"/><circle cx="16.8" cy="11.8" r="1.2" fill="currentColor" stroke="none"/></svg>
-              <span class="text-sm font-bold">${commentsCount}</span>
+              <span id="commentscount-${note.id}" class="text-sm font-bold">${commentsCount}</span>
             </button>
             <button onclick="toggleRepost('${note.id}')" id="repost-${note.id}" class="repost-btn" aria-label="Repostear publicación">
               <svg class="repost-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
