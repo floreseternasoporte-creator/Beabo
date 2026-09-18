@@ -4273,6 +4273,12 @@ document.addEventListener("DOMContentLoaded", function() {
           <div id="feed-tab-indicator"></div>
         </div>
       </div>
+      <div id="flair-filter-chip" class="hidden max-w-[680px] mx-auto px-4 pb-2">
+        <button type="button" onclick="clearFlairFilter()" class="inline-flex items-center gap-1.5 bg-[#1c2b4a] text-white text-xs font-bold rounded-full pl-3 pr-2 py-1.5" aria-label="Quitar filtro de etiqueta">
+          <span id="flair-filter-text">Etiqueta</span>
+          <span aria-hidden="true" class="text-base leading-none font-black">&times;</span>
+        </button>
+      </div>
       <div id="adsterra-feed-top" class="adsterra-slot max-w-[680px] mx-auto" style="display:none;"></div>
       <div id="feed-pull-indicator" class="hidden py-1 text-center"></div>
       <div id="notes-feed" class="drex-feed-list max-w-[680px] mx-auto pb-24"></div>
@@ -4623,6 +4629,63 @@ document.addEventListener("DOMContentLoaded", function() {
     .drex-action-pill:hover { background: #e7edf5; }
     .drex-action-pill:active { opacity: .8; }
     .drex-action-pill svg { width: 16px; height: 16px; flex-shrink: 0; }
+    /* Etiquetas (flair) estilo Reddit */
+    .drex-flair-pill {
+      display: inline-flex; align-items: center;
+      font-size: 11px; font-weight: 800; line-height: 1;
+      padding: 5px 10px; border-radius: 9999px;
+      white-space: nowrap; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .drex-flair-pill:active { opacity: .75; }
+    /* Spoiler: difumina el contenido hasta que se toca */
+    .drex-spoiler { position: relative; }
+    .drex-spoiler-blur { filter: blur(18px); pointer-events: none; user-select: none; }
+    .drex-spoiler.revealed .drex-spoiler-blur { filter: none; pointer-events: auto; user-select: auto; }
+    .drex-spoiler-overlay {
+      position: absolute; inset: 0; z-index: 2;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(20, 28, 45, 0.28); border-radius: 12px; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .drex-spoiler.revealed .drex-spoiler-overlay { display: none; }
+    .drex-spoiler-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,.96); border-radius: 9999px;
+      padding: 10px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.25);
+      color: #1c2b4a; font-size: 13px; font-weight: 800;
+    }
+    .drex-spoiler-badge svg { width: 18px; height: 18px; flex-shrink: 0; }
+    .drex-spoiler-hint { font-weight: 600; color: #7b878f; }
+    /* Premios estilo Reddit */
+    .drex-awards-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px; }
+    .drex-award-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #fdf6ec; border: 1px solid #f3e2c7; border-radius: 9999px;
+      padding: 4px 9px 4px 6px; font-size: 12px; font-weight: 800; color: #92610f;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+    }
+    .drex-award-badge:active { opacity: .75; }
+    /* Composer: chips de etiqueta + toggle de spoiler */
+    #note-flair-row { scrollbar-width: none; }
+    #note-flair-row::-webkit-scrollbar { display: none; }
+    .note-flair-chip {
+      flex-shrink: 0; font-size: 12.5px; font-weight: 700;
+      padding: 8px 14px; border-radius: 9999px; min-height: 40px;
+      background: var(--flair-bg); color: var(--flair-fg);
+      border: 2px solid transparent; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .note-flair-chip.selected { border-color: #1c2b4a; }
+    .note-spoiler-toggle {
+      flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12.5px; font-weight: 700; min-height: 40px;
+      padding: 8px 14px; border-radius: 9999px;
+      background: #eef1f6; color: #5c6974; border: 2px solid transparent; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .note-spoiler-toggle svg { width: 16px; height: 16px; }
+    .note-spoiler-toggle.active { background: #1c2b4a; color: #fff; }
     .drex-action-pill.repost-btn.active {
       background: #e8f4ff;
       color: #2F33B8;
@@ -5882,6 +5945,16 @@ if (scrollArea) {
   </div>
 </div>
 
+<!-- Premios de publicacion estilo Reddit -->
+<div id="post-award-sheet-overlay" class="hidden fixed inset-0 bg-black/40 z-[200] flex items-end justify-center" onclick="if(event.target===this) closeAwardSheet()">
+  <div class="bg-white rounded-t-3xl w-full max-w-md px-4 pt-3" style="padding-bottom:max(1.5rem,env(safe-area-inset-bottom));">
+    <div class="w-10 h-1 rounded-full bg-[#dce1e5] mx-auto mb-3"></div>
+    <h3 id="award-sheet-title" class="font-bold text-[#1c2b4a] text-sm text-center mb-1">Dar un premio</h3>
+    <p id="award-sheet-sub" class="text-xs text-[#7b878f] text-center mb-3">Reconoce una gran publicaci&oacute;n. Puedes dar cada premio una vez por publicaci&oacute;n.</p>
+    <div id="award-sheet-list" class="flex flex-col gap-1"></div>
+  </div>
+</div>
+
 <!-- ============ PRACTICAR IDIOMAS (estilo Busuu: correcciones de la comunidad) ============ -->
 <div id="practicar-view" class="fixed inset-0 bg-[#f0f4f9] text-[#1c2b4a] overflow-y-auto hidden z-50">
   <div class="max-w-3xl mx-auto pb-32">
@@ -6261,6 +6334,8 @@ if (scrollArea) {
         style="min-height:180px;"
       ></textarea>
 
+      <!-- Etiqueta estilo Reddit + spoiler -->
+      <div id="note-flair-row" class="flex items-center gap-2 overflow-x-auto pb-3 pt-1" style="scrollbar-width:none;-webkit-overflow-scrolling:touch;"></div>
 
       <!-- Preview de imagen -->
       <div id="image-preview-fullscreen" class="hidden mb-4">
@@ -7124,6 +7199,8 @@ if (scrollArea) {
           <button onclick="openMyFollowersModal()" class="tap44 relative whitespace-nowrap active:opacity-60 transition"><span id="profile-followers" class="font-extrabold text-[#1c2b4a]">0</span> seguidores</button>
           <span class="text-[#c3ccd6]">·</span>
           <button onclick="openMyFollowingModal()" class="tap44 relative whitespace-nowrap active:opacity-60 transition"><span id="profile-following" class="font-extrabold text-[#1c2b4a]">0</span> siguiendo</button>
+          <span class="text-[#c3ccd6]">&middot;</span>
+          <span class="whitespace-nowrap"><span id="profile-karma" class="font-extrabold text-[#1c2b4a]">0</span> karma</span>
         </div>
         <!-- Acciones -->
         <div class="flex items-center gap-2 mt-4 w-full max-w-xs">
@@ -7414,6 +7491,8 @@ if (scrollArea) {
           <button onclick="openFollowersModal()" class="tap44 relative whitespace-nowrap active:opacity-60 transition"><span id="author-followers" class="font-bold text-black">0</span> seguidores</button>
           <span class="text-gray-300">·</span>
           <button onclick="openFollowingModal()" class="tap44 relative whitespace-nowrap active:opacity-60 transition"><span id="author-following" class="font-bold text-black">0</span> seguidos</button>
+          <span class="text-gray-300">·</span>
+          <span class="whitespace-nowrap"><span id="author-karma" class="font-bold text-black">0</span> karma</span>
         </div>
 
         <!-- Botón de acción -->
@@ -9685,6 +9764,9 @@ function saveNote() {
     onNoteFormatChange(startFormat);
 
     selectNoteAudience('public');
+    selectedNoteFlair = null;
+    notePostIsSpoiler = false;
+    renderNoteFlairRow();
     // El editor siempre arranca sin fotos ni GIF heredados: un adjunto
     // descartado antes no debe publicarse invisiblemente con el siguiente
     // post (los borradores no guardan GIFs).
@@ -10725,6 +10807,8 @@ function saveNote() {
       };
 
       note.format = currentNoteFormat;
+      if (selectedNoteFlair) note.flair = selectedNoteFlair;
+      if (notePostIsSpoiler) note.spoiler = true;
       const audienceConfig = getCurrentAudienceConfig();
       note.audience = {
         id: audienceConfig.id,
@@ -10843,6 +10927,9 @@ function saveNote() {
 
   function switchFeedTab(tab) {
     currentFeedTab = tab;
+    // Cambiar de tab limpia el filtro por etiqueta.
+    currentFeedFlairFilter = null;
+    try { document.getElementById('flair-filter-chip')?.classList.add('hidden'); } catch (_) {}
     
     document.querySelectorAll('.feed-tab-btn').forEach(btn => {
       const btnTab = btn.dataset.tab;
@@ -12834,6 +12921,168 @@ function saveNote() {
   let _feedOlderObserver = null;
   // Contadores en vivo de tarjetas paginadas: teardown de la generación anterior.
   let _feedCardsTeardown = null;
+  // ============ FUNCIONES ESTILO REDDIT: etiquetas, spoiler, premios, karma ============
+  const DREX_POST_FLAIRS = [
+    { id: 'musica', es: 'M\u00fasica', en: 'Music', zh: '\u97f3\u4e50', bg: '#e3f0ff', fg: '#1d4ed8' },
+    { id: 'pregunta', es: 'Pregunta', en: 'Question', zh: '\u95ee\u9898', bg: '#ffedd5', fg: '#c2410c' },
+    { id: 'anuncio', es: 'Anuncio', en: 'Announcement', zh: '\u516c\u544a', bg: '#fee2e2', fg: '#b91c1c' },
+    { id: 'arte', es: 'Arte', en: 'Art', zh: '\u827a\u672f', bg: '#ede9fe', fg: '#6d28d9' },
+    { id: 'ayuda', es: 'Ayuda', en: 'Help', zh: '\u6c42\u52a9', bg: '#dcfce7', fg: '#15803d' },
+    { id: 'meme', es: 'Meme', en: 'Meme', zh: '\u6897\u56fe', bg: '#fef9c3', fg: '#a16207' },
+    { id: 'offtopic', es: 'Off-topic', en: 'Off-topic', zh: '\u95f2\u804a', bg: '#f1f5f9', fg: '#475569' }
+  ];
+  function drexLang() { return (typeof getAppLanguage === 'function' ? getAppLanguage() : 'es') || 'es'; }
+  function flairLabel(f) { const l = drexLang(); return l === 'en' ? f.en : (l === 'zh' ? f.zh : f.es); }
+  function getFlairById(id) { return DREX_POST_FLAIRS.find(f => f.id === id) || null; }
+
+  const DREX_AWARDS = [
+    { id: 'gold', es: 'Oro', en: 'Gold', zh: '\u91d1\u724c', svg: '<svg viewBox="0 0 24 24" class="w-5 h-5" aria-hidden="true"><path d="M8.6 9.2 6.2 2.5h3.6l2.2 4.6 2.2-4.6h3.6l-2.4 6.7" fill="#f59e0b"/><circle cx="12" cy="14.5" r="6" fill="#fbbf24"/><circle cx="12" cy="14.5" r="3.6" fill="#f59e0b"/></svg>' },
+    { id: 'silver', es: 'Plata', en: 'Silver', zh: '\u94f6\u724c', svg: '<svg viewBox="0 0 24 24" class="w-5 h-5" aria-hidden="true"><path d="M8.6 9.2 6.2 2.5h3.6l2.2 4.6 2.2-4.6h3.6l-2.4 6.7" fill="#94a3b8"/><circle cx="12" cy="14.5" r="6" fill="#cbd5e1"/><circle cx="12" cy="14.5" r="3.6" fill="#94a3b8"/></svg>' },
+    { id: 'heart', es: 'Coraz\u00f3n', en: 'Heart', zh: '\u7231\u5fc3', svg: '<svg viewBox="0 0 24 24" class="w-5 h-5" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#ef4444"/></svg>' },
+    { id: 'fire', es: 'En llamas', en: 'On fire', zh: '\u70ed\u95e8', svg: '<svg viewBox="0 0 24 24" class="w-5 h-5" aria-hidden="true"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z" fill="#f97316"/></svg>' }
+  ];
+  function awardLabel(a) { const l = drexLang(); return l === 'en' ? a.en : (l === 'zh' ? a.zh : a.es); }
+  function getAwardById(id) { return DREX_AWARDS.find(a => a.id === id) || null; }
+
+  // Estado del composer (etiqueta + spoiler).
+  let selectedNoteFlair = null;
+  let notePostIsSpoiler = false;
+
+  function renderNoteFlairRow() {
+    const row = document.getElementById('note-flair-row');
+    if (!row) return;
+    row.innerHTML =
+      '<button type="button" onclick="toggleNoteSpoiler()" aria-pressed="' + notePostIsSpoiler + '" class="note-spoiler-toggle ' + (notePostIsSpoiler ? 'active' : '') + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' +
+        '<span>' + appT3('Spoiler', 'Spoiler', '\u5267\u900f') + '</span>' +
+      '</button>' +
+      DREX_POST_FLAIRS.map(f =>
+        '<button type="button" onclick="selectNoteFlair(\'' + f.id + '\')" aria-pressed="' + (selectedNoteFlair === f.id) + '" class="note-flair-chip ' + (selectedNoteFlair === f.id ? 'selected' : '') + '" style="--flair-bg:' + f.bg + ';--flair-fg:' + f.fg + ';">' + escapeHtml(flairLabel(f)) + '</button>'
+      ).join('');
+  }
+  function selectNoteFlair(id) {
+    selectedNoteFlair = (selectedNoteFlair === id) ? null : id;
+    renderNoteFlairRow();
+  }
+  function toggleNoteSpoiler() {
+    notePostIsSpoiler = !notePostIsSpoiler;
+    renderNoteFlairRow();
+  }
+
+  // Pildora de etiqueta en la tarjeta (tocarla filtra el feed por etiqueta).
+  function renderPostFlairPill(note) {
+    const f = note && note.flair ? getFlairById(note.flair) : null;
+    if (!f) return '';
+    return '<button type="button" onclick="filterFeedByFlair(\'' + f.id + '\')" class="drex-flair-pill" style="background:' + f.bg + ';color:' + f.fg + ';" aria-label="' + escapeHtml(appT3('Filter by tag', 'Filtrar por etiqueta', '\u6309\u6807\u7b7e\u7b5b\u9009')) + '">' + escapeHtml(flairLabel(f)) + '</button>';
+  }
+
+  // Filtro de feed por etiqueta (ortogonal a Para ti / Siguiendo / Populares).
+  let currentFeedFlairFilter = null;
+  function filterFeedByFlair(flairId) {
+    const f = getFlairById(flairId);
+    if (!f) return;
+    try {
+      const pv = document.getElementById('post-permalink-view');
+      if (pv && !pv.classList.contains('hidden') && typeof closePostPermalink === 'function') closePostPermalink();
+      const ap = document.getElementById('author-profile-view');
+      if (ap && !ap.classList.contains('hidden') && typeof closeAuthorProfile === 'function') closeAuthorProfile();
+    } catch (_) {}
+    currentFeedFlairFilter = flairId;
+    const chip = document.getElementById('flair-filter-chip');
+    const label = document.getElementById('flair-filter-text');
+    if (label) label.textContent = appT3('Tag: ', 'Etiqueta: ', '\u6807\u7b7e\uff1a') + flairLabel(f);
+    if (chip) chip.classList.remove('hidden');
+    const tab = (typeof currentFeedTab === 'string' && currentFeedTab) ? currentFeedTab : 'foryou';
+    if (typeof loadNotes === 'function') loadNotes(false, tab);
+    showMiniToast(appT3('Showing posts tagged ', 'Mostrando publicaciones con la etiqueta ', '\u6b63\u5728\u663e\u793a\u6807\u7b7e\u4e3a') + flairLabel(f));
+  }
+  function clearFlairFilter() {
+    currentFeedFlairFilter = null;
+    const chip = document.getElementById('flair-filter-chip');
+    if (chip) chip.classList.add('hidden');
+    const tab = (typeof currentFeedTab === 'string' && currentFeedTab) ? currentFeedTab : 'foryou';
+    if (typeof loadNotes === 'function') loadNotes(false, tab);
+  }
+
+  // Spoiler: difumina texto + fotos + video hasta que se toca.
+  function wrapPostSpoiler(note, innerHTML) {
+    if (!note || !note.spoiler) return innerHTML;
+    return '<div class="drex-spoiler" data-spoiler-card="' + note.id + '">' +
+      '<div class="drex-spoiler-blur">' + innerHTML + '</div>' +
+      '<button type="button" class="drex-spoiler-overlay" onclick="revealPostSpoiler(\'' + note.id + '\')" aria-label="' + escapeHtml(appT3('Spoiler: tap to reveal', 'Spoiler: toca para ver', '\u5267\u900f\uff1a\u70b9\u51fb\u67e5\u770b')) + '">' +
+        '<span class="drex-spoiler-badge">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>' +
+          '<span>' + appT3('Spoiler', 'Spoiler', '\u5267\u900f') + '</span>' +
+          '<span class="drex-spoiler-hint">' + appT3('Tap to reveal', 'Toca para ver', '\u70b9\u51fb\u67e5\u770b') + '</span>' +
+        '</span>' +
+      '</button>' +
+    '</div>';
+  }
+  function revealPostSpoiler(noteId) {
+    document.querySelectorAll('[data-spoiler-card="' + noteId + '"]').forEach(el => el.classList.add('revealed'));
+  }
+
+  // Premios estilo Reddit: cada usuario puede dar cada premio una vez por post.
+  let _awardSheetNoteId = null;
+  function renderPostAwardBadges(note) {
+    const awards = (note && note.awards) || {};
+    const items = DREX_AWARDS.filter(a => Number(awards[a.id] || 0) > 0);
+    if (!items.length) return '';
+    return '<div class="drex-awards-row">' + items.map(a =>
+      '<button type="button" class="drex-award-badge" onclick="openAwardSheet(\'' + note.id + '\')" aria-label="' + escapeHtml(awardLabel(a)) + '">' +
+        a.svg + '<span>' + formatNumber(Number(awards[a.id] || 0)) + '</span>' +
+      '</button>').join('') + '</div>';
+  }
+  function openAwardSheet(noteId) {
+    const user = DrexCloud.auth().currentUser;
+    if (!user) { showMiniToast(appT3('Sign in to give awards', 'Debes iniciar sesi\u00f3n para dar premios', '\u767b\u5f55\u540e\u5373\u53ef\u8d60\u9001\u5956\u9879')); return; }
+    _awardSheetNoteId = noteId;
+    const list = document.getElementById('award-sheet-list');
+    if (list) {
+      list.innerHTML = DREX_AWARDS.map(a =>
+        '<button type="button" onclick="givePostAward(\'' + noteId + '\',\'' + a.id + '\')" class="w-full flex items-center gap-3 px-3 py-3 rounded-2xl hover:bg-[#f0f4f9] active:bg-[#f0f4f9] text-left">' +
+          '<span class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style="background:#f6f8fb">' + a.svg + '</span>' +
+          '<span>' +
+            '<span class="block text-sm font-bold text-[#1c2b4a]">' + escapeHtml(awardLabel(a)) + '</span>' +
+            '<span class="block text-xs text-[#7b878f]">' + appT3('Tap to give this award', 'Toca para dar este premio', '\u70b9\u51fb\u8d60\u9001\u6b64\u5956\u9879') + '</span>' +
+          '</span>' +
+        '</button>').join('');
+    }
+    const title = document.getElementById('award-sheet-title');
+    if (title) title.textContent = appT3('Give an award', 'Dar un premio', '\u8d60\u9001\u5956\u9879');
+    const sub = document.getElementById('award-sheet-sub');
+    if (sub) sub.textContent = appT3('Recognize a great post. You can give each award once per post.', 'Reconoce una gran publicaci\u00f3n. Puedes dar cada premio una vez por publicaci\u00f3n.', '\u8868\u5f70\u4f18\u8d28\u5e16\u5b50\u3002\u6bcf\u79cd\u5956\u9879\u6bcf\u4e2a\u5e16\u5b50\u53ea\u80fd\u8d60\u9001\u4e00\u6b21\u3002');
+    const ov = document.getElementById('post-award-sheet-overlay');
+    if (ov) ov.classList.remove('hidden');
+  }
+  function closeAwardSheet() {
+    const ov = document.getElementById('post-award-sheet-overlay');
+    if (ov) ov.classList.add('hidden');
+    _awardSheetNoteId = null;
+  }
+  async function givePostAward(noteId, awardId) {
+    const user = DrexCloud.auth().currentUser;
+    if (!user || !getAwardById(awardId)) return;
+    closeAwardSheet();
+    const markerRef = DrexCloud.database().ref('postAwardedBy/' + noteId + '/' + awardId + '/' + user.uid);
+    let already = false;
+    try { already = await markerRef.once('value').then(s => s.exists()); } catch (_) {}
+    if (already) { showMiniToast(appT3('You already gave this award to this post', 'Ya diste este premio a esta publicaci\u00f3n', '\u4f60\u5df2\u7ed9\u6b64\u5e16\u5b50\u8d60\u9001\u8fc7\u8be5\u5956\u9879')); return; }
+    try {
+      const res = await DrexCloud.database().ref('communityNotes/' + noteId).transaction(note => {
+        if (!note) return undefined;
+        note.awards = note.awards || {};
+        note.awards[awardId] = Number(note.awards[awardId] || 0) + 1;
+        return note;
+      });
+      if (!res || !res.committed) { showMiniToast(appT3('Could not send the award. Try again.', 'No se pudo enviar el premio. Intenta de nuevo.', '\u8d60\u9001\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002')); return; }
+      await markerRef.set(true);
+      showMiniToast(appT3('Award sent', 'Premio enviado', '\u5956\u9879\u5df2\u8d60\u9001'));
+    } catch (e) {
+      showMiniToast(appT3('Could not send the award. Try again.', 'No se pudo enviar el premio. Intenta de nuevo.', '\u8d60\u9001\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002'));
+    }
+  }
+
   // Tarjeta de publicación estilo comunidad Drex: la comparten el feed,
   // los perfiles y cualquier otra superficie.
   // ctx = { user, userVote, hasReposted, avatarIdPrefix }.
@@ -12910,12 +13159,11 @@ function saveNote() {
               </div>`}
                 <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}${primaryCollab ? `<span class="font-normal text-[#7b878f]"> y </span>${escapeHtml(primaryCollab.name || 'Colaborador')}${getVerificationIconByAuthor('', primaryCollab.uid || '', 12)}` : ''}</button>
                 <span class="drex-post-time">· ${formatRelativeTime(safeTimestamp)}</span>
+                ${renderPostFlairPill(note)}
                 <span class="inline-flex items-center gap-1">${renderAuthorLanguageBadges(note, true)}</span>
               </div>
               ${renderNoteAnchoredMeta(note)}
-              ${note.content ? renderContentWithSticker(note.content, 'drex-post-title') : ''}
-            ${renderNoteImages(note, note.id)}
-            ${renderNoteVideo(note)}
+              ${wrapPostSpoiler(note, `${note.content ? renderContentWithSticker(note.content, 'drex-post-title') : ''}${renderNoteImages(note, note.id)}${renderNoteVideo(note)}${urlHTML}${renderFiestaCardHTML(note)}${renderMusicCardHTML(note)}`)}
             ${note.taggedPeople && note.taggedPeople.length ? `<div class="mb-3 flex items-center gap-2 flex-wrap">
               <span class="text-xs text-[#7b878f] font-semibold">Con:</span>
               ${note.taggedPeople.map(p => `<span class="inline-flex items-center gap-1 text-xs bg-white border border-[#dce1e5] rounded-full px-2 py-0.5 font-semibold text-[#24324c] cursor-pointer" onclick="openAuthorProfile('${escapeInlineSingleQuote(p.uid||'')}')">
@@ -12923,10 +13171,7 @@ function saveNote() {
                 ${escapeHtml(p.name||'')}${getVerificationIconByAuthor('', p.uid || '', 14)}
               </span>`).join('')}
             </div>` : ''}
-            ${urlHTML}
-            ${renderFiestaCardHTML(note)}
-            ${renderMusicCardHTML(note)}
-
+            ${renderPostAwardBadges(note)}
             <div class="drex-post-actions">
               <button onclick="openCommentsView('${note.id}')" class="drex-action-pill" aria-label="Ver comentarios">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.8c0 4.3-3.9 7.7-8.7 7.7-1 0-2-.2-2.9-.5L4 20.5l1.2-3.4c-.8-1.3-1.2-2.7-1.2-4.3 0-4.3 3.9-7.8 8.7-7.8S21 7.5 21 11.8z"/></svg>
@@ -12940,6 +13185,9 @@ function saveNote() {
                   <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
                 <span>${repostsCount}</span>
+              </button>
+              <button onclick="openAwardSheet('${note.id}')" class="drex-action-icon" aria-label="Dar premio">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/><path d="M12 8v13"/><path d="M12 8S10.5 3.5 7.8 3.5 5.5 8 8.2 8H12zm0 0s1.5-4.5 4.2-4.5S18.5 8 15.8 8H12z"/></svg>
               </button>
               <button onclick="openPostShareMenu('${note.id}')" class="drex-action-icon" aria-label="Compartir">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
@@ -13065,6 +13313,7 @@ function saveNote() {
       try {
         if (!rawNote || rawNote.groupId) return null;
         if (feedMode === 'following' && followingMap && !(rawNote.authorId && followingMap[rawNote.authorId])) return null;
+        if (currentFeedFlairFilter && rawNote.flair !== currentFeedFlairFilter) return null;
         const authorId = rawNote.authorId || rawNote.userId || '';
         if (authorId && authorId !== currentUserId) {
           const isPrivate = await isAccountPrivate(authorId);
@@ -14894,6 +15143,16 @@ function saveNote() {
         if (updatedNote) {
           const finalScore = Number(updatedNote.upvotes || 0) - Number(updatedNote.downvotes || 0);
           paintVoteUI(newVote === 'up', newVote === 'down', finalScore);
+        }
+        // KARMA estilo Reddit: los votos en publicaciones ajenas mueven el
+        // karma del autor (no cuenta el voto propio).
+        if (updatedNote && updatedNote.authorId && updatedNote.authorId !== user.uid) {
+          const karmaDelta = ((newVote === 'up' ? 1 : 0) - (currentVote === 'up' ? 1 : 0))
+            - ((newVote === 'down' ? 1 : 0) - (currentVote === 'down' ? 1 : 0));
+          if (karmaDelta !== 0) {
+            DrexCloud.database().ref('users/' + updatedNote.authorId + '/karma')
+              .transaction(k => (Number(k) || 0) + karmaDelta).catch(() => {});
+          }
         }
 
         if (
@@ -24652,6 +24911,8 @@ function saveNote() {
           });
           document.getElementById('profile-followers').textContent = formatNumber(data.followersCount || 0);
           document.getElementById('profile-following').textContent = formatNumber(data.followingCount || 0);
+          const profileKarmaEl = document.getElementById('profile-karma');
+          if (profileKarmaEl) profileKarmaEl.textContent = formatNumber(data.karma || 0);
 
           const usernameDesktop = document.getElementById('profile-username-desktop');
           const followersDesktop = document.getElementById('profile-followers-desktop');
@@ -32271,6 +32532,8 @@ function renderAccountsList(accounts) {
     if (authorFollowersNode) authorFollowersNode.textContent = '...';
     if (authorFollowingNode) authorFollowingNode.textContent = '...';
     if (authorPostsNode) authorPostsNode.textContent = '...';
+    const authorKarmaNode0 = document.getElementById('author-karma');
+    if (authorKarmaNode0) authorKarmaNode0.textContent = '...';
     if (authorLocationPill) {
       authorLocationPill.textContent = '';
       authorLocationPill.classList.add('hidden');
@@ -32363,6 +32626,8 @@ function renderAccountsList(accounts) {
       }
       authorFollowersNode.textContent = formatNumber(authorData.followersCount || 0);
       authorFollowingNode.textContent = formatNumber(authorData.followingCount || 0);
+      const authorKarmaNode = document.getElementById('author-karma');
+      if (authorKarmaNode) authorKarmaNode.textContent = formatNumber(authorData.karma || 0);
       authorBioNode.textContent = authorData.bio || authorData.info || 'Este usuario aún no ha agregado información.';
       const authorCountryCode = String(authorData.authorCountryCode || authorData.countryCode || '').toUpperCase();
       // La píldora de ubicación solo muestra lo que el chip de país no dice ya
