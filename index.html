@@ -5935,7 +5935,8 @@ if (scrollArea) {
 
 <!-- Composer: nuevo ejercicio -->
 <div id="practicar-composer-overlay" class="hidden fixed inset-0 bg-black/40 z-[200] flex items-end justify-center" onclick="if(event.target===this) closePracticarComposer()">
-  <div class="bg-white rounded-t-3xl w-full max-w-md px-4 pt-3 max-h-[92vh] overflow-y-auto" style="padding-bottom:max(1.5rem,env(safe-area-inset-bottom));">
+  <div class="relative bg-white rounded-t-3xl w-full max-w-md px-4 pt-3 max-h-[92vh] overflow-y-auto" style="padding-bottom:max(1.5rem,env(safe-area-inset-bottom));">
+    <button onclick="closePracticarComposer()" aria-label="Cerrar" class="absolute top-3 right-3 w-9 h-9 rounded-full bg-[#f0f4f9] text-[#4b5a6e] text-xl leading-none flex items-center justify-center active:opacity-70">×</button>
     <div class="w-10 h-1 rounded-full bg-[#dce1e5] mx-auto mb-3"></div>
     <h3 class="font-bold text-[#1c2b4a] text-base text-center mb-4">Nuevo ejercicio</h3>
     <label class="block text-xs font-bold text-[#7b878f] mb-1">Idioma que practicas</label>
@@ -11090,6 +11091,11 @@ function saveNote() {
     });
     player.addEventListener('loadedmetadata', () => {
       _videoModalRenderDur();
+      // Cachear solo cuando el video demuestra que carga: evita envenenar
+      // la caché con un dataUrl corrupto (la reapertura reintenta la descarga).
+      const nid = _videoModalNoteId;
+      const src = player.src || '';
+      if (nid && src.indexOf('data:video') === 0) _videoModalCache[nid] = src;
     });
     player.addEventListener('timeupdate', () => {
       const dur = player.duration || 0;
@@ -11101,9 +11107,14 @@ function saveNote() {
       _videoModalRenderDur();
     });
     player.addEventListener('error', () => {
+      const nid = _videoModalNoteId;
+      if (!nid) return; // error espurio por src vacío al abrir/cerrar
+      const src = player.getAttribute('src') || player.src || '';
+      if (!src) return;
+      delete _videoModalCache[nid]; // no reintentar con datos corruptos cacheados
       _videoModalLoading(false);
       showMiniToast(appT('No se pudo reproducir el video.'));
-      _videoModalBigPlay(true);
+      closeVideoModal(); // no dejar el modal clavado en un video que no reproduce
     });
     if (seek) {
       seek.addEventListener('input', () => {
@@ -11278,12 +11289,12 @@ function saveNote() {
     if (dur) dur.textContent = '0:00';
     _videoModalSetChrome(true);
     _videoModalBigPlay(false);
+    _videoModalPlayIcon(false);
     _videoModalLoading(true);
     modal.classList.remove('hidden');
     const cached = _videoModalCache[noteId];
     const startPlayback = (dataUrl) => {
       if (_videoModalNoteId !== noteId) return; // se cerró antes de terminar
-      _videoModalCache[noteId] = dataUrl;
       try { player.src = dataUrl; } catch (_) {}
       const pr = player.play();
       if (pr && pr.catch) pr.catch(() => {
@@ -11326,6 +11337,7 @@ function saveNote() {
     if (badge2x) badge2x.classList.add('hidden');
     _videoModalLoading(false);
     _videoModalBigPlay(false);
+    _videoModalPlayIcon(false);
     if (modal) modal.classList.add('hidden');
   }
 
