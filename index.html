@@ -8820,6 +8820,7 @@ function saveNote() {
   }
 
   function maybeInsertFeedAd(feedFragment, postIndex) {
+    try { if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) return; } catch (_) {}
     // Anuncios Adsterra intercalados en el feed: el primero aparece tras
     // inFeedFirstAt posts y luego uno cada N posts, con carga diferida (el
     // banner se pide solo cuando el bloque se acerca a la pantalla al hacer
@@ -8881,6 +8882,7 @@ function saveNote() {
   function loadAdsterraInFeedSlot(wrap) {
     if (!wrap || wrap.dataset.adLoaded === '1') return;
     if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.bannerKey) return;
+    try { if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) { wrap.style.display = 'none'; return; } } catch (_) {}
     wrap.dataset.adLoaded = '1';
     try {
       const slot = wrap.querySelector('.adsterra-slot');
@@ -8893,14 +8895,22 @@ function saveNote() {
       const s = document.createElement('script');
       s.type = 'text/javascript';
       s.src = 'https://www.highrevenueformat.com/' + key + '/invoke.js';
+      s.onerror = function () {
+        // Bloqueador o red: intentar con la segunda empresa, si no ocultar.
+        try { if (typeof drexTryPropellerFallback === 'function' && drexTryPropellerFallback(slot, function () { wrap.style.display = 'none'; })) return; } catch (_) {}
+        try { wrap.style.display = 'none'; } catch (_) {}
+      };
       slot.appendChild(s);
       if (typeof adsterraWatchShimmer === 'function') adsterraWatchShimmer(slot);
       setTimeout(function () {
         try {
           var ifr = slot.querySelector('iframe');
-          if (!ifr || ifr.getBoundingClientRect().height < 5) wrap.style.display = 'none';
+          if (!ifr || ifr.getBoundingClientRect().height < 5) {
+            try { if (typeof drexTryPropellerFallback === 'function' && drexTryPropellerFallback(slot, function () { wrap.style.display = 'none'; })) return; } catch (_) {}
+            wrap.style.display = 'none';
+          }
         } catch (_) {}
-      }, 12000);
+      }, 9000);
     } catch (_) {}
   }
 
@@ -18353,7 +18363,80 @@ function saveNote() {
     popunderUrl: 'https://pl31406713.profitableratecpmnetwork.com/05/ed/52/05ed52dc12f86e20fc1fae9e7b9756/invoke.js'    // URL completa del script Popunder
   };
 
+  /* -- Segunda empresa de anuncios: PropellerAds (respaldo) ------------
+     Si Adsterra no llena un bloque (bloqueador, sin fill, error), se
+     intenta con PropellerAds antes de ocultar el espacio. Para activarlo:
+     1. Crear cuenta en https://www.propellerads.com (aprobacion rapida,
+        sin minimo de trafico, pago minimo $5).
+     2. Crear una zona de banner y copiar la URL COMPLETA del script.
+     3. Pegarla abajo en bannerScriptUrl. Vacio = sin respaldo. */
+  const PROPELLER = {
+    bannerScriptUrl: '', // ej: 'https://plXXXXX.profitablecpmrate.com/ab/cd/ef/abcdef1234567890/invoke.js'
+    w: 320,
+    h: 50
+  };
+  function propellerActive() {
+    return !!(typeof PROPELLER !== 'undefined' && PROPELLER && PROPELLER.bannerScriptUrl);
+  }
+
+  /* -- Deteccion de bloqueador de anuncios ------------------------------
+     Si el telefono tiene bloqueador (muy comun en iOS), los scripts de
+     anuncios nunca cargan y solo se veria el esqueleto. Al detectarlo se
+     ocultan todos los bloques y no se insertan mas en la sesion. */
+  window.__drexAdBlockChecked = false;
+  window.__drexAdsBlocked = false;
+  function drexAdsBlocked() { return !!window.__drexAdsBlocked; }
+  function drexAdsKillAll() {
+    try {
+      document.querySelectorAll('.drex-ad-slot, .adsterra-slot').forEach(function (el) {
+        try { if (!el.querySelector('iframe')) el.style.display = 'none'; } catch (_) {}
+      });
+      var bar = document.getElementById('drex-sticky-ad');
+      if (bar) { bar.style.display = 'none'; }
+      if (typeof drexStickyAdLiftFabs === 'function') drexStickyAdLiftFabs(false);
+      if (typeof drexStickyAdTimer !== 'undefined' && drexStickyAdTimer) { clearInterval(drexStickyAdTimer); drexStickyAdTimer = null; }
+    } catch (_) {}
+  }
+  function drexProbeAdBlock() {
+    if (window.__drexAdBlockChecked) return;
+    window.__drexAdBlockChecked = true;
+    try {
+      var url = 'https://www.highrevenueformat.com/favicon.ico?probe=' + Date.now();
+      var to = setTimeout(function () { /* sin respuesta: se sigue normal */ }, 4000);
+      fetch(url, { mode: 'no-cors', cache: 'no-store' }).then(function () {
+        clearTimeout(to); window.__drexAdsBlocked = false;
+      }).catch(function () {
+        clearTimeout(to); window.__drexAdsBlocked = true; drexAdsKillAll();
+      });
+    } catch (_) {}
+  }
+  /* Respaldo con la segunda empresa: inyecta su script en el bloque. */
+  function drexTryPropellerFallback(slot, onFail) {
+    try {
+      if (!propellerActive() || !slot || slot.dataset.propellerTried === '1') return false;
+      slot.dataset.propellerTried = '1';
+      if (!slot.querySelector('.ad-shimmer')) {
+        var d = document.createElement('div'); d.className = 'ad-shimmer'; slot.appendChild(d);
+      }
+      var failed = function () {
+        try { slot.style.display = 'none'; } catch (_) {}
+        try { if (typeof onFail === 'function') onFail(); } catch (_) {}
+      };
+      var s = document.createElement('script');
+      s.type = 'text/javascript';
+      s.src = PROPELLER.bannerScriptUrl;
+      s.onerror = failed;
+      slot.appendChild(s);
+      if (typeof adsterraWatchShimmer === 'function') adsterraWatchShimmer(slot);
+      setTimeout(function () {
+        try { if (!slot.querySelector('iframe')) failed(); } catch (_) {}
+      }, 10000);
+      return true;
+    } catch (_) { return false; }
+  }
+
   function adsterraInjectBanners() {
+    try { if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) return; } catch (_) {}
     const units = [];
     if (ADSTERRA.bannerKey2) units.push({ slotId: 'adsterra-menu-slot', key: ADSTERRA.bannerKey2, w: ADSTERRA.menuBannerW || 320, h: ADSTERRA.menuBannerH || 50 });
     // Se cargan en cadena para que cada banner use su propia key (atOptions).
@@ -18381,6 +18464,15 @@ function saveNote() {
      scroll, trae botón X (cierra solo la sesión actual) y se esconde solo
      si el anuncio no carga. Cada refresh cuenta como impresión nueva. */
   var drexStickyAdTimer = null;
+  var drexStickyAdFails = 0; // fallos consecutivos del banner fijo
+  function drexStickyAdNoteFail() {
+    drexStickyAdFails++;
+    if (drexStickyAdFails >= 3 && drexStickyAdTimer) {
+      // 3 fallos seguidos: se deja de refrescar en la sesion (no mas esqueletos)
+      try { clearInterval(drexStickyAdTimer); } catch (_) {}
+      drexStickyAdTimer = null;
+    }
+  }
   function drexStickyAdClosed() {
     try { return sessionStorage.getItem('drexStickyAdClosed') === '1'; } catch (_) { return false; }
   }
@@ -18398,22 +18490,34 @@ function saveNote() {
     try {
       if (drexStickyAdClosed()) return;
       if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.bannerKey) return;
+      if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) return;
       var bar = document.getElementById('drex-sticky-ad');
       var slot = document.getElementById('drex-sticky-ad-slot');
       if (!bar || !slot) return;
       slot.innerHTML = '<div class="ad-shimmer"></div>';
+      try { delete slot.dataset.propellerTried; } catch (_) {}
       window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
+      var failBar = function () {
+        drexStickyAdNoteFail();
+        try { bar.style.display = 'none'; } catch (_) {}
+        try { drexStickyAdLiftFabs(false); } catch (_) {}
+      };
       var s = document.createElement('script');
       s.type = 'text/javascript';
       s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
+      s.onerror = function () {
+        try { if (typeof drexTryPropellerFallback === 'function' && drexTryPropellerFallback(slot, failBar)) return; } catch (_) {}
+        failBar();
+      };
       slot.appendChild(s);
       setTimeout(function () {
         try {
           if (drexStickyAdClosed()) { bar.style.display = 'none'; drexStickyAdLiftFabs(false); return; }
           var ifr = slot.querySelector('iframe');
           var ok = !!(ifr && ifr.getBoundingClientRect().width > 10);
-          bar.style.display = ok ? 'flex' : 'none';
-          drexStickyAdLiftFabs(ok);
+          if (ok) { drexStickyAdFails = 0; bar.style.display = 'flex'; drexStickyAdLiftFabs(true); return; }
+          try { if (typeof drexTryPropellerFallback === 'function' && drexTryPropellerFallback(slot, failBar)) return; } catch (_) {}
+          failBar();
         } catch (_) {}
       }, 8000);
     } catch (_) {}
@@ -18498,6 +18602,7 @@ function saveNote() {
     } catch (_) {}
   }
   function initAdsterra() {
+    try { drexProbeAdBlock(); } catch (_) {}
     adsterraPreload();
     try {
       if (ADSTERRA.popunderUrl) {
@@ -42166,6 +42271,7 @@ function adsterraInjectMusicSlot() {
   const slot = document.getElementById('adsterra-music-slot');
   if (!slot) return;
   if (typeof ADSTERRA === 'undefined' || !ADSTERRA.bannerKey) return;
+  try { if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) { slot.style.display = 'none'; return; } } catch (_) {}
   adsterraMusicInjected = true;
   const card = document.getElementById('adsterra-music-card');
   if (card) card.style.display = 'block';
@@ -42175,6 +42281,14 @@ function adsterraInjectMusicSlot() {
   const s = document.createElement('script');
   s.type = 'text/javascript';
   s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
+  s.onerror = function () {
+    try {
+      var card = document.getElementById('adsterra-music-card');
+      var hide = function () { try { slot.style.display = 'none'; if (card) card.style.display = 'none'; } catch (_) {} };
+      if (typeof drexTryPropellerFallback === 'function' && drexTryPropellerFallback(slot, hide)) return;
+      hide();
+    } catch (_) {}
+  };
   slot.appendChild(s);
 }
 
