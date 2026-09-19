@@ -12865,6 +12865,10 @@ function saveNote() {
   // iOS: Safari no redimensiona el layout viewport al abrir el teclado, así que
   // una vista "fixed inset-0" quedaría con su barra inferior detrás del teclado.
   // Se encoge la vista del chat a la altura del visualViewport mientras está visible.
+  // ADEMÁS se ancla su `top` al offsetTop del visualViewport: cuando iOS hace
+  // "pan" del viewport visual para mostrar el input enfocado (offsetTop > 0),
+  // una vista fixed con top:0 quedaría corrida hacia arriba y el usuario vería
+  // el composer pegado arriba de la pantalla con blanco debajo (bug 2026-09-19).
   (function () {
     var vv = window.visualViewport;
     if (!vv) return;
@@ -12872,7 +12876,16 @@ function saveNote() {
     function applyChatViewport() {
       var v = document.getElementById('chat-room-view');
       if (!v || v.classList.contains('hidden')) return;
+      v.style.top = vv.offsetTop + 'px';
+      v.style.bottom = 'auto';
       v.style.height = vv.height + 'px';
+    }
+    function resetChatViewport() {
+      var v = document.getElementById('chat-room-view');
+      if (!v) return;
+      v.style.top = '';
+      v.style.bottom = '';
+      v.style.height = '';
     }
     function scheduleApply() {
       cancelAnimationFrame(rafId);
@@ -12880,6 +12893,7 @@ function saveNote() {
     }
     vv.addEventListener('resize', scheduleApply);
     vv.addEventListener('scroll', scheduleApply);
+    window._resetChatViewport = resetChatViewport;
   })();
   function openImageModal(imageUrl, noteId, clickedEl) {
     // Alcance preciso primero: solo las fotos del carrusel donde se hizo clic.
@@ -30718,6 +30732,16 @@ let chatTypingListener = null;
     DrexCloud.database().ref(`conversationReadAt/${conversationId}/${user.uid}`).set(Date.now());
   }
 
+  let _chatReadMarkTimer = 0;
+  function scheduleChatReadMark(conversationId) {
+    // Re-marca la lectura cuando llega un mensaje ajeno con el chat abierto,
+    // para que el "Visto" del otro lado sea preciso también en vivo.
+    // Con debounce: la carga inicial (ráfaga de child_added) colapsa en una
+    // sola escritura en vez de una por mensaje.
+    try { clearTimeout(_chatReadMarkTimer); } catch (_) {}
+    _chatReadMarkTimer = setTimeout(() => { markChatRoomRead(conversationId); }, 1500);
+  }
+
   async function updateChatConversationPreview(lastMessage, payload = {}, options = {}) {
     const user = DrexCloud.auth().currentUser;
     const conversationId = options.conversationId || currentChatRoomId;
@@ -30827,13 +30851,19 @@ let chatTypingListener = null;
     if (!container) return;
     container.querySelectorAll('.chat-seen-badge').forEach(el => el.remove());
     if (!readAt) return;
+    // El "Visto" solo vale para mensajes ANTERIORES a la lectura del otro.
+    // Sin esta comparación, una lectura vieja (p. ej. de la semana pasada)
+    // marcaba como vistos los mensajes nuevos que el otro jamás abrió.
     const all = Array.from(container.querySelectorAll('[data-msg-id]'));
     for (let i = all.length - 1; i >= 0; i--) {
-      if (all[i].classList.contains('items-end')) {
+      const el = all[i];
+      if (!el.classList.contains('items-end')) continue;
+      const ts = Number(el.dataset.msgTs || 0);
+      if (ts && ts <= readAt) {
         const badge = document.createElement('span');
         badge.className = 'chat-seen-badge text-[10px] text-[#7b878f] px-1 self-end';
         badge.textContent = appT('Visto');
-        all[i].appendChild(badge);
+        el.appendChild(badge);
         break;
       }
     }
@@ -31510,6 +31540,7 @@ let chatTypingListener = null;
   function closeChatRoomView() {
     detachChatMessagesListener();
     detachConversationPinnedListener();
+    try { clearTimeout(_chatReadMarkTimer); } catch (_) {}
     currentChatRoomId = null;
     currentChatRecipient = null;
     currentChatIsGroup = false;
@@ -31537,7 +31568,8 @@ let chatTypingListener = null;
     if (groupAvatar) groupAvatar.classList.add('hidden');
     if (subtitle) subtitle.classList.add('hidden');
     var _crvClose = document.getElementById('chat-room-view');
-    if (_crvClose) { _crvClose.classList.add('hidden'); _crvClose.style.height = ''; }
+    if (_crvClose) { _crvClose.classList.add('hidden'); }
+    try { if (typeof window._resetChatViewport === 'function') window._resetChatViewport(); } catch (_) {}
     document.getElementById('chat-inbox-view')?.classList.remove('hidden');
     loadChatConversations();
   }
@@ -31653,6 +31685,7 @@ let chatTypingListener = null;
         const del = document.createElement('div');
         del.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
         if (resolvedId) del.dataset.msgId = resolvedId;
+        del.dataset.msgTs = '0';
         del.innerHTML = `<div class="deleted-placeholder flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#dce1e5] text-[#b6c0d1] text-xs italic select-none" data-del-id="${resolvedId}"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-linecap="round"/></svg>${mine ? 'Eliminaste este mensaje' : 'Mensaje eliminado'}</div>`;
         container.appendChild(del);
         container.scrollTop = container.scrollHeight;
@@ -31749,6 +31782,7 @@ let chatTypingListener = null;
         const senderName = msg.senderName || '...';
         wrapper.className = 'w-full flex flex-col items-start';
         if (resolvedId) wrapper.dataset.msgId = resolvedId;
+        wrapper.dataset.msgTs = String(msgTimestamp || 0);
         wrapper.innerHTML = `
           <p class="text-[11px] font-bold text-[#6b7280] mb-1 ml-11 px-1 cursor-pointer group-sender-label" data-uid="${escapeHtml(senderId)}">${escapeHtml(senderName)}</p>
           <div class="flex items-end gap-2 max-w-[85%]">
@@ -31783,6 +31817,7 @@ let chatTypingListener = null;
       } else {
         wrapper.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
         if (resolvedId) wrapper.dataset.msgId = resolvedId;
+        wrapper.dataset.msgTs = String(msgTimestamp || 0);
         wrapper.innerHTML = `
           <div class="msg-bubble ${(msgImages.length && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : (mine ? 'bg-[#2F33B8] text-white px-4 py-2.5' : 'bg-[#f0f4f9] text-[#1c2b4a] px-4 py-2.5')} rounded-3xl max-w-[75%] select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
             ${replyBlock}${content}
@@ -31917,6 +31952,14 @@ const _startChatListeners = () => {
           _persistChatMessages(conversationId, nextCache);
         }
         renderMessageNode(msg, msgId);
+        // Si el mensaje es ajeno y el chat está abierto, re-marca la lectura
+        // (con debounce) para que el "Visto" del remitente sea preciso en vivo.
+        try {
+          const myUid = DrexCloud.auth().currentUser?.uid || '';
+          if (msg.senderId && msg.senderId !== myUid && typeof scheduleChatReadMark === 'function') {
+            scheduleChatReadMark(conversationId);
+          }
+        } catch (_) {}
       };
       ref.on('child_added', callback);
 
