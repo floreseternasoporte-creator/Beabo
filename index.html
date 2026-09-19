@@ -277,15 +277,6 @@ button, a, select, [role="button"] {
   stroke: #EF4444;
 }
 
-/* ===== DOBLE TAP LIKE ===== */
-.dt-heart {
-  position: fixed;
-  pointer-events: none;
-  z-index: 9999;
-  transform: translate(-50%, -50%) scale(0);
-  animation: dtHeartBurst 0.65s cubic-bezier(0.17,0.89,0.32,1.28) forwards;
-  filter: drop-shadow(0 0 12px rgba(239,68,68,0.55));
-}
 @keyframes dtHeartBurst {
   0%   { transform: translate(-50%,-50%) scale(0.1); opacity: 0; }
   25%  { opacity: 1; }
@@ -14470,7 +14461,6 @@ function saveNote() {
         hydrateQuickFollowButtons(noteElement);
         hydrateSaveButtons(noteElement);
         applyFeedTypeFilter();
-        initFeedDoubleTapLike();
         try { drexRecObserveCard(noteElement); } catch (_) {}
         if (appendAtBottom) {
           noteElement.dataset.feedPaginated = '1';
@@ -15953,60 +15943,6 @@ function saveNote() {
       _postVoteLocks.delete(noteId);
     });
   }
-
-  function showDoubleTapHeart(x, y, noteId) {
-    const heart = document.createElement('div');
-    heart.className = 'dt-heart';
-    heart.style.left = x + 'px';
-    heart.style.top = y + 'px';
-    heart.innerHTML = `<svg width="90" height="90" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 20.6C6.9 16.6 3.6 13.4 3.6 9.7 3.6 7.2 5.6 5.2 8.1 5.2c1.6 0 3 .8 3.9 2 .9-1.2 2.3-2 3.9-2 2.5 0 4.5 2 4.5 4.5 0 3.7-3.3 6.9-8.4 10.9z" fill="#EF4444" stroke="#EF4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    document.body.appendChild(heart);
-    setTimeout(() => heart.remove(), 700);
-
-    const btn = document.getElementById('upvote-' + noteId);
-    if (btn && !btn.classList.contains('active')) {
-      votePost(noteId, 'up');
-    }
-  }
-
-  function initFeedDoubleTapLike() {
-    // Delegado a nivel documento: el doble toque para dar like funciona en
-    // el feed, el perfil, el permalink y los comentarios, no solo en el feed.
-    if (document._dtLikeReady) return;
-    document._dtLikeReady = true;
-
-    let lastTap = 0;
-    let lastNoteId = null;
-
-    document.addEventListener('touchend', function(e) {
-      if (e.target.closest('button, a, input, select, textarea')) return;
-      const postEl = e.target.closest('.drex-post[data-note-id]');
-      if (!postEl) return;
-
-      const noteId = postEl.dataset.noteId;
-      const now = Date.now();
-      const gap = now - lastTap;
-
-      if (gap < 320 && gap > 0 && lastNoteId === noteId) {
-        const touch = e.changedTouches[0];
-        document._dtLikeLastTouch = now;
-        showDoubleTapHeart(touch.clientX, touch.clientY, noteId);
-        e.preventDefault();
-      }
-      lastTap = now;
-      lastNoteId = noteId;
-    }, { passive: false });
-
-    // Escritorio (ratón): doble clic sobre el post también da like.
-    document.addEventListener('dblclick', function(e) {
-      if (Date.now() - (document._dtLikeLastTouch || 0) < 800) return;
-      if (e.target.closest('button, a, input, select, textarea')) return;
-      const postEl = e.target.closest('.drex-post[data-note-id]');
-      if (!postEl) return;
-      showDoubleTapHeart(e.clientX, e.clientY, postEl.dataset.noteId);
-    });
-  }
-
 
   let _userSavedPosts = null;
   // Carpetas de guardados: { folderId: { name, createdAt } }. null = aún no cargadas.
