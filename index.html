@@ -27716,7 +27716,7 @@ function saveNote() {
 
   function closeScreenTimeView() {
     const view = document.getElementById('screentime-view');
-    if (view) view.classList.add('hidden');
+    if (view) { view.classList.add('hidden'); view.style.display = 'none'; }
   }
 
   function _renderScreenTimeView() {
@@ -28338,39 +28338,61 @@ function saveNote() {
 
   function clearRealtimeCache() {
     const button = document.getElementById('clear-cache-btn');
+    const originalHTML = button ? button.innerHTML : '';
+    const restoreButton = () => {
+      if (button) { button.disabled = false; button.innerHTML = originalHTML; }
+    };
+    // Contar ANTES de borrar para reportar el resultado real.
+    let keysCount = 0, bytesCount = 0;
+    try {
+      const pre = getClearableCacheKeys();
+      keysCount = pre.length;
+      pre.forEach(key => {
+        try { bytesCount += key.length + (localStorage.getItem(key) || '').length; } catch (_) {}
+      });
+      try { bytesCount += window.DrexCache ? window.DrexCache.sizeBytes() : 0; } catch (_) {}
+    } catch (_) {}
     if (button) {
       button.disabled = true;
       button.innerHTML = '<span class="inline-flex items-center gap-2">' + DREX_SPINNER_HTML + '<span>Limpiando caché...</span></span>';
     }
+    // Red de seguridad: el botón SIEMPRE vuelve a su estado, pase lo que pase.
+    const safetyTimer = setTimeout(restoreButton, 10000);
+    try {
+      const keysToDelete = getClearableCacheKeys();
+      keysToDelete.forEach(key => {
+        try { localStorage.removeItem(key); } catch (_) {}
+      });
+      try { if (window.DrexCache) window.DrexCache.clear(); } catch (_) {}
+      try { if (window.DrexCache) window.DrexCache.invalidate('translate'); } catch (_) {}
+      try { if (typeof window.drexTranslateClearCache === 'function') window.drexTranslateClearCache(); } catch (_) {}
 
-    const keysToDelete = getClearableCacheKeys();
-    keysToDelete.forEach(key => {
-      try { localStorage.removeItem(key); } catch (_) {}
-    });
-    try { if (window.DrexCache) window.DrexCache.clear(); } catch (_) {}
-    try { if (window.DrexCache) window.DrexCache.invalidate('translate'); } catch (_) {}
+      chatUsersIndexCache = [];
+      chatUsersIndexLoadedAt = 0;
+      chatConversationCache = { items: [], loadedAt: 0 };
+      chatMessagesMemoryCache.clear();
+      allChatConversations = [];
+      try { _authorProfileCache.clear(); } catch (_) {}
+      try { _privacyAccountCache.clear(); } catch (_) {}
+      try { _followApprovedCache.clear(); } catch (_) {}
+      try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
+      if (chatSearchDebounceTimer) {
+        clearTimeout(chatSearchDebounceTimer);
+        chatSearchDebounceTimer = null;
+      }
 
-    if (typeof translationCache?.clear === 'function') translationCache.clear();
-    chatUsersIndexCache = [];
-    chatUsersIndexLoadedAt = 0;
-    chatConversationCache = { items: [], loadedAt: 0 };
-    chatMessagesMemoryCache.clear();
-    allChatConversations = [];
-    try { _authorProfileCache.clear(); } catch (_) {}
-    try { _privacyAccountCache.clear(); } catch (_) {}
-    try { _followApprovedCache.clear(); } catch (_) {}
-    try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
-    if (chatSearchDebounceTimer) {
-      clearTimeout(chatSearchDebounceTimer);
-      chatSearchDebounceTimer = null;
+      refreshCacheUsageUI();
+      clearTimeout(safetyTimer);
+      restoreButton();
+      const msg = keysCount > 0
+        ? 'Caché liberado: ' + keysCount + (keysCount === 1 ? ' elemento' : ' elementos') + ' (' + formatCacheSize(bytesCount) + ').'
+        : 'No había caché acumulado por liberar.';
+      showMiniToast(msg);
+    } catch (_) {
+      clearTimeout(safetyTimer);
+      restoreButton();
+      showMiniToast('No se pudo liberar el caché. Inténtalo de nuevo.');
     }
-
-    refreshCacheUsageUI();
-    if (button) {
-      button.disabled = false;
-      button.textContent = appT('Liberar cach\u00e9 ahora');
-    }
-    showMiniToast(appT('Caché eliminado en tiempo real correctamente.'));
   }
 
   function selectThemeOption(theme) {
@@ -29302,7 +29324,8 @@ function saveNote() {
   }
 
   function closeDeactivateDeleteAccountView() {
-    document.getElementById('deactivate-delete-account-view').classList.add('hidden');
+    const v = document.getElementById('deactivate-delete-account-view');
+    if (v) { v.classList.add('hidden'); v.style.display = 'none'; }
   }
 
   function openDeactivateConfirmationView() {
@@ -29317,7 +29340,8 @@ function saveNote() {
   }
 
   function closeDeactivateConfirmationView() {
-    document.getElementById('deactivate-confirmation-view').classList.add('hidden');
+    const dcv = document.getElementById('deactivate-confirmation-view');
+    if (dcv) { dcv.classList.add('hidden'); dcv.style.display = 'none'; }
     const ddv = document.getElementById('deactivate-delete-account-view');
     ddv.classList.remove('hidden');
     ddv.style.display = 'flex';
@@ -29350,8 +29374,10 @@ function saveNote() {
   }
 
   function closeDeleteReasonView() {
-    document.getElementById('delete-reason-view').classList.add('hidden');
-    document.getElementById('deactivate-delete-account-view').classList.remove('hidden');
+    const drv = document.getElementById('delete-reason-view');
+    if (drv) { drv.classList.add('hidden'); drv.style.display = 'none'; }
+    const ddv = document.getElementById('deactivate-delete-account-view');
+    if (ddv) { ddv.classList.remove('hidden'); ddv.style.display = 'flex'; }
   }
 
   function selectDeleteReason(reason) {
@@ -35677,6 +35703,8 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
     try { translationCache.clear(); } catch (_) {}
     try { if (window.DrexCache) window.DrexCache.invalidate('translate'); } catch (_) {}
   }
+  // Expuesto para "Liberar caché" de Ajustes (el IIFE no deja ver translationCache fuera).
+  window.drexTranslateClearCache = tCacheClear;
   function tCacheHas(key) { return tCacheGet(key) !== undefined; }
 
   let autoTranslateEnabled = true;
