@@ -34278,13 +34278,34 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
     }
   }
 
-  async function translateText(text, sourceLang, targetLang) {
-    if (!text || !text.trim()) return text;
-    if (sourceLang === targetLang) return null;
-
-    const cacheKey = `${sourceLang}_${targetLang}_${text.substring(0, 100)}`;
+  // Letras completas u otros textos largos: se dividen en trozos por líneas
+  // porque una sola petición gigante falla (timeout / URL demasiado larga).
+  function splitForTranslate(text, maxLen) {
+    const lines = String(text).split('\n');
+    const chunks = [];
+    let cur = '';
+    const push = p => {
+      if (cur && (cur + '\n' + p).length > maxLen) { chunks.push(cur); cur = p; }
+      else cur = cur ? cur + '\n' + p : p;
+    };
+    for (const ln of lines) {
+      if (ln.length > maxLen) {
+        const parts = ln.match(new RegExp('.{1,' + maxLen + '}', 'g')) || [ln];
+        parts.forEach(push);
+      } else push(ln);
+    }
+    if (cur.trim()) chunks.push(cur);
+    return chunks.length ? chunks : [text];
+  }
+  function translateCacheKey(text) {
+    let h = 0;
+    const s = String(text);
+    for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
+    return 'h' + (h >>> 0).toString(36) + '_' + s.length;
+  }
+  async function translateChunk(text, sourceLang, targetLang) {
+    const cacheKey = `${sourceLang}_${targetLang}_${translateCacheKey(text)}`;
     if (translationCache.has(cacheKey)) return translationCache.get(cacheKey);
-
     try {
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
       const response = await fetch(url);
@@ -34307,6 +34328,21 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
       console.warn('Traducción fallida:', e.message);
       return null;
     }
+  }
+  async function translateText(text, sourceLang, targetLang) {
+    if (!text || !text.trim()) return text;
+    if (sourceLang === targetLang) return null;
+
+    const chunks = splitForTranslate(text, 900);
+    if (chunks.length === 1) return translateChunk(text, sourceLang, targetLang);
+    const out = [];
+    for (const c of chunks) {
+      const tr = await translateChunk(c, sourceLang, targetLang);
+      if (tr == null) return null;
+      out.push(tr);
+      if (chunks.length > 1) await new Promise(r => setTimeout(r, 250));
+    }
+    return out.join('\n');
   }
 
   async function processTextForTranslation(element, originalText) {
@@ -34424,13 +34460,16 @@ body.theme-dark #side-panel-content button:last-child svg { color: #f87171 !impo
   // detección + traducción de Google que las publicaciones.
   window.drexTranslateContent = async function (text) {
     try {
-      if (!autoTranslateEnabled || !text || text.trim().length < 10) return null;
+      if (!text || text.trim().length < 10) return null;
+      if (!autoTranslateEnabled) return { disabled: true };
       const detected = await detectLanguage(text);
-      if (!detected || detected === userPreferredLang) return null;
+      if (!detected) return null;
+      const info = WORLD_LANGUAGES.find(l => l.code === detected);
+      const langName = info ? info.name.split(' ')[0] : detected.toUpperCase();
+      if (detected === userPreferredLang) return { detected, translated: null, sameLang: true, langName };
       const translated = await translateText(text, detected, userPreferredLang);
       if (!translated || translated === text) return null;
-      const info = WORLD_LANGUAGES.find(l => l.code === detected);
-      return { detected, translated, langName: info ? info.name.split(' ')[0] : detected.toUpperCase() };
+      return { detected, translated, langName };
     } catch (_) { return null; }
   };
 
@@ -41644,7 +41683,7 @@ function musicLoadTrackLyrics() {
     }
   } catch (_) {}
 }
-var musicLyricsState = { original: '', translated: null, showing: 'original', langName: '' };
+var musicLyricsState = { original: '', translated: null, showing: 'original', langName: '', canRetry: false };
 function musicPaintLyrics() {
   const textEl = document.getElementById('music-lyrics-text');
   const badgeWrap = document.getElementById('music-lyrics-trans-badge');
@@ -41664,7 +41703,7 @@ function musicPaintLyrics() {
   } else {
     textEl.textContent = musicLyricsState.original;
     if (badgeWrap) badgeWrap.classList.add('hidden');
-    if (musicLyricsState.translated) {
+    if (musicLyricsState.translated || musicLyricsState.canRetry) {
       if (btn) { btn.classList.remove('hidden'); btn.classList.add('flex'); }
       if (label) label.textContent = T('Traducir');
     } else {
@@ -41673,32 +41712,55 @@ function musicPaintLyrics() {
   }
 }
 window.musicToggleLyricsTranslation = function () {
-  if (!musicLyricsState.translated) return;
-  musicLyricsState.showing = musicLyricsState.showing === 'translated' ? 'original' : 'translated';
-  musicPaintLyrics();
+  if (musicLyricsState.translated) {
+    musicLyricsState.showing = musicLyricsState.showing === 'translated' ? 'original' : 'translated';
+    musicPaintLyrics();
+  } else if (musicLyricsState.canRetry) {
+    // La traducción automática falló: reintentar al tocar.
+    musicLyricsState.canRetry = false;
+    musicPaintLyrics();
+    if (typeof musicTranslateLyrics === 'function') musicTranslateLyrics();
+  }
 };
+function musicTranslateLyrics() {
+  if (typeof window.drexTranslateContent !== 'function') return;
+  const lyrics = musicLyricsState.original;
+  if (!lyrics) return;
+  // Misma traducción automática de las publicaciones: si la letra está en otro idioma,
+  // se traduce sola y se puede volver al original con el botón.
+  window.drexTranslateContent(lyrics).then(res => {
+    if (musicLyricsState.original !== lyrics) return; // ya abrió otra letra
+    if (document.getElementById('music-lyrics-sheet')?.classList.contains('hidden')) return;
+    if (!res || res.disabled) {
+      // Traducción desactivada: no ofrecer nada. Fallo real: ofrecer reintento.
+      if (!res) { musicLyricsState.canRetry = true; musicPaintLyrics(); }
+      return;
+    }
+    if (res.translated) {
+      musicLyricsState.translated = res.translated;
+      musicLyricsState.langName = res.langName;
+      musicLyricsState.showing = 'translated';
+      musicLyricsState.canRetry = false;
+    } else if (!res.sameLang) {
+      musicLyricsState.canRetry = true; // falló: ofrecer reintento manual
+    }
+    musicPaintLyrics();
+  }).catch(() => {
+    if (musicLyricsState.original !== lyrics) return;
+    musicLyricsState.canRetry = true;
+    musicPaintLyrics();
+  });
+}
 window.musicOpenLyrics = function () {
   const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
   const lyrics = t && t.lyrics ? String(t.lyrics).trim() : '';
   if (!lyrics) return;
-  musicLyricsState = { original: lyrics, translated: null, showing: 'original', langName: '' };
+  musicLyricsState = { original: lyrics, translated: null, showing: 'original', langName: '', canRetry: false };
   const titleEl = document.getElementById('music-lyrics-title');
   if (titleEl) titleEl.textContent = (t.title || 'Sin título') + ' — ' + (t.artistName || t.authorName || '');
   musicPaintLyrics();
   document.getElementById('music-lyrics-sheet')?.classList.remove('hidden');
-  // Misma traducción automática de las publicaciones: si la letra está en otro idioma,
-  // se traduce sola y se puede volver al original con el botón.
-  if (typeof window.drexTranslateContent === 'function') {
-    window.drexTranslateContent(lyrics).then(res => {
-      if (!res || !res.translated) return;
-      if (musicLyricsState.original !== lyrics) return; // ya abrió otra letra
-      if (document.getElementById('music-lyrics-sheet')?.classList.contains('hidden')) return;
-      musicLyricsState.translated = res.translated;
-      musicLyricsState.langName = res.langName;
-      musicLyricsState.showing = 'translated';
-      musicPaintLyrics();
-    }).catch(() => {});
-  }
+  musicTranslateLyrics();
 };
 window.musicCloseLyrics = function () { document.getElementById('music-lyrics-sheet')?.classList.add('hidden'); };
 /* ---------- Temporizador de apagado ---------- */
