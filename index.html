@@ -15034,6 +15034,76 @@ function saveNote() {
     }
   }
 
+  // Editar publicación: el modal ya existía en el HTML (#edit-post-modal);
+  // estas son las funciones que faltaban y que el botón "Editar" intentaba llamar.
+  function openEditPostModal() {
+    const noteId = currentPostOptionsNoteId;
+    if (!noteId) return;
+    const user = DrexCloud.auth().currentUser;
+    if (!user || !user.uid) { if (typeof showMiniToast === 'function') showMiniToast(appT('Inicia sesión para continuar.')); return; }
+    const showModalWith = (note) => {
+      if (!note) {
+        if (typeof showMiniToast === 'function') showMiniToast(appT('Esta publicación ya no existe.'));
+        return;
+      }
+      const isOwner = (note.authorId && note.authorId === user.uid) || (note.userId && note.userId === user.uid);
+      if (!isOwner) { if (typeof showMiniToast === 'function') showMiniToast(appT('Solo el autor puede editar esta publicación.')); return; }
+      const ta = document.getElementById('edit-post-textarea');
+      if (ta) {
+        ta.value = note.content || note.text || '';
+        const cc = document.getElementById('edit-post-char-count');
+        if (cc) cc.textContent = String(ta.value.length);
+      }
+      const saveBtn = document.getElementById('edit-post-save-btn');
+      if (saveBtn) saveBtn.disabled = false;
+      closePostOptionsSheet();
+      document.getElementById('edit-post-overlay')?.classList.remove('hidden');
+      document.getElementById('edit-post-modal')?.classList.remove('hidden');
+      if (ta) setTimeout(() => { try { ta.focus(); } catch (_) {} }, 60);
+    };
+    if (currentPostOptionsNoteData) { showModalWith(currentPostOptionsNoteData); return; }
+    DrexCloud.database().ref('communityNotes/' + noteId).once('value')
+      .then(snap => showModalWith(snap.val()))
+      .catch(() => { if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo cargar la publicación.')); });
+  }
+
+  function closeEditPostModal() {
+    document.getElementById('edit-post-overlay')?.classList.add('hidden');
+    document.getElementById('edit-post-modal')?.classList.add('hidden');
+  }
+
+  async function saveEditedPost() {
+    const noteId = currentPostOptionsNoteId;
+    if (!noteId) return;
+    const user = DrexCloud.auth().currentUser;
+    if (!user || !user.uid) { if (typeof showMiniToast === 'function') showMiniToast(appT('Inicia sesión para continuar.')); return; }
+    const ta = document.getElementById('edit-post-textarea');
+    const saveBtn = document.getElementById('edit-post-save-btn');
+    const newText = (ta ? ta.value : '').trim();
+    if (!newText) { if (typeof showMiniToast === 'function') showMiniToast(appT('El texto no puede estar vacío.')); return; }
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      const snap = await DrexCloud.database().ref('communityNotes/' + noteId).once('value');
+      const note = snap.val();
+      if (!note) {
+        if (typeof showMiniToast === 'function') showMiniToast(appT('Esta publicación ya no existe.'));
+        closeEditPostModal();
+        return;
+      }
+      const isOwner = (note.authorId && note.authorId === user.uid) || (note.userId && note.userId === user.uid);
+      if (!isOwner) { if (typeof showMiniToast === 'function') showMiniToast(appT('Solo el autor puede editar esta publicación.')); return; }
+      const field = (note.content !== undefined) ? 'content' : 'text';
+      await DrexCloud.database().ref('communityNotes/' + noteId + '/' + field).set(newText);
+      closeEditPostModal();
+      if (typeof showMiniToast === 'function') showMiniToast(appT('Publicación actualizada.'));
+      try { if (typeof loadNotes === 'function') loadNotes(false); } catch (_) {}
+    } catch (e) {
+      if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo guardar. Inténtalo de nuevo.'));
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  }
+
   // Si el visor está mostrando este post y se ocultó/eliminó, cerrarlo:
   // no tiene sentido seguir viendo una foto de algo que ya no existe.
   function _closeViewerIfShowingNote(noteId) {
