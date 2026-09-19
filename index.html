@@ -18452,17 +18452,14 @@ function saveNote() {
     /* Zonas In-Page Push (formato flotante nativo de Monetag, no ocupa bloque
        físico: se inyecta 1 vez por sesión al entrar a la sección).
        2026-09-19: el usuario pidió monetizar con AMBAS empresas en varias
-       secciones: Adsterra en los bloques físicos + Monetag IPP flotante. */
-    ippFeedZone: '__MONETAG_IPP_FEED_ZONE__',
-    ippPracticarZone: '__MONETAG_IPP_PRACTICAR_ZONE__',
-    ippScriptUrl: '__MONETAG_IPP_SCRIPT__',
-    /* Zonas de Banner (formato slot, se dibujan DENTRO del bloque donde se
-       inserta el tag). 2026-09-19: Monetag retiró el Banner clásico; no hay
-       zonas que crear. Feed y Practicar usan Adsterra (feedProvider).
-       El Vignette sigue como respaldo de página completa. */
-    feedBannerZone: '__MONETAG_FEED_ZONE__',
-    practicarBannerZone: '__MONETAG_PRACTICAR_ZONE__',
-    bannerScriptUrl: '__MONETAG_BANNER_SCRIPT__',
+       secciones: Adsterra en los bloques físicos + Monetag IPP flotante.
+       Zonas creadas en el panel (sitio 3496740): "Drex Feed Banner"=11837698,
+       "Drex Practicar Banner"=11837766. Formato del tag verificado en el
+       centro de ayuda de Monetag y con el CDN en vivo: el loader se lee a
+       sí mismo para saber la zona (s.src='https://'+d+'/400/'+z). */
+    ippFeedZone: '11837698',
+    ippPracticarZone: '11837766',
+    ippCdnHost: 'n6wxm.com', // host CDN verificado en vivo (mismo del tag Vignette oficial)
     /* 2026-09-19: Monetag retiró el formato "Banner" clásico de su panel
        (solo ofrece MultiTag, Onclick, Push, In-Page Push, Vignette y Direct
        Link). Sin banner clásico no hay slot físico de Monetag para el feed;
@@ -18471,10 +18468,7 @@ function saveNote() {
     feedProvider: 'adsterra'
   };
   function monetagBannerActive() {
-    if (typeof MONETAG !== 'undefined' && MONETAG && MONETAG.feedProvider === 'adsterra') return false; // el feed usa Adsterra
-    return !!(typeof MONETAG !== 'undefined' && MONETAG && MONETAG.feedBannerZone &&
-      MONETAG.feedBannerZone.indexOf('__MONETAG') !== 0 && MONETAG.bannerScriptUrl &&
-      MONETAG.bannerScriptUrl.indexOf('__MONETAG') !== 0);
+    return false; // Monetag retiró el banner clásico: no hay slot físico de Monetag
   }
   function monetagActive() {
     return !!(typeof MONETAG !== 'undefined' && MONETAG && MONETAG.vignetteZone && MONETAG.vignetteScriptUrl);
@@ -18586,23 +18580,26 @@ function saveNote() {
   }
   /* In-Page Push de Monetag (banner flotante nativo, no ocupa bloque físico).
      Se inyecta UNA vez por zona y por sesión. No depende de la sonda de
-     Adsterra; si el script falla, simplemente no se muestra nada. */
+     Adsterra; si el script falla, simplemente no se muestra nada.
+     Formato oficial del tag (centro de ayuda de Monetag, verificado con el
+     CDN en vivo el 2026-09-19): el loader se lee a sí mismo para saber la
+     zona -> s.src='https://'+d+'/400/'+z */
   var __drexIppLoaded = {};
   function drexLoadMonetagIPP(zone) {
     try {
-      if (!zone || zone.indexOf('__MONETAG') === 0) return false;
-      if (typeof MONETAG === 'undefined' || !MONETAG || !MONETAG.ippScriptUrl ||
-          MONETAG.ippScriptUrl.indexOf('__MONETAG') === 0) return false;
+      if (typeof MONETAG === 'undefined' || !MONETAG) return false;
+      zone = String(zone || '').replace(/[^0-9]/g, '');
+      var host = String(MONETAG.ippCdnHost || '').replace(/[^a-z0-9.\-]/gi, '');
+      if (!zone || !host) return false;
       if (__drexIppLoaded[zone]) return true;
       __drexIppLoaded[zone] = true;
       var s = document.createElement('script');
       s.type = 'text/javascript';
-      s.dataset.zone = zone;
-      s.src = MONETAG.ippScriptUrl;
-      s.onerror = function () { try { delete __drexIppLoaded[zone]; } catch (_) {} };
-      (document.head || document.documentElement).appendChild(s);
+      s.text = "(function(d,z,s){s.src='https://'+d+'/400/'+z;try{(document.body||document.documentElement).appendChild(s)}catch(e){}})('"
+        + host + "','" + zone + "',document.createElement('script'))";
+      (document.body || document.documentElement).appendChild(s);
       return true;
-    } catch (_) { return false; }
+    } catch (_) { try { delete __drexIppLoaded[String(zone)]; } catch (_) {} return false; }
   }
   /* Cola serializada para TODAS las cargas de invoke.js de Adsterra.
      Causa raíz del "se queda cargando": window.atOptions es global y cada
