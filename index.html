@@ -38902,8 +38902,9 @@ function handleSubpageHash() {
     }
     if (typeof closePostPermalink === 'function') closePostPermalink({ skipHistory: true });
     if (r.type === 'route' && r.path && r.path !== '/') {
-      // Normalizar enlaces viejos con hash a su ruta limpia.
-      if (r.normalize && typeof drexPushRoute === 'function') {
+      // Normalizar enlaces viejos con hash a su ruta limpia (solo donde hay
+      // soporte de rutas en el servidor; en el worker el hash ES la ruta).
+      if (r.normalize && typeof drexPathRoutingSupported === 'function' && drexPathRoutingSupported()) {
         try {
           const base = drexBasePath();
           history.replaceState({ drexRoute: r.path }, '', base + '/' + r.path);
@@ -38982,6 +38983,16 @@ function drexBasePath() {
   } catch (_) { return ''; }
 }
 
+function drexPathRoutingSupported() {
+  // El worker drex.glamworksapps.workers.dev devuelve 404 VACÍO para rutas
+  // profundas (no sirve el fallback SPA), así que ahí se usan #hash, que no
+  // necesitan soporte del servidor. En GitHub Pages / dominio propio sí hay
+  // rutas limpias mediante 404.html.
+  try {
+    return !/(^|\.)workers\.dev$/i.test(location.hostname || '');
+  } catch (_) { return true; }
+}
+
 function drexViewVisible(el) {
   return !!(el && !el.classList.contains('hidden') && el.style.display !== 'none');
 }
@@ -38989,20 +39000,35 @@ function drexViewVisible(el) {
 function drexPushRoute(route) {
   // route: '/' o 'musica'
   try {
-    const base = drexBasePath();
-    const url = base + (route === '/' ? '/' : '/' + route);
-    if ((location.pathname + location.search) !== url) {
-      history.pushState({ drexRoute: route }, '', url);
+    if (drexPathRoutingSupported()) {
+      const base = drexBasePath();
+      const url = base + (route === '/' ? '/' : '/' + route);
+      if ((location.pathname + location.search) !== url) {
+        history.pushState({ drexRoute: route }, '', url);
+      }
+    } else {
+      // Modo worker: hash (#musica), sin necesidad de fallback del servidor.
+      const target = location.pathname + location.search + (route === '/' ? '' : '#' + route);
+      if ((location.pathname + location.search + location.hash) !== target) {
+        history.pushState({ drexRoute: route }, '', target);
+      }
     }
   } catch (_) {}
 }
 
 function drexRouteFromLocation() {
-  // 1) Enlaces viejos con hash: #post-xxx (permalink) o #nombre (subpágina).
+  // 1) Hash: #post-xxx (permalink), #nombre-viejo (compatibilidad) o
+  //    #ruta-limpia (modo worker, p. ej. #musica).
   const h = (location.hash || '').replace(/^#/, '');
   if (h.startsWith('post-')) return { type: 'post', id: h.slice(5) };
   if (h && DREX_LEGACY_HASH_ROUTES[h]) return { type: 'route', path: DREX_LEGACY_HASH_ROUTES[h], normalize: true };
-  // 2) Ruta limpia en el path: /Beabo/musica o /musica.
+  const hashRoute = h && DREX_ROUTES.find(x => x.path === h.toLowerCase());
+  if (hashRoute) {
+    // En modo path se normaliza a la ruta limpia; en modo worker ya es su forma.
+    return { type: 'route', path: hashRoute.path, normalize: drexPathRoutingSupported() };
+  }
+  if (!drexPathRoutingSupported()) return { type: 'route', path: '/' };
+  // 2) Ruta limpia en el path: /Beabo/musica, /musica o getdrex.com/musica.
   let p = location.pathname || '';
   const base = drexBasePath();
   if (base && p.toLowerCase().startsWith(base.toLowerCase())) p = p.slice(base.length);
