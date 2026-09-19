@@ -18981,10 +18981,18 @@ function saveNote() {
     adsterraPreload();
     try {
       if (ADSTERRA.popunderUrl) {
-        const s = document.createElement('script');
-        s.type = 'text/javascript';
-        s.src = ADSTERRA.popunderUrl;
-        document.head.appendChild(s);
+        // Tope anti-abuso: el popunder se dispara UNA vez por sesión de
+        // pestaña. Sin tope cubría la app en cada carga y había que
+        // cerrarlo varias veces para poder navegar.
+        var __puFired = false;
+        try { __puFired = sessionStorage.getItem('drex_popunder_fired') === '1'; } catch (_) {}
+        if (!__puFired) {
+          try { sessionStorage.setItem('drex_popunder_fired', '1'); } catch (_) {}
+          const s = document.createElement('script');
+          s.type = 'text/javascript';
+          s.src = ADSTERRA.popunderUrl;
+          document.head.appendChild(s);
+        }
       }
       if (ADSTERRA.socialBarUrl) {
         const s = document.createElement('script');
@@ -18995,6 +19003,17 @@ function saveNote() {
       adsterraInjectBanners();
       drexStickyAdInit();
       adsterraInterstitialEngine();
+      /* Guardián del título de la pestaña: algunos scripts de anuncios de
+         terceros reescriben document.title ("(1) New Message!"). Si el
+         título deja de mencionar a Drex, lo restauramos. */
+      try {
+        setInterval(function () {
+          try {
+            var t = String(document.title || '');
+            if (t.indexOf('Drex') < 0) document.title = 'Drex';
+          } catch (_) {}
+        }, 2500);
+      } catch (_) {}
     } catch (_) {}
   }
   initAdsterra();
