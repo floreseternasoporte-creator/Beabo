@@ -18364,77 +18364,41 @@ function saveNote() {
   };
 
   /* -- Segunda empresa de anuncios: Monetag (respaldo) ------------------
-     Monetag es la plataforma de publishers de Propeller Ads Ltd (los
-     publishers de PropellerAds ahora operan como Monetag).
+     Monetag es la plataforma de publishers de Propeller Ads Ltd.
      Si Adsterra no llena un bloque (bloqueador, sin fill, error), se
-     intenta con Monetag antes de ocultar el espacio. Para activarlo:
-     1. Crear cuenta en https://monetag.com (aprobacion en <24h, sin
-        minimo de trafico, pago minimo $5). OJO: exigen dominio propio
-        (no aceptan github.io/blogspot/wix) -> usar getdrex.com.
-     2. Agregar el sitio y crear una zona "Vignette Banner" (banner).
-     3. Copiar la URL COMPLETA del script/tag que te dan y pegarla abajo
-        en bannerScriptUrl. Vacio = sin respaldo. */
+     activa el tag Vignette Banner de Monetag antes de ocultar el espacio.
+     Cuenta: glamworksapps@gmail.com | Sitio verificado: ID 3496740
+     (floreseternasoporte-creator.github.io - github.io SI fue aceptado).
+     El Vignette Banner es un intersticial de pagina completa: NO se dibuja
+     dentro del bloque, por eso el bloque que fallo se oculta y el tag se
+     inyecta una sola vez por carga de pagina. */
   const MONETAG = {
-    bannerScriptUrl: '', // URL completa del tag del Vignette Banner de Monetag; vacio = sin respaldo
-    w: 320,
-    h: 50
+    vignetteZone: '11837635', // Zone ID del Vignette Banner ("Interesting tag", creada 19.09.2026)
+    vignetteScriptUrl: 'https://n6wxm.com/vignette.min.js' // Script oficial del tag Vignette Banner
   };
   function monetagActive() {
-    return !!(typeof MONETAG !== 'undefined' && MONETAG && MONETAG.bannerScriptUrl);
+    return !!(typeof MONETAG !== 'undefined' && MONETAG && MONETAG.vignetteZone && MONETAG.vignetteScriptUrl);
   }
 
-  /* -- Deteccion de bloqueador de anuncios ------------------------------
-     Si el telefono tiene bloqueador (muy comun en iOS), los scripts de
-     anuncios nunca cargan y solo se veria el esqueleto. Al detectarlo se
-     ocultan todos los bloques y no se insertan mas en la sesion. */
-  window.__drexAdBlockChecked = false;
-  window.__drexAdsBlocked = false;
-  function drexAdsBlocked() { return !!window.__drexAdsBlocked; }
-  function drexAdsKillAll() {
-    try {
-      document.querySelectorAll('.drex-ad-slot, .adsterra-slot').forEach(function (el) {
-        try { if (!el.querySelector('iframe')) el.style.display = 'none'; } catch (_) {}
-      });
-      var bar = document.getElementById('drex-sticky-ad');
-      if (bar) { bar.style.display = 'none'; }
-      if (typeof drexStickyAdLiftFabs === 'function') drexStickyAdLiftFabs(false);
-      if (typeof drexStickyAdTimer !== 'undefined' && drexStickyAdTimer) { clearInterval(drexStickyAdTimer); drexStickyAdTimer = null; }
-    } catch (_) {}
-  }
-  function drexProbeAdBlock() {
-    if (window.__drexAdBlockChecked) return;
-    window.__drexAdBlockChecked = true;
-    try {
-      var url = 'https://www.highrevenueformat.com/favicon.ico?probe=' + Date.now();
-      var to = setTimeout(function () { /* sin respuesta: se sigue normal */ }, 4000);
-      fetch(url, { mode: 'no-cors', cache: 'no-store' }).then(function () {
-        clearTimeout(to); window.__drexAdsBlocked = false;
-      }).catch(function () {
-        clearTimeout(to); window.__drexAdsBlocked = true; drexAdsKillAll();
-      });
-    } catch (_) {}
-  }
-  /* Respaldo con la segunda empresa: inyecta su script en el bloque. */
+  /* Respaldo con Monetag (Vignette Banner): replica exacta del snippet
+     oficial. Se inyecta UNA vez por carga de pagina; si ya se intento y
+     fallo la carga, se permite un reintento. El bloque que origino el
+     fallo se oculta limpiamente (el vignette no ocupa el bloque). */
   function drexTryMonetagFallback(slot, onFail) {
     try {
-      if (!monetagActive() || !slot || slot.dataset.monetagTried === '1') return false;
-      slot.dataset.monetagTried = '1';
-      if (!slot.querySelector('.ad-shimmer')) {
-        var d = document.createElement('div'); d.className = 'ad-shimmer'; slot.appendChild(d);
+      if (!monetagActive()) return false;
+      if (!window.__drexMonetagVignette || window.__drexMonetagVignetteFailed) {
+        window.__drexMonetagVignette = true;
+        window.__drexMonetagVignetteFailed = false;
+        var el = document.createElement('script');
+        el.type = 'text/javascript';
+        el.dataset.zone = MONETAG.vignetteZone;
+        el.src = MONETAG.vignetteScriptUrl;
+        el.onerror = function () { window.__drexMonetagVignetteFailed = true; };
+        [document.documentElement, document.body].filter(Boolean).pop().appendChild(el);
       }
-      var failed = function () {
-        try { slot.style.display = 'none'; } catch (_) {}
-        try { if (typeof onFail === 'function') onFail(); } catch (_) {}
-      };
-      var s = document.createElement('script');
-      s.type = 'text/javascript';
-      s.src = MONETAG.bannerScriptUrl;
-      s.onerror = failed;
-      slot.appendChild(s);
-      if (typeof adsterraWatchShimmer === 'function') adsterraWatchShimmer(slot);
-      setTimeout(function () {
-        try { if (!slot.querySelector('iframe')) failed(); } catch (_) {}
-      }, 10000);
+      try { if (slot) slot.style.display = 'none'; } catch (_) {}
+      try { if (typeof onFail === 'function') onFail(); } catch (_) {}
       return true;
     } catch (_) { return false; }
   }
@@ -18499,7 +18463,6 @@ function saveNote() {
       var slot = document.getElementById('drex-sticky-ad-slot');
       if (!bar || !slot) return;
       slot.innerHTML = '<div class="ad-shimmer"></div>';
-      try { delete slot.dataset.monetagTried; } catch (_) {}
       window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
       var failBar = function () {
         drexStickyAdNoteFail();
