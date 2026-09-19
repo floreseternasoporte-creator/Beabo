@@ -6348,55 +6348,81 @@ if (scrollArea) {
 <!-- Sala de fiesta (llamada de voz grupal) -->
 <style>
 .fiesta-reaction-float { position: absolute; bottom: 130px; font-size: 2.4rem; line-height: 1; animation: fiesta-float-up 2.6s ease-out forwards; pointer-events: none; }
-.fiesta-speaking { box-shadow: 0 0 0 3px #4ade80, 0 0 18px rgba(74,222,128,.75) !important; border-radius: 9999px; }
-#fiesta-mute-btn.fiesta-mic-live { box-shadow: 0 0 0 4px rgba(168,85,247,.55), 0 0 22px rgba(168,85,247,.85); }
+/* Anillo de "está hablando": índigo de marca con halo suave (detección real de audio). */
+.fiesta-speaking { box-shadow: 0 0 0 2.5px #2F33B8, 0 0 16px rgba(47,51,184,.55) !important; border-radius: 9999px; }
+#fiesta-mute-btn.fiesta-mic-live { box-shadow: 0 0 0 3px rgba(47,51,184,.6), 0 0 20px rgba(47,51,184,.5); }
+/* Punto "EN VIVO" pulsante. */
+.fiesta-live-dot { animation: fiesta-live-pulse 1.6s ease-in-out infinite; }
+@keyframes fiesta-live-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
+/* Etiquetas bajo los botones de control. */
+.fiesta-ctrl-label { font-size: 10px; font-weight: 600; color: rgba(255,255,255,.55); margin-top: 6px; letter-spacing: .01em; }
 @keyframes fiesta-float-up {
   0% { transform: translateY(0) scale(.5); opacity: 0; }
   15% { opacity: 1; transform: translateY(-40px) scale(1.2); }
   100% { transform: translateY(-240px) scale(1); opacity: 0; }
 }
 </style>
-<div id="fiesta-room-view" class="fixed inset-0 z-[60] hidden flex-col text-white" style="background: linear-gradient(165deg, #1c2547 0%, #111736 55%, #0a0e22 100%);">
-  <div class="flex items-center gap-3 px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-3">
-    <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-2 mb-1.5">
-        <span id="fiesta-room-lang" class="text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full bg-white/15 text-white/90"></span>
-      </div>
-      <p id="fiesta-room-title" class="font-extrabold text-[17px] truncate leading-tight"></p>
-      <p id="fiesta-room-sub" class="text-xs text-white/60 truncate mt-0.5"></p>
-      <p id="fiesta-conn-status" class="text-[11px] font-bold text-white/50 truncate mt-0.5">Conectando&hellip;</p>
-    </div>
-    <button onclick="leaveFiesta()" class="tap44 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center active:bg-white/20 transition shrink-0" aria-label="Cerrar">
+<div id="fiesta-room-view" class="fixed inset-0 z-[60] hidden flex-col text-white" style="background:#0b0b0f;">
+  <!-- Resplandor de marca sutil (contenido, no degradado llamativo) -->
+  <div class="absolute inset-x-0 top-0 h-72 pointer-events-none" style="background:radial-gradient(65% 100% at 50% 0%, rgba(47,51,184,.13), transparent 70%);"></div>
+  <div class="relative flex items-center gap-3 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-2">
+    <button onclick="leaveFiesta()" class="tap44 w-10 h-10 rounded-full bg-white/[.07] flex items-center justify-center active:bg-white/[.14] transition shrink-0" aria-label="Cerrar">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 18L18 6M6 6l12 12"/></svg>
     </button>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="flex items-center gap-1.5 text-[11px] font-extrabold tracking-wide text-red-400"><span class="fiesta-live-dot w-2 h-2 rounded-full bg-red-500"></span>EN VIVO</span>
+        <span id="fiesta-room-timer" class="text-[11px] font-semibold text-white/45 tabular-nums">00:00</span>
+        <span id="fiesta-room-lang" class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/[.07] text-white/55"></span>
+      </div>
+      <p id="fiesta-room-title" class="font-extrabold text-[19px] truncate leading-tight"></p>
+      <p id="fiesta-room-sub" class="text-[13px] text-white/55 truncate mt-0.5"></p>
+      <p id="fiesta-conn-status" class="text-[11px] font-medium text-white/35 truncate mt-0.5">Conectando&hellip;</p>
+    </div>
   </div>
-  <div class="flex-1 overflow-y-auto px-5 pb-4">
-    <p class="text-[11px] font-bold uppercase tracking-widest text-white/50 mb-3">Hablando</p>
+  <div class="relative flex-1 overflow-y-auto px-5 pb-4">
+    <p class="text-[13px] font-bold text-white/85 mb-3 mt-1">Hablando</p>
     <div id="fiesta-speakers" class="grid grid-cols-3 gap-4 mb-7"></div>
-    <p class="text-[11px] font-bold uppercase tracking-widest text-white/50 mb-3">Escuchando <span id="fiesta-listener-count" class="text-white/70"></span></p>
+    <p class="text-[13px] font-bold text-white/85 mb-3">Escuchando <span id="fiesta-listener-count" class="text-white/45 font-semibold"></span></p>
     <div id="fiesta-listeners" class="flex flex-wrap gap-2"></div>
   </div>
-  <div class="px-6 pt-4" style="padding-bottom:max(2.5rem,env(safe-area-inset-bottom));">
-    <div id="fiesta-action-row" class="hidden justify-center mb-5">
-      <button id="fiesta-end-btn" onclick="endFiesta()" class="h-12 px-8 rounded-full bg-white/10 text-red-300 font-bold text-sm active:opacity-80 transition">Terminar fiesta</button>
+  <div class="relative px-6 pt-3" style="padding-bottom:max(2.25rem,env(safe-area-inset-bottom));">
+    <div id="fiesta-action-row" class="hidden justify-center mb-4">
+      <button id="fiesta-end-btn" onclick="endFiesta()" class="h-11 px-7 rounded-full bg-white/[.08] text-red-300 font-bold text-[13px] active:bg-white/[.14] transition">Terminar fiesta</button>
     </div>
-    <div class="flex items-center justify-center gap-5">
-      <button id="fiesta-mute-btn" onclick="fiestaToggleMute()" class="w-14 h-14 rounded-full bg-white/15 items-center justify-center active:opacity-80 transition shadow-lg hidden" aria-label="Silenciar micrófono"></button>
-      <button id="fiesta-speak-btn" onclick="fiestaWantToSpeak()" class="w-14 h-14 rounded-full bg-[#2F33B8] items-center justify-center active:opacity-80 transition shadow-lg shadow-[#2F33B8]/30 hidden text-2xl leading-none" aria-label="Quiero hablar">✋️</button>
-      <div class="relative">
-        <button id="fiesta-react-btn" onclick="fiestaToggleReactions()" class="w-14 h-14 rounded-full bg-white/15 flex items-center justify-center active:opacity-80 transition text-2xl leading-none" aria-label="Reaccionar">😍</button>
-        <div id="fiesta-reaction-picker" class="hidden absolute bottom-16 left-1/2 -translate-x-1/2 bg-white rounded-full pl-3 pr-3 py-2 flex items-center gap-1 shadow-xl z-20">
-          <button onclick="fiestaSendReaction('❤️')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">❤️</button>
-          <button onclick="fiestaSendReaction('👏')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">👏</button>
-          <button onclick="fiestaSendReaction('😂')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">😂</button>
-          <button onclick="fiestaSendReaction('🎉')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">🎉</button>
-          <button onclick="fiestaSendReaction('🔥')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">🔥</button>
-          <button onclick="fiestaSendReaction('👍')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">👍</button>
-        </div>
+    <div class="flex items-start justify-center gap-6">
+      <div class="flex-col items-center hidden" id="fiesta-mute-wrap">
+        <button id="fiesta-mute-btn" onclick="fiestaToggleMute()" class="w-14 h-14 rounded-full bg-white/[.1] items-center justify-center active:bg-white/[.18] transition" aria-label="Silenciar micrófono"></button>
+        <span class="fiesta-ctrl-label">Micrófono</span>
       </div>
-      <button onclick="leaveFiesta()" class="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center active:opacity-80 transition shadow-lg shadow-red-500/40" aria-label="Colgar">
-        <svg class="w-7 h-7 text-white" style="transform: rotate(135deg)" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-      </button>
+      <div class="flex-col items-center hidden" id="fiesta-speak-wrap">
+        <button id="fiesta-speak-btn" onclick="fiestaWantToSpeak()" class="w-14 h-14 rounded-full bg-[#2F33B8] items-center justify-center active:opacity-80 transition shadow-lg shadow-[#2F33B8]/30 text-white" aria-label="Quiero hablar">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21v-6.34a1.5 1.5 0 0 1 3 0V18m0-4.19a1.5 1.5 0 0 1 3 0V18m0-5.69a1.5 1.5 0 0 1 3 0V18m0-3.5a1.5 1.5 0 0 1 3 0v2.36a6.5 6.5 0 0 1-6.5 6.5h-.8a6.5 6.5 0 0 1-5.35-2.8L2.7 14.6a1.55 1.55 0 0 1 2.55-1.75L7 14.5"/></svg>
+        </button>
+        <span class="fiesta-ctrl-label">Hablar</span>
+      </div>
+      <div class="flex flex-col items-center">
+        <div class="relative">
+          <button id="fiesta-react-btn" onclick="fiestaToggleReactions()" class="w-14 h-14 rounded-full bg-white/[.1] flex items-center justify-center active:bg-white/[.18] transition text-white" aria-label="Reaccionar">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          </button>
+          <div id="fiesta-reaction-picker" class="hidden absolute bottom-16 left-1/2 -translate-x-1/2 bg-white rounded-full pl-3 pr-3 py-2 flex items-center gap-1 shadow-xl z-20]">
+            <button onclick="fiestaSendReaction('❤️')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">❤️</button>
+            <button onclick="fiestaSendReaction('👏')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">👏</button>
+            <button onclick="fiestaSendReaction('😂')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">😂</button>
+            <button onclick="fiestaSendReaction('🎉')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">🎉</button>
+            <button onclick="fiestaSendReaction('🔥')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">🔥</button>
+            <button onclick="fiestaSendReaction('👍')" class="tap44 text-2xl leading-none p-1 active:opacity-80 transition">👍</button>
+          </div>
+        </div>
+        <span class="fiesta-ctrl-label">Reaccionar</span>
+      </div>
+      <div class="flex flex-col items-center">
+        <button onclick="leaveFiesta()" class="w-14 h-14 rounded-full bg-[#e11d48] flex items-center justify-center active:opacity-80 transition shadow-lg shadow-[#e11d48]/30" aria-label="Colgar">
+          <svg class="w-6 h-6 text-white" style="transform: rotate(135deg)" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        </button>
+        <span class="fiesta-ctrl-label">Salir</span>
+      </div>
     </div>
   </div>
   <div id="fiesta-reactions-layer" class="absolute inset-0 pointer-events-none overflow-hidden z-10"></div>
@@ -25537,7 +25563,10 @@ function saveNote() {
       // Si no, la lectura del perfil puede ganarle la carrera a su escritura
       // y ver un perfil vacío o a medias, mandando al paso de cumpleaños a
       // una cuenta que en realidad está completa.
-      const _chatRecordReady = ensureChatUserRecord(user).catch(() => {});
+      const _chatRecordReady = ensureChatUserRecord(user)
+        .then(() => maybeRepairCorruptedUsername(user))
+        .then(restoredName => { if (restoredName) refreshProfileUsernameUI(restoredName); })
+        .catch(() => {});
       setupNotificationsBadge(user.uid);
       setupChatUnreadBadge(user.uid);
       startScreenTimeTracking();
@@ -32104,6 +32133,71 @@ const _startChatListeners = () => {
       }).then(() => ref.update({ lastChatLoginAt: Date.now() }));
     }).catch(() => {});
   }
+
+  // REPARACIÓN AUTOMÁTICA de usernames corrompidos (2026-09-19).
+  // El bug antiguo de ensureChatUserRecord sobrescribía usernames reales con
+  // temporales tipo "usuario_x7k2" cuando la lectura del perfil llegaba
+  // obsoleta en el login. Los temporales NUNCA se indexaron en usernames/,
+  // así que la señal de corrupción es concluyente: el username del perfil NO
+  // está en el índice, pero el índice SÍ tiene otra entrada apuntando a este
+  // uid con un nombre distinto => ese es el nombre real y se restaura.
+  // Corre en cada login con las credenciales del propio usuario, solo toca su
+  // propio perfil y usa transacción (si el username ya cambió, no pisa nada).
+  // Devuelve el nombre restaurado o null.
+  function maybeRepairCorruptedUsername(user) {
+    if (!user || !user.uid) return Promise.resolve(null);
+    const ref = DrexCloud.database().ref('users/' + user.uid);
+    return ref.once('value').then(snapshot => {
+      const data = snapshot.val() || {};
+      const currentName = String(data.username || '').trim();
+      if (!currentName) return null;
+      const idxRef = DrexCloud.database().ref('usernames');
+      return idxRef.child(currentName).once('value').then(ownSnap => {
+        if (ownSnap.val() === user.uid) return null; // indexado a mi uid => legítimo
+        if (ownSnap.exists()) return null; // lo reclamó otro usuario: no tocar
+        // Mi nombre no está indexado: posible temporal. Buscar el real.
+        return idxRef.once('value').then(allSnap => {
+          const idx = allSnap.val() || {};
+          let realName = null;
+          Object.keys(idx).forEach(name => {
+            if (idx[name] === user.uid && name !== currentName) realName = name;
+          });
+          if (!realName) return null; // irrecuperable: se deja el temporal
+          return ref.transaction(cur => {
+            cur = cur || {};
+            if (cur.username !== currentName) return; // ya cambió: no pisar
+            cur.username = realName;
+            cur.profileDegraded = null;
+            return cur;
+          }).then(res => (res && res.committed) ? realName : null);
+        });
+      });
+    }).catch(() => null);
+  }
+
+  // Refresca las etiquetas de username del perfil propio tras una restauración.
+  function refreshProfileUsernameUI(restoredName) {
+    try {
+      const user = DrexCloud.auth().currentUser;
+      DrexCloud.database().ref('users/' + user.uid).once('value').then(snap => {
+        const data = snap.val() || {};
+        let html = restoredName;
+        if (data.founder) html += ' <span class="founder-tag">Fundador</span>';
+        if (typeof getVerificationIcon === 'function') html += getVerificationIcon(data.email || '', user.uid);
+        const label = document.getElementById('profile-username');
+        if (label) label.innerHTML = html;
+        const desk = document.getElementById('profile-username-desktop');
+        if (desk) desk.innerHTML = html;
+        if (typeof syncProfileHeaderUsername === 'function') syncProfileHeaderUsername(html);
+        if (typeof showMiniToast === 'function') showMiniToast('Recuperamos tu nombre de usuario: @' + restoredName);
+      }).catch(() => {});
+    } catch (_) {}
+  }
+  // Acceso manual desde consola para diagnóstico.
+  try { window.drexRepairMyUsername = function () {
+    const u = DrexCloud.auth().currentUser;
+    return maybeRepairCorruptedUsername(u).then(r => { if (r) refreshProfileUsernameUI(r); return r; });
+  }; } catch (_) {}
 
   let currentGroupAdmins = [];
   let currentGroupIsCreator = false;
@@ -38823,6 +38917,28 @@ function fiestaShowRoom() {
   document.getElementById('fiesta-room-lang').textContent = fiestaCur.data.languageName || '';
   fiestaPaintControls();
   renderFiestaRoom();
+  fiestaStartRoomTimer();
+}
+
+// Temporizador "EN VIVO 04:32": humano, como en Twitter Spaces.
+let fiestaJoinAt = 0, fiestaTimerInt = null;
+function fiestaStartRoomTimer() {
+  try { if (fiestaTimerInt) clearInterval(fiestaTimerInt); } catch (_) {}
+  fiestaJoinAt = Date.now();
+  const el = document.getElementById('fiesta-room-timer');
+  const tick = () => {
+    if (!el) return;
+    const s = Math.floor((Date.now() - fiestaJoinAt) / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    el.textContent = mm + ':' + ss;
+  };
+  tick();
+  fiestaTimerInt = setInterval(tick, 1000);
+}
+function fiestaStopRoomTimer() {
+  try { if (fiestaTimerInt) clearInterval(fiestaTimerInt); } catch (_) {}
+  fiestaTimerInt = null;
 }
 
 function fiestaWatchRoom() {
@@ -38918,25 +39034,25 @@ function renderFiestaRoom() {
   spEl.innerHTML = speakers.map(([uid, m]) => `
     <div class="flex flex-col items-center gap-2">
       <div class="relative" id="fiesta-spk-${uid}">
-        <div class="w-20 h-20 rounded-full p-[3px]" style="background: ${m.muted ? 'rgba(255,255,255,.15)' : 'linear-gradient(135deg,#a855f7,#ec4899)'}">
-          <img src="${esc(m.photo) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-full h-full rounded-full object-cover ${m.muted ? 'opacity-60' : ''}">
+        <div class="w-20 h-20 rounded-full p-[2.5px] ${m.muted ? 'bg-white/10' : 'bg-white/[.16]'}" style="${m.muted ? '' : 'box-shadow: 0 0 14px rgba(255,255,255,.08);'}">
+          <img src="${esc(m.photo) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-full h-full rounded-full object-cover ${m.muted ? 'opacity-50 grayscale-[.4]' : ''}">
         </div>
-        ${m.muted ? '<span class="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-white/20 border-2 border-[#141a38] flex items-center justify-center"><svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path stroke-linecap="round" d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="4" y1="4" x2="20" y2="20" stroke-linecap="round"/></svg></span>' : ''}
-        ${fiestaCur.data.hostId === uid ? '<span class="absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full bg-amber-400 border-2 border-[#141a38] flex items-center justify-center text-sm leading-none">👑</span>' : ''}
+        ${m.muted ? '<span class="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-[#23232c] border-2 border-[#0b0b0f] flex items-center justify-center"><svg class="w-4 h-4 text-white/70" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path stroke-linecap="round" d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="4" y1="4" x2="20" y2="20" stroke-linecap="round"/></svg></span>' : ''}
+        ${fiestaCur.data.hostId === uid ? '<span class="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] font-extrabold tracking-widest px-2 py-0.5 rounded-full bg-[#2F33B8] text-white whitespace-nowrap" style="box-shadow:0 2px 10px rgba(47,51,184,.5);">ANFITRIÓN</span>' : ''}
       </div>
-      <p class="text-[11px] font-bold truncate max-w-[84px] text-white/90">${esc(m.name)}${uid === fiestaMyUid ? ' (tú)' : ''}</p>
+      <p class="text-[12px] font-semibold truncate max-w-[88px] ${m.muted ? 'text-white/45' : 'text-white/90'}">${esc(m.name)}${uid === fiestaMyUid ? ' · tú' : ''}</p>
       ${(fiestaAmHost && uid !== fiestaMyUid) ? `<div class="flex gap-1">
-        <button onclick="fiestaMuteMember('${uid}')" class="text-[9px] font-bold px-2 py-1 rounded-full bg-white/15 text-white/85">Silenciar</button>
-        <button onclick="fiestaKickMember('${uid}')" class="text-[9px] font-bold px-2 py-1 rounded-full bg-red-500/80 text-white">Expulsar</button>
+        <button onclick="fiestaMuteMember('${uid}')" class="text-[9px] font-bold px-2 py-1 rounded-full bg-white/[.08] text-white/70">Silenciar</button>
+        <button onclick="fiestaKickMember('${uid}')" class="text-[9px] font-bold px-2 py-1 rounded-full bg-[#e11d48]/85 text-white">Expulsar</button>
       </div>` : ''}
-    </div>`).join('') || '<p class="text-xs text-white/50 col-span-3 text-center py-4">Aún no hay hablantes.</p>';
+    </div>`).join('') || '<p class="text-[13px] text-white/40 col-span-3 text-center py-4">Aún no hay hablantes.</p>';
 
-  document.getElementById('fiesta-listener-count').textContent = listeners.length ? '(' + listeners.length + ')' : '';
+  document.getElementById('fiesta-listener-count').textContent = listeners.length ? '· ' + listeners.length : '';
   liEl.innerHTML = listeners.map(([uid, m]) => `
-    <div class="flex items-center gap-1.5 bg-white/10 rounded-full pl-1 pr-3 py-1">
+    <div class="flex items-center gap-1.5 bg-white/[.06] rounded-full pl-1 pr-3 py-1">
       <img src="${esc(m.photo) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-7 h-7 rounded-full object-cover">
-      <span class="text-xs font-semibold max-w-[100px] truncate text-white/90">${esc(m.name)}${uid === fiestaMyUid ? ' (tú)' : ''}</span>
-    </div>`).join('') || '<p class="text-xs text-white/40">Sé el primero en escuchar.</p>';
+      <span class="text-[13px] font-medium max-w-[110px] truncate text-white/75">${esc(m.name)}${uid === fiestaMyUid ? ' · tú' : ''}</span>
+    </div>`).join('') || '<p class="text-[13px] text-white/35">Sé el primero en escuchar.</p>';
 }
 
 function fiestaPaintControls() {
@@ -38948,14 +39064,21 @@ function fiestaPaintControls() {
   const MIC_ON = '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 19v4M8 23h8"/></svg>';
   const MIC_OFF = '<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 0 1-14 0v-2"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 19v4M8 23h8"/><line x1="4" y1="4" x2="20" y2="20" stroke-linecap="round"/></svg>';
   if (muteBtn) {
-    muteBtn.classList.toggle('hidden', !isSpeaker);
-    muteBtn.classList.toggle('flex', isSpeaker);
-
+    const muteWrap = document.getElementById('fiesta-mute-wrap');
+    if (muteWrap) {
+      muteWrap.classList.toggle('hidden', !isSpeaker);
+      muteWrap.classList.toggle('flex', isSpeaker);
+    }
     muteBtn.innerHTML = fiestaMuted ? MIC_OFF : MIC_ON;
     muteBtn.setAttribute('aria-label', fiestaMuted ? 'Activar micrófono' : 'Silenciar micrófono');
   }
   const showSpeak = !isSpeaker;
   const showEnd = fiestaAmHost;
+  const speakWrap = document.getElementById('fiesta-speak-wrap');
+  if (speakWrap) {
+    speakWrap.classList.toggle('hidden', !showSpeak);
+    speakWrap.classList.toggle('flex', showSpeak);
+  }
   if (speakBtn) {
     speakBtn.classList.toggle('hidden', !showSpeak);
     speakBtn.classList.toggle('flex', showSpeak);
@@ -39270,6 +39393,7 @@ function fiestaFullCleanup() {
 }
 
 async function leaveFiesta(silent) {
+  fiestaStopRoomTimer();
   if (typeof DrexCloud !== 'undefined' && DrexCloud.setFastPolling) DrexCloud.setFastPolling(false);
   const id = fiestaCur && fiestaCur.id;
   const uid = fiestaMyUid;
