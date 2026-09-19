@@ -8909,7 +8909,8 @@ function saveNote() {
               const obs = ensureMonetagInFeedObserver();
               if (obs) obs.observe(wrap); else loadMonetagInFeedSlot(wrap);
             } else {
-              loadAdsterraInFeedSlot(wrap);
+              const aobs = ensureAdsterraInFeedObserver();
+              if (aobs) aobs.observe(wrap); else loadAdsterraInFeedSlot(wrap);
             }
           } catch (_) {}
           return;
@@ -8967,11 +8968,23 @@ function saveNote() {
       if (!drexLoadAdsterraBannerInto(body, ADSTERRA.bannerKey, 320, 50, wrap)) wrap.style.display = 'none';
     } catch (_) { try { wrap.style.display = 'none'; } catch (_) {} }
   }
-  /* Compat: el observador viejo de Adsterra ya no se usa en el feed
-     (el feed es territorio Monetag desde 2026-09-19). Se conserva como no-op
-     por si algún código antiguo lo referencia. */
+  /* Observador para los bloques in-feed de Adsterra: carga el banner cuando
+     está por entrar en pantalla (lazy). Evita disparar N invoke.js a la vez
+     al renderizar el feed, que era otra causa del "se queda cargando". */
   var adsterraInFeedObserver = null;
-  function ensureAdsterraInFeedObserver() { return null; }
+  function ensureAdsterraInFeedObserver() {
+    if (adsterraInFeedObserver) return adsterraInFeedObserver;
+    try {
+      adsterraInFeedObserver = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          try { adsterraInFeedObserver.unobserve(en.target); } catch (_) {}
+          loadAdsterraInFeedSlot(en.target);
+        });
+      }, { rootMargin: '1200px 0px' });
+    } catch (_) { adsterraInFeedObserver = null; }
+    return adsterraInFeedObserver;
+  }
 
   function loadUserFrame(userId, targetElementId) { /* feature removed */ }
 
@@ -18436,6 +18449,13 @@ function saveNote() {
   const MONETAG = {
     vignetteZone: '11837635', // Zone ID del Vignette Banner ("Interesting tag", creada 19.09.2026)
     vignetteScriptUrl: 'https://n6wxm.com/vignette.min.js', // Script oficial del tag Vignette Banner
+    /* Zonas In-Page Push (formato flotante nativo de Monetag, no ocupa bloque
+       físico: se inyecta 1 vez por sesión al entrar a la sección).
+       2026-09-19: el usuario pidió monetizar con AMBAS empresas en varias
+       secciones: Adsterra en los bloques físicos + Monetag IPP flotante. */
+    ippFeedZone: '__MONETAG_IPP_FEED_ZONE__',
+    ippPracticarZone: '__MONETAG_IPP_PRACTICAR_ZONE__',
+    ippScriptUrl: '__MONETAG_IPP_SCRIPT__',
     /* Zonas de Banner (formato slot, se dibujan DENTRO del bloque donde se
        inserta el tag). 2026-09-19: Monetag retiró el Banner clásico; no hay
        zonas que crear. Feed y Practicar usan Adsterra (feedProvider).
@@ -18497,15 +18517,29 @@ function saveNote() {
      drexLoadSectionAds(root) carga cada bloque una sola vez; si el anuncio
      no llena, el bloque se oculta limpiamente (cero esqueletos). */
   function drexAdSlotFail(slot) {
-    try { if (slot) slot.style.display = 'none'; } catch (_) {}
+    try { if (slot) { slot.dataset.adFailed = '1'; slot.style.display = 'none'; } } catch (_) {}
   }
   /* Vigila el cuerpo del bloque: si tras timeoutMs no hay iframe/ins con
-     tamaño real, se considera sin fill y se oculta el bloque. */
+     tamaño real, se considera sin fill y se oculta el bloque.
+     Si el bloque está oculto por un ancestro (la vista aún no es visible),
+     NO se dictamina fallo: se reintenta hasta 5 veces cada 2s. Así ningún
+     bloque se queda en "cargando" ni se oculta por estar en una vista
+     que todavía no se abrió. */
   function drexWatchAdBody(body, slot, timeoutMs) {
     if (!body || !slot) return;
     var ms = Math.max(4000, timeoutMs | 0 || 10000);
-    setTimeout(function () {
+    var tries = 0;
+    var check;
+    check = function () {
       try {
+        if (!slot || slot.dataset.adFailed === '1') return;
+        tries++;
+        var hiddenByAncestor = false;
+        try {
+          hiddenByAncestor = slot.style.display !== 'none' && !slot.offsetParent &&
+            !(slot.getClientRects && slot.getClientRects().length);
+        } catch (_) {}
+        if (hiddenByAncestor && tries < 5) { setTimeout(check, 2000); return; }
         var ok = false;
         var els = body.querySelectorAll('iframe, ins');
         for (var i = 0; i < els.length; i++) {
@@ -18528,7 +18562,8 @@ function saveNote() {
         if (!ok) drexAdSlotFail(slot);
         else { try { var sh = body.querySelector('.ad-shimmer'); if (sh) sh.style.display = 'none'; } catch (_) {} }
       } catch (_) {}
-    }, ms);
+    };
+    setTimeout(check, ms);
   }
   /* Inyecta un tag Banner de Monetag dentro del cuerpo del bloque. El script
      oficial dibuja el banner en la posición del propio <script>. */
@@ -18549,20 +18584,84 @@ function saveNote() {
       return true;
     } catch (_) { drexAdSlotFail(slot); return false; }
   }
-  /* Inyecta un banner de Adsterra (invoke.js) dentro del cuerpo del bloque. */
+  /* In-Page Push de Monetag (banner flotante nativo, no ocupa bloque físico).
+     Se inyecta UNA vez por zona y por sesión. No depende de la sonda de
+     Adsterra; si el script falla, simplemente no se muestra nada. */
+  var __drexIppLoaded = {};
+  function drexLoadMonetagIPP(zone) {
+    try {
+      if (!zone || zone.indexOf('__MONETAG') === 0) return false;
+      if (typeof MONETAG === 'undefined' || !MONETAG || !MONETAG.ippScriptUrl ||
+          MONETAG.ippScriptUrl.indexOf('__MONETAG') === 0) return false;
+      if (__drexIppLoaded[zone]) return true;
+      __drexIppLoaded[zone] = true;
+      var s = document.createElement('script');
+      s.type = 'text/javascript';
+      s.dataset.zone = zone;
+      s.src = MONETAG.ippScriptUrl;
+      s.onerror = function () { try { delete __drexIppLoaded[zone]; } catch (_) {} };
+      (document.head || document.documentElement).appendChild(s);
+      return true;
+    } catch (_) { return false; }
+  }
+  /* Cola serializada para TODAS las cargas de invoke.js de Adsterra.
+     Causa raíz del "se queda cargando": window.atOptions es global y cada
+     banner lo pisaba antes de que el invoke.js anterior lo leyera; además
+     N banners simultáneos saturaban la respuesta del ad server. Ahora cada
+     carga espera a que la anterior termine (load/error/timeout 6s). */
+  var __drexAdsterraQueue = Promise.resolve();
+  function drexQueueAdsterraLoad(loadFn) {
+    try {
+      __drexAdsterraQueue = __drexAdsterraQueue.then(function () {
+        return new Promise(function (resolve) {
+          var done = false;
+          var finish = function () { if (!done) { done = true; resolve(); } };
+          try { loadFn(finish); } catch (_) { finish(); }
+          setTimeout(finish, 6000); // la cola nunca se atasca
+        });
+      });
+      return __drexAdsterraQueue;
+    } catch (_) { try { loadFn(function () {}); } catch (_) {} return null; }
+  }
+  /* Inyecta un banner de Adsterra (invoke.js) dentro del cuerpo del bloque.
+     La inyección real pasa por drexQueueAdsterraLoad para que window.atOptions
+     nunca se pise entre banners. El watcher arranca desde la llamada para
+     que el bloque jamás se quede en "cargando": si la cola tarda, el watcher
+     lo oculta y la carga encolada se salta al verlo oculto. */
   function drexLoadAdsterraBannerInto(body, key, w, h, slot) {
     try {
       if (!body || !key) { drexAdSlotFail(slot); return false; }
       if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) { drexAdSlotFail(slot); return false; }
       body.innerHTML = '<div class="ad-shimmer"></div>';
-      window.atOptions = { 'key': key, 'format': 'iframe', 'height': h | 0 || 50, 'width': w | 0 || 320, 'params': {} };
-      var s = document.createElement('script');
-      s.type = 'text/javascript';
-      s.src = 'https://www.highrevenueformat.com/' + key + '/invoke.js';
-      s.onerror = function () { drexAdSlotFail(slot); };
-      body.appendChild(s);
       if (typeof adsterraWatchShimmer === 'function') { try { adsterraWatchShimmer(body); } catch (_) {} }
-      drexWatchAdBody(body, slot, 9000);
+      drexWatchAdBody(body, slot, 10000);
+      drexQueueAdsterraLoad(function (release) {
+        try {
+          if (!body || !slot || slot.style.display === 'none' || slot.dataset.adFailed === '1') { release(); return; }
+          window.atOptions = { 'key': key, 'format': 'iframe', 'height': h | 0 || 50, 'width': w | 0 || 320, 'params': {} };
+          var s = document.createElement('script');
+          s.type = 'text/javascript';
+          s.src = 'https://www.highrevenueformat.com/' + key + '/invoke.js';
+          var settled = false;
+          var done = function (ok) {
+            if (settled) return; settled = true;
+            if (!ok) drexAdSlotFail(slot);
+            release();
+          };
+          s.onload = function () {
+            // El script cargó: hasta 4s para que dibuje el iframe.
+            setTimeout(function () {
+              try {
+                var el = body.querySelector('iframe, ins');
+                var r = el && el.getBoundingClientRect();
+                done(!!(r && r.width > 10 && r.height > 5));
+              } catch (_) { done(false); }
+            }, 4000);
+          };
+          s.onerror = function () { done(false); };
+          body.appendChild(s);
+        } catch (_) { drexAdSlotFail(slot); release(); }
+      });
       return true;
     } catch (_) { drexAdSlotFail(slot); return false; }
   }
@@ -18586,9 +18685,10 @@ function saveNote() {
               if (zoneName === 'feed') zone = (typeof MONETAG !== 'undefined' && MONETAG.feedBannerZone) || '';
               if (zoneName === 'practicar') zone = (typeof MONETAG !== 'undefined' && MONETAG.practicarBannerZone) || '';
               if (!monetagBannerActive()) {
-                // Si el feed está configurado con Adsterra (Monetag no ofrece banner),
-                // el bloque del feed carga Adsterra en vez de ocultarse.
-                var feedFallback = (zoneName === 'feed' || slot.id === 'monetag-feed-top') &&
+                // Monetag retiró el banner clásico: feed y Practicar usan
+                // Adsterra en el bloque físico (más Monetag IPP flotante).
+                var feedFallback = (zoneName === 'feed' || zoneName === 'practicar' ||
+                  slot.id === 'monetag-feed-top' || slot.id === 'drex-ad-practicar') &&
                   typeof MONETAG !== 'undefined' && MONETAG && MONETAG.feedProvider === 'adsterra';
                 if (feedFallback && typeof ADSTERRA !== 'undefined' && ADSTERRA && ADSTERRA.bannerKey) {
                   drexLoadAdsterraBannerInto(body, ADSTERRA.bannerKey, 320, 50, slot);
@@ -18635,6 +18735,7 @@ function saveNote() {
     const units = [];
     if (ADSTERRA.bannerKey2) units.push({ slotId: 'adsterra-menu-slot', key: ADSTERRA.bannerKey2, w: ADSTERRA.menuBannerW || 320, h: ADSTERRA.menuBannerH || 50 });
     // Se cargan en cadena para que cada banner use su propia key (atOptions).
+    // Además pasan por la cola global para no pisar cargas de otras secciones.
     let i = 0;
     (function next() {
       if (i >= units.length) return;
@@ -18644,13 +18745,20 @@ function saveNote() {
       slot.style.display = 'flex';
       slot.style.justifyContent = 'center';
       slot.style.padding = '8px 0';
-      window.atOptions = { 'key': u.key, 'format': 'iframe', 'height': u.h, 'width': u.w, 'params': {} };
-      const s = document.createElement('script');
-      s.type = 'text/javascript';
-      s.src = 'https://www.highrevenueformat.com/' + u.key + '/invoke.js';
-      s.onload = next;
-      s.onerror = next;
-      slot.appendChild(s);
+      var doInject = function (release) {
+        try {
+          window.atOptions = { 'key': u.key, 'format': 'iframe', 'height': u.h, 'width': u.w, 'params': {} };
+          const s = document.createElement('script');
+          s.type = 'text/javascript';
+          s.src = 'https://www.highrevenueformat.com/' + u.key + '/invoke.js';
+          var cont = function () { try { release(); } catch (_) {} next(); };
+          s.onload = cont;
+          s.onerror = cont;
+          slot.appendChild(s);
+        } catch (_) { try { release(); } catch (_) {} next(); }
+      };
+      if (typeof drexQueueAdsterraLoad === 'function') drexQueueAdsterraLoad(doInject);
+      else doInject(function () {});
     })();
   }
 
@@ -18690,20 +18798,33 @@ function saveNote() {
       var slot = document.getElementById('drex-sticky-ad-slot');
       if (!bar || !slot) return;
       slot.innerHTML = '<div class="ad-shimmer"></div>';
-      window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
       var failBar = function () {
         drexStickyAdNoteFail();
         try { bar.style.display = 'none'; } catch (_) {}
         try { drexStickyAdLiftFabs(false); } catch (_) {}
       };
-      var s = document.createElement('script');
-      s.type = 'text/javascript';
-      s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
-      s.onerror = function () {
-        try { if (typeof drexTryMonetagFallback === 'function' && drexTryMonetagFallback(slot, failBar)) return; } catch (_) {}
-        failBar();
+      var doStickyInject = function (release) {
+        try {
+          window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
+          var s = document.createElement('script');
+          s.type = 'text/javascript';
+          s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
+          var settled = false;
+          var done = function (ok) {
+            if (settled) return; settled = true;
+            try { release(); } catch (_) {}
+            if (!ok) {
+              try { if (typeof drexTryMonetagFallback === 'function' && drexTryMonetagFallback(slot, failBar)) return; } catch (_) {}
+              failBar();
+            }
+          };
+          s.onload = function () { setTimeout(function () { done(true); }, 3000); };
+          s.onerror = function () { done(false); };
+          slot.appendChild(s);
+        } catch (_) { try { release(); } catch (_) {} failBar(); }
       };
-      slot.appendChild(s);
+      if (typeof drexQueueAdsterraLoad === 'function') drexQueueAdsterraLoad(doStickyInject);
+      else doStickyInject(function () {});
       setTimeout(function () {
         try {
           if (drexStickyAdClosed()) { bar.style.display = 'none'; drexStickyAdLiftFabs(false); return; }
@@ -28697,6 +28818,8 @@ function saveNote() {
     if (typeof window.setActiveNavTab === 'function') window.setActiveNavTab(0);
     loadNotes(false);
     try { if (typeof drexLoadSectionAds === 'function') drexLoadSectionAds(document.getElementById('main-app')); } catch (_) {}
+    // Monetag In-Page Push (flotante): segunda empresa monetizando en el feed.
+    try { if (typeof drexLoadMonetagIPP === 'function' && typeof MONETAG !== 'undefined' && MONETAG) drexLoadMonetagIPP(MONETAG.ippFeedZone); } catch (_) {}
   }
 
   // Games feature removed
@@ -37902,6 +38025,8 @@ function openPracticar() {
   if (typeof window.setActiveNavTab === 'function') window.setActiveNavTab(2);
   loadPracticarLangs().catch(function() {}).finally(function() { loadPracticarFeed(); });
   try { if (typeof drexLoadSectionAds === 'function') drexLoadSectionAds(document.getElementById('practicar-view')); } catch (_) {}
+  // Monetag In-Page Push (flotante): segunda empresa monetizando en Practicar.
+  try { if (typeof drexLoadMonetagIPP === 'function' && typeof MONETAG !== 'undefined' && MONETAG) drexLoadMonetagIPP(MONETAG.ippPracticarZone); } catch (_) {}
 }
 
 async function loadPracticarLangs() {
@@ -41767,11 +41892,21 @@ function musicShowAdBreak(next) {
   if (!adMoved) try {
     const mKey = ADSTERRA.inFeedRectKey || ADSTERRA.bannerKey;
     const mW = ADSTERRA.inFeedRectKey ? 300 : 320, mH = ADSTERRA.inFeedRectKey ? 250 : 50;
-    window.atOptions = { 'key': mKey, 'format': 'iframe', 'height': mH, 'width': mW, 'params': {} };
-    const sc = document.createElement('script');
-    sc.type = 'text/javascript';
-    sc.src = 'https://www.highrevenueformat.com/' + mKey + '/invoke.js';
-    slot.appendChild(sc);
+    var doMusicAdInject = function (release) {
+      try {
+        window.atOptions = { 'key': mKey, 'format': 'iframe', 'height': mH, 'width': mW, 'params': {} };
+        const sc = document.createElement('script');
+        sc.type = 'text/javascript';
+        sc.src = 'https://www.highrevenueformat.com/' + mKey + '/invoke.js';
+        var mSettled = false;
+        var mDone = function () { if (!mSettled) { mSettled = true; try { release(); } catch (_) {} } };
+        sc.onload = function () { setTimeout(mDone, 2000); };
+        sc.onerror = mDone;
+        slot.appendChild(sc);
+      } catch (_) { try { release(); } catch (_) {} }
+    };
+    if (typeof drexQueueAdsterraLoad === 'function') drexQueueAdsterraLoad(doMusicAdInject);
+    else doMusicAdInject(function () {});
     setTimeout(function () {
       try {
         const ifr = slot.querySelector('iframe');
@@ -42466,11 +42601,20 @@ function musicPreloadAdBreak() {
     musicAdBreakPreloaded = true;
     const pKey = ADSTERRA.inFeedRectKey || ADSTERRA.bannerKey;
     const pW = ADSTERRA.inFeedRectKey ? 300 : 320, pH = ADSTERRA.inFeedRectKey ? 250 : 50;
-    window.atOptions = { 'key': pKey, 'format': 'iframe', 'height': pH, 'width': pW, 'params': {} };
-    const sc = document.createElement('script');
-    sc.type = 'text/javascript';
-    sc.src = 'https://www.highrevenueformat.com/' + pKey + '/invoke.js';
-    pre.appendChild(sc);
+    var doPreload = function (release) {
+      try {
+        window.atOptions = { 'key': pKey, 'format': 'iframe', 'height': pH, 'width': pW, 'params': {} };
+        const sc = document.createElement('script');
+        sc.type = 'text/javascript';
+        sc.src = 'https://www.highrevenueformat.com/' + pKey + '/invoke.js';
+        var pDone = function () { try { release(); } catch (_) {} };
+        sc.onload = function () { setTimeout(pDone, 1500); };
+        sc.onerror = pDone;
+        pre.appendChild(sc);
+      } catch (_) { try { release(); } catch (_) {} }
+    };
+    if (typeof drexQueueAdsterraLoad === 'function') drexQueueAdsterraLoad(doPreload);
+    else doPreload(function () {});
   } catch (_) {}
 }
 /* ---------- Adsterra en el reproductor ---------- */
@@ -42485,19 +42629,28 @@ function adsterraInjectMusicSlot() {
   if (card) card.style.display = 'block';
   slot.style.display = 'flex';
   adsterraWatchShimmer(slot);
-  window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
-  const s = document.createElement('script');
-  s.type = 'text/javascript';
-  s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
-  s.onerror = function () {
+  var doMusicSlotInject = function (release) {
     try {
-      var card = document.getElementById('adsterra-music-card');
-      var hide = function () { try { slot.style.display = 'none'; if (card) card.style.display = 'none'; } catch (_) {} };
-      if (typeof drexTryMonetagFallback === 'function' && drexTryMonetagFallback(slot, hide)) return;
-      hide();
-    } catch (_) {}
+      window.atOptions = { 'key': ADSTERRA.bannerKey, 'format': 'iframe', 'height': 50, 'width': 320, 'params': {} };
+      const s = document.createElement('script');
+      s.type = 'text/javascript';
+      s.src = 'https://www.highrevenueformat.com/' + ADSTERRA.bannerKey + '/invoke.js';
+      var msDone = function () { try { release(); } catch (_) {} };
+      s.onload = function () { setTimeout(msDone, 1500); };
+      s.onerror = function () {
+        msDone();
+        try {
+          var card = document.getElementById('adsterra-music-card');
+          var hide = function () { try { slot.style.display = 'none'; if (card) card.style.display = 'none'; } catch (_) {} };
+          if (typeof drexTryMonetagFallback === 'function' && drexTryMonetagFallback(slot, hide)) return;
+          hide();
+        } catch (_) {}
+      };
+      slot.appendChild(s);
+    } catch (_) { try { release(); } catch (_) {} }
   };
-  slot.appendChild(s);
+  if (typeof drexQueueAdsterraLoad === 'function') drexQueueAdsterraLoad(doMusicSlotInject);
+  else doMusicSlotInject(function () {});
 }
 
 /* ---------- Tarjeta de música en el feed ---------- */
