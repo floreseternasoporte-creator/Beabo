@@ -6,7 +6,7 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v11'; // v11: splash estático sin animaciones (2026-09-19)
+const DREX_SW_VERSION = 'drex-v12'; // v12: handlers push + notificationclick (2026-09-19)
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',
@@ -58,6 +58,50 @@ function networkFirst(req, cacheKey) {
     })
     .catch(() => caches.match(cacheKey));
 }
+
+// ============================================================
+// Web Push (2026-09-19): muestra la notificación aunque Drex esté
+// cerrada y abre la app en la sección correcta al tocarla.
+// El backend (Lambda drex-push-sender) envía {title, body, url, tag}.
+// ============================================================
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) {}
+  const title = data.title || 'Drex';
+  let iconUrl = 'icon-192.png';
+  try { iconUrl = new URL('icon-192.png', self.registration.scope).href; } catch (_) {}
+  const options = {
+    body: data.body || '',
+    icon: iconUrl,
+    badge: iconUrl,
+    tag: data.tag || 'drex-notif',
+    renotify: true,
+    data: { url: data.url || './' }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || './';
+  let targetUrl = target;
+  try { targetUrl = new URL(target, self.registration.scope).href; } catch (_) {}
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        try {
+          if ('focus' in c) {
+            // Si ya hay una ventana de Drex, la enfoca y le pide navegar.
+            c.focus();
+            try { c.postMessage({ type: 'drex-push-open', url: targetUrl }); } catch (_) {}
+            return;
+          }
+        } catch (_) {}
+      }
+      if (clients.openWindow) return clients.openWindow(targetUrl);
+    })
+  );
+});
 
 self.addEventListener('fetch', event => {
   const req = event.request;
