@@ -436,6 +436,11 @@ button, a, select, [role="button"] {
   filter: drop-shadow(0 0 4px rgba(28,43,74, 0.22));
 }
 
+/* El icono de compartir (avión) no rota al activarse: solo se agranda. */
+.repost-btn.active .repost-icon--share {
+  transform: scale(1.12);
+}
+
 @keyframes repost-bounce {
   0% { transform: scale(1); }
   50% { transform: scale(1.4); }
@@ -6267,30 +6272,7 @@ if (scrollArea) {
 </div>
 
 <!-- MENÚ COMPARTIR PUBLICACIÓN (una sola entrada: chat o enlace) -->
-<div id="post-share-menu-overlay" class="hidden fixed inset-0 bg-black/40 z-[200] flex items-end justify-center" onclick="if(event.target===this) closePostShareMenu()">
-  <div class="bg-white rounded-t-3xl w-full max-w-md px-4 pt-3" style="padding-bottom:max(1.5rem,env(safe-area-inset-bottom));">
-    <div class="w-10 h-1 rounded-full bg-[#dce1e5] mx-auto mb-3"></div>
-    <h3 class="font-bold text-[#1c2b4a] text-sm text-center mb-3">Compartir publicación</h3>
-    <button onclick="shareMenuSendViaChat()" class="w-full flex items-center gap-3 px-3 py-3 rounded-2xl hover:bg-[#f0f4f9] active:bg-[#f0f4f9] transition text-left">
-      <span class="w-10 h-10 rounded-full bg-[#eef2f7] flex items-center justify-center text-[#1c2b4a] flex-shrink-0">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-      </span>
-      <span>
-        <span class="block text-sm font-bold text-[#1c2b4a]">Compartir por chat</span>
-        <span class="block text-xs text-[#7b878f]">Envíala a alguien en Drex</span>
-      </span>
-    </button>
-    <button onclick="shareMenuShareLink()" class="w-full flex items-center gap-3 px-3 py-3 rounded-2xl hover:bg-[#f0f4f9] active:bg-[#f0f4f9] transition text-left">
-      <span class="w-10 h-10 rounded-full bg-[#eef2f7] flex items-center justify-center text-[#1c2b4a] flex-shrink-0">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v13m0-13 4 4m-4-4-4 4M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
-      </span>
-      <span>
-        <span class="block text-sm font-bold text-[#1c2b4a]">Compartir enlace</span>
-        <span class="block text-xs text-[#7b878f]">Copia o envía el enlace fuera de Drex</span>
-      </span>
-    </button>
-  </div>
-</div>
+<!-- Hoja de compartir eliminada: el botón compartir ahora es repost directo. -->
 
 <!-- ============ PRACTICAR IDIOMAS (estilo Busuu: correcciones de la comunidad) ============ -->
 <div id="practicar-view" class="fixed inset-0 bg-[#f0f4f9] text-[#1c2b4a] overflow-y-auto hidden z-50">
@@ -7719,6 +7701,9 @@ if (scrollArea) {
             <button class="tab-button active py-4 px-2 border-b-2 border-[#5c6974] text-[#5c6974] font-medium" data-tab="posts">
               Publicaciones
             </button>
+            <button class="tab-button py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium" data-tab="reposts">
+              Reposts
+            </button>
             <button class="tab-button py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium" data-tab="notes">
               Notas
             </button>
@@ -7752,6 +7737,17 @@ if (scrollArea) {
 
               <!-- Lista de publicaciones -->
               <div id="user-posts-desktop" class="flex flex-col"></div>
+            </div>
+
+            <!-- Tab de Reposts -->
+            <div id="reposts-tab-content" class="tab-content hidden">
+              <div class="flex justify-between items-center mb-6">
+                <div>
+                  <h2 id="profile-reposts-header" class="text-2xl font-bold text-gray-900">0 reposts</h2>
+                  <p class="text-sm text-gray-500 mt-1">Publicaciones que reposteaste en Drex</p>
+                </div>
+              </div>
+              <div id="profile-reposts-list" class="flex flex-col"></div>
             </div>
 
             <!-- Otros tabs (ocultos por defecto) -->
@@ -7829,6 +7825,9 @@ if (scrollArea) {
 
         if (tabName === 'notes') {
           loadUserNotes();
+        }
+        if (tabName === 'reposts' && typeof loadProfileRepostsTab === 'function') {
+          loadProfileRepostsTab();
         }
       }
     });
@@ -7930,6 +7929,8 @@ if (scrollArea) {
         </div>
         <h3 class="text-[15px] font-extrabold text-black mb-2 px-1">Publicaciones</h3>
         <div id="author-profile-posts-list" class="flex flex-col"></div>
+        <h3 class="text-[15px] font-extrabold text-black mb-2 px-1 mt-6">Reposts</h3>
+        <div id="author-profile-reposts-list" class="flex flex-col"></div>
       </div>
         <!-- Nota de perfil -->
         <div id="profile-note" class="mx-4 hidden mt-2 p-4 text-center border-y border-[#efefef]">
@@ -9497,6 +9498,68 @@ function saveNote() {
       console.error('Error renderizando repost de perfil:', repostId, renderError);
     }
     return card;
+  }
+
+  // Pestaña "Reposts" del perfil propio: lee userReposts/<uid>, trae cada
+  // post original y lo pinta con la cabecera "Reposteado".
+  async function loadProfileRepostsTab() {
+    const container = document.getElementById('profile-reposts-list');
+    const header = document.getElementById('profile-reposts-header');
+    if (!container) return;
+    const user = DrexCloud.auth().currentUser;
+    if (!user) {
+      container.innerHTML = `<div class="py-10 text-center text-[#6b7280]">Inicia sesión para ver tus reposts.</div>`;
+      return;
+    }
+    container.innerHTML = `<div class="py-10 flex justify-center">${typeof getSpinnerMarkup === 'function' ? getSpinnerMarkup() : '<span class="text-sm text-[#9aa4ae]">Cargando...</span>'}</div>`;
+    try {
+      const snap = await DrexCloud.database().ref('userReposts/' + user.uid).once('value');
+      if (!snap.exists()) {
+        if (header) header.textContent = '0 reposts';
+        container.innerHTML = `
+          <div class="py-12 text-center text-[#6b7280]">
+            <p class="font-bold text-[#1c2b4a] mb-1">Aún no tienes reposts</p>
+            <p class="text-sm">Toca el botón de compartir en cualquier publicación para repostearla aquí.</p>
+          </div>`;
+        return;
+      }
+      const reposts = [];
+      snap.forEach(child => reposts.push({ ...(child.val() || {}), noteId: child.key }));
+      reposts.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+      if (header) header.textContent = reposts.length + (reposts.length === 1 ? ' repost' : ' reposts');
+      const voteMaps = await _getProfileVoteMaps();
+      const items = await Promise.all(reposts.map(item =>
+        DrexCloud.database().ref('communityNotes/' + item.noteId).once('value')
+          .then(postSnap => postSnap.val() ? { payload: item, post: { ...postSnap.val(), id: item.noteId } } : null)
+          .catch(() => null)
+      ));
+      container.innerHTML = '';
+      const valid = items.filter(Boolean);
+      if (!valid.length) {
+        container.innerHTML = `<div class="py-10 text-center text-[#6b7280]">No hay reposts disponibles.</div>`;
+        return;
+      }
+      valid.forEach(({ payload, post }) => {
+        container.appendChild(createProfileRepostCard(payload, post, {
+          user: voteMaps.user,
+          userVote: voteMaps.votes[post.id] || null,
+          hasReposted: true
+        }));
+      });
+      if (typeof hydrateSaveButtons === 'function') hydrateSaveButtons(container);
+      if (typeof hydrateQuickFollowButtons === 'function') hydrateQuickFollowButtons(container);
+    } catch (error) {
+      console.error('Error al cargar reposts del perfil:', error);
+      container.innerHTML = `<div class="py-10 text-center text-red-500">Error al cargar los reposts.</div>`;
+    }
+  }
+
+  // Si la pestaña Reposts está visible y cambia un repost, recargarla.
+  function refreshProfileRepostsIfVisible() {
+    const panel = document.getElementById('reposts-tab-content');
+    if (panel && !panel.classList.contains('hidden') && typeof loadProfileRepostsTab === 'function') {
+      loadProfileRepostsTab();
+    }
   }
 
   function openCreatorHub() {
@@ -12443,12 +12506,11 @@ function saveNote() {
     openPostOptionsSheet(noteId);
   }
 
-  // Compartir del post desde la hoja: abre el mismo menú que usa el feed.
+  // Compartir del post desde el visor: repost directo, sin hoja intermedia.
   function _shareFeedImageModalPost() {
     const noteId = _feedImageModalNoteId;
     if (!noteId) return;
-    if (typeof openPostShareMenu === 'function') openPostShareMenu(noteId);
-    else if (typeof sharePostExternally === 'function') sharePostExternally(noteId, 'post');
+    if (typeof toggleRepost === 'function') toggleRepost(noteId);
   }
 
   // Abrir los comentarios POR ENCIMA del visor: al cerrarlos, el visor sigue ahí.
@@ -14074,16 +14136,8 @@ function saveNote() {
                 <span id="commentscount-${note.id}">${commentsCount}</span>
               </button>
               <button onclick="toggleRepost('${note.id}')" id="repost-${note.id}" class="drex-action-pill repost-btn ${hasReposted ? 'active' : ''}" aria-label="Repostear publicación">
-                <svg class="repost-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M17 1L21 5L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M3 11V9C3 7.93913 3.42143 6.92172 4.17157 6.17157C4.92172 5.42143 5.93913 5 7 5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M7 23L3 19L7 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <svg class="repost-icon repost-icon--share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
                 <span>${repostsCount}</span>
-              </button>
-              <button onclick="openPostShareMenu('${note.id}')" class="drex-action-icon" aria-label="Compartir">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
               </button>
               <button onclick="toggleSavePost('${note.id}', this)" id="save-${note.id}" class="drex-action-icon save-btn" aria-label="Guardar publicación">
                 <svg class="save-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -15510,6 +15564,11 @@ function saveNote() {
   }
 
   const _postVoteLocks = new Set();
+  // Marca de tiempo del último like activado por post: un segundo toque
+  // dentro de la ventana corta se ignora para no quitar el like al instante
+  // (el doble toque debe dejar el like puesto, no quitarlo).
+  const _drexUpvoteActivatedAt = new Map();
+  const DREX_UPVOTE_DOUBLE_TAP_MS = 600;
 
   // REINTENTO AUTOMÁTICO: si un voto o comentario falla por red, se reintenta
   // solo (hasta 2 veces, con espera creciente) en vez de mostrar el error y ya.
@@ -15570,6 +15629,14 @@ function saveNote() {
     const wasDownvoted = downvoteBtn ? downvoteBtn.classList.contains('active') : false;
     const currentScore = parseInt((scoreLabel && scoreLabel.textContent) || '0', 10) || 0;
 
+    // Doble toque sobre el botón de like: si el like se activó hace menos de
+    // la ventana corta, el segundo toque se ignora y el like se queda puesto.
+    if (voteType === 'up' && wasUpvoted &&
+        (Date.now() - (_drexUpvoteActivatedAt.get(noteId) || 0)) < DREX_UPVOTE_DOUBLE_TAP_MS) {
+      _postVoteLocks.delete(noteId);
+      return;
+    }
+
     // Pinta el estado de voto de un post (riel up/down + marcador).
     const paintVoteUI = (isUp, isDown, scoreValue) => {
       upvoteBtns.forEach(btn => {
@@ -15597,6 +15664,7 @@ function saveNote() {
       optimisticUpvoted = !wasUpvoted;
       optimisticDownvoted = false;
       optimisticScore = currentScore + (wasUpvoted ? -1 : 1) + (wasDownvoted ? 1 : 0);
+      if (!wasUpvoted) _drexUpvoteActivatedAt.set(noteId, Date.now());
     } else {
       optimisticDownvoted = !wasDownvoted;
       optimisticUpvoted = false;
@@ -15732,16 +15800,17 @@ function saveNote() {
   }
 
   function initFeedDoubleTapLike() {
-    const feed = document.getElementById('notes-feed');
-    if (!feed || feed._dtLikeReady) return;
-    feed._dtLikeReady = true;
+    // Delegado a nivel documento: el doble toque para dar like funciona en
+    // el feed, el perfil, el permalink y los comentarios, no solo en el feed.
+    if (document._dtLikeReady) return;
+    document._dtLikeReady = true;
 
     let lastTap = 0;
     let lastNoteId = null;
 
-    feed.addEventListener('touchend', function(e) {
+    document.addEventListener('touchend', function(e) {
       if (e.target.closest('button, a, input, select, textarea')) return;
-      const postEl = e.target.closest('[data-note-id]');
+      const postEl = e.target.closest('.drex-post[data-note-id]');
       if (!postEl) return;
 
       const noteId = postEl.dataset.noteId;
@@ -15750,12 +15819,22 @@ function saveNote() {
 
       if (gap < 320 && gap > 0 && lastNoteId === noteId) {
         const touch = e.changedTouches[0];
+        document._dtLikeLastTouch = now;
         showDoubleTapHeart(touch.clientX, touch.clientY, noteId);
         e.preventDefault();
       }
       lastTap = now;
       lastNoteId = noteId;
     }, { passive: false });
+
+    // Escritorio (ratón): doble clic sobre el post también da like.
+    document.addEventListener('dblclick', function(e) {
+      if (Date.now() - (document._dtLikeLastTouch || 0) < 800) return;
+      if (e.target.closest('button, a, input, select, textarea')) return;
+      const postEl = e.target.closest('.drex-post[data-note-id]');
+      if (!postEl) return;
+      showDoubleTapHeart(e.clientX, e.clientY, postEl.dataset.noteId);
+    });
   }
 
 
@@ -16452,6 +16531,7 @@ function saveNote() {
         })
         ]);
         refreshHistorialIfVisible();
+        if (typeof refreshProfileRepostsIfVisible === 'function') refreshProfileRepostsIfVisible();
       } else {
         const payload = {
           noteId,
@@ -16480,6 +16560,7 @@ function saveNote() {
           addNotification(note.authorId, `${reposterName} hizo Repost de tu publicación.`, 'repost', { actionType: 'post', actionId: noteId });
         }
         refreshHistorialIfVisible();
+        if (typeof refreshProfileRepostsIfVisible === 'function') refreshProfileRepostsIfVisible();
       }
     } catch (error) {
       console.error('Error al hacer repost:', error);
@@ -33821,6 +33902,11 @@ function renderAccountsList(accounts) {
       });
       // Posts sueltos directo en el perfil (sin vista intermedia)
       _loadAuthorProfilePostsInline(authorId);
+      // Reposts del autor: sección vinculada bajo sus publicaciones.
+      if (typeof _loadAuthorRepostsContent === 'function') {
+        const repostsContainer = document.getElementById('author-profile-reposts-list');
+        if (repostsContainer) _loadAuthorRepostsContent(authorId, repostsContainer);
+      }
     }).catch(() => {
       if (currentViewedAuthorId !== authorId) return;
       // ARREGLO 3: en fallo de lectura se conserva el nombre ya mostrado.
@@ -37950,27 +38036,6 @@ function unlinkSupervisedAccount(teenUid) {
 }
 
 
-let _shareMenuNoteId = null;
-function openPostShareMenu(noteId) {
-  if (!noteId) return;
-  _shareMenuNoteId = noteId;
-  document.getElementById('post-share-menu-overlay')?.classList.remove('hidden');
-}
-function closePostShareMenu() {
-  document.getElementById('post-share-menu-overlay')?.classList.add('hidden');
-  _shareMenuNoteId = null;
-}
-function shareMenuSendViaChat() {
-  const id = _shareMenuNoteId;
-  closePostShareMenu();
-  if (id && typeof openSharePostSheet === 'function') openSharePostSheet(id, 'post');
-}
-function shareMenuShareLink() {
-  const id = _shareMenuNoteId;
-  closePostShareMenu();
-  if (id) sharePostExternally(id, 'post');
-}
-
 function sharePostExternally(noteId, kind = 'post') {
   if (!noteId) return;
   const shareUrl = `${location.origin}${location.pathname}#post-${noteId}`;
@@ -38147,9 +38212,6 @@ function _renderPostPermalinkCard(note) {
             </button>
           </div>
           <div class="flex items-center gap-1.5">
-            <button onclick="openPostShareMenu('${note.id}')" class="text-[#6b7280] hover:text-[#1c2b4a] transition-colors p-1.5 tap44" aria-label="Compartir">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-            </button>
             <button onclick="toggleSavePost('${note.id}', this)" id="save-${note.id}" class="save-btn" aria-label="Guardar publicación">
               <svg class="save-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6-3.8L6.5 21V4.5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
