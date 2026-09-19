@@ -32060,31 +32060,48 @@ const _startChatListeners = () => {
     const ref = DrexCloud.database().ref('users/' + user.uid);
     return ref.once('value').then(snapshot => {
       const existing = snapshot.val() || {};
+      // Campos seguros: jamás pisan datos que otros flujos hayan escrito.
+      const safeUpdates = {
+        email: existing.email || user.email || '',
+        profileImage: existing.profileImage || user.photoURL || '',
+        lastChatLoginAt: Date.now()
+      };
+      // FIX DEFINITIVO (2026-09-19): el username JAMÁS se toca si el perfil ya
+      // tiene uno. Antes se escribía `username` en cada login con el valor de
+      // una lectura que podía llegar obsoleta/vacía (red intermitente o carrera
+      // con el registro), y eso corrompía usernames reales reemplazándolos por
+      // temporales extraños tipo "usuario_x7k2". Si ya hay username, solo se
+      // limpia la marca degradada vieja (evita el bucle de completar-registro)
+      // sin tocar el username real.
+      if (existing.username) {
+        safeUpdates.profileDegraded = null;
+        return ref.update(safeUpdates);
+      }
+      // Sin username en la lectura: NO se escribe un temporal a ciegas.
+      // Se usa transacción atómica: el temporal solo se crea si el servidor
+      // confirma que el perfil SIGUE sin username al momento de escribir.
+      // Si el registro u otro flujo ya escribió el real, se aborta sin tocar nada.
       // C4: el username temporal se sanitiza (se quitan solo los caracteres
       // peligrosos: "/" rompe rutas, <>&"'` se inyectarían como HTML) y se
       // hace único por usuario con un sufijo de su uid. No se escribe en el
       // índice usernames/ (la reserva real ocurre en el flujo de registro con
-      // transacción atómica). Si ya hay username, se respeta.
-      let fallbackUsername = existing.username || '';
-      if (!fallbackUsername) {
-        const raw = user.displayName || (user.email ? user.email.split('@')[0] : 'usuario');
-        const clean = String(raw).toLowerCase().replace(/^@+/, '').replace(/[\/<>&"'`\s\u0000-\u001f\u007f]/g, '').slice(0, 20) || 'usuario';
-        const suffix = String(user.uid).replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase() || 'x';
-        fallbackUsername = clean + '_' + suffix;
-      }
-      const updates = {
-        email: existing.email || user.email || '',
-        username: fallbackUsername,
-        profileImage: existing.profileImage || user.photoURL || '',
-        lastChatLoginAt: Date.now()
-      };
-      // Si no tenía username se marca como degradado para forzar el flujo de
-      // completar-registro UNA vez. Si ya tiene username (aunque sea el
-      // temporal de un login anterior), se limpia la marca vieja: si no, quien
-      // abandone la pantalla de cumpleaños quedaría atrapado en un bucle
-      // infinito (cada login vuelve a la misma pantalla).
-      updates.profileDegraded = existing.username ? null : true;
-      return ref.update(updates);
+      // transacción atómica).
+      const raw = user.displayName || (user.email ? user.email.split('@')[0] : 'usuario');
+      const clean = String(raw).toLowerCase().replace(/^@+/, '').replace(/[\/<>&"'`\s\u0000-\u001f\u007f]/g, '').slice(0, 20) || 'usuario';
+      const suffix = String(user.uid).replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase() || 'x';
+      const fallbackUsername = clean + '_' + suffix;
+      return ref.transaction(current => {
+        const cur = current || {};
+        if (cur.username) return; // abortar: ya hay username real, no tocar
+        cur.email = cur.email || user.email || '';
+        cur.username = fallbackUsername;
+        cur.profileImage = cur.profileImage || user.photoURL || '';
+        cur.lastChatLoginAt = Date.now();
+        // Solo aquí (temporal recién creado) se marca degradado para forzar
+        // el flujo de completar-registro UNA vez.
+        cur.profileDegraded = true;
+        return cur;
+      }).then(() => ref.update({ lastChatLoginAt: Date.now() }));
     }).catch(() => {});
   }
 
