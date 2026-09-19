@@ -11095,6 +11095,8 @@ function saveNote() {
     const mentionPromise = sendMentionNotifications(note.content, note.authorId, note.authorName, 'publicación', [note.authorId]);
     Promise.all([writePromise, mentionPromise]).then(([ref1]) => {
       notePostPublishing = false;
+      // Drex Rec: lo que uno publica también dice qué le interesa.
+      try { if (typeof drexRecTrain === 'function' && note.flair) drexRecTrain({ flair: note.flair, authorId: null, text: '' }, DREX_REC.weights.publish); } catch (_) {}
       if (note.content || note.imageUrls || note.imageUrl || note.video) {
         moderarContenidoAutomaticamente(ref1.key, `${note.content || ''} ${(note.imageUrls || []).join(' ')} ${note.imageUrl || ''}`);
       }
@@ -12953,6 +12955,337 @@ function saveNote() {
 
 
 
+  /* ================================================================
+     MOTOR DE RECOMENDACIÓN "PARA TI" (Drex Rec)
+     ----------------------------------------------------------------
+     Ordena la pestaña "Para ti" con un puntaje personal por post,
+     entrenado con el comportamiento real del usuario.
+     Señales que entrenan el perfil (pesos):
+       vista ≥2s (+0.6) · vista profunda ≥8s (+1.0 extra) · upvote (+3) ·
+       downvote (−3.5) · quitar voto (−1) · guardar (+4) · repost (+4) ·
+       comentar (+5) · seguir autor (+6) · publicar con etiqueta (+2)
+     El perfil vive en userInterests/<uid>: afinidad por etiqueta
+     (flair), por autor y por palabras clave, con decaimiento temporal
+     (vida media 14 días) para que los gustos viejos pesen menos.
+     Puntaje = frescura + popularidad global + afinidad personal +
+     exploración (impulso ocasional a autores/etiquetas nuevas para no
+     encerrar al usuario en una burbuja).
+     Sin perfil (usuario nuevo), el orden equivale a frescura +
+     popularidad: un "Para ti" razonable por defecto.
+     ================================================================ */
+  const DREX_REC = {
+    profilePath: 'userInterests',
+    decayHalfLifeDays: 14,
+    viewMs: 2000,
+    deepViewMs: 8000,
+    maxAuthors: 80,
+    maxKeywords: 300,
+    weights: { view: 0.6, deepView: 1.0, up: 3, down: -3.5, unvote: -1, save: 4, repost: 4, comment: 5, follow: 6, publish: 2 }
+  };
+  // Saturación 0..10 (y −10..0 en negativo): ningún gusto domina la frescura.
+  function _drexRecSat(v) {
+    v = Number(v) || 0;
+    if (v >= 0) return 10 * v / (v + 12);
+    return Math.max(-10, 10 * v / (12 - v));
+  }
+  function _drexRecHash(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  let _drexRecProfile = null;
+  let _drexRecProfileUid = null;
+  let _drexRecProfilePromise = null;
+  let _drexRecSaveTimer = null;
+  // Metadatos de posts montados (para entrenar con interacciones futuras).
+  let _drexNoteMeta = {};
+  function _drexRecEmptyProfile() {
+    return { v: 1, updatedAt: Date.now(), flairs: {}, authors: {}, keywords: {} };
+  }
+  function _drexRecApplyDecay(p) {
+    try {
+      const days = Math.max(0, (Date.now() - Number(p.updatedAt || Date.now())) / 86400000);
+      if (days >= 0.5) {
+        const f = Math.pow(0.5, days / DREX_REC.decayHalfLifeDays);
+        ['flairs', 'authors', 'keywords'].forEach(k => {
+          const o = p[k] || {};
+          Object.keys(o).forEach(key => { o[key] = o[key] * f; if (Math.abs(o[key]) < 0.05) delete o[key]; });
+        });
+        p.updatedAt = Date.now();
+      }
+    } catch (_) {}
+    return p;
+  }
+  function drexRecProfile() {
+    try {
+      const user = DrexCloud.auth().currentUser;
+      if (!user) return Promise.resolve(_drexRecEmptyProfile());
+      if (_drexRecProfile && _drexRecProfileUid === user.uid) return Promise.resolve(_drexRecProfile);
+      if (_drexRecProfilePromise && _drexRecProfileUid === user.uid) return _drexRecProfilePromise;
+      _drexRecProfileUid = user.uid;
+      _drexRecProfilePromise = DrexCloud.database().ref(DREX_REC.profilePath + '/' + user.uid).once('value')
+        .then(snap => {
+          const raw = snap.val();
+          _drexRecProfile = _drexRecApplyDecay(raw && typeof raw === 'object' ? raw : _drexRecEmptyProfile());
+          if (!_drexRecProfile.flairs || typeof _drexRecProfile.flairs !== 'object') _drexRecProfile.flairs = {};
+          if (!_drexRecProfile.authors || typeof _drexRecProfile.authors !== 'object') _drexRecProfile.authors = {};
+          if (!_drexRecProfile.keywords || typeof _drexRecProfile.keywords !== 'object') _drexRecProfile.keywords = {};
+          return _drexRecProfile;
+        })
+        .catch(() => (_drexRecProfile = _drexRecEmptyProfile()));
+      return _drexRecProfilePromise;
+    } catch (_) { return Promise.resolve(_drexRecEmptyProfile()); }
+  }
+  function _drexRecTrim(p) {
+    try {
+      const top = (o, n) => {
+        const ks = Object.keys(o || {});
+        if (ks.length <= n) return;
+        ks.sort((a, b) => Math.abs(o[b]) - Math.abs(o[a]));
+        ks.slice(n).forEach(k => { delete o[k]; });
+      };
+      top(p.authors, DREX_REC.maxAuthors);
+      top(p.keywords, DREX_REC.maxKeywords);
+    } catch (_) {}
+  }
+  function _drexRecPersistNow() {
+    try {
+      const user = DrexCloud.auth().currentUser;
+      if (!user || !_drexRecProfile || _drexRecProfileUid !== user.uid) return;
+      _drexRecProfile.updatedAt = Date.now();
+      _drexRecTrim(_drexRecProfile);
+      DrexCloud.database().ref(DREX_REC.profilePath + '/' + user.uid).set(_drexRecProfile).catch(() => {});
+    } catch (_) {}
+  }
+  function drexRecScheduleSave() {
+    try {
+      const user = DrexCloud.auth().currentUser;
+      if (!user || !_drexRecProfile || _drexRecProfileUid !== user.uid) return;
+      if (_drexRecSaveTimer) return;
+      _drexRecSaveTimer = setTimeout(() => { _drexRecSaveTimer = null; _drexRecPersistNow(); }, 15000);
+    } catch (_) {}
+  }
+  // No perder entrenamiento al salir/ocultar la app.
+  try {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        if (_drexRecSaveTimer) { clearTimeout(_drexRecSaveTimer); _drexRecSaveTimer = null; }
+        _drexRecPersistNow();
+      }
+    });
+    window.addEventListener('pagehide', () => {
+      if (_drexRecSaveTimer) { clearTimeout(_drexRecSaveTimer); _drexRecSaveTimer = null; }
+      _drexRecPersistNow();
+    });
+  } catch (_) {}
+
+  const _DREX_REC_STOP = new Set('el,la,los,las,un,una,unos,unas,de,del,al,en,y,o,que,con,por,para,como,pero,si,mi,tu,su,sus,este,esta,esto,ese,esa,eso,lo,le,les,se,me,te,ya,muy,mas,tan,hay,son,es,era,fue,han,estoy,estas,esta,estamos,estan,hecho,the,a,an,and,or,of,to,in,on,for,with,that,this,these,those,is,are,was,were,be,been,have,has,had,you,your,yours,my,mine,his,her,their,ours,not,but,from,at,by,as,it,its,so,if,then,than,too,very,can,will,just,about,into,over,after,before,up,out,do,did,done,what,when,where,which,who,how,all,also,there,here'.split(','));
+  // Palabras clave de un texto (latino + secuencias CJK), top 8 por frecuencia.
+  function drexRecKeywords(text) {
+    const out = [];
+    try {
+      const t = String(text || '').toLowerCase();
+      const freq = {};
+      (t.match(/[a-záéíóúñü]{4,}/g) || []).forEach(w => {
+        if (w.length <= 20 && !_DREX_REC_STOP.has(w)) freq[w] = (freq[w] || 0) + 1;
+      });
+      (t.match(/[一-鿿぀-ヿ가-힯]{2,}/g) || []).forEach(w => {
+        // Sin segmentador: bigramas solapados (p. ej. "音乐" se repite
+        // entre frases y así acumula afinidad real).
+        for (let i = 0; i + 1 < w.length && i < 14; i++) {
+          const k = w.slice(i, i + 2);
+          freq[k] = (freq[k] || 0) + 1;
+        }
+      });
+      Object.keys(freq).sort((a, b) => freq[b] - freq[a]).slice(0, 8).forEach(w => out.push(w));
+    } catch (_) {}
+    return out;
+  }
+  // Entrena el perfil con una interacción. meta: {flair, authorId, text}.
+  function drexRecTrain(meta, weight) {
+    try {
+      if (!meta || !(weight = Number(weight))) return;
+      drexRecProfile().then(p => {
+        try {
+          const bump = (obj, key) => {
+            if (!key || !obj) return;
+            obj[key] = Math.max(-15, Math.min(300, (Number(obj[key]) || 0) + weight));
+          };
+          if (meta.flair) bump(p.flairs, String(meta.flair));
+          if (meta.authorId) bump(p.authors, String(meta.authorId));
+          drexRecKeywords(meta.text).forEach(w => bump(p.keywords, w));
+          drexRecScheduleSave();
+        } catch (_) {}
+      }).catch(() => {});
+    } catch (_) {}
+  }
+  // Entrena por id de post (usa el cache del feed; si no está, lo lee una vez).
+  function drexRecTrainById(noteId, weight) {
+    try {
+      if (!noteId || !Number(weight)) return;
+      const cached = _drexNoteMeta[noteId];
+      if (cached) { drexRecTrain(cached, weight); return; }
+      DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(snap => {
+        const n = snap.val() || {};
+        const meta = { flair: n.flair || null, authorId: n.authorId || n.userId || null, text: n.content || n.text || '' };
+        _drexNoteMeta[noteId] = meta;
+        drexRecTrain(meta, weight);
+      }).catch(() => {});
+    } catch (_) {}
+  }
+  function drexRecTrainFollow(authorId) {
+    try {
+      if (authorId) drexRecTrain({ flair: null, authorId: String(authorId), text: '' }, DREX_REC.weights.follow);
+    } catch (_) {}
+  }
+  // Puntaje personal de un post para "Para ti".
+  function drexRecScore(note) {
+    try {
+      const now = Date.now();
+      const ts = Number(note.timestamp || 0);
+      const ageH = ts > 0 ? Math.max(0, (now - ts) / 3600000) : 72;
+      const recency = 100 * Math.exp(-ageH / 26);
+      const net = Math.max(0, Number(note.upvotes || 0) - Number(note.downvotes || 0));
+      const popularity = 14 * Math.log10(1 + net) + 5 * Math.log10(1 + Number(note.commentsCount || 0));
+      let personal = 0;
+      const p = _drexRecProfile;
+      if (p) {
+        const f = note.flair ? (Number(p.flairs[note.flair]) || 0) : 0;
+        const a = note.authorId ? (Number(p.authors[note.authorId]) || 0) : 0;
+        let kw = 0, n = 0;
+        const words = drexRecKeywords(note.content || note.text || '');
+        for (const w of words) {
+          const v = Number(p.keywords[w]) || 0;
+          if (v) { kw += v; if (++n >= 4) break; }
+        }
+        personal = 3.5 * _drexRecSat(f) + 5.0 * _drexRecSat(a) + 1.8 * _drexRecSat(kw);
+        // Exploración: impulso ocasional a lo totalmente nuevo (anti-burbuja).
+        if (!a && !f) {
+          const day = new Date(now).toDateString();
+          if (_drexRecHash(String(note.id || '') + '|' + day) % 100 < 18) personal += 5;
+        }
+      }
+      return recency + popularity + personal;
+    } catch (_) { return 0; }
+  }
+
+  // --- Seguimiento de vistas: entrena con lo que el usuario realmente mira.
+  let _drexRecViewObserver = null;
+  const _drexRecViewTimers = new Map();
+  function _drexRecViewTrainEl(el, stage) {
+    try {
+      const noteId = el.dataset && el.dataset.noteId;
+      if (!noteId) return;
+      drexRecTrainById(noteId, stage === 'deep' ? DREX_REC.weights.deepView : DREX_REC.weights.view);
+    } catch (_) {}
+  }
+  function drexRecObserveCard(el) {
+    try {
+      if (!el || el.dataset.recObserved) return;
+      el.dataset.recObserved = '1';
+      if (!_drexRecViewObserver) {
+        _drexRecViewObserver = new IntersectionObserver((entries) => {
+          entries.forEach(en => {
+            const target = en.target;
+            const st = _drexRecViewTimers.get(target);
+            if (en.isIntersecting) {
+              if (st) return;
+              const rec = {
+                t1: setTimeout(() => {
+                  try {
+                    if (target.isConnected) {
+                      _drexRecViewTrainEl(target, 'view');
+                      rec.t2 = setTimeout(() => {
+                        try {
+                          if (target.isConnected) {
+                            _drexRecViewTrainEl(target, 'deep');
+                            try { _drexRecViewObserver.unobserve(target); } catch (_) {}
+                            _drexRecViewTimers.delete(target);
+                          }
+                        } catch (_) {}
+                      }, DREX_REC.deepViewMs - DREX_REC.viewMs);
+                    } else { _drexRecViewTimers.delete(target); }
+                  } catch (_) {}
+                }, DREX_REC.viewMs)
+              };
+              _drexRecViewTimers.set(target, rec);
+            } else if (st) {
+              clearTimeout(st.t1);
+              if (st.t2) clearTimeout(st.t2);
+              _drexRecViewTimers.delete(target);
+            }
+          });
+        }, { threshold: 0.4 });
+      }
+      _drexRecViewObserver.observe(el);
+    } catch (_) {}
+  }
+  // Inserta una tarjeta en "Para ti" ordenada por puntaje personal.
+  function drexRecInsertForYou(feedContainer, noteElement, note) {
+    const placeAtEnd = () => {
+      const sentinel = feedContainer.querySelector('#feed-older-sentinel');
+      if (sentinel) feedContainer.insertBefore(noteElement, sentinel);
+      else feedContainer.appendChild(noteElement);
+    };
+    try {
+      const s = drexRecScore(note);
+      noteElement.dataset.recScore = String(s);
+      const author = note.authorId || '';
+      noteElement.dataset.recAuthor = author;
+      const kids = feedContainer.querySelectorAll(':scope > div[id^="post-"]');
+      for (const kid of kids) {
+        if (s > parseFloat(kid.dataset.recScore || '0')) {
+          // Diversidad: no más de 2 tarjetas seguidas del mismo autor.
+          if (author) {
+            let same = 0;
+            let sib = kid.previousElementSibling;
+            while (sib && same < 2) {
+              if (sib.matches && sib.matches('div[id^="post-"]')) {
+                if (sib.dataset.recAuthor === author) same++; else break;
+              }
+              sib = sib.previousElementSibling;
+            }
+            if (same >= 2) continue;
+          }
+          feedContainer.insertBefore(noteElement, kid);
+          return;
+        }
+      }
+      placeAtEnd();
+    } catch (_) { placeAtEnd(); }
+  }
+  // Reordena "Para ti" cuando el perfil llega tarde (red de seguridad).
+  function drexRecResortForYou() {
+    try {
+      const feedContainer = document.getElementById('notes-feed');
+      if (!feedContainer || feedContainer.dataset.feedMode !== 'foryou') return;
+      const sentinel = feedContainer.querySelector('#feed-older-sentinel');
+      const kids = Array.from(feedContainer.querySelectorAll(':scope > div[id^="post-"]'));
+      if (!kids.length) return;
+      kids.forEach(el => {
+        const meta = _drexNoteMeta[el.dataset.noteId];
+        if (meta) {
+          el.dataset.recScore = String(drexRecScore({
+            id: el.dataset.noteId, timestamp: meta.ts, upvotes: meta.up,
+            downvotes: meta.down, commentsCount: meta.cc,
+            flair: meta.flair, authorId: meta.authorId, text: meta.text
+          }));
+        }
+      });
+      // Mueve cada tarjeta junto con su bloque de anuncio adherido.
+      const groups = kids.map(el => {
+        const g = [el];
+        let sib = el.nextElementSibling;
+        while (sib && sib.classList && sib.classList.contains('drex-ad-slot')) { g.push(sib); sib = sib.nextElementSibling; }
+        return g;
+      });
+      groups.sort((ga, gb) => parseFloat(gb[0].dataset.recScore || '0') - parseFloat(ga[0].dataset.recScore || '0'));
+      groups.forEach(g => { g.forEach(el => feedContainer.insertBefore(el, sentinel)); });
+    } catch (_) {}
+  }
+
+
+
   function loadNotes(showLoader = true, feedMode = 'foryou') {
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
@@ -12976,8 +13309,12 @@ function saveNote() {
     const followingPromise = (feedMode === 'following' && user)
       ? DrexCloud.database().ref('following/' + user.uid).once('value').then(snap => snap.val() || {}).catch(() => ({}))
       : Promise.resolve(null);
+    // Drex Rec: el perfil de intereses debe estar listo antes de ordenar "Para ti".
+    const recProfilePromise = (typeof drexRecProfile === 'function')
+      ? drexRecProfile().catch(() => null)
+      : Promise.resolve(null);
 
-    Promise.all([userVotesPromise, userRepostsPromise, followingPromise]).then(([userVotes, userReposts, followingMap]) => {
+    Promise.all([userVotesPromise, userRepostsPromise, followingPromise, recProfilePromise]).then(([userVotes, userReposts, followingMap]) => {
       _subscribeNotesFeed(feedContainer, user, userVotes, userReposts, feedMode, followingMap);
     });
   }
@@ -13533,6 +13870,18 @@ function saveNote() {
         if (feedMode === 'popular') {
           noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0));
         }
+        // Drex Rec: metadatos para entrenar con interacciones futuras.
+        try {
+          _drexNoteMeta[note.id] = {
+            flair: note.flair || null,
+            authorId: note.authorId || note.userId || null,
+            text: note.content || note.text || '',
+            ts: noteTs,
+            up: Number(note.upvotes || 0),
+            down: Number(note.downvotes || 0),
+            cc: Number(note.commentsCount || 0)
+          };
+        } catch (_) {}
         noteElement.innerHTML = buildDrexPostCardHTML(note, {
           user: user,
           userVote: userVotes[note.id] || null,
@@ -13555,6 +13904,9 @@ function saveNote() {
             if (olderSentinel) feedContainer.insertBefore(noteElement, olderSentinel);
             else feedContainer.appendChild(noteElement);
           }
+        } else if (feedMode === 'foryou') {
+          // Drex Rec: "Para ti" se ordena por puntaje personal, no por fecha.
+          drexRecInsertForYou(feedContainer, noteElement, note);
         } else if (appendAtBottom) {
           // Paginación: los más viejos van al fondo, antes del centinela.
           if (olderSentinel) feedContainer.insertBefore(noteElement, olderSentinel);
@@ -13573,6 +13925,7 @@ function saveNote() {
         hydrateSaveButtons(noteElement);
         applyFeedTypeFilter();
         initFeedDoubleTapLike();
+        try { drexRecObserveCard(noteElement); } catch (_) {}
         if (appendAtBottom) {
           noteElement.dataset.feedPaginated = '1';
           try { ensureCardVisibilityObserver().observe(noteElement); } catch (_) {}
@@ -14003,6 +14356,8 @@ function saveNote() {
       addNotification(targetUserId, `${senderName} te comenzó a seguir`, 'follow', { actionType: 'profile', actionId: currentUser.uid });
     }
     _invalidatePrivacyCaches(targetUserId);
+    // Drex Rec: seguir a alguien es la señal de afinidad más fuerte.
+    try { if (typeof drexRecTrainFollow === 'function') drexRecTrainFollow(targetUserId); } catch (_) {}
     onFollowed?.();
   }
 
@@ -15308,6 +15663,14 @@ function saveNote() {
         }
 
         refreshHistorialIfVisible();
+        // Drex Rec: entrena con el voto confirmado (up/down/quitado).
+        try {
+          if (typeof drexRecTrainById === 'function') {
+            if (newVote === 'up') drexRecTrainById(noteId, DREX_REC.weights.up);
+            else if (newVote === 'down') drexRecTrainById(noteId, DREX_REC.weights.down);
+            else drexRecTrainById(noteId, DREX_REC.weights.unvote);
+          }
+        } catch (_) {}
         return { ok: true };
       });
 
@@ -15445,6 +15808,8 @@ function saveNote() {
         await DrexCloud.database().ref('postSavedBy/' + noteId + '/' + user.uid).set(true).catch(() => {});
         _userSavedPosts[noteId] = { savedAt: Date.now() };
         btnEl.classList.add('saved');
+        // Drex Rec: guardar es una señal fuerte de interés.
+        try { if (typeof drexRecTrainById === 'function') drexRecTrainById(noteId, DREX_REC.weights.save); } catch (_) {}
         showMiniToast(appT('Guardado'));
       }
     } catch (e) {
@@ -16098,6 +16463,8 @@ function saveNote() {
         })
         ]);
 
+        // Drex Rec: el repost es una señal fuerte de interés.
+        try { if (typeof drexRecTrainById === 'function') drexRecTrainById(noteId, DREX_REC.weights.repost); } catch (_) {}
         shareRepost({ ...note, id: noteId }, reposterName);
         if (note.authorId && note.authorId !== user.uid) {
           addNotification(note.authorId, `${reposterName} hizo Repost de tu publicación.`, 'repost', { actionType: 'post', actionId: noteId });
@@ -17505,6 +17872,8 @@ function saveNote() {
       if (!result || !result.key) return;
       // UI y contador: una sola vez, fuera de la región reintentable.
       bumpStoredCommentsCount(noteId, 1);
+      // Drex Rec: comentar es la señal de interacción más fuerte del feed.
+      try { if (typeof drexRecTrainById === 'function') drexRecTrainById(noteId, DREX_REC.weights.comment); } catch (_) {}
       if (result.isReply) {
         // Optimista: la respuesta aparece al instante, sin skeleton ni salto.
         const replyPath = targetReply.commentId + '/replies/' + result.key;
