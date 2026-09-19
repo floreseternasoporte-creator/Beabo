@@ -6304,7 +6304,30 @@ if (scrollArea) {
 </div>
 
 <!-- MENÚ COMPARTIR PUBLICACIÓN (una sola entrada: chat o enlace) -->
-<!-- Hoja de compartir eliminada: el botón compartir ahora es repost directo. -->
+<div id="post-share-menu-overlay" class="hidden fixed inset-0 bg-black/40 z-[200] flex items-end justify-center" onclick="if(event.target===this) closePostShareMenu()">
+  <div class="bg-white rounded-t-3xl w-full max-w-md px-4 pt-3" style="padding-bottom:max(1.5rem,env(safe-area-inset-bottom));">
+    <div class="w-10 h-1 rounded-full bg-[#dce1e5] mx-auto mb-3"></div>
+    <h3 class="font-bold text-[#1c2b4a] text-sm text-center mb-3">Compartir publicación</h3>
+    <button onclick="shareMenuSendViaChat()" class="w-full flex items-center gap-3 px-3 py-3 rounded-2xl hover:bg-[#f0f4f9] active:bg-[#f0f4f9] transition text-left">
+      <span class="w-10 h-10 rounded-full bg-[#eef2f7] flex items-center justify-center text-[#1c2b4a] flex-shrink-0">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      </span>
+      <span>
+        <span class="block text-sm font-bold text-[#1c2b4a]">Compartir por chat</span>
+        <span class="block text-xs text-[#7b878f]">Envíala a alguien en Drex</span>
+      </span>
+    </button>
+    <button onclick="shareMenuShareLink()" class="w-full flex items-center gap-3 px-3 py-3 rounded-2xl hover:bg-[#f0f4f9] active:bg-[#f0f4f9] transition text-left">
+      <span class="w-10 h-10 rounded-full bg-[#eef2f7] flex items-center justify-center text-[#1c2b4a] flex-shrink-0">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v13m0-13 4 4m-4-4-4 4M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+      </span>
+      <span>
+        <span class="block text-sm font-bold text-[#1c2b4a]">Compartir enlace</span>
+        <span class="block text-xs text-[#7b878f]">Copia o envía el enlace fuera de Drex</span>
+      </span>
+    </button>
+  </div>
+</div>
 
 <!-- ============ PRACTICAR IDIOMAS (estilo Busuu: correcciones de la comunidad) ============ -->
 <div id="practicar-view" class="fixed inset-0 bg-[#f0f4f9] text-[#1c2b4a] overflow-y-auto hidden z-50">
@@ -14287,8 +14310,16 @@ function saveNote() {
                 <span id="commentscount-${note.id}">${commentsCount}</span>
               </button>
               <button onclick="toggleRepost('${note.id}')" id="repost-${note.id}" class="drex-action-pill repost-btn ${hasReposted ? 'active' : ''}" aria-label="Repostear publicación">
-                <svg class="repost-icon repost-icon--share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                <svg class="repost-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M17 1L21 5L17 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M3 11V9C3 7.93913 3.42143 6.92172 4.17157 6.17157C4.92172 5.42143 5.93913 5 7 5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M7 23L3 19L7 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
                 <span>${repostsCount}</span>
+              </button>
+              <button onclick="openPostShareMenu('${note.id}')" class="drex-action-icon" aria-label="Compartir">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
               </button>
               <button onclick="toggleSavePost('${note.id}', this)" id="save-${note.id}" class="drex-action-icon save-btn" aria-label="Guardar publicación">
                 <svg class="save-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -38870,6 +38901,27 @@ function unlinkSupervisedAccount(teenUid) {
 }
 
 
+let _shareMenuNoteId = null;
+function openPostShareMenu(noteId) {
+  if (!noteId) return;
+  _shareMenuNoteId = noteId;
+  document.getElementById('post-share-menu-overlay')?.classList.remove('hidden');
+}
+function closePostShareMenu() {
+  document.getElementById('post-share-menu-overlay')?.classList.add('hidden');
+  _shareMenuNoteId = null;
+}
+function shareMenuSendViaChat() {
+  const id = _shareMenuNoteId;
+  closePostShareMenu();
+  if (id && typeof openSharePostSheet === 'function') openSharePostSheet(id, 'post');
+}
+function shareMenuShareLink() {
+  const id = _shareMenuNoteId;
+  closePostShareMenu();
+  if (id) sharePostExternally(id, 'post');
+}
+
 function sharePostExternally(noteId, kind = 'post') {
   if (!noteId) return;
   const shareUrl = `${location.origin}${location.pathname}#post-${noteId}`;
@@ -39043,6 +39095,9 @@ function _renderPostPermalinkCard(note) {
                 <path d="M21 13V15C21 16.0609 20.5786 17.0783 19.8284 17.8284C19.0783 18.5786 18.0609 19 17 19H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
               <span class="text-sm font-bold">${repostsCount}</span>
+            </button>
+            <button onclick="openPostShareMenu('${note.id}')" class="text-[#6b7280] hover:text-[#1c2b4a] transition-colors p-1.5 tap44" aria-label="Compartir">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
             </button>
           </div>
           <div class="flex items-center gap-1.5">
