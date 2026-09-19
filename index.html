@@ -14935,6 +14935,51 @@ function saveNote() {
     currentPostOptionsNoteData = null;
   }
 
+  // Eliminar publicación (solo el autor). Esta función faltaba: el botón
+  // "Eliminar" del menú de opciones la llamaba pero nunca existió, por eso
+  // no hacía nada en ninguna publicación (incluidas las de fiestas).
+  async function deletePostFromOptions() {
+    const noteId = currentPostOptionsNoteId;
+    if (!noteId) return;
+    const user = DrexCloud.auth().currentUser;
+    if (!user || !user.uid) { if (typeof showMiniToast === 'function') showMiniToast(appT('Inicia sesión para continuar.')); return; }
+    let note = currentPostOptionsNoteData || null;
+    try {
+      const snap = await DrexCloud.database().ref('communityNotes/' + noteId).once('value');
+      note = snap.val() || note;
+    } catch (_) {}
+    if (!note) {
+      if (typeof showMiniToast === 'function') showMiniToast(appT('Esta publicación ya no existe.'));
+      closePostOptionsSheet();
+      return;
+    }
+    const isOwner = (note.authorId && note.authorId === user.uid) || (note.userId && note.userId === user.uid);
+    if (!isOwner) { if (typeof showMiniToast === 'function') showMiniToast(appT('Solo el autor puede eliminar esta publicación.')); return; }
+    if (!confirm(appT('¿Eliminar esta publicación? Esta acción no se puede deshacer.'))) return;
+    try {
+      // Si es el anuncio de una fiesta y sigue activa, terminarla también para
+      // no dejar una sala de voz huérfana sin anuncio en el feed.
+      if (note.fiestaId) {
+        try {
+          const fSnap = await DrexCloud.database().ref('fiestas/' + note.fiestaId).once('value');
+          const f = fSnap.val();
+          if (f && f.status !== 'ended' && f.hostId === user.uid) {
+            await DrexCloud.database().ref('fiestas/' + note.fiestaId + '/status').set('ended').catch(() => {});
+            await DrexCloud.database().ref('fiestaReactions/' + note.fiestaId).remove().catch(() => {});
+            await DrexCloud.database().ref('fiestaKicked/' + note.fiestaId).remove().catch(() => {});
+          }
+        } catch (_) {}
+      }
+      await DrexCloud.database().ref('communityNotes/' + noteId).remove();
+      _closeViewerIfShowingNote(noteId);
+      closePostOptionsSheet();
+      if (typeof showMiniToast === 'function') showMiniToast(appT('Publicación eliminada.'));
+      try { if (typeof loadNotes === 'function') loadNotes(false); } catch (_) {}
+    } catch (e) {
+      if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo eliminar. Inténtalo de nuevo.'));
+    }
+  }
+
   // Si el visor está mostrando este post y se ocultó/eliminó, cerrarlo:
   // no tiene sentido seguir viendo una foto de algo que ya no existe.
   function _closeViewerIfShowingNote(noteId) {
