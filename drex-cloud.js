@@ -428,10 +428,68 @@
 
   // Lee todas las hojas bajo una ruta (hoja exacta + descendientes).
   // Usa begins_with(sk, 'ruta/') para no confundir 'abc' con 'abc2'.
-  function readLeaves(segs) {
+  // Fase 1: localiza los prefijos (push IDs) más recientes con un Query en
+  // reversa proyectando SOLO sk (items de ~30 bytes: 1 página típica).
+  // Fase 2: lee en paralelo solo las hojas de esos prefijos. Costo acotado
+  // por N, independiente del tamaño total de la tabla.
+  function readLeavesBounded(pk, limitN) {
+    var want = Math.ceil(limitN * 1.5) + 10;
+    var prefixes = [];
+    var seen = {};
+    function phase1(lastKey) {
+      var p = {
+        TableName: AWS_CONFIG.tableName,
+        KeyConditionExpression: 'pk = :pk',
+        ExpressionAttributeValues: { ':pk': pk },
+        ProjectionExpression: 'sk',
+        ScanIndexForward: false
+      };
+      if (lastKey) p.ExclusiveStartKey = lastKey;
+      return withCredRetry(function () {
+        return dbTimeout(getDocClient().query(p).promise(), 'db-query-timeout');
+      }).then(function (res) {
+        var arr = res.Items || [];
+        for (var i = 0; i < arr.length; i++) {
+          var sk = (arr[i].sk === undefined || arr[i].sk === null) ? '' : String(arr[i].sk);
+          var first = sk.split('/')[0];
+          if (first && !seen[first]) { seen[first] = 1; prefixes.push(first); }
+          if (prefixes.length >= want) break;
+        }
+        if (prefixes.length < want && res.LastEvaluatedKey) return phase1(res.LastEvaluatedKey);
+        return prefixes;
+      });
+    }
+    function phase2() {
+      if (!prefixes.length) return Promise.resolve([]);
+      return Promise.all(prefixes.map(function (pfx) {
+        return readLeaves([pk, pfx]);
+      })).then(function (lists) {
+        var out = [];
+        lists.forEach(function (ll) { out = out.concat(ll); });
+        return out;
+      });
+    }
+    return phase1(null).then(phase2);
+  }
+
+  function readLeaves(segs, query) {
     if (!segs.length) return Promise.reject(new Error('Ruta vacía no soportada'));
     var pk = segs[0];
     var skExact = segs.slice(1).join('/');
+    // Lectura ACOTADA "últimos N por tiempo": orderByChild('timestamp'|
+    // 'createdAt') + limitToLast(N), sin otros filtros. Los push IDs ordenan
+    // lexicográficamente por tiempo de creación (newPushId), así que los N
+    // más recientes por pushId son los N más recientes por timestamp. En vez
+    // de descargar el pk COMPLETO en cada polling (crece sin cota con la
+    // tabla), se localizan los prefijos más nuevos con un escaneo ligero
+    // (solo sk) y luego se leen únicamente esos posts/pistas. El applyQuery
+    // posterior ordena por el campo real y aplica el límite exacto.
+    if (segs.length === 1 && query && typeof query.limitLast === 'number' && query.limitLast > 0 &&
+        !query.limitFirst && !query.orderByKey &&
+        (query.orderBy === 'timestamp' || query.orderBy === 'createdAt') &&
+        query.equalTo === undefined && query.startAt === undefined && query.endAt === undefined) {
+      return readLeavesBounded(pk, query.limitLast);
+    }
     var jobs;
     if (skExact === '') {
       jobs = [queryAll({
@@ -585,11 +643,67 @@
   }
 
   function readRefValue(ref) {
-    return readLeaves(ref._segs).then(function (leaves) {
+    var q = ref._query || {};
+    // Índice musicByAuthor: las consultas "pistas de un autor" descargaban
+    // musicTracks COMPLETO (todas las canciones de todos) y filtraban en el
+    // cliente, lo que dejaba "Tu música" en "Cargando..." eterno. Ahora se
+    // lee el índice pequeño del autor y solo se descargan sus pistas.
+    if (ref._segs.length === 1 && ref._segs[0] === 'musicTracks' &&
+        q.orderBy === 'authorId' && q.equalTo !== undefined &&
+        q.startAt === undefined && q.endAt === undefined) {
+      return readMusicTracksByAuthor(q.equalTo).then(function (val) {
+        val = applyQuery(val, ref._query);
+        return new DataSnapshot(val, 'musicTracks');
+      });
+    }
+    return readLeaves(ref._segs, ref._query).then(function (leaves) {
       var val = unflatten(leaves, ref._segs);
       if (ref._query) val = applyQuery(val, ref._query);
       var key = ref._segs.length ? ref._segs[ref._segs.length - 1] : null;
       return new DataSnapshot(val, key);
+    });
+  }
+
+  // Lee las pistas de un autor vía el índice musicByAuthor/<uid>/<trackId>.
+  // El índice se escribe al subir cada canción; para canciones anteriores al
+  // índice se hace UN backfill (escaneo legacy) y se marca _indexed para no
+  // repetirlo. Sin índice ni marca y sin pistas => {} (applyQuery -> null).
+  function readMusicTracksByAuthor(uid) {
+    uid = String(uid);
+    return readLeaves(['musicByAuthor', uid]).then(function (leaves) {
+      var idx = unflatten(leaves, ['musicByAuthor', uid]) || {};
+      var ids = Object.keys(idx).filter(function (k) { return k.charAt(0) !== '_'; });
+      // Ordenar por t desc: con limitToLast(N) basta leer los primeros N.
+      ids.sort(function (a, b) {
+        var ta = (idx[a] && idx[a].t) || 0, tb = (idx[b] && idx[b].t) || 0;
+        return tb - ta;
+      });
+      if (!ids.length && !idx._indexed) {
+        return readLeaves(['musicTracks']).then(function (allLeaves) {
+          var all = unflatten(allLeaves, ['musicTracks']) || {};
+          var reqs = [];
+          var obj = {};
+          Object.keys(all).forEach(function (tid) {
+            var t = all[tid];
+            if (t && typeof t === 'object' && String(t.authorId) === uid) {
+              obj[tid] = t;
+              reqs.push(putLeaf('musicByAuthor', uid + '/' + tid, { t: t.createdAt || 0 }));
+            }
+          });
+          reqs.push(putLeaf('musicByAuthor', uid + '/_indexed', true));
+          batchWriteAll(reqs).catch(function () {});
+          return obj;
+        });
+      }
+      return Promise.all(ids.map(function (tid) {
+        return readLeaves(['musicTracks', tid]).then(function (ll) {
+          return [tid, unflatten(ll, ['musicTracks', tid]) || {}];
+        });
+      })).then(function (pairs) {
+        var obj = {};
+        pairs.forEach(function (pr) { obj[pr[0]] = pr[1]; });
+        return obj;
+      });
     });
   }
 
@@ -644,14 +758,9 @@
   }
 
   // Dispara un oyente según su tipo de evento ('value' | 'child_added' | 'child_changed' | 'child_removed')
-  function fireListener(l) {
-    // No apilar lecturas: si la anterior aún no terminó (lectura pesada con
-    // muchas fotos), se marca un re-disparo pendiente en vez de lanzar otra
-    // lectura encima. Sin esto, los ciclos de polling se solapaban y la
-    // pestaña del iPhone se quedaba sin memoria.
-    if (l._reading) { l._pendingFire = true; return Promise.resolve(); }
-    l._reading = true;
-    return readRefValue(l.ref).then(function (snap) {
+  // Reparte un snapshot ya leído entre la lógica de eventos de UN oyente
+  // ('value' | 'child_added' | 'child_changed' | 'child_removed').
+  function dispatchSnapshot(l, snap) {
       if (l.eventType === 'value') {
         var j = _changeFingerprint(snap.val());
         if (j !== l.lastJson) { l.lastJson = j; callCb(l.cb, snap); }
@@ -697,18 +806,68 @@
           });
         }
       }
+      }
+
+  function fireListener(l) {
+    // No apilar lecturas: si la anterior aún no terminó (lectura pesada con
+    // muchas fotos), se marca un re-disparo pendiente en vez de lanzar otra
+    // lectura encima. Sin esto, los ciclos de polling se solapaban y la
+    // pestaña del iPhone se quedaba sin memoria.
+    if (l._reading) { l._pendingFire = true; return Promise.resolve(); }
+    l._reading = true;
+    return readRefValue(l.ref).then(function (snap) {
+      dispatchSnapshot(l, snap);
     }).catch(function () { /* el próximo ciclo reintenta */ }).then(function () {
       l._reading = false;
       if (l._pendingFire) { l._pendingFire = false; fireListener(l); }
     });
   }
 
+  // Clave de agrupación: oyentes sobre la MISMA ruta y la MISMA consulta
+  // comparten una sola lectura por ciclo de polling.
+  function pollGroupKey(l) {
+    return l.ref._segs.join('/') + '|' + JSON.stringify(l.ref._query || null);
+  }
+
+  // Dispara un grupo de oyentes con UNA sola lectura compartida.
+  function pollGroup(ls) {
+    var busy = false;
+    for (var i = 0; i < ls.length; i++) { if (ls[i]._reading) { busy = true; break; } }
+    if (busy) { ls.forEach(function (l) { l._pendingFire = true; }); return; }
+    ls.forEach(function (l) { l._reading = true; });
+    readRefValue(ls[0].ref).then(function (snap) {
+      ls.forEach(function (l) { dispatchSnapshot(l, snap); });
+    }).catch(function () { /* el próximo ciclo reintenta */ }).then(function () {
+      var again = false;
+      ls.forEach(function (l) {
+        l._reading = false;
+        if (l._pendingFire) { l._pendingFire = false; again = true; }
+      });
+      if (again) pollGroup(ls);
+    });
+  }
+
+  // Un ciclo de polling agrupa los oyentes por (ruta + consulta): el feed
+  // tenía 3 oyentes (child_added/changed/removed) sobre la misma consulta y
+  // cada uno descargaba communityNotes COMPLETO cada 3 s. Ahora los 3
+  // comparten el mismo snapshot: ~3x menos lecturas al servidor.
+  function pollListenersGrouped() {
+    // En segundo plano no se sondea (ahorra batería y datos en el iPhone);
+    // al volver a primer plano el siguiente ciclo (<=3 s) refresca. La
+    // señalización de fiestas (polling rápido de WebRTC) sigue activa.
+    if (!fastPolling && typeof document !== 'undefined' && document.hidden) return;
+    var groups = {};
+    listeners.slice().forEach(function (l) {
+      var k = pollGroupKey(l);
+      (groups[k] = groups[k] || []).push(l);
+    });
+    Object.keys(groups).forEach(function (k) { pollGroup(groups[k]); });
+  }
+
   var fastPolling = false;
   function ensurePolling() {
     if (!pollTimer && listeners.length) {
-      pollTimer = setInterval(function () {
-        listeners.slice().forEach(function (l) { fireListener(l); });
-      }, fastPolling ? 800 : 3000);
+      pollTimer = setInterval(pollListenersGrouped, fastPolling ? 800 : 3000);
     }
   }
   function maybeStopPolling() {
@@ -727,11 +886,19 @@
 
   // Avisa a los oyentes afectados por una escritura propia (eco local inmediato)
   function notifyLocal(changedSegs) {
+    // Eco local inmediato tras una escritura propia, agrupado por
+    // (ruta + consulta) para no repetir la misma lectura N veces.
+    var groups = {};
     listeners.forEach(function (l) {
-      if (pathsOverlap(l.ref._segs, changedSegs)) {
-        if (l._deb) clearTimeout(l._deb);
-        l._deb = setTimeout(function () { l._deb = null; fireListener(l); }, 120);
-      }
+      if (!pathsOverlap(l.ref._segs, changedSegs)) return;
+      var k = pollGroupKey(l);
+      (groups[k] = groups[k] || []).push(l);
+    });
+    Object.keys(groups).forEach(function (k) {
+      var ls = groups[k];
+      ls.forEach(function (l) { if (l._deb) { clearTimeout(l._deb); l._deb = null; } });
+      var rep = ls[0];
+      rep._deb = setTimeout(function () { rep._deb = null; pollGroup(ls); }, 120);
     });
   }
 

@@ -831,6 +831,10 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
 
 /* ===== LIQUID GLASS — BARRA SUPERIOR ===== */
 #top-nav {
+  /* PWA iOS standalone (viewport-fit=cover): el header es sticky top-0 y sin
+     este padding el contenido quedaba pegado a la hora/batería. En Safari
+     normal env()=0 y se mantiene el py-2 original. */
+  padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
   background: rgba(255, 255, 255, 0.22) !important;
   backdrop-filter: blur(52px) saturate(240%) brightness(1.08) contrast(1.04);
   -webkit-backdrop-filter: blur(52px) saturate(240%) brightness(1.08) contrast(1.04);
@@ -43271,6 +43275,9 @@ window.publishMusic = async function () {
       plays: 0, likes: 0
     };
     await trackRef.set(meta);
+    // Índice por autor: las vistas "Tu música" leen musicByAuthor/<uid> en vez
+    // de escanear musicTracks completo (era la causa del "Cargando..." eterno).
+    await musicDb().ref('musicByAuthor/' + uid + '/' + trackId).set({ t: meta.createdAt }).catch(() => {});
     musicSetProgress(90, 'Anunciando en el feed…');
 
     // Anuncio en el feed (tarjeta de música con reproductor integrado)
@@ -43336,6 +43343,7 @@ window.deleteMusicTrack = async function (trackId) {
     if (!t || t.authorId !== uid) { if (typeof showMiniToast === 'function') showMiniToast(appT('No puedes eliminar esta canción')); return; }
     await musicDb().ref('musicAudio/' + trackId).remove().catch(() => {});
     await musicDb().ref('musicTracks/' + trackId).remove().catch(() => {});
+    await musicDb().ref('musicByAuthor/' + uid + '/' + trackId).remove().catch(() => {});
     if (t.announceNoteId) await musicDb().ref('communityNotes/' + t.announceNoteId).remove().catch(() => {});
     musicUrlCache.delete(trackId);
     if (musicCurrentTrackId() === trackId) musicStopAndHide();
