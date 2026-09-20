@@ -1533,6 +1533,44 @@
     return promiseTimeout(promise, 25000, label || 'db-timeout');
   }
 
+  // Reparación del índice de login por username (2026-09-20): las cuentas
+  // creadas antes de la función "iniciar sesión con nombre de usuario"
+  // tienen perfil con username pero NUNCA se escribió su entrada
+  // `usernames/<normalizado>` en la tabla, que es lo que la Lambda
+  // drex-username-resolve consulta. Sin esa entrada el login por username
+  // devuelve "incorrecta" aunque la contraseña sea correcta.
+  // Tras cada autenticación exitosa se asegura, SIN bloquear el login:
+  //   1. `usernames/<normalizado>` -> uid (transacción suave: solo si está
+  //      libre o ya apunta a este uid; jamás se roba el de otro usuario)
+  //   2. `users/<uid>/email` -> email de Cognito (la Lambda lo necesita para
+  //      resolver el correo sin exponerlo; Cognito es la fuente autoritativa)
+  // No indexa usernames temporales (usernameIsFallback). Idempotente y
+  // silencioso: cualquier fallo se ignora, el login no depende de esto.
+  function ensureUsernameLoginIndex(user) {
+    try {
+      if (!user || !user.uid) return;
+      var uid = String(user.uid);
+      var email = user.email ? String(user.email) : '';
+      new Ref(splitPath('users/' + uid + '/username')).once('value').then(function (snap) {
+        var username = snap.val();
+        if (!username || typeof username !== 'string') return null;
+        username = username.trim().toLowerCase().replace(/^@+/, '').replace(/\s+/g, '');
+        if (username.length < 3 || username.length > 30) return null;
+        return new Ref(splitPath('users/' + uid + '/usernameIsFallback')).once('value').then(function (fb) {
+          if (fb.val() === true) return null; // temporal: no se indexa
+          return new Ref(splitPath('usernames/' + username)).transaction(function (cur) {
+            return (cur === null || cur === uid) ? uid : undefined;
+          });
+        });
+      }).then(function (claim) {
+        if (claim && claim.committed && email) {
+          return new Ref(splitPath('users/' + uid + '/email')).set(email).catch(function () {});
+        }
+        return null;
+      }).catch(function () { /* silencioso */ });
+    } catch (e) { /* nunca bloquear el login */ }
+  }
+
   function establishSession(cognitoUser, session) {
     currentCognitoUser = cognitoUser;
     restoreSeq++;
@@ -1549,6 +1587,10 @@
           try { console.warn('[DrexCloud] getUserAttributes no disponible; sesión establecida con datos del token.'); } catch (_) {}
         }
         authInstance.currentUser = makeCurrentUser(cognitoUser, useAttrs || []);
+        // Reparación no bloqueante del índice de login por username
+        // (cuentas creadas antes de esa función). Corre en segundo plano;
+        // el login no espera ni depende de ella.
+        try { setTimeout(function () { ensureUsernameLoginIndex(authInstance.currentUser); }, 0); } catch (_) {}
         var credPromise = promiseTimeout(Promise.resolve().then(function () {
           return configureAwsCredentials(session.getIdToken());
         }), 15000, 'aws-creds-timeout');
