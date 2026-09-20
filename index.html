@@ -4700,6 +4700,12 @@ document.addEventListener("DOMContentLoaded", function() {
       background: #ffffff;
       border-bottom: 1px solid #eef2f7;
     }
+    /* Cabecera "Eco hace X" sobre la tarjeta de eco en perfiles.
+       Va en el wrapper, fuera del .drex-post (que es flex en fila). */
+    .profile-eco-head {
+      background: #ffffff;
+    }
+    body.theme-dark .profile-eco-head { background: #0b0f14; }
     .drex-vote-rail {
       display: flex;
       flex-direction: column;
@@ -9526,7 +9532,13 @@ function saveNote() {
 
   // Eco en perfiles: mismo constructor suelto del feed para el post
   // original, con cabecera "Eco". voteCtx = { user, userVote, hasEchoed }.
+  // La cabecera va FUERA del .drex-post: esa clase es display:flex en fila
+  // y meter la cabecera dentro la volvia un flex-item junto al riel de
+  // votos (se veia "fuera del lugar"). Ahora el wrapper lleva la cabecera
+  // arriba y la tarjeta intacta debajo.
   function createProfileEcoCard(payload, originalPost, voteCtx) {
+    const wrap = document.createElement('div');
+    wrap.className = 'profile-eco-wrap w-full';
     const card = document.createElement('div');
     card.className = 'drex-post w-full';
     const ecoId = (payload && payload.noteId) || (originalPost && originalPost.id) || '';
@@ -9537,8 +9549,8 @@ function saveNote() {
     }
     const ctx = voteCtx || {};
     try {
-      card.innerHTML = `
-      <div class="flex items-center gap-2 text-xs text-[#00a364] font-semibold px-1 mb-1">
+      wrap.innerHTML = `
+      <div class="profile-eco-head flex items-center gap-2 text-xs text-[#00a364] font-semibold px-4 pt-3 pb-1">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/>
           <path d="M8.9 9.8A3.8 3.8 0 0 0 8.9 14.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -9547,16 +9559,18 @@ function saveNote() {
           <path d="M17.7 8A7 7 0 0 1 17.7 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
         Eco ${formatRelativeTime((payload && payload.timestamp) || Date.now())}
-      </div>` + buildDrexPostCardHTML(originalPost || {}, {
+      </div>`;
+      card.innerHTML = buildDrexPostCardHTML(originalPost || {}, {
         user: ctx.user || null,
         userVote: ctx.userVote || null,
         hasEchoed: Boolean(ctx.hasEchoed),
         avatarIdPrefix: 'eco-author-'
       });
+      wrap.appendChild(card);
     } catch (renderError) {
       console.error('Error renderizando eco de perfil:', ecoId, renderError);
     }
-    return card;
+    return wrap;
   }
 
   // Pestaña "Ecos" del perfil propio: lee userEcos/<uid>, trae cada
