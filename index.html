@@ -7873,7 +7873,7 @@ if (scrollArea) {
 
         <!-- Nombre de usuario -->
         <h2 id="author-profile-name" class="mt-3 text-lg font-extrabold text-black cursor-pointer select-none" title="Copiar usuario"></h2>
-        <p id="author-profile-handle" class="text-sm text-gray-500 cursor-pointer select-none" title="Copiar usuario">@autor</p>
+        <p id="author-profile-handle" class="text-sm text-gray-500 cursor-pointer select-none" title="Copiar usuario">@…</p>
         <p id="author-bio" class="text-sm text-gray-800 mt-2 leading-relaxed max-w-xs"></p>
 
         <!-- Pills de ubicación, idioma y pronombres -->
@@ -26281,6 +26281,7 @@ function saveNote() {
       updates[p + 'dmPermission'] = isMinorRestricted ? 'friends' : 'all';
       updates[p + 'registrationTimestamp'] = Date.now();
       updates[p + 'profileDegraded'] = null;
+      updates[p + 'usernameIsFallback'] = null;
       updates[p + 'founder'] = false;
       if (firstClaim) {
         updates[p + 'bio'] = '';
@@ -26764,6 +26765,7 @@ function saveNote() {
       const _chatRecordReady = ensureChatUserRecord(user)
         .then(() => maybeRepairCorruptedUsername(user))
         .then(restoredName => { if (restoredName) refreshProfileUsernameUI(restoredName); })
+        .then(() => maybeFlagLegacyFallbackUsername(user))
         .then(() => maybeRepairLostProfileImage(user))
         .then(() => maybeRepairFollowCounts(user.uid))
         .catch(() => {});
@@ -26844,13 +26846,16 @@ function saveNote() {
         // Los usuarios antiguos no tienen registrationTimestamp: se consideran
         // completos si ya tienen username. Los perfiles degradados (Facebook o
         // registro interrumpido) llevan la marca profileDegraded.
+        // FIX (2026-09-20): un username temporal obliga a completar-registro
+        // aunque la marca degradada se haya perdido (codigo viejo la limpiaba).
         const needsCompletion = !data || data.profileDegraded === true ||
+          data.usernameIsFallback === true ||
           (!data.registrationTimestamp && !data.username);
         if (needsCompletion) {
           // Motivo específico: se muestra en pantalla para que siempre quede
           // claro por qué se pide completar el registro, y queda en consola
           // para diagnóstico.
-          const _reason = !data ? 'no-profile' : (data.profileDegraded === true ? 'degraded' : 'incomplete');
+          const _reason = !data ? 'no-profile' : ((data.profileDegraded === true || data.usernameIsFallback === true) ? 'degraded' : 'incomplete');
           try { console.warn('[Drex] completar-registro, motivo:', _reason); } catch (_) {}
           startRegistrationCompletion(user, data, _reason);
           return;
@@ -27156,7 +27161,7 @@ function saveNote() {
     list.unshift({
       uid: account.uid,
       email: account.email,
-      username: account.username || account.email.split('@')[0],
+      username: account.username || '',
       photo: account.photo || ''
     });
     saveRememberedAccounts(list);
@@ -30035,6 +30040,9 @@ function saveNote() {
           return false;
         }
         updates.username = nextUsername;
+        // Nombre real elegido: ya no es temporal ni degradado.
+        updates.usernameIsFallback = null;
+        updates.profileDegraded = null;
         const lastUsernameChange = userData.lastUsernameChange || 0;
         const timeSinceLastChange = Date.now() - lastUsernameChange;
         const USERNAME_CHANGE_COOLDOWN = 7 * 24 * 60 * 60 * 1000;
@@ -33663,6 +33671,23 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   }
 
 
+  // Sanitizado EXACTO del formato legacy de username temporal (2026-09-19 y
+  // antes): "<displayName|local-del-correo>_<ult4-del-uid>". Se conserva para
+  // detectar perfiles ya afectados (ej. "zam.privacy_e12c") sin falsos positivos.
+  function _legacyFallbackUsernameFor(user) {
+    if (!user || !user.uid) return '';
+    const raw = user.displayName || (user.email ? user.email.split('@')[0] : 'usuario');
+    const clean = String(raw).toLowerCase().replace(/^@+/, '').replace(/[\/<>&"'`\s\u0000-\u001f\u007f]/g, '').slice(0, 20) || 'usuario';
+    const suffix = String(user.uid).replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase() || 'x';
+    return clean + '_' + suffix;
+  }
+  // Temporal neutro (2026-09-20): JAMAS contiene el correo del usuario.
+  function _neutralFallbackUsername(user) {
+    if (!user || !user.uid) return 'usuario_x';
+    const suffix = String(user.uid).replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase() || 'x';
+    const base = String(user.displayName || '').toLowerCase().replace(/^@+/, '').replace(/[\/<>&"'`\s\u0000-\u001f\u007f]/g, '').slice(0, 20);
+    return (base || 'usuario') + '_' + suffix;
+  }
   function ensureChatUserRecord(user) {
     if (!user) return Promise.resolve();
     const ref = DrexCloud.database().ref('users/' + user.uid);
@@ -33681,8 +33706,17 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       // temporales extraños tipo "usuario_x7k2". Si ya hay username, solo se
       // limpia la marca degradada vieja (evita el bucle de completar-registro)
       // sin tocar el username real.
-      if (existing.username) {
+      // FIX (2026-09-20): un username TEMPORAL (usernameIsFallback) NO es un
+      // username real: no limpia profileDegraded y, si la marca se perdio (el
+      // codigo viejo la limpiaba en el segundo login), se repone para forzar
+      // completar-registro. Ese era el bug que volvia permanente el temporal
+      // derivado del correo ("zam.privacy_e12c").
+      if (existing.username && !existing.usernameIsFallback) {
         safeUpdates.profileDegraded = null;
+        return ref.update(safeUpdates);
+      }
+      if (existing.usernameIsFallback) {
+        if (existing.profileDegraded !== true) safeUpdates.profileDegraded = true;
         return ref.update(safeUpdates);
       }
       // Sin username en la lectura: NO se escribe un temporal a ciegas.
@@ -33694,15 +33728,17 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       // hace único por usuario con un sufijo de su uid. No se escribe en el
       // índice usernames/ (la reserva real ocurre en el flujo de registro con
       // transacción atómica).
-      const raw = user.displayName || (user.email ? user.email.split('@')[0] : 'usuario');
-      const clean = String(raw).toLowerCase().replace(/^@+/, '').replace(/[\/<>&"'`\s\u0000-\u001f\u007f]/g, '').slice(0, 20) || 'usuario';
-      const suffix = String(user.uid).replace(/[^a-zA-Z0-9]/g, '').slice(-4).toLowerCase() || 'x';
-      const fallbackUsername = clean + '_' + suffix;
+      // FIX PRIVACIDAD (2026-09-20): el temporal NUNCA deriva del correo.
+      // El formato viejo "<correolocal>_<uid4>" exponia el correo de registro
+      // en el perfil publico (ej. "zam.privacy_e12c"). Ahora es neutro.
+      const fallbackUsername = _neutralFallbackUsername(user);
       return ref.transaction(current => {
         const cur = current || {};
         if (cur.username) return; // abortar: ya hay username real, no tocar
         cur.email = cur.email || user.email || '';
         cur.username = fallbackUsername;
+        // Marca explicita: distingue un temporal de un nombre real elegido.
+        cur.usernameIsFallback = true;
         cur.profileImage = cur.profileImage || user.photoURL || '';
         cur.lastChatLoginAt = Date.now();
         // Solo aquí (temporal recién creado) se marca degradado para forzar
@@ -33828,6 +33864,37 @@ ${getSpinnerMarkup('drex-spinner-inline')}
             return cur;
           }).then(res => (res && res.committed) ? realName : null);
         });
+      });
+    }).catch(() => null);
+  }
+
+  // REPARACION DE USERNAMES TEMPORALES LEGACY (2026-09-20).
+  // Causa: el temporal viejo derivaba del correo ("zam.privacy_e12c") y la
+  // marca profileDegraded se limpiaba en el siguiente login, asi que el
+  // temporal se volvia permanente y el perfil mostraba el correo de registro.
+  // Detecta el formato legacy EXACTO (mismo sanitizado que lo genero) y exige
+  // que NO este en el indice usernames/ (todo nombre real reclamado si lo
+  // esta): cero falsos positivos. Lo marca como fallback + degradado para que
+  // completar-registro obligue a elegir un nombre real. No renombra nada solo.
+  function maybeFlagLegacyFallbackUsername(user) {
+    if (!user || !user.uid) return Promise.resolve(null);
+    const ref = DrexCloud.database().ref('users/' + user.uid);
+    return ref.once('value').then(snapshot => {
+      const data = snapshot.val() || {};
+      if (data.usernameIsFallback) return null; // ya marcado: la puerta lo fuerza
+      const current = String(data.username || '').toLowerCase();
+      if (!current) return null;
+      if (current !== _legacyFallbackUsernameFor(user)) return null;
+      return DrexCloud.database().ref('usernames/' + current).once('value').then(idxSnap => {
+        if (idxSnap.val() === user.uid) return null; // reclamado de verdad: no tocar
+        if (idxSnap.exists()) return null; // de otro usuario: no tocar
+        return ref.transaction(cur => {
+          cur = cur || {};
+          if (String(cur.username || '').toLowerCase() !== current) return; // cambio: no pisar
+          cur.usernameIsFallback = true;
+          cur.profileDegraded = true;
+          return cur;
+        }).then(res => (res && res.committed) ? current : null);
       });
     }).catch(() => null);
   }
@@ -35036,7 +35103,7 @@ function renderAccountsList(accounts) {
     addNoteBtn.classList.add('hidden');
     profileNote.classList.add('hidden');
     if (authorNameNode) authorNameNode.textContent = 'Cargando perfil...';
-    if (authorHandleNode) authorHandleNode.textContent = '@autor';
+    if (authorHandleNode) authorHandleNode.textContent = '@…';
     if (authorBioNode) authorBioNode.textContent = 'Estamos preparando la información del autor.';
     if (authorImageNode) {
       authorImageNode.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
