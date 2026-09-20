@@ -44,7 +44,7 @@
   <meta name="theme-color" content="#f0f4f9" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Drex" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
     <!-- Google Fonts -->
@@ -4710,6 +4710,10 @@ document.addEventListener("DOMContentLoaded", function() {
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid #e7ecf3;
+      /* PWA "Añadir a pantalla" (iOS): con viewport-fit=cover el sticky top:0
+         quedaba DEBAJO de la hora/batería. El padding empuja las pestañas al
+         área segura; el fondo translúcido sigue cubriendo el notch. */
+      padding-top: env(safe-area-inset-top, 0px);
     }
     #douyin-feed-tabs #feed-tab-indicator { display: none; }
     .feed-tab-btn.drex-sort-tab {
@@ -19747,6 +19751,69 @@ function saveNote() {
       document.head.appendChild(l2);
     } catch (_) {}
   }
+  /* Guardián de safe-area para anuncios flotantes de terceros.
+     El Social Bar de Adsterra y el In-Page Push de Monetag inyectan barras
+     position:fixed pegadas al borde FÍSICO (top:0 / bottom:0). En el PWA
+     "Añadir a pantalla" de iOS (viewport-fit=cover) eso las mete debajo de
+     la barra de estado y del home indicator, tapando el contenido.
+     Este guardián detecta esos contenedores ajenos a Drex y los recorre al
+     área segura. No toca ningún elemento propio (ids drex-*, nav, modals…). */
+  var __drexAdGuardianOn = false;
+  function drexAdSafeAreaFix(scanDeep) {
+    try {
+      var sat = 'env(safe-area-inset-top, 0px)';
+      var sab = 'env(safe-area-inset-bottom, 0px)';
+      var kids = [];
+      function collect(el, depth) {
+        if (!el || depth > 1) return;
+        var ch = el.children;
+        for (var i = 0; i < ch.length; i++) { kids.push(ch[i]); collect(ch[i], depth + 1); }
+      }
+      if (document.body) collect(document.body, 0);
+      for (var k = 0; k < kids.length; k++) {
+        (function (el) {
+          try {
+            var id = el.id || '';
+            if (/^(drex-|bottom-nav|scrollable-content|nav-|fab-)/.test(id)) return;
+            if (/(^|-)toast|drawer|modal|sheet|menu|header|toolbar|tabbar|popover/i.test(id)) return;
+            var cs = window.getComputedStyle(el);
+            if (!cs || cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') return;
+            var r = el.getBoundingClientRect();
+            if (r.width < 40 || r.height < 16) return;
+            if (r.width >= window.innerWidth - 2 && r.height >= window.innerHeight - 2) return;
+            var inner = '';
+            try { inner = (el.innerHTML || '').slice(0, 500); } catch (_) {}
+            var looksAd = el.querySelector('iframe') ||
+              /profitableratecpm|highrevenueformat|nap5k|monetag|adsterra|>Ad</i.test(inner);
+            if (!looksAd) return;
+            if (r.top < 28 && el.getAttribute('data-drex-sat') !== '1') {
+              el.style.setProperty('top', sat, 'important');
+              el.setAttribute('data-drex-sat', '1');
+            } else if (r.bottom > window.innerHeight - 28 && el.getAttribute('data-drex-sab') !== '1') {
+              el.style.setProperty('bottom', sab, 'important');
+              el.setAttribute('data-drex-sab', '1');
+            }
+          } catch (_) {}
+        })(kids[k]);
+      }
+    } catch (_) {}
+  }
+  function drexAdSafeAreaGuardian() {
+    if (__drexAdGuardianOn) return;
+    __drexAdGuardianOn = true;
+    var last = 0;
+    function throttled() {
+      var now = Date.now();
+      if (now - last < 2500) return;
+      last = now;
+      drexAdSafeAreaFix(false);
+    }
+    try {
+      new MutationObserver(throttled).observe(document.documentElement, { childList: true, subtree: true });
+    } catch (_) {}
+    setInterval(function () { try { if (!document.hidden) drexAdSafeAreaFix(false); } catch (_) {} }, 8000);
+    setTimeout(function () { drexAdSafeAreaFix(false); }, 2000);
+  }
   function initAdsterra() {
     try { drexProbeAdblock(); } catch (_) {}
     adsterraPreload();
@@ -19773,6 +19840,7 @@ function saveNote() {
       }
       adsterraInjectBanners();
       drexStickyAdInit();
+      try { drexAdSafeAreaGuardian(); } catch (_) {}
       adsterraInterstitialEngine();
       /* Guardián del título de la pestaña: algunos scripts de anuncios de
          terceros reescriben document.title ("(1) New Message!"). Si el
