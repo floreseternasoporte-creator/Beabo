@@ -1571,7 +1571,272 @@
     } catch (e) { /* nunca bloquear el login */ }
   }
 
+  // [HISTORIAL-ACCESOS] inicio — Registro del historial de accesos (Ing. #3, 2026-09-20).
+  // Cada login EXPLÍCITO (email, username u OAuth) guarda un ítem
+  // pk='users', sk='<uid>/logins/<timestamp_ms>_<rand>' con v=JSON:
+  // {ts, ua, browser, os, deviceLabel, deviceType, tz, loginMethod}.
+  // Fire-and-forget TOTAL: cualquier fallo se ignora en silencio; el login
+  // nunca espera ni depende de esta escritura.
+  // Privacidad: NO se guarda la IP (no hay forma de obtenerla del lado del
+  // cliente sin un servicio externo, y enviarla a un tercero sería una fuga
+  // de datos; la zona horaria sirve como aproximación gruesa). El userAgent
+  // se trunca a 300 caracteres. Jamás contraseñas ni tokens.
+  // Retención: máximo 50 accesos por usuario. La limpieza se hace EN LA
+  // ESCRITURA, solo cuando se supera el límite: se leen las claves del
+  // subárbol y se borran las más viejas hasta quedar en 50 (barato porque
+  // solo ocurre cuando hay exceso; no se limpia en la lectura para que la
+  // tabla no crezca si el usuario nunca abre el Centro de seguridad).
+  var DREX_LOGIN_HISTORY_MAX = 50;
+  var drexPendingLoginMethod = null; // 'email' | 'username' | 'oauth' | null
+
+  function drexSummarizeUA(ua) {
+    ua = String(ua || '');
+    var browser = 'Navegador', os = '', deviceType = 'desktop';
+    var m;
+    if (/iPhone|iPad|iPod/i.test(ua)) { os = 'iOS'; deviceType = 'phone'; }
+    else if (/Android/i.test(ua)) { os = 'Android'; deviceType = 'phone'; }
+    else if (/Windows NT/i.test(ua)) os = 'Windows';
+    else if (/Mac OS X|Macintosh/i.test(ua)) os = 'macOS';
+    else if (/Linux/i.test(ua)) os = 'Linux';
+    else if (/CrOS/i.test(ua)) os = 'ChromeOS';
+    if (/Edg\/|EdgA|EdgiOS/i.test(ua)) browser = 'Edge';
+    else if (/OPR\/|Opera/i.test(ua)) browser = 'Opera';
+    else if (/SamsungBrowser/i.test(ua)) browser = 'Samsung Internet';
+    else if (/FxiOS/i.test(ua)) browser = 'Firefox';
+    else if (/Firefox/i.test(ua)) browser = 'Firefox';
+    else if (/CriOS/i.test(ua)) browser = 'Chrome';
+    else if (/Chrome/i.test(ua)) browser = 'Chrome';
+    else if (/Safari/i.test(ua)) browser = 'Safari';
+    var devName = deviceType === 'phone'
+      ? (/iPhone/i.test(ua) ? 'iPhone' : (/iPad/i.test(ua) ? 'iPad' : (/Android/i.test(ua) ? 'Android' : 'Móvil')))
+      : 'Computadora';
+    return { browser: browser, os: os, deviceType: deviceType, label: devName + ' · ' + browser };
+  }
+
+  function recordLoginHistory(user) {
+    try {
+      var method = drexPendingLoginMethod;
+      drexPendingLoginMethod = null; // se consume una sola vez
+      if (!method || !user || !user.uid) return; // restauración de sesión: no es un login
+      var uid = String(user.uid);
+      var now = Date.now();
+      var ua = '';
+      try { ua = (typeof navigator !== 'undefined' && navigator.userAgent) || ''; } catch (_) {}
+      var info = drexSummarizeUA(ua);
+      var tz = '';
+      try { tz = (typeof Intl !== 'undefined' && Intl.DateTimeFormat().resolvedOptions().timeZone) || ''; } catch (_) {}
+      var record = {
+        ts: now,
+        ua: ua.slice(0, 300),
+        browser: info.browser,
+        os: info.os,
+        deviceLabel: info.label,
+        deviceType: info.deviceType,
+        tz: tz,
+        loginMethod: method
+      };
+      var key = String(now) + '_' + Math.random().toString(36).slice(2, 6);
+      var baseRef = new Ref(splitPath('users/' + uid + '/logins'));
+      baseRef.child(key).set(record).catch(function () {}).then(function () {
+        return baseRef.once('value').then(function (snap) {
+          var val = snap.val() || {};
+          var keys = Object.keys(val).sort(); // prefijo ts numérico (13 dígitos) => orden cronológico
+          var excess = keys.length - DREX_LOGIN_HISTORY_MAX;
+          if (excess <= 0) return null;
+          var oldest = keys.slice(0, excess);
+          var chain = Promise.resolve();
+          oldest.forEach(function (k) {
+            chain = chain.then(function () { return baseRef.child(k).remove().catch(function () {}); });
+          });
+          return chain;
+        }).catch(function () {});
+      });
+    } catch (e) { /* nunca bloquear el login */ }
+  }
+  // [HISTORIAL-ACCESOS] fin
+
+  // [DISPOSITIVOS] inicio — alertas de dispositivo nuevo.
+  // Fingerprint estable por dispositivo/navegador: userAgent normalizado
+  // (familia de navegador + SO + móvil/escritorio, SIN versiones menores para
+  // no alertar en cada auto-actualización del navegador), resolución de
+  // pantalla, zona horaria e idioma. Registro en users/<uid>/devices/<hash>
+  // (pk='users', sk='<uid>/devices/<hash>') con {label, firstSeen, lastSeen,
+  // userAgent, tz}. La alerta in-app la muestra la app vía
+  // window.drexOnNewDeviceDetected(info), solo si el usuario tiene las
+  // alertas activadas. Todo es fire-and-forget: cualquier fallo se traga en
+  // silencio para no romper jamás el login. Sin IP (privacidad) y sin email
+  // (no hay SES configurado): solo alerta in-app.
+  function drexDeviceUA() {
+    try { return String((typeof navigator !== 'undefined' && navigator.userAgent) || ''); }
+    catch (_) { return ''; }
+  }
+  function drexSummarizeDeviceUA(ua) {
+    ua = String(ua || '');
+    var browser = 'navegador', os = '', form = 'desktop';
+    if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) form = 'mobile';
+    if (/iPhone|iPad|iPod/i.test(ua)) os = 'ios';
+    else if (/Android/i.test(ua)) os = 'android';
+    else if (/Windows NT/i.test(ua)) os = 'windows';
+    else if (/Mac OS X|Macintosh/i.test(ua)) os = 'macos';
+    else if (/Linux/i.test(ua)) os = 'linux';
+    else if (/CrOS/i.test(ua)) os = 'chromeos';
+    if (/Edg\/|EdgA|EdgiOS/i.test(ua)) browser = 'edge';
+    else if (/OPR\/|Opera/i.test(ua)) browser = 'opera';
+    else if (/SamsungBrowser/i.test(ua)) browser = 'samsung internet';
+    else if (/FxiOS/i.test(ua)) browser = 'firefox';
+    else if (/Firefox/i.test(ua)) browser = 'firefox';
+    else if (/CriOS/i.test(ua)) browser = 'chrome';
+    else if (/Chrome/i.test(ua)) browser = 'chrome';
+    else if (/Safari/i.test(ua)) browser = 'safari';
+    return { browser: browser, os: os, form: form };
+  }
+  function drexDeviceFriendlyLabel(ua) {
+    ua = String(ua || '');
+    var p = drexSummarizeDeviceUA(ua);
+    var browserNames = { edge: 'Edge', opera: 'Opera', 'samsung internet': 'Samsung Internet', firefox: 'Firefox', chrome: 'Chrome', safari: 'Safari' };
+    var browserName = browserNames[p.browser] || 'Navegador';
+    var devicePart;
+    if (p.form === 'mobile') {
+      if (/iPhone/i.test(ua)) devicePart = 'iPhone';
+      else if (/iPad/i.test(ua)) devicePart = 'iPad';
+      else if (/Android/i.test(ua)) devicePart = 'Android';
+      else devicePart = 'Móvil';
+    } else {
+      var osNames = { windows: 'Windows', macos: 'macOS', linux: 'Linux', chromeos: 'ChromeOS', ios: 'iOS', android: 'Android' };
+      devicePart = osNames[p.os] || 'Computadora';
+    }
+    return devicePart + ' · ' + browserName;
+  }
+  function drexShortUA(ua) {
+    ua = String(ua || '');
+    var p = drexSummarizeDeviceUA(ua);
+    var browserNames = { edge: 'Edge', opera: 'Opera', 'samsung internet': 'Samsung Internet', firefox: 'Firefox', chrome: 'Chrome', safari: 'Safari' };
+    var browserName = browserNames[p.browser] || 'Navegador';
+    var m = null;
+    if (p.browser === 'edge') m = /Edg(?:A|iOS)?\/(\d+)/i.exec(ua);
+    else if (p.browser === 'opera') m = /(?:OPR|Opera)\/(\d+)/i.exec(ua);
+    else if (p.browser === 'samsung internet') m = /SamsungBrowser\/(\d+)/i.exec(ua);
+    else if (p.browser === 'firefox') m = /(?:FxiOS|Firefox)\/(\d+)/i.exec(ua);
+    else if (p.browser === 'chrome') m = /(?:CriOS|Chrome)\/(\d+)/i.exec(ua);
+    else if (p.browser === 'safari') m = /Version\/(\d+)/i.exec(ua);
+    var ver = m ? ' ' + m[1] : '';
+    var osNames = { windows: 'Windows', macos: 'macOS', linux: 'Linux', chromeos: 'ChromeOS', ios: 'iOS', android: 'Android' };
+    var osPart = osNames[p.os] ? ' · ' + osNames[p.os] : '';
+    return (browserName + ver + osPart).slice(0, 120);
+  }
+  function drexDeviceFingerprintString() {
+    var ua = drexDeviceUA();
+    var p = drexSummarizeDeviceUA(ua);
+    var res = '';
+    try {
+      var s = (typeof screen !== 'undefined') ? screen : null;
+      if (s && s.width && s.height) res = s.width + 'x' + s.height;
+    } catch (_) {}
+    var tz = '', lang = '';
+    try { tz = (typeof Intl !== 'undefined' && Intl.DateTimeFormat().resolvedOptions().timeZone) || ''; } catch (_) {}
+    try { lang = (typeof navigator !== 'undefined' && navigator.language) || ''; } catch (_) {}
+    return ['drex-dev-v1', p.browser, p.os, p.form, res, String(tz), String(lang)].join('|');
+  }
+  function drexCyrb53(str, seed) {
+    str = String(str);
+    var h1 = 0xdeadbeef ^ (seed || 0), h2 = 0x41c6ce57 ^ (seed || 0);
+    for (var i = 0, ch; i < str.length; i++) {
+      ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    var a = (h2 >>> 0).toString(16), b = (h1 >>> 0).toString(16);
+    while (a.length < 8) a = '0' + a;
+    while (b.length < 8) b = '0' + b;
+    return a + b;
+  }
+  function drexHashDeviceString(str) {
+    str = String(str);
+    try {
+      var c = (typeof crypto !== 'undefined') ? crypto : null;
+      if (c && c.subtle && typeof c.subtle.digest === 'function') {
+        var bytes = null;
+        try { bytes = new TextEncoder().encode(str); } catch (_) { bytes = null; }
+        if (bytes) {
+          return c.subtle.digest('SHA-256', bytes).then(function (buf) {
+            var arr = new Uint8Array(buf), out = '';
+            for (var i = 0; i < arr.length; i++) out += ('0' + arr[i].toString(16)).slice(-2);
+            return out;
+          }, function () { return drexCyrb53(str); });
+        }
+      }
+    } catch (_) {}
+    return Promise.resolve(drexCyrb53(str));
+  }
+  function drexTzCity(tz) {
+    var parts = String(tz || '').split('/');
+    var city = parts.length ? parts[parts.length - 1] : '';
+    return city.replace(/_/g, ' ');
+  }
+  function drexNotifyNewDevice(info) {
+    try {
+      var key = 'drex_newdevice_alert_' + info.uid + '_' + info.fpHash;
+      var seen = false;
+      try { seen = !!(typeof sessionStorage !== 'undefined' && sessionStorage.getItem(key)); } catch (_) {}
+      if (seen) return;
+      try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(key, String(Date.now())); } catch (_) {}
+      var w = (typeof window !== 'undefined') ? window : ((typeof globalThis !== 'undefined') ? globalThis : null);
+      var cb = w && w.drexOnNewDeviceDetected;
+      if (typeof cb === 'function') { try { cb(info); } catch (_) {} }
+    } catch (_) {}
+  }
+  // db inyectable para pruebas; en producción usa el Ref real de DynamoDB.
+  function checkDrexNewDevice(user, db) {
+    function done(result) { return Promise.resolve(result); }
+    try {
+      if (!user || !user.uid) return done({ checked: false });
+      var uid = String(user.uid);
+      var ua = drexDeviceUA();
+      var fpString = drexDeviceFingerprintString();
+      var label = drexDeviceFriendlyLabel(ua);
+      var uaShort = drexShortUA(ua);
+      var tz = '';
+      try { tz = (typeof Intl !== 'undefined' && Intl.DateTimeFormat().resolvedOptions().timeZone) || ''; } catch (_) {}
+      var now = Date.now();
+      var database = db || { ref: function (path) { return new Ref(splitPath(path)); } };
+      var devicesRef, prefsRef;
+      try {
+        devicesRef = database.ref('users/' + uid + '/devices');
+        prefsRef = database.ref('security/' + uid + '/preferences');
+      } catch (e) { return done({ checked: false, error: 'ref' }); }
+      return drexHashDeviceString(fpString).then(function (fpHash) {
+        var oneRef = devicesRef.child(fpHash);
+        return Promise.all([
+          oneRef.once('value').then(function (s) { return s.val(); }, function () { return 'READ_ERROR'; }),
+          prefsRef.once('value').then(function (s) { return s.val() || {}; }, function () { return {}; })
+        ]).then(function (pair) {
+          var existing = pair[0], prefs = pair[1] || {};
+          if (existing === 'READ_ERROR') return { checked: false, error: 'read' };
+          if (existing && typeof existing === 'object') {
+            // Dispositivo conocido: solo refrescar lastSeen (y etiqueta).
+            return oneRef.update({ lastSeen: now, label: label }).then(function () {
+              return { checked: true, isNew: false, fpHash: fpHash };
+            }, function () { return { checked: true, isNew: false, fpHash: fpHash, error: 'write' }; });
+          }
+          // Dispositivo nuevo: registrar primero; la alerta solo si el registro funcionó.
+          var record = { label: label, firstSeen: now, lastSeen: now, userAgent: uaShort, tz: String(tz) };
+          return oneRef.set(record).then(function () {
+            var alertsOn = prefs.securityChangeAlerts !== false && prefs.newDeviceAlerts !== false;
+            if (alertsOn) drexNotifyNewDevice({ uid: uid, fpHash: fpHash, label: label, firstSeen: now, tz: String(tz), tzCity: drexTzCity(tz) });
+            return { checked: true, isNew: true, fpHash: fpHash, alertShown: alertsOn };
+          }, function () { return { checked: true, isNew: true, fpHash: fpHash, alertShown: false, error: 'write' }; });
+        });
+      }, function () { return { checked: false, error: 'hash' }; });
+    } catch (e) {
+      return done({ checked: false, error: 'unexpected' });
+    }
+  }
+  // [DISPOSITIVOS] fin
+
   function establishSession(cognitoUser, session) {
+
     currentCognitoUser = cognitoUser;
     restoreSeq++;
     return new Promise(function (resolve) {
@@ -1591,6 +1856,16 @@
         // (cuentas creadas antes de esa función). Corre en segundo plano;
         // el login no espera ni depende de ella.
         try { setTimeout(function () { ensureUsernameLoginIndex(authInstance.currentUser); }, 0); } catch (_) {}
+        // [HISTORIAL-ACCESOS] inicio — Ing. #3: registra el acceso (fire-and-forget).
+        try { setTimeout(function () { recordLoginHistory(authInstance.currentUser); }, 0); } catch (_) {}
+        // [HISTORIAL-ACCESOS] fin
+        // [DISPOSITIVOS] inicio — verificación de dispositivo nuevo.
+        // Fire-and-forget: jamás bloquea ni rompe el login.
+        try { setTimeout(function () { checkDrexNewDevice(authInstance.currentUser); }, 0); } catch (_) {}
+        // [DISPOSITIVOS] fin
+        // [SESIONES] inicio — Ing. #5: registro de sesión activa (fire-and-forget).
+        try { setTimeout(function () { drexSessionsRegister(authInstance.currentUser); }, 0); } catch (_) {}
+        // [SESIONES] fin
         var credPromise = promiseTimeout(Promise.resolve().then(function () {
           return configureAwsCredentials(session.getIdToken());
         }), 15000, 'aws-creds-timeout');
@@ -1647,39 +1922,79 @@
       // FIX 2026-09-18: authenticateUser no tenía timeout. Si el endpoint de
       // Cognito se colgaba, el botón se quedaba en "Iniciando..." para
       // siempre sin mostrar ningún error. Ahora falla a los 30 s con mensaje
-      // de conexión.
-      return promiseTimeout(new Promise(function (resolve, reject) {
-        cognitoUser.authenticateUser(authDetails, {
-          onSuccess: function (session) {
-            establishSession(cognitoUser, session).then(function (user) {
-              resolve({ user: user });
-            }, reject);
-          },
-          onFailure: function (err) {
-            if (err && err.code === 'UserNotConfirmedException') {
-              // La cuenta existe pero el email no está verificado: la app debe
-              // llevar al usuario a la pantalla de código de verificación.
-              var need = new Error('Tu correo aún no está verificado. Escribe el código que te enviamos.');
-              need.code = 'auth/needs-confirmation';
-              need.email = em;
-              reject(need);
-              return;
-            }
-            reject(mapAuthError(err));
-          },
-          newPasswordRequired: function () {
-            reject(Object.assign(new Error('Debes restablecer tu contraseña.'), { code: 'auth/password-reset-required' }));
+      // de conexión. EXCEPCIÓN (MFA 2026-09-20): cuando Cognito pide el desafío
+      // TOTP (totpRequired), el temporizador de red se apaga y rige la ventana
+      // del código (MFA_CODE_WINDOW_MS): el usuario necesita tiempo para abrir
+      // su app de autenticación y escribir el código.
+      return new Promise(function (resolve, reject) {
+        var done = false;
+        var mfaPhase = false;
+        var netTimer = setTimeout(function () {
+          if (!done && !mfaPhase) {
+            done = true;
+            var t = new Error('Tiempo de espera agotado. Revisa tu conexión.');
+            t.code = 'auth/network-request-failed';
+            reject(t);
           }
-        });
-      }), 30000, 'auth-timeout').catch(function (err) {
-        // El timeout se reporta como error de red para que la UI muestre
-        // "Error de conexión. Revisa tu internet." en vez de un error genérico.
-        if (err && err.message === 'auth-timeout') {
-          var t = new Error('Tiempo de espera agotado. Revisa tu conexión.');
-          t.code = 'auth/network-request-failed';
-          throw t;
+        }, 30000);
+        var mfaTimer = null;
+        function clearTimers() {
+          try { clearTimeout(netTimer); } catch (_) {}
+          try { if (mfaTimer) clearTimeout(mfaTimer); } catch (_) {}
         }
-        throw err;
+        function ok(user) { if (!done) { done = true; clearTimers(); resolve({ user: user }); } }
+        function fail(err) { if (!done) { done = true; clearTimers(); reject(err); } }
+        try {
+          cognitoUser.authenticateUser(authDetails, {
+            onSuccess: function (session) {
+              // [HISTORIAL-ACCESOS] marca el método ANTES de establecer la sesión.
+              drexPendingLoginMethod = 'email';
+              establishSession(cognitoUser, session).then(function (user) { ok(user); }, fail);
+            },
+            onFailure: function (err) {
+              if (err && err.code === 'UserNotConfirmedException') {
+                // La cuenta existe pero el email no está verificado: la app debe
+                // llevar al usuario a la pantalla de código de verificación.
+                var need = new Error('Tu correo aún no está verificado. Escribe el código que te enviamos.');
+                need.code = 'auth/needs-confirmation';
+                need.email = em;
+                fail(need);
+                return;
+              }
+              fail(mapAuthError(err));
+            },
+            // Desafío TOTP (MFA opcional del pool con "Authenticator apps"):
+            // se completa con el código de 6 dígitos mediante la vista de
+            // desafío (#twofactor-challenge-view). NOTA: en este SDK el
+            // callback es `totpRequired`, no `mfaRequired` (ese es solo SMS).
+            totpRequired: function (challengeName, challengeParameters) {
+              mfaPhase = true;
+              try { clearTimeout(netTimer); } catch (_) {}
+              mfaTimer = setTimeout(function () { fail(mfaExpiredError()); }, MFA_CODE_WINDOW_MS);
+              beginMfaChallenge({
+                kind: 'email',
+                submitCode: function (code) {
+                  return new Promise(function (res, rej) {
+                    try {
+                      cognitoUser.sendMFACode(String(code).trim(), {
+                        onSuccess: function (session) {
+                          // [HISTORIAL-ACCESOS] marca el método (login email con MFA).
+                          drexPendingLoginMethod = 'email';
+                          establishSession(cognitoUser, session).then(function (user) { res({ user: user }); }, rej);
+                        },
+                        onFailure: function (err) { rej(mapMfaError(err)); }
+                      }, 'SOFTWARE_TOKEN_MFA');
+                    } catch (e) { rej(mapMfaError(e)); }
+                  });
+                },
+                cancel: function () { fail(Object.assign(new Error('Verificación cancelada.'), { code: 'auth/mfa-cancelled' })); }
+              }).then(function (r) { ok(r.user); }, fail);
+            },
+            newPasswordRequired: function () {
+              fail(Object.assign(new Error('Debes restablecer tu contraseña.'), { code: 'auth/password-reset-required' }));
+            }
+          });
+        } catch (e) { fail(mapAuthError(e)); }
       });
     }
   }
@@ -1694,6 +2009,83 @@
   // Aquí se reconstruye la sesión de Cognito con esos tokens para que todo
   // lo demás (refresh, credenciales AWS, listeners) funcione igual que con
   // el login por correo.
+  // Paso 2 del login con MFA por username (Ing. #1, 2026-09-20): envía el
+  // código TOTP junto con la sesión opaca del desafío que devolvió el paso 1.
+  // Resuelve con el JSON de la Lambda ({tokens}) o rechaza con un error
+  // genérico (401 -> reintentable, para que la vista deje intentar de nuevo).
+  function usernameMfaStep2(loginUrl, username, challengeSession, code) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (_) {} }, 20000);
+    function clearTimer() { try { clearTimeout(timer); } catch (_) {} }
+    var fetchOpts = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: String(username || ''), session: String(challengeSession || ''), code: String(code || '') })
+    };
+    if (ctrl) fetchOpts.signal = ctrl.signal;
+    return fetch(loginUrl, fetchOpts).then(function (resp) {
+      clearTimer();
+      if (resp.status === 429) {
+        var e429 = new Error('Demasiados intentos. Inténtalo de nuevo en un minuto.');
+        e429.code = 'auth/too-many-requests';
+        throw e429;
+      }
+      return resp.json().then(function (data) {
+        if (!resp.ok) {
+          var e = new Error('Código incorrecto o vencido. Inténtalo de nuevo.');
+          e.code = 'auth/invalid-mfa-code';
+          e.retryable = (resp.status === 401);
+          throw e;
+        }
+        return data;
+      });
+    }).catch(function (err) {
+      clearTimer();
+      if (err && err.name === 'AbortError') {
+        var te = new Error('Tiempo de espera agotado. Revisa tu conexión.');
+        te.code = 'auth/network-request-failed';
+        throw te;
+      }
+      throw err;
+    });
+  }
+
+  // Construye la sesión de Cognito a partir de los tokens que devuelve la
+  // Lambda (paso 1 directo o paso 2 tras el desafío MFA). Idéntico en ambos
+  // casos: el username de Cognito es el correo y se lee del claim `email` del
+  // ID token (respaldo: `cognito:username`); el servidor nunca lo envía.
+  function buildSessionFromLambdaTokens(data) {
+    var C = cognitoLib();
+    var t = (data && data.tokens) || {};
+    if (!t.idToken || !t.accessToken || !t.refreshToken) {
+      return Promise.reject(Object.assign(new Error('Error de conexión. Revisa tu internet.'), { code: 'auth/network-request-failed' }));
+    }
+    var claims = null;
+    try {
+      var parts = String(t.idToken).split('.');
+      if (parts.length >= 2) claims = JSON.parse(base64UrlDecode(parts[1]));
+    } catch (e) { claims = null; }
+    var cognitoUsername = (claims && (claims.email || claims['cognito:username'])) || '';
+    if (!cognitoUsername) {
+      return Promise.reject(Object.assign(new Error('Error de conexión. Revisa tu internet.'), { code: 'auth/network-request-failed' }));
+    }
+    var session = new C.CognitoUserSession({
+      IdToken: new C.CognitoIdToken({ IdToken: t.idToken }),
+      AccessToken: new C.CognitoAccessToken({ AccessToken: t.accessToken }),
+      RefreshToken: new C.CognitoRefreshToken({ RefreshToken: t.refreshToken })
+    });
+    if (!session.isValid()) {
+      return Promise.reject(Object.assign(new Error('Nombre de usuario o contraseña incorrectos.'), { code: 'auth/invalid-credential' }));
+    }
+    var cognitoUser = new C.CognitoUser({ Username: cognitoUsername, Pool: getUserPool() });
+    cognitoUser.setSignInUserSession(session);
+    // [HISTORIAL-ACCESOS] marca el método ANTES de establecer la sesión.
+    drexPendingLoginMethod = 'username';
+    return establishSession(cognitoUser, session).then(function (user) {
+      return { user: user };
+    });
+  }
+
   function signInWithUsernameAndPassword(username, password) {
     getAuth();
     var C = cognitoLib();
@@ -1704,85 +2096,92 @@
       nc.code = 'auth/network-request-failed';
       return Promise.reject(nc);
     }
-    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (_) {} }, 20000);
-    function clearTimer() { try { clearTimeout(timer); } catch (_) {} }
-    var fetchOpts = {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: String(username || ''), password: String(password || '') })
-    };
-    if (ctrl) fetchOpts.signal = ctrl.signal;
-    return promiseTimeout(fetch(url, fetchOpts).then(function (resp) {
-      clearTimer();
-      if (resp.status === 429) {
-        var e429 = new Error('Demasiados intentos. Inténtalo de nuevo en un minuto.');
-        e429.code = 'auth/too-many-requests';
-        throw e429;
+    // MFA (2026-09-20): si la cuenta tiene TOTP activado, el paso 1 de la
+    // Lambda responde {challenge:'mfa', session}; el paso 2 envía el código
+    // de 6 dígitos. Los temporizadores de red se apagan al entrar en fase MFA
+    // y rige la ventana del código (MFA_CODE_WINDOW_MS).
+    return new Promise(function (resolve, reject) {
+      var done = false;
+      var mfaPhase = false;
+      var mfaTimer = null;
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var netAbort = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (_) {} }, 20000);
+      var hardTimer = setTimeout(function () {
+        if (!done && !mfaPhase) {
+          done = true;
+          var t = new Error('Tiempo de espera agotado. Revisa tu conexión.');
+          t.code = 'auth/network-request-failed';
+          reject(t);
+        }
+      }, 30000);
+      function clearTimers() {
+        try { clearTimeout(netAbort); } catch (_) {}
+        try { clearTimeout(hardTimer); } catch (_) {}
+        try { if (mfaTimer) clearTimeout(mfaTimer); } catch (_) {}
       }
-      if (resp.status === 403) {
-        return resp.json().then(function (data) {
-          var code = (data && data.error) || '';
-          if (code === 'unconfirmed') {
-            // Sin correo conocido (el servidor no lo revela): la app pide
-            // al usuario iniciar sesión con su correo para verificarla.
-            var need = new Error('Tu cuenta aún no está verificada. Inicia sesión con tu correo electrónico para verificarla.');
-            need.code = 'auth/needs-confirmation';
-            throw need;
-          }
-          var rst = new Error('Debes restablecer tu contraseña.');
-          rst.code = 'auth/password-reset-required';
-          throw rst;
-        });
-      }
-      if (!resp.ok) {
-        throw Object.assign(new Error('Nombre de usuario o contraseña incorrectos.'), { code: 'auth/invalid-credential' });
-      }
-      return resp.json();
-    }).then(function (data) {
-      var t = (data && data.tokens) || {};
-      if (!t.idToken || !t.accessToken || !t.refreshToken) {
-        throw Object.assign(new Error('Error de conexión. Revisa tu internet.'), { code: 'auth/network-request-failed' });
-      }
-      // El username de Cognito es el correo: se lee del claim `email` del
-      // ID token (respaldo: `cognito:username`). El servidor nunca lo envía.
-      var claims = null;
-      try {
-        var parts = String(t.idToken).split('.');
-        if (parts.length >= 2) claims = JSON.parse(base64UrlDecode(parts[1]));
-      } catch (e) { claims = null; }
-      var cognitoUsername = (claims && (claims.email || claims['cognito:username'])) || '';
-      if (!cognitoUsername) {
-        throw Object.assign(new Error('Error de conexión. Revisa tu internet.'), { code: 'auth/network-request-failed' });
-      }
-      var session = new C.CognitoUserSession({
-        IdToken: new C.CognitoIdToken({ IdToken: t.idToken }),
-        AccessToken: new C.CognitoAccessToken({ AccessToken: t.accessToken }),
-        RefreshToken: new C.CognitoRefreshToken({ RefreshToken: t.refreshToken })
+      function ok(user) { if (!done) { done = true; clearTimers(); resolve({ user: user }); } }
+      function fail(err) { if (!done) { done = true; clearTimers(); reject(err); } }
+
+      var fetchOpts = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: String(username || ''), password: String(password || '') })
+      };
+      if (ctrl) fetchOpts.signal = ctrl.signal;
+
+      fetch(url, fetchOpts).then(function (resp) {
+        clearTimers();
+        if (resp.status === 429) {
+          var e429 = new Error('Demasiados intentos. Inténtalo de nuevo en un minuto.');
+          e429.code = 'auth/too-many-requests';
+          throw e429;
+        }
+        if (resp.status === 403) {
+          return resp.json().then(function (data) {
+            var code = (data && data.error) || '';
+            if (code === 'unconfirmed') {
+              // Sin correo conocido (el servidor no lo revela): la app pide
+              // al usuario iniciar sesión con su correo para verificarla.
+              var need = new Error('Tu cuenta aún no está verificada. Inicia sesión con tu correo electrónico para verificarla.');
+              need.code = 'auth/needs-confirmation';
+              throw need;
+            }
+            var rst = new Error('Debes restablecer tu contraseña.');
+            rst.code = 'auth/password-reset-required';
+            throw rst;
+          });
+        }
+        if (!resp.ok) {
+          throw Object.assign(new Error('Nombre de usuario o contraseña incorrectos.'), { code: 'auth/invalid-credential' });
+        }
+        return resp.json();
+      }).then(function (data) {
+        // Desafío MFA: la Lambda devolvió la sesión del desafío; se pide el
+        // código en la vista de desafío y se completa con el paso 2.
+        if (data && data.challenge === 'mfa' && data.session) {
+          mfaPhase = true;
+          mfaTimer = setTimeout(function () { fail(mfaExpiredError()); }, MFA_CODE_WINDOW_MS);
+          beginMfaChallenge({
+            kind: 'username',
+            submitCode: function (code) {
+              return usernameMfaStep2(url, username, data.session, code).then(function (data2) {
+                return buildSessionFromLambdaTokens(data2);
+              });
+            },
+            cancel: function () { fail(Object.assign(new Error('Verificación cancelada.'), { code: 'auth/mfa-cancelled' })); }
+          }).then(function (r) { ok(r.user); }, fail);
+          return;
+        }
+        buildSessionFromLambdaTokens(data).then(function (r) { ok(r.user); }, fail);
+      }).catch(function (err) {
+        if (err && err.name === 'AbortError') {
+          var te = new Error('Tiempo de espera agotado. Revisa tu conexión.');
+          te.code = 'auth/network-request-failed';
+          fail(te);
+          return;
+        }
+        fail(err);
       });
-      if (!session.isValid()) {
-        throw Object.assign(new Error('Nombre de usuario o contraseña incorrectos.'), { code: 'auth/invalid-credential' });
-      }
-      var cognitoUser = new C.CognitoUser({ Username: cognitoUsername, Pool: getUserPool() });
-      cognitoUser.setSignInUserSession(session);
-      return establishSession(cognitoUser, session).then(function (user) {
-        return { user: user };
-      });
-    }).catch(function (err) {
-      clearTimer();
-      if (err && err.name === 'AbortError') {
-        var te = new Error('Tiempo de espera agotado. Revisa tu conexión.');
-        te.code = 'auth/network-request-failed';
-        throw te;
-      }
-      throw err;
-    }), 30000, 'auth-timeout').catch(function (err) {
-      if (err && err.message === 'auth-timeout') {
-        var t2 = new Error('Tiempo de espera agotado. Revisa tu conexión.');
-        t2.code = 'auth/network-request-failed';
-        throw t2;
-      }
-      throw err;
     });
   }
 
@@ -1921,6 +2320,8 @@
     getAuth();
     restoreSeq++;
     setRestorePending(false);
+    // [SESIONES] Ing. #5: revocar refresh token en Cognito + marcar registro propio (fire-and-forget).
+    try { drexSessionsOnLocalSignOut(); } catch (e) {}
     return new Promise(function (resolve) {
       try { if (currentCognitoUser) currentCognitoUser.signOut(); } catch (e) {}
       currentCognitoUser = null;
@@ -1995,6 +2396,8 @@
         RefreshToken: new C.CognitoRefreshToken({ RefreshToken: tok.refresh_token })
       });
       cu.setSignInUserSession(session);
+      // [HISTORIAL-ACCESOS] marca el método ANTES de establecer la sesión.
+      drexPendingLoginMethod = 'oauth';
       return establishSession(cu, session).then(function (user) { return { user: user }; });
     });
   }
@@ -2164,6 +2567,283 @@
     disable: totpDisable,
     backupRegenerate: totpBackupRegenerate
   };
+
+  // ================================================================
+  // MFA TOTP nativo de Cognito (Ing. #1 — Suite de Seguridad, 2026-09-20).
+  // El User Pool tiene MFA opcional con "Authenticator apps" (TOTP).
+  // Activación: associateTotp() -> QR/clave manual -> confirmTotpSetup(código)
+  //   [verifySoftwareToken + setUserMfaPreference como preferido].
+  // Desactivación: reauthenticate(password) para confirmar identidad y luego
+  //   disableTotp().
+  // El desafío SOFTWARE_TOKEN_MFA durante el login se maneja dentro de
+  // signInWithEmailAndPassword (callback totpRequired del SDK) y de
+  // signInWithUsernameAndPassword (paso 2 de la Lambda), ambos mediante
+  // beginMfaChallenge() + la UI que expone index.html en window.__drexMfaUi.
+  // NOTA SDK 6.3.15: el desafío TOTP llega por `totpRequired` (NO por
+  // `mfaRequired`, que es solo para SMS). Verificado contra el dist real.
+  // ================================================================
+  var MFA_CODE_WINDOW_MS = 5 * 60 * 1000; // tiempo para ingresar el código TOTP
+
+  function mapMfaError(err) {
+    var code = (err && err.code) || '';
+    var message = String((err && err.message) || '');
+    var out = new Error(message || 'No se pudo completar la verificación.');
+    if (/not authenticated/i.test(message)) {
+      out.code = 'auth/session-expired';
+      out.message = 'Tu sesión venció. Inicia sesión de nuevo.';
+      return out;
+    }
+    switch (code) {
+      case 'CodeMismatchException':
+        out.code = 'auth/invalid-mfa-code';
+        out.message = 'Código incorrecto. Revisa e inténtalo de nuevo.';
+        out.retryable = true;
+        break;
+      case 'NotAuthorizedException':
+        // Cognito no distingue "código incorrecto" de "sesión del desafío
+        // vencida": mensaje genérico que cubre ambos; se puede reintentar.
+        out.code = 'auth/invalid-mfa-code';
+        out.message = 'Código incorrecto o vencido. Inténtalo de nuevo.';
+        out.retryable = true;
+        break;
+      case 'ExpiredCodeException':
+        out.code = 'auth/mfa-expired';
+        out.message = 'El código venció. Inicia sesión de nuevo.';
+        break;
+      case 'LimitExceededException':
+      case 'TooManyRequestsException':
+        out.code = 'auth/too-many-requests';
+        out.message = 'Demasiados intentos. Inténtalo de nuevo en un minuto.';
+        break;
+      default:
+        out.code = 'auth/mfa-error';
+        out.message = 'No se pudo completar la verificación. Inténtalo de nuevo.';
+    }
+    return out;
+  }
+
+  function mfaExpiredError() {
+    return Object.assign(new Error('El código venció. Inicia sesión de nuevo.'), { code: 'auth/mfa-expired' });
+  }
+
+  function mfaCurrentCognitoUser() {
+    getAuth();
+    return currentCognitoUser || null;
+  }
+
+  function mfaBuildOtpauthUrl(secret) {
+    var user = authInstance.currentUser;
+    var label = (user && user.email) || 'Drex';
+    var issuer = 'Drex';
+    return 'otpauth://totp/' + encodeURIComponent(issuer + ':' + label) +
+      '?secret=' + encodeURIComponent(secret) +
+      '&issuer=' + encodeURIComponent(issuer) +
+      '&algorithm=SHA1&digits=6&period=30';
+  }
+
+  // Paso 1 de la activación: obtiene el secreto TOTP generado por Cognito.
+  function mfaAssociateTotp() {
+    var C = cognitoLib();
+    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    var cu = mfaCurrentCognitoUser();
+    if (!cu) return Promise.reject(mapMfaError(new Error('User is not authenticated')));
+    return new Promise(function (resolve, reject) {
+      try {
+        cu.associateSoftwareToken({
+          onFailure: function (err) { reject(mapMfaError(err)); },
+          associateSecretCode: function (secret) {
+            if (!secret) { reject(mapMfaError(new Error('empty-secret'))); return; }
+            // Clave manual legible en grupos de 4 para quien no puede escanear el QR.
+            var manualKey = String(secret).replace(/\s+/g, '').replace(/(.{4})/g, '$1 ').trim();
+            resolve({ secret: secret, manualKey: manualKey, otpauthUrl: mfaBuildOtpauthUrl(secret) });
+          }
+        });
+      } catch (e) { reject(mapMfaError(e)); }
+    });
+  }
+
+  // Paso 2 de la activación: verifica el código y deja el TOTP como MFA preferido.
+  function mfaConfirmTotpSetup(code) {
+    var C = cognitoLib();
+    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    var cu = mfaCurrentCognitoUser();
+    if (!cu) return Promise.reject(mapMfaError(new Error('User is not authenticated')));
+    var clean = String(code || '').trim();
+    if (!/^\d{6}$/.test(clean)) {
+      var bad = new Error('Escribe el código de 6 dígitos que muestra tu app.');
+      bad.code = 'auth/invalid-mfa-code'; bad.retryable = true;
+      return Promise.reject(bad);
+    }
+    var deviceName = 'Drex';
+    try {
+      if (typeof global.getDrexDeviceLabel === 'function') deviceName = 'Drex · ' + global.getDrexDeviceLabel();
+    } catch (_) {}
+    return new Promise(function (resolve, reject) {
+      try {
+        cu.verifySoftwareToken(clean, deviceName, {
+          onFailure: function (err) { reject(mapMfaError(err)); },
+          onSuccess: function () {
+            try {
+              cu.setUserMfaPreference(null, { Enabled: true, PreferredMfa: true }, function (err2) {
+                if (err2) reject(mapMfaError(err2)); else resolve();
+              });
+            } catch (e) { reject(mapMfaError(e)); }
+          }
+        });
+      } catch (e) { reject(mapMfaError(e)); }
+    });
+  }
+
+  // Desactiva el MFA TOTP (llamar tras confirmar la identidad).
+  function mfaDisableTotp(cognitoUser) {
+    var C = cognitoLib();
+    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    var cu = cognitoUser || mfaCurrentCognitoUser();
+    if (!cu) return Promise.reject(mapMfaError(new Error('User is not authenticated')));
+    return new Promise(function (resolve, reject) {
+      try {
+        cu.setUserMfaPreference(null, { Enabled: false, PreferredMfa: false }, function (err) {
+          if (err) reject(mapMfaError(err)); else resolve();
+        });
+      } catch (e) { reject(mapMfaError(e)); }
+    });
+  }
+
+  // Re-autentica con contraseña SIN tocar la sesión global (no llama a
+  // establishSession ni notifica listeners): sirve para confirmar la identidad
+  // antes de desactivar el MFA. Si Cognito pide el desafío TOTP durante la
+  // re-autenticación, se usa totpCodeProvider(), que debe devolver una
+  // Promise<string> con el código actual de la app de autenticación.
+  // Resuelve con el CognitoUser recién autenticado (sesión fresca válida).
+  function mfaReauthenticate(password, totpCodeProvider) {
+    var C = cognitoLib();
+    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    getAuth();
+    var user = authInstance.currentUser;
+    var email = user && user.email;
+    if (!email || String(email).indexOf('@') < 0) {
+      return Promise.reject(new Error('No se pudo confirmar tu identidad. Inicia sesión con tu correo.'));
+    }
+    var poolUser = new C.CognitoUser({ Username: String(email), Pool: getUserPool() });
+    var details = new C.AuthenticationDetails({ Username: String(email), Password: String(password || '') });
+    return new Promise(function (resolve, reject) {
+      var done = false;
+      var timer = setTimeout(function () {
+        if (!done) {
+          done = true;
+          reject(Object.assign(new Error('Tiempo de espera agotado. Revisa tu conexión.'), { code: 'auth/network-request-failed' }));
+        }
+      }, 30000);
+      function clear() { try { clearTimeout(timer); } catch (_) {} }
+      function ok() { if (!done) { done = true; clear(); resolve(poolUser); } }
+      function fail(e) { if (!done) { done = true; clear(); reject(e); } }
+      try {
+        poolUser.authenticateUser(details, {
+          onSuccess: function () { ok(); },
+          onFailure: function (err) { fail(mapAuthError(err)); },
+          totpRequired: function () {
+            Promise.resolve()
+              .then(function () { return totpCodeProvider(); })
+              .then(function (code) {
+                poolUser.sendMFACode(String(code || '').trim(), {
+                  onSuccess: function () { ok(); },
+                  onFailure: function (err) { fail(mapMfaError(err)); }
+                }, 'SOFTWARE_TOKEN_MFA');
+              }, function (e) { fail(e); });
+          },
+          newPasswordRequired: function () {
+            fail(Object.assign(new Error('Debes restablecer tu contraseña.'), { code: 'auth/password-reset-required' }));
+          }
+        });
+      } catch (e) { fail(mapAuthError(e)); }
+    });
+  }
+
+  // Puente entre el flujo de login y la vista de desafío (#twofactor-challenge-view).
+  // La UI la provee index.html como window.__drexMfaUi({kind, onCode, onCancel}).
+  // onCode(code) -> Promise: resuelve al completar el desafío; rechaza con
+  // un Error con .retryable=true si el código fue incorrecto (reintentable).
+  function beginMfaChallenge(opts) {
+    return new Promise(function (resolve, reject) {
+      var ui = global.__drexMfaUi;
+      if (typeof ui !== 'function') {
+        reject(new Error('La verificación en dos pasos no está disponible en esta pantalla.'));
+        return;
+      }
+      try {
+        ui({
+          kind: opts.kind,
+          onCode: function (code) {
+            return Promise.resolve()
+              .then(function () { return opts.submitCode(code); })
+              .then(function (r) {
+                // Marca para la puerta legacy de index.html: el MFA nativo ya
+                // se pasó en este inicio; no se debe volver a pedir post-sesión.
+                try { global.__drexMfaPassed = true; } catch (_) {}
+                resolve(r);
+                return r;
+              });
+          },
+          onCancel: function () {
+            try { if (typeof opts.cancel === 'function') opts.cancel(); } catch (_) {}
+            reject(Object.assign(new Error('Verificación cancelada.'), { code: 'auth/mfa-cancelled' }));
+          }
+        });
+      } catch (e) { reject(e); }
+    });
+  }
+
+  // Estado del MFA para la UI (Ing. #1, 2026-09-20): pregunta a Cognito las
+  // opciones MFA del usuario (getUserData -> MFAOptions) y usa la bandera
+  // local users/<uid>/twoFactorEnabled como respaldo (se escribe al activar
+  // y se borra al desactivar). Nunca rechaza: si no se puede determinar,
+  // resuelve {enabled:false} para no romper la vista de seguridad.
+  function mfaStatus() {
+    return Promise.resolve().then(function () {
+      var u = currentCognitoUser();
+      if (!u || typeof u.getUserData !== 'function') return { enabled: false };
+      return new Promise(function (resolve) {
+        var settled = false;
+        function done(v) { if (!settled) { settled = true; resolve(v); } }
+        var watchdog = setTimeout(function () { done({ enabled: false }); }, 8000);
+        function clearW() { try { clearTimeout(watchdog); } catch (_) {} }
+        try {
+          u.getUserData(function (err, data) {
+            if (err || !data) { clearW(); done({ enabled: false }); return; }
+            var opts = data.MFAOptions || data.mfaOptions || [];
+            var totpOn = false;
+            try {
+              totpOn = opts.some(function (o) {
+                var d = String((o && (o.DeliveryMedium || o.deliveryMedium)) || '').toUpperCase();
+                return d === 'SOFTWARE_TOKEN_MFA' || d === 'SOFTWARE_TOKEN';
+              });
+            } catch (_) { totpOn = false; }
+            if (totpOn) { clearW(); done({ enabled: true }); return; }
+            // Respaldo: bandera local del perfil.
+            try {
+              var au = null;
+              try { au = getAuth().currentUser; } catch (_) {}
+              var uid = au && au.uid;
+              if (!uid) { clearW(); done({ enabled: false }); return; }
+              new Ref(splitPath('users/' + uid + '/twoFactorEnabled')).once('value').then(function (snap) {
+                clearW(); done({ enabled: !!snap.val() });
+              }).catch(function () { clearW(); done({ enabled: false }); });
+            } catch (_) { clearW(); done({ enabled: false }); }
+          });
+        } catch (e) { clearW(); done({ enabled: false }); }
+      });
+    });
+  }
+
+  var mfaNs = {
+    associateTotp: mfaAssociateTotp,
+    confirmTotpSetup: mfaConfirmTotpSetup,
+    disableTotp: mfaDisableTotp,
+    reauthenticate: mfaReauthenticate,
+    beginChallenge: beginMfaChallenge,
+    status: mfaStatus,
+    codeWindowMs: MFA_CODE_WINDOW_MS
+  };
   var SUPPORT_TABLE = 'drex-support-tickets';
   var SUPPORT_OWNER_EMAIL = 'zam.contact@yahoo.com';
 
@@ -2284,6 +2964,7 @@
     auth: getAuth,
     support: supportApi,
     totp: totpApiNs,
+    mfa: mfaNs,
     setFastPolling: setFastPolling
   };
   // ServerValue también directo sobre DrexCloud.database (sin llamar),
@@ -2303,6 +2984,536 @@
   DrexCloud.authRestorePending = function () { return restorePending; };
 
   global.DrexCloud = DrexCloud;
+
+  // [DISPOSITIVOS] acceso interno (navegador): la app lo usa para marcar
+  // "Este dispositivo" en el Centro de seguridad y para pruebas manuales.
+  // Prefijo _ = interno, no parte de la API pública.
+  DrexCloud._drexDevices = {
+    fingerprintString: drexDeviceFingerprintString,
+    hashDeviceString: drexHashDeviceString,
+    friendlyLabel: drexDeviceFriendlyLabel,
+    checkNewDevice: checkDrexNewDevice
+  };
+  // [DISPOSITIVOS] fin
+  // [SESIONES] inicio — Sesiones activas (Ingeniero #5, 2026-09-20).
+  //
+  // Registro de sesiones por dispositivo en pk='users', sk='<uid>/sessions/<session_id>'
+  // con v=JSON {id, deviceLabel, form, os, browser, ip, createdAt, lastActivity,
+  // current, revoked, endedAt}.
+  //
+  // - Se ejecuta en cada establishSession (login explícito o restauración), fire-and-forget
+  //   total: cualquier fallo se ignora en silencio y jamás bloquea ni rompe el login.
+  // - El session_id se genera con crypto.getRandomValues y persiste en localStorage por uid:
+  //   el mismo dispositivo/navegador reutiliza su registro entre aperturas (sin duplicados).
+  // - Etiqueta de dispositivo "iPhone · Safari" (mismo formato que el Ing. #4;
+  //   parser propio porque el baseline limpio no incluye su módulo).
+  // - Al registrar, las demás sesiones del usuario pasan a current:false.
+  // - Heartbeat: lastActivity se actualiza cada 5 min con la app visible y al volver
+  //   a primer plano (throttle: mínimo 60 s entre escrituras).
+  // - Limpieza perezosa: al listar, se borran las sesiones con lastActivity > 30 días.
+  //
+  // DECISIÓN DE REVOCACIÓN (documentada):
+  // Cognito no permite revocar los tokens de OTRO dispositivo desde el cliente:
+  // GlobalSignOut/AdminUserGlobalSignOut exigen credenciales admin (IAM) y en este
+  // proyecto no hay ninguna Lambda admin para sesiones (la única Lambda es
+  // drex-username-resolve, de login). user.globalSignOut() solo afecta a la sesión local.
+  // Por eso "Cerrar" / "Cerrar todas las demás" marcan revoked:true en DynamoDB y el
+  // dispositivo afectado lo detecta de dos formas: (1) oyente en tiempo real sobre su
+  // propio registro -> signOut inmediato (segundos, si tiene la app abierta); (2) al
+  // restaurar sesión se lee el registro ANTES de re-registrar: si está revocado se hace
+  // signOut local (se borran los tokens) y la app vuelve a pedir login. Efecto real:
+  // el otro dispositivo debe iniciar sesión de nuevo. Los tokens Cognito del otro
+  // dispositivo siguen siendo técnicamente válidos hasta expirar, pero la app ya no los
+  // acepta para restaurar sesión. Punto de extensión futuro: DrexCloud.revokeOtherDrexSessions().
+  //
+  // Cierre de la sesión PROPIA: además de marcar el registro, se intenta revocar el
+  // refresh token en Cognito (revokeToken), best-effort.
+  //
+  // Privacidad: el navegador no conoce su IP publica sin un backend o un servicio
+  // externo, y no se envia la IP del usuario a terceros (sin ipify ni similares):
+  // el registro guarda ip:null. Si a futuro el servidor aporta un prefijo ya
+  // truncado (p. ej. "187.200.•.•"), se persiste con drexSessionsTruncateIp().
+  var DREX_SESSIONS_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
+  var DREX_SESSIONS_HEARTBEAT_MS = 5 * 60 * 1000;
+  var DREX_SESSIONS_TOUCH_MIN_MS = 60 * 1000;
+  var drexSessionState = {
+    uid: null, sessionId: null, lastTouch: 0, revokedNoticed: false,
+    heartbeatTimer: null, detachWatch: null, visibilityHook: false
+  };
+
+  function drexSessionsStorageKey(uid) { return 'drex_session_id_' + uid; }
+
+  function drexSessionsNewId() {
+    var hex = '', i;
+    try {
+      var bytes = new Uint8Array(16);
+      var c = (typeof global !== 'undefined' && global.crypto) || null;
+      if (c && typeof c.getRandomValues === 'function') {
+        c.getRandomValues(bytes);
+        for (i = 0; i < bytes.length; i++) hex += ('0' + bytes[i].toString(16)).slice(-2);
+        return 's_' + hex;
+      }
+    } catch (_) {}
+    // Respaldo sin crypto: nunca debe fallar la generación del id.
+    hex = Date.now().toString(36);
+    for (i = 0; i < 4; i++) hex += Math.random().toString(36).slice(2, 8);
+    return 's_' + hex;
+  }
+
+  function drexSessionsLoadId(uid) {
+    try {
+      if (typeof localStorage === 'undefined') return null;
+      var v = localStorage.getItem(drexSessionsStorageKey(uid));
+      return (v && /^[A-Za-z0-9_:-]{4,80}$/.test(v)) ? v : null;
+    } catch (_) { return null; }
+  }
+  function drexSessionsSaveId(uid, sid) {
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(drexSessionsStorageKey(uid), sid); } catch (_) {}
+  }
+  function drexSessionsForgetId(uid) {
+    try { if (typeof localStorage !== 'undefined') localStorage.removeItem(drexSessionsStorageKey(uid)); } catch (_) {}
+  }
+
+  function drexSessionsTruncateIp(ip) {
+    ip = String(ip || '').trim();
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return ip.split('.').slice(0, 2).join('.') + '.•.•';
+    if (ip.indexOf(':') !== -1) {
+      var parts = ip.split(':').filter(function (p) { return p !== ''; });
+      if (parts.length >= 4) return parts.slice(0, 4).join(':') + '::•';
+    }
+    return null;
+  }
+  // Acceso directo a DynamoDB con UN item por sesion:
+  // pk='users', sk='<uid>/sessions/<session_id>', v=JSON del registro completo.
+  // (Ref.set/update/transaction aplanan en varias hojas; aqui se exige un item.)
+  function drexSessionsItemKey(uid, sid) { return { pk: 'users', sk: String(uid) + '/sessions/' + String(sid) }; }
+  function drexSessionsGetRecord(uid, sid) {
+    var dc = null;
+    try { dc = getDocClient(); } catch (_) { return Promise.resolve(null); }
+    if (!dc) return Promise.resolve(null);
+    return withCredRetry(function () {
+      return dbTimeout(dc.get({ TableName: AWS_CONFIG.tableName, Key: drexSessionsItemKey(uid, sid) }).promise(), 'ses-get');
+    }).then(function (res) {
+      try {
+        if (res && res.Item && typeof res.Item.v === 'string') {
+          var rec = JSON.parse(res.Item.v);
+          return (rec && typeof rec === 'object') ? rec : null;
+        }
+      } catch (_) {}
+      return null;
+    }).catch(function () { return null; });
+  }
+  function drexSessionsPutRecord(uid, sid, record) {
+    var dc = null;
+    try { dc = getDocClient(); } catch (_) { return Promise.resolve(false); }
+    if (!dc) return Promise.resolve(false);
+    var key = drexSessionsItemKey(uid, sid);
+    var params = { TableName: AWS_CONFIG.tableName, Item: { pk: key.pk, sk: key.sk, v: JSON.stringify(record) } };
+    return withCredRetry(function () {
+      return dbTimeout(dc.put(params).promise(), 'ses-put');
+    }).then(function () { return true; }).catch(function () { return false; });
+  }
+  function drexSessionsDeleteRecord(uid, sid) {
+    var dc = null;
+    try { dc = getDocClient(); } catch (_) { return Promise.resolve(false); }
+    if (!dc) return Promise.resolve(false);
+    return withCredRetry(function () {
+      return dbTimeout(dc.delete({ TableName: AWS_CONFIG.tableName, Key: drexSessionsItemKey(uid, sid) }).promise(), 'ses-del');
+    }).then(function () { return true; }).catch(function () { return false; });
+  }
+  // Lista solo claves de profundidad exacta <uid>/sessions/<id> (ignora subrutas).
+  function drexSessionsQueryRecords(uid) {
+    var dc = null;
+    try { dc = getDocClient(); } catch (_) { return Promise.resolve([]); }
+    if (!dc) return Promise.resolve([]);
+    var pfx = String(uid) + '/sessions/';
+    var params = {
+      TableName: AWS_CONFIG.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :pfx)',
+      ExpressionAttributeValues: { ':pk': 'users', ':pfx': pfx }
+    };
+    return withCredRetry(function () {
+      return dbTimeout(dc.query(params).promise(), 'ses-query');
+    }).then(function (res) {
+      var out = [];
+      ((res && res.Items) || []).forEach(function (it) {
+        try {
+          if (!it || typeof it.sk !== 'string') return;
+          if (it.sk.slice(0, pfx.length) !== pfx) return;
+          var rest = it.sk.slice(pfx.length);
+          if (!rest || rest.indexOf('/') !== -1) return;
+          var rec = (typeof it.v === 'string') ? JSON.parse(it.v) : null;
+          if (rec && typeof rec === 'object') out.push({ id: rest, record: rec });
+        } catch (_) {}
+      });
+      return out;
+    }).catch(function () { return []; });
+  }
+
+  // Parseo de user agent AUTOCONTENIDO. Etiqueta "iPhone · Safari": mismo formato
+  // que el Ing. #4 para que las etiquetas coincidan al integrar ramas.
+  function drexSessionsParseUA(ua) {
+    ua = String(ua || '');
+    var browser = 'Navegador', os = '', form = 'desktop';
+    if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) form = 'mobile';
+    if (/iPhone|iPad|iPod/i.test(ua)) os = 'iOS';
+    else if (/Android/i.test(ua)) os = 'Android';
+    else if (/Windows NT/i.test(ua)) os = 'Windows';
+    else if (/Mac OS X|Macintosh/i.test(ua)) os = 'macOS';
+    else if (/Linux/i.test(ua)) os = 'Linux';
+    else if (/CrOS/i.test(ua)) os = 'ChromeOS';
+    if (/Edg\/|EdgA|EdgiOS/i.test(ua)) browser = 'Edge';
+    else if (/OPR\/|Opera/i.test(ua)) browser = 'Opera';
+    else if (/SamsungBrowser/i.test(ua)) browser = 'Samsung Internet';
+    else if (/FxiOS/i.test(ua)) browser = 'Firefox';
+    else if (/Firefox/i.test(ua)) browser = 'Firefox';
+    else if (/CriOS/i.test(ua)) browser = 'Chrome';
+    else if (/Chrome/i.test(ua)) browser = 'Chrome';
+    else if (/Safari/i.test(ua)) browser = 'Safari';
+    var device;
+    if (form === 'mobile') {
+      if (/iPhone/i.test(ua)) device = 'iPhone';
+      else if (/iPad/i.test(ua)) device = 'iPad';
+      else if (/Android/i.test(ua)) device = 'Android';
+      else device = 'Móvil';
+    } else {
+      device = os || 'Computadora';
+    }
+    return { label: device + ' · ' + browser, form: form, os: os, browser: browser };
+  }
+
+  function drexSessionsRegister(user) {
+    try {
+      var uid = (user && user.uid) ? String(user.uid) : '';
+      if (!uid) return;
+      if (drexSessionState.uid === uid && drexSessionState.sessionId) {
+        drexSessionsTouch(false); // re-establish en la misma página: solo latido
+        return;
+      }
+      var sid = drexSessionsLoadId(uid);
+      if (!sid) { sid = drexSessionsNewId(); drexSessionsSaveId(uid, sid); }
+      drexSessionState.uid = uid;
+      drexSessionState.sessionId = sid;
+      drexSessionState.revokedNoticed = false;
+      var ref = DrexCloud.database().ref('users/' + uid + '/sessions/' + sid);
+      var mySid = sid, myUid = uid;
+      drexSessionsGetRecord(myUid, mySid).then(function (existing) {
+        try {
+          // El usuario pudo cerrar sesión mientras se leía: no actuar con estado viejo.
+          if (drexSessionState.sessionId !== mySid || drexSessionState.uid !== myUid) return;
+          if (existing && existing.revoked === true) {
+            // Esta sesión fue cerrada desde otro dispositivo: salir sin re-registrar.
+            drexSessionsHandleRemoteRevoke();
+            return;
+          }
+          drexSessionsUpsert(myUid, mySid, ref, existing);
+        } catch (_) {}
+      }).catch(function () { /* sin red: la sesión local sigue válida */ });
+    } catch (_) { /* nunca bloquear el login */ }
+  }
+
+  function drexSessionsUpsert(uid, sid, ref, existing) {
+    try {
+      var now = Date.now();
+      var ua = '';
+      try { ua = (typeof navigator !== 'undefined' && navigator.userAgent) || ''; } catch (_) {}
+      // Etiqueta "iPhone · Safari" (parser propio, mismo formato que el Ing. #4).
+      var info = drexSessionsParseUA(ua);
+      var record = {
+        id: sid,
+        deviceLabel: info.label,
+        form: info.form,       // 'mobile' | 'desktop' (icono en la UI)
+        os: info.os,           // 'iOS' | 'Android' | 'Windows' | ...
+        browser: info.browser, // 'Chrome' | 'Safari' | ...
+        // Privacidad: el navegador no conoce su IP publica sin un servicio externo;
+        // no se envia a terceros. Queda null hasta que el servidor aporte un prefijo
+        // ya truncado (ver drexSessionsTruncateIp).
+        ip: null,
+        createdAt: (existing && existing.createdAt) || now,
+        lastActivity: now,
+        current: true,
+        revoked: false
+      };
+      var myUid2 = uid, mySid2 = sid, myRef = ref, myExisting = existing, myNow = now, myRecord = record, myInfo = info;
+      // Lectura + escritura de UN item: si otro dispositivo la revoco entre la
+      // lectura y la escritura, se aborta en vez de "resucitar" la sesion.
+      drexSessionsGetRecord(myUid2, mySid2).then(function (cur) {
+        try {
+          if (drexSessionState.sessionId !== mySid2 || drexSessionState.uid !== myUid2) return;
+          if (cur && cur.revoked === true) { drexSessionsHandleRemoteRevoke(); return; }
+          var merged = (cur && typeof cur === 'object') ? cur : {};
+          Object.keys(myRecord).forEach(function (k) { merged[k] = myRecord[k]; });
+          if (!merged.createdAt) merged.createdAt = myNow;
+          var wasNew = !myExisting;
+          drexSessionsPutRecord(myUid2, mySid2, merged).then(function () {
+            try {
+              drexSessionState.lastTouch = myNow;
+              drexSessionsMarkOthersNotCurrent(myUid2, mySid2);
+              drexSessionsWatchRevocation(myRef, mySid2);
+              drexSessionsStartHeartbeat();
+              drexSessionsHookVisibility();
+          // Aviso a la UI (index.html registra el evento de seguridad si es nueva).
+          try {
+            if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+              var ev = null;
+              try { ev = new CustomEvent('drex:session-registered', { detail: { isNew: wasNew, deviceLabel: myInfo.label } }); }
+              catch (_) {
+                try {
+                  ev = document.createEvent('CustomEvent');
+                  ev.initCustomEvent('drex:session-registered', false, false, { isNew: wasNew, deviceLabel: myInfo.label });
+                } catch (_) { ev = null; }
+              }
+              if (ev) document.dispatchEvent(ev);
+            }
+          } catch (_) {}
+            } catch (_) {}
+          }).catch(function () {});
+        } catch (_) {}
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
+  function drexSessionsMarkOthersNotCurrent(uid, sid) {
+    try {
+      drexSessionsQueryRecords(uid).then(function (rows) {
+        try {
+          rows.forEach(function (row) {
+            try {
+              var s = row.record;
+              if (row.id !== sid && s && s.revoked !== true && s.current !== false) {
+                s.current = false;
+                drexSessionsPutRecord(uid, row.id, s);
+              }
+            } catch (_) {}
+          });
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  function drexSessionsWatchRevocation(ref, sid) {
+    try {
+      if (drexSessionState.detachWatch) {
+        try { drexSessionState.detachWatch(); } catch (_) {}
+        drexSessionState.detachWatch = null;
+      }
+      var detach = ref.on('value', function (snap) {
+        try {
+          var s = snap.val();
+          if (s && s.revoked === true && drexSessionState.sessionId === sid) {
+            drexSessionsHandleRemoteRevoke();
+          }
+        } catch (_) {}
+      });
+      drexSessionState.detachWatch = (typeof detach === 'function') ? detach : null;
+    } catch (_) {}
+  }
+
+  function drexSessionsHandleRemoteRevoke() {
+    try {
+      if (drexSessionState.revokedNoticed) return;
+      drexSessionState.revokedNoticed = true;
+      drexSessionsTeardown(true); // olvida el id: no debe re-registrarse
+      try {
+        if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('drex_session_revoked_notice', '1');
+      } catch (_) {}
+      try { DrexCloud.auth().signOut(); } catch (_) {}
+    } catch (_) {}
+  }
+
+  function drexSessionsTeardown(forgetId) {
+    try {
+      if (drexSessionState.heartbeatTimer) { clearInterval(drexSessionState.heartbeatTimer); drexSessionState.heartbeatTimer = null; }
+      if (drexSessionState.detachWatch) { try { drexSessionState.detachWatch(); } catch (_) {} drexSessionState.detachWatch = null; }
+      if (drexSessionState.visibilityHook && typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+        try { document.removeEventListener('visibilitychange', drexSessionsOnVisibility); } catch (_) {}
+        drexSessionState.visibilityHook = false;
+      }
+      if (forgetId && drexSessionState.uid) drexSessionsForgetId(drexSessionState.uid);
+    } catch (_) {}
+    drexSessionState.uid = null;
+    drexSessionState.sessionId = null;
+    drexSessionState.lastTouch = 0;
+    drexSessionState.revokedNoticed = false;
+  }
+
+  // Cierre de la sesión PROPIA (llamado desde signOutUser, antes de borrar tokens):
+  // 1) intenta revocar el refresh token en Cognito; 2) marca el registro como
+  // terminado; 3) olvida el id local para que el próximo login genere uno nuevo.
+  function drexSessionsOnLocalSignOut() {
+    try {
+      var uid = drexSessionState.uid, sid = drexSessionState.sessionId;
+      try {
+        var cu = (typeof currentCognitoUser !== 'undefined') ? currentCognitoUser : null;
+        var rt = null;
+        try {
+          var sess = (cu && typeof cu.getSignInUserSession === 'function') ? cu.getSignInUserSession() : null;
+          rt = (sess && typeof sess.getRefreshToken === 'function' && sess.getRefreshToken()) ? sess.getRefreshToken().getToken() : null;
+        } catch (_) { rt = null; }
+        if (cu && rt && typeof cu.revokeToken === 'function') {
+          try { cu.revokeToken(rt, function () {}); } catch (_) {}
+        }
+      } catch (_) {}
+      try {
+        if (uid && sid) {
+          var oUid = uid, oSid = sid, oStamp = Date.now();
+          drexSessionsGetRecord(oUid, oSid).then(function (cur) {
+            try {
+              var rec = (cur && typeof cur === 'object') ? cur : { id: oSid };
+              rec.revoked = true;
+              rec.endedAt = oStamp;
+              rec.current = false;
+              drexSessionsPutRecord(oUid, oSid, rec);
+            } catch (_) {}
+          });
+        }
+      } catch (_) {}
+      drexSessionsTeardown(true);
+    } catch (_) {}
+  }
+
+  function drexSessionsTouch(force) {
+    try {
+      var st = drexSessionState;
+      if (!st.uid || !st.sessionId || st.revokedNoticed) return;
+      var now = Date.now();
+      if (!force && (now - st.lastTouch) < DREX_SESSIONS_TOUCH_MIN_MS) return;
+      st.lastTouch = now;
+      var tUid = st.uid, tSid = st.sessionId;
+      drexSessionsGetRecord(tUid, tSid).then(function (cur) {
+        try {
+          if (!cur || cur.revoked === true) return;
+          if (drexSessionState.sessionId !== tSid) return;
+          cur.lastActivity = now;
+          drexSessionsPutRecord(tUid, tSid, cur);
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  function drexSessionsStartHeartbeat() {
+    try {
+      if (drexSessionState.heartbeatTimer) clearInterval(drexSessionState.heartbeatTimer);
+      drexSessionState.heartbeatTimer = setInterval(function () {
+        try {
+          var hidden = false;
+          try { hidden = (typeof document !== 'undefined' && !!document.hidden); } catch (_) {}
+          if (!hidden) drexSessionsTouch(false);
+        } catch (_) {}
+      }, DREX_SESSIONS_HEARTBEAT_MS);
+    } catch (_) {}
+  }
+
+  function drexSessionsOnVisibility() {
+    try {
+      var hidden = false;
+      try { hidden = (typeof document !== 'undefined' && !!document.hidden); } catch (_) {}
+      if (!hidden) drexSessionsTouch(false);
+    } catch (_) {}
+  }
+  function drexSessionsHookVisibility() {
+    try {
+      if (drexSessionState.visibilityHook) return;
+      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', drexSessionsOnVisibility);
+        drexSessionState.visibilityHook = true;
+      }
+    } catch (_) {}
+  }
+
+  // --- API pública para la UI (Centro de seguridad) ---
+  DrexCloud.getActiveDrexSessionId = function () {
+    try {
+      if (drexSessionState.sessionId) return drexSessionState.sessionId;
+      var u = null;
+      try { u = DrexCloud.auth().currentUser; } catch (_) {}
+      if (u && u.uid) return drexSessionsLoadId(String(u.uid));
+    } catch (_) {}
+    return null;
+  };
+
+  // Lista las sesiones no revocadas, ordenadas por actividad (con limpieza
+  // perezosa de las que llevan >30 días sin actividad).
+  DrexCloud.listDrexSessions = function () {
+    var user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (_) {}
+    if (!user || !user.uid) return Promise.resolve([]);
+    var uid = String(user.uid);
+    var now = Date.now();
+    var mySid = null;
+    try { mySid = drexSessionState.sessionId; } catch (_) {}
+    return drexSessionsQueryRecords(uid).then(function (rows) {
+      var stale = [];
+      rows.forEach(function (row) {
+        var s = row.record;
+        if (s && s.revoked !== true && row.id !== mySid &&
+            typeof s.lastActivity === 'number' && (now - s.lastActivity) > DREX_SESSIONS_MAX_AGE_MS) {
+          stale.push(row.id);
+        }
+      });
+      stale.forEach(function (id) { try { drexSessionsDeleteRecord(uid, id); } catch (_) {} });
+      return rows.filter(function (row) {
+        return row.record && row.record.revoked !== true && stale.indexOf(row.id) === -1;
+      }).map(function (row) {
+        var r = row.record;
+        if (!r.id) r.id = row.id;
+        return r;
+      }).sort(function (a, b) { return (b.lastActivity || 0) - (a.lastActivity || 0); });
+    });
+  };
+
+  // Cierra UNA sesión ajena (la marca revocada; su dispositivo sale al detectar el cambio).
+  DrexCloud.revokeDrexSession = function (sessionId) {
+    var user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (_) {}
+    if (!user || !user.uid || !sessionId) return Promise.reject(new Error('Sin sesión'));
+    var me = null;
+    try { me = DrexCloud.getActiveDrexSessionId(); } catch (_) {}
+    if (String(sessionId) === String(me)) return Promise.reject(new Error('No puedes cerrar tu sesión actual desde aquí'));
+    var rUid = String(user.uid), rSid = String(sessionId), rStamp = Date.now();
+    return drexSessionsGetRecord(rUid, rSid).then(function (cur) {
+      var rec = (cur && typeof cur === 'object') ? cur : { id: rSid };
+      rec.revoked = true;
+      rec.endedAt = rStamp;
+      rec.current = false;
+      return drexSessionsPutRecord(rUid, rSid, rec);
+    });
+  };
+
+  // Cierra TODAS las demás sesiones. Punto de extensión: si a futuro existe una
+  // Lambda admin, aquí se llamaría a AdminUserGlobalSignOut por usuario.
+  DrexCloud.revokeOtherDrexSessions = function () {
+    var user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (_) {}
+    if (!user || !user.uid) return Promise.reject(new Error('Sin sesión'));
+    var uid = String(user.uid);
+    var me = null;
+    try { me = DrexCloud.getActiveDrexSessionId(); } catch (_) {}
+    var stamp = Date.now();
+    return drexSessionsQueryRecords(uid).then(function (rows) {
+      var jobs = [];
+      rows.forEach(function (row) {
+        var s = row.record;
+        if (String(row.id) !== String(me) && s && s.revoked !== true) {
+          s.revoked = true;
+          s.endedAt = stamp;
+          s.current = false;
+          jobs.push(drexSessionsPutRecord(uid, row.id, s));
+        }
+      });
+      return Promise.all(jobs).then(function () {
+        // Compatibilidad: dispositivos con versiones viejas escuchan este comando.
+        try {
+          return DrexCloud.database().ref('security/' + uid + '/revokeOtherSessions')
+            .set({ timestamp: stamp, exceptSessionId: me }).catch(function () {});
+        } catch (_) { return null; }
+      });
+    });
+  };
+
+  // Actividad en acciones clave (la UI puede llamarlo tras acciones importantes).
+  DrexCloud.touchDrexSessionActivity = function () { drexSessionsTouch(true); };
+  // [SESIONES] fin
 
   // Solo en navegador: procesar regreso del login social y restaurar sesión
   if (typeof global.window !== 'undefined' && typeof global.document !== 'undefined') {
@@ -2329,8 +3540,24 @@
         Ref: Ref,
         TIMESTAMP_SENTINEL: TIMESTAMP_SENTINEL,
         AWS_CONFIG: AWS_CONFIG,
+        // [DISPOSITIVOS] internos para pruebas en node
+        drexDevices: {
+          summarizeUA: drexSummarizeDeviceUA,
+          friendlyLabel: drexDeviceFriendlyLabel,
+          shortUA: drexShortUA,
+          fingerprintString: drexDeviceFingerprintString,
+          hashDeviceString: drexHashDeviceString,
+          cyrb53: drexCyrb53,
+          tzCity: drexTzCity,
+          checkNewDevice: checkDrexNewDevice
+        },
+        // [DISPOSITIVOS] fin
         setDocClient: function (dc) { _docClient = dc; },
         setAwsCredentials: function (c) { _awsCredentials = c; },
+        // [HISTORIAL-ACCESOS] exportaciones solo para pruebas (Ing. #3)
+        recordLoginHistory: recordLoginHistory,
+        setPendingLoginMethod: function (m) { drexPendingLoginMethod = m; },
+        getPendingLoginMethod: function () { return drexPendingLoginMethod; },
         resetListeners: function () {
           for (var i = listeners.length - 1; i >= 0; i--) {
             if (listeners[i]._deb) clearTimeout(listeners[i]._deb);
@@ -2338,7 +3565,24 @@
           listeners.length = 0;
           if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         },
-        listenerCount: function () { return listeners.length; }
+        listenerCount: function () { return listeners.length; },
+        // [SESIONES] Ing. #5: superficie de pruebas del registro de sesiones.
+        drexSessions: {
+          register: drexSessionsRegister,
+          touch: function (force) { drexSessionsTouch(!!force); },
+          onLocalSignOut: drexSessionsOnLocalSignOut,
+          handleRemoteRevoke: drexSessionsHandleRemoteRevoke,
+          teardown: function (forgetId) { drexSessionsTeardown(!!forgetId); },
+          newId: drexSessionsNewId,
+          truncateIp: drexSessionsTruncateIp,
+          parseUA: drexSessionsParseUA,
+          getRecord: drexSessionsGetRecord,
+          putRecord: drexSessionsPutRecord,
+          deleteRecord: drexSessionsDeleteRecord,
+          queryRecords: drexSessionsQueryRecords,
+          itemKey: drexSessionsItemKey,
+          state: drexSessionState
+        }
       }
     };
   }
