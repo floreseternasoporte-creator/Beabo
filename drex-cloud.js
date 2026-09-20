@@ -643,7 +643,7 @@
     return Object.keys(v).map(function (k) { return [k, v[k]]; });
   }
 
-  // Dispara un oyente según su tipo de evento ('value' | 'child_added' | 'child_changed')
+  // Dispara un oyente según su tipo de evento ('value' | 'child_added' | 'child_changed' | 'child_removed')
   function fireListener(l) {
     // No apilar lecturas: si la anterior aún no terminó (lectura pesada con
     // muchas fotos), se marca un re-disparo pendiente en vez de lanzar otra
@@ -681,6 +681,19 @@
             var ej = _changeFingerprint(e[1]);
             if ((e[0] in l.kids) && l.kids[e[0]] !== ej) callCb(l.cb, snap.child(e[0]));
             l.kids[e[0]] = ej;
+          });
+        }
+      } else if (l.eventType === 'child_removed') {
+        // Primera lectura: línea base, sin disparar (igual que child_changed).
+        // Después: todo hijo que estaba y ya no está => eliminado.
+        if (!l.kids) {
+          l.kids = {};
+          entries.forEach(function (e) { l.kids[e[0]] = _changeFingerprint(e[1]); });
+        } else {
+          var seenR = {};
+          entries.forEach(function (e) { seenR[e[0]] = 1; l.kids[e[0]] = _changeFingerprint(e[1]); });
+          Object.keys(l.kids).forEach(function (k) {
+            if (!seenR[k]) { delete l.kids[k]; callCb(l.cb, snap.child(k)); }
           });
         }
       }
@@ -845,7 +858,7 @@
   Ref.prototype.get = function () { return this.once('value'); };
 
   Ref.prototype.on = function (eventType, cb) {
-    if (eventType !== 'value' && eventType !== 'child_added' && eventType !== 'child_changed') {
+    if (eventType !== 'value' && eventType !== 'child_added' && eventType !== 'child_changed' && eventType !== 'child_removed') {
       throw new Error('Evento no soportado: ' + eventType);
     }
     var l = { ref: this, eventType: eventType, cb: cb, lastJson: undefined, kids: null, _deb: null };
