@@ -1927,6 +1927,26 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
       overflow: hidden;
       background: #eef2f7;
     }
+    /* Fotos separadas: shimmer mientras se hidratan bajo demanda */
+    .drex-imgs-shimmer {
+      position: relative;
+      overflow: hidden;
+      background: #e8edf2;
+      border-radius: 14px;
+      min-height: 180px;
+    }
+    body.theme-dark .drex-imgs-shimmer { background: #141a26; }
+    .drex-imgs-shimmer::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+      animation: drexShimmer 1.4s infinite;
+    }
+    body.theme-dark .drex-imgs-shimmer::after {
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+    }
+    @keyframes drexShimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
     body.theme-dark .drex-media-cell { background: #141a26; }
     .drex-media-cell img {
       display: block !important;
@@ -11121,6 +11141,83 @@ function saveNote() {
     return DrexCloud.database().ref('noteVideos/' + noteId).set(obj);
   }
 
+  // ============ FOTOS SEPARADAS (mismo patrón que VIDEO-POSTS) ============
+  // Las fotos de los posts nuevos viven en `noteImages/<noteId>/img_00000…`
+  // (una por ítem; cada data URL ya sale ≤300 KB del procesador de imágenes).
+  // La nota solo guarda `imageCount`. El snapshot del feed (polling cada 3 s)
+  // nunca incluye los bytes: se descargan bajo demanda al pintar la tarjeta
+  // y se cachean en memoria por sesión. Los posts viejos con fotos inline se
+  // migran solos en segundo plano la primera vez que alguien los ve.
+  function writeNoteImagesToDb(noteId, imageDataUrls) {
+    const obj = {};
+    imageDataUrls.forEach((url, i) => { obj['img_' + String(i).padStart(5, '0')] = url; });
+    return DrexCloud.database().ref('noteImages/' + noteId).set(obj);
+  }
+
+  const _noteImagesCache = {};    // noteId -> [dataUrls] (solo en memoria, por sesión)
+  const _noteImagesCacheOrder = []; // FIFO para topar el caché (iPhone: memoria limitada)
+  const _NOTE_IMAGES_CACHE_MAX = 120;
+  const _noteImagesPending = {};  // noteId -> Promise en curso (deduplica lecturas)
+  const _noteImagesMigrated = {}; // noteId -> true (la migración se intenta una vez por sesión)
+  function loadNoteImages(noteId) {
+    if (!noteId) return Promise.resolve([]);
+    if (_noteImagesCache[noteId]) return Promise.resolve(_noteImagesCache[noteId]);
+    if (_noteImagesPending[noteId]) return _noteImagesPending[noteId];
+    const p = DrexCloud.database().ref('noteImages/' + noteId).once('value').then(snap => {
+      const obj = snap.val() || {};
+      const keys = Object.keys(obj).filter(k => /^img_\d+$/.test(k)).sort();
+      const imgs = keys.map(k => String(obj[k] || '')).filter(u => u.indexOf('data:image/') === 0);
+      _noteImagesCache[noteId] = imgs;
+      _noteImagesCacheOrder.push(noteId);
+      while (_noteImagesCacheOrder.length > _NOTE_IMAGES_CACHE_MAX) {
+        const oldId = _noteImagesCacheOrder.shift();
+        if (oldId !== noteId) delete _noteImagesCache[oldId];
+      }
+      return imgs;
+    }).catch(() => []).finally(() => { delete _noteImagesPending[noteId]; });
+    _noteImagesPending[noteId] = p;
+    return p;
+  }
+
+  // Rellena los contenedores diferidos [data-note-imgs="<noteId>"] con las
+  // fotos reales, usando el mismo layout del renderer síncrono.
+  function hydrateNoteImages(noteId) {
+    if (!noteId || typeof renderNoteImagesHtml !== 'function') return;
+    loadNoteImages(noteId).then(imgs => {
+      document.querySelectorAll('[data-note-imgs]').forEach(el => {
+        if (el.getAttribute('data-note-imgs') !== noteId) return;
+        el.removeAttribute('data-note-imgs');
+        if (!imgs.length) { el.style.display = 'none'; return; }
+        const tmp = document.createElement('div');
+        tmp.innerHTML = renderNoteImagesHtml(imgs, noteId);
+        if (tmp.firstElementChild) el.replaceWith(tmp.firstElementChild);
+        else el.style.display = 'none';
+      });
+    }).catch(() => {});
+  }
+
+  // Muda las fotos inline (data URLs) de un post viejo a `noteImages/<noteId>`
+  // y deja la nota liviana (`imageCount`, sin bytes). Idempotente: si dos
+  // clientes lo intentan a la vez, escriben el mismo contenido.
+  async function migrateNoteImagesToSeparate(noteId, note) {
+    if (!noteId || !note || _noteImagesMigrated[noteId]) return;
+    _noteImagesMigrated[noteId] = true;
+    try {
+      const isData = u => typeof u === 'string' && u.indexOf('data:image/') === 0;
+      const dataUrls = [];
+      if (Array.isArray(note.imageUrls)) note.imageUrls.forEach(u => { if (isData(u) && dataUrls.indexOf(u) < 0) dataUrls.push(u); });
+      if (isData(note.imageUrl) && dataUrls.indexOf(note.imageUrl) < 0) dataUrls.push(note.imageUrl);
+      if (!dataUrls.length) return;
+      await writeNoteImagesToDb(noteId, dataUrls);
+      const upd = { imageCount: dataUrls.length };
+      if (Array.isArray(note.imageUrls) && note.imageUrls.length) {
+        upd.imageUrls = note.imageUrls.every(isData) ? null : note.imageUrls.filter(u => !isData(u));
+      }
+      if (isData(note.imageUrl)) upd.imageUrl = null;
+      await DrexCloud.database().ref('communityNotes/' + noteId).update(upd);
+    } catch (_) {}
+  }
+
   function handleNoteImagePreviewFullscreen(event, source = 'gallery') {
     const selectedFiles = Array.from(event.target.files || []);
     if (!selectedFiles.length) return;
@@ -11434,9 +11531,33 @@ function saveNote() {
           if (failedIdx.length) {
             showMiniToast(appT3(`Will publish ${images.length} of ${imageFiles.length} photos (couldn't process photo${failedIdx.length === 1 ? '' : 's'} ${failedIdx.join(', ')}).`, `Se publicarán ${images.length} de ${imageFiles.length} fotos (no se pudo procesar ${failedIdx.length === 1 ? 'la foto' : 'las fotos'} ${failedIdx.join(', ')}).`, `将发布 ${imageFiles.length} 张中的 ${images.length} 张（无法处理第 ${failedIdx.join('、')} 张）。`));
           }
-          note.imageUrls = images;
-          note.imageUrl = images[0];
-          publishWithAudienceScope().then(() => publishNoteToDatabase(note));
+          // FOTOS SEPARADAS: los bytes van a `noteImages/<noteId>` (mismo
+          // patrón que VIDEO-POSTS: se reserva la key, se suben las fotos y
+          // luego se escribe la nota). La nota solo guarda `imageCount` para
+          // que el snapshot del feed no descargue las fotos en cada polling.
+          try {
+            const reservedImgRef = DrexCloud.database().ref('communityNotes').push();
+            note.imageCount = images.length;
+            publishBtn.innerHTML = `${getSpinnerMarkup()}<span class="ml-2">Subiendo fotos…</span>`;
+            writeNoteImagesToDb(reservedImgRef.key, images).then(() =>
+              publishWithAudienceScope().then(() => publishNoteToDatabase(note, reservedImgRef))
+            ).catch(imgErr => {
+              console.error('Error al subir fotos:', imgErr);
+              DrexCloud.database().ref('noteImages/' + reservedImgRef.key).remove().catch(() => {});
+              showMiniToast(appT('No se pudieron subir las fotos. Inténtalo de nuevo.'));
+              notePostPublishing = false;
+              renderNotePostPhotoPreviews();
+              publishBtn.disabled = false;
+              publishBtn.innerHTML = 'Publicar';
+            });
+          } catch (imgErr) {
+            console.error('Error al subir fotos:', imgErr);
+            showMiniToast(appT('No se pudieron subir las fotos. Inténtalo de nuevo.'));
+            notePostPublishing = false;
+            renderNotePostPhotoPreviews();
+            publishBtn.disabled = false;
+            publishBtn.innerHTML = 'Publicar';
+          }
         });
       } else if (videoFile) {
         // VIDEO-POSTS: validar + comprimir, subir los trozos y luego crear
@@ -11595,7 +11716,7 @@ function saveNote() {
       try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
       // Drex Rec: lo que uno publica también dice qué le interesa.
       try { if (typeof drexRecTrain === 'function' && note.flair) drexRecTrain({ flair: note.flair, authorId: null, text: '' }, DREX_REC.weights.publish); } catch (_) {}
-      if (note.content || note.imageUrls || note.imageUrl || note.video) {
+      if (note.content || note.imageUrls || note.imageUrl || note.imageCount || note.video) {
         moderarContenidoAutomaticamente(ref1.key, `${note.content || ''} ${(note.imageUrls || []).join(' ')} ${note.imageUrl || ''}`);
       }
 
@@ -11661,12 +11782,38 @@ function saveNote() {
   // - 2 a 4 fotos: retícula tipo X (con 3, la primera ocupa dos filas).
   // - 5 o más: se muestran 4 y la cuarta lleva la insignia "+N".
   function renderNoteImages(note, noteIdForModal) {
+    const noteId = noteIdForModal || note.id || '';
+    // FOTOS SEPARADAS: los posts nuevos guardan las fotos en
+    // `noteImages/<noteId>` y la nota solo trae `imageCount`. Se pinta un
+    // contenedor diferido con shimmer y se hidrata bajo demanda (con caché
+    // en memoria por sesión): el snapshot del feed nunca descarga los bytes.
+    if (Number(note.imageCount || 0) > 0 && noteId) {
+      setTimeout(() => { try { hydrateNoteImages(noteId); } catch (_) {} }, 0);
+      return `<div class="mb-3" data-note-imgs="${escapeHtml(noteId)}"><div class="drex-imgs-shimmer"></div></div>`;
+    }
     const images = Array.isArray(note.imageUrls) && note.imageUrls.length ? note.imageUrls.slice() : (note.imageUrl ? [note.imageUrl] : []);
     // Legado: publicaciones viejas que guardaban el GIF en note.gifUrl en vez
     // de imageUrls. Se pinta aquí (contain, sin recorte) y no en un bloque
     // aparte, para que no salga duplicado ni recortado.
     if (note.gifUrl && !images.includes(note.gifUrl)) images.push(note.gifUrl);
     if (!images.length) return '';
+    // Migración en segundo plano: los posts viejos con data URLs inline se
+    // mudan a `noteImages/<noteId>` para que el polling deje de descargarlos.
+    // Solo notas reales (el reintento de render pasa un objeto sintético).
+    if (noteId && (note.authorId || note.userId || note.id)) {
+      const hasInlineData = images.some(u => typeof u === 'string' && u.indexOf('data:image/') === 0);
+      if (hasInlineData) setTimeout(() => { migrateNoteImagesToSeparate(noteId, note).catch(() => {}); }, 0);
+    }
+    return renderNoteImagesHtml(images, noteIdForModal);
+  }
+
+  // Retícula de fotos estilo X/Threads a partir de URLs ya resueltas
+  // (síncrono; lo usan el formato legado y la hidratación del formato nuevo).
+  // - 1 foto: ancho completo con su proporción natural, sin fondo ni recorte.
+  // - 2 a 4 fotos: retícula tipo X (con 3, la primera ocupa dos filas).
+  // - 5 o más: se muestran 4 y la cuarta lleva la insignia "+N".
+  function renderNoteImagesHtml(images, noteIdForModal) {
+    if (!images || !images.length) return '';
 
     const safeNoteIdJs = escapeInlineSingleQuote(noteIdForModal);
     const imgTag = (img, index) => {
@@ -15136,6 +15283,9 @@ function saveNote() {
         } catch (_) {}
       }
       await DrexCloud.database().ref('communityNotes/' + noteId).remove();
+      // Limpiar los medios separados (fotos y videos) para no dejar huérfanos.
+      DrexCloud.database().ref('noteImages/' + noteId).remove().catch(() => {});
+      DrexCloud.database().ref('noteVideos/' + noteId).remove().catch(() => {});
       // Invalidar snapshot del feed: el post ya no existe.
       try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
       _closeViewerIfShowingNote(noteId);
@@ -18926,6 +19076,7 @@ function saveNote() {
   }
 
   async function drexTestPush() {
+    try { drexPlayNotificationSound(); } catch (_) {}
     try {
       if (!('Notification' in window) || Notification.permission !== 'granted') {
         if (typeof showMiniToast === 'function') showMiniToast('Primero activa las notificaciones.');
@@ -18942,7 +19093,6 @@ function saveNote() {
     } catch (_) {
       try { new Notification('Drex — prueba', { body: 'Si ves este aviso, las notificaciones funcionan.' }); } catch (_) {}
     }
-    try { drexPlayNotificationSound(); } catch (_) {}
   }
 
   async function drexRenderPushCard() {
@@ -34312,6 +34462,10 @@ function performRealTimeSearch() {
           seenPhotos.add(key);
           photos.push({ postId: child.key, url, authorName: note.authorName || 'Usuario', authorId });
         });
+      } else if (matches && Number(note.imageCount || 0) > 0) {
+        // Formato nuevo: las fotos viven en noteImages/<postId>; la primera
+        // se resuelve al pintar la retícula (renderPhotosList).
+        photos.push({ postId: child.key, url: null, imageCount: Number(note.imageCount), authorName: note.authorName || 'Usuario', authorId });
       }
 
     });
@@ -34399,7 +34553,15 @@ function renderPhotosList(photos) {
   photos.forEach(photo => {
     const btn = document.createElement('button');
     btn.className = 'relative aspect-square rounded-2xl overflow-hidden border border-[#dce1e5] bg-white';
-    btn.innerHTML = `<img src="${getSafeMediaUrl(photo.url)}" class="w-full h-full object-cover" alt="Foto de post">`;
+    if (photo.url) {
+      btn.innerHTML = `<img src="${getSafeMediaUrl(photo.url)}" class="w-full h-full object-cover" alt="Foto de post">`;
+    } else if (photo.postId && Number(photo.imageCount || 0) > 0 && typeof loadNoteImages === 'function') {
+      // Formato nuevo: primera foto bajo demanda, con shimmer mientras carga.
+      btn.innerHTML = `<div class="drex-imgs-shimmer w-full h-full" style="border-radius:0;min-height:0"></div>`;
+      loadNoteImages(photo.postId).then(imgs => {
+        if (imgs.length && btn.isConnected) btn.innerHTML = `<img src="${getSafeMediaUrl(imgs[0])}" class="w-full h-full object-cover" alt="Foto de post">`;
+      }).catch(() => {});
+    }
     btn.onclick = () => { closeSearch(); openCommentsView(photo.postId); };
     grid.appendChild(btn);
   });
@@ -44570,7 +44732,7 @@ async function drexReportOpen(type, data) {
       target.targetAuthorName = await _drexReportFetchUserName(authorId);
       const txt = String(note.content || note.text || '');
       target.targetPreview = txt.slice(0, 140);
-      target.hasMedia = !!(note.imageUrl || note.image || (note.media && note.media.length));
+      target.hasMedia = !!(note.imageUrl || note.image || note.imageCount || (note.media && note.media.length));
     } else if (type === 'comment') {
       const authorId = data.commentAuthorId || '';
       if (authorId && authorId === user.uid) { if (typeof showMiniToast === 'function') showMiniToast('No puedes reportar tu propio comentario.'); return; }
