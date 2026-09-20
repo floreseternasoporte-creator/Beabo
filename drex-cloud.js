@@ -33,7 +33,10 @@
     oauthScope: 'email openid profile',
     // URL de DrexTotpFunction (verificación TOTP del lado servidor).
     // Se rellena con el Output TotpFunctionUrl tras desplegar el backend.
-    totpFunctionUrl: ''
+    totpFunctionUrl: '',
+    // URL de la Lambda drex-username-resolve (login con nombre de usuario).
+    // Se rellena con la Function URL real tras crear la Lambda en AWS.
+    usernameLoginUrl: 'https://opyy2nl5x66xhu5uy4n4dwjzui0wkuas.lambda-url.us-east-1.on.aws/'
   };
   var IDP_ISSUER = 'cognito-idp.us-east-1.amazonaws.com/us-east-1_kDSYEBsnY';
 
@@ -1356,6 +1359,7 @@
         };
       },
       signInWithEmailAndPassword: signInWithEmailAndPassword,
+      signInWithUsernameAndPassword: signInWithUsernameAndPassword,
       createUserWithEmailAndPassword: createUserWithEmailAndPassword,
       signUpOrResendConfirmation: signUpOrResendConfirmation,
       confirmRegistration: confirmRegistration,
@@ -1636,6 +1640,108 @@
         throw err;
       });
     }
+  }
+
+  // Inicio de sesión con nombre de usuario (2026-09-20).
+  // El User Pool solo acepta el correo como identificador (los aliases son
+  // inmutables del pool), así que la autenticación ocurre en el servidor:
+  // la Lambda drex-username-resolve normaliza el username, lo resuelve a
+  // email en DynamoDB y autentica con Cognito (ADMIN_NO_SRP_AUTH),
+  // devolviendo SOLO los tokens. El correo jamás sale del servidor y los
+  // errores son genéricos (sin enumeración de cuentas).
+  // Aquí se reconstruye la sesión de Cognito con esos tokens para que todo
+  // lo demás (refresh, credenciales AWS, listeners) funcione igual que con
+  // el login por correo.
+  function signInWithUsernameAndPassword(username, password) {
+    getAuth();
+    var C = cognitoLib();
+    if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    var url = (AWS_CONFIG.usernameLoginUrl || '').replace(/\/$/, '');
+    if (!url) {
+      var nc = new Error('Error de conexión. Revisa tu internet.');
+      nc.code = 'auth/network-request-failed';
+      return Promise.reject(nc);
+    }
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (_) {} }, 20000);
+    function clearTimer() { try { clearTimeout(timer); } catch (_) {} }
+    var fetchOpts = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: String(username || ''), password: String(password || '') })
+    };
+    if (ctrl) fetchOpts.signal = ctrl.signal;
+    return promiseTimeout(fetch(url, fetchOpts).then(function (resp) {
+      clearTimer();
+      if (resp.status === 429) {
+        var e429 = new Error('Demasiados intentos. Inténtalo de nuevo en un minuto.');
+        e429.code = 'auth/too-many-requests';
+        throw e429;
+      }
+      if (resp.status === 403) {
+        return resp.json().then(function (data) {
+          var code = (data && data.error) || '';
+          if (code === 'unconfirmed') {
+            // Sin correo conocido (el servidor no lo revela): la app pide
+            // al usuario iniciar sesión con su correo para verificarla.
+            var need = new Error('Tu cuenta aún no está verificada. Inicia sesión con tu correo electrónico para verificarla.');
+            need.code = 'auth/needs-confirmation';
+            throw need;
+          }
+          var rst = new Error('Debes restablecer tu contraseña.');
+          rst.code = 'auth/password-reset-required';
+          throw rst;
+        });
+      }
+      if (!resp.ok) {
+        throw Object.assign(new Error('Nombre de usuario o contraseña incorrectos.'), { code: 'auth/invalid-credential' });
+      }
+      return resp.json();
+    }).then(function (data) {
+      var t = (data && data.tokens) || {};
+      if (!t.idToken || !t.accessToken || !t.refreshToken) {
+        throw Object.assign(new Error('Error de conexión. Revisa tu internet.'), { code: 'auth/network-request-failed' });
+      }
+      // El username de Cognito es el correo: se lee del claim `email` del
+      // ID token (respaldo: `cognito:username`). El servidor nunca lo envía.
+      var claims = null;
+      try {
+        var parts = String(t.idToken).split('.');
+        if (parts.length >= 2) claims = JSON.parse(base64UrlDecode(parts[1]));
+      } catch (e) { claims = null; }
+      var cognitoUsername = (claims && (claims.email || claims['cognito:username'])) || '';
+      if (!cognitoUsername) {
+        throw Object.assign(new Error('Error de conexión. Revisa tu internet.'), { code: 'auth/network-request-failed' });
+      }
+      var session = new C.CognitoUserSession({
+        IdToken: new C.CognitoIdToken({ IdToken: t.idToken }),
+        AccessToken: new C.CognitoAccessToken({ AccessToken: t.accessToken }),
+        RefreshToken: new C.CognitoRefreshToken({ RefreshToken: t.refreshToken })
+      });
+      if (!session.isValid()) {
+        throw Object.assign(new Error('Nombre de usuario o contraseña incorrectos.'), { code: 'auth/invalid-credential' });
+      }
+      var cognitoUser = new C.CognitoUser({ Username: cognitoUsername, Pool: getUserPool() });
+      cognitoUser.setSignInUserSession(session);
+      return establishSession(cognitoUser, session).then(function (user) {
+        return { user: user };
+      });
+    }).catch(function (err) {
+      clearTimer();
+      if (err && err.name === 'AbortError') {
+        var te = new Error('Tiempo de espera agotado. Revisa tu conexión.');
+        te.code = 'auth/network-request-failed';
+        throw te;
+      }
+      throw err;
+    }), 30000, 'auth-timeout').catch(function (err) {
+      if (err && err.message === 'auth-timeout') {
+        var t2 = new Error('Tiempo de espera agotado. Revisa tu conexión.');
+        t2.code = 'auth/network-request-failed';
+        throw t2;
+      }
+      throw err;
+    });
   }
 
   function createUserWithEmailAndPassword(email, password) {

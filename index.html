@@ -3693,7 +3693,7 @@ document.addEventListener("DOMContentLoaded", function() {
           <p class="text-sm" style="color:#7b878f;">Lo usaremos para verificar tu identidad.</p>
         </div>
         <div class="relative w-full">
-          <input id="emailInput" type="email" placeholder="Correo electrónico" autocomplete="email" class="w-full p-4 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #dce1e5; color:#24324c; background:#f0f4f9;" required>
+          <input id="emailInput" type="text" inputmode="email" placeholder="Correo electrónico o nombre de usuario" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" class="w-full p-4 rounded-2xl focus:outline-none focus:ring-2 transition text-base" style="border:2px solid #dce1e5; color:#24324c; background:#f0f4f9;" required>
           <span id="emailInputIcon" class="absolute right-4 top-1/2 -translate-y-1/2 text-base hidden"></span>
         </div>
         <div id="emailInputError" class="mt-2 text-red-500 text-sm text-center hidden w-full"></div>
@@ -19320,6 +19320,7 @@ function saveNote() {
   const mainApp = document.getElementById('main-app');
   let isLogin = true;
   let pendingEmail = '';
+  let pendingUsername = ''; // username normalizado (sin @) cuando el login es por usuario
   let currentViewedAuthorId = null;
   let currentLanguage = 'es';
   const translations = {
@@ -19327,7 +19328,7 @@ function saveNote() {
       appName: "Drex",
       tagline: "Tu portal de historias inolvidables",
       authTitle: "Drex",
-      emailPlaceholder: "Correo electrónico",
+      emailPlaceholder: "Correo electrónico o nombre de usuario",
       passwordPlaceholder: "Contraseña",
       btnIniciarSesion: "Iniciar Sesión",
       btnToggleAuth: "¿No tienes cuenta? Regístrate",
@@ -19360,7 +19361,7 @@ function saveNote() {
       appName: "Drex",
       tagline: "Your portal for unforgettable stories",
       authTitle: "Drex",
-      emailPlaceholder: "Email address",
+      emailPlaceholder: "Email or username",
       passwordPlaceholder: "Password",
       btnIniciarSesion: "Log in",
       btnToggleAuth: "Don't have an account? Sign up",
@@ -19392,7 +19393,7 @@ function saveNote() {
       appName: "Drex",
       tagline: "难忘故事的传送门",
       authTitle: "Drex",
-      emailPlaceholder: "电子邮箱",
+      emailPlaceholder: "电子邮箱或用户名",
       passwordPlaceholder: "密码",
       btnIniciarSesion: "登录",
       btnToggleAuth: "还没有账号？注册",
@@ -25566,14 +25567,21 @@ function saveNote() {
   document.getElementById('backToOptionsFromEmail').addEventListener('click', () => { showAuthSection(loginOptions); });
 
   document.getElementById('goToPasswordStep').addEventListener('click', () => {
-    const email = emailInput.value.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      authError.textContent = 'Por favor ingresa un correo válido.';
+    // Este campo acepta correo electrónico o nombre de usuario ("@usuario" también vale).
+    const rawId = emailInput.value.trim();
+    const idIsUsername = rawId.length > 0 && (!rawId.includes('@') || /^@[^@\s]+$/.test(rawId));
+    const loginIdGate = idIsUsername ? normalizeUsername(rawId) : rawId;
+    const gateBad = idIsUsername ? usernameInvalidReason(loginIdGate) : (!rawId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawId));
+    if (gateBad) {
+      authError.textContent = idIsUsername
+        ? 'Escribe un correo válido o un nombre de usuario válido.'
+        : 'Por favor ingresa un correo válido.';
       authError.classList.remove('hidden');
       return;
     }
     authError.classList.add('hidden');
-    pendingEmail = email;
+    pendingEmail = idIsUsername ? '' : rawId;
+    pendingUsername = idIsUsername ? loginIdGate : '';
 
     const userCard    = document.getElementById('loginUserCard');
     const noCard      = document.getElementById('loginNoCard');
@@ -25585,18 +25593,29 @@ function saveNote() {
 
     userCard.classList.add('hidden');
     noCard.classList.remove('hidden');
-    emailLabelAlt.textContent = email;
+    emailLabelAlt.textContent = idIsUsername ? ('@' + loginIdGate) : rawId;
     showAuthSection(passwordStep);
     passwordInput.focus();
 
-    DrexCloud.database().ref('users').orderByChild('email').equalTo(email).once('value')
+    // Tarjeta del perfil: con correo se busca por email; con usuario se resuelve
+    // por el índice usernames/ (si la consulta falla sin sesión, la pantalla
+    // sigue funcionando sin tarjeta, igual que antes).
+    const profileQuery = idIsUsername
+      ? DrexCloud.database().ref('usernames/' + loginIdGate).once('value').then(s => {
+          const uid = s.val();
+          if (!uid || typeof uid !== 'string') throw new Error('no-user-card');
+          return DrexCloud.database().ref('users/' + uid).once('value');
+        })
+      : DrexCloud.database().ref('users').orderByChild('email').equalTo(rawId).once('value');
+    profileQuery
       .then(snap => {
         if (!snap.exists()) return;
-        const data = Object.values(snap.val())[0];
-        if (!data) return;
+        const snapData = snap.val() || {};
+        const data = idIsUsername ? snapData : (Object.values(snapData)[0] || {});
+        if (!data || typeof data !== 'object') return;
 
         userName.textContent    = data.displayName || data.username || '';
-        emailLabel.textContent  = email;
+        emailLabel.textContent  = idIsUsername ? ('@' + loginIdGate) : rawId;
 
         if (data.profileImage && data.profileImage.length > 0) {
           avatar.src = data.profileImage;
@@ -25613,16 +25632,17 @@ function saveNote() {
       })
       .catch(() => {}); // Si falla la consulta, la pantalla sigue funcionando sin tarjeta
   });
-
-  document.getElementById('backToEmailStep').addEventListener('click', () => { showAuthSection(emailStep); });
+document.getElementById('backToEmailStep').addEventListener('click', () => { showAuthSection(emailStep); });
 
   document.getElementById('forgotPasswordBtn').addEventListener('click', () => {
-    recoveryEmailInput.value = pendingEmail || emailInput.value.trim();
+    // La recuperación es por correo: si venía de un login con usuario, se deja
+    // vacío para que escriba su correo.
+    const idForRecovery = (pendingEmail || emailInput.value).trim();
+    recoveryEmailInput.value = idForRecovery.includes('@') ? idForRecovery : '';
     showRecoveryState('recoveryForm');
     showAuthSection(recoveryStep);
   });
-
-  document.getElementById('backToPasswordFromRecovery').addEventListener('click', () => { showAuthSection(passwordStep); });
+document.getElementById('backToPasswordFromRecovery').addEventListener('click', () => { showAuthSection(passwordStep); });
   document.getElementById('sendRecoveryButton').addEventListener('click', () => { resetPassword(); });
 
   document.getElementById('toggleLoginPwd').addEventListener('click', () => {
@@ -25672,14 +25692,34 @@ function saveNote() {
   authForm.addEventListener('submit', e => {
     e.preventDefault();
     authError.classList.add('hidden');
-    const email = pendingEmail || emailInput.value.trim();
+    // El identificador puede ser correo electrónico o nombre de usuario: el paso
+    // anterior ya lo normalizó en pendingEmail/pendingUsername. Con usuario la
+    // autenticación ocurre en el servidor (Lambda drex-username-resolve:
+    // resuelve a email y autentica con Cognito, devolviendo solo tokens);
+    // con correo se usa el SRP directo, sin cambios.
+    let isUsername = false;
+    let loginId = '';
+    if (pendingUsername) { isUsername = true; loginId = pendingUsername; }
+    else {
+      const rawInput = (pendingEmail || emailInput.value).trim();
+      isUsername = rawInput.length > 0 && (!rawInput.includes('@') || /^@[^@\s]+$/.test(rawInput));
+      loginId = isUsername ? normalizeUsername(rawInput) : rawInput;
+    }
     const password = passwordInput.value;
-    if (!email) {
-      authError.textContent = 'Por favor ingresa tu correo electrónico.';
+    if (!loginId) {
+      authError.textContent = 'Por favor ingresa tu correo electrónico o nombre de usuario.';
       authError.classList.remove('hidden');
       return;
     }
-    const lockedSecs = checkLoginLock(email);
+    if (isUsername && usernameInvalidReason(loginId)) {
+      authError.textContent = 'Ese nombre de usuario no es válido.';
+      authError.classList.remove('hidden');
+      return;
+    }
+    // Clave anti-fuerza bruta separada por tipo: los intentos con usuario no
+    // comparten contador con los de correo (ni viceversa).
+    const lockKey = isUsername ? ('u:' + loginId) : loginId;
+    const lockedSecs = checkLoginLock(lockKey);
     if (lockedSecs) {
       const mins = Math.ceil(lockedSecs / 60);
       authError.textContent = lockedSecs > 60
@@ -25690,38 +25730,59 @@ function saveNote() {
     }
     submitButton.disabled = true;
     submitButton.innerHTML = `<span class="inline-flex items-center gap-2 justify-center">${DREX_SPINNER_HTML}<span>Iniciando...</span></span>`;
-    DrexCloud.auth().signInWithEmailAndPassword(email, password)
+    // Con nombre de usuario: la autenticación ocurre en el servidor (la Lambda
+    // drex-username-resolve resuelve username -> email y autentica con Cognito,
+    // devolviendo solo tokens; el correo nunca sale del servidor). Con correo:
+    // directo al SRP, sin cambios.
+    const signInPromise = isUsername
+      ? DrexCloud.auth().signInWithUsernameAndPassword(loginId, password)
+      : DrexCloud.auth().signInWithEmailAndPassword(loginId, password);
+    signInPromise
       .then(() => {
-        clearLoginAttempts(email);
-        localStorage.setItem('drex_last_login_method', 'email');
+        clearLoginAttempts(lockKey);
+        localStorage.setItem('drex_last_login_method', isUsername ? 'username' : 'email');
       })
       .catch(error => {
         if (error && error.code === 'auth/needs-confirmation') {
-          showVerifyCodeScreen(error.email || email, password, 'login');
+          if (isUsername) {
+            // Con usuario no se conoce el correo (el servidor no lo revela):
+            // se pide iniciar sesión con el correo para verificarla.
+            authError.textContent = error.message || 'Tu cuenta aún no está verificada.';
+          } else {
+            showVerifyCodeScreen(error.email || loginId, password, 'login');
+          }
+          authError.classList.remove('hidden');
           submitButton.disabled = false;
           submitButton.textContent = 'Iniciar sesión';
           return;
         }
+        // Mensajes específicos para la ruta de nombre de usuario; la ruta de
+        // correo conserva exactamente sus mensajes de siempre.
+        const friendlyForId = (err) => {
+          if (!isUsername) return getFriendlyErrorMessage(err);
+          if (err && err.code === 'auth/user-not-found') return 'No se encontró ninguna cuenta con ese nombre de usuario.';
+          if (err && (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-login-credentials')) return 'Nombre de usuario o contraseña incorrectos.';
+          return getFriendlyErrorMessage(err);
+        };
         if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials') {
-          const record = registerFailedLogin(email);
+          const record = registerFailedLogin(lockKey);
           if (record.lockedUntil && record.lockedUntil > Date.now()) {
             const secs = Math.ceil((record.lockedUntil - Date.now()) / 1000);
             authError.textContent = `Demasiados intentos fallidos. Inténtalo de nuevo en ${secs}s.`;
           } else {
             const remaining = 5 - record.count;
             authError.textContent = remaining > 0
-              ? `${getFriendlyErrorMessage(error)} Te quedan ${remaining} intento${remaining !== 1 ? 's' : ''}.`
-              : getFriendlyErrorMessage(error);
+              ? `${friendlyForId(error)} Te quedan ${remaining} intento${remaining !== 1 ? 's' : ''}.`
+              : friendlyForId(error);
           }
         } else {
-          authError.textContent = getFriendlyErrorMessage(error);
+          authError.textContent = friendlyForId(error);
         }
         authError.classList.remove('hidden');
         submitButton.disabled = false;
         submitButton.textContent = 'Iniciar sesión';
       });
   });
-
   // Flujo de registro
 
   // Paso 1: nombre (el apellido es opcional y se puede agregar en ajustes)
@@ -26168,6 +26229,17 @@ function saveNote() {
     if (!/^[\p{L}\p{N}._-]+$/u.test(s)) return 'chars';
     return null;
   }
+
+  // LOGIN CON NOMBRE DE USUARIO (2026-09-20, v3 servidor seguro).
+  // El User Pool de Drex solo acepta el correo como identificador (los aliases
+  // son inmutables del pool; verificado contra Cognito el 2026-09-20).
+  // La autenticación ocurre en el servidor: DrexCloud.auth()
+  // .signInWithUsernameAndPassword() envía username+password a la Lambda
+  // drex-username-resolve (URL en AWS_CONFIG.usernameLoginUrl de
+  // drex-cloud.js), que resuelve username -> email en DynamoDB y autentica
+  // con Cognito (ADMIN_NO_SRP_AUTH), devolviendo SOLO los tokens. El correo
+  // jamás sale del servidor; los errores son genéricos (sin enumeración).
+  // La recuperación de contraseña sigue siendo exclusivamente por correo.
 
   document.getElementById('regUsername').addEventListener('input', () => {
     clearTimeout(usernameCheckTimer);
