@@ -7813,7 +7813,7 @@ if (scrollArea) {
 <!-- HOJA DE CALIFICACIONES DEL PERFIL (se abre desde el icono estrella) -->
 <div id="author-ratings-sheet" class="fixed inset-0 bg-black/50 hidden z-[145] flex flex-col" onclick="if(event.target===this)closeAuthorRatings()">
   <div class="w-full max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl mt-auto max-h-[85vh] overflow-y-auto" onclick="event.stopPropagation()" style="padding-bottom:max(1.5rem,env(safe-area-inset-bottom));">
-    <div class="flex justify-center pt-3 pb-1"><div class="w-10 h-1 bg-[#dce1e5] rounded-full"></div></div>
+    <div class="flex justify-center pt-3 pb-1" data-sheet-handle style="touch-action:none;cursor:grab"><div class="w-10 h-1 bg-[#dce1e5] rounded-full"></div></div>
     <div class="px-4 pb-1 flex items-center justify-between gap-2">
       <div class="flex items-center gap-2">
         <h3 class="text-[15px] font-extrabold text-black">Calificaciones</h3>
@@ -7826,6 +7826,7 @@ if (scrollArea) {
     <div class="px-4">
       <section id="author-ratings-section" aria-label="Calificaciones">
           <div id="author-ratings-avg" class="mt-1 flex items-center gap-1.5"></div>
+      <div id="author-ratings-dist" class="mt-1.5"></div>
           <div class="mt-2 pt-2 border-t border-[#eef1f5]">
             <div class="flex items-center gap-2">
               <div id="author-rating-stars" class="flex items-center gap-0.5 shrink-0" role="radiogroup" aria-label="Calificar con estrellas"></div>
@@ -7905,7 +7906,7 @@ if (scrollArea) {
           <span class="text-gray-300">·</span>
           <button onclick="openFollowingModal()" class="tap44 relative whitespace-nowrap active:opacity-60 transition"><span id="author-following" class="font-bold text-black">0</span> seguidos</button>
           <span class="text-gray-300">·</span>
-          <button onclick="openAuthorRatings()" class="tap44 relative whitespace-nowrap active:opacity-60 transition" aria-label="Ver calificaciones"><span id="author-ratings-badge" class="font-bold text-black">★ –</span></button>
+          <button onclick="openAuthorRatings()" class="tap44 flex items-center gap-1 pl-2 pr-2.5 h-7 rounded-full bg-[#eef1fb] active:opacity-60 transition" aria-label="Ver calificaciones"><span class="text-[13px] leading-none" style="color:#2F33B8">★</span><span id="author-ratings-badge" class="text-[13px] font-extrabold text-black tabular-nums">–</span></button>
         </div>
 
         <!-- Botón de acción -->
@@ -35334,12 +35335,33 @@ function renderAccountsList(accounts) {
   // ============================================================
   let _profileRatingsTarget = null;
   let _profileRatingStars = 0;
+  let _profileRatingExists = false;
   const PROFILE_RATING_MAX_COMMENT = 150;
 
   function _setI18nTextNode(el, esText) {
     if (!el) return;
     el.textContent = appT(esText);
     try { if (el.firstChild) el.firstChild.__drexI18nOriginal = esText; } catch (_) {}
+  }
+
+  function _ratingTimeAgo(ts) {
+    if (!ts) return '';
+    const _rl = (typeof getAppLanguage === 'function' ? getAppLanguage() : 'es');
+    const _rt = {
+      es: { now: 'ahora mismo', min: n => 'hace ' + n + ' min', h: n => 'hace ' + n + ' h', d: n => 'hace ' + n + ' d', w: n => 'hace ' + n + ' sem' },
+      en: { now: 'just now', min: n => n + 'm ago', h: n => n + 'h ago', d: n => n + 'd ago', w: n => n + 'w ago' },
+      zh: { now: '\u521a\u521a', min: n => n + '\u5206\u949f\u524d', h: n => n + '\u5c0f\u65f6\u524d', d: n => n + '\u5929\u524d', w: n => n + '\u5468\u524d' }
+    }[_rl] || null;
+    const T = _rt || { now: 'ahora mismo', min: n => 'hace ' + n + ' min', h: n => 'hace ' + n + ' h', d: n => 'hace ' + n + ' d', w: n => 'hace ' + n + ' sem' };
+    const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (s < 60) return T.now;
+    const m = Math.floor(s / 60); if (m < 60) return T.min(m);
+    const h = Math.floor(m / 60); if (h < 24) return T.h(h);
+    const d = Math.floor(h / 24); if (d < 7) return T.d(d);
+    const w = Math.floor(d / 7); if (w < 5) return T.w(w);
+    try {
+      return new Date(ts).toLocaleDateString(_rl === 'zh' ? 'zh-CN' : _rl === 'en' ? 'en-US' : 'es-ES', { day: 'numeric', month: 'short' });
+    } catch (_) { return ''; }
   }
 
   function _profileRatingStarsRow(value, cls) {
@@ -35376,14 +35398,18 @@ function renderAccountsList(accounts) {
     const counterBox = document.getElementById('author-rating-counter');
     const saveBtn = document.getElementById('author-rating-save');
     const badgeBox = document.getElementById('author-ratings-badge');
+    const distBox = document.getElementById('author-ratings-dist');
+    _profileRatingExists = false;
     if (commentBox) commentBox.value = '';
     if (counterBox) counterBox.textContent = '0/' + PROFILE_RATING_MAX_COMMENT;
     _renderProfileRatingInput();
+    if (saveBtn) saveBtn.disabled = false;
     _setI18nTextNode(saveBtn, 'Guardar calificación');
-    if (avgBox) avgBox.innerHTML = '<span class="text-sm text-gray-400">' + escapeHtml(appT('Cargando calificaciones…')) + '</span>';
+    if (avgBox) avgBox.innerHTML = '<div class="animate-pulse flex items-center gap-1.5 py-0.5"><div class="h-4 w-4 rounded-full bg-[#e8edf3]"></div><div class="h-4 w-14 rounded bg-[#e8edf3]"></div><div class="h-3 w-24 rounded bg-[#eef1f5]"></div></div>';
     if (countBox) countBox.textContent = '';
-    if (badgeBox) badgeBox.textContent = '★ –';
-    if (listBox) listBox.innerHTML = '';
+    if (distBox) distBox.innerHTML = '';
+    if (badgeBox) badgeBox.textContent = '–';
+    if (listBox) listBox.innerHTML = '<div class="animate-pulse py-2"><div class="flex items-center gap-1.5"><div class="h-3.5 w-24 rounded bg-[#e8edf3]"></div><div class="h-3 w-16 rounded bg-[#eef1f5]"></div></div><div class="mt-1.5 h-3 w-full rounded bg-[#eef1f5]"></div></div>';
     if (!authorId) return;
     DrexCloud.database().ref('users/' + authorId + '/ratings').once('value').then(snap => {
       if (_profileRatingsTarget !== authorId) return;
@@ -35393,10 +35419,13 @@ function renderAccountsList(accounts) {
       const count = entries.length;
       const avg = count ? entries.reduce((a, r) => a + r.stars, 0) / count : 0;
       if (countBox) countBox.textContent = count ? String(count) : '';
-      if (badgeBox) badgeBox.textContent = count ? '★ ' + avg.toFixed(1) : '★ –';
+      if (badgeBox) badgeBox.textContent = count ? avg.toFixed(1) : '–';
       if (avgBox) {
         if (!count) {
-          avgBox.innerHTML = '<span class="text-sm text-gray-400">' + escapeHtml(appT('Aún no hay calificaciones. ¡Sé la primera persona en calificar!')) + '</span>';
+          avgBox.innerHTML = '<div class="py-4 flex flex-col items-center text-center">' +
+            '<span class="text-[26px] leading-none" style="color:#D7DEE6">\u2605</span>' +
+            '<p class="mt-1.5 text-sm font-extrabold text-black">' + escapeHtml(appT3('No ratings yet', 'Aún no hay calificaciones', '\u8fd8\u6ca1\u6709\u8bc4\u5206')) + '</p>' +
+            '<p class="mt-0.5 text-xs text-gray-500">' + escapeHtml(appT3('Be the first to rate this profile', 'S\u00e9 la primera persona en calificar este perfil', '\u6210\u4e3a\u7b2c\u4e00\u4e2a\u4e3a\u6b64\u8d44\u6599\u8bc4\u5206\u7684\u4eba')) + '</p></div>';
         } else {
           avgBox.innerHTML = '<span class="text-base leading-none font-extrabold" style="color:#2F33B8">★</span>' +
             '<span class="text-[15px] font-extrabold text-black tabular-nums">' + avg.toFixed(1) + '</span>' +
@@ -35404,10 +35433,28 @@ function renderAccountsList(accounts) {
             '<span class="text-xs text-gray-500">' + count + ' ' + appT3('ratings', 'calificaciones', '条评分') + '</span>';
         }
       }
+      if (distBox) {
+        if (!count) {
+          distBox.innerHTML = '';
+        } else {
+          const dist = [0, 0, 0, 0, 0];
+          entries.forEach(r => { dist[r.stars - 1]++; });
+          let dh = '';
+          for (let s = 5; s >= 1; s--) {
+            const pct = Math.round(dist[s - 1] / count * 100);
+            dh += '<div class="flex items-center gap-1.5">' +
+              '<span class="w-3 text-right text-[10px] font-bold text-gray-400 tabular-nums">' + s + '</span>' +
+              '<div class="flex-1 h-1.5 rounded-full bg-[#eef1f5] overflow-hidden"><div class="h-full rounded-full" style="width:' + pct + '%;background:#2F33B8"></div></div>' +
+              '<span class="w-8 text-[10px] text-gray-400 tabular-nums">' + pct + '%</span></div>';
+          }
+          distBox.innerHTML = '<div class="space-y-1 pt-0.5">' + dh + '</div>';
+        }
+      }
       const me = DrexCloud.auth().currentUser;
       const mine = me && all[me.uid];
       if (mine && typeof mine.stars === 'number') {
         _profileRatingStars = Math.max(1, Math.min(5, mine.stars));
+        _profileRatingExists = true;
         if (commentBox) commentBox.value = String(mine.comment || '').slice(0, PROFILE_RATING_MAX_COMMENT);
         if (counterBox) counterBox.textContent = (commentBox ? commentBox.value.length : 0) + '/' + PROFILE_RATING_MAX_COMMENT;
         _setI18nTextNode(saveBtn, 'Actualizar calificación');
@@ -35423,9 +35470,11 @@ function renderAccountsList(accounts) {
           const comment = r.comment
             ? '<p data-user-content class="text-[13px] text-gray-600 leading-snug break-words">' + escapeHtml(r.comment) + '</p>'
             : '';
+          const ago = _ratingTimeAgo(r.updatedAt || r.at);
           return '<div class="py-2 border-b border-[#f1f4f8] last:border-0">' +
             '<div class="flex items-center gap-1.5"><span class="text-[13px] font-bold text-black truncate">' + name + '</span>' +
-            '<span class="flex gap-px shrink-0">' + _profileRatingStarsRow(r.stars, 'text-[11px]') + '</span></div>' + comment + '</div>';
+            '<span class="flex gap-px shrink-0">' + _profileRatingStarsRow(r.stars, 'text-[11px]') + '</span>' +
+            (ago ? '<span class="ml-auto text-[10px] text-gray-400 shrink-0">' + escapeHtml(ago) + '</span>' : '') + '</div>' + comment + '</div>';
         }).join('');
       }
     }).catch(() => {
@@ -35441,6 +35490,8 @@ function renderAccountsList(accounts) {
     if (!target || !me || !me.uid) return;
     if (target === me.uid) { showToast(appT('No puedes calificarte a ti mismo')); return; }
     if (!_profileRatingStars || _profileRatingStars < 1) { showToast(appT('Selecciona al menos 1 estrella')); return; }
+    const saveBtnEl = document.getElementById('author-rating-save');
+    if (saveBtnEl) { saveBtnEl.disabled = true; saveBtnEl.innerHTML = '<span class="inline-block w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin align-[-2px]"></span>'; }
     const commentEl = document.getElementById('author-rating-comment');
     const comment = String(commentEl ? commentEl.value : '').trim().slice(0, PROFILE_RATING_MAX_COMMENT);
     let raterName = appT3('User', 'Usuario', '用户');
@@ -35471,13 +35522,48 @@ function renderAccountsList(accounts) {
       _loadProfileRatings(target);
     } catch (e) {
       showToast(appT('No se pudo guardar tu calificación. Revisa tu conexión.'));
+      if (saveBtnEl) { saveBtnEl.disabled = false; _setI18nTextNode(saveBtnEl, _profileRatingExists ? 'Actualizar calificación' : 'Guardar calificación'); }
     }
+  }
+
+  function _initRatingsSheetSwipe() {
+    const sheet = document.getElementById('author-ratings-sheet');
+    const panel = sheet && sheet.firstElementChild;
+    const handle = sheet && sheet.querySelector('[data-sheet-handle]');
+    if (!sheet || !panel || !handle || handle.dataset.swipeInit) return;
+    handle.dataset.swipeInit = '1';
+    let startY = 0, dy = 0, dragging = false;
+    handle.addEventListener('touchstart', e => {
+      dragging = true; startY = e.touches[0].clientY; dy = 0;
+      panel.style.transition = 'none';
+    }, { passive: true });
+    handle.addEventListener('touchmove', e => {
+      if (!dragging) return;
+      dy = Math.max(0, e.touches[0].clientY - startY);
+      panel.style.transform = 'translateY(' + dy + 'px)';
+    }, { passive: true });
+    handle.addEventListener('touchend', () => {
+      if (!dragging) return;
+      dragging = false;
+      panel.style.transition = 'transform .22s ease-out';
+      if (dy > 90) {
+        closeAuthorRatings();
+        setTimeout(() => { panel.style.transform = ''; panel.style.transition = ''; }, 260);
+      } else {
+        panel.style.transform = 'translateY(0)';
+        setTimeout(() => { panel.style.transition = ''; panel.style.transform = ''; }, 240);
+      }
+    });
   }
 
   function openAuthorRatings() {
     if (!_profileRatingsTarget) return;
     const sheet = document.getElementById('author-ratings-sheet');
-    if (sheet) sheet.classList.remove('hidden');
+    if (!sheet) return;
+    const panel = sheet.firstElementChild;
+    if (panel) { panel.style.transform = ''; panel.style.transition = ''; }
+    sheet.classList.remove('hidden');
+    _initRatingsSheetSwipe();
   }
 
   function closeAuthorRatings() {
