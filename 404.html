@@ -4470,9 +4470,9 @@ document.addEventListener("DOMContentLoaded", function() {
       <div id="drex-sort-bar">
         <div id="douyin-feed-tabs" class="max-w-[680px] mx-auto px-4">
           <div class="flex items-center gap-2 py-2.5">
-            <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="foryou" onclick="switchFeedTab('foryou')" aria-label="Ver publicaciones para ti"><span>Para ti</span></button>
-            <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="following" onclick="switchFeedTab('following')" aria-label="Ver publicaciones de seguidos"><span>Siguiendo</span></button>
-            <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="popular" onclick="switchFeedTab('popular')" aria-label="Ver publicaciones populares"><span>Populares</span></button>
+            <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="foryou" onclick="switchFeedTab('foryou')" aria-label="Descubrir publicaciones"><span>Descubre</span></button>
+            <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="following" onclick="switchFeedTab('following')" aria-label="Ver publicaciones de mi gente"><span>Mi gente</span></button>
+            <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="popular" onclick="switchFeedTab('popular')" aria-label="Ver destacados"><span>Destacados</span></button>
           </div>
           <div id="feed-tab-indicator"></div>
         </div>
@@ -11713,10 +11713,10 @@ function saveNote() {
       loadNotes(false, 'foryou');
     } else if (tab === 'popular') {
       loadNotes(false, 'popular');
-      showToast(appT('Mostrando publicaciones populares'));
+      showToast(appT('Mostrando destacados'));
     } else if (tab === 'following') {
       loadNotes(false, 'following');
-      showToast(appT('Mostrando publicaciones de seguidos'));
+      showToast(appT('Mostrando tu gente'));
     } else if (tab === 'trending') {
       // Tendencias: igual que popular por ahora (ordenado por score reciente)
       loadNotes(false, 'popular');
@@ -21472,6 +21472,11 @@ function saveNote() {
 "contáctanos":"contact us",
 "Silenciar mensajes":"Mute messages",
 "Para ti":"For you",
+"Descubre":"Discover",
+"Mi gente":"My people",
+"Destacados":"Top posts",
+"Mostrando destacados":"Showing top posts",
+"Mostrando tu gente":"Showing your people",
 "Populares":"Popular",
 "publicaciones":"posts",
 "canción":"song",
@@ -23422,6 +23427,11 @@ function saveNote() {
 "contáctanos":"联系我们",
 "Silenciar mensajes":"静音消息",
 "Para ti":"为你推荐",
+"Descubre":"发现",
+"Mi gente":"我的圈子",
+"Destacados":"精选",
+"Mostrando destacados":"正在显示精选",
+"Mostrando tu gente":"正在显示我的圈子",
 "Populares":"热门",
 "publicaciones":"帖子",
 "canción":"首歌曲",
@@ -26216,11 +26226,19 @@ function saveNote() {
       if (regData.usernameClaimed && regData.usernameClaimed !== username) {
         updates['usernames/' + regData.usernameClaimed] = null;
       }
-      const firstClaim = !regData.usernameClaimed;
+      // FIX FOTO+NUMEROS (2026-09-20): en modo completar-registro (cuentas
+      // existentes con perfil degradado o incompleto) NUNCA se inicializa:
+      // ese bloque borraba profileImage, bio y los contadores
+      // (followersCount/followingCount) de usuarios que ya tenian datos.
+      // Solo los registros verdaderamente nuevos inicializan su perfil.
+      const firstClaim = !regData.usernameClaimed && !regData.socialCompletion;
 
-      // userCount se incrementa una sola vez por registro (no al reintentar).
+      // userCount se incrementa una sola vez por registro NUEVO (no al
+      // reintentar, y NUNCA en completar-registro: esas cuentas ya existen;
+      // contarlas inflaria la metrica y el sorteo de verificado de los
+      // primeros 100 podria quitarles o regalarles el verificado).
       let isVerified = regData.grantedVerified === true;
-      if (!regData.userCounted) {
+      if (!regData.userCounted && !regData.socialCompletion) {
         const cRes = await DrexCloud.database().ref('userCount').transaction(c => (c || 0) + 1);
         isVerified = (cRes.snapshot.val() || 0) <= 100;
         regData.userCounted = true;
@@ -26724,6 +26742,8 @@ function saveNote() {
       const _chatRecordReady = ensureChatUserRecord(user)
         .then(() => maybeRepairCorruptedUsername(user))
         .then(restoredName => { if (restoredName) refreshProfileUsernameUI(restoredName); })
+        .then(() => maybeRepairLostProfileImage(user))
+        .then(() => maybeRepairFollowCounts(user.uid))
         .catch(() => {});
       setupNotificationsBadge(user.uid);
       setupChatUnreadBadge(user.uid);
@@ -33668,6 +33688,84 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         cur.profileDegraded = true;
         return cur;
       }).then(() => ref.update({ lastChatLoginAt: Date.now() }));
+    }).catch(() => {});
+  }
+
+  // REPARACION DE FOTOS DE PERFIL PERDIDAS (2026-09-20).
+  // Causa: el flujo completar-registro borraba `profileImage` (y los
+  // contadores) de cuentas existentes al reclamar username. Ese borrado ya
+  // no ocurre, pero las fotos perdidas antes siguen vacias en la BD.
+  // Corre en cada login: si el perfil no tiene foto, la restaura desde (1)
+  // la foto del proveedor (Google/Facebook) o (2) la foto de autor mas
+  // reciente de sus publicaciones. Solo escribe cuando la foto esta vacia:
+  // jamas pisa una foto real.
+  function _isRealPhotoUrl(u) {
+    if (!u || typeof u !== 'string') return false;
+    const s = u.trim();
+    if (!s) return false;
+    if (s.indexOf('data:image/svg+xml') === 0) return false; // avatar por defecto
+    return true;
+  }
+  function maybeRepairLostProfileImage(user) {
+    if (!user || !user.uid) return Promise.resolve(null);
+    const ref = DrexCloud.database().ref('users/' + user.uid);
+    return ref.once('value').then(snapshot => {
+      const data = snapshot.val() || {};
+      if (_isRealPhotoUrl(data.profileImage)) return null; // tiene foto: nada que hacer
+      const providerPhoto = (user.photoURL && String(user.photoURL).trim()) || '';
+      if (_isRealPhotoUrl(providerPhoto)) {
+        return ref.transaction(cur => {
+          cur = cur || {};
+          if (_isRealPhotoUrl(cur.profileImage)) return; // ya la recuperaron
+          cur.profileImage = providerPhoto;
+          return cur;
+        }).then(res => (res && res.committed) ? providerPhoto : null);
+      }
+      return DrexCloud.database().ref('communityNotes').orderByChild('authorId')
+        .equalTo(user.uid).limitToLast(15).once('value').then(postsSnap => {
+          let best = null, bestTs = -1;
+          postsSnap.forEach(child => {
+            const p = child.val() || {};
+            if (_isRealPhotoUrl(p.authorImage) && (Number(p.timestamp) || 0) >= bestTs) {
+              bestTs = Number(p.timestamp) || 0;
+              best = p.authorImage;
+            }
+          });
+          if (!best) return null;
+          return ref.transaction(cur => {
+            cur = cur || {};
+            if (_isRealPhotoUrl(cur.profileImage)) return;
+            cur.profileImage = best;
+            return cur;
+          }).then(res => (res && res.committed) ? best : null);
+        });
+    }).catch(() => null);
+  }
+
+  // REPARACION DE CONTEOS DE SEGUIDORES (2026-09-20).
+  // El mismo borrado ponia followersCount/followingCount en 0. Los edges
+  // followers/<uid>/... y following/<uid>/... son la fuente de verdad, asi
+  // que se recuentan y se corrigen. Limitado a 1 vez cada 24 h por usuario.
+  function maybeRepairFollowCounts(uid) {
+    if (!uid) return Promise.resolve();
+    const ref = DrexCloud.database().ref('users/' + uid);
+    return ref.once('value').then(snapshot => {
+      const data = snapshot.val() || {};
+      const last = Number(data.followCountsRepairedAt) || 0;
+      if (Date.now() - last < 24 * 3600 * 1000) return;
+      const db = DrexCloud.database();
+      return Promise.all([
+        db.ref('followers/' + uid).once('value'),
+        db.ref('following/' + uid).once('value')
+      ]).then(snaps => {
+        let fCount = 0, gCount = 0;
+        try { snaps[0].forEach(() => { fCount++; }); } catch (_) {}
+        try { snaps[1].forEach(() => { gCount++; }); } catch (_) {}
+        const updates = { followCountsRepairedAt: Date.now() };
+        if (Number(data.followersCount || 0) !== fCount) updates.followersCount = fCount;
+        if (Number(data.followingCount || 0) !== gCount) updates.followingCount = gCount;
+        return ref.update(updates);
+      });
     }).catch(() => {});
   }
 
