@@ -434,8 +434,17 @@
   // por N, independiente del tamaño total de la tabla.
   function readLeavesBounded(pk, limitN) {
     var want = Math.ceil(limitN * 1.5) + 10;
+    // communityNotes: los posts viejos guardan las fotos como data URLs inline
+    // (hasta ~300KB c/u, 20 por post). Descargarlas en cada polling (cada 3 s)
+    // saturaba la red del telefono y el feed tardaba una eternidad en cargar.
+    // La fase 2 EXCLUYE esos bytes con FilterExpression; la fase 1 anota solo
+    // las KEYS de imagen por post (pocos bytes) y las fotos se cargan bajo
+    // demanda al pintar la tarjeta (ver hydrateLegacyNoteImages en index.html).
+    var lightImages = (pk === 'communityNotes');
+    var wantScan = lightImages ? want + 3 : want;
     var prefixes = [];
     var seen = {};
+    var imgKeysByPrefix = {}; // pfx -> ['imageUrls/0', ...] o ['imageUrl']
     function phase1(lastKey) {
       var p = {
         TableName: AWS_CONFIG.tableName,
@@ -453,16 +462,34 @@
           var sk = (arr[i].sk === undefined || arr[i].sk === null) ? '' : String(arr[i].sk);
           var first = sk.split('/')[0];
           if (first && !seen[first]) { seen[first] = 1; prefixes.push(first); }
-          if (prefixes.length >= want) break;
+          if (lightImages && first) {
+            var rel = sk.slice(first.length + 1);
+            if (rel === 'imageUrl' || rel === 'imageUrls' || rel.indexOf('imageUrls/') === 0) {
+              (imgKeysByPrefix[first] = imgKeysByPrefix[first] || []).push(rel);
+            }
+          }
+          if (prefixes.length >= wantScan) break;
         }
-        if (prefixes.length < want && res.LastEvaluatedKey) return phase1(res.LastEvaluatedKey);
+        if (prefixes.length < wantScan && res.LastEvaluatedKey) return phase1(res.LastEvaluatedKey);
+        // Con +3 de margen, las keys de imagen de los primeros `want` prefijos
+        // estan completas: en orden descendente de sk, todas las hojas de un
+        // prefijo vienen antes que la primera hoja del siguiente.
+        if (lightImages) prefixes = prefixes.slice(0, want);
         return prefixes;
       });
     }
     function phase2() {
       if (!prefixes.length) return Promise.resolve([]);
       return Promise.all(prefixes.map(function (pfx) {
-        return readLeaves([pk, pfx]);
+        var pr = lightImages
+          ? readLeavesLight([pk, pfx]).catch(function () { return readLeaves([pk, pfx]); })
+          : readLeaves([pk, pfx]);
+        return pr.then(function (leaves) {
+          if (lightImages && imgKeysByPrefix[pfx] && imgKeysByPrefix[pfx].length) {
+            leaves.push({ segs: [pk, pfx, '_imgKeys'], value: sortImgKeys(imgKeysByPrefix[pfx]) });
+          }
+          return leaves;
+        });
       })).then(function (lists) {
         var out = [];
         lists.forEach(function (ll) { out = out.concat(ll); });
@@ -470,6 +497,41 @@
       });
     }
     return phase1(null).then(phase2);
+  }
+
+  // Orden natural para las keys de imagen: imageUrls/0, imageUrls/1, ...,
+  // imageUrls/10 (no lexicografico, que pondria el 10 antes que el 2).
+  function sortImgKeys(keys) {
+    return keys.slice().sort(function (a, b) {
+      var na = parseInt(String(a).split('/')[1], 10);
+      var nb = parseInt(String(b).split('/')[1], 10);
+      var aNum = !isNaN(na), bNum = !isNaN(nb);
+      if (aNum && bNum && na !== nb) return na - nb;
+      return a < b ? -1 : (a > b ? 1 : 0);
+    });
+  }
+
+  // Variante liviana de readLeaves para el feed: lee las hojas bajo el prefijo
+  // EXCLUYENDO los bytes de imagen inline (imageUrl*), que son los que volvian
+  // lento cada polling. Las fotos se cargan bajo demanda al ver el post.
+  function readLeavesLight(segs) {
+    var pk = segs[0];
+    var skExact = segs.slice(1).join('/');
+    return queryAll({
+      TableName: AWS_CONFIG.tableName,
+      KeyConditionExpression: 'pk = :pk AND begins_with(sk, :pfx)',
+      FilterExpression: 'NOT contains(sk, :img)',
+      ExpressionAttributeValues: { ':pk': pk, ':pfx': skExact + '/', ':img': '/imageUrl' }
+    }).then(function (items) {
+      return items.map(function (it) {
+        var rawSk = (it.sk === undefined || it.sk === null) ? '' : String(it.sk);
+        if (rawSk === EMPTY_SK) rawSk = ''; // centinela de ruta de un segmento
+        var skSegs = rawSk.split('/').filter(function (s) { return s !== ''; });
+        var v;
+        try { v = JSON.parse(it.v); } catch (e) { v = null; }
+        return { segs: [pk].concat(skSegs), value: v };
+      });
+    });
   }
 
   function readLeaves(segs, query) {

@@ -11196,6 +11196,48 @@ function saveNote() {
     }).catch(() => {});
   }
 
+  // Hidrata las fotos de un post VIEJO (data URLs inline en communityNotes,
+  // excluidas del polling por su peso). Lee solo las hojas de imagen de ese
+  // post, las pinta y las migra al formato nuevo (`noteImages/<noteId>`) en
+  // segundo plano para que el proximo polling ya no las necesite.
+  const _legacyImgLoading = {};
+  function hydrateLegacyNoteImages(noteId, imgKeys) {
+    if (!noteId || !imgKeys || !imgKeys.length || typeof renderNoteImagesHtml !== 'function') return;
+    if (_legacyImgLoading[noteId]) return;
+    _legacyImgLoading[noteId] = true;
+    const jobs = imgKeys.map(relKey =>
+      DrexCloud.database().ref('communityNotes/' + noteId + '/' + relKey).once('value')
+        .then(snap => snap.val())
+        .catch(() => null)
+    );
+    Promise.all(jobs).then(vals => {
+      // vals[i] corresponde a imgKeys[i]
+      const pairs = [];
+      imgKeys.forEach((k, i) => {
+        const u = vals[i];
+        if (typeof u === 'string' && u.indexOf('data:image/') === 0) pairs.push([k, u]);
+      });
+      const urls = pairs.map(p => p[1]);
+      document.querySelectorAll('[data-note-imgs]').forEach(el => {
+        if (el.getAttribute('data-note-imgs') !== noteId) return;
+        el.removeAttribute('data-note-imgs');
+        if (!urls.length) { el.style.display = 'none'; return; }
+        const tmp = document.createElement('div');
+        tmp.innerHTML = renderNoteImagesHtml(urls, noteId);
+        if (tmp.firstElementChild) el.replaceWith(tmp.firstElementChild);
+        else el.style.display = 'none';
+      });
+      if (pairs.length) {
+        const legacyNote = {};
+        pairs.forEach(([k, u]) => {
+          if (k === 'imageUrl') legacyNote.imageUrl = u;
+          else (legacyNote.imageUrls = legacyNote.imageUrls || []).push(u);
+        });
+        setTimeout(() => { try { migrateNoteImagesToSeparate(noteId, legacyNote).catch(() => {}); } catch (_) {} }, 0);
+      }
+    }).catch(() => { delete _legacyImgLoading[noteId]; });
+  }
+
   // Muda las fotos inline (data URLs) de un post viejo a `noteImages/<noteId>`
   // y deja la nota liviana (`imageCount`, sin bytes). Idempotente: si dos
   // clientes lo intentan a la vez, escriben el mismo contenido.
@@ -11796,7 +11838,17 @@ function saveNote() {
     // de imageUrls. Se pinta aquí (contain, sin recorte) y no en un bloque
     // aparte, para que no salga duplicado ni recortado.
     if (note.gifUrl && !images.includes(note.gifUrl)) images.push(note.gifUrl);
-    if (!images.length) return '';
+    if (!images.length) {
+      // Post viejo cuyas fotos NO viajaron en el polling (excluidas por peso
+      // en readLeavesBounded): se cargan bajo demanda con las keys que anoto
+      // la fase 1 y luego se migran al formato nuevo en segundo plano.
+      const imgKeys = Array.isArray(note._imgKeys) ? note._imgKeys.filter(k => typeof k === 'string' && k) : [];
+      if (imgKeys.length && noteId) {
+        setTimeout(() => { try { hydrateLegacyNoteImages(noteId, imgKeys); } catch (_) {} }, 0);
+        return `<div class="mb-3" data-note-imgs="${escapeHtml(noteId)}"><div class="drex-imgs-shimmer"></div></div>`;
+      }
+      return '';
+    }
     // Migración en segundo plano: los posts viejos con data URLs inline se
     // mudan a `noteImages/<noteId>` para que el polling deje de descargarlos.
     // Solo notas reales (el reintento de render pasa un objeto sintético).
@@ -34466,6 +34518,10 @@ function performRealTimeSearch() {
         // Formato nuevo: las fotos viven en noteImages/<postId>; la primera
         // se resuelve al pintar la retícula (renderPhotosList).
         photos.push({ postId: child.key, url: null, imageCount: Number(note.imageCount), authorName: note.authorName || 'Usuario', authorId });
+      } else if (matches && Array.isArray(note._imgKeys) && note._imgKeys.length) {
+        // Post viejo: las fotos no viajaron en el poll; la primera se resuelve
+        // bajo demanda al pintar la retícula (renderPhotosList).
+        photos.push({ postId: child.key, url: null, imgKeys: note._imgKeys.filter(k => typeof k === 'string' && k), authorName: note.authorName || 'Usuario', authorId });
       }
 
     });
@@ -34560,6 +34616,13 @@ function renderPhotosList(photos) {
       btn.innerHTML = `<div class="drex-imgs-shimmer w-full h-full" style="border-radius:0;min-height:0"></div>`;
       loadNoteImages(photo.postId).then(imgs => {
         if (imgs.length && btn.isConnected) btn.innerHTML = `<img src="${getSafeMediaUrl(imgs[0])}" class="w-full h-full object-cover" alt="Foto de post">`;
+      }).catch(() => {});
+    } else if (photo.postId && Array.isArray(photo.imgKeys) && photo.imgKeys.length) {
+      // Post viejo: primera foto bajo demanda desde su hoja inline.
+      btn.innerHTML = `<div class="drex-imgs-shimmer w-full h-full" style="border-radius:0;min-height:0"></div>`;
+      DrexCloud.database().ref('communityNotes/' + photo.postId + '/' + photo.imgKeys[0]).once('value').then(snap => {
+        const u = snap.val();
+        if (typeof u === 'string' && u.indexOf('data:image/') === 0 && btn.isConnected) btn.innerHTML = `<img src="${getSafeMediaUrl(u)}" class="w-full h-full object-cover" alt="Foto de post">`;
       }).catch(() => {});
     }
     btn.onclick = () => { closeSearch(); openCommentsView(photo.postId); };
@@ -44732,7 +44795,7 @@ async function drexReportOpen(type, data) {
       target.targetAuthorName = await _drexReportFetchUserName(authorId);
       const txt = String(note.content || note.text || '');
       target.targetPreview = txt.slice(0, 140);
-      target.hasMedia = !!(note.imageUrl || note.image || note.imageCount || (note.media && note.media.length));
+      target.hasMedia = !!(note.imageUrl || note.image || note.imageCount || (Array.isArray(note._imgKeys) && note._imgKeys.length) || (note.media && note.media.length));
     } else if (type === 'comment') {
       const authorId = data.commentAuthorId || '';
       if (authorId && authorId === user.uid) { if (typeof showMiniToast === 'function') showMiniToast('No puedes reportar tu propio comentario.'); return; }
