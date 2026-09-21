@@ -14,15 +14,23 @@
  *   v = JSON { hashes: [sha256hex...], generatedAt: <ms>, usedCount: <n> }
  * NUNCA se guardan los códigos en texto plano.
  *
- * Contrato para el Ingeniero #1 (hook en el challenge de 2FA):
- *   Cuando el input del challenge NO sea un código TOTP de 6
- *   dígitos, llamar:
- *     DrexRecoveryCodes.redeem(rawCode)
- *       .then(function (res) { /* res.ok === true -> pass() *\/ })
- *       .catch(function (err) {
- *         // err.code: 'invalid-code' | 'locked' | 'no-user'
- *         // err.userMessage: texto listo para mostrar (i18n)
- *       });
+ * Canje durante el DESAFÍO DE LOGIN (2026-09-20): OBSOLETO aquí.
+ * El canje se movió al SERVIDOR (Lambda drex-username-resolve, paso R):
+ * el desafío de 2FA llama a ch.onCode(código) y drex-cloud.js decide la
+ * ruta (TOTP de 6 dígitos -> paso 2; forma de respaldo -> paso R con
+ * {username, password, recoveryCode}). redeem() se conserva únicamente
+ * para contextos con sesión ya autenticada; ningún desafío de login lo
+ * llama (currentUser es null antes de completar el MFA, así que ahí
+ * siempre rechazaba con 'no-user').
+ *
+ * NOTA totpFunctionUrl / backupRegenerate: esos símbolos viven en
+ * drex-cloud.js (módulo DrexCloud.totp) y apuntan a la DrexTotpFunction
+ * (API /totp/* con Bearer JWT), un backend distinto aún no desplegado
+ * ("Lambda inexistente: no se usa"). NO se configuran con la Function
+ * URL de drex-username-resolve: no tiene rutas /totp/* y rompería el
+ * respaldo legacy de verifyCurrentTotp. La UI de regeneración de aquí
+ * funciona sin ese backend (verificación TOTP del servidor si está
+ * configurado, si no, secreto legacy).
  * ============================================================ */
 (function () {
   'use strict';
@@ -219,7 +227,11 @@
 
   /* ---------------- redención ---------------- */
 
-  // Canjea un código de respaldo durante el challenge de 2FA.
+  // OBSOLETO para el desafío de login (2026-09-20): el canje durante el
+  // login ocurre en el SERVIDOR (Lambda drex-username-resolve, paso R)
+  // porque currentUser es null antes de completar el MFA y esta función
+  // siempre rechazaba con 'no-user'. Se conserva únicamente para
+  // contextos con sesión ya autenticada.
   // Resuelve { ok:true, ... } o rechaza con err.code 'invalid-code'|'locked'|'no-user'.
   function redeem(code) {
     var user = currentUser();

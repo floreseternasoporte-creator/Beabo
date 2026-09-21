@@ -2050,6 +2050,87 @@
     });
   }
 
+  // Detecta forma de código de respaldo con el MISMO criterio que la UI
+  // del desafío (#twofactor-challenge-view): 6+ caracteres alfanuméricos o
+  // guiones con al menos una letra o guion. Los códigos TOTP son
+  // exactamente 6 dígitos, así que nunca colisionan.
+  function looksLikeRecoveryCode(code) {
+    var s = String(code == null ? '' : code).trim();
+    return /^[A-Za-z0-9-]{6,}$/.test(s) && /[^0-9]/.test(s);
+  }
+
+  // Paso R del login con username (2026-09-20): canje de código de respaldo
+  // en el SERVIDOR (contrato con el backend drex-username-resolve).
+  // POST {username, password, recoveryCode} a la misma Function URL.
+  // El password viaja solo por HTTPS al backend propio y no se guarda más
+  // allá del intento (vive en el closure del login en curso).
+  // Respuestas:
+  //   200 {tokens: {..., recoveryUsed: true}} -> canje OK; el servidor
+  //       desactivó el 2FA. Construir la sesión como en el paso 2.
+  //   200 {tokens} sin recoveryUsed -> el 2FA no estaba activo; login
+  //       normal, no se quemó ningún código.
+  //   401 -> genérico reintentable (username/contraseña/código mal, código
+  //       ya usado o formato inválido). La UI no distingue "inválido" de
+  //       "bloqueado".
+  //   429 -> demasiados intentos (incluye el bloqueo temporal de canje:
+  //       5 intentos/15 min por username).
+  //   403 -> igual que el paso 1 (unconfirmed / reset_required).
+  function usernameRecoveryStep2(loginUrl, username, password, recoveryCode) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (_) {} }, 20000);
+    function clearTimer() { try { clearTimeout(timer); } catch (_) {} }
+    var fetchOpts = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: String(username || ''),
+        password: String(password || ''),
+        recoveryCode: String(recoveryCode || '')
+      })
+    };
+    if (ctrl) fetchOpts.signal = ctrl.signal;
+    return fetch(loginUrl, fetchOpts).then(function (resp) {
+      clearTimer();
+      if (resp.status === 429) {
+        var e429 = new Error('Demasiados intentos. Inténtalo más tarde.');
+        e429.code = 'auth/too-many-requests';
+        throw e429;
+      }
+      if (resp.status === 403) {
+        return resp.json().then(function (data) {
+          var code = (data && data.error) || '';
+          if (code === 'unconfirmed') {
+            // Sin correo conocido (el servidor no lo revela): la app pide
+            // al usuario iniciar sesión con su correo para verificarla.
+            var need = new Error('Tu cuenta aún no está verificada. Inicia sesión con tu correo electrónico para verificarla.');
+            need.code = 'auth/needs-confirmation';
+            throw need;
+          }
+          var rst = new Error('Debes restablecer tu contraseña.');
+          rst.code = 'auth/password-reset-required';
+          throw rst;
+        });
+      }
+      return resp.json().then(function (data) {
+        if (!resp.ok) {
+          var e = new Error('Código de respaldo inválido. Revisa e inténtalo de nuevo.');
+          e.code = 'auth/invalid-recovery-code';
+          e.retryable = (resp.status === 401);
+          throw e;
+        }
+        return data;
+      });
+    }).catch(function (err) {
+      clearTimer();
+      if (err && err.name === 'AbortError') {
+        var te = new Error('Tiempo de espera agotado. Revisa tu conexión.');
+        te.code = 'auth/network-request-failed';
+        throw te;
+      }
+      throw err;
+    });
+  }
+
   // Construye la sesión de Cognito a partir de los tokens que devuelve la
   // Lambda (paso 1 directo o paso 2 tras el desafío MFA). Idéntico en ambos
   // casos: el username de Cognito es el correo y se lee del claim `email` del
@@ -2081,8 +2162,16 @@
     cognitoUser.setSignInUserSession(session);
     // [HISTORIAL-ACCESOS] marca el método ANTES de establecer la sesión.
     drexPendingLoginMethod = 'username';
+    // recoveryUsed: el servidor canjeó un código de respaldo (paso R) y
+    // desactivó el 2FA. Se expone para que la UI muestre el aviso y se
+    // refresca la bandera local para que el Centro de seguridad no diga
+    // que la verificación sigue activa. No se asume que queden códigos.
+    var recoveryUsed = !!(((data && data.tokens) || {}).recoveryUsed);
     return establishSession(cognitoUser, session).then(function (user) {
-      return { user: user };
+      if (recoveryUsed && user && user.uid) {
+        try { new Ref(splitPath('users/' + user.uid + '/twoFactorEnabled')).set(false).catch(function () {}); } catch (_) {}
+      }
+      return { user: user, recoveryUsed: recoveryUsed };
     });
   }
 
@@ -2164,6 +2253,15 @@
           beginMfaChallenge({
             kind: 'username',
             submitCode: function (code) {
+              // Canje de respaldo en el servidor (paso R): si el texto tiene
+              // forma de código de respaldo se envía {username, password,
+              // recoveryCode}; el password está en el closure y no se guarda
+              // más allá del intento. Si no, es el TOTP de 6 dígitos (paso 2).
+              if (looksLikeRecoveryCode(code)) {
+                return usernameRecoveryStep2(url, username, password, code).then(function (data2) {
+                  return buildSessionFromLambdaTokens(data2);
+                });
+              }
               return usernameMfaStep2(url, username, data.session, code).then(function (data2) {
                 return buildSessionFromLambdaTokens(data2);
               });

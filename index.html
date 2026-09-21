@@ -39472,21 +39472,41 @@ function submitTwoFactorChallenge() {
   }
 
   // Aspecto de código de respaldo (alfanumérico con guiones, 6+ caracteres
-  // y al menos una letra o guion): hook del Ing. #2. Si su módulo no existe,
-  // "Próximamente" sin romper el TOTP.
+  // y al menos una letra o guion): canje en el SERVIDOR a través del objeto
+  // del desafío (kind 'username' -> Lambda paso R). El canje 100% cliente
+  // (DrexRecoveryCodes.redeem) está obsoleto aquí: currentUser es null
+  // antes de completar el MFA, así que siempre rechazaba con 'no-user'.
+  // La detección de forma también vive en drex-cloud.js (submitCode) con
+  // este mismo criterio.
   if (/^[A-Za-z0-9-]{6,}$/.test(raw) && /[^0-9]/.test(raw)) {
-    if (window.DrexRecoveryCodes && typeof window.DrexRecoveryCodes.redeem === 'function') {
+    if (ch && typeof ch.onCode === 'function') {
       input.disabled = true; if (btn) btn.disabled = true;
-      window.DrexRecoveryCodes.redeem(raw).then(
+      if (errBox) errBox.classList.add('hidden');
+      ch.onCode(raw).then(
         res => {
           input.disabled = false; if (btn) btn.disabled = false;
-          // Contrato con Ing. #2: redeem(code) -> Promise<{ok, message?}>.
-          // Si ok:true durante un desafío de login, su módulo completa el
-          // inicio de sesión por su propio mecanismo de servidor y oculta
-          // la vista al terminar.
-          if (!res || !res.ok) showErr((res && res.message) || appT('Código de respaldo inválido.'));
+          // onCode resuelve {user, recoveryUsed?} (drex-cloud.js). Si se usó
+          // un código de respaldo, el servidor desactivó el 2FA: se oculta
+          // la vista del desafío y se muestra el aviso.
+          if (res && res.recoveryUsed) {
+            window.__drexMfaChallenge = null;
+            document.getElementById('twofactor-challenge-view')?.classList.add('hidden');
+            try { if (typeof recordSecurityEvent === 'function') recordSecurityEvent('Código de respaldo usado', 'Se usó un código de respaldo para iniciar sesión y se desactivó la verificación en dos pasos.'); } catch (_) {}
+            try { if (typeof showSecurityAlertIfEnabled === 'function') showSecurityAlertIfEnabled('securityChangeAlerts', appT('Se usó un código de respaldo. La verificación en dos pasos quedó desactivada.')); } catch (_) {}
+            try { if (typeof showMiniToast === 'function') showMiniToast(appT('Se usó un código de respaldo. La verificación en dos pasos quedó desactivada.')); } catch (_) {}
+          }
+          // Éxito sin recoveryUsed (el 2FA no estaba activo): el login
+          // completó por la vía normal y la navegación oculta la vista.
         },
-        () => { input.disabled = false; if (btn) btn.disabled = false; showErr(appT('No se pudo validar el código. Inténtalo de nuevo.')); }
+        err => {
+          input.disabled = false; if (btn) btn.disabled = false;
+          if (err && err.code === 'auth/mfa-expired') {
+            showErr(err.message);
+            signOutFromTwoFactorChallenge();
+            return;
+          }
+          showErr((err && err.message) || appT('Código de respaldo inválido.'));
+        }
       );
     } else {
       showErr(appT('Próximamente: los códigos de respaldo aún no están disponibles.'));
