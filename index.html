@@ -43590,7 +43590,11 @@ async function joinFiesta(id, asSpeaker) {
     const prof = await fiestaMyProfile();
     await mRef.child(user.uid).set({ name: prof.name, photo: prof.photo, role, muted: false, joinedAt: Date.now() });
     // WEPLAY2: aviso de entrada en el chat de la sala.
-    DrexCloud.database().ref('fiestas/' + id + '/chat').push({ sys: true, text: (prof.name || '') + ' ' + appT('se unió a la sala'), ts: Date.now() }).catch(() => {});
+    // FIX 2026-09-21: push() devuelve un Ref, NO una promesa (no tiene .catch);
+    // encadenar .catch lanzaba TypeError y el catch de joinFiesta lo convertía
+    // en "Couldn't join the party". push() ya traga el error de escritura
+    // internamente (console.warn), así que el aviso es fire-and-forget real.
+    DrexCloud.database().ref('fiestas/' + id + '/chat').push({ sys: true, text: (prof.name || '') + ' ' + appT('se unió a la sala'), ts: Date.now() });
     mRef.child(user.uid).onDisconnect().remove();
 
     document.getElementById('fiesta-view')?.classList.add('hidden');
@@ -44235,7 +44239,9 @@ async function leaveFiesta(silent) {
   if (!silent && id && uid) {
     try {
       const _ln = (fiestaMembers && fiestaMembers[uid] && fiestaMembers[uid].name) || '';
-      if (_ln) DrexCloud.database().ref('fiestas/' + id + '/chat').push({ sys: true, text: _ln + ' ' + appT('salió de la sala'), ts: Date.now() }).catch(() => {});
+      // FIX 2026-09-21: push() devuelve un Ref sin .catch (ver nota en joinFiesta);
+      // encadenarlo lanzaba TypeError y rompía la salida de la fiesta.
+      if (_ln) DrexCloud.database().ref('fiestas/' + id + '/chat').push({ sys: true, text: _ln + ' ' + appT('salió de la sala'), ts: Date.now() });
     } catch (_) {}
   }
   if (id && uid) {
