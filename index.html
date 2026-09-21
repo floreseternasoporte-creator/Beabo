@@ -43499,20 +43499,31 @@ async function createFiesta() {
     fiestaStatus: 'live',
     fiestaMax: maxSpeakers
   };
-  const _fiestaNoteRef = DrexCloud.database().ref('communityNotes').push(note);
-  await _fiestaNoteRef._writePromise;
+  // FIX 2026-09-21: pushAsync() rechaza si el aviso no se guarda de verdad.
+  // Con push()+_writePromise el error se tragaba en silencio y la app mostraba
+  // "Fiesta publicada en el feed" aunque la tarjeta nunca existía (nadie la
+  // encontraba). Si el aviso falla, la sala SÍ existe: se entra igual a la
+  // fiesta y se dice la verdad en el aviso.
+  let _fiestaNoteRef = null, _noteErr = '';
+  try {
+    _fiestaNoteRef = await DrexCloud.database().ref('communityNotes').pushAsync(note);
+  } catch (e) {
+    try { _noteErr = String((e && (e.message || e.code)) || '').slice(0, 120); } catch (_) {}
+  }
   // Avisar a los seguidores de la fiesta nueva (respeta su toggle "Fiestas").
   try {
     if (typeof notifyFollowersOfNewContent === 'function') {
       notifyFollowersOfNewContent(user.uid, prof.name, 'fiesta',
         prof.name + ' inició una fiesta: ' + title.slice(0, 60),
-        { actionType: 'post', actionId: _fiestaNoteRef.key, actorId: user.uid, fiestaId: ref.key });
+        { actionType: 'post', actionId: _fiestaNoteRef ? _fiestaNoteRef.key : null, actorId: user.uid, fiestaId: ref.key });
     }
   } catch (_) {}
   document.getElementById('fiesta-title').value = '';
   document.getElementById('fiesta-desc').value = '';
   closeFiestaSection();
-  showMiniToast(appT('Fiesta publicada en el feed.'));
+  if (_fiestaNoteRef) showMiniToast(appT('Fiesta publicada en el feed.'));
+  else showMiniToast('Entraste a tu fiesta (el aviso del feed no se publicó' + (_noteErr ? ': [' + _noteErr + '])' : ').'));
+  // El creador entra DIRECTO a su sala, como antes.
   joinFiesta(ref.key, true);
 }
 
@@ -43556,10 +43567,14 @@ async function joinFiestaFromFeed(fiestaId) {
 
 async function joinFiesta(id, asSpeaker) {
   if (fiestaCur) { showMiniToast(appT('Ya estás en una fiesta.')); return; }
-  if (fiestaJoining) return; // FIX 2026-09-21: un segundo toque no inicia otra entrada en paralelo
-  fiestaJoining = true;
+  // FIX 2026-09-21: la comprobación de sesión va ANTES de activar el bloqueo.
+  // Antes, salir por falta de sesión ocurría con fiestaJoining=true y fuera del
+  // try/finally, así que el bloqueo quedaba activo para siempre y todos los
+  // intentos posteriores de entrar morían en silencio sin ningún mensaje.
   const user = DrexCloud.auth().currentUser;
   if (!user) { showMiniToast(appT('Inicia sesión para unirte.')); return; }
+  if (fiestaJoining) return; // FIX 2026-09-21: un segundo toque no inicia otra entrada en paralelo
+  fiestaJoining = true;
   const mRef = DrexCloud.database().ref('fiestaMembers/' + id);
   let opened = false;
   try {
@@ -43885,7 +43900,10 @@ async function fiestaSendChat() {
   inp.value = '';
   try {
     const prof = await fiestaMyProfile();
-    await DrexCloud.database().ref('fiestas/' + fiestaCur.id + '/chat').push({ uid: fiestaMyUid, name: prof.name || '', photo: prof.photo || '', text: text.slice(0, 200), ts: Date.now() });
+    // FIX 2026-09-21: push() devuelve un Ref, no una promesa; el await anterior
+    // no esperaba la escritura y el mensaje se perdía si salías rápido de la
+    // sala. pushAsync() sí espera la escritura real.
+    await DrexCloud.database().ref('fiestas/' + fiestaCur.id + '/chat').pushAsync({ uid: fiestaMyUid, name: prof.name || '', photo: prof.photo || '', text: text.slice(0, 200), ts: Date.now() });
   } catch (_) {}
 }
 
