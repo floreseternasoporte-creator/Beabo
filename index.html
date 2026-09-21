@@ -30587,6 +30587,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       document.getElementById('profile-image').src = cloudUrl;
       const desktopImg = document.getElementById('profile-image-desktop');
       if (desktopImg) desktopImg.src = cloudUrl;
+      // Propagar la foto nueva a los posts viejos que quedaron con placeholder.
+      backfillAuthorImageOnPosts(user.uid, cloudUrl).catch(() => {});
 
       saveBtn.disabled = false;
       saveBtn.innerHTML = 'Guardar';
@@ -34340,6 +34342,32 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     }).catch(() => null);
   }
 
+  // BACKFILL DE FOTO DE AUTOR EN POSTS (2026-09-21).
+  // Causa: los posts publicados mientras `profileImage` estaba vacio quedaron
+  // con `authorImage` = placeholder SVG para siempre (el fallback al publicar).
+  // Cuando el usuario sube una foto de perfil real, se propaga a sus posts
+  // recientes para que el avatar se vea bien en el feed, su perfil y los
+  // permalinks. Solo toca posts cuyo authorImage NO sea ya una foto real:
+  // jamas pisa fotos reales. Corre en segundo plano, no bloquea el guardado.
+  function backfillAuthorImageOnPosts(uid, photoUrl) {
+    if (!uid || !_isRealPhotoUrl(photoUrl)) return Promise.resolve(0);
+    const db = DrexCloud.database();
+    return db.ref('communityNotes').orderByChild('authorId').equalTo(uid).limitToLast(30).once('value')
+      .then(snap => {
+        const updates = {};
+        let n = 0;
+        snap.forEach(child => {
+          const p = child.val() || {};
+          if (!_isRealPhotoUrl(p.authorImage) && child.key) {
+            updates['communityNotes/' + child.key + '/authorImage'] = photoUrl;
+            n++;
+          }
+        });
+        if (!n) return 0;
+        return db.ref().update(updates).then(() => n);
+      }).catch(() => 0);
+  }
+
   // REPARACION DE CONTEOS DE SEGUIDORES (2026-09-20).
   // El mismo borrado ponia followersCount/followingCount en 0. Los edges
   // followers/<uid>/... y following/<uid>/... son la fuente de verdad, asi
@@ -35581,6 +35609,8 @@ function renderAccountsList(accounts) {
       if (profileImg) { profileImg.src = cloudUrl; profileImg.style.opacity = '1'; }
       const desktopImg = document.getElementById('profile-image-desktop');
       if (desktopImg) desktopImg.src = cloudUrl;
+      // Propagar la foto nueva a los posts viejos que quedaron con placeholder.
+      backfillAuthorImageOnPosts(user.uid, cloudUrl).catch(() => {});
     } catch (error) {
       console.error("Error al subir la imagen de perfil:", error);
       if (profileImg) profileImg.style.opacity = '1';
