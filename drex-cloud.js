@@ -310,7 +310,12 @@
       var dc = getDocClient();
       var items = [];
       function loop(lastKey) {
-        var p = Object.assign({}, params, { ConsistentRead: true });
+        // PERF 2026-09-21: lecturas de consistencia eventual (default de
+        // DynamoDB). El ConsistentRead:true anterior duplicaba el costo de
+        // RCU y subía la latencia p99 en cada polling; la app ya está
+        // diseñada para eventualidad (eco local + polling 3s) y
+        // transaction() reintenta ante lecturas obsoletas.
+        var p = Object.assign({ ConsistentRead: false }, params);
         if (lastKey) p.ExclusiveStartKey = lastKey;
         return dbTimeout(dc.query(p).promise(), 'db-query-timeout').then(function (res) {
           items = items.concat(res.Items || []);
@@ -570,10 +575,11 @@
           ExpressionAttributeValues: { ':pk': pk, ':pfx': skExact + '/' }
         }),
         withCredRetry(function () {
+          // PERF 2026-09-21: consistencia eventual también aquí (ver nota en queryAll).
           return dbTimeout(getDocClient().get({
             TableName: AWS_CONFIG.tableName,
             Key: { pk: pk, sk: skExact },
-            ConsistentRead: true
+            ConsistentRead: false
           }).promise(), 'db-get-timeout').then(function (res) { return res.Item ? [res.Item] : []; });
         })
       ];
@@ -700,6 +706,7 @@
 
   var listeners = [];
   var pollTimer = null;
+  var fastTimer = null; // ciclo de 800ms solo para señalización WebRTC (fiestas)
 
   function pathsOverlap(a, b) {
     var n = Math.min(a.length, b.length);
@@ -709,6 +716,19 @@
 
   function readRefValue(ref) {
     var q = ref._query || {};
+    // Índice notesByAuthor: las consultas "posts de un autor" descargaban
+    // communityNotes COMPLETO (todos los posts de todos) y filtraban en el
+    // cliente, lo que dejaba los perfiles colgados en "Cargando..." y
+    // saturaba la red en cada polling de 3 s. Ahora se lee el índice
+    // pequeño del autor y solo se descargan sus posts.
+    if (ref._segs.length === 1 && ref._segs[0] === 'communityNotes' &&
+        q.orderBy === 'authorId' && q.equalTo !== undefined &&
+        q.startAt === undefined && q.endAt === undefined) {
+      return readNotesByAuthor(q.equalTo).then(function (val) {
+        val = applyQuery(val, ref._query);
+        return new DataSnapshot(val, 'communityNotes');
+      });
+    }
     // Índice musicByAuthor: las consultas "pistas de un autor" descargaban
     // musicTracks COMPLETO (todas las canciones de todos) y filtraban en el
     // cliente, lo que dejaba "Tu música" en "Cargando..." eterno. Ahora se
@@ -726,6 +746,45 @@
       if (ref._query) val = applyQuery(val, ref._query);
       var key = ref._segs.length ? ref._segs[ref._segs.length - 1] : null;
       return new DataSnapshot(val, key);
+    });
+  }
+
+  // Lee los posts de un autor vía el índice notesByAuthor/<uid>/<postId>.
+  // El índice se escribe al crear cada post (ver index.html); para posts
+  // anteriores al índice se hace UN backfill (escaneo legacy) y se marca
+  // _indexed para no repetirlo. Sin índice ni marca y sin posts => {}
+  // (applyQuery -> null).
+  function readNotesByAuthor(uid) {
+    uid = String(uid);
+    return readLeaves(['notesByAuthor', uid]).then(function (leaves) {
+      var idx = unflatten(leaves, ['notesByAuthor', uid]) || {};
+      var ids = Object.keys(idx).filter(function (k) { return k.charAt(0) !== '_'; });
+      if (!ids.length && !idx._indexed) {
+        return readLeaves(['communityNotes']).then(function (allLeaves) {
+          var all = unflatten(allLeaves, ['communityNotes']) || {};
+          var reqs = [];
+          var obj = {};
+          Object.keys(all).forEach(function (pid) {
+            var p = all[pid];
+            if (p && typeof p === 'object' && String(p.authorId) === uid) {
+              obj[pid] = p;
+              reqs.push(putLeaf('notesByAuthor', uid + '/' + pid, { t: p.timestamp || 0 }));
+            }
+          });
+          reqs.push(putLeaf('notesByAuthor', uid + '/_indexed', true));
+          batchWriteAll(reqs).catch(function () {});
+          return obj;
+        });
+      }
+      return Promise.all(ids.map(function (pid) {
+        return readLeaves(['communityNotes', pid]).then(function (ll) {
+          return [pid, unflatten(ll, ['communityNotes', pid]) || {}];
+        });
+      })).then(function (pairs) {
+        var obj = {};
+        pairs.forEach(function (pr) { obj[pr[0]] = pr[1]; });
+        return obj;
+      });
     });
   }
 
@@ -912,17 +971,29 @@
     });
   }
 
+  // PERF 2026-09-21: solo la bandeja de señales WebRTC (fiestaSignals/...)
+  // necesita el ciclo rápido de 800ms (offers/answers/ICE). El resto de la
+  // fiesta (miembros, reacciones, chat, estado, juego) va al ciclo normal
+  // de 3s. Antes TODO iba a 800ms: ~5 lecturas DynamoDB cada 800ms por
+  // cliente (~6-7/s), que con varios usuarios en sala saturaba la tabla.
+  function isSignalingListener(l) {
+    return !!(l && l.ref && l.ref._segs && l.ref._segs[0] === 'fiestaSignals');
+  }
+
   // Un ciclo de polling agrupa los oyentes por (ruta + consulta): el feed
   // tenía 3 oyentes (child_added/changed/removed) sobre la misma consulta y
   // cada uno descargaba communityNotes COMPLETO cada 3 s. Ahora los 3
   // comparten el mismo snapshot: ~3x menos lecturas al servidor.
-  function pollListenersGrouped() {
+  function pollListenersGrouped(fastOnly) {
     // En segundo plano no se sondea (ahorra batería y datos en el iPhone);
     // al volver a primer plano el siguiente ciclo (<=3 s) refresca. La
     // señalización de fiestas (polling rápido de WebRTC) sigue activa.
-    if (!fastPolling && typeof document !== 'undefined' && document.hidden) return;
+    if (typeof document !== 'undefined' && document.hidden) {
+      if (!fastOnly || !fastPolling) return;
+    }
     var groups = {};
     listeners.slice().forEach(function (l) {
+      if (fastPolling && (!!fastOnly !== isSignalingListener(l))) return;
       var k = pollGroupKey(l);
       (groups[k] = groups[k] || []).push(l);
     });
@@ -930,23 +1001,23 @@
   }
 
   var fastPolling = false;
+  var NORMAL_POLL_MS = 3000, FAST_POLL_MS = 800;
   function ensurePolling() {
-    if (!pollTimer && listeners.length) {
-      pollTimer = setInterval(pollListenersGrouped, fastPolling ? 800 : 3000);
-    }
+    if (!listeners.length) return;
+    if (!pollTimer) pollTimer = setInterval(function () { pollListenersGrouped(false); }, NORMAL_POLL_MS);
+    if (fastPolling && !fastTimer) fastTimer = setInterval(function () { pollListenersGrouped(true); }, FAST_POLL_MS);
   }
   function maybeStopPolling() {
     if (pollTimer && !listeners.length) { clearInterval(pollTimer); pollTimer = null; }
+    if (fastTimer && !listeners.length) { clearInterval(fastTimer); fastTimer = null; }
   }
   // Activa/desactiva polling rápido (800ms) para señalización WebRTC en fiestas.
   // El polling normal de 3s es muy lento para offers/answers/ICE candidates.
   function setFastPolling(enabled) {
     fastPolling = !!enabled;
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      ensurePolling();
-    }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (fastTimer) { clearInterval(fastTimer); fastTimer = null; }
+    ensurePolling();
   }
 
   // Avisa a los oyentes afectados por una escritura propia (eco local inmediato)
