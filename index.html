@@ -39154,7 +39154,13 @@ function renderTwoFactorStatus() {
         `;
     }
   }).catch(() => {
-    body.innerHTML = `<p class="text-sm text-[#7b878f]">${appT('No se pudo cargar esta sección. Inténtalo de nuevo.')}</p>`;
+    // Red de seguridad: mfa.status() ya no debería rechazar nunca, pero si
+    // algo inesperado falla, el error dice qué pasó y ofrece reintentar
+    // (en vez del genérico sin salida).
+    body.innerHTML = `<div class="text-center py-6">
+      <p class="text-sm text-[#7b878f] mb-4">${appT('No se pudo comprobar el estado de la verificación en dos pasos. Revisa tu conexión.')}</p>
+      <button onclick="renderTwoFactorStatus()" class="px-5 py-2.5 rounded-full bg-[#24324c] text-white text-sm font-bold active:opacity-80 transition">${appT('Reintentar')}</button>
+    </div>`;
   });
 }
 
@@ -39656,12 +39662,15 @@ function renderLoginHistory(logins) {
 async function loadSecurityCenter() {
   const user = DrexCloud.auth().currentUser;
   if (!user) return;
-  await registerDrexSecuritySession(user);
+  try { await registerDrexSecuritySession(user); } catch (_) {}
+  // Cada lectura es independiente: si una falla (red), las demás secciones
+  // igual se dibujan en vez de dejar todo el centro en "Comprobando…".
+  const emptySnap = { val: () => null };
   const [userSnap, securitySnap, loginsSnap] = await Promise.all([
-    DrexCloud.database().ref('users/' + user.uid).once('value'),
-    DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}`).once('value'),
+    DrexCloud.database().ref('users/' + user.uid).once('value').catch(() => emptySnap),
+    DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}`).once('value').catch(() => emptySnap),
     // [HISTORIAL-ACCESOS] Ing. #3: historial de accesos de este usuario.
-    DrexCloud.database().ref(`users/${user.uid}/logins`).once('value').catch(() => ({ val: () => null }))
+    DrexCloud.database().ref(`users/${user.uid}/logins`).once('value').catch(() => emptySnap)
   ]);
   const userData = userSnap.val() || {};
   const security = securitySnap.val() || {};

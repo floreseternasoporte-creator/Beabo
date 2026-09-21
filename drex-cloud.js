@@ -2793,46 +2793,84 @@
     });
   }
 
-  // Estado del MFA para la UI (Ing. #1, 2026-09-20): pregunta a Cognito las
-  // opciones MFA del usuario (getUserData -> MFAOptions) y usa la bandera
-  // local users/<uid>/twoFactorEnabled como respaldo (se escribe al activar
-  // y se borra al desactivar). Nunca rechaza: si no se puede determinar,
-  // resuelve {enabled:false} para no romper la vista de seguridad.
+  // Detecta si el TOTP está habilitado en el payload de Cognito getUserData
+  // (API GetUser). OJO: MFAOptions solo describe los medios SMS
+  // ({DeliveryMedium:'SMS',...}); el TOTP aparece en UserMFASettingList
+  // (['SOFTWARE_TOKEN_MFA']) y en PreferredMfaSetting. Función pura (sin
+  // DOM ni red) para que sea comprobable en pruebas.
+  function mfaDetectTotpFromUserData(data) {
+    try {
+      var d = data || {};
+      var list = d.UserMFASettingList || d.userMFASettingList || [];
+      if (list && typeof list.some === 'function') {
+        var on = list.some(function (s) {
+          return String(s || '').toUpperCase().indexOf('SOFTWARE_TOKEN') === 0;
+        });
+        if (on) return true;
+      }
+      var pref = String(d.PreferredMfaSetting || d.preferredMfaSetting || '').toUpperCase();
+      if (pref.indexOf('SOFTWARE_TOKEN') === 0) return true;
+      var opts = d.MFAOptions || d.mfaOptions || [];
+      if (opts && typeof opts.some === 'function') {
+        return opts.some(function (o) {
+          var m = String((o && (o.DeliveryMedium || o.deliveryMedium)) || '').toUpperCase();
+          return m === 'SOFTWARE_TOKEN_MFA' || m === 'SOFTWARE_TOKEN';
+        });
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  // Lee la bandera local users/<uid>/twoFactorEnabled (la app la escribe al
+  // activar y la borra al desactivar). Resuelve boolean; nunca rechaza.
+  function mfaReadLocalFlag() {
+    return Promise.resolve().then(function () {
+      var au = null;
+      try { au = getAuth().currentUser; } catch (_) {}
+      var uid = au && au.uid;
+      if (!uid) return false;
+      return new Ref(splitPath('users/' + uid + '/twoFactorEnabled')).once('value')
+        .then(function (snap) { return !!(snap && typeof snap.val === 'function' && snap.val()); })
+        .catch(function () { return false; });
+    }).catch(function () { return false; });
+  }
+
+  // Estado del MFA para la UI (Ing. #1, 2026-09-20; corrección raíz 2026-09-20):
+  // la versión anterior llamaba `currentCognitoUser()` como si fuera función,
+  // pero es la VARIABLE que guarda el CognitoUser -> TypeError "not a function"
+  // -> la promesa rechazaba y la vista pintaba "No se pudo cargar esta sección".
+  // Ahora: pregunta a Cognito (getUserData, revisando UserMFASettingList /
+  // PreferredMfaSetting, no solo MFAOptions) y usa la bandera local como
+  // respaldo. GARANTÍA: nunca rechaza; si no se puede determinar, resuelve
+  // {enabled:false} para no romper la vista de seguridad.
   function mfaStatus() {
     return Promise.resolve().then(function () {
-      var u = currentCognitoUser();
-      if (!u || typeof u.getUserData !== 'function') return { enabled: false };
-      return new Promise(function (resolve) {
-        var settled = false;
-        function done(v) { if (!settled) { settled = true; resolve(v); } }
-        var watchdog = setTimeout(function () { done({ enabled: false }); }, 8000);
-        function clearW() { try { clearTimeout(watchdog); } catch (_) {} }
-        try {
-          u.getUserData(function (err, data) {
-            if (err || !data) { clearW(); done({ enabled: false }); return; }
-            var opts = data.MFAOptions || data.mfaOptions || [];
-            var totpOn = false;
-            try {
-              totpOn = opts.some(function (o) {
-                var d = String((o && (o.DeliveryMedium || o.deliveryMedium)) || '').toUpperCase();
-                return d === 'SOFTWARE_TOKEN_MFA' || d === 'SOFTWARE_TOKEN';
-              });
-            } catch (_) { totpOn = false; }
-            if (totpOn) { clearW(); done({ enabled: true }); return; }
-            // Respaldo: bandera local del perfil.
-            try {
-              var au = null;
-              try { au = getAuth().currentUser; } catch (_) {}
-              var uid = au && au.uid;
-              if (!uid) { clearW(); done({ enabled: false }); return; }
-              new Ref(splitPath('users/' + uid + '/twoFactorEnabled')).once('value').then(function (snap) {
-                clearW(); done({ enabled: !!snap.val() });
-              }).catch(function () { clearW(); done({ enabled: false }); });
-            } catch (_) { clearW(); done({ enabled: false }); }
-          });
-        } catch (e) { clearW(); done({ enabled: false }); }
+      var u = mfaCurrentCognitoUser();
+      var askCognito;
+      if (!u || typeof u.getUserData !== 'function') {
+        askCognito = Promise.resolve(null);
+      } else {
+        askCognito = new Promise(function (resolve) {
+          var settled = false;
+          function done(v) { if (!settled) { settled = true; resolve(v); } }
+          var watchdog = setTimeout(function () { done(null); }, 8000);
+          function clearW() { try { clearTimeout(watchdog); } catch (_) {} }
+          try {
+            u.getUserData(function (err, data) {
+              clearW();
+              if (err || !data) { done(null); return; }
+              done(mfaDetectTotpFromUserData(data));
+            });
+          } catch (e) { clearW(); done(null); }
+        });
+      }
+      return askCognito.then(function (cognitoOn) {
+        if (cognitoOn === true) return { enabled: true };
+        // Cognito no lo confirma (o no hay usuario Cognito en memoria):
+        // respaldo con la bandera local que la app mantiene al activar/desactivar.
+        return mfaReadLocalFlag().then(function (flag) { return { enabled: !!flag }; });
       });
-    });
+    }).catch(function () { return { enabled: false }; });
   }
 
   var mfaNs = {
@@ -3540,6 +3578,8 @@
         Ref: Ref,
         TIMESTAMP_SENTINEL: TIMESTAMP_SENTINEL,
         AWS_CONFIG: AWS_CONFIG,
+        // [SEGURIDAD-2FA] detector TOTP puro (sin red) para pruebas (fix 2026-09-20)
+        mfaDetectTotp: mfaDetectTotpFromUserData,
         // [DISPOSITIVOS] internos para pruebas en node
         drexDevices: {
           summarizeUA: drexSummarizeDeviceUA,
