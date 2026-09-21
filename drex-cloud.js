@@ -257,6 +257,456 @@
     return _docClient;
   }
 
+// ==FIABILIDAD-INICIO==
+// =====================================================================
+// MÓDULO DE FIABILIDAD (2026-09-21).
+// Endurece el camino navegador -> DynamoDB para escala de millones de
+// usuarios. Tres piezas:
+//   1) classifyDbError + withCredRetry con backoff: distingue errores
+//      reintentables (red, throttling, timeouts) de los que no lo son
+//      (4xx, validación, lógica de app) y solo reintenta los primeros.
+//   2) CircuitBreaker por subsistema (db/auth/storage): tras 5 fallos
+//      consecutivos del subsistema db, las operaciones fallan rápido
+//      (~1 ms) en vez de colgar 25 s cada una; se recupera con un probe.
+//   3) Colector de errores del cliente: captura window.onerror y
+//      promesas no capturadas, deduplica, muestrea y envía en lotes con
+//      sendBeacon al endpoint de ingesta (o a un respaldo local si no
+//      hay endpoint configurado).
+// Este módulo NO toca el motor de polling, los índices secundarios, el
+// ruteo de readRefValue, la cascada de arranque ni la consistencia
+// eventual: solo añade código y reescribe withCredRetry (única función
+// existente modificada). La API pública vive en DrexCloud.reliability.
+// =====================================================================
+
+// Clasifica un error de la capa de datos:
+//   'credential'   -> hay que refrescar la sesión Cognito (una sola vez)
+//   'retryable'    -> red / throttling / timeout: reintentar con backoff
+//   'nonretryable' -> 4xx, validación, lógica de app: fallar de inmediato
+// TransactionCanceledException es 'nonretryable' a propósito: ya la maneja
+// transaction() con su propio reintento (hasta 6 intentos); aquí no se
+// duplica ese reintento.
+function classifyDbError(err) {
+  if (isCredError(err)) return 'credential';
+  var code = String((err && err.code) || '');
+  var msg = String((err && err.message) || '');
+  if (code === 'TransactionCanceledException') return 'nonretryable';
+  // Bandera interna de "sin red": no es fallo del backend, no reintentar.
+  if (code === 'DrexNetworkDown' || msg.indexOf('DrexNetworkDown') >= 0) return 'nonretryable';
+  // Timeouts propios: dbTimeout/promiseTimeout generan estos mensajes.
+  if (/^db-(.+-)?timeout$/.test(msg) || msg === 'aws-creds-timeout') return 'retryable';
+  // Errores de red del AWS SDK.
+  if (/^(NetworkingError|TimeoutError|RequestAbortedError)$/.test(code)) return 'retryable';
+  // Throttling de DynamoDB: la respuesta correcta es esperar y reintentar.
+  if (/Throttl|ProvisionedThroughputExceeded|RequestLimitExceeded|TooManyRequestsException/i.test(code)) return 'retryable';
+  if (/^5\d\d$/.test(code)) return 'retryable';
+  var status = err && err.statusCode;
+  if (typeof status === 'string' && /^\d+$/.test(status)) status = parseInt(status, 10);
+  if (typeof status === 'number') {
+    if (status >= 500 && status < 600) return 'retryable';
+    if (status >= 400 && status < 500) return 'nonretryable';
+  }
+  // Mensajes típicos de red (fetch/XHR del SDK en el navegador).
+  if (/timeout|timed out|network|failed to fetch|econnreset|econnaborted|enetunreach|socket hang up|eai_again/i.test(msg)) return 'retryable';
+  // Por defecto: 4xx, validación y errores de app -> no reintentar.
+  return 'nonretryable';
+}
+
+// Reintento con backoff exponencial + jitter (decorrelación simple):
+//   intento 0 -> 150-300 ms, intento 1 -> 300-600 ms, intento 2 -> 600-1200 ms.
+// Total esperado ~1.6 s (máx 2.1 s): absorbe picos de throttling sin
+// castigar la UX. Tope de 8 s por si algún día se amplía el nº de reintentos.
+var REL_MAX_RETRIES = 3;
+var REL_BACKOFF_BASE_MS = 300;
+var REL_BACKOFF_CAP_MS = 8000;
+function relBackoffMs(attempt) {
+  var exp = Math.min(REL_BACKOFF_CAP_MS, REL_BACKOFF_BASE_MS * Math.pow(2, Math.max(0, attempt || 0)));
+  return Math.floor(exp / 2 + Math.random() * (exp / 2));
+}
+function relSleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+// Disyuntor por subsistema. Estados: closed -> open -> half-open -> closed.
+//   closed:    opera normal; N fallos consecutivos abren el circuito.
+//   open:      fail-fast durante openMs (las ops se rechazan en ~1 ms).
+//   half-open: pasado openMs se permite UN probe; si tiene éxito el
+//              circuito se cierra, si falla se reabre otros openMs.
+// Emite onHealthChange({subsystem, from, to, at}) en cada transición.
+// Es una factoría (no una clase con 'new'): devuelve el objeto API.
+function CircuitBreaker(name, opts) {
+  opts = opts || {};
+  var threshold = opts.threshold || 5; // fallos consecutivos para abrir
+  var openMs = opts.openMs || 30000;   // tiempo abierto antes del probe
+  var state = 'closed';
+  var consecutive = 0;
+  var openedAt = 0;
+  var probeInFlight = false;
+  var listeners = [];
+  function now() { return Date.now(); }
+  function emit(from, to) {
+    var ev = { subsystem: name, from: from, to: to, at: now() };
+    for (var i = 0; i < listeners.length; i++) {
+      try { listeners[i](ev); } catch (e) { /* un observador roto no debe romper el breaker */ }
+    }
+  }
+  function setState(to) {
+    if (state === to) return;
+    var from = state;
+    state = to;
+    emit(from, to);
+  }
+  function maybeHalfOpen() {
+    if (state === 'open' && now() - openedAt >= openMs) setState('half-open');
+  }
+  return {
+    // Estado actual ('closed' | 'open' | 'half-open'). Hace la transición
+    // perezosa open -> half-open cuando ya pasó openMs.
+    state: function () { maybeHalfOpen(); return state; },
+    // true si el circuito está abierto (fail-fast). ~1 ms, sin red.
+    isOpen: function () { maybeHalfOpen(); return state === 'open'; },
+    // Reserva el probe único del estado half-open (o una verificación
+    // manual en closed). Devuelve false si ya hay un probe en vuelo.
+    allowProbe: function () {
+      maybeHalfOpen();
+      if (state === 'open') return false;
+      if (probeInFlight) return false;
+      probeInFlight = true;
+      return true;
+    },
+    // Libera un probe reservado sin contar éxito ni fallo (p. ej. el probe
+    // terminó con un error nonretryable: la BD sí respondió, no cuenta
+    // como caída).
+    releaseProbe: function () { probeInFlight = false; },
+    recordSuccess: function () {
+      consecutive = 0;
+      probeInFlight = false;
+      setState('closed'); // resetea el conteo y cierra desde half-open
+    },
+    recordFailure: function (/* err */) {
+      probeInFlight = false;
+      if (state === 'half-open') { openedAt = now(); setState('open'); return; } // reapertura
+      if (state === 'open') return;
+      consecutive++;
+      if (consecutive >= threshold) { openedAt = now(); setState('open'); }
+    },
+    onHealthChange: function (cb) {
+      if (typeof cb !== 'function') return function () {};
+      listeners.push(cb);
+      return function () {
+        var i = listeners.indexOf(cb);
+        if (i >= 0) listeners.splice(i, 1);
+      };
+    },
+    // Solo para diagnóstico y pruebas.
+    stats: function () { return { state: state, consecutiveFailures: consecutive, threshold: threshold, openMs: openMs }; }
+  };
+}
+
+// Registro de disyuntores por subsistema. Solo 'db' está cableado (lo usa
+// withCredRetry); 'auth' y 'storage' quedan listos para futuros frentes
+// sin tocar este módulo.
+var circuitRegistry = {
+  db: CircuitBreaker('db', { threshold: 5, openMs: 30000 }),
+  auth: CircuitBreaker('auth', { threshold: 5, openMs: 30000 }),
+  storage: CircuitBreaker('storage', { threshold: 5, openMs: 30000 })
+};
+
+// Contadores de los caminos silenciosos ("best-effort") que recorre este
+// módulo sin cambiar la conducta visible: Rel.note('tag') cuenta y
+// silentStats() los expone para diagnóstico. No se toca ningún
+// .catch(()=>{}) existente: esto cubre solo los caminos nuevos de aquí.
+var _relSilentCounts = {};
+function relNote(tag) {
+  try {
+    tag = String(tag == null ? 'unknown' : tag);
+    _relSilentCounts[tag] = (_relSilentCounts[tag] || 0) + 1;
+  } catch (e) { /* contar nunca debe lanzar */ }
+}
+function silentStats() {
+  var out = {};
+  try {
+    for (var k in _relSilentCounts) {
+      if (Object.prototype.hasOwnProperty.call(_relSilentCounts, k)) out[k] = _relSilentCounts[k];
+    }
+  } catch (e) {}
+  return out;
+}
+
+// ---------------------------------------------------------------------
+// Colector de errores del cliente.
+// Captura window.onerror y unhandledrejection, deduplica por firma
+// (ventana de 10 min), muestrea al 10 % y envía en lotes de <=10 con
+// navigator.sendBeacon al endpoint de ingesta
+// (window.DREX_ERROR_INGEST_URL; vacío = solo respaldo local).
+// Respaldo en localStorage ('drex_errbuf_v1', máx 50 eventos) con drenaje
+// piggyback en cada envío: lo respaldado viaja primero.
+// Nunca lanza, nunca se auto-reporta y filtra el 'Script error.' opaco
+// de scripts de terceros.
+// ---------------------------------------------------------------------
+var DREX_ERRBUF_KEY = 'drex_errbuf_v1';
+var DREX_ERRBUF_MAX = 50;
+var REL_DEDUP_WINDOW_MS = 10 * 60 * 1000;
+var REL_BATCH_MAX = 10;
+var REL_QUEUE_MAX = 200;
+var REL_STACK_CAP = 2048;
+
+var _relErrQueue = [];    // lote en memoria pendiente de envío
+var _relErrSeen = {};     // firma -> timestamp (dedup 10 min)
+var _relReporting = false; // guardia de reentrancia: no auto-reportarse
+var _relFlushing = false;   // guardia propia del envío (ver relFlushErrors)
+var _relFlushTimer = null;
+
+// Firma de deduplicación: mensaje + primer frame útil del stack.
+function relErrSignature(msg, stack) {
+  var first = '';
+  try {
+    var lines = String(stack || '').split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].replace(/^\s+/, '');
+      if (!t) continue;
+      if (t.indexOf('relReportError') >= 0) continue; // frames propios
+      first = t.slice(0, 160);
+      break;
+    }
+  } catch (e) {}
+  return String(msg || '').slice(0, 200) + '|' + first;
+}
+
+function relReadErrBuf() {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    var raw = localStorage.getItem(DREX_ERRBUF_KEY);
+    if (!raw) return [];
+    var arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { relNote('errbuf-read-fail'); return []; }
+}
+function relWriteErrBuf(arr) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(DREX_ERRBUF_KEY, JSON.stringify(arr.slice(-DREX_ERRBUF_MAX)));
+  } catch (e) { relNote('errbuf-write-fail'); }
+}
+function relIngestUrl() {
+  try { return String(global.DREX_ERROR_INGEST_URL || ''); }
+  catch (e) { return ''; }
+}
+function relBeaconSend(url, batch) {
+  try {
+    var nav = (typeof navigator !== 'undefined') ? navigator : null;
+    if (!nav || typeof nav.sendBeacon !== 'function') return false;
+    var payload = JSON.stringify({ app: 'drex-web', v: 1, batch: batch });
+    var body = payload;
+    try { body = new Blob([payload], { type: 'application/json' }); } catch (e) { /* sendBeacon acepta string */ }
+    return !!nav.sendBeacon(url, body);
+  } catch (e) {
+    relNote('beacon-throw');
+    return false;
+  }
+}
+
+// Envía lo pendiente (respaldo local primero = drenaje piggyback).
+// Nunca lanza. Tiene su propia guardia (_relFlushing) porque también se
+// llama desde dentro de relReportError, donde _relReporting está activa.
+function relFlushErrors() {
+  if (_relFlushing) return;
+  try {
+    _relFlushing = true;
+    var pending = relReadErrBuf().concat(_relErrQueue);
+    _relErrQueue = [];
+    if (!pending.length) return;
+    var url = relIngestUrl();
+    if (!url) {
+      // Sin endpoint configurado: solo respaldo local (máx 50).
+      relWriteErrBuf(pending);
+      relNote('ingest-unset');
+      return;
+    }
+    var batch = pending.slice(0, REL_BATCH_MAX);
+    var rest = pending.slice(REL_BATCH_MAX);
+    if (relBeaconSend(url, batch)) {
+      relNote('beacon-ok');
+      relWriteErrBuf(rest); // lo que no cupo espera el próximo envío
+    } else {
+      // El beacon falló (o no existe): todo vuelve al respaldo local.
+      relWriteErrBuf(pending);
+      relNote('beacon-fail');
+    }
+  } catch (e) {
+    relNote('flush-fail');
+  } finally {
+    _relFlushing = false;
+  }
+}
+
+// Punto de entrada del colector. Acepta Error, objeto o string. Nunca lanza.
+function relReportError(input, kind) {
+  if (_relReporting) return; // no auto-reportarse
+  try {
+    _relReporting = true;
+    var msg = '', stack = '', url = '', line = null, col = null;
+    try {
+      var inp = input;
+      if (inp instanceof Error) {
+        msg = String(inp.message || inp.name || 'Error');
+        stack = String(inp.stack || '');
+      } else if (inp && typeof inp === 'object') {
+        msg = String(inp.message || inp.msg || '');
+        if (!msg) { try { msg = JSON.stringify(inp).slice(0, 300); } catch (e) { msg = 'object-error'; } }
+        stack = String(inp.stack || '');
+        line = (inp.lineno != null ? inp.lineno : (inp.line != null ? inp.line : null));
+        col = (inp.colno != null ? inp.colno : (inp.col != null ? inp.col : null));
+        url = String(inp.filename || inp.url || '');
+      } else {
+        msg = String(inp);
+      }
+    } catch (e) { msg = 'unserializable-error'; }
+    msg = msg.slice(0, 300);
+    // Filtra el error opaco de scripts de terceros (sin información útil).
+    if (msg === 'Script error.' || msg === 'Script error') { relNote('opaque-filtered'); return; }
+    stack = stack.slice(0, REL_STACK_CAP);
+    if (!url) { try { url = String((global.location && global.location.href) || '').split('#')[0]; } catch (e) {} }
+    url = String(url).slice(0, 300);
+    var sig = relErrSignature(msg, stack);
+    var nowMs = Date.now();
+    // Deduplicación por firma (ventana de 10 min).
+    var seenAt = _relErrSeen[sig];
+    if (seenAt && nowMs - seenAt < REL_DEDUP_WINDOW_MS) { relNote('dedup-drop'); return; }
+    _relErrSeen[sig] = nowMs;
+    // Poda del mapa de firmas (no crece sin cota).
+    try {
+      var keys = Object.keys(_relErrSeen);
+      if (keys.length > 500) {
+        for (var i = 0; i < keys.length; i++) {
+          if (nowMs - _relErrSeen[keys[i]] >= REL_DEDUP_WINDOW_MS) delete _relErrSeen[keys[i]];
+        }
+      }
+    } catch (e) {}
+    // Muestreo: por defecto solo el 10 % viaja a la red.
+    if (Math.random() >= Rel.sampleRate) { relNote('sampled-out'); return; }
+    var ev = { v: 1, ts: nowMs, kind: kind || 'error', msg: msg, stack: stack, url: url, line: line, col: col, sig: sig };
+    if (_relErrQueue.length >= REL_QUEUE_MAX) { _relErrQueue.shift(); relNote('queue-overflow'); }
+    _relErrQueue.push(ev);
+    // Lote lleno -> se envía solo (<=10 por beacon).
+    if (_relErrQueue.length >= REL_BATCH_MAX) relFlushErrors();
+  } catch (e) {
+    relNote('report-fail');
+  } finally {
+    _relReporting = false;
+  }
+}
+
+// Instala los hooks globales y drena la cola temprana que index.html llena
+// (window.__drexErrQ) antes de que cargue este bundle. Nunca lanza.
+function relInstallCollector() {
+  try {
+    var q = global.__drexErrQ;
+    if (Array.isArray(q) && q.length) {
+      global.__drexErrQ = [];
+      for (var i = 0; i < q.length; i++) {
+        try { relReportError(q[i], 'early'); } catch (e) {}
+      }
+      relNote('early-drained');
+    }
+    var prevOnError = global.onerror;
+    global.onerror = function (msg, src, ln, co, err) {
+      try { relReportError(err || { message: msg, filename: src, lineno: ln, colno: co }, 'error'); } catch (e) {}
+      try { if (typeof prevOnError === 'function') return prevOnError.apply(this, arguments); } catch (e) {}
+      return false;
+    };
+    if (typeof global.addEventListener === 'function') {
+      global.addEventListener('unhandledrejection', function (ev) {
+        try { relReportError(ev && ev.reason, 'rejection'); } catch (e) {}
+      });
+      var flushOnHide = function () { try { relFlushErrors(); } catch (e) {} };
+      global.addEventListener('pagehide', flushOnHide);
+      if (global.document && global.document.addEventListener) {
+        global.document.addEventListener('visibilitychange', function () {
+          try { if (global.document.visibilityState === 'hidden') relFlushErrors(); } catch (e) {}
+        });
+      }
+    }
+    // Si los errores no llegan a 10, salen solos cada 30 s (no deja
+    // telemetría pudriéndose en memoria; unref para no frenar a node).
+    try {
+      _relFlushTimer = setInterval(function () {
+        try { if (_relErrQueue.length) relFlushErrors(); } catch (e) {}
+      }, 30000);
+      if (_relFlushTimer && typeof _relFlushTimer.unref === 'function') _relFlushTimer.unref();
+    } catch (e) {}
+  } catch (e) { /* instalar el colector nunca debe romper la app */ }
+}
+
+// Contadores best-effort del módulo (Rel.note) + tasa de muestreo ajustable.
+var Rel = {
+  note: relNote,
+  stats: silentStats,
+  sampleRate: 0.10
+};
+
+// Verificación barata de salud de DynamoDB: un solo GetItem a _health/#.
+// Sirve como probe del circuit breaker y como acción del botón "Reintentar"
+// del banner de degradación. NO pasa por withCredRetry a propósito: si el
+// circuito está abierto, withCredRetry haría fail-fast y el probe jamás
+// llegaría a la red.
+function probeDb() {
+  var brk = circuitRegistry.db;
+  if (!brk.allowProbe()) {
+    return Promise.reject(new Error('db/probe-busy: ya hay una verificación de conexión en curso'));
+  }
+  var dc;
+  try {
+    dc = getDocClient();
+  } catch (e) {
+    brk.releaseProbe();
+    return Promise.reject(e);
+  }
+  return dbTimeout(
+    dc.get({ TableName: AWS_CONFIG.tableName, Key: { pk: '_health', sk: '#' } }).promise(),
+    'db-health-timeout'
+  ).then(function (res) {
+    brk.recordSuccess();
+    relNote('probe-ok');
+    return (res && res.Item) ? res.Item : null;
+  }, function (err) {
+    var cls = classifyDbError(err);
+    if (cls === 'retryable' || cls === 'credential') brk.recordFailure(err);
+    else brk.releaseProbe(); // la BD respondió (4xx): no cuenta como caída
+    relNote('probe-fail');
+    throw err;
+  });
+}
+
+// API pública de fiabilidad (se expone como DrexCloud.reliability).
+var RelPublicApi = {
+  // Disyuntor de un subsistema ('db' | 'auth' | 'storage').
+  circuit: function (name) { return circuitRegistry[name] || null; },
+  resetCircuits: function () {
+    Object.keys(circuitRegistry).forEach(function (k) { circuitRegistry[k].recordSuccess(); });
+  },
+  // cb({subsystem, from, to, at}); devuelve función para desuscribir.
+  onHealthChange: function (cb) {
+    var offs = Object.keys(circuitRegistry).map(function (k) { return circuitRegistry[k].onHealthChange(cb); });
+    return function () { offs.forEach(function (off) { try { off(); } catch (e) {} }); };
+  },
+  // true si algún subsistema está degradado (open o half-open).
+  isDegraded: function () {
+    return Object.keys(circuitRegistry).some(function (k) {
+      var s = circuitRegistry[k].state();
+      return s === 'open' || s === 'half-open';
+    });
+  },
+  probeDb: probeDb,
+  silentStats: silentStats,
+  reportError: relReportError,
+  // Vacía la cola/búfer hacia el endpoint ahora mismo (también se hace
+  // solo al llenar el lote, cada 30 s y al ocultar la página).
+  flushErrors: relFlushErrors
+};
+
+relInstallCollector();
+// ==FIABILIDAD-FIN==
+
   // --- Auto-reparación de credenciales AWS (fix 2026-09-17) ---
   // Causa del bug "No se pudo enviar el mensaje": si el configure inicial de
   // credenciales fallaba (red inestable al abrir la app) o el refresh del
@@ -293,17 +743,66 @@
     return _credsRefreshPromise;
   }
 
-  function withCredRetry(opFn) {
-    function run() {
-      try { return opFn(); }
-      catch (e) { return Promise.reject(e); }
+// ==WITHCREDRETRY-INICIO==
+// withCredRetry endurecido (2026-09-21; única función existente reescrita):
+//  - Fail-fast: si el circuit breaker de db está abierto, rechaza en ~1 ms
+//    con un error claro en vez de colgar hasta 25 s por intento.
+//  - Reintento con backoff exponencial + jitter (base 300 ms, tope 8 s,
+//    3 reintentos) SOLO para errores 'retryable' (red, throttling, timeout).
+//  - Credenciales: se refrescan UNA vez, como antes.
+//  - 'nonretryable' (4xx, validación, lógica de app) falla de inmediato y
+//    NO abre el circuito. TransactionCanceledException la sigue manejando
+//    transaction() con su propio reintento (no se duplica aquí).
+function withCredRetry(opFn) {
+  var brk = circuitRegistry.db;
+  function circuitOpenError() {
+    return new Error('db/circuit-open: el servicio de datos no responde; reintenta en unos segundos');
+  }
+  // Fail-fast: circuito abierto -> rechazo inmediato, 0 llamadas a la red.
+  if (brk.isOpen()) return Promise.reject(circuitOpenError());
+  // En half-open solo pasa un probe; el resto sigue en fail-fast.
+  var holdsProbe = false;
+  if (brk.state() === 'half-open') {
+    if (!brk.allowProbe()) return Promise.reject(circuitOpenError());
+    holdsProbe = true;
+  }
+  function run() {
+    try { return opFn(); }
+    catch (e) { return Promise.reject(e); }
+  }
+  function settledOk(v) {
+    brk.recordSuccess();
+    return v;
+  }
+  function settledErr(err) {
+    var cls = classifyDbError(err);
+    if (cls === 'retryable') {
+      brk.recordFailure(err);
+    } else if (holdsProbe) {
+      brk.releaseProbe(); // el probe terminó sin veredicto de caída
     }
+    throw err;
+  }
+  function attempt(n, credRefreshed) {
     return run().catch(function (err) {
-      if (!isCredError(err)) throw err;
-      if (!currentCognitoUser) throw err;
-      return refreshAwsCredentialsNow().then(run, function () { throw err; });
+      var cls = classifyDbError(err);
+      if (cls === 'credential') {
+        // Comportamiento original: una sola oportunidad de refrescar.
+        if (credRefreshed || !currentCognitoUser) return settledErr(err);
+        return refreshAwsCredentialsNow().then(
+          function () { return attempt(n, true); },
+          function () { return settledErr(err); }
+        );
+      }
+      if (cls === 'retryable' && n < REL_MAX_RETRIES) {
+        return relSleep(relBackoffMs(n)).then(function () { return attempt(n + 1, credRefreshed); });
+      }
+      return settledErr(err);
     });
   }
+  return attempt(0, false).then(settledOk, settledErr);
+}
+// ==WITHCREDRETRY-FIN==
 
   function queryAll(params) {
     return withCredRetry(function () {
@@ -440,7 +939,22 @@
   // reversa proyectando SOLO sk (items de ~30 bytes: 1 página típica).
   // Fase 2: lee en paralelo solo las hojas de esos prefijos. Costo acotado
   // por N, independiente del tamaño total de la tabla.
-  function readLeavesBounded(pk, limitN) {
+  // Cota superior de pushId para un timestamp: los ids estilo push llevan el
+  // tiempo en sus primeros 8 caracteres (base64 propio, ver newPushId), así
+  // que todo id con tiempo <= ts ordena estrictamente antes que esta cota
+  // (los 12 caracteres de sufijo son el mínimo '-'). Permite paginar "los N
+  // anteriores a X" con una condición sobre sk, sin descargar el pk completo.
+  function pushIdUpperBound(ts) {
+    var now = Math.floor(Number(ts) || 0) + 1;
+    var timeStampChars = new Array(8);
+    for (var i = 7; i >= 0; i--) {
+      timeStampChars[i] = PUSH_CHARS.charAt(now % 64);
+      now = Math.floor(now / 64);
+    }
+    return timeStampChars.join('') + '------------';
+  }
+
+  function readLeavesBounded(pk, limitN, endAt) {
     var want = Math.ceil(limitN * 1.5) + 10;
     // communityNotes: los posts viejos guardan las fotos como data URLs inline
     // (hasta ~300KB c/u, 20 por post). Descargarlas en cada polling (cada 3 s)
@@ -450,6 +964,10 @@
     // demanda al pintar la tarjeta (ver hydrateLegacyNoteImages en index.html).
     var lightImages = (pk === 'communityNotes');
     var wantScan = lightImages ? want + 3 : want;
+    // Paginación "cargar anteriores": endAt (timestamp) se traduce a cota de
+    // pushId (misma hipótesis de correlación tiempo/pushId que el path sin
+    // endAt). Sin esto, cada "cargar anteriores" descargaba el pk COMPLETO.
+    var endSk = (endAt === undefined || endAt === null) ? null : pushIdUpperBound(endAt);
     var prefixes = [];
     var seen = {};
     var imgKeysByPrefix = {}; // pfx -> ['imageUrls/0', ...] o ['imageUrl']
@@ -461,6 +979,15 @@
         ProjectionExpression: 'sk',
         ScanIndexForward: false
       };
+      // La cota endAt se aplica en el SERVIDOR (KeyConditionExpression), no
+      // solo saltando en cliente: si hay mucho contenido más nuevo que endAt,
+      // DynamoDB lo poda sin leerlo (las key conditions no consumen RCU en
+      // los ítems descartados). Equivale al filtro cliente de abajo porque
+      // todo sk es '<pushId>/...' y endSk es cota superior estricta de pushId.
+      if (endSk) {
+        p.KeyConditionExpression = 'pk = :pk AND sk < :endSk';
+        p.ExpressionAttributeValues[':endSk'] = endSk;
+      }
       if (lastKey) p.ExclusiveStartKey = lastKey;
       return withCredRetry(function () {
         return dbTimeout(getDocClient().query(p).promise(), 'db-query-timeout');
@@ -469,6 +996,7 @@
         for (var i = 0; i < arr.length; i++) {
           var sk = (arr[i].sk === undefined || arr[i].sk === null) ? '' : String(arr[i].sk);
           var first = sk.split('/')[0];
+          if (endSk && first >= endSk) continue; // más nuevo que endAt: saltar
           if (first && !seen[first]) { seen[first] = 1; prefixes.push(first); }
           if (lightImages && first) {
             var rel = sk.slice(first.length + 1);
@@ -542,6 +1070,51 @@
     });
   }
 
+  // Búsqueda por prefijo de clave ACOTADA en DynamoDB: KeyConditionExpression
+  // pk = :pk AND begins_with(sk, :pfx) con Limit real (sin paginar de más).
+  // Antes, consultas como users.orderByChild('username').startAt(q)...
+  // .limitToFirst(20) descargaban el pk COMPLETO y filtraban en el cliente.
+  // Se usa para el índice usernames/ (orderByKey + startAt + limitToFirst):
+  // solo viajan las entradas cuyo nombre empieza por el prefijo.
+  function queryPrefixBounded(pk, prefix, limitN) {
+    var want = Math.max(1, Math.ceil(limitN));
+    var dc = getDocClient();
+    var items = [];
+    function loop(lastKey) {
+      var p = {
+        TableName: AWS_CONFIG.tableName,
+        ConsistentRead: false,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :pfx)',
+        ExpressionAttributeValues: { ':pk': pk, ':pfx': String(prefix) },
+        ProjectionExpression: 'sk, v',
+        Limit: want - items.length,
+        ScanIndexForward: true
+      };
+      if (lastKey) p.ExclusiveStartKey = lastKey;
+      return withCredRetry(function () {
+        return dbTimeout(dc.query(p).promise(), 'db-query-timeout');
+      }).then(function (res) {
+        items = items.concat(res.Items || []);
+        if (items.length < want && res.LastEvaluatedKey) return loop(res.LastEvaluatedKey);
+        return items.slice(0, want);
+      });
+    }
+    return loop(null).then(function (its) {
+      var out = [];
+      its.forEach(function (it) {
+        var rawSk = (it.sk === undefined || it.sk === null) ? '' : String(it.sk);
+        var skSegs = rawSk.split('/').filter(function (s) { return s !== ''; });
+        // Solo hojas exactas del índice (sk sin '/'): un nombre de usuario
+        // nunca contiene '/', así que los sub-paths no son entradas válidas.
+        if (skSegs.length !== 1) return;
+        var v;
+        try { v = JSON.parse(it.v); } catch (e) { v = null; }
+        out.push({ segs: [pk].concat(skSegs), value: v });
+      });
+      return out;
+    });
+  }
+
   function readLeaves(segs, query) {
     if (!segs.length) return Promise.reject(new Error('Ruta vacía no soportada'));
     var pk = segs[0];
@@ -557,8 +1130,8 @@
     if (segs.length === 1 && query && typeof query.limitLast === 'number' && query.limitLast > 0 &&
         !query.limitFirst && !query.orderByKey &&
         (query.orderBy === 'timestamp' || query.orderBy === 'createdAt') &&
-        query.equalTo === undefined && query.startAt === undefined && query.endAt === undefined) {
-      return readLeavesBounded(pk, query.limitLast);
+        query.equalTo === undefined && query.startAt === undefined) {
+      return readLeavesBounded(pk, query.limitLast, query.endAt);
     }
     var jobs;
     if (skExact === '') {
@@ -594,6 +1167,68 @@
         try { v = JSON.parse(it.v); } catch (e) { v = null; }
         return { segs: [pk].concat(skSegs), value: v };
       });
+    });
+  }
+
+  // DELTA-SYNC (parche parcial 2026-09-21): lee solo las hojas NUEVAS bajo un
+  // prefijo (sk > fromSk) con un rango BETWEEN sobre la sort key. Solo válido
+  // para rutas append-only con hijos push ID (orden temporal lexicográfico,
+  // ver newPushId): p. ej. fiestaSignals/<id>/<uid> (bandeja WebRTC).
+  // La query BETWEEN vacía (sin señales nuevas, el caso común cada 800 ms)
+  // consume ~0 RCU en vez de re-descargar la bandeja completa.
+  // LÍMITES DEL PARCHE (diseño completo en el reporte): no sirve para
+  // child_changed/removed ni para rutas con hijos de orden no temporal; el
+  // delta de 'value' sobre objetos mutables requiere timestamps por hoja
+  // (migración de datos) y queda como roadmap.
+  function readLeavesDelta(segs, fromSk) {
+    var pk = segs[0];
+    var prefix = segs.slice(1).join('/') + '/';
+    return queryAll({
+      TableName: AWS_CONFIG.tableName,
+      KeyConditionExpression: 'pk = :pk AND sk BETWEEN :lo AND :hi',
+      ExpressionAttributeValues: {
+        ':pk': pk,
+        ':lo': prefix + fromSk,
+        ':hi': prefix + '\uFFFF' // mayor que cualquier push ID (ASCII)
+      }
+    }).then(function (items) {
+      return items.map(function (it) {
+        var rawSk = (it.sk === undefined || it.sk === null) ? '' : String(it.sk);
+        if (rawSk === EMPTY_SK) rawSk = '';
+        var skSegs = rawSk.split('/').filter(function (s) { return s !== ''; });
+        var v;
+        try { v = JSON.parse(it.v); } catch (e) { v = null; }
+        return { segs: [pk].concat(skSegs), value: v };
+      });
+    });
+  }
+
+  // Mayor clave hija de un valor ya desplegado (para fijar la línea base).
+  function maxChildKeyOf(val) {
+    if (!val || typeof val !== 'object') return null;
+    var ks = Object.keys(val);
+    if (!ks.length) return null;
+    var m = ks[0];
+    for (var i = 1; i < ks.length; i++) if (ks[i] > m) m = ks[i];
+    return m;
+  }
+
+  // Mayor sk relativo entre las hojas de una lectura delta.
+  function maxSkOfLeaves(leaves, segs) {
+    var m = null;
+    leaves.forEach(function (l) {
+      var rel = l.segs.slice(segs.length).join('/');
+      if (rel && (m === null || rel > m)) m = rel;
+    });
+    return m;
+  }
+
+  // Snapshot solo con lo nuevo bajo ref (para oyentes child_added con delta).
+  function readRefValueDelta(ref, fromSk) {
+    return readLeavesDelta(ref._segs, fromSk).then(function (leaves) {
+      var val = unflatten(leaves, ref._segs);
+      var key = ref._segs.length ? ref._segs[ref._segs.length - 1] : null;
+      return { snap: new DataSnapshot(val, key), maxSk: maxSkOfLeaves(leaves, ref._segs) };
     });
   }
 
@@ -724,7 +1359,7 @@
     if (ref._segs.length === 1 && ref._segs[0] === 'communityNotes' &&
         q.orderBy === 'authorId' && q.equalTo !== undefined &&
         q.startAt === undefined && q.endAt === undefined) {
-      return readNotesByAuthor(q.equalTo).then(function (val) {
+      return readNotesByAuthor(q.equalTo, queryLimit(q)).then(function (val) {
         val = applyQuery(val, ref._query);
         return new DataSnapshot(val, 'communityNotes');
       });
@@ -736,9 +1371,62 @@
     if (ref._segs.length === 1 && ref._segs[0] === 'musicTracks' &&
         q.orderBy === 'authorId' && q.equalTo !== undefined &&
         q.startAt === undefined && q.endAt === undefined) {
-      return readMusicTracksByAuthor(q.equalTo).then(function (val) {
+      return readMusicTracksByAuthor(q.equalTo, queryLimit(q)).then(function (val) {
         val = applyQuery(val, ref._query);
         return new DataSnapshot(val, 'musicTracks');
+      });
+    }
+    // Índices postsByGroup / postsByFiesta: "posts del grupo" y "terminar
+    // fiesta" descargaban communityNotes COMPLETO en cada apertura.
+    if (ref._segs.length === 1 && ref._segs[0] === 'communityNotes' &&
+        (q.orderBy === 'groupId' || q.orderBy === 'fiestaId') && q.equalTo !== undefined &&
+        q.startAt === undefined && q.endAt === undefined) {
+      var dimIdxPk = (q.orderBy === 'groupId') ? 'postsByGroup' : 'postsByFiesta';
+      var dimLim = (typeof q.limitLast === 'number' && q.limitLast > 0) ? q.limitLast : 200;
+      return readPostsByDimIndex(dimIdxPk, q.orderBy, q.equalTo, dimLim).then(function (val) {
+        val = applyQuery(val, ref._query);
+        return new DataSnapshot(val, 'communityNotes');
+      });
+    }
+    // Índice de búsqueda de música: cada tecla descargaba musicTracks
+    // completo (con portadas). Incluye backfill único.
+    if (ref._segs.length === 1 && ref._segs[0] === 'musicSearch' &&
+        q.orderBy === 'createdAt' && typeof q.limitLast === 'number' && q.limitLast > 0 &&
+        !q.limitFirst && !q.orderByKey &&
+        q.equalTo === undefined && q.startAt === undefined && q.endAt === undefined) {
+      return readMusicSearchIndex(q.limitLast).then(function (val) {
+        val = applyQuery(val, ref._query);
+        return new DataSnapshot(val, 'musicSearch');
+      });
+    }
+    // Índice verifiedUsers: la caché de insignias descargaba users completo
+    // en cada login. Incluye backfill único.
+    if (ref._segs.length === 1 && ref._segs[0] === 'verifiedUsers' &&
+        !q.orderBy && !q.orderByKey) {
+      return readVerifiedUsersIndex().then(function (val) {
+        if (ref._query) val = applyQuery(val, ref._query);
+        return new DataSnapshot(val, 'verifiedUsers');
+      });
+    }
+    // Búsqueda de usuarios por prefijo sobre el índice usernames/: antes
+    // descargaba users COMPLETO en cada tecla. Acota en DynamoDB con
+    // begins_with; el llamador hidrata solo los perfiles coincidentes.
+    if (ref._segs.length === 1 && ref._segs[0] === 'usernames' && q.orderByKey &&
+        q.startAt !== undefined && q.equalTo === undefined &&
+        typeof q.limitFirst === 'number' && q.limitFirst > 0) {
+      return queryPrefixBounded('usernames', q.startAt, q.limitFirst).then(function (leaves) {
+        var val = unflatten(leaves, ['usernames']);
+        if (ref._query) val = applyQuery(val, ref._query);
+        return new DataSnapshot(val, 'usernames');
+      });
+    }
+    // Lectura exacta usernames/<nombre>: con backfill global único si el
+    // nombre no está indexado (usuario legacy). Elimina el "respaldo" que
+    // descargaba users completo en cada tecla del registro.
+    if (ref._segs.length === 2 && ref._segs[0] === 'usernames' &&
+        !q.orderBy && !q.orderByKey) {
+      return readUsernameEntry(ref._segs[1]).then(function (val) {
+        return new DataSnapshot(val, ref._segs[1]);
       });
     }
     return readLeaves(ref._segs, ref._query).then(function (leaves) {
@@ -749,12 +1437,28 @@
     });
   }
 
+  // Límite de la consulta para recortar ANTES de hidratar documentos: con
+  // orderBy+equalTo, applyQuery ordena por clave cuando los valores del
+  // campo son iguales, así que recortar por orden de clave da el mismo
+  // conjunto que applyQuery recortaría después (pero sin descargar todo).
+  function queryLimit(q) {
+    if (q && typeof q.limitFirst === 'number' && q.limitFirst > 0) return { first: q.limitFirst };
+    if (q && typeof q.limitLast === 'number' && q.limitLast > 0) return { last: q.limitLast };
+    return null;
+  }
+  function applyLimitSpec(ids, limitSpec) {
+    if (!limitSpec) return ids;
+    var sorted = ids.slice().sort(function (a, b) { return a < b ? -1 : (a > b ? 1 : 0); });
+    return limitSpec.first ? sorted.slice(0, limitSpec.first)
+                           : sorted.slice(Math.max(0, sorted.length - limitSpec.last));
+  }
+
   // Lee los posts de un autor vía el índice notesByAuthor/<uid>/<postId>.
   // El índice se escribe al crear cada post (ver index.html); para posts
   // anteriores al índice se hace UN backfill (escaneo legacy) y se marca
   // _indexed para no repetirlo. Sin índice ni marca y sin posts => {}
   // (applyQuery -> null).
-  function readNotesByAuthor(uid) {
+  function readNotesByAuthor(uid, limitSpec) {
     uid = String(uid);
     return readLeaves(['notesByAuthor', uid]).then(function (leaves) {
       var idx = unflatten(leaves, ['notesByAuthor', uid]) || {};
@@ -776,7 +1480,11 @@
           return obj;
         });
       }
-      return Promise.all(ids.map(function (pid) {
+      // Con límite (p. ej. limitToLast(15) del encabezado del perfil): se
+      // hidrata solo lo pedido. Antes se descargaban TODOS los posts del
+      // autor para quedarse con 15.
+      var take = applyLimitSpec(ids, limitSpec);
+      return Promise.all(take.map(function (pid) {
         return readLeaves(['communityNotes', pid]).then(function (ll) {
           return [pid, unflatten(ll, ['communityNotes', pid]) || {}];
         });
@@ -792,7 +1500,7 @@
   // El índice se escribe al subir cada canción; para canciones anteriores al
   // índice se hace UN backfill (escaneo legacy) y se marca _indexed para no
   // repetirlo. Sin índice ni marca y sin pistas => {} (applyQuery -> null).
-  function readMusicTracksByAuthor(uid) {
+  function readMusicTracksByAuthor(uid, limitSpec) {
     uid = String(uid);
     return readLeaves(['musicByAuthor', uid]).then(function (leaves) {
       var idx = unflatten(leaves, ['musicByAuthor', uid]) || {};
@@ -819,7 +1527,11 @@
           return obj;
         });
       }
-      return Promise.all(ids.map(function (tid) {
+      // Con límite: recortar por orden de clave ANTES de hidratar (igual que
+      // applyQuery haría después). Sin esto, "pistas del artista"
+      // descargaba TODAS para quedarse con 10.
+      var take = applyLimitSpec(ids, limitSpec);
+      return Promise.all(take.map(function (tid) {
         return readLeaves(['musicTracks', tid]).then(function (ll) {
           return [tid, unflatten(ll, ['musicTracks', tid]) || {}];
         });
@@ -828,6 +1540,205 @@
         pairs.forEach(function (pr) { obj[pr[0]] = pr[1]; });
         return obj;
       });
+    });
+  }
+
+  // Índice por dimensión de post: postsByGroup/<gid>/<pid> y
+  // postsByFiesta/<fid>/<pid>, con valor {t} (timestamp). Antes, "posts del
+  // grupo" y "terminar fiesta" descargaban communityNotes COMPLETO en cada
+  // apertura. El índice se escribe al crear/borrar cada post (ver index.html);
+  // para contenido anterior al índice se hace UN backfill global (marca
+  // <idx>/_indexed) la primera vez que se lee el índice.
+  function readPostsByDimIndex(idxPk, field, dimVal, limitN) {
+    dimVal = String(dimVal);
+    var lim = (typeof limitN === 'number' && limitN > 0) ? limitN : 200;
+    function hydrate(ids) {
+      return Promise.all(ids.map(function (pid) {
+        return readLeaves(['communityNotes', pid]).then(function (ll) {
+          return [pid, unflatten(ll, ['communityNotes', pid]) || {}];
+        });
+      })).then(function (pairs) {
+        var obj = {};
+        pairs.forEach(function (pr) { obj[pr[0]] = pr[1]; });
+        return obj;
+      });
+    }
+    return readLeaves([idxPk, dimVal]).then(function (leaves) {
+      var idx = unflatten(leaves, [idxPk, dimVal]) || {};
+      var ids = Object.keys(idx).filter(function (k) { return k.charAt(0) !== '_'; });
+      // La marca _indexed manda, no el hecho de que haya entradas: si un
+      // backfill anterior murió a la mitad, el índice estaría parcial para
+      // siempre. Sin marca se re-ejecuta (los puts son idempotentes).
+      return readLeaves([idxPk, '_indexed']).then(function (ml) {
+        if (unflatten(ml, [idxPk, '_indexed']) !== true) return doBackfill();
+        if (!ids.length) return {};
+        ids.sort(function (a, b) { return (((idx[b] || {}).t) || 0) - (((idx[a] || {}).t) || 0); });
+        return hydrate(ids.slice(0, lim));
+      });
+    });
+    function doBackfill() {
+      // Backfill global único: un solo escaneo legacy construye el índice
+      // para TODAS las dimensiones de una vez; luego se marca.
+      return readLeaves(['communityNotes']).then(function (allLeaves) {
+          var all = unflatten(allLeaves, ['communityNotes']) || {};
+          var reqs = [];
+          Object.keys(all).forEach(function (pid) {
+            var p = all[pid];
+            if (p && typeof p === 'object' && p[field] !== undefined && p[field] !== null && String(p[field]) !== '') {
+              reqs.push(putLeaf(idxPk, String(p[field]) + '/' + pid, { t: p.timestamp || 0 }));
+            }
+          });
+          reqs.push(putLeaf(idxPk, '_indexed', true));
+          batchWriteAll(reqs).catch(function () {});
+          var mine = [];
+          Object.keys(all).forEach(function (pid) {
+            var p = all[pid];
+            if (p && typeof p === 'object' && String(p[field] || '') === dimVal) mine.push([pid, p]);
+          });
+          mine.sort(function (x, y) { return (Number(y[1].timestamp) || 0) - (Number(x[1].timestamp) || 0); });
+          var obj = {};
+          mine.slice(0, lim).forEach(function (pr) { obj[pr[0]] = pr[1]; });
+          return obj;
+      });
+    }
+  }
+
+  // Entrada del índice de búsqueda de música: solo texto (sin portadas).
+  function musicSearchEntry(t) {
+    t = t || {};
+    return {
+      ti: String(t.title || ''), ar: String(t.artist || t.artistName || ''),
+      an: String(t.authorName || ''), aid: String(t.authorId || ''),
+      createdAt: Number(t.createdAt) || 0
+    };
+  }
+  // Índice de búsqueda de música (musicSearch/<trackId> -> texto ligero).
+  // Antes, cada tecla del buscador descargaba musicTracks COMPLETO
+  // (metadatos + portadas de hasta ~300KB). El índice guarda ~150 bytes por
+  // pista y se lee acotado por createdAt; la portada se hidrata solo para
+  // los resultados visibles (ver musicSearchTracks en index.html). Incluye
+  // backfill único para pistas anteriores al índice.
+  function readMusicSearchIndex(limitN) {
+    var lim = (typeof limitN === 'number' && limitN > 0) ? limitN : 500;
+    function doBackfill() {
+      return readLeaves(['musicTracks']).then(function (allLeaves) {
+        var all = unflatten(allLeaves, ['musicTracks']) || {};
+        var reqs = [];
+        var obj2 = {};
+        Object.keys(all).forEach(function (tid) {
+          var t = all[tid];
+          if (t && typeof t === 'object') {
+            var e = musicSearchEntry(t);
+            obj2[tid] = e;
+            reqs.push(putLeaf('musicSearch', tid, e));
+          }
+        });
+        reqs.push(putLeaf('musicSearch', '_indexed', true));
+        batchWriteAll(reqs).catch(function () {});
+        return obj2;
+      });
+    }
+    return readLeavesBounded('musicSearch', lim).then(function (leaves) {
+      var idx = unflatten(leaves, ['musicSearch']) || {};
+      var ids = Object.keys(idx).filter(function (k) { return k.charAt(0) !== '_'; });
+      // La marca _indexed manda: un backfill interrumpido dejaría el índice
+      // parcial para siempre si solo miráramos si hay entradas.
+      return readLeaves(['musicSearch', '_indexed']).then(function (ml) {
+        if (unflatten(ml, ['musicSearch', '_indexed']) !== true) return doBackfill();
+        var obj = {};
+        ids.forEach(function (tid) { obj[tid] = idx[tid]; });
+        return obj;
+      });
+    });
+  }
+
+  // Índice verifiedUsers/<uid> -> {at, by, em}: evita descargar users
+  // COMPLETO en cada inicio de sesión para la caché de insignias. El índice
+  // se rellena con backfill único; las concesiones futuras deben escribirlo
+  // (ver nota en refreshVerifiedUsersCache de index.html).
+  function readVerifiedUsersIndex() {
+    return readLeaves(['verifiedUsers']).then(function (leaves) {
+      var idx = unflatten(leaves, ['verifiedUsers']) || {};
+      // La marca _indexed manda, no el conteo de entradas: un backfill
+      // interrumpido dejaría el índice parcial para siempre.
+      if (idx._indexed === true) return idx;
+      return readLeaves(['users']).then(function (ul) {
+        var users = unflatten(ul, ['users']) || {};
+        var reqs = [];
+        var obj = {};
+        Object.keys(users).forEach(function (uid) {
+          var u = users[uid];
+          if (!u || typeof u !== 'object') return;
+          var v = u.verified;
+          if (!(v === true || v === 'true' || v === 1 || v === '1')) return;
+          var em = String(u.email || '').trim().toLowerCase();
+          var e = { at: u.verifiedAt || '', by: u.verifiedBy || 'Drex', em: em };
+          obj[uid] = e;
+          reqs.push(putLeaf('verifiedUsers', uid, e));
+        });
+        reqs.push(putLeaf('verifiedUsers', '_indexed', true));
+        batchWriteAll(reqs).catch(function () {});
+        return obj;
+      });
+    });
+  }
+
+  // Backfill global único del índice usernames/: lo dispara la primera
+  // lectura exacta que falle (usuario legacy anterior al índice). Usa put
+  // CONDICIONAL (solo si la hoja no existe) para no pisar reservas hechas
+  // por transacción mientras corre el escaneo.
+  var _usernamesBackfillPromise = null;
+  function ensureUsernamesBackfilled() {
+    if (_usernamesBackfillPromise) return _usernamesBackfillPromise;
+    _usernamesBackfillPromise = readLeaves(['usernames', '_indexed']).then(function (ml) {
+      if (unflatten(ml, ['usernames', '_indexed']) === true) return null;
+      return readLeaves(['users']).then(function (leaves) {
+        var users = unflatten(leaves, ['users']) || {};
+        var tasks = [];
+        Object.keys(users).forEach(function (uid) {
+          var u = users[uid];
+          if (!u || typeof u !== 'object') return;
+          var uname = String(u.username || '').toLowerCase();
+          if (!uname || uname.charAt(0) === '_') return;
+          tasks.push(function () {
+            return putLeafConditional('usernames', uname, JSON.stringify(uid), null)
+              .then(function () {
+                // Índice inverso usernameByUid/<uid> -> <nombre>: permite la
+                // búsqueda "¿qué nombre apunta a este uid?" con una lectura
+                // puntual (la usa maybeRepairCorruptedUsername). Solo se
+                // escribe si la reserva directa tuvo éxito; si otro la tomó,
+                // se respeta y no se escribe nada.
+                return putLeafConditional('usernameByUid', uid, JSON.stringify(uname), null)
+                  .catch(function () {});
+              })
+              .catch(function () { /* otro la reservó: se respeta */ });
+          });
+        });
+        function runChunk(i) {
+          if (i >= tasks.length) return Promise.resolve(null);
+          return Promise.all(tasks.slice(i, i + 25).map(function (fn) { return fn(); }))
+            .then(function () { return runChunk(i + 25); });
+        }
+        return runChunk(0).then(function () {
+          return batchWriteAll([putLeaf('usernames', '_indexed', true)]).catch(function () {});
+        });
+      });
+    }).catch(function () { _usernamesBackfillPromise = null; });
+    return _usernamesBackfillPromise;
+  }
+  // Lectura exacta usernames/<nombre> con backfill global único en caso de
+  // fallo. Antes, la pantalla de registro descargaba users COMPLETO en cada
+  // tecla como "respaldo por si no se usa el índice".
+  function readUsernameEntry(name) {
+    var segs = ['usernames', String(name)];
+    return readLeaves(segs).then(function (leaves) {
+      var val = unflatten(leaves, segs);
+      if (val !== null && val !== undefined) return val;
+      return ensureUsernamesBackfilled().then(function () {
+        return readLeaves(segs);
+      }).then(function (leaves2) {
+        return unflatten(leaves2, segs);
+      }, function () { return val; });
     });
   }
 
@@ -884,7 +1795,9 @@
   // Dispara un oyente según su tipo de evento ('value' | 'child_added' | 'child_changed' | 'child_removed')
   // Reparte un snapshot ya leído entre la lógica de eventos de UN oyente
   // ('value' | 'child_added' | 'child_changed' | 'child_removed').
-  function dispatchSnapshot(l, snap) {
+  // isDelta = true → el snapshot trae SOLO hijos nuevos (delta-sync): no se
+  // poda l.kids (los hijos viejos siguen existiendo, solo no se re-descargaron).
+  function dispatchSnapshot(l, snap, isDelta) {
       if (l.eventType === 'value') {
         var j = _changeFingerprint(snap.val());
         if (j !== l.lastJson) { l.lastJson = j; callCb(l.cb, snap); }
@@ -903,7 +1816,10 @@
             if (!(e[0] in l.kids)) { l.kids[e[0]] = ej; callCb(l.cb, snap.child(e[0])); }
             else l.kids[e[0]] = ej;
           });
-          Object.keys(l.kids).forEach(function (k) { if (!seen[k]) delete l.kids[k]; });
+          // En delta-sync el snapshot trae SOLO lo nuevo: no podar (los hijos
+          // viejos siguen existiendo, simplemente no se re-descargaron; si se
+          // podaran, el siguiente delta los re-dispararía como "nuevos").
+          if (!isDelta) Object.keys(l.kids).forEach(function (k) { if (!seen[k]) delete l.kids[k]; });
         }
       } else if (l.eventType === 'child_changed') {
         if (!l.kids) {
@@ -953,22 +1869,132 @@
     return l.ref._segs.join('/') + '|' + JSON.stringify(l.ref._query || null);
   }
 
+  // REALTIME 2026-09-21: tolerancia a throttling de DynamoDB.
+  // Antes: si una lectura fallaba (throttle/5xx), el grupo reintentaba en el
+  // siguiente ciclo fijo (3 s / 800 ms). Tras un evento de throttling, TODOS
+  // los clientes reintentaban a la vez en la misma rejilla: estampida
+  // sincronizada que re-saturaba la tabla. Ahora cada grupo de oyentes lleva
+  // su propio estado: backoff exponencial con jitter (los reintentos se
+  // des-correlacionan entre clientes) y circuit-breaker ligero (si un grupo
+  // falla K veces seguidas, sus ciclos se degradan a 30 s/60 s y se recupera
+  // con una sonda). El eco local (notifyLocal) nunca se bloquea: va a ritmo
+  // de usuario, no de ciclo.
+  var POLL_MAX_FAILS = 4;       // fallos retriables seguidos para abrir el circuito
+  var POLL_BACKOFF_CAP = 30000; // tope del backoff entre reintentos (30 s)
+  var POLL_CIRCUIT_MS = 30000;  // ventana de circuito abierto (60 s si reincide)
+  var pollCircuit = {};         // groupKey -> { fails, notBefore, openUntil, openedLong }
+
+  function pollCircuitState(key) {
+    var st = pollCircuit[key];
+    if (!st) st = pollCircuit[key] = { fails: 0, notBefore: 0, openUntil: 0, openedLong: false };
+    return st;
+  }
+
+  // Clasifica errores retriables de DynamoDB/red: throttling, 5xx y fallos de
+  // red/timeout sí; validación, credenciales o lógica no (reintentarlos es inútil).
+  function isRetriablePollError(err) {
+    if (!err) return false;
+    var code = String(err.code || err.name || '');
+    var msg = String(err.message || '');
+    if (/ProvisionedThroughputExceeded|Throttling|RequestLimitExceeded|TooManyRequests|RequestThrottled/i.test(code)) return true;
+    var sc = err.statusCode || (err.$metadata && err.$metadata.httpStatusCode);
+    if (typeof sc === 'number' && sc >= 500) return true;
+    if (/timeout|NetworkingError|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|ServiceUnavailable|InternalError/i.test(code + ' ' + msg)) return true;
+    return false;
+  }
+
+  // Backoff "equal jitter" (recomendación AWS): mitad determinista y mitad
+  // aleatoria por cliente, así dos clientes que fallaron a la vez NO
+  // reintentan a la vez. baseMs = intervalo natural del grupo (3 s / 800 ms).
+  function pollBackoffDelay(st, baseMs) {
+    var exp = Math.min(POLL_BACKOFF_CAP, baseMs * Math.pow(2, Math.max(0, st.fails - 1)));
+    var half = exp / 2;
+    return Math.floor(half + Math.random() * half);
+  }
+
+  function pollGroupSucceeded(key) {
+    var st = pollCircuit[key];
+    if (st) { st.fails = 0; st.notBefore = 0; st.openUntil = 0; st.openedLong = false; }
+  }
+
+  function pollGroupFailed(key, err, baseMs) {
+    if (!isRetriablePollError(err)) return; // no castigar fallos no retriables
+    var st = pollCircuitState(key);
+    st.fails++;
+    var now = Date.now();
+    if (st.fails >= POLL_MAX_FAILS) {
+      // Circuito abierto: se pausan los ciclos de este grupo. Al expirar la
+      // ventana entra UNA sonda; si falla, se reabre (esta vez a 60 s).
+      st.openUntil = now + (st.openedLong ? POLL_CIRCUIT_MS * 2 : POLL_CIRCUIT_MS);
+      st.notBefore = st.openUntil;
+      st.openedLong = true;
+      st.fails = 0;
+      return;
+    }
+    st.notBefore = now + pollBackoffDelay(st, baseMs);
+  }
+
   // Dispara un grupo de oyentes con UNA sola lectura compartida.
-  function pollGroup(ls) {
+  // opts.local = true → eco local tras escritura propia (nunca bloqueado por
+  // el circuito: es la única forma de que el usuario vea su propio cambio).
+  function pollGroup(ls, opts) {
+    var key = pollGroupKey(ls[0]);
+    var isLocal = !!(opts && opts.local);
+    if (!isLocal) {
+      var st = pollCircuitState(key);
+      var now = Date.now();
+      if (st.notBefore > now || st.openUntil > now) return; // backoff / circuito
+    }
     var busy = false;
     for (var i = 0; i < ls.length; i++) { if (ls[i]._reading) { busy = true; break; } }
     if (busy) { ls.forEach(function (l) { l._pendingFire = true; }); return; }
+    var fast = ls.some(isSignalingListener);
+    var baseMs = fast ? FAST_POLL_MS : NORMAL_POLL_MS;
     ls.forEach(function (l) { l._reading = true; });
-    readRefValue(ls[0].ref).then(function (snap) {
-      ls.forEach(function (l) { dispatchSnapshot(l, snap); });
-    }).catch(function () { /* el próximo ciclo reintenta */ }).then(function () {
+    // DELTA-SYNC (parche parcial): si todos los oyentes del grupo son
+    // child_added con delta habilitado y ya tienen línea base, se pide solo
+    // lo nuevo (sk > último visto) en vez de re-descargar todo.
+    var useDelta = ls.length > 0 && ls.every(function (l) {
+      return l.eventType === 'child_added' && l._delta === true && typeof l._deltaSk === 'string';
+    });
+    var readP = useDelta
+      ? readRefValueDelta(ls[0].ref, minDeltaSk(ls)).then(function (r) {
+          return { snap: r.snap, delta: true, maxSk: r.maxSk };
+        })
+      : readRefValue(ls[0].ref).then(function (snap) {
+          return { snap: snap, delta: false, maxSk: null };
+        });
+    readP.then(function (r) {
+      pollGroupSucceeded(key);
+      ls.forEach(function (l) {
+        dispatchSnapshot(l, r.snap, r.delta);
+        if (l._delta === true) {
+          var mk = r.delta ? r.maxSk : maxChildKeyOf(r.snap.val());
+          if (mk && (typeof l._deltaSk !== 'string' || mk > l._deltaSk)) l._deltaSk = mk;
+        }
+      });
+    }).catch(function (err) {
+      // Antes: comentario vacío y reintento en el siguiente ciclo fijo,
+      // sincronizado entre todos los clientes tras un throttling.
+      pollGroupFailed(key, err, baseMs);
+    }).then(function () {
       var again = false;
       ls.forEach(function (l) {
         l._reading = false;
         if (l._pendingFire) { l._pendingFire = false; again = true; }
       });
-      if (again) pollGroup(ls);
+      if (again) pollGroup(ls, opts);
     });
+  }
+
+  // Mínimo _deltaSk del grupo (el más antiguo manda: el rango trae un
+  // superconjunto y las huellas evitan re-disparar lo ya visto).
+  function minDeltaSk(ls) {
+    var m = null;
+    ls.forEach(function (l) {
+      if (typeof l._deltaSk === 'string' && (m === null || l._deltaSk < m)) m = l._deltaSk;
+    });
+    return m;
   }
 
   // PERF 2026-09-21: solo la bandeja de señales WebRTC (fiestaSignals/...)
@@ -1002,11 +2028,46 @@
 
   var fastPolling = false;
   var NORMAL_POLL_MS = 3000, FAST_POLL_MS = 800;
+
+  // REALTIME 2026-09-21: polling adaptativo a la red (NetworkInformation).
+  // En 2G o con ahorro de datos, sondear cada 3 s (800 ms en fiestas) quema
+  // datos y batería sin mejorar la UX: la red no da para más. Con feature-
+  // detect: si el navegador no expone navigator.connection, todo queda igual.
+  // NOTA: en segundo plano el ciclo normal ya se pausa (ver
+  // pollListenersGrouped); el rápido SIGUE porque es señalización WebRTC
+  // crítica: pausarlo tumbaría las llamadas de fiesta al cambiar de app.
+  function adaptivePollMs(baseMs) {
+    try {
+      var c = (typeof navigator !== 'undefined' && navigator.connection) || null;
+      if (c) {
+        if (c.saveData) return Math.max(baseMs, 10000);
+        var t = c.effectiveType;
+        if (t === 'slow-2g' || t === '2g') return Math.max(baseMs, 10000);
+        if (t === '3g') return Math.max(baseMs, 5000);
+      }
+    } catch (e) { /* sin NetworkInformation: intervalo base */ }
+    return baseMs;
+  }
+  function currentNormalMs() { return adaptivePollMs(NORMAL_POLL_MS); }
+  function currentFastMs() { return adaptivePollMs(FAST_POLL_MS); }
+  function restartPollTimers() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (fastTimer) { clearInterval(fastTimer); fastTimer = null; }
+    ensurePolling();
+  }
   function ensurePolling() {
     if (!listeners.length) return;
-    if (!pollTimer) pollTimer = setInterval(function () { pollListenersGrouped(false); }, NORMAL_POLL_MS);
-    if (fastPolling && !fastTimer) fastTimer = setInterval(function () { pollListenersGrouped(true); }, FAST_POLL_MS);
+    if (!pollTimer) pollTimer = setInterval(function () { pollListenersGrouped(false); }, currentNormalMs());
+    if (fastPolling && !fastTimer) fastTimer = setInterval(function () { pollListenersGrouped(true); }, currentFastMs());
   }
+  // Si la calidad de red cambia (2G<->4G, entra/sale saveData), se recalculan
+  // los intervalos sin perder oyentes.
+  try {
+    var _netInfo = (typeof navigator !== 'undefined' && navigator.connection) || null;
+    if (_netInfo && typeof _netInfo.addEventListener === 'function') {
+      _netInfo.addEventListener('change', function () { restartPollTimers(); });
+    }
+  } catch (e) {}
   function maybeStopPolling() {
     if (pollTimer && !listeners.length) { clearInterval(pollTimer); pollTimer = null; }
     if (fastTimer && !listeners.length) { clearInterval(fastTimer); fastTimer = null; }
@@ -1015,9 +2076,7 @@
   // El polling normal de 3s es muy lento para offers/answers/ICE candidates.
   function setFastPolling(enabled) {
     fastPolling = !!enabled;
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    if (fastTimer) { clearInterval(fastTimer); fastTimer = null; }
-    ensurePolling();
+    restartPollTimers();
   }
 
   // Avisa a los oyentes afectados por una escritura propia (eco local inmediato)
@@ -1034,9 +2093,151 @@
       var ls = groups[k];
       ls.forEach(function (l) { if (l._deb) { clearTimeout(l._deb); l._deb = null; } });
       var rep = ls[0];
-      rep._deb = setTimeout(function () { rep._deb = null; pollGroup(ls); }, 120);
+      // Eco local: se marca como lectura de usuario para que el circuito de
+      // throttling nunca la bloquee (ver pollGroup).
+      rep._deb = setTimeout(function () { rep._deb = null; pollGroup(ls, { local: true }); }, 120);
     });
   }
+
+  // OUTBOX OFFLINE (esqueleto 2026-09-21 — solo operación 'set').
+  // Cola persistente (localStorage) de escrituras cuando no hay red: en vez
+  // de fallar, Ref.set() encola y resuelve al vaciarse la cola. Orden FIFO
+  // estricto; ante fallo retriable (throttle/5xx/red) la operación se queda
+  // al frente y se reintenta con backoff con jitter; ante fallo no retriable
+  // (validación) se descarta para no bloquear la cola. Coalescing: dos 'set'
+  // pendientes sobre la misma ruta colapsan (último valor gana) y TODOS los
+  // llamadores encolados reciben el resultado.
+  // DISEÑO COMPLETO (roadmap): 'update'/'push'/'remove' (push necesita
+  // reservar el ID localmente), encolar también ante 5xx en caliente (hoy
+  // solo sin red, vía navigator.onLine), y contadores de telemetría.
+  var Outbox = (function () {
+    var LS_KEY = 'drex-outbox-v1';
+    var MAX_OPS = 200;
+    var waiters = {}; // opId -> [{ resolve, reject }] (varios si hubo coalescing)
+    var flushing = false;
+    var retryTimer = null;
+    var bypass = false; // runOp escribe directo, sin re-encolar
+
+    function load() {
+      try {
+        var raw = (typeof localStorage !== 'undefined' && localStorage.getItem(LS_KEY)) || '[]';
+        var a = JSON.parse(raw);
+        return Array.isArray(a) ? a : [];
+      } catch (e) { return []; }
+    }
+    function save(q) {
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(LS_KEY, JSON.stringify(q.slice(-MAX_OPS)));
+      } catch (e) {}
+    }
+    function isOffline() {
+      try { return typeof navigator !== 'undefined' && navigator.onLine === false; }
+      catch (e) { return false; }
+    }
+    function shouldQueue() { return !bypass && isOffline(); }
+    function newOpId() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    }
+    // Eco local sintético: los oyentes sobre la ruta ven el valor encolado
+    // al instante; las huellas de cambio evitan el doble disparo cuando
+    // llegue el eco real del servidor tras el flush.
+    function echoLocal(segs, value) {
+      try {
+        var snap = new DataSnapshot(value, segs.length ? segs[segs.length - 1] : null);
+        listeners.slice().forEach(function (l) {
+          if (!pathsOverlap(l.ref._segs, segs)) return;
+          var rel = segs.slice(l.ref._segs.length).join('/');
+          dispatchSnapshot(l, rel ? snap.child(rel) : snap);
+        });
+      } catch (e) {}
+    }
+    function runOp(op) {
+      if (op.type !== 'set') return Promise.reject(new Error('Outbox: tipo no soportado: ' + op.type));
+      bypass = true;
+      try { return new Ref(splitPath(op.path)).set(op.value); }
+      catch (e) { return Promise.reject(e); }
+      finally { bypass = false; }
+    }
+    function scheduleFlush(ms) {
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      retryTimer = setTimeout(function () { retryTimer = null; flush(); }, ms);
+    }
+    function settleAll(op, ok, val) {
+      var ws = waiters[op.id]; delete waiters[op.id];
+      (ws || []).forEach(function (w) { ok ? w.resolve(val) : w.reject(val); });
+    }
+    function dropHead(qq, op, err) {
+      save(qq.filter(function (o) { return o.id !== op.id; }));
+      settleAll(op, false, err || new Error('Outbox: operación descartada'));
+      try {
+        if (typeof console !== 'undefined' && console.warn)
+          console.warn('Outbox: operación descartada (no retriable)', op.path, err && err.message);
+      } catch (e) {}
+    }
+    function flush() {
+      if (flushing || isOffline()) return;
+      var qq = load();
+      if (!qq.length) return;
+      flushing = true;
+      (function step() {
+        var cur = load();
+        if (!cur.length || isOffline()) { flushing = false; return; }
+        var op = cur[0];
+        runOp(op).then(function () {
+          save(load().filter(function (o) { return o.id !== op.id; }));
+          settleAll(op, true, { flushed: true, path: op.path });
+          step();
+        }, function (err) {
+          if (isRetriablePollError(err)) {
+            // Se mantiene el orden: no se avanza; reintento con backoff+jitter.
+            op.tries = (op.tries || 0) + 1;
+            var all = load();
+            for (var i = 0; i < all.length; i++) if (all[i].id === op.id) { all[i] = op; break; }
+            save(all);
+            flushing = false;
+            var d = Math.min(60000, 2000 * Math.pow(2, Math.min(5, op.tries - 1)));
+            scheduleFlush(Math.floor(d / 2 + Math.random() * d / 2));
+          } else {
+            dropHead(cur, op, err);
+            step();
+          }
+        });
+      })();
+    }
+    function enqueueSet(segs, value) {
+      var q = load();
+      var op = { id: newOpId(), type: 'set', path: segs.join('/'), value: value, ts: Date.now(), tries: 0 };
+      var dup = null;
+      for (var i = 0; i < q.length; i++) {
+        if (q[i].type === 'set' && q[i].path === op.path) { dup = q[i]; break; }
+      }
+      if (dup) { op.id = dup.id; q[q.indexOf(dup)] = op; } // coalescing: último gana
+      else q.push(op);
+      save(q);
+      echoLocal(segs, value);
+      scheduleFlush(0);
+      return new Promise(function (res, rej) {
+        // Con coalescing, varios llamadores esperan la misma op: se avisa a todos.
+        (waiters[op.id] = waiters[op.id] || []).push({ resolve: res, reject: rej });
+      });
+    }
+    // Al volver la red: el backoff/circuitos quedaron obsoletos (los fallos
+    // eran por falta de red) y la cola pendiente se vacía.
+    try {
+      if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        window.addEventListener('online', function () { pollCircuit = {}; flush(); });
+      }
+    } catch (e) {}
+    // Arranque con cola pendiente (pestaña cerrada antes de vaciar).
+    try { setTimeout(function () { flush(); }, 1500); } catch (e) {}
+    return {
+      shouldQueue: shouldQueue,
+      enqueueSet: enqueueSet,
+      flush: flush,
+      isOffline: isOffline,
+      pending: load
+    };
+  })();
 
   // Ref
 
@@ -1058,6 +2259,8 @@
 
   Ref.prototype.set = function (value) {
     var segs = this._segs;
+    // OUTBOX (esqueleto): sin red, la escritura se encola en vez de fallar.
+    if (Outbox.shouldQueue()) return Outbox.enqueueSet(segs, value);
     var leaves = flatten(value, segs);
     return deleteSubtree(segs).then(function () {
       if (!leaves.length) return null;
@@ -1160,11 +2363,14 @@
 
   Ref.prototype.get = function () { return this.once('value'); };
 
-  Ref.prototype.on = function (eventType, cb) {
+  Ref.prototype.on = function (eventType, cb, opts) {
     if (eventType !== 'value' && eventType !== 'child_added' && eventType !== 'child_changed' && eventType !== 'child_removed') {
       throw new Error('Evento no soportado: ' + eventType);
     }
     var l = { ref: this, eventType: eventType, cb: cb, lastJson: undefined, kids: null, _deb: null };
+    // opts.delta (ver onDelta): la primera lectura es completa (línea base);
+    // después cada ciclo pide solo sk > último visto (rango BETWEEN).
+    if (opts && opts.delta === true && eventType === 'child_added') l._delta = true;
     listeners.push(l);
     ensurePolling();
     // Lectura inicial: en 'value' dispara el callback; en 'child_added' dispara
@@ -1176,6 +2382,16 @@
       if (l._deb) clearTimeout(l._deb);
       maybeStopPolling();
     };
+  };
+
+  // onDelta(cb): como on('child_added', cb), pero con delta-sync: tras la
+  // lectura inicial completa, cada ciclo pide solo los hijos nuevos
+  // (sk > último push ID visto) en vez de re-descargar la ruta entera.
+  // SOLO para rutas append-only con hijos push ID (orden temporal):
+  // fiestaSignals/<id>/<uid> (bandeja WebRTC), NO para objetos mutables.
+  // off('child_added', cb) sigue funcionando igual para desuscribir.
+  Ref.prototype.onDelta = function (cb) {
+    return this.on('child_added', cb, { delta: true });
   };
 
   Ref.prototype.off = function (eventType, cb) {
@@ -3172,7 +4388,8 @@
     support: supportApi,
     totp: totpApiNs,
     mfa: mfaNs,
-    setFastPolling: setFastPolling
+    setFastPolling: setFastPolling,
+    _outbox: Outbox // interno: cola offline (esqueleto: solo 'set')
   };
   // ServerValue también directo sobre DrexCloud.database (sin llamar),
   // porque el código migrado usa DrexCloud.database.ServerValue.TIMESTAMP
@@ -3191,6 +4408,10 @@
   DrexCloud.authRestorePending = function () { return restorePending; };
 
   global.DrexCloud = DrexCloud;
+
+  // API de fiabilidad (módulo 2026-09-21): disyuntores, probe de
+  // salud, colector de errores y contadores silenciosos.
+  DrexCloud.reliability = RelPublicApi;
 
   // [DISPOSITIVOS] acceso interno (navegador): la app lo usa para marcar
   // "Este dispositivo" en el Centro de seguridad y para pruebas manuales.
