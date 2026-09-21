@@ -53,11 +53,22 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Font Awesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <!-- DrexSheet: hoja inferior reutilizable (estilos) -->
+  <link rel="stylesheet" href="drex-sheet.css" />
   <!-- AWS: SDK JS v2 (pineado) + Amazon Cognito + adaptador DrexCloud (antes del código de la app) -->
   <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.15/dist/amazon-cognito-identity.min.js"></script>
   <script src="drex-cloud.js"></script>
   <script src="recovery-codes.js"></script>
+  <!-- DrexSheet: hoja inferior reutilizable (lógica) -->
+  <script src="drex-sheet.js"></script>
+  <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
+  <script src="drex-data-export.js"></script>
+  <script>
+    // URL de la Function URL de la Lambda drex-data-export (backend durable).
+    // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
+    window.DREX_EXPORT_BACKEND_URL = window.DREX_EXPORT_BACKEND_URL || 'https://iscko3blzkw5zfgxxgc3auxdwu0liiny.lambda-url.us-east-1.on.aws/';
+  </script>
   
   <!-- hCaptcha API -->
   <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
@@ -8113,16 +8124,10 @@ function saveNote() {
       <!-- Revisión de seguridad -->
       <section class="bg-[#2F33B8] px-5 py-6 text-white"><div class="flex items-start justify-between gap-4"><div><p class="text-xs font-bold tracking-widest text-white/60">ESTADO DE SEGURIDAD</p><p id="security-score-label" class="text-2xl font-black mt-1">Revisando tu cuenta</p><p id="security-score-detail" class="text-sm text-white/70 mt-2">Completaremos esta revisión con tus ajustes actuales.</p></div><div class="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center shrink-0"><svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7l8-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="m9 12 2 2 4-4"/></svg></div></div></section>
 
-      <!-- Acceso a la cuenta -->
+      <!-- Grupo: Seguridad de la cuenta -->
       <div>
-        <p class="px-4 pt-6 pb-1.5 text-[17px] font-semibold text-[#1c2b4a]">Acceso a la cuenta</p>
+        <div class="px-4 pt-6 pb-1.5"><p class="text-[17px] font-semibold text-[#1c2b4a]">Seguridad de la cuenta</p><p class="text-[13px] text-[#7b8794] mt-0.5 leading-snug">Refuerza tu acceso con capas extra de protección y mantente al tanto de lo importante.</p></div>
         <section class="bg-white">
-          <button onclick="sendSecurityVerificationEmail()" class="w-full px-4 py-3 flex items-center gap-4 text-left active:bg-[#f5f5f5]">
-            <svg class="w-7 h-7 shrink-0 text-[#1c2b4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.9 5.3a2 2 0 0 0 2.2 0L21 8M5 19h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2z"/></svg>
-            <span class="flex-1 min-w-0"><span class="block text-[16px] text-[#1c2b4a]">Correo de recuperación</span><span id="security-email-status" class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Comprobando verificación…</span></span>
-            <span id="security-email-action" class="text-xs font-bold text-[#2F33B8] shrink-0">Verificar</span>
-          </button>
-<div class="ml-[60px] h-px bg-[#efefef]"></div>
           <button onclick="openTwoFactorView()" class="w-full px-4 py-3 flex items-center gap-4 text-left active:bg-[#f5f5f5]">
             <svg class="w-7 h-7 shrink-0 text-[#1c2b4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7l8-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="m9 12 2 2 4-4"/></svg>
             <span class="flex-1 min-w-0"><span class="block text-[16px] text-[#1c2b4a]">Verificación en dos pasos</span><span id="security-2fa-status" class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Comprobando estado…</span></span>
@@ -8140,13 +8145,13 @@ function saveNote() {
             <span class="flex-1 min-w-0"><span class="block text-[16px] text-[#1c2b4a]">Cambiar contraseña</span><span class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Recibe el código en tu correo vinculado.</span></span>
             <svg class="w-5 h-5 text-[#c3ccd8] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
           </button>
-        </section>
-      </div>
-
-      <!-- Alertas y dispositivos -->
-      <div>
-        <p class="px-4 pt-8 pb-1.5 text-[17px] font-semibold text-[#1c2b4a]">Alertas y dispositivos</p>
-        <section class="bg-white">
+<div class="ml-[60px] h-px bg-[#efefef]"></div>
+          <button onclick="sendSecurityVerificationEmail()" class="w-full px-4 py-3 flex items-center gap-4 text-left active:bg-[#f5f5f5]">
+            <svg class="w-7 h-7 shrink-0 text-[#1c2b4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.9 5.3a2 2 0 0 0 2.2 0L21 8M5 19h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2z"/></svg>
+            <span class="flex-1 min-w-0"><span class="block text-[16px] text-[#1c2b4a]">Correo de recuperación</span><span id="security-email-status" class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Comprobando verificación…</span></span>
+            <span id="security-email-action" class="text-xs font-bold text-[#2F33B8] shrink-0">Verificar</span>
+          </button>
+<div class="ml-[60px] h-px bg-[#efefef]"></div>
           <!-- [DISPOSITIVOS] toggle de alertas de inicio de sesión (clave newDeviceAlerts) -->
           <div class="px-4 py-3 flex items-center gap-4">
             <svg class="w-7 h-7 shrink-0 text-[#1c2b4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7l8-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01"/></svg>
@@ -8161,6 +8166,15 @@ function saveNote() {
             <button id="security-changes-toggle" onclick="toggleSecurityPreference('securityChangeAlerts')" role="switch" aria-checked="true" class="tap-expand w-12 h-7 rounded-full bg-[#2F33B8] p-1 shrink-0"><span class="block w-5 h-5 rounded-full bg-white translate-x-5 transition-transform"></span></button>
           </div>
 <div class="ml-[60px] h-px bg-[#efefef]"></div>
+          <div class="px-4 pt-3 pb-1"><p class="text-[16px] font-bold text-[#1c2b4a]">Actividad reciente</p></div>
+          <div id="security-events-list" class="divide-y divide-[#eef2f7]"></div>
+        </section>
+      </div>
+
+      <!-- Grupo: Tus sesiones y dispositivos -->
+      <div>
+        <div class="px-4 pt-8 pb-1.5"><p class="text-[17px] font-semibold text-[#1c2b4a]">Tus sesiones y dispositivos</p><p class="text-[13px] text-[#7b8794] mt-0.5 leading-snug">Revisa dónde está abierta tu cuenta y gestiona tus dispositivos.</p></div>
+        <section class="bg-white">
           <!-- [SESIONES] Ing. #5: "Dónde iniciaste sesión" estilo Meta -->
           <div class="px-4 pt-3 pb-1 flex items-center justify-between gap-4"><p class="text-[16px] font-bold text-[#1c2b4a]">Dónde iniciaste sesión</p><button onclick="endOtherDrexSessions()" class="text-xs font-bold text-[#b91c1c] shrink-0">Cerrar todas las demás</button></div>
           <p class="px-4 pb-2 text-xs text-[#6b7280]">Revisa los dispositivos donde tu cuenta está abierta. Si ves algo que no reconoces, cierra esa sesión.</p>
@@ -8170,46 +8184,61 @@ function saveNote() {
           <div class="px-4 pt-4 pb-1"><p class="text-[16px] text-[#1c2b4a]">Dispositivos reconocidos</p><p class="text-[13px] text-[#7b8794] mt-0.5">Si olvidas un dispositivo, el próximo inicio de sesión desde ahí generará una alerta.</p></div>
           <div id="security-devices-list" class="divide-y divide-[#eef2f7]"></div>
           <!-- [/DISPOSITIVOS] -->
-        </section>
-      </div>
-
-      <!-- Historial de accesos -->
-      <div>
-        <p class="px-4 pt-8 pb-1.5 text-[17px] font-semibold text-[#1c2b4a]">Historial de accesos</p>
-        <section class="bg-white">
+<div class="ml-[60px] h-px bg-[#efefef]"></div>
+          <div class="px-4 pt-4 pb-1"><p class="text-[16px] font-bold text-[#1c2b4a]">Historial de accesos</p></div>
           <div id="security-login-history-list" class="divide-y divide-[#eef2f7]"></div>
           <button onclick="clearLoginHistory()" class="w-full px-4 py-3 flex items-center gap-4 text-left active:bg-[#fef2f2]">
             <svg class="w-7 h-7 shrink-0 text-[#b91c1c]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
             <span class="flex-1 min-w-0"><span class="block text-[16px] font-medium text-[#dc2626]">Limpiar historial</span><span class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Borra todos los accesos registrados de forma permanente.</span></span>
-            <svg class="w-5 h-5 text-[#c3ccd8] shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+            <svg class="w-5 h-5 text-[#c3ccd8] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
           </button>
-
         </section>
       </div>
 
-      <!-- Tus datos -->
+      <!-- Grupo: Tu información -->
       <div>
-        <p class="px-4 pt-8 pb-1.5 text-[17px] font-semibold text-[#1c2b4a]">Tus datos</p>
+        <div class="px-4 pt-8 pb-1.5"><p class="text-[17px] font-semibold text-[#1c2b4a]">Tu información</p><p class="text-[13px] text-[#7b8794] mt-0.5 leading-snug">Obtén una copia de tu información de Drex y controla tus datos.</p></div>
         <section class="bg-white">
-          <button onclick="downloadMySecurityData()" class="w-full px-4 py-3 flex items-center gap-4 text-left active:bg-[#f5f5f5]">
+          <div class="px-4 py-3 flex items-center gap-4">
             <svg class="w-7 h-7 shrink-0 text-[#1c2b4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M12 4v12m0 0 4-4m-4 4-4-4"/></svg>
-            <span class="flex-1 min-w-0"><span class="block text-[16px] text-[#1c2b4a]">Descargar mis datos</span><span class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Crea un archivo privado con tu perfil y preferencias.</span></span>
-            <svg class="w-5 h-5 text-[#c3ccd8] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+            <div class="flex-1 min-w-0"><p class="text-[16px] font-bold text-[#1c2b4a]">Descargar mis datos</p><p class="text-[13px] text-[#7b8794] mt-0.5 leading-snug">Preparamos tu archivo con tu información de Drex. Cuando esté listo, te avisaremos para que lo descargues.</p></div>
+          </div>
+          <!-- Punto de montaje de la exportación asíncrona:
+               window.DrexDataExport.renderInto(el) monta selector de formato,
+               botón solicitar, estado con progreso real e historial.
+               Se inicializa una vez al abrir el Centro de seguridad. -->
+          <div id="drex-data-export" data-format="json"></div>
+<div class="ml-[60px] h-px bg-[#efefef]"></div>
+          <p class="px-4 pt-4 pb-1 text-[13px] font-bold text-[#1c2b4a]">Funciones relacionadas</p>
+          <button onclick="closeSecurityCenter(); openPrivacyConfigView()" class="w-full px-4 py-3 flex items-center gap-4 text-left active:bg-[#f5f5f5]">
+            <svg class="w-7 h-7 shrink-0 text-[#1c2b4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>
+            <span class="flex-1 min-w-0"><span class="block text-[16px] text-[#1c2b4a]">Privacidad</span><span class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Cuenta privada, solicitudes y cuentas bloqueadas</span></span>
+            <svg class="w-5 h-5 text-[#c3ccd8] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
           </button>
 <div class="ml-[60px] h-px bg-[#efefef]"></div>
+          <button onclick="closeSecurityCenter(); openNotificationSettings()" class="w-full px-4 py-3 flex items-center gap-4 text-left active:bg-[#f5f5f5]">
+            <svg class="w-7 h-7 shrink-0 text-[#1c2b4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+            <span class="flex-1 min-w-0"><span class="block text-[16px] text-[#1c2b4a]">Alertas</span><span class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Qué alertas quieres recibir</span></span>
+            <svg class="w-5 h-5 text-[#c3ccd8] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+          </button>
+<div class="ml-[60px] h-px bg-[#efefef]"></div>
+          <button onclick="closeSecurityCenter(); openBlockedAccountsView()" class="w-full px-4 py-3 flex items-center gap-4 text-left active:bg-[#f5f5f5]">
+            <svg class="w-7 h-7 shrink-0 text-[#1c2b4a]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 00-12.728 12.728M7 7l10 10"/><circle cx="12" cy="12" r="9"/></svg>
+            <span class="flex-1 min-w-0"><span class="block text-[16px] text-[#1c2b4a]">Bloqueados</span><span class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Ver y desbloquear cuentas</span></span>
+            <svg class="w-5 h-5 text-[#c3ccd8] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+          </button>
+        </section>
+      </div>
+
+      <!-- Grupo: Cuenta -->
+      <div>
+        <div class="px-4 pt-8 pb-1.5"><p class="text-[17px] font-semibold text-[#1c2b4a]">Cuenta</p><p class="text-[13px] text-[#7b8794] mt-0.5 leading-snug">Desactiva tu cuenta de forma temporal o elimínala para siempre.</p></div>
+        <section class="bg-white">
           <button onclick="closeSecurityCenter(); openDeactivateDeleteAccountView()" class="w-full px-4 py-3 flex items-center gap-4 text-left active:bg-[#fef2f2]">
             <svg class="w-7 h-7 shrink-0 text-[#b91c1c]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM6 21v-1a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v1"/><path stroke-linecap="round" d="m17 8 5 5m0-5-5 5"/></svg>
             <span class="flex-1 min-w-0"><span class="block text-[16px] font-medium text-[#dc2626]">Desactivar o eliminar cuenta</span><span class="block text-[13px] text-[#7b8794] mt-0.5 leading-snug">Abre los controles de cuenta sensibles.</span></span>
             <svg class="w-5 h-5 text-[#b91c1c] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
           </button>
-        </section>
-      </div>
-
-      <!-- Actividad reciente -->
-      <div>
-        <p class="px-4 pt-8 pb-1.5 text-[17px] font-semibold text-[#1c2b4a]">Actividad reciente</p>
-        <section class="bg-white">
-          <div id="security-events-list" class="divide-y divide-[#eef2f7]"></div>
         </section>
       </div>
     </div>
@@ -20264,6 +20293,46 @@ function saveNote() {
 
   const APP_LANGUAGE_STORAGE_KEY = 'drex_app_language_v1';
   const APP_ENGLISH_TEXT = {
+"Verificación de edad":"Age verification",
+"Sin verificar":"Not verified",
+"Verificada":"Verified",
+"Rechazada":"Rejected",
+"Vencida":"Expired",
+"Verificar mi edad":"Verify my age",
+"Verifica tu edad":"Verify your age",
+"Selecciona tu país":"Select your country",
+"Tipo de documento":"Document type",
+"Pasaporte":"Passport",
+"Cédula de identidad":"National ID",
+"Licencia de conducir":"Driver's license",
+"Cuba":"Cuba",
+"Estados Unidos":"United States",
+"Canadá":"Canada",
+"México":"Mexico",
+"Brasil":"Brazil",
+"Iniciar verificación":"Start verification",
+"MODO DEMO":"DEMO MODE",
+"Esto es una simulación del proceso de verificación. Ningún documento real será revisado.":"This is a simulation of the verification process. No real document will be reviewed.",
+"Tu documento está en revisión. Te avisaremos cuando termine.":"Your document is under review. We'll notify you when it's done.",
+"Tu edad fue verificada correctamente.":"Your age was verified successfully.",
+"Tu verificación de identidad fue rechazada.":"Your identity verification was rejected.",
+"Tu verificación de identidad venció.":"Your identity verification has expired.",
+"Para cambiar tu fecha de nacimiento, primero verifica tu identidad.":"To change your birth date, verify your identity first.",
+"Has alcanzado el límite de cambios de fecha de nacimiento. Si necesitas ayuda, contacta a soporte.":"You've reached the birth date change limit. If you need help, contact support.",
+"Fecha de nacimiento actualizada.":"Birth date updated.",
+"Cambios de fecha restantes: {n}":"Birth date changes left: {n}",
+"Fecha registrada":"Registered date",
+"Actualizar estado":"Refresh status",
+"Verificando tu identidad…":"Verifying your identity…",
+"Selecciona tu país y tu tipo de documento para continuar.":"Select your country and document type to continue.",
+"No se pudo iniciar la verificación. Inténtalo de nuevo.":"Couldn't start verification. Try again.",
+"No se pudo actualizar el estado. Inténtalo de nuevo.":"Couldn't refresh the status. Try again.",
+"Tu verificación está en revisión.":"Your verification is under review.",
+"Verificada ✓":"Verified ✓",
+"Creando sesión de verificación…":"Creating verification session…",
+"Documento recibido. Revisando…":"Document received. Reviewing…",
+"Serás redirigido al proveedor de verificación para completar el proceso.":"You'll be redirected to the verification provider to complete the process.",
+"Inicia sesión para verificar tu edad.":"Sign in to verify your age.",
 "Colaborar":"Collaborate",
 "Quitar colaboración":"Remove collaboration",
 "Aceptar":"Accept",
@@ -20387,7 +20456,9 @@ function saveNote() {
 "Te avisamos si se detecta un nuevo navegador.":"We will notify you if a new browser is detected.",
 "Dispositivos":"Devices",
 "Dispositivos reconocidos":"Recognized devices",
+"Dispositivo no reconocido":"Unrecognized device",
 "Dispositivo olvidado.":"Device forgotten.",
+"Dispositivo olvidado":"Forgotten device",
 "Dispositivo reconocido.":"Device recognized.",
 "Sesiones activas":"Active sessions",
 "Tus datos":"Your data",
@@ -20395,6 +20466,17 @@ function saveNote() {
 "Historial de accesos":"Login history",
 "Limpiar historial":"Clear history",
 "Borra todos los accesos registrados de forma permanente.":"Permanently deletes all recorded logins.",
+"Seguridad de la cuenta":"Account security",
+"Tus sesiones y dispositivos":"Your sessions and devices",
+"Tu información":"Your information",
+"Refuerza tu acceso con capas extra de protección y mantente al tanto de lo importante.":"Strengthen your sign-in with extra layers of protection and stay on top of important changes.",
+"Revisa dónde está abierta tu cuenta y gestiona tus dispositivos.":"Review where your account is signed in and manage your devices.",
+"Obtén una copia de tu información de Drex y controla tus datos.":"Get a copy of your Drex information and stay in control of your data.",
+"Desactiva tu cuenta de forma temporal o elimínala para siempre.":"Temporarily deactivate your account or delete it permanently.",
+"Preparamos tu archivo con tu información de Drex. Cuando esté listo, te avisaremos para que lo descargues.":"We're preparing your file with your Drex information. When it's ready, we'll let you know so you can download it.",
+"Formato del archivo":"File format",
+"Funciones relacionadas":"Related features",
+"Cuenta privada, solicitudes y cuentas bloqueadas":"Private account, requests and blocked accounts",
 "Aún no hay accesos registrados.":"No logins recorded yet.",
 "Este dispositivo":"This device",
 "Con correo":"With email",
@@ -20740,6 +20822,7 @@ function saveNote() {
 "Nueva contraseña":"New password",
 "Nueva publicación":"New post",
 "Nuevo Chat":"New Chat",
+"Nuevo dispositivo detectado":"New device detected",
 "Nuevo Post":"New Post",
 "Nuevo grupo":"New group",
 "Nuevo mensaje":"New message",
@@ -21123,6 +21206,7 @@ function saveNote() {
 "Código incorrecto.":"Incorrect code.",
 "Código incorrecto. Revisa e inténtalo de nuevo.":"Incorrect code. Check it and try again.",
 "Código incorrecto. Revisa la hora de tu celular e inténtalo de nuevo.":"Incorrect code. Check your phone's time and try again.",
+"Código de respaldo usado":"Backup code used",
 "Dansk (Danés)":"Dansk (Danish)",
 "Datos descargados":"Data downloaded",
 "Datos locales de chat eliminados":"Local chat data deleted",
@@ -22314,6 +22398,46 @@ function saveNote() {
 "No compartas estos códigos con nadie. Drex nunca te los pedirá por correo o mensaje.":"Never share these codes with anyone. Drex will never ask for them by email or message.",
 };
   const APP_CHINESE_TEXT = {
+"Verificación de edad":"年龄验证",
+"Sin verificar":"未验证",
+"Verificada":"已验证",
+"Rechazada":"已拒绝",
+"Vencida":"已过期",
+"Verificar mi edad":"验证我的年龄",
+"Verifica tu edad":"验证你的年龄",
+"Selecciona tu país":"选择你的国家",
+"Tipo de documento":"证件类型",
+"Pasaporte":"护照",
+"Cédula de identidad":"身份证",
+"Licencia de conducir":"驾驶证",
+"Cuba":"古巴",
+"Estados Unidos":"美国",
+"Canadá":"加拿大",
+"México":"墨西哥",
+"Brasil":"巴西",
+"Iniciar verificación":"开始验证",
+"MODO DEMO":"演示模式",
+"Esto es una simulación del proceso de verificación. Ningún documento real será revisado.":"这是验证流程的模拟，不会审核任何真实证件。",
+"Tu documento está en revisión. Te avisaremos cuando termine.":"你的证件正在审核中，完成后我们会通知你。",
+"Tu edad fue verificada correctamente.":"你的年龄已验证成功。",
+"Tu verificación de identidad fue rechazada.":"你的身份验证被拒绝。",
+"Tu verificación de identidad venció.":"你的身份验证已过期。",
+"Para cambiar tu fecha de nacimiento, primero verifica tu identidad.":"要更改出生日期，请先验证你的身份。",
+"Has alcanzado el límite de cambios de fecha de nacimiento. Si necesitas ayuda, contacta a soporte.":"你已达到出生日期更改次数上限。如需帮助，请联系客服。",
+"Fecha de nacimiento actualizada.":"出生日期已更新。",
+"Cambios de fecha restantes: {n}":"出生日期剩余更改次数：{n}",
+"Fecha registrada":"已登记的日期",
+"Actualizar estado":"更新状态",
+"Verificando tu identidad…":"正在验证你的身份…",
+"Selecciona tu país y tu tipo de documento para continuar.":"请选择你的国家和证件类型以继续。",
+"No se pudo iniciar la verificación. Inténtalo de nuevo.":"无法开始验证，请重试。",
+"No se pudo actualizar el estado. Inténtalo de nuevo.":"无法更新状态，请重试。",
+"Tu verificación está en revisión.":"你的验证正在审核中。",
+"Verificada ✓":"已验证 ✓",
+"Creando sesión de verificación…":"正在创建验证会话…",
+"Documento recibido. Revisando…":"已收到证件，正在审核…",
+"Serás redirigido al proveedor de verificación para completar el proceso.":"你将被重定向到验证服务商以完成流程。",
+"Inicia sesión para verificar tu edad.":"请登录以验证你的年龄。",
 "Colaborar":"合作",
 "Quitar colaboración":"移除合作",
 "Aceptar":"接受",
@@ -22433,7 +22557,9 @@ function saveNote() {
 "Te avisamos si se detecta un nuevo navegador.":"检测到新浏览器时我们会通知你。",
 "Dispositivos":"设备",
 "Dispositivos reconocidos":"已知的设备",
+"Dispositivo no reconocido":"无法识别的设备",
 "Dispositivo olvidado.":"已忘掉该设备。",
+"Dispositivo olvidado":"已移除的设备",
 "Dispositivo reconocido.":"已识别设备。",
 "Sesiones activas":"活跃会话",
 "Tus datos":"你的数据",
@@ -22441,6 +22567,17 @@ function saveNote() {
 "Historial de accesos":"登录历史",
 "Limpiar historial":"清除历史",
 "Borra todos los accesos registrados de forma permanente.":"永久删除所有已记录的登录。",
+"Seguridad de la cuenta":"账号安全",
+"Tus sesiones y dispositivos":"你的会话与设备",
+"Tu información":"你的信息",
+"Refuerza tu acceso con capas extra de protección y mantente al tanto de lo importante.":"为你的登录增加额外的保护层，并及时了解重要变化。",
+"Revisa dónde está abierta tu cuenta y gestiona tus dispositivos.":"查看你的账号在哪些设备上登录，并管理你的设备。",
+"Obtén una copia de tu información de Drex y controla tus datos.":"获取你的 Drex 信息副本，并掌控你的数据。",
+"Desactiva tu cuenta de forma temporal o elimínala para siempre.":"暂时停用你的账号，或将其永久删除。",
+"Preparamos tu archivo con tu información de Drex. Cuando esté listo, te avisaremos para que lo descargues.":"我们正在准备包含你的 Drex 信息的文件。准备就绪后，我们会通知你下载。",
+"Formato del archivo":"文件格式",
+"Funciones relacionadas":"相关功能",
+"Cuenta privada, solicitudes y cuentas bloqueadas":"私密账号、请求和屏蔽账号",
 "Aún no hay accesos registrados.":"暂无登录记录。",
 "Este dispositivo":"此设备",
 "Con correo":"使用邮箱",
@@ -22778,6 +22915,7 @@ function saveNote() {
 "Nueva contraseña":"新密码",
 "Nueva publicación":"新帖子",
 "Nuevo Chat":"新聊天",
+"Nuevo dispositivo detectado":"检测到新设备",
 "Nuevo Post":"新帖子",
 "Nuevo grupo":"新建群组",
 "Nuevo mensaje":"新消息",
@@ -23152,6 +23290,7 @@ function saveNote() {
 "Código incorrecto.":"验证码不正确。",
 "Código incorrecto. Revisa e inténtalo de nuevo.":"验证码不正确。请检查后重试。",
 "Código incorrecto. Revisa la hora de tu celular e inténtalo de nuevo.":"验证码不正确。请检查手机时间后重试。",
+"Código de respaldo usado":"备用验证码已使用",
 "Dansk (Danés)":"丹麦语",
 "Datos descargados":"数据已下载",
 "Datos locales de chat eliminados":"聊天本地数据已删除",
@@ -25336,7 +25475,9 @@ function saveNote() {
       support_response: { icon: 'fa-headset', color: '#2F33B8' },
       info:      { icon: 'fa-circle-info', color: '#5c6974' },
       post:      { icon: 'fa-newspaper',    color: '#2F33B8' },
-      fiesta:    { icon: 'fa-champagne-glasses', color: '#8b5cf6' }
+      fiesta:    { icon: 'fa-champagne-glasses', color: '#8b5cf6' },
+      id_verification: { icon: 'fa-id-card', color: '#2F33B8' },
+      announcement:    { icon: 'fa-bullhorn', color: '#2F33B8' }
     };
 
     const now = Date.now(), DAY = 86400000;
@@ -27910,8 +28051,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       { t: { es: 'Cambiar de cuenta', en: 'Switch accounts', zh: '切换账号' }, b: { es: '<p>Toca tu nombre de usuario en la parte superior de tu perfil para abrir el cambiador de cuentas. Puedes agregar varias cuentas y cambiar entre ellas sin cerrar sesión.</p>', en: '<p>Tap your username at the top of your profile to open the account switcher. You can add multiple accounts and switch between them without signing out.</p>', zh: '<p>点击个人主页顶部的用户名即可打开账号切换器。你可以添加多个账号，无需退出登录即可在它们之间切换。</p>' } },
       { t: { es: 'Cerrar sesión', en: 'Log out', zh: '退出登录' }, b: { es: '<p>Ve a <b>Configuración</b> y toca <b>Cerrar sesión</b> al final de la lista. Tu información seguirá guardada en el dispositivo si tienes varias cuentas.</p>', en: '<p>Go to <b>Settings</b> and tap <b>Log out</b> at the bottom of the list. Your info stays saved on the device if you use multiple accounts.</p>', zh: '<p>前往<b>设置</b>，点击列表底部的<b>退出登录</b>。如果你有多个账号，你的信息仍会保存在设备上。</p>' } }
     ,
-      { t: { es: 'Cambiar tu contraseña', en: 'Change your password', zh: '更改密码' }, b: { es: '<p>Ve a <b>Configuración</b> &gt; <b>Centro de seguridad</b> &gt; <b>Acceso a la cuenta</b> y toca <b>Cambiar contraseña</b>.</p><p>Recibirás un código de 6 dígitos en tu correo vinculado: escríbelo junto con tu nueva contraseña para completar el cambio.</p>', en: '<p>Go to <b>Settings</b> &gt; <b>Security center</b> &gt; <b>Account access</b> and tap <b>Change password</b>.</p><p>You will receive a 6-digit code at your linked email: enter it along with your new password to complete the change.</p>', zh: '<p>前往<b>设置</b> &gt; <b>安全中心</b> &gt; <b>账号访问</b>，点击<b>更改密码</b>。</p><p>你会在绑定的邮箱中收到一个 6 位验证码：输入验证码和新密码即可完成更改。</p>' } },
-      { t: { es: 'Verificación en dos pasos', en: 'Two-step verification', zh: '两步验证' }, b: { es: '<p>Activa la <b>verificación en dos pasos</b> en Configuración &gt; Centro de seguridad &gt; Acceso a la cuenta.</p><p>Así, cada inicio de sesión en un dispositivo nuevo pedirá un código adicional además de tu contraseña.</p>', en: '<p>Turn on <b>two-step verification</b> in Settings &gt; Security center &gt; Account access.</p><p>Every sign-in on a new device will then ask for an extra code besides your password.</p>', zh: '<p>在设置 &gt; 安全中心 &gt; 账号访问中开启<b>两步验证</b>。</p><p>这样，每次在新设备上登录时，除了密码还需要输入一个额外的验证码。</p>' } },
+      { t: { es: 'Cambiar tu contraseña', en: 'Change your password', zh: '更改密码' }, b: { es: '<p>Ve a <b>Configuración</b> &gt; <b>Centro de seguridad</b> &gt; <b>Seguridad de la cuenta</b> y toca <b>Cambiar contraseña</b>.</p><p>Recibirás un código de 6 dígitos en tu correo vinculado: escríbelo junto con tu nueva contraseña para completar el cambio.</p>', en: '<p>Go to <b>Settings</b> &gt; <b>Security center</b> &gt; <b>Account security</b> and tap <b>Change password</b>.</p><p>You will receive a 6-digit code at your linked email: enter it along with your new password to complete the change.</p>', zh: '<p>前往<b>设置</b> &gt; <b>安全中心</b> &gt; <b>账号安全</b>，点击<b>更改密码</b>。</p><p>你会在绑定的邮箱中收到一个 6 位验证码：输入验证码和新密码即可完成更改。</p>' } },
+      { t: { es: 'Verificación en dos pasos', en: 'Two-step verification', zh: '两步验证' }, b: { es: '<p>Activa la <b>verificación en dos pasos</b> en Configuración &gt; Centro de seguridad &gt; Seguridad de la cuenta.</p><p>Así, cada inicio de sesión en un dispositivo nuevo pedirá un código adicional además de tu contraseña.</p>', en: '<p>Turn on <b>two-step verification</b> in Settings &gt; Security center &gt; Account security.</p><p>Every sign-in on a new device will then ask for an extra code besides your password.</p>', zh: '<p>在设置 &gt; 安全中心 &gt; 账号安全中开启<b>两步验证</b>。</p><p>这样，每次在新设备上登录时，除了密码还需要输入一个额外的验证码。</p>' } },
       { t: { es: 'Cambiar el idioma o la apariencia', en: 'Change the language or appearance', zh: '更改语言或外观' }, b: { es: '<p>El idioma de la app se cambia en Configuración &gt; <b>Idioma de la aplicación</b>.</p><p>El modo oscuro o claro se cambia en Configuración &gt; <b>Apariencia</b>.</p>', en: '<p>The app language is changed in Settings &gt; <b>App language</b>.</p><p>Dark or light mode is changed in Settings &gt; <b>Appearance</b>.</p>', zh: '<p>应用语言在设置 &gt; <b>应用语言</b>中更改。</p><p>深色或浅色模式在设置 &gt; <b>外观</b>中更改。</p>' } }]},
     { id: 'privacidad', title: { es: 'Privacidad y seguridad', en: 'Privacy & safety', zh: '隐私与安全' }, articles: [
       { t: { es: 'Cuenta privada y solicitudes de seguimiento', en: 'Private account & follow requests', zh: '私密账号与关注请求' }, b: { es: '<p>Activa <b>Cuenta privada</b> en Configuración &gt; Privacidad. Con la cuenta privada, las personas que quieran seguirte deben enviar una solicitud.</p><p>Para aceptar o rechazar solicitudes, toca la notificación que recibas o ve a Configuración &gt; Privacidad &gt; <b>Solicitudes de seguimiento</b>.</p>', en: '<p>Turn on <b>Private account</b> in Settings &gt; Privacy. With a private account, people who want to follow you must send a request.</p><p>To accept or decline requests, tap the notification you receive or go to Settings &gt; Privacy &gt; <b>Follow requests</b>.</p>', zh: '<p>在设置 &gt; 隐私中开启<b>私密账号</b>。开启私密账号后，想要关注你的人必须先发送请求。</p><p>要接受或拒绝请求，点击你收到的通知，或前往设置 &gt; 隐私 &gt; <b>关注请求</b>。</p>' } },
@@ -29779,7 +29920,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       view.style.display = 'flex';
       view.style.zIndex = '135';
     }
-    try { initBirthdayDisplay(); } catch (e) {}
+    try { initBirthdayDisplay(); refreshBirthdayIdvSection(); } catch (e) {}
   }
 
   function closeBirthdayConfigView() {
@@ -30337,21 +30478,535 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     }).finally(() => setSavingButtonState(actionButton, false));
   }
 
-  function saveBirthdayConfig() {
+    function saveBirthdayConfig() {
     const actionButton = window.event?.currentTarget || null;
     setSavingButtonState(actionButton, true);
     const nextBirthday = document.getElementById('settings-account-birthday')?.value || "";
-    saveProfileField({ birthday: nextBirthday }).then(saved => {
-      if (!saved) return;
-      const preview = document.getElementById('settings-account-birthday-preview');
-      if (preview) preview.textContent = nextBirthday || "Sin fecha registrada";
-      closeBirthdayConfigView();
-      // Detección retroactiva: esto cubre a cuentas que ya existían antes de
-      // que pidiéramos la fecha de nacimiento en el registro, o a alguien
-      // que la carga/corrige por primera vez desde Configuración.
-      if (nextBirthday) applyBirthdayAgeProtections(nextBirthday);
-    }).finally(() => setSavingButtonState(actionButton, false));
+    // PUERTA DE VERIFICACIÓN DE EDAD (Ing. #2, 2026-09-20): solo se puede
+    // CAMBIAR la fecha con verificación de identidad vigente y sin haber
+    // agotado el límite de cambios (BIRTHDAY_MAX_CHANGES, como Instagram).
+    // La primera carga (sin fecha previa) no cuenta como cambio.
+    idvGateBirthdayChange(nextBirthday).then(gate => {
+      if (!gate.allowed) {
+        setSavingButtonState(actionButton, false);
+        if (gate.openVerification) { try { openIdvFlow(); } catch (e) {} }
+        return;
+      }
+      saveProfileField({ birthday: nextBirthday }).then(saved => {
+        if (!saved) return;
+        const preview = document.getElementById('settings-account-birthday-preview');
+        if (preview) preview.textContent = nextBirthday || "Sin fecha registrada";
+        if (gate.recordChange) {
+          try { idvRecordBirthdayChange(gate.oldBirthday, nextBirthday, gate.verifiedBy); } catch (e) {}
+          showMiniToast(appT('Fecha de nacimiento actualizada.'));
+        } else {
+          try { refreshBirthdayIdvSection(); } catch (e) {}
+        }
+        closeBirthdayConfigView();
+        // Detección retroactiva: esto cubre a cuentas que ya existían antes de
+        // que pidiéramos la fecha de nacimiento en el registro, o a alguien
+        // que la carga/corrige por primera vez desde Configuración.
+        if (nextBirthday) applyBirthdayAgeProtections(nextBirthday);
+      }).finally(() => setSavingButtonState(actionButton, false));
+    }).catch(() => setSavingButtonState(actionButton, false));
   }
+
+  /* === DREX-IDV-CLIENT-START === */
+  /* ════════════════════════════════════════════════════════════════════
+     VERIFICACIÓN DE EDAD — CLIENTE (Ing. #2, 2026-09-20)
+     Sección Cumpleaños (Configuración): insignia de estado, flujo de
+     verificación de identidad y puerta al cambio de fecha.
+     Backend: Lambda drex-id-verification (Ing. #1). Contrato:
+       window.DREX_IDV_BACKEND_URL = 'https://ef3menqtisejy2pjdrxg5zsc3q0wwthy.lambda-url.us-east-1.on.aws/'  (modo demo activo)
+       POST {url}/session   Authorization: Bearer <JWT Cognito>
+         body {country:"CU"|"US"|"CA"|"MX"|"BR", documentType}
+       GET  {url}/status → {status:"none"|"pending"|"verified"|"rejected"|"expired", ...}
+     NOTA: el JWT se obtiene con DrexCloud.auth().getAccessToken() porque la
+     Lambda valida con Cognito GetUser, que exige access token (el ID token
+     NO sirve ahí). Reconciliado 2026-09-21.
+     Claves NUEVAS en drex-kv (users/<uid>/...):
+       birthdayVerification: {status, provider, country?, documentType?, updatedAt}
+       birthdayHistory: [{old, new, at, verifiedBy}]
+     La clave `birthday` existente solo se LEE; su formato ("YYYY-MM-DD") no cambia.
+     En MODO DEMO el provider se marca "demo": nunca se escribe un
+     verificado real falso.
+     ════════════════════════════════════════════════════════════════════ */
+  window.DREX_IDV_BACKEND_URL = window.DREX_IDV_BACKEND_URL ||
+    'https://ef3menqtisejy2pjdrxg5zsc3q0wwthy.lambda-url.us-east-1.on.aws/';  // Lambda drex-id-verification (modo demo)
+  var IDV_DEMO_DELAY_MS = (typeof window !== 'undefined' && window.DREX_IDV_DEMO_DELAY_MS) || 20000;
+  var BIRTHDAY_MAX_CHANGES = 2;
+  var IDV_COUNTRIES = [
+    { code: 'CU', es: 'Cuba' },
+    { code: 'US', es: 'Estados Unidos' },
+    { code: 'CA', es: 'Canadá' },
+    { code: 'MX', es: 'México' },
+    { code: 'BR', es: 'Brasil' }
+  ];
+  // Documentos aceptados por país (cobertura Veriff; ajustar al desplegar).
+  var IDV_DOCS_BY_COUNTRY = {
+    CU: ['passport', 'national_id', 'drivers_license'], // Veriff documenta pasaporte + ID/cédula + licencia para Cuba (verificado 2026-09-21)
+    US: ['passport', 'drivers_license'],
+    CA: ['passport', 'drivers_license'],
+    MX: ['passport', 'national_id', 'drivers_license'],
+    BR: ['passport', 'national_id', 'drivers_license']
+  };
+  var IDV_DOC_LABELS = {
+    passport: 'Pasaporte',
+    national_id: 'Cédula de identidad',
+    drivers_license: 'Licencia de conducir'
+  };
+  // Claves ES nuevas que este módulo usa (los tests verifican que existan
+  // en APP_ENGLISH_TEXT y APP_CHINESE_TEXT de index.html y 404.html).
+  var IDV_I18N_KEYS = [
+    'Verificación de edad', 'Sin verificar', 'Verificada', 'Rechazada', 'Vencida',
+    'Verificar mi edad', 'Verifica tu edad', 'Selecciona tu país', 'Tipo de documento',
+    'Pasaporte', 'Cédula de identidad', 'Licencia de conducir',
+    'Cuba', 'Estados Unidos', 'Canadá', 'México', 'Brasil',
+    'Iniciar verificación', 'MODO DEMO',
+    'Esto es una simulación del proceso de verificación. Ningún documento real será revisado.',
+    'Tu documento está en revisión. Te avisaremos cuando termine.',
+    'Tu edad fue verificada correctamente.',
+    'Tu verificación de identidad fue rechazada.',
+    'Tu verificación de identidad venció.',
+    'Para cambiar tu fecha de nacimiento, primero verifica tu identidad.',
+    'Has alcanzado el límite de cambios de fecha de nacimiento. Si necesitas ayuda, contacta a soporte.',
+    'Fecha de nacimiento actualizada.',
+    'Cambios de fecha restantes: {n}',
+    'Fecha registrada', 'Actualizar estado', 'Verificando tu identidad…',
+    'Selecciona tu país y tu tipo de documento para continuar.',
+    'No se pudo iniciar la verificación. Inténtalo de nuevo.',
+    'No se pudo actualizar el estado. Inténtalo de nuevo.',
+    'Tu verificación está en revisión.',
+    'Verificada ✓',
+    'Creando sesión de verificación…',
+    'Documento recibido. Revisando…',
+    'Serás redirigido al proveedor de verificación para completar el proceso.',
+    'Inicia sesión para verificar tu edad.'
+  ];
+
+  var _idvCountry = '';
+  var _idvDoc = '';
+  var _idvDemoTimer = null;
+  var _idvPollTimer = null;
+  var _idvStep = 'country';
+
+  function idvT(es) { return (typeof appT === 'function') ? appT(es) : es; }
+
+  function idvBackendConfigured() {
+    try { return !!String(window.DREX_IDV_BACKEND_URL || '').trim(); } catch (e) { return false; }
+  }
+
+  function idvBadgeInfo(status, provider) {
+    var map = {
+      none:     { key: 'Sin verificar', cls: 'bg-[#eef2f7] text-[#5c6974]' },
+      pending:  { key: 'En revisión',   cls: 'bg-[#fef3c7] text-[#b45309]' },
+      verified: { key: 'Verificada ✓',  cls: 'bg-[#dcfce7] text-[#15803d]' },
+      rejected: { key: 'Rechazada',     cls: 'bg-[#fee2e2] text-[#b91c1c]' },
+      expired:  { key: 'Vencida',       cls: 'bg-[#eef2f7] text-[#5c6974]' }
+    };
+    var info = map[status] || map.none;
+    var label = idvT(info.key);
+    if (status === 'verified' && provider === 'demo') label += ' · ' + idvT('MODO DEMO');
+    return { label: label, cls: info.cls, key: info.key };
+  }
+
+  function renderIdvBadge(status, provider) {
+    try {
+      var badge = document.getElementById('idv-status-badge');
+      if (badge) {
+        var info = idvBadgeInfo(status, provider);
+        badge.textContent = info.label;
+        badge.className = 'shrink-0 text-[12px] font-bold px-3 py-1.5 rounded-full ' + info.cls;
+      }
+      var btn = document.getElementById('idv-verify-btn');
+      if (btn) btn.classList.toggle('hidden', !(status === 'none' || status === 'rejected' || status === 'expired'));
+    } catch (e) {}
+  }
+
+  function idvFormatDate(iso) {
+    try {
+      var p = String(iso || '').split('-');
+      if (p.length === 3 && p[0].length === 4) return p[2] + '/' + p[1] + '/' + p[0];
+    } catch (e) {}
+    return String(iso || '');
+  }
+
+  function refreshBirthdayIdvSection() {
+    var user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (e) {}
+    if (!user) { renderIdvBadge('none'); return; }
+    DrexCloud.database().ref('users/' + user.uid).once('value').then(function (snap) {
+      var data = snap.val() || {};
+      var v = data.birthdayVerification || {};
+      var status = v.status || 'none';
+      renderIdvBadge(status, v.provider);
+      var cur = document.getElementById('idv-current-birthday');
+      if (cur) cur.textContent = data.birthday ? idvFormatDate(data.birthday) : idvT('Sin fecha registrada');
+      var hist = Array.isArray(data.birthdayHistory) ? data.birthdayHistory : [];
+      var left = Math.max(0, BIRTHDAY_MAX_CHANGES - hist.length);
+      var cl = document.getElementById('idv-changes-left');
+      if (cl) cl.textContent = idvT('Cambios de fecha restantes: {n}').replace('{n}', String(left));
+      var tag = document.getElementById('idv-demo-tag');
+      if (tag) tag.classList.toggle('hidden', idvBackendConfigured());
+      if (idvBackendConfigured() && status === 'pending') { try { idvRefreshStatusFromBackend(); } catch (e) {} }
+    }).catch(function () {});
+  }
+
+  /* ── Puerta al cambio de fecha (como Instagram) ── */
+  function idvGateBirthdayChange(nextBirthday) {
+    var user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (e) {}
+    if (!user) return Promise.resolve({ allowed: true });
+    return DrexCloud.database().ref('users/' + user.uid).once('value').then(function (snap) {
+      var data = snap.val() || {};
+      var current = data.birthday || '';
+      if (!nextBirthday || nextBirthday === current) return { allowed: true };
+      if (!current) return { allowed: true }; // primera carga: no cuenta como cambio
+      var history = Array.isArray(data.birthdayHistory) ? data.birthdayHistory : [];
+      if (history.length >= BIRTHDAY_MAX_CHANGES) {
+        showMiniToast(idvT('Has alcanzado el límite de cambios de fecha de nacimiento. Si necesitas ayuda, contacta a soporte.'));
+        return { allowed: false, openVerification: false };
+      }
+      var verification = data.birthdayVerification || {};
+      var decide = function (vStatus, vProvider) {
+        if ((vStatus || 'none') !== 'verified') {
+          showMiniToast(idvT('Para cambiar tu fecha de nacimiento, primero verifica tu identidad.'));
+          return { allowed: false, openVerification: true };
+        }
+        return { allowed: true, recordChange: true, oldBirthday: current, verifiedBy: vProvider || 'unknown' };
+      };
+      // Con backend configurado, la verdad está en el servidor: un registro local
+      // escrito a mano no puede abrir la puerta.
+      if (idvBackendConfigured()) {
+        return idvApi('/status', 'GET').then(function (st) {
+          st = st || {};
+          return decide(st.status, st.provider);
+        }).catch(function () { return decide(verification.status, verification.provider); });
+      }
+      return decide(verification.status, verification.provider);
+    }).catch(function () { return { allowed: true }; });
+  }
+
+  function idvRecordBirthdayChange(oldBirthday, newBirthday, verifiedBy) {
+    var user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (e) {}
+    if (!user) return Promise.resolve();
+    var ref = DrexCloud.database().ref('users/' + user.uid + '/birthdayHistory');
+    return ref.once('value').then(function (snap) {
+      var history = Array.isArray(snap.val()) ? snap.val() : [];
+      history.push({ old: oldBirthday || '', new: newBirthday || '', at: new Date().toISOString(), verifiedBy: verifiedBy || 'unknown' });
+      return ref.set(history.slice(-10));
+    }).then(function () { try { refreshBirthdayIdvSection(); } catch (e) {} })
+      .catch(function () {});
+  }
+
+  function idvWriteVerification(obj) {
+    try {
+      var user = DrexCloud.auth().currentUser;
+      if (!user) return Promise.resolve();
+      return DrexCloud.database().ref('users/' + user.uid + '/birthdayVerification').set(obj).catch(function () {});
+    } catch (e) { return Promise.resolve(); }
+  }
+
+  /* ── Llamadas al backend drex-id-verification ── */
+  function idvApi(path, method, body) {
+    var base = '';
+    try { base = String(window.DREX_IDV_BACKEND_URL || '').replace(/\/+$/, ''); } catch (e) {}
+    if (!base) return Promise.reject(new Error('idv-not-configured'));
+    var auth = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth() : null;
+    var tokenP = (auth && typeof auth.getAccessToken === 'function') ? auth.getAccessToken() : ((auth && typeof auth.getIdToken === 'function') ? auth.getIdToken() : Promise.resolve(null));
+    return tokenP.then(function (jwt) {
+      if (!jwt) throw new Error('idv-no-session');
+      var opts = {
+        method: method || 'GET',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwt }
+      };
+      if (body) opts.body = JSON.stringify(body);
+      return fetch(base + path, opts);
+    }).then(function (res) {
+      if (!res.ok) throw new Error('idv-http-' + res.status);
+      return res.json();
+    });
+  }
+
+  function idvOnResolved(status, provider) {
+    var user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (e) {}
+    var payload = { status: status, provider: provider || 'unknown', updatedAt: new Date().toISOString() };
+    var notify = function () {
+      renderIdvBadge(status, payload.provider);
+      var msgs = {
+        verified: 'Tu edad fue verificada correctamente.',
+        rejected: 'Tu verificación de identidad fue rechazada.',
+        expired: 'Tu verificación de identidad venció.'
+      };
+      if (msgs[status]) {
+        var text = idvT(msgs[status]);
+        try { showMiniToast(text); } catch (e) {}
+        if (user && typeof addNotification === 'function') {
+          try { addNotification(user.uid, text, 'id_verification', { system: true, category: 'age-verification', provider: payload.provider }); } catch (e) {}
+        }
+      }
+    };
+    // Con backend configurado el servidor ya escribió el estado (fuente de verdad);
+    // el cliente no debe sobrescribirlo: escribir aquí permitiría auto-verificarse.
+    if (user && !idvBackendConfigured()) { idvWriteVerification(payload).then(notify).catch(notify); }
+    else notify();
+    return payload;
+  }
+
+  function idvShowResult(status, provider) {
+    var conf = {
+      verified: { icon: '✅', title: 'Tu edad fue verificada correctamente.' },
+      rejected: { icon: '❌', title: 'Tu verificación de identidad fue rechazada.' },
+      expired:  { icon: '⏳', title: 'Tu verificación de identidad venció.' }
+    }[status];
+    if (!conf) return;
+    try {
+      var icon = document.getElementById('idv-result-icon');
+      var title = document.getElementById('idv-result-title');
+      var sub = document.getElementById('idv-result-sub');
+      if (icon) icon.textContent = conf.icon;
+      if (title) title.textContent = idvT(conf.title) + (provider === 'demo' ? ' · ' + idvT('MODO DEMO') : '');
+      if (sub) sub.textContent = (provider === 'demo')
+        ? idvT('Esto es una simulación del proceso de verificación. Ningún documento real será revisado.') : '';
+      idvShowStep('result');
+    } catch (e) {}
+  }
+
+  /* ── UI del flujo ── */
+  function idvShowStep(step) {
+    _idvStep = step;
+    try {
+      ['country', 'doc', 'launch', 'result'].forEach(function (s) {
+        var el = document.getElementById('idv-step-' + s);
+        if (el) el.classList.toggle('hidden', s !== step);
+      });
+    } catch (e) {}
+  }
+
+  function idvClearTimers() {
+    try { if (_idvDemoTimer) clearTimeout(_idvDemoTimer); } catch (e) {}
+    try { if (_idvPollTimer) clearInterval(_idvPollTimer); } catch (e) {}
+    _idvDemoTimer = null; _idvPollTimer = null;
+  }
+
+  function openIdvFlow() {
+    var view = null;
+    try { view = document.getElementById('idv-flow-view'); } catch (e) {}
+    if (!view) return;
+    try { if (view.parentElement !== document.body) document.body.appendChild(view); } catch (e) {}
+    _idvCountry = ''; _idvDoc = '';
+    idvClearTimers();
+    try {
+      var banner = document.getElementById('idv-demo-banner');
+      if (banner) banner.classList.toggle('hidden', idvBackendConfigured());
+    } catch (e) {}
+    try { idvRenderCountries(); } catch (e) {}
+    idvShowStep('country');
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+    view.style.zIndex = '140';
+  }
+
+  function closeIdvFlow() {
+    idvClearTimers();
+    try {
+      var view = document.getElementById('idv-flow-view');
+      if (view) { view.classList.add('hidden'); view.style.display = 'none'; }
+    } catch (e) {}
+  }
+
+  function idvGoBack() {
+    if (_idvStep === 'doc') idvShowStep('country');
+    else if (_idvStep === 'launch') { idvClearTimers(); idvShowStep('doc'); }
+    else closeIdvFlow();
+  }
+
+  function idvRenderCountries() {
+    var list = document.getElementById('idv-country-list');
+    if (!list) return;
+    list.innerHTML = IDV_COUNTRIES.map(function (c) {
+      var name = idvT(c.es);
+      var sel = _idvCountry === c.code;
+      return '<button type="button" onclick="selectIdvCountry(\'' + c.code + '\')" class="w-full px-4 py-3 flex items-center justify-between gap-4 text-left rounded-2xl border' + (sel ? ' border-[#1c2b4a] bg-[#eef2f7]' : ' border-[#dce1e5]') + ' active:opacity-80">' +
+        '<span class="text-[16px] text-[#1c2b4a] font-semibold">' + name + '</span>' +
+        '<span class="text-[#2F33B8] text-xl font-bold' + (sel ? '' : ' hidden') + '">✓</span></button>';
+    }).join('');
+  }
+
+  function selectIdvCountry(code) {
+    _idvCountry = code; _idvDoc = '';
+    try { idvRenderCountries(); } catch (e) {}
+    try { idvRenderDocs(); } catch (e) {}
+    idvShowStep('doc');
+  }
+
+  function idvRenderDocs() {
+    var list = document.getElementById('idv-doc-list');
+    if (!list) return;
+    var docs = IDV_DOCS_BY_COUNTRY[_idvCountry] || [];
+    var cname = '';
+    IDV_COUNTRIES.forEach(function (c) { if (c.code === _idvCountry) cname = idvT(c.es); });
+    try {
+      var label = document.getElementById('idv-doc-country-label');
+      if (label) label.textContent = cname;
+    } catch (e) {}
+    list.innerHTML = docs.map(function (d) {
+      return '<button type="button" onclick="selectIdvDoc(\'' + d + '\')" class="w-full px-4 py-3 flex items-center justify-between gap-4 text-left rounded-2xl border border-[#dce1e5] active:opacity-80">' +
+        '<span class="text-[16px] text-[#1c2b4a] font-semibold">' + idvT(IDV_DOC_LABELS[d] || d) + '</span>' +
+        '<svg class="w-5 h-5 text-[#c3ccd8]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg></button>';
+    }).join('');
+  }
+
+  function selectIdvDoc(doc) {
+    _idvDoc = doc;
+    var cname = '';
+    IDV_COUNTRIES.forEach(function (c) { if (c.code === _idvCountry) cname = idvT(c.es); });
+    try {
+      var sum = document.getElementById('idv-launch-summary');
+      if (sum) sum.textContent = cname + ' · ' + idvT(IDV_DOC_LABELS[doc] || doc);
+      var note = document.getElementById('idv-launch-note');
+      if (note) note.textContent = idvBackendConfigured()
+        ? idvT('Serás redirigido al proveedor de verificación para completar el proceso.')
+        : idvT('Esto es una simulación del proceso de verificación. Ningún documento real será revisado.');
+      var prog = document.getElementById('idv-launch-progress');
+      if (prog) { prog.classList.add('hidden'); prog.innerHTML = ''; }
+      var startBtn = document.getElementById('idv-start-btn');
+      if (startBtn) { startBtn.classList.remove('hidden'); startBtn.disabled = false; startBtn.textContent = idvT('Iniciar verificación'); }
+      var refBtn = document.getElementById('idv-refresh-btn');
+      if (refBtn) refBtn.classList.add('hidden');
+    } catch (e) {}
+    idvShowStep('launch');
+  }
+
+  function idvStartCurrent() {
+    if (idvBackendConfigured()) idvStartReal();
+    else idvStartDemo();
+  }
+
+  /* ── MODO DEMO (sin backend desplegado): flujo completo simulado in-app ── */
+  function idvStartDemo() {
+    var user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (e) {}
+    if (!_idvCountry || !_idvDoc) { try { showMiniToast(idvT('Selecciona tu país y tu tipo de documento para continuar.')); } catch (e) {} return; }
+    if (!user) { try { showMiniToast(idvT('Inicia sesión para verificar tu edad.')); } catch (e) {} return; }
+    idvWriteVerification({ status: 'pending', provider: 'demo', country: _idvCountry, documentType: _idvDoc, updatedAt: new Date().toISOString() });
+    renderIdvBadge('pending', 'demo');
+    try {
+      var spin = (typeof DREX_SPINNER_HTML !== 'undefined') ? DREX_SPINNER_HTML : '';
+      var prog = document.getElementById('idv-launch-progress');
+      if (prog) {
+        prog.classList.remove('hidden');
+        prog.innerHTML = '<div class="flex items-center gap-3 text-[14px] text-[#1c2b4a]">' + spin + '<span>' + idvT('Creando sesión de verificación…') + '</span></div>';
+        setTimeout(function () {
+          try {
+            var p2 = document.getElementById('idv-launch-progress');
+            if (p2) p2.innerHTML = '<div class="flex items-center gap-3 text-[14px] text-[#1c2b4a]">' + spin + '<span>' + idvT('Documento recibido. Revisando…') + '</span></div>';
+          } catch (e) {}
+        }, 3000);
+      }
+      var startBtn = document.getElementById('idv-start-btn');
+      if (startBtn) startBtn.classList.add('hidden');
+    } catch (e) {}
+    try { showMiniToast(idvT('Tu documento está en revisión. Te avisaremos cuando termine.')); } catch (e) {}
+    idvClearTimers();
+    _idvDemoTimer = setTimeout(function () {
+      _idvDemoTimer = null;
+      idvOnResolved('verified', 'demo');
+      idvShowResult('verified', 'demo');
+    }, IDV_DEMO_DELAY_MS);
+  }
+
+  /* ── Backend real (Lambda drex-id-verification) ── */
+  function idvStartReal() {
+    if (!_idvCountry || !_idvDoc) { try { showMiniToast(idvT('Selecciona tu país y tu tipo de documento para continuar.')); } catch (e) {} return; }
+    var startBtn = null;
+    try {
+      startBtn = document.getElementById('idv-start-btn');
+      if (startBtn) { startBtn.disabled = true; startBtn.textContent = idvT('Verificando tu identidad…'); }
+    } catch (e) {}
+    idvApi('/session', 'POST', { country: _idvCountry, documentType: _idvDoc }).then(function (data) {
+      data = data || {};
+      // El servidor ya marcó 'pending' en birthdayVerification (fuente de verdad);
+      // el cliente solo refleja el estado, nunca lo escribe en esta ruta.
+      var prov0 = data.provider || 'veriff';
+      renderIdvBadge('pending', prov0);
+      var vurl = data.verificationUrl || data.url;
+      if (vurl) { try { window.open(vurl, '_blank'); } catch (e) {} }
+      try {
+        var prog = document.getElementById('idv-launch-progress');
+        if (prog) {
+          prog.classList.remove('hidden');
+          prog.innerHTML = '<p class="text-[14px] text-[#1c2b4a]">' + idvT('Tu verificación está en revisión.') + '</p>';
+        }
+        if (startBtn) startBtn.classList.add('hidden');
+        var refBtn = document.getElementById('idv-refresh-btn');
+        if (refBtn) refBtn.classList.remove('hidden');
+      } catch (e) {}
+      try { showMiniToast(idvT('Tu verificación está en revisión.')); } catch (e) {}
+      idvStartPolling();
+    }).catch(function () {
+      try {
+        if (startBtn) { startBtn.disabled = false; startBtn.textContent = idvT('Iniciar verificación'); }
+        showMiniToast(idvT('No se pudo iniciar la verificación. Inténtalo de nuevo.'));
+      } catch (e) {}
+    });
+  }
+
+  function idvStartPolling() {
+    idvClearTimers();
+    var attempts = 0;
+    _idvPollTimer = setInterval(function () {
+      attempts++;
+      if (attempts > 20) { idvClearTimers(); return; }
+      idvApi('/status', 'GET').then(function (data) {
+        var st = (data && data.status) || 'pending';
+        if (st === 'pending' || st === 'none') return;
+        idvClearTimers();
+        var prov = (data && data.provider) || 'veriff';
+        idvOnResolved(st, prov);
+        idvShowResult(st, prov);
+      }).catch(function () {});
+    }, 15000);
+  }
+
+  function idvManualRefresh() {
+    idvApi('/status', 'GET').then(function (data) {
+      var st = (data && data.status) || 'none';
+      var prov = (data && data.provider) || 'veriff';
+      idvOnResolved(st, prov);
+      if (st === 'pending' || st === 'none') {
+        try { showMiniToast(idvT('Tu verificación está en revisión.')); } catch (e) {}
+        return;
+      }
+      idvClearTimers();
+      idvShowResult(st, prov);
+    }).catch(function () {
+      try { showMiniToast(idvT('No se pudo actualizar el estado. Inténtalo de nuevo.')); } catch (e) {}
+    });
+  }
+
+  // Al abrir la sección, si el backend ya está configurado y hay una
+  // verificación pendiente, se consulta el estado real una vez.
+  function idvRefreshStatusFromBackend() {
+    if (!idvBackendConfigured()) return;
+    idvApi('/status', 'GET').then(function (data) {
+      var st = (data && data.status) || 'none';
+      var prov = (data && data.provider) || 'veriff';
+      var user = null;
+      try { user = DrexCloud.auth().currentUser; } catch (e) {}
+      if (!user) return;
+      DrexCloud.database().ref('users/' + user.uid + '/birthdayVerification').once('value').then(function (snap) {
+        var cur = (snap.val() || {}).status || 'none';
+        if (st === 'verified' || st === 'rejected' || st === 'expired') idvOnResolved(st, prov);
+        else if (st === 'pending' && cur === 'none') idvOnResolved('pending', prov);
+      }).catch(function () {});
+    }).catch(function () {});
+  }
+  /* === DREX-IDV-CLIENT-END === */
+
+
 
   /* ══════════════════════════════════════════════════════
      PROTECCIONES AUTOMÁTICAS POR EDAD (cuentas de menores de 14)
@@ -39545,6 +40200,18 @@ try { installMfaChallengeUi(); } catch (_) {}
 
 // Centro de seguridad
 const DREX_SECURITY_PATH = 'security';
+function securityToast(message) {
+  if (typeof showMiniToast === 'function') showMiniToast(message);
+  else showMiniToast(message);
+}
+async function showSecurityAlertIfEnabled(key, message) {
+  const user = DrexCloud.auth().currentUser;
+  if (!user) return;
+  try {
+    const value = (await DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}/preferences/${key}`).once('value')).val();
+    if (value !== false) securityToast(message);
+  } catch (_) {}
+}
 // [SESIONES] Ing. #5: el registro de sesiones vive en drex-cloud.js (bloque [SESIONES]).
 // Aqui solo se sincroniza el id local para resaltar "Esta sesion" en la lista y se
 // escuchan los avisos de sesion nueva para registrar el evento de seguridad.
@@ -39607,6 +40274,99 @@ async function toggleSecurityPreference(key) {
   await recordSecurityEvent('Preferencia de seguridad', `${label}: ${value ? 'activados' : 'desactivados'}.`);
   securityToast(value ? 'Alerta de seguridad activada.' : 'Alerta de seguridad desactivada.');
 }
+// [EVENTOS-SEGURIDAD-BLOCK-BEGIN]
+// [EVENTOS-SEGURIDAD] Ing. Eventos (2026-09-21): persistencia real de la
+// seccion "Actividad reciente" del Centro de seguridad.
+// Cada evento es un item propio de DynamoDB:
+//   pk='users', sk='<uid>/security/events/<timestamp_ms>_<rand>'
+// con {eventKey, type, detail, timestamp, ts}.
+//  - eventKey: clave canonica del tipo de evento (permite traducir la
+//    etiqueta al idioma actual en el render, sin importar el idioma con el
+//    que se registro). 'custom' si el tipo no es uno de los conocidos.
+//  - type: etiqueta en espanol (respaldo si eventKey falta).
+// Retencion: maximo 50 eventos por usuario. La limpieza se hace EN LA
+// ESCRITURA, solo cuando se supera el limite: se leen las claves del
+// subarbol y se borran las mas viejas hasta quedar en 50. Mismo patron que
+// recordLoginHistory() en drex-cloud.js (barato porque solo corre en exceso).
+// Totalmente segura: no-op silencioso si no hay usuario autenticado o si
+// DynamoDB falla; NUNCA lanza (varios call sites ni siquiera estan en
+// try/catch). En `detail` nunca se guardan datos sensibles: sin tokens,
+// correos, contrasenas ni secretos; solo descripciones genericas.
+const DREX_SECURITY_EVENT_TYPES = {
+  mfa_enabled:               { es:'Verificación en dos pasos activada',   en:'Two-step verification enabled',  zh:'两步验证已开启' },
+  mfa_disabled:              { es:'Verificación en dos pasos desactivada', en:'Two-step verification disabled', zh:'两步验证已关闭' },
+  recovery_code_used:        { es:'Código de respaldo usado',              en:'Backup code used',               zh:'备用验证码已使用' },
+  new_login:                 { es:'Nuevo inicio de sesión',                en:'New login',                      zh:'新登录' },
+  security_preference:       { es:'Preferencia de seguridad',             en:'Security preference',            zh:'安全偏好' },
+  new_device:                { es:'Nuevo dispositivo detectado',           en:'New device detected',            zh:'检测到新设备' },
+  unrecognized_device:       { es:'Dispositivo no reconocido',             en:'Unrecognized device',            zh:'无法识别的设备' },
+  device_forgotten:          { es:'Dispositivo olvidado',                  en:'Forgotten device',               zh:'已移除的设备' },
+  email_verify_requested:    { es:'Verificación de correo solicitada',     en:'Email verification requested',   zh:'已请求邮箱验证' },
+  password_recovery_requested:{ es:'Recuperación solicitada',              en:'Recovery requested',             zh:'已请求恢复' },
+  password_changed:          { es:'Contraseña cambiada',                   en:'Password changed',               zh:'密码已更改' },
+  session_closed:            { es:'Sesión cerrada',                        en:'Session signed out',             zh:'会话已退出' },
+  other_sessions_closed:     { es:'Otras sesiones cerradas',               en:'Other sessions signed out',      zh:'其他会话已退出' },
+  data_downloaded:           { es:'Datos descargados',                     en:'Data downloaded',                zh:'数据已下载' }
+};
+// Mapa inverso: la etiqueta entrante (en ES/EN/ZH, segun el idioma activo al
+// registrar) se normaliza a la clave canonica.
+const DREX_SECURITY_EVENT_KEY_BY_LABEL = {};
+Object.keys(DREX_SECURITY_EVENT_TYPES).forEach(function (k) {
+  const t = DREX_SECURITY_EVENT_TYPES[k];
+  [t.es, t.en, t.zh].forEach(function (s) { if (s) DREX_SECURITY_EVENT_KEY_BY_LABEL[s] = k; });
+});
+function securityEventKeyForType(type) {
+  try {
+    const s = String(type == null ? '' : type).trim();
+    return DREX_SECURITY_EVENT_KEY_BY_LABEL[s] || null;
+  } catch (_) { return null; }
+}
+var DREX_SECURITY_EVENTS_MAX = 50;
+function recordSecurityEvent(type, detail) {
+  try {
+    let user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (_) {}
+    if (!user || !user.uid) return Promise.resolve(false); // no-op silencioso
+    const key = securityEventKeyForType(type);
+    const esLabel = (key && DREX_SECURITY_EVENT_TYPES[key].es) || String(type == null ? '' : type).slice(0, 120);
+    const now = Date.now();
+    const record = {
+      eventKey: key || 'custom',
+      type: esLabel,
+      detail: String(detail == null ? '' : detail).slice(0, 300),
+      timestamp: now,
+      ts: now
+    };
+    const pushId = String(now) + '_' + Math.random().toString(36).slice(2, 10);
+    const baseRef = DrexCloud.database().ref('users/' + user.uid + '/security/events');
+    // Fire-and-forget: el flujo que registra nunca espera ni depende de esto.
+    baseRef.child(pushId).set(record).catch(function () {}).then(function () {
+      return baseRef.once('value').then(function (snap) {
+        const val = snap.val() || {};
+        const keys = Object.keys(val).sort(); // prefijo ts de 13 digitos => orden cronologico
+        const excess = keys.length - DREX_SECURITY_EVENTS_MAX;
+        if (excess <= 0) return null;
+        let chain = Promise.resolve();
+        keys.slice(0, excess).forEach(function (k) {
+          chain = chain.then(function () { return baseRef.child(k).remove().catch(function () {}); });
+        });
+        return chain;
+      }).catch(function () {});
+    }).catch(function () {});
+    return Promise.resolve(true);
+  } catch (_) { return Promise.resolve(false); }
+}
+// Etiqueta visible: siempre traducida al idioma actual via appT().
+function securityEventTypeLabel(event) {
+  try {
+    const e = event || {};
+    const key = e.eventKey;
+    if (key && DREX_SECURITY_EVENT_TYPES[key]) return appT(DREX_SECURITY_EVENT_TYPES[key].es);
+    const raw = String(e.type || '').trim();
+    return raw ? appT(raw) : appT('Actividad de seguridad');
+  } catch (_) { return 'Actividad de seguridad'; }
+}
+// [EVENTOS-SEGURIDAD-BLOCK-END]
 function renderSecuritySessions(sessions) {
   // [SESIONES] Ing. #5: la lista se alimenta con DrexCloud.listDrexSessions()
   // (registros users/<uid>/sessions/<id>, un item JSON por sesion).
@@ -39635,13 +40395,13 @@ function renderSecurityEvents(events) {
   const list = document.getElementById('security-events-list');
   if (!list) return;
   const entries = Object.values(events || {})
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+    .sort((a, b) => (((b && (b.timestamp || b.ts)) || 0) - ((a && (a.timestamp || a.ts)) || 0)))
     .slice(0, 8);
   if (!entries.length) {
-    list.innerHTML = '<p class="p-4 text-sm text-[#6b7280]">Aún no hay eventos de seguridad registrados.</p>';
+    list.innerHTML = '<p class="p-4 text-sm text-[#6b7280]">' + escapeHtml(appT('Aún no hay eventos de seguridad registrados.')) + '</p>';
     return;
   }
-  list.innerHTML = entries.map(event => `<div class="p-4"><p class="text-sm font-bold text-[#1c2b4a]">${escapeHtml(event.type || 'Actividad de seguridad')}</p><p class="text-xs text-[#6b7280] mt-1">${escapeHtml(event.detail || '')}</p><p class="text-[11px] text-[#8b96a5] mt-2">${formatSecurityTime(event.timestamp)}</p></div>`).join('');
+  list.innerHTML = entries.map(event => `<div class="p-4"><p class="text-sm font-bold text-[#1c2b4a]">${escapeHtml(securityEventTypeLabel(event))}</p><p class="text-xs text-[#6b7280] mt-1">${escapeHtml(event.detail || '')}</p><p class="text-[11px] text-[#8b96a5] mt-2">${formatSecurityTime(event.timestamp || event.ts)}</p></div>`).join('');
 }
 async function clearLoginHistory() {
   // [HISTORIAL-ACCESOS] Borra todos los accesos registrados (confirmación nativa, como el resto de la app).
@@ -39693,11 +40453,13 @@ async function loadSecurityCenter() {
   // Cada lectura es independiente: si una falla (red), las demás secciones
   // igual se dibujan en vez de dejar todo el centro en "Comprobando…".
   const emptySnap = { val: () => null };
-  const [userSnap, securitySnap, loginsSnap] = await Promise.all([
+  const [userSnap, securitySnap, loginsSnap, secEventsSnap] = await Promise.all([
     DrexCloud.database().ref('users/' + user.uid).once('value').catch(() => emptySnap),
     DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}`).once('value').catch(() => emptySnap),
     // [HISTORIAL-ACCESOS] Ing. #3: historial de accesos de este usuario.
-    DrexCloud.database().ref(`users/${user.uid}/logins`).once('value').catch(() => emptySnap)
+    DrexCloud.database().ref(`users/${user.uid}/logins`).once('value').catch(() => emptySnap),
+    // [EVENTOS-SEGURIDAD] Ing. Eventos: eventos de seguridad (un item por evento).
+    DrexCloud.database().ref(`users/${user.uid}/security/events`).once('value').catch(() => emptySnap)
   ]);
   const userData = userSnap.val() || {};
   const security = securitySnap.val() || {};
@@ -39738,7 +40500,7 @@ async function loadSecurityCenter() {
   const drexSessionsObj = {};
   drexSessionList.forEach(sess => { if (sess && sess.id) drexSessionsObj[sess.id] = sess; });
   renderSecuritySessions(drexSessionsObj);
-  renderSecurityEvents(security.events);
+  renderSecurityEvents(secEventsSnap.val() || security.events);
   renderLoginHistory(loginsSnap.val()); // [HISTORIAL-ACCESOS] Ing. #3
   // [DISPOSITIVOS] inicio — cargar dispositivos reconocidos
   try {
@@ -39759,6 +40521,16 @@ async function openSecurityCenter() {
   } catch (_) {
     securityToast('No se pudo cargar por completo el Centro de seguridad.');
   }
+  // "Descargar mis datos" (exportación asíncrona): montar una sola vez por
+  // carga de página; el módulo sondea su propio estado en DynamoDB.
+  try {
+    var dxm = document.getElementById('drex-data-export');
+    if (dxm && !dxm.dataset.dxInit && window.DrexDataExport &&
+        typeof window.DrexDataExport.renderInto === 'function') {
+      dxm.dataset.dxInit = '1';
+      window.DrexDataExport.renderInto(dxm);
+    }
+  } catch (_) {}
 }
 function closeSecurityCenter() {
   const view = document.getElementById('security-center-view');
@@ -42837,7 +43609,71 @@ async function endFiesta() {
         <!-- Campo oculto para almacenar la fecha completa -->
         <input id="settings-account-birthday" type="hidden" class="form-input w-full p-3 rounded-xl border border-[#dce1e5] bg-white text-[#1c2b4a]">
         
+        <!-- VERIFICACIÓN DE EDAD -->
+        <div class="rounded-2xl border border-[#dce1e5] bg-[#f8fafc] p-4">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-[15px] font-bold text-[#1c2b4a]">Verificación de edad</p>
+              <p class="text-[12px] text-[#7b8794] mt-0.5"><span>Fecha registrada</span>: <span id="idv-current-birthday">—</span></p>
+            </div>
+            <span id="idv-status-badge" class="shrink-0 text-[12px] font-bold px-3 py-1.5 rounded-full bg-[#eef2f7] text-[#5c6974]">Sin verificar</span>
+          </div>
+          <p id="idv-changes-left" class="text-[12px] text-[#7b8794] mt-2"></p>
+          <button id="idv-verify-btn" onclick="openIdvFlow()" class="mt-3 w-full min-h-[44px] rounded-full bg-[#1c2b4a] text-white font-bold text-[15px] active:opacity-80">Verificar mi edad</button>
+          <div class="mt-2 text-center"><span id="idv-demo-tag" class="hidden text-[11px] font-bold text-[#b45309] bg-[#fef3c7] rounded-full px-3 py-1">MODO DEMO</span></div>
+        </div>
+        
         <p class="text-[13px] text-[#7b8794] mt-4">Puedes usarla para completar la información de tu cuenta y tu perfil.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- VERIFICACIÓN DE EDAD: flujo de verificación de identidad -->
+  <div id="idv-flow-view" class="fixed inset-0 bg-white z-[140] flex flex-col" style="display:none;">
+    <div class="flex items-center justify-between p-4 border-b border-[#dce1e5] bg-white" style="padding-top:max(1rem,env(safe-area-inset-top));">
+      <button onclick="idvGoBack()" class="tap44 text-[#5c6974] p-1" aria-label="Volver">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[#1c2b4a] absolute left-1/2 -translate-x-1/2">Verifica tu edad</h2>
+      <button onclick="closeIdvFlow()" class="min-h-[44px] flex items-center text-[#1c2b4a] font-bold text-lg">Cerrar</button>
+    </div>
+    <div class="flex-1 overflow-y-auto bg-white pb-8">
+      <div class="px-4 pt-5">
+        <div id="idv-demo-banner" class="hidden mb-4 text-center"><span class="text-[11px] font-bold text-[#b45309] bg-[#fef3c7] rounded-full px-3 py-1">MODO DEMO</span>
+          <p class="text-[12px] text-[#7b8794] mt-2">Esto es una simulación del proceso de verificación. Ningún documento real será revisado.</p>
+        </div>
+
+        <!-- Paso 1: país -->
+        <div id="idv-step-country">
+          <p class="text-[15px] font-bold text-[#1c2b4a] mb-3">Selecciona tu país</p>
+          <div id="idv-country-list" class="space-y-2"></div>
+        </div>
+
+        <!-- Paso 2: tipo de documento -->
+        <div id="idv-step-doc" class="hidden">
+          <p class="text-[15px] font-bold text-[#1c2b4a] mb-1">Tipo de documento</p>
+          <p id="idv-doc-country-label" class="text-[13px] text-[#7b8794] mb-3"></p>
+          <div id="idv-doc-list" class="space-y-2"></div>
+        </div>
+
+        <!-- Paso 3: lanzar verificación -->
+        <div id="idv-step-launch" class="hidden">
+          <div class="rounded-2xl border border-[#dce1e5] bg-[#f8fafc] p-4">
+            <p id="idv-launch-summary" class="text-[15px] font-bold text-[#1c2b4a]"></p>
+            <p id="idv-launch-note" class="text-[13px] text-[#7b8794] mt-1"></p>
+          </div>
+          <div id="idv-launch-progress" class="hidden mt-4 space-y-2"></div>
+          <button id="idv-start-btn" onclick="idvStartCurrent()" class="mt-4 w-full min-h-[48px] rounded-full bg-[#1c2b4a] text-white font-bold text-[16px] active:opacity-80">Iniciar verificación</button>
+          <button id="idv-refresh-btn" onclick="idvManualRefresh()" class="hidden mt-3 w-full min-h-[44px] rounded-full border border-[#dce1e5] text-[#1c2b4a] font-bold text-[15px]">Actualizar estado</button>
+        </div>
+
+        <!-- Resultado -->
+        <div id="idv-step-result" class="hidden text-center pt-8">
+          <div id="idv-result-icon" class="text-6xl mb-4"></div>
+          <p id="idv-result-title" class="text-[18px] font-black text-[#1c2b4a]"></p>
+          <p id="idv-result-sub" class="text-[13px] text-[#7b8794] mt-2"></p>
+          <button onclick="closeIdvFlow()" class="mt-6 min-h-[48px] px-10 rounded-full bg-[#1c2b4a] text-white font-bold text-[16px]">Cerrar</button>
+        </div>
       </div>
     </div>
   </div>
