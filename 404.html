@@ -7892,7 +7892,7 @@ if (scrollArea) {
       <!-- Tarjeta de identidad -->
       <div class="flex flex-col items-center text-center -mt-10">
         <div id="author-profile-img-container" class="relative">
-          <img id="author-profile-image" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==" class="w-20 h-20 rounded-full object-cover ring-4 ring-white bg-[#eef2f7]" alt="">
+          <img id="author-profile-image" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==" class="w-20 h-20 rounded-full object-cover ring-4 ring-white bg-[#eef2f7] cursor-pointer active:opacity-80 transition" alt="Foto de perfil" title="Foto de perfil" onclick="openAuthorPhotoViewer()">
         </div>
 
         <!-- Nombre de usuario -->
@@ -20293,6 +20293,13 @@ function saveNote() {
 
   const APP_LANGUAGE_STORAGE_KEY = 'drex_app_language_v1';
   const APP_ENGLISH_TEXT = {
+"Copiar enlace":"Copy link",
+"Código QR":"QR code",
+"¡Enlace del perfil copiado!":"Profile link copied!",
+"Escanea para ver este perfil":"Scan to view this profile",
+"Aún no se pudo cargar este perfil. Inténtalo de nuevo en un momento.":"This profile couldn't be loaded yet. Try again in a moment.",
+"No se pudo generar el código QR.":"Couldn't generate the QR code.",
+"Foto":"Photo",
 "Colaborar":"Collaborate",
 "Quitar colaboración":"Remove collaboration",
 "Aceptar":"Accept",
@@ -22358,6 +22365,13 @@ function saveNote() {
 "No compartas estos códigos con nadie. Drex nunca te los pedirá por correo o mensaje.":"Never share these codes with anyone. Drex will never ask for them by email or message.",
 };
   const APP_CHINESE_TEXT = {
+"Copiar enlace":"复制链接",
+"Código QR":"二维码",
+"¡Enlace del perfil copiado!":"个人资料链接已复制！",
+"Escanea para ver este perfil":"扫码查看此个人资料",
+"Aún no se pudo cargar este perfil. Inténtalo de nuevo en un momento.":"此个人资料尚未加载完成，请稍后再试。",
+"No se pudo generar el código QR.":"无法生成二维码。",
+"Foto":"照片",
 "Colaborar":"合作",
 "Quitar colaboración":"移除合作",
 "Aceptar":"接受",
@@ -30681,6 +30695,91 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     if (view) {
       view.classList.add('hidden');
       view.style.display = 'none';
+    }
+  }
+
+  // Visor de foto de perfil del autor (circular estilo Instagram).
+  // Se abre al tocar la foto en el perfil de autor; ofrece copiar el enlace
+  // del perfil y mostrar su código QR.
+  function getAuthorProfileLink() {
+    const username = (typeof _currentAuthorUsername === 'string' ? _currentAuthorUsername : '').trim();
+    if (!username) return null;
+    return {
+      username: username,
+      url: window.location.origin + window.location.pathname + '?user=' + encodeURIComponent(username)
+    };
+  }
+
+  function openAuthorPhotoViewer() {
+    const view = document.getElementById('author-photo-viewer');
+    const big = document.getElementById('author-photo-viewer-img');
+    const nameEl = document.getElementById('author-photo-viewer-username');
+    if (!view || !big) return;
+    const small = document.getElementById('author-profile-image');
+    big.src = (small && small.src) ? small.src : '';
+    const link = getAuthorProfileLink();
+    if (nameEl) nameEl.textContent = link ? '@' + link.username : '';
+    showAuthorPhotoViewerPhoto();
+    if (view.parentElement !== document.body) document.body.appendChild(view);
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
+  }
+
+  function closeAuthorPhotoViewer() {
+    const view = document.getElementById('author-photo-viewer');
+    if (view) {
+      view.classList.add('hidden');
+      view.style.display = 'none';
+    }
+  }
+
+  function showAuthorPhotoViewerPhoto() {
+    const qrPage = document.getElementById('author-photo-viewer-qr-page');
+    if (qrPage) { qrPage.classList.add('hidden'); qrPage.classList.remove('flex'); }
+    document.getElementById('author-photo-viewer-photo-page')?.classList.remove('hidden');
+  }
+
+  function showAuthorPhotoQr() {
+    const link = getAuthorProfileLink();
+    if (!link) { showMiniToast(appT('Aún no se pudo cargar este perfil. Inténtalo de nuevo en un momento.')); return; }
+    const box = document.getElementById('author-photo-viewer-qr');
+    const uname = document.getElementById('author-photo-viewer-qr-username');
+    if (uname) uname.textContent = '@' + link.username;
+    if (box) {
+      box.innerHTML = '';
+      if (typeof QRCode !== 'undefined') {
+        try {
+          new QRCode(box, { text: link.url, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+        } catch (_) {
+          box.innerHTML = '<p class="text-sm text-gray-500 px-4 text-center">' + appT('No se pudo generar el código QR.') + '</p>';
+        }
+      } else {
+        box.innerHTML = '<p class="text-sm text-gray-500 px-4 text-center">' + appT('No se pudo generar el código QR.') + '</p>';
+      }
+    }
+    document.getElementById('author-photo-viewer-photo-page')?.classList.add('hidden');
+    const qrPage = document.getElementById('author-photo-viewer-qr-page');
+    if (qrPage) { qrPage.classList.remove('hidden'); qrPage.classList.add('flex'); }
+  }
+
+  function copyAuthorProfileLink() {
+    const link = getAuthorProfileLink();
+    if (!link) { showMiniToast(appT('Aún no se pudo cargar este perfil. Inténtalo de nuevo en un momento.')); return; }
+    const onCopied = () => showMiniToast(appT('¡Enlace del perfil copiado!'));
+    const fallbackCopy = () => {
+      const tempInput = document.createElement('input');
+      tempInput.value = link.url;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(tempInput);
+      onCopied();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link.url).then(onCopied).catch(fallbackCopy);
+    } else {
+      fallbackCopy();
     }
   }
 
@@ -40970,6 +41069,7 @@ function closeSubpageView() {
       ['image-modal-details', () => typeof _closeFeedImageModalDetails === 'function' && _closeFeedImageModalDetails()],
       ['image-modal', () => typeof closeImageModal === 'function' && closeImageModal()],
       ['author-ratings-sheet', () => typeof closeAuthorRatings === 'function' && closeAuthorRatings()],
+      ['author-photo-viewer', () => typeof closeAuthorPhotoViewer === 'function' && closeAuthorPhotoViewer()],
       ['author-profile-modal', () => typeof closeAuthorProfile === 'function' && closeAuthorProfile()],
       ['user-actions-sheet', () => typeof closeUserActionsSheet === 'function' && closeUserActionsSheet()],
       ['group-posts-view', () => typeof closeGroupPostsView === 'function' && closeGroupPostsView()],
@@ -43607,6 +43707,46 @@ async function endFiesta() {
     <img id="cover-fullscreen-img" src="" alt="Portada" class="max-w-full max-h-full object-contain">
   </div>
 
+<!-- Visor de foto de perfil del autor (circular estilo Instagram) -->
+  <div id="author-photo-viewer" class="fixed inset-0 z-[210] hidden flex-col items-center justify-center px-6" style="background:rgba(0,0,0,.93)">
+    <button onclick="closeAuthorPhotoViewer()" class="tap44 absolute top-4 right-4 w-11 h-11 rounded-full bg-white/20 text-white flex items-center justify-center" aria-label="Cerrar">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+    <!-- Página: foto circular -->
+    <div id="author-photo-viewer-photo-page" class="flex flex-col items-center w-full">
+      <img id="author-photo-viewer-img" src="" alt="Foto de perfil" class="rounded-full object-cover ring-4 ring-white/90 bg-[#eef2f7]" style="width:min(72vw,300px);height:min(72vw,300px)">
+      <p id="author-photo-viewer-username" class="mt-4 text-white font-bold text-lg"></p>
+      <div class="mt-6 flex items-center justify-center gap-3 w-full">
+        <button onclick="copyAuthorProfileLink()" class="tap44 flex items-center gap-2 px-5 h-12 rounded-full bg-white text-black font-semibold text-sm active:opacity-80 transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+          <span>Copiar enlace</span>
+        </button>
+        <button onclick="showAuthorPhotoQr()" class="tap44 flex items-center gap-2 px-5 h-12 rounded-full text-white font-semibold text-sm active:opacity-80 transition border border-white/25" style="background:rgba(255,255,255,.15)">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path stroke-linecap="round" d="M14 14h3v3h-3zM21 14v3M14 21h3M18 18h3v3h-3z"/></svg>
+          <span>Código QR</span>
+        </button>
+      </div>
+    </div>
+    <!-- Página: código QR -->
+    <div id="author-photo-viewer-qr-page" class="hidden flex-col items-center w-full">
+      <div class="bg-white rounded-3xl p-5 flex flex-col items-center max-w-full">
+        <div id="author-photo-viewer-qr" class="flex items-center justify-center" style="min-width:200px;min-height:200px"></div>
+        <p id="author-photo-viewer-qr-username" class="mt-3 font-bold text-black text-base"></p>
+        <p class="text-xs text-gray-500 mt-1">Escanea para ver este perfil</p>
+      </div>
+      <div class="mt-6 flex items-center justify-center gap-3 w-full">
+        <button onclick="showAuthorPhotoViewerPhoto()" class="tap44 flex items-center gap-2 px-5 h-12 rounded-full text-white font-semibold text-sm active:opacity-80 transition border border-white/25" style="background:rgba(255,255,255,.15)">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 15l-5-5L5 21"/></svg>
+          <span>Foto</span>
+        </button>
+        <button onclick="copyAuthorProfileLink()" class="tap44 flex items-center gap-2 px-5 h-12 rounded-full bg-white text-black font-semibold text-sm active:opacity-80 transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+          <span>Copiar enlace</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
 
 <script>
 // reubican-perfil-body: las 13 vistas de edición de perfil deben vivir como
@@ -43615,7 +43755,7 @@ async function endFiesta() {
 // se renderiza, por eso "Editar perfil" no mostraba nada al tocarlo.
 // Se reubican al body al cargar la página (antes de cualquier interacción).
 (function () {
-  var ids = ['profile-config-view','name-config-view','username-config-view','info-config-view','location-config-view','pronouns-config-view','email-config-view','password-config-view','birthday-config-view','app-language-settings-view','learning-language-settings-view','translations-config-view','update-photo-view','update-cover-view','cover-fullscreen-view'];
+  var ids = ['profile-config-view','name-config-view','username-config-view','info-config-view','location-config-view','pronouns-config-view','email-config-view','password-config-view','birthday-config-view','app-language-settings-view','learning-language-settings-view','translations-config-view','update-photo-view','update-cover-view','cover-fullscreen-view','author-photo-viewer'];
   for (var k = 0; k < ids.length; k++) {
     var el = document.getElementById(ids[k]);
     if (el && el.parentElement !== document.body) document.body.appendChild(el);
