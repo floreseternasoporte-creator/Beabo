@@ -43274,6 +43274,7 @@ document.addEventListener('input', function(e) {
 // Fiestas: llamadas grupales de voz para practicar idiomas (estilo Tandem Parties).
 const FIESTA_ICE = { iceServers: [ { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302', 'stun:stun3.l.google.com:19302', 'stun:stun4.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' } ], iceCandidatePoolSize: 10 };
 let fiestaCur = null;
+let fiestaJoining = false; // evita doble-toque: una sola entrada en curso
 let fiestaMyUid = null;
 let fiestaMyRole = 'listener';
 let fiestaLocalStream = null;
@@ -43555,6 +43556,8 @@ async function joinFiestaFromFeed(fiestaId) {
 
 async function joinFiesta(id, asSpeaker) {
   if (fiestaCur) { showMiniToast(appT('Ya estás en una fiesta.')); return; }
+  if (fiestaJoining) return; // FIX 2026-09-21: un segundo toque no inicia otra entrada en paralelo
+  fiestaJoining = true;
   const user = DrexCloud.auth().currentUser;
   if (!user) { showMiniToast(appT('Inicia sesión para unirte.')); return; }
   const mRef = DrexCloud.database().ref('fiestaMembers/' + id);
@@ -43608,10 +43611,16 @@ async function joinFiesta(id, asSpeaker) {
     // escritura del miembro, apertura de la sala), se limpia el estado para
     // no dejar al usuario atorado en "Ya estás en una fiesta." sin haber
     // entrado a la sala. La única salida antes era recargar la página.
+    // DIAG 2026-09-21: se muestra el motivo real del fallo para poder
+    // diagnosticar desde el teléfono del usuario.
+    let _emsg = '';
+    try { _emsg = String((e && (e.message || e.code)) || '').slice(0, 140); } catch (_) {}
     try { mRef.child(user.uid).remove().catch(() => {}); } catch (_) {}
     fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener';
     fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false;
-    if (!opened) showMiniToast(appT('No se pudo entrar a la fiesta. Revisa tu conexión e inténtalo de nuevo.'));
+    if (!opened) showMiniToast(appT('No se pudo entrar a la fiesta. Revisa tu conexión e inténtalo de nuevo.') + (_emsg ? ' [' + _emsg + ']' : ''));
+  } finally {
+    fiestaJoining = false;
   }
 }
 
