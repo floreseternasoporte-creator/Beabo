@@ -22714,6 +22714,8 @@ function saveNote() {
 "Ya enviaste una corrección en este ejercicio.":"You already submitted a correction on this exercise.",
 "Ya estás en esta fiesta.":"You're already in this party.",
 "Ya estás en una fiesta.":"You're already in a party.",
+"Te reconectaste a la fiesta.":"You reconnected to the party.",
+"No se pudo entrar a la fiesta. Revisa tu conexión e inténtalo de nuevo.":"Couldn't join the party. Check your connection and try again.",
 "Ya no estás supervisado por esa cuenta":"You're no longer supervised by that account",
 "Ya puedes iniciar sesión con tu nueva contraseña.":"You can now log in with your new password.",
 "Yorùbá":"Yorùbá",
@@ -24828,6 +24830,8 @@ function saveNote() {
 "Ya enviaste una corrección en este ejercicio.":"你已在此练习中提交过纠正。",
 "Ya estás en esta fiesta.":"你已在这个派对中。",
 "Ya estás en una fiesta.":"你已在一个派对中。",
+"Te reconectaste a la fiesta.":"你已重新连接到派对。",
+"No se pudo entrar a la fiesta. Revisa tu conexión e inténtalo de nuevo.":"无法加入派对。请检查网络连接后重试。",
 "Ya no estás supervisado por esa cuenta":"该账号已不再监管你",
 "Ya puedes iniciar sesión con tu nueva contraseña.":"你现在可以用新密码登录了。",
 "Yorùbá":"约鲁巴语",
@@ -43553,42 +43557,61 @@ async function joinFiesta(id, asSpeaker) {
   if (fiestaCur) { showMiniToast(appT('Ya estás en una fiesta.')); return; }
   const user = DrexCloud.auth().currentUser;
   if (!user) { showMiniToast(appT('Inicia sesión para unirte.')); return; }
-  const snap = await DrexCloud.database().ref('fiestas/' + id).once('value');
-  const f = snap.val();
-  if (!f || f.status !== 'live') { showMiniToast(appT('Esta fiesta ya terminó.')); return; }
   const mRef = DrexCloud.database().ref('fiestaMembers/' + id);
-  const mSnap = await mRef.once('value');
-  const members = mSnap.val() || {};
-  if (members[user.uid]) { showMiniToast(appT('Ya estás en esta fiesta.')); return; }
-  const speakers = Object.values(members).filter(m => m.role === 'speaker').length;
-  let role = 'listener';
-  if (asSpeaker && speakers < (f.maxSpeakers || 6)) role = 'speaker';
+  let opened = false;
+  try {
+    const snap = await DrexCloud.database().ref('fiestas/' + id).once('value');
+    const f = snap.val();
+    if (!f || f.status !== 'live') { showMiniToast(appT('Esta fiesta ya terminó.')); return; }
+    const mSnap = await mRef.once('value');
+    const members = mSnap.val() || {};
+    // FIX 2026-09-21: si quedó un registro atorado de una sesión anterior
+    // (la app se cerró sin disparar onDisconnect), se reclama en vez de
+    // bloquear la entrada. Antes mostraba "Ya estás en esta fiesta." y nunca
+    // abría la sala, dejando al usuario atorado sin poder entrar.
+    const stale = members[user.uid] || null;
+    const speakers = Object.entries(members).filter(([uid, m]) => uid !== user.uid && m && m.role === 'speaker').length;
+    let role = 'listener';
+    if (asSpeaker && speakers < (f.maxSpeakers || 6)) role = 'speaker';
+    else if (stale && stale.role === 'speaker' && speakers < (f.maxSpeakers || 6)) role = 'speaker';
 
-  fiestaMyUid = user.uid;
-  fiestaMyRole = role;
-  fiestaAmHost = f.hostId === user.uid;
-  fiestaCur = { id, data: f };
-  fiestaMuted = false;
-  fiestaMembers = {};
+    fiestaMyUid = user.uid;
+    fiestaMyRole = role;
+    fiestaAmHost = f.hostId === user.uid;
+    fiestaCur = { id, data: f };
+    fiestaMuted = false;
+    fiestaMembers = {};
 
-  // Limpiar senales viejas de mi buzon antes de que alguien me escriba
-  await DrexCloud.database().ref('fiestaSignals/' + id + '/' + user.uid).remove().catch(() => {});
-  const prof = await fiestaMyProfile();
-  await mRef.child(user.uid).set({ name: prof.name, photo: prof.photo, role, muted: false, joinedAt: Date.now() });
-  // WEPLAY2: aviso de entrada en el chat de la sala.
-  DrexCloud.database().ref('fiestas/' + id + '/chat').push({ sys: true, text: (prof.name || '') + ' ' + appT('se unió a la sala'), ts: Date.now() }).catch(() => {});
-  mRef.child(user.uid).onDisconnect().remove();
+    // Limpiar senales viejas de mi buzon antes de que alguien me escriba
+    await DrexCloud.database().ref('fiestaSignals/' + id + '/' + user.uid).remove().catch(() => {});
+    const prof = await fiestaMyProfile();
+    await mRef.child(user.uid).set({ name: prof.name, photo: prof.photo, role, muted: false, joinedAt: Date.now() });
+    // WEPLAY2: aviso de entrada en el chat de la sala.
+    DrexCloud.database().ref('fiestas/' + id + '/chat').push({ sys: true, text: (prof.name || '') + ' ' + appT('se unió a la sala'), ts: Date.now() }).catch(() => {});
+    mRef.child(user.uid).onDisconnect().remove();
 
-  document.getElementById('fiesta-view')?.classList.add('hidden');
-  fiestaShowRoom();
-  fiestaWatchRoom();
-  if (role === 'speaker') {
-    const ok = await fiestaEnsureMic();
-    if (!ok) {
-      fiestaMyRole = 'listener';
-      await mRef.child(user.uid).update({ role: 'listener' });
-      fiestaPaintControls();
+    document.getElementById('fiesta-view')?.classList.add('hidden');
+    fiestaShowRoom();
+    fiestaWatchRoom();
+    opened = true;
+    if (stale) showMiniToast(appT('Te reconectaste a la fiesta.'));
+    if (role === 'speaker') {
+      const ok = await fiestaEnsureMic();
+      if (!ok) {
+        fiestaMyRole = 'listener';
+        await mRef.child(user.uid).update({ role: 'listener' });
+        fiestaPaintControls();
+      }
     }
+  } catch (e) {
+    // FIX 2026-09-21: rollback. Si algo falla a mitad de la entrada (red,
+    // escritura del miembro, apertura de la sala), se limpia el estado para
+    // no dejar al usuario atorado en "Ya estás en una fiesta." sin haber
+    // entrado a la sala. La única salida antes era recargar la página.
+    try { mRef.child(user.uid).remove().catch(() => {}); } catch (_) {}
+    fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener';
+    fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false;
+    if (!opened) showMiniToast(appT('No se pudo entrar a la fiesta. Revisa tu conexión e inténtalo de nuevo.'));
   }
 }
 
