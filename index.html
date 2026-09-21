@@ -13043,6 +13043,15 @@ function saveNote() {
       notePostPublishing = false;
       // Invalidar snapshot del feed: hay un post nuevo que el caché no tiene.
       try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
+      // Índice notesByAuthor: mantiene el índice secundario para que los
+      // perfiles lean solo los posts del autor en vez de descargar
+      // communityNotes completo en cada polling. No bloquea la publicación.
+      try {
+        if (ref1 && ref1.key && note.authorId) {
+          DrexCloud.database().ref('notesByAuthor/' + note.authorId + '/' + ref1.key)
+            .set({ t: note.timestamp || Date.now() }).catch(() => {});
+        }
+      } catch (_) {}
       // Drex Rec: lo que uno publica también dice qué le interesa.
       try { if (typeof drexRecTrain === 'function' && note.flair) drexRecTrain({ flair: note.flair, authorId: null, text: '' }, DREX_REC.weights.publish); } catch (_) {}
       if (note.content || note.imageUrls || note.imageUrl || note.imageCount || note.video) {
@@ -16637,6 +16646,8 @@ function saveNote() {
         } catch (_) {}
       }
       await DrexCloud.database().ref('communityNotes/' + noteId).remove();
+      // Limpiar el índice notesByAuthor para que el post no quede fantasma en el perfil.
+      try { const _delAid = note.authorId || note.userId; if (_delAid) await DrexCloud.database().ref('notesByAuthor/' + _delAid + '/' + noteId).remove().catch(() => {}); } catch (_) {}
       // Limpiar los medios separados (fotos y videos) para no dejar huérfanos.
       DrexCloud.database().ref('noteImages/' + noteId).remove().catch(() => {});
       DrexCloud.database().ref('noteVideos/' + noteId).remove().catch(() => {});
@@ -43507,6 +43518,8 @@ async function createFiesta() {
   let _fiestaNoteRef = null, _noteErr = '';
   try {
     _fiestaNoteRef = await DrexCloud.database().ref('communityNotes').pushAsync(note);
+    // Índice notesByAuthor: el aviso de fiesta también es un post del autor.
+    try { if (_fiestaNoteRef && _fiestaNoteRef.key) DrexCloud.database().ref('notesByAuthor/' + user.uid + '/' + _fiestaNoteRef.key).set({ t: note.timestamp || Date.now() }).catch(() => {}); } catch (_) {}
   } catch (e) {
     try { _noteErr = String((e && (e.message || e.code)) || '').slice(0, 120); } catch (_) {}
   }
@@ -46682,6 +46695,8 @@ window.publishMusic = async function () {
     if (typeof musicDb().ref('communityNotes').pushAsync === 'function') noteRef = await musicDb().ref('communityNotes').pushAsync(note);
     else { noteRef = musicDb().ref('communityNotes').push(note); if (noteRef && noteRef._writePromise) await noteRef._writePromise; }
     if (noteRef && noteRef.key) trackRef.update({ announceNoteId: noteRef.key }).catch(() => {});
+    // Índice notesByAuthor: el anuncio también es un post del autor.
+    try { if (noteRef && noteRef.key) musicDb().ref('notesByAuthor/' + uid + '/' + noteRef.key).set({ t: note.timestamp || Date.now() }).catch(() => {}); } catch (_) {}
     // Avisar a los seguidores del artista (no bloquea la publicación).
     try {
       const _annId = (noteRef && noteRef.key) || null;
@@ -46731,6 +46746,7 @@ window.deleteMusicTrack = async function (trackId) {
     await musicDb().ref('musicTracks/' + trackId).remove().catch(() => {});
     await musicDb().ref('musicByAuthor/' + uid + '/' + trackId).remove().catch(() => {});
     if (t.announceNoteId) await musicDb().ref('communityNotes/' + t.announceNoteId).remove().catch(() => {});
+    try { if (t.announceNoteId) await musicDb().ref('notesByAuthor/' + uid + '/' + t.announceNoteId).remove().catch(() => {}); } catch (_) {}
     musicUrlCache.delete(trackId);
     if (musicCurrentTrackId() === trackId) musicStopAndHide();
     loadMyMusic(); loadProfileMusic();
