@@ -1383,23 +1383,6 @@
             });
           } catch (e) { resolve(null); }
         });
-      },
-      // Access token de Cognito (para APIs que validan con Cognito GetUser,
-      // como la Lambda drex-id-verification; el ID token NO sirve ahí).
-      getAccessToken: function () {
-        return new Promise(function (resolve) {
-          try {
-            var C = cognitoLib();
-            if (!C) return resolve(null);
-            var cu = getUserPool().getCurrentUser();
-            if (!cu) return resolve(null);
-            cu.getSession(function (err, session) {
-              if (err || !session || !session.isValid()) return resolve(null);
-              try { resolve(session.getAccessToken().getJwtToken()); }
-              catch (e) { resolve(null); }
-            });
-          } catch (e) { resolve(null); }
-        });
       }
     };
     return authInstance;
