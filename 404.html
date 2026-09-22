@@ -12192,7 +12192,21 @@ function saveNote() {
         if (tmp.firstElementChild) el.replaceWith(tmp.firstElementChild);
         else el.style.display = 'none';
       });
-    }).catch(() => {});
+    }).catch(() => {
+      // FIX AUDITORÍA POSTS 2026-09-22 (12): antes el error se tragaba en
+      // silencio y la foto desaparecía sin explicación. Ahora se muestra un
+      // estado de error con botón de reintento en cada placeholder afectado.
+      document.querySelectorAll('[data-note-imgs]').forEach(el => {
+        if (el.getAttribute('data-note-imgs') !== noteId) return;
+        el.removeAttribute('data-note-imgs');
+        el.innerHTML = '<button type="button" data-retry-imgs="' + escapeHtml(noteId) + '" ' +
+          'onclick="hydrateNoteImages(\'' + escapeInlineSingleQuote(noteId) + '\')" ' +
+          'class="w-full py-6 flex flex-col items-center gap-2 text-xs text-[var(--theme-text-muted)]">' +
+          '<svg class="w-6 h-6 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>' +
+          '<span>' + escapeHtml(appT('No se pudieron cargar las fotos. Toca para reintentar.')) + '</span>' +
+          '</button>';
+      });
+    });
   }
 
   // Hidrata las fotos de un post VIEJO (data URLs inline en communityNotes,
@@ -12495,9 +12509,14 @@ function saveNote() {
         authorName: userData.username || user.displayName || 'Usuario',
         authorImage: userData.profileImage || user.photoURL || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==',
         timestamp: Date.now(),
-        likes: 0,
-        comments: 0,
-        viewsCount: 0
+        // FIX AUDITORÍA POSTS 2026-09-22 (10): esquema canónico que usa la
+        // tarjeta (upvotes/downvotes/commentsCount/ecosCount). Los campos
+        // legacy (likes/comments/viewsCount) se eliminan: nadie los lee y
+        // solo confunden el modelo de datos.
+        upvotes: 0,
+        downvotes: 0,
+        commentsCount: 0,
+        ecosCount: 0
       };
 
       note.format = currentNoteFormat;
@@ -12739,7 +12758,12 @@ function saveNote() {
     // que pushAsync. Si falla, se limpian los trozos huérfanos.
     const writePromise = preReservedRef
       ? preReservedRef.set(note).then(() => preReservedRef).catch(err => {
+          // FIX AUDITORÍA POSTS 2026-09-22 (4): antes solo se limpiaban los
+          // trozos de video; las fotos escritas en noteImages/<id> quedaban
+          // huérfanas si la escritura final de la nota fallaba. Ahora se
+          // limpian ambos.
           if (note.video) DrexCloud.database().ref('noteVideos/' + preReservedRef.key).remove().catch(() => {});
+          if (note.imageUrls || note.imageUrl || note.imageCount) DrexCloud.database().ref('noteImages/' + preReservedRef.key).remove().catch(() => {});
           throw err;
         })
       : (typeof notesRef.pushAsync === 'function')
@@ -12883,7 +12907,12 @@ function saveNote() {
 
     const safeNoteIdJs = escapeInlineSingleQuote(noteIdForModal);
     const imgTag = (img, index) => {
-      const safeImg = escapeHtml(img);
+      // FIX AUDITORÍA POSTS 2026-09-22 (7): escapeHtml solo neutraliza HTML
+      // pero no valida el protocolo; una URL javascript:/data:text/html
+      // escapada seguiría siendo peligrosa en src. Se valida el esquema
+      // (http/https/data:image) con getSafeMediaUrl antes de interpolar.
+      const safeImg = getSafeMediaUrl(img);
+      if (!safeImg) return '';
       // Para el handler inline se usa la URL validada y escapada para string
       // JS (escapeHtml dejaría &#039; que el parser HTML decodifica antes de
       // compilar el handler y rompería la cadena).
@@ -15313,9 +15342,13 @@ function saveNote() {
 
   function wrapPostSpoiler(note, innerHTML) {
     if (!note || !note.spoiler) return innerHTML;
-    return '<div class="drex-spoiler" data-spoiler-card="' + note.id + '">' +
+    // FIX AUDITORÍA POSTS 2026-09-22 (9): note.id se interpolaba sin escape
+    // en el atributo data y el handler inline.
+    const safeSpoilerId = escapeInlineSingleQuote(note.id || '');
+    const safeSpoilerIdHtml = escapeHtml(note.id || '');
+    return '<div class="drex-spoiler" data-spoiler-card="' + safeSpoilerIdHtml + '">' +
       '<div class="drex-spoiler-blur">' + innerHTML + '</div>' +
-      '<button type="button" class="drex-spoiler-cover" style="background-image:' + drexSpoilerStarfield() + '" onclick="revealPostSpoiler(\'' + note.id + '\')" aria-label="' + escapeHtml(appT3('Spoiler: tap to reveal', 'Spoiler: toca para ver', '\u5267\u900f\uff1a\u70b9\u51fb\u67e5\u770b')) + '">' +
+      '<button type="button" class="drex-spoiler-cover" style="background-image:' + drexSpoilerStarfield() + '" onclick="revealPostSpoiler(\'' + safeSpoilerId + '\')" aria-label="' + escapeHtml(appT3('Spoiler: tap to reveal', 'Spoiler: toca para ver', '\u5267\u900f\uff1a\u70b9\u51fb\u67e5\u770b')) + '">' +
         '<span class="drex-spoiler-badge">' +
           DREX_EYE_OFF_SVG +
           '<span>' + appT3('Spoiler', 'Spoiler', '\u5267\u900f') + '</span>' +
@@ -16540,6 +16573,44 @@ function saveNote() {
   // Eliminar publicación (solo el autor). Esta función faltaba: el botón
   // "Eliminar" del menú de opciones la llamaba pero nunca existió, por eso
   // no hacía nada en ninguna publicación (incluidas las de fiestas).
+  // FIX AUDITORÍA POSTS 2026-09-22 (1): cascadeDeleteNote existía solo como
+  // llamada en moderarContenidoAutomaticamente pero nunca se definió
+  // (ReferenceError si la moderación automática se activaba). Extrae la
+  // cascada completa de borrado para reutilizarla en borrado manual y
+  // moderación automática sin duplicar lógica.
+  async function cascadeDeleteNote(noteId, note) {
+    if (!noteId) return false;
+    let n = note || null;
+    try {
+      const snap = await DrexCloud.database().ref('communityNotes/' + noteId).once('value');
+      n = snap.val() || n;
+    } catch (_) {}
+    if (!n) return false;
+    // Si es el anuncio de una fiesta activa del autor, terminarla también.
+    if (n.fiestaId) {
+      try {
+        const fSnap = await DrexCloud.database().ref('fiestas/' + n.fiestaId).once('value');
+        const f = fSnap.val();
+        if (f && f.status !== 'ended') {
+          await DrexCloud.database().ref('fiestas/' + n.fiestaId + '/status').set('ended').catch(() => {});
+          await DrexCloud.database().ref('fiestaReactions/' + n.fiestaId).remove().catch(() => {});
+          await DrexCloud.database().ref('fiestaKicked/' + n.fiestaId).remove().catch(() => {});
+        }
+      } catch (_) {}
+    }
+    await DrexCloud.database().ref('communityNotes/' + noteId).remove();
+    try { const _delAid = n.authorId || n.userId; if (_delAid) await DrexCloud.database().ref('notesByAuthor/' + _delAid + '/' + noteId).remove().catch(() => {}); } catch (_) {}
+    try {
+      if (n.groupId) await DrexCloud.database().ref('postsByGroup/' + n.groupId + '/' + noteId).remove().catch(() => {});
+      if (n.fiestaId) await DrexCloud.database().ref('postsByFiesta/' + n.fiestaId + '/' + noteId).remove().catch(() => {});
+    } catch (_) {}
+    DrexCloud.database().ref('noteImages/' + noteId).remove().catch(() => {});
+    DrexCloud.database().ref('noteVideos/' + noteId).remove().catch(() => {});
+    try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
+    _closeViewerIfShowingNote(noteId);
+    return true;
+  }
+
   async function deletePostFromOptions() {
     const noteId = currentPostOptionsNoteId;
     if (!noteId) return;
@@ -16559,33 +16630,8 @@ function saveNote() {
     if (!isOwner) { if (typeof showMiniToast === 'function') showMiniToast(appT('Solo el autor puede eliminar esta publicación.')); return; }
     if (!confirm(appT('¿Eliminar esta publicación? Esta acción no se puede deshacer.'))) return;
     try {
-      // Si es el anuncio de una fiesta y sigue activa, terminarla también para
-      // no dejar una sala de voz huérfana sin anuncio en el feed.
-      if (note.fiestaId) {
-        try {
-          const fSnap = await DrexCloud.database().ref('fiestas/' + note.fiestaId).once('value');
-          const f = fSnap.val();
-          if (f && f.status !== 'ended' && f.hostId === user.uid) {
-            await DrexCloud.database().ref('fiestas/' + note.fiestaId + '/status').set('ended').catch(() => {});
-            await DrexCloud.database().ref('fiestaReactions/' + note.fiestaId).remove().catch(() => {});
-            await DrexCloud.database().ref('fiestaKicked/' + note.fiestaId).remove().catch(() => {});
-          }
-        } catch (_) {}
-      }
-      await DrexCloud.database().ref('communityNotes/' + noteId).remove();
-      // Limpiar el índice notesByAuthor para que el post no quede fantasma en el perfil.
-      try { const _delAid = note.authorId || note.userId; if (_delAid) await DrexCloud.database().ref('notesByAuthor/' + _delAid + '/' + noteId).remove().catch(() => {}); } catch (_) {}
-      // Limpiar los índices por dimensión (grupo/fiesta) del post borrado.
-      try {
-        if (note.groupId) await DrexCloud.database().ref('postsByGroup/' + note.groupId + '/' + noteId).remove().catch(() => {});
-        if (note.fiestaId) await DrexCloud.database().ref('postsByFiesta/' + note.fiestaId + '/' + noteId).remove().catch(() => {});
-      } catch (_) {}
-      // Limpiar los medios separados (fotos y videos) para no dejar huérfanos.
-      DrexCloud.database().ref('noteImages/' + noteId).remove().catch(() => {});
-      DrexCloud.database().ref('noteVideos/' + noteId).remove().catch(() => {});
-      // Invalidar snapshot del feed: el post ya no existe.
-      try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
-      _closeViewerIfShowingNote(noteId);
+      // FIX AUDITORÍA POSTS 2026-09-22 (1): usa la cascada compartida.
+      await cascadeDeleteNote(noteId, note);
       closePostOptionsSheet();
       if (typeof showMiniToast === 'function') showMiniToast(appT('Publicación eliminada.'));
       try { if (typeof loadNotes === 'function') loadNotes(false); } catch (_) {}
@@ -16642,6 +16688,15 @@ function saveNote() {
     const newText = (ta ? ta.value : '').trim();
     if (!newText) { if (typeof showMiniToast === 'function') showMiniToast(appT('El texto no puede estar vacío.')); return; }
     if (saveBtn) saveBtn.disabled = true;
+    // FIX AUDITORÍA POSTS 2026-09-22 (5): la edición guardaba el texto
+    // directamente sin pasar por moderación; un post limpio podía editarse
+    // para incluir contenido prohibido. Ahora se evalúa antes de guardar.
+    const editModeration = evaluateContentModeration(newText, []);
+    if (editModeration.flagged) {
+      if (typeof showMiniToast === 'function') showMiniToast(appT('Tu nota no puede ser publicada porque contiene contenido inapropiado.'));
+      if (saveBtn) saveBtn.disabled = false;
+      return;
+    }
     try {
       const snap = await DrexCloud.database().ref('communityNotes/' + noteId).once('value');
       const note = snap.val();
@@ -17454,13 +17509,17 @@ function saveNote() {
 
     // A20: primero la escritura; solo si tiene éxito se confirma el estado
     // local y visual. Si falla, se revierte todo.
+    // FIX AUDITORÍA POSTS 2026-09-22 (11): btnEl puede no llegar (llamadas
+    // programáticas u otras superficies); se sincronizan todas las
+    // instancias visibles del botón como en votePost/toggleEco.
+    const saveBtns = btnEl ? [btnEl] : Array.from(document.querySelectorAll('[id="save-' + noteId + '"]'));
     if (btnEl) btnEl.classList.add('is-pending');
     try {
       if (isSaved) {
         await ref.child(noteId).remove();
         await DrexCloud.database().ref('postSavedBy/' + noteId + '/' + user.uid).remove().catch(() => {});
         delete _userSavedPosts[noteId];
-        btnEl.classList.remove('saved');
+        saveBtns.forEach(b => b.classList.remove('saved'));
         showMiniToast(appT('Eliminado de guardados'));
       } else {
         // A26: límite de 30 guardados con aviso claro.
@@ -17471,7 +17530,7 @@ function saveNote() {
         await ref.child(noteId).set({ savedAt: Date.now() });
         await DrexCloud.database().ref('postSavedBy/' + noteId + '/' + user.uid).set(true).catch(() => {});
         _userSavedPosts[noteId] = { savedAt: Date.now() };
-        btnEl.classList.add('saved');
+        saveBtns.forEach(b => b.classList.add('saved'));
         // Drex Rec: guardar es una señal fuerte de interés.
         try { if (typeof drexRecTrainById === 'function') drexRecTrainById(noteId, DREX_REC.weights.save); } catch (_) {}
         showMiniToast(appT('Guardado'));
@@ -17729,7 +17788,7 @@ function saveNote() {
           const timeAgo = typeof formatRelativeTime === 'function' ? formatRelativeTime(note.timestamp || Date.now()) : '';
           card.innerHTML = `
           <div class="flex items-start gap-3">
-            <img data-author-id="${note.authorId || ''}" data-author-avatar src="${note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0">
+            <img data-author-id="${note.authorId || ''}" data-author-avatar src="${getSafeMediaUrl(note.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0">
             <div class="flex-1 min-w-0">
               <p class="font-semibold text-sm text-[#1c2b4a]" data-author-id="${note.authorId || ''}" data-author-name>${authorName}</p>
               <p class="text-sm text-[#5c6974] mt-0.5 leading-relaxed">${content}${note.content && note.content.length > 220 ? '...' : ''}</p>
@@ -18076,17 +18135,27 @@ function saveNote() {
     return Number((note && (note.ecosCount || note.repostsCount)) || 0);
   }
 
+  // FIX AUDITORÍA POSTS 2026-09-22 (3): lock anti-doble-toque para eco,
+  // igual que _postVoteLocks en votePost. Sin esto, toques rápidos abrían
+  // transacciones simultáneas y desincronizaban UI/contador.
+  const _postEcoLocks = new Set();
   async function toggleEco(noteId) {
     const user = DrexCloud.auth().currentUser;
     if (!user) {
       showMiniToast(appT('Debes iniciar sesión para hacer eco'));
       return;
     }
+    if (_postEcoLocks.has(noteId)) return;
+    _postEcoLocks.add(noteId);
 
-    const btn = document.getElementById(`eco-${noteId}`);
-    if (!btn) return;
-
-    const countSpan = btn.querySelector('span');
+    // FIX AUDITORÍA POSTS 2026-09-22 (2): un post puede estar visible en
+    // varias superficies a la vez (feed, perfil, comentarios, permalink).
+    // Antes solo se actualizaba el primer botón (getElementById); ahora se
+    // sincronizan TODAS las instancias como hace votePost.
+    const btns = Array.from(document.querySelectorAll('[id="eco-' + noteId + '"]'));
+    if (!btns.length) { _postEcoLocks.delete(noteId); return; }
+    const setAll = (fn) => { btns.forEach(fn); };
+    const firstCountSpan = () => btns[0].querySelector('span');
 
     const noteRef = DrexCloud.database().ref('communityNotes/' + noteId);
     const userEcoRef = DrexCloud.database().ref('userEcos/' + user.uid + '/' + noteId);
@@ -18111,17 +18180,22 @@ function saveNote() {
       const note = noteSnap.val();
       if (!note) {
         showMiniToast(appT('Este post ya no existe.'));
+        _postEcoLocks.delete(noteId);
         return;
       }
 
       alreadyEchoed = ecoSnap.exists() || legacyEcoSnap.exists();
-      // UI optimista alineada con la realidad recién leída.
+      // UI optimista alineada con la realidad recién leída (todas las instancias).
       const willBeActive = !alreadyEchoed;
-      let currentCount = parseInt(countSpan.textContent) || 0;
-      btn.classList.add('animating');
-      btn.classList.toggle('active', willBeActive);
-      countSpan.textContent = willBeActive ? currentCount + 1 : Math.max(0, currentCount - 1);
-      setTimeout(() => btn.classList.remove('animating'), 400);
+      const countSpan = firstCountSpan();
+      let currentCount = parseInt((countSpan && countSpan.textContent) || '0', 10) || 0;
+      setAll(btn => {
+        btn.classList.add('animating');
+        btn.classList.toggle('active', willBeActive);
+        const s = btn.querySelector('span');
+        if (s) s.textContent = willBeActive ? currentCount + 1 : Math.max(0, currentCount - 1);
+        setTimeout(() => btn.classList.remove('animating'), 400);
+      });
       const userData = userSnap.val() || {};
       const ecoUserName = userData.username || user.displayName || user.email || 'Alguien';
 
@@ -18177,11 +18251,18 @@ function saveNote() {
       }
     } catch (error) {
       console.error('Error al hacer eco:', error);
-      // Revertir al estado real conocido (alreadyEchoed).
-      btn.classList.toggle('active', alreadyEchoed);
-      const revertedCount = parseInt(countSpan.textContent) || 0;
-      countSpan.textContent = alreadyEchoed ? revertedCount + 1 : Math.max(0, revertedCount - 1);
+      // Revertir al estado real conocido (alreadyEchoed) en todas las instancias.
+      setAll(btn => {
+        btn.classList.toggle('active', alreadyEchoed);
+        const s = btn.querySelector('span');
+        if (s) {
+          const revertedCount = parseInt(s.textContent) || 0;
+          s.textContent = alreadyEchoed ? revertedCount + 1 : Math.max(0, revertedCount - 1);
+        }
+      });
       showMiniToast(appT('No se pudo hacer eco.'));
+    } finally {
+      _postEcoLocks.delete(noteId);
     }
   }
 
@@ -29822,7 +29903,9 @@ function saveNote() {
 
 
   function renderPostTopActions(noteId, optionsLabel = 'Opciones de publicación') {
-    const safeNoteId = String(noteId || '');
+    // FIX AUDITORÍA POSTS 2026-09-22 (9): String() no escapa; se usa
+    // escapeInlineSingleQuote para el handler inline.
+    const safeNoteId = escapeInlineSingleQuote(noteId || '');
 
     return `
       <div class="post-top-actions">
@@ -45462,7 +45545,7 @@ function _renderPostPermalinkCard(note) {
   if (!body || !note || !note.id) return;
 
   const groupChipHTML = (note.groupId && note.groupName)
-    ? `<button onclick="openGroupPostsView('${note.groupId}', '${escapeSingleQuote(note.groupName)}')" class="mb-3 inline-flex items-center gap-1.5 text-xs font-bold text-[var(--theme-text)] bg-[var(--theme-surface-muted)] rounded-full px-3 py-1.5 active:bg-[var(--theme-surface-subtle)]">\uD83D\uDC65 ${escapeHtml(note.groupName)}</button>`
+    ? `<button onclick="openGroupPostsView('${escapeInlineSingleQuote(note.groupId)}', '${escapeSingleQuote(note.groupName)}')" class="mb-3 inline-flex items-center gap-1.5 text-xs font-bold text-[var(--theme-text)] bg-[var(--theme-surface-muted)] rounded-full px-3 py-1.5 active:bg-[var(--theme-surface-subtle)]">\uD83D\uDC65 ${escapeHtml(note.groupName)}</button>`
     : '';
 
   // Tarjeta canónica única: el permalink reutiliza el mismo renderer del feed
