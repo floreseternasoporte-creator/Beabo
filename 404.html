@@ -5044,6 +5044,33 @@ document.addEventListener("DOMContentLoaded", function() {
       margin-top: 10px;
       flex-wrap: wrap;
     }
+    /* Cluster de comentaristas (estilo Reddit): avatares apilados + conteo.
+       Oculto hasta que la carga perezosa lo llena (.drex-commenters-ready). */
+    .drex-commenters { display: none; margin-top: 8px; }
+    .drex-commenters.drex-commenters-ready { display: block; }
+    .drex-commenters-stack {
+      display: inline-flex; align-items: center; gap: 10px;
+      min-height: 44px; padding: 4px 8px 4px 2px; border-radius: 9999px;
+      max-width: 100%; text-align: left;
+    }
+    .drex-commenters-stack:active { opacity: .7; }
+    .drex-commenters-avatars { display: inline-flex; align-items: center; flex-shrink: 0; }
+    .drex-commenters-avatar {
+      width: 26px; height: 26px; border-radius: 9999px; object-fit: cover;
+      border: 2px solid var(--theme-surface, #fff); margin-left: -9px;
+      background: var(--theme-surface-muted, #eef1f6);
+    }
+    .drex-commenters-avatar:first-child { margin-left: 0; }
+    .drex-commenters-more {
+      width: 26px; height: 26px; border-radius: 9999px; margin-left: -9px;
+      border: 2px solid var(--theme-surface, #fff);
+      background: var(--theme-surface-muted, #eef1f6); color: var(--theme-muted, #6b7280);
+      font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .drex-commenters-label {
+      font-size: 12.5px; font-weight: 600; color: var(--theme-muted, #6b7280);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     /* En telefonos las 4 pildoras (comentar, eco, compartir, guardar)
        van en una sola fila: sin wrap y pildoras compactas. Se conserva
        el alto tactil de 44px (guia de Apple); solo se recorta el
@@ -8358,6 +8385,13 @@ function fiestaGameHTMLFinal() {
         <div id="profile-language-badge" class="hidden mt-1.5"></div>
         <!-- Bio -->
         <p id="profile-bio-display" class="mt-2 text-[15px] text-[var(--theme-text)] leading-relaxed hidden max-w-xs"></p>
+        <!-- Enlace del perfil (estilo Twitter/X): icono + dominio clicable -->
+        <div id="profile-link-row" class="hidden mt-2 max-w-xs">
+          <a id="profile-link-anchor" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-[14px] font-semibold text-[#2F33B8] hover:underline break-all">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" /></svg>
+            <span id="profile-link-text" class="truncate"></span>
+          </a>
+        </div>
         <!-- Comunidad en una línea fluida -->
         <div class="mt-3 flex items-center justify-center flex-wrap gap-x-2 gap-y-1 text-sm text-[var(--theme-muted)]">
           <span class="whitespace-nowrap"><span id="profile-posts-count-mobile" class="font-extrabold text-[var(--theme-text)]">0</span> posts</span>
@@ -10412,6 +10446,7 @@ function saveNote() {
         hasEchoed: Boolean(ctx.hasEchoed),
         avatarIdPrefix: 'profile-author-'
       });
+      _enhancePostCard(card);
     } catch (renderError) {
       console.error('Error renderizando post de perfil:', post && post.id, renderError);
     }
@@ -10454,6 +10489,7 @@ function saveNote() {
         hasEchoed: Boolean(ctx.hasEchoed),
         avatarIdPrefix: 'eco-author-'
       });
+      _enhancePostCard(card);
       wrap.appendChild(card);
     } catch (renderError) {
       console.error('Error renderizando eco de perfil:', ecoId, renderError);
@@ -15309,23 +15345,23 @@ function saveNote() {
               </button>
             </div>
             <div class="drex-post-body">
-              <div class="drex-post-meta pr-10">
+              <div class="drex-post-meta pr-10" data-author-id="${safeAuthorId}">
                 ${primaryCollab ? `
                 <div class="drex-collab-avatars" role="group" aria-label="Publicación en colaboración">
                   <button class="drex-collab-avatar-btn" ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} aria-label="Ver perfil de ${escapeHtml(safeAuthorName)}">
-                    <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" src="${safeAuthorImage}" alt="${escapeHtml(safeAuthorName)}" onerror="this.onerror=null;this.src='${AVATAR_PLACEHOLDER}'">
+                    <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" data-author-avatar src="${safeAuthorImage}" alt="${escapeHtml(safeAuthorName)}" onerror="this.onerror=null;this.src='${AVATAR_PLACEHOLDER}'">
                   </button>
                   <button class="drex-collab-avatar-btn" onclick="openAuthorProfile('${escapeInlineSingleQuote(primaryCollab.uid || '')}')" aria-label="Ver perfil de ${escapeHtml(primaryCollab.name || 'Colaborador')}">
-                    <img id="${authorAvatarId}-collab" data-author-id="${escapeHtml(primaryCollab.uid || '')}" src="${getSafeMediaUrl(primaryCollab.image) || AVATAR_PLACEHOLDER}" alt="${escapeHtml(primaryCollab.name || 'Colaborador')}" onerror="this.onerror=null;this.src='${AVATAR_PLACEHOLDER}'">
+                    <img id="${authorAvatarId}-collab" data-author-id="${escapeHtml(primaryCollab.uid || '')}" data-author-avatar src="${getSafeMediaUrl(primaryCollab.image) || AVATAR_PLACEHOLDER}" alt="${escapeHtml(primaryCollab.name || 'Colaborador')}" onerror="this.onerror=null;this.src='${AVATAR_PLACEHOLDER}'">
                   </button>
                 </div>` : `
                 <div class="relative flex-shrink-0">
                 <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-avatar-btn ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
-                  <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" src="${safeAuthorImage}" alt="${safeAuthorName}" onerror="this.onerror=null;this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='" class="w-full h-full object-cover">
+                  <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" data-author-avatar src="${safeAuthorImage}" alt="${safeAuthorName}" onerror="this.onerror=null;this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='" class="w-full h-full object-cover">
                 </button>
                 ${getQuickFollowButtonMarkup(safeAuthorId, user?.uid || '')}
               </div>`}
-                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}">${safeAuthorName}${safeAuthorVerifiedIcon}${primaryCollab ? `<span class="font-normal text-[var(--theme-muted)]"> y </span>${escapeHtml(primaryCollab.name || 'Colaborador')}${getVerificationIconByAuthor('', primaryCollab.uid || '', 12)}` : ''}</button>
+                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}"><span data-author-name>${safeAuthorName}</span>${safeAuthorVerifiedIcon}${primaryCollab ? `<span class="font-normal text-[var(--theme-muted)]"> y </span>${escapeHtml(primaryCollab.name || 'Colaborador')}${getVerificationIconByAuthor('', primaryCollab.uid || '', 12)}` : ''}</button>
                 <span class="drex-post-time">· ${formatRelativeTime(safeTimestamp)}</span>
                 ${renderPostFlairPill(note)}
                 <span class="inline-flex items-center gap-1">${renderAuthorLanguageBadges(note, true)}</span>
@@ -15363,6 +15399,7 @@ function saveNote() {
                 </svg>
               </button>
             </div>
+            ${commentsCount > 0 ? `<div class="drex-commenters" data-commenters-for="${note.id}"></div>` : ''}
           </div>
         `;
   }
@@ -15548,6 +15585,7 @@ function saveNote() {
         hydrateQuickFollowButtons(el);
         hydrateSaveButtons(el);
         applyFeedTypeFilter();
+        _enhancePostCard(el);
         try { drexRecObserveCard(el); } catch (_) {}
         if (el.dataset.feedPaginated === '1') {
           try { ensureCardVisibilityObserver().observe(el); } catch (_) {}
@@ -15813,6 +15851,7 @@ function saveNote() {
         hydrateQuickFollowButtons(noteElement);
         hydrateSaveButtons(noteElement);
         applyFeedTypeFilter();
+        _enhancePostCard(noteElement);
         try { drexRecObserveCard(noteElement); } catch (_) {}
         if (appendAtBottom) {
           noteElement.dataset.feedPaginated = '1';
@@ -17628,9 +17667,9 @@ function saveNote() {
           const timeAgo = typeof formatRelativeTime === 'function' ? formatRelativeTime(note.timestamp || Date.now()) : '';
           card.innerHTML = `
           <div class="flex items-start gap-3">
-            <img src="${note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0">
+            <img data-author-id="${note.authorId || ''}" data-author-avatar src="${note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0">
             <div class="flex-1 min-w-0">
-              <p class="font-semibold text-sm text-[#1c2b4a]">${authorName}</p>
+              <p class="font-semibold text-sm text-[#1c2b4a]" data-author-id="${note.authorId || ''}" data-author-name>${authorName}</p>
               <p class="text-sm text-[#5c6974] mt-0.5 leading-relaxed">${content}${note.content && note.content.length > 220 ? '...' : ''}</p>
               <div class="flex items-center justify-between mt-2">
                 <p class="text-xs text-[#b6c0d1]">${timeAgo}</p>
@@ -17643,6 +17682,7 @@ function saveNote() {
             </div>
           </div>`;
           listEl.appendChild(card);
+          try { hydrateIdentitySlots(card); } catch (_) {}
         } else {
           const ref = _getSavedPostsRef();
           if (ref) ref.child(noteId).remove();
@@ -18731,6 +18771,7 @@ function saveNote() {
       }
       Promise.all(pvJobs).then(() => {
         originalPostHost.innerHTML = `<div class="drex-post w-full" data-note-id="${noteId}">${buildDrexPostCardHTML(note, { user, userVote: pUserVote, hasEchoed: pHasEchoed, avatarIdPrefix: 'comments-author-' })}</div>`;
+      _enhancePostCard(originalPostHost);
         hydrateQuickFollowButtons(originalPostHost);
       });
     }).catch(() => {
@@ -19250,6 +19291,139 @@ function saveNote() {
         });
       }).catch(() => {});
     } catch (_) {}
+  }
+
+  // HIDRATACIÓN CANÓNICA UNIVERSAL DE IDENTIDAD.
+  // Varias superficies guardan nombre/foto como copia sellada al publicar
+  // (tarjetas del feed, búsqueda, menciones, guardados, comentarios). Esta
+  // función refresca esas copias desde el perfil vivo con una sola lectura
+  // por autor (caché de sesión, TTL 120 s).
+  // Contrato: [data-author-id="UID"] delimita el slot; [data-author-name]
+  // (el mismo nodo o un descendiente) recibe el nombre; img[data-author-avatar]
+  // recibe la foto. Nunca pinta vacíos, nunca toca nodos desconectados y el
+  // token por contenedor evita que una respuesta lenta pise un render nuevo.
+  function hydrateIdentitySlots(container) {
+    try {
+      if (!container || !container.querySelectorAll) return;
+      const gen = (Number(container.dataset.identityGen) || 0) + 1;
+      container.dataset.identityGen = String(gen);
+      const scopes = [];
+      if (container.hasAttribute && container.hasAttribute('data-author-id')) scopes.push(container);
+      container.querySelectorAll('[data-author-id]').forEach(el => scopes.push(el));
+      const uids = [...new Set(scopes.map(el => el.getAttribute('data-author-id')).filter(Boolean))];
+      if (!uids.length) return;
+      _getCachedAuthorProfiles(uids).then(profiles => {
+        try {
+          if (String(container.dataset.identityGen) !== String(gen)) return;
+          profiles.forEach((profile, uid) => {
+            const freshName = profile.username || profile.displayName || null;
+            const freshImg = getSafeMediaUrl(profile.profileImage) || null;
+            if (!freshName && !freshImg) return;
+            const inScope = scopes.filter(el => el.getAttribute('data-author-id') === uid && el.isConnected);
+            inScope.forEach(scope => {
+              if (freshName) {
+                const nameEls = [];
+                if (scope.hasAttribute('data-author-name')) nameEls.push(scope);
+                scope.querySelectorAll('[data-author-name]').forEach(n => { if (n !== scope) nameEls.push(n); });
+                nameEls.forEach(n => { if (n.textContent !== freshName) n.textContent = freshName; });
+              }
+              if (freshImg) {
+                const imgEls = [];
+                if (scope.tagName === 'IMG' && scope.hasAttribute('data-author-avatar')) imgEls.push(scope);
+                scope.querySelectorAll('img[data-author-avatar]').forEach(im => { if (im !== scope) imgEls.push(im); });
+                imgEls.forEach(im => { if (im.getAttribute('src') !== freshImg) im.src = freshImg; });
+              }
+            });
+          });
+        } catch (_) {}
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // CLUSTER DE COMENTARISTAS (estilo Reddit): bajo cada tarjeta con
+  // comentarios se muestra la pila de avatares apilados + "N usuarios han
+  // comentado"; al tocarla se abren los comentarios. Carga perezosa: solo lee
+  // postComments/<id> (últimos 60) cuando la tarjeta entra al viewport, una
+  // sola vez por post, con fotos del caché canónico de perfiles.
+  const _commentersLoaded = new Set();
+  const _commentersCache = new Map(); // noteId -> { html, ts }: sobrevive a reconstrucciones de tarjeta
+  let _commentersIO = null;
+  const _COMMENTERS_AVATAR_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+  function _ensureCommentersObserver() {
+    if (_commentersIO) return _commentersIO;
+    try {
+      _commentersIO = new IntersectionObserver(entries => {
+        entries.forEach(en => {
+          if (en.isIntersecting) {
+            try { _commentersIO.unobserve(en.target); } catch (_) {}
+            _loadCommentersCluster(en.target);
+          }
+        });
+      }, { rootMargin: '360px' });
+    } catch (_) { _commentersIO = null; }
+    return _commentersIO;
+  }
+  function _observeCommenters(scope) {
+    try {
+      if (!scope || !scope.querySelectorAll) return;
+      const io = _ensureCommentersObserver();
+      scope.querySelectorAll('[data-commenters-for]:not([data-commenters-done])').forEach(el => {
+        el.setAttribute('data-commenters-done', '1');
+        if (io) io.observe(el); else _loadCommentersCluster(el);
+      });
+    } catch (_) {}
+  }
+  async function _loadCommentersCluster(el) {
+    try {
+      if (!el || !el.isConnected) return;
+      const noteId = el.getAttribute('data-commenters-for');
+      if (!noteId) return;
+      const cachedCluster = _commentersCache.get(noteId);
+      if (cachedCluster && cachedCluster.html) {
+        el.innerHTML = cachedCluster.html;
+        el.classList.add('drex-commenters-ready');
+        if (Date.now() - cachedCluster.ts < 120000) return; // fresco: no re-leer
+      } else if (_commentersLoaded.has(noteId)) {
+        return; // ya se leyó y no había nada que mostrar
+      }
+      _commentersLoaded.add(noteId);
+      const snap = await DrexCloud.database().ref('postComments/' + noteId).orderByKey().limitToLast(60).once('value');
+      const val = snap.val();
+      if (!val) { el.remove(); return; }
+      if (!el.isConnected) return;
+      const seen = [];
+      const pushUid = uid => { uid = uid || ''; if (uid && seen.indexOf(uid) === -1 && seen.length < 40) seen.push(uid); };
+      Object.keys(val).forEach(k => {
+        const c = val[k];
+        if (!c) return;
+        pushUid(c.authorId);
+        if (c.replies) Object.keys(c.replies).forEach(rk => pushUid(c.replies[rk] && c.replies[rk].authorId));
+      });
+      if (!seen.length || !el.isConnected) { if (!seen.length) el.remove(); return; }
+      const profiles = await _getCachedAuthorProfiles(seen);
+      if (!el.isConnected) return;
+      const show = seen.slice(0, 4);
+      const avatars = show.map(uid => {
+        const p = profiles.get(uid) || {};
+        const img = getSafeMediaUrl(p.profileImage) || _COMMENTERS_AVATAR_PLACEHOLDER;
+        return '<img src="' + img + '" alt="" loading="lazy" class="drex-commenters-avatar" onerror="this.onerror=null;this.src=\'' + _COMMENTERS_AVATAR_PLACEHOLDER + '\'">';
+      }).join('');
+      const extra = seen.length > show.length ? '<span class="drex-commenters-more">+' + (seen.length - show.length) + '</span>' : '';
+      const n = seen.length;
+      const label = n === 1
+        ? appT3('1 user commented', '1 usuario ha comentado', '1 \u4f4d\u7528\u6237\u53d1\u8868\u4e86\u8bc4\u8bba')
+        : appT3(n + ' users commented', n + ' usuarios han comentado', n + ' \u4f4d\u7528\u6237\u53d1\u8868\u4e86\u8bc4\u8bba');
+      el.innerHTML = '<button type="button" class="drex-commenters-stack" onclick="openCommentsView(\'' + escapeInlineSingleQuote(noteId) + '\')" aria-label="' + escapeHtml(label) + '"><span class="drex-commenters-avatars">' + avatars + extra + '</span><span class="drex-commenters-label">' + escapeHtml(label) + '</span></button>';
+      el.classList.add('drex-commenters-ready');
+      _commentersCache.set(noteId, { html: el.innerHTML, ts: Date.now() });
+    } catch (_) {}
+  }
+
+  // Gancho único tras montar o reconstruir una tarjeta: identidad canónica +
+  // cluster de comentaristas.
+  function _enhancePostCard(el) {
+    try { hydrateIdentitySlots(el); } catch (_) {}
+    try { _observeCommenters(el); } catch (_) {}
   }
 
   function igRowOpts(noteId, commentPath, comment, pinnedBadgeHtml) {
@@ -29461,10 +29635,10 @@ function saveNote() {
         const preview = escapeHTML(note.content || '').replace(mentionPattern, `<span class="font-bold text-[var(--theme-text)]">@${escapeHTML(myUsername)}</span>`).slice(0, 200);
         card.innerHTML = `
           <div class="flex items-start gap-3">
-            <img src="${getSafeMediaUrl(note.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0 mt-0.5">
+            <img data-author-id="${note.authorId || ''}" data-author-avatar src="${getSafeMediaUrl(note.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0 mt-0.5">
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between mb-1">
-                <span class="font-semibold text-sm text-[var(--theme-text)]">${escapeHTML(note.authorName || 'Usuario')}</span>
+                <span class="font-semibold text-sm text-[var(--theme-text)]" data-author-id="${note.authorId || ''}" data-author-name>${escapeHTML(note.authorName || 'Usuario')}</span>
                 <span class="text-[10px] text-[#b6c0d1] ml-2 flex-shrink-0">${timeAgo}</span>
               </div>
               <p class="text-sm text-[var(--theme-icon)] leading-relaxed">${preview}${note.content && note.content.length > 200 ? '...' : ''}</p>
@@ -29473,6 +29647,7 @@ function saveNote() {
           </div>`;
         listEl.appendChild(card);
       });
+      try { hydrateIdentitySlots(listEl); } catch (_) {}
     } catch (err) {
       listEl.innerHTML = '<div class="py-10 text-center text-sm text-[var(--theme-muted)]">No se pudieron cargar las menciones.</div>';
     }
@@ -31132,6 +31307,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
               bioDisplay.classList.remove('hidden');
             }
           }
+          try { renderOwnProfileLink(data.website || ''); } catch (_) {}
           if (data.profileImage) {
             const profileImage = document.getElementById('profile-image');
             if (profileImage) profileImage.src = data.profileImage;
@@ -32162,6 +32338,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       'name-config-view',
       'username-config-view',
       'info-config-view',
+      'link-config-view',
       'location-config-view',
       'pronouns-config-view',
       'email-config-view',
@@ -33533,6 +33710,80 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     }
   }
 
+  // ENLACE DE PERFIL (estilo Twitter/X): se edita aquí y se guarda en
+  // users/<uid>/website. Solo http(s); sanitizeWebsiteUrl descarta el resto.
+  function openLinkConfigView() {
+    const view = document.getElementById('link-config-view');
+    if (!view) return;
+    const input = document.getElementById('settings-website');
+    const user = DrexCloud.auth().currentUser;
+    if (input) {
+      input.value = '';
+      if (user) {
+        DrexCloud.database().ref('users/' + user.uid + '/website').once('value')
+          .then(s => { if (input.isConnected && document.activeElement !== input) input.value = s.val() || ''; })
+          .catch(() => {});
+      }
+    }
+    if (view.parentElement !== document.body) document.body.appendChild(view);
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+    view.style.zIndex = '130';
+  }
+
+  function closeLinkConfigView() {
+    const view = document.getElementById('link-config-view');
+    if (view) {
+      view.classList.add('hidden');
+      view.style.display = 'none';
+    }
+  }
+
+  function saveLinkConfig() {
+    const actionButton = window.event?.currentTarget || null;
+    setSavingButtonState(actionButton, true);
+    const input = document.getElementById('settings-website');
+    const raw = (input ? input.value : '').trim().slice(0, 300);
+    const safe = raw ? sanitizeWebsiteUrl(raw) : '';
+    if (raw && !safe) {
+      showMiniToast(appT('Ese enlace no es válido. Usa http:// o https://'));
+      setSavingButtonState(actionButton, false);
+      return;
+    }
+    saveProfileField({ website: safe || '' }).then(saved => {
+      if (saved) closeLinkConfigView();
+    }).finally(() => setSavingButtonState(actionButton, false));
+  }
+
+  // Etiqueta corta y legible para un enlace: dominio (+ ruta si no es raíz).
+  function _shortLinkLabel(safeUrl) {
+    let label = safeUrl;
+    try {
+      const u = new URL(safeUrl);
+      label = u.hostname.replace(/^www\./, '') + (u.pathname && u.pathname !== '/' ? u.pathname : '');
+    } catch (_) {}
+    return label.length > 36 ? label.slice(0, 35) + '\u2026' : label;
+  }
+
+  // Pinta el enlace en el perfil propio: icono + dominio visible, abre en
+  // pestaña nueva. Se oculta cuando no hay enlace.
+  function renderOwnProfileLink(url) {
+    const row = document.getElementById('profile-link-row');
+    const anchor = document.getElementById('profile-link-anchor');
+    const label = document.getElementById('profile-link-text');
+    if (!row || !anchor || !label) return;
+    const safe = (typeof sanitizeWebsiteUrl === 'function') ? sanitizeWebsiteUrl(url) : null;
+    if (!safe) {
+      row.classList.add('hidden');
+      anchor.removeAttribute('href');
+      label.textContent = '';
+      return;
+    }
+    anchor.href = safe;
+    label.textContent = _shortLinkLabel(safe);
+    row.classList.remove('hidden');
+  }
+
   const PROFILE_COUNTRY_CODES = ['AD','AE','AF','AG','AL','AM','AO','AR','AT','AU','AZ','BA','BB','BD','BE','BF','BG','BH','BJ','BN','BO','BR','BS','BT','BW','BY','BZ','CA','CD','CF','CG','CH','CI','CL','CM','CN','CO','CR','CU','CV','CY','CZ','DE','DJ','DK','DM','DO','DZ','EC','EE','EG','ER','ES','ET','FI','FJ','FM','FR','GA','GB','GD','GE','GH','GM','GN','GQ','GR','GT','GW','GY','HN','HR','HT','HU','ID','IE','IL','IN','IQ','IS','IT','JM','JO','JP','KE','KG','KH','KI','KM','KN','KP','KR','KW','KZ','LA','LB','LC','LI','LK','LR','LS','LT','LU','LV','LY','MA','MC','MD','ME','MG','MH','MK','ML','MN','MR','MT','MU','MV','MW','MX','MY','MZ','NA','NE','NG','NI','NL','NO','NP','NR','NZ','OM','PA','PE','PG','PH','PK','PL','PS','PT','PW','PY','QA','RO','RS','RU','RW','SA','SB','SC','SD','SE','SG','SI','SK','SL','SM','SN','SO','SR','SS','ST','SV','SY','SZ','TD','TG','TH','TJ','TL','TM','TN','TO','TR','TT','TV','TZ','UA','UG','US','UY','UZ','VA','VC','VE','VN','VU','WS','YE','ZA','ZM','ZW'];
   const PROFILE_COUNTRY_NAMES = { es: (() => { try { return new Intl.DisplayNames(['es'], { type: 'region' }); } catch (_) { return null; } })(), en: (() => { try { return new Intl.DisplayNames(['en'], { type: 'region' }); } catch (_) { return null; } })() };
   function getCountryNameForLocale(code, locale) { return PROFILE_COUNTRY_NAMES[locale]?.of(code) || code; }
@@ -34388,6 +34639,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       }
 
       return DrexCloud.database().ref('users/' + user.uid).update(updates).then(() => {
+        // Identidad canónica: tras editar el perfil se invalida la caché de
+        // sesión para que feed/comentarios/búsqueda pinten nombre/foto nuevos.
+        try { _drexProfileCache.delete(user.uid); } catch (_) {}
+        try { _invalidateAuthorProfileCache(user.uid); } catch (_) {}
         if (updates.username) {
           // Índice inverso usernameByUid/<uid> -> <nombre>: la reparación de
           // temporales lo lee puntual en vez de descargar usernames/ completo.
@@ -34407,6 +34662,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
             locationLabel.textContent = nextLocation || (nextCountryCode ? '' : 'Ubicación no especificada');
             locationLabel.classList.toggle('hidden', !locationLabel.textContent);
           }
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, 'website')) {
+          try { renderOwnProfileLink(updates.website || ''); } catch (_) {}
         }
             showMiniToast("Perfil actualizado");
         return true;
@@ -34451,6 +34709,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       const cloudUrl = await processImageFile(file);
 
       await DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
+      try { _drexProfileCache.delete(user.uid); } catch (_) {}
+      try { _invalidateAuthorProfileCache(user.uid); } catch (_) {}
       document.getElementById('profile-image').src = cloudUrl;
       const desktopImg = document.getElementById('profile-image-desktop');
       if (desktopImg) desktopImg.src = cloudUrl;
@@ -39745,9 +40005,9 @@ function renderPostsList(posts) {
     item.className = 'w-full text-left p-4 bg-white border border-[#dce1e5] rounded-3xl shadow-sm hover:border-[#dce1e5] transition';
     item.innerHTML = `
       <div class="flex items-start gap-3">
-        <img id="${authorAvatarId}" data-author-id="${post.authorId || ''}" src="${getSafeMediaUrl(post.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-10 h-10 rounded-full object-cover">
+        <img id="${authorAvatarId}" data-author-id="${post.authorId || ''}" data-author-avatar src="${getSafeMediaUrl(post.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-10 h-10 rounded-full object-cover">
         <div class="min-w-0">
-          <p class="text-sm font-semibold text-[#6b7280]">${escapeHTML(post.authorName || 'Usuario')}${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')} • ${formatRelativeTime(post.timestamp)}</p>
+          <p class="text-sm font-semibold text-[#6b7280]"><span data-author-id="${post.authorId || ''}" data-author-name>${escapeHTML(post.authorName || 'Usuario')}</span>${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')} • ${formatRelativeTime(post.timestamp)}</p>
           <p class="text-lg leading-tight text-[#1c2b4a] line-clamp-2 mt-1">${escapeHTML(post.content || 'Sin texto')}</p>
         </div>
       </div>`;
@@ -39756,6 +40016,7 @@ function renderPostsList(posts) {
       openCommentsView(post.id);
     };
     list.appendChild(item);
+    try { hydrateIdentitySlots(item); } catch (_) {}
     loadUserFrame(post.authorId || '', authorAvatarId);
   });
   if (!posts.length) list.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-3xl p-5 text-sm text-[#7b878f]">No hay posts que coincidan.</div>';
@@ -39820,6 +40081,8 @@ function renderAccountsList(accounts) {
     try {
       const cloudUrl = await processImageFile(file);
       await DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
+      try { _drexProfileCache.delete(user.uid); } catch (_) {}
+      try { _invalidateAuthorProfileCache(user.uid); } catch (_) {}
       if (profileImg) { profileImg.src = cloudUrl; profileImg.style.opacity = '1'; }
       const desktopImg = document.getElementById('profile-image-desktop');
       if (desktopImg) desktopImg.src = cloudUrl;
@@ -40024,7 +40287,7 @@ function renderAccountsList(accounts) {
       let socialLinksHTML = "";
       const safeWebsite = sanitizeWebsiteUrl(authorData.website);
       if (safeWebsite) {
-        socialLinksHTML += `<a href="${safeWebsite}" target="_blank" rel="noopener" class="tap44 w-10 h-10 rounded-full bg-[#eef2f7] text-[#5c6974] flex items-center justify-center"><i class="fa-solid fa-globe text-lg"></i></a>`;
+        socialLinksHTML += `<a href="${safeWebsite}" target="_blank" rel="noopener" class="tap44 inline-flex items-center gap-2 max-w-full px-4 min-h-[44px] rounded-full bg-[#eef1fb] text-[#2F33B8] font-semibold text-[14px] active:opacity-70 transition"><i class="fa-solid fa-link text-sm shrink-0"></i><span class="truncate">${escapeHtml(_shortLinkLabel(safeWebsite))}</span></a>`;
       }
       socialLinksNode.innerHTML = socialLinksHTML;
 
@@ -40611,6 +40874,7 @@ body,
 #profile-config-view,
 #username-config-view,
 #info-config-view,
+#link-config-view,
 #location-config-view,
 #pronouns-config-view,
 #email-config-view,
@@ -40903,6 +41167,7 @@ body.theme-dark #profile-config-view,
 body.theme-dark #name-config-view,
 body.theme-dark #username-config-view,
 body.theme-dark #info-config-view,
+body.theme-dark #link-config-view,
 body.theme-dark #location-config-view,
 body.theme-dark #pronouns-config-view,
 body.theme-dark #email-config-view,
@@ -47145,6 +47410,15 @@ async function endFiesta() {
       </button>
 <div class="ml-[60px] h-px bg-[var(--theme-border)]"></div>
 
+      <button onclick="openLinkConfigView()" class="w-full px-4 py-3 flex items-center justify-between gap-4 text-left active:bg-[var(--theme-surface-subtle)]">
+        <div class="flex items-center gap-4 min-w-0">
+          <svg class="w-7 h-7 shrink-0 text-[var(--theme-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" /></svg>
+          <span class="text-[16px] text-[var(--theme-text)]">Enlace</span>
+        </div>
+        <svg class="w-5 h-5 text-[var(--theme-icon)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+      </button>
+<div class="ml-[60px] h-px bg-[var(--theme-border)]"></div>
+
       <button onclick="openLocationConfigView()" class="w-full px-4 py-3 flex items-center justify-between gap-4 text-left active:bg-[var(--theme-surface-subtle)]">
         <div class="flex items-center gap-4 min-w-0">
           
@@ -47225,6 +47499,23 @@ async function endFiesta() {
       <label class="block mb-1.5 text-[15px] font-semibold text-[var(--theme-text)]">Biografía (máximo 150 caracteres)</label>
       <textarea id="settings-info" rows="4" maxlength="150" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="Cuéntale a la comunidad sobre ti..."></textarea>
       <p id="settings-info-counter" class="text-xs text-[var(--theme-muted)] mt-2">0/150</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="link-config-view" class="fixed inset-0 bg-[var(--theme-surface)] z-[130] hidden flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border)] bg-[var(--theme-surface)]" style="padding-top:max(1rem,env(safe-area-inset-top));">
+      <button onclick="closeLinkConfigView()" class="tap44 text-[var(--theme-icon)] p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[var(--theme-text)] absolute left-1/2 -translate-x-1/2">Enlace</h2>
+      <button onclick="saveLinkConfig()" class="text-[#2F33B8] min-h-[44px] flex items-center text-[var(--theme-text)] font-bold text-lg">Guardar</button>
+    </div>
+    <div class="flex-1 overflow-y-auto bg-[var(--theme-surface)] pb-8">
+      <div class="px-4 pt-5 space-y-5">
+      <label class="block mb-1.5 text-[15px] font-semibold text-[var(--theme-text)]">Enlace de tu perfil</label>
+      <input id="settings-website" type="url" inputmode="url" autocomplete="url" maxlength="300" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="https://tuenlace.com">
+      <p class="text-[13px] text-[var(--theme-muted)] mt-2">Aparecerá en tu perfil público con un icono; al tocarlo se abre en una pestaña nueva. Déjalo vacío para quitarlo.</p>
       </div>
     </div>
   </div>
@@ -48014,7 +48305,7 @@ body.theme-dark .music-queue-row.is-current{background:rgba(85,91,255,.14)}
 // se renderiza, por eso "Editar perfil" no mostraba nada al tocarlo.
 // Se reubican al body al cargar la página (antes de cualquier interacción).
 (function () {
-  var ids = ['profile-config-view','name-config-view','username-config-view','info-config-view','location-config-view','pronouns-config-view','email-config-view','password-config-view','birthday-config-view','app-language-settings-view','learning-language-settings-view','translations-config-view','update-photo-view','update-cover-view','cover-fullscreen-view','author-photo-viewer'];
+  var ids = ['profile-config-view','name-config-view','username-config-view','info-config-view','link-config-view','location-config-view','pronouns-config-view','email-config-view','password-config-view','birthday-config-view','app-language-settings-view','learning-language-settings-view','translations-config-view','update-photo-view','update-cover-view','cover-fullscreen-view','author-photo-viewer'];
   for (var k = 0; k < ids.length; k++) {
     var el = document.getElementById(ids[k]);
     if (el && el.parentElement !== document.body) document.body.appendChild(el);
@@ -48034,7 +48325,7 @@ body.theme-dark .music-queue-row.is-current{background:rgba(85,91,255,.14)}
   'parental-control-view','twofactor-view','changepassword-view','twofactor-challenge-view',
   'recovery-codes-view',
   'post-permalink-view','group-posts-view','profile-config-view','name-config-view',
-  'username-config-view','info-config-view','location-config-view','pronouns-config-view',
+  'username-config-view','info-config-view','link-config-view','location-config-view','pronouns-config-view',
   'email-config-view','password-config-view','birthday-config-view','app-language-settings-view',
   'learning-language-settings-view','translations-config-view','update-photo-view'];
   for (var k = 0; k < ids.length; k++) {
