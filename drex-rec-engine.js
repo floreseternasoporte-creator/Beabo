@@ -64,6 +64,7 @@
   var POST_STATS_PATH = 'postStats';     // estadísticas agregadas por post
 
   // Pesos de las señales de interacción (ajustables).
+  // Incluye aliases V1 (view, deepView, up, down) para compatibilidad.
   var SIGNAL_WEIGHTS = {
     // Vistas
     view1s:        0.3,   // vista de ≥1 segundo
@@ -85,7 +86,12 @@
     // Señales negativas
     hide:         -5.0,
     report:       -8.0,
-    blockAuthor:  -7.0
+    blockAuthor:  -7.0,
+    // Aliases V1 (para compatibilidad con código que usa DREX_REC.weights.view, etc.)
+    view:          0.3,
+    deepView:      1.2,
+    up:            3.0,
+    down:         -3.5
   };
 
   // Vida media del decaimiento por categoría (días).
@@ -120,7 +126,7 @@
     social:         0.7,
     novelty:        0.4,
     exploration:    0.3,
-    diversity:     -0.5,   // negativo: penaliza repetición
+    diversity:      1.5,    // positivo: penaliza repetición (el componente es negativo)
     negative:      -2.0    // penalización fuerte por feedback negativo
   };
 
@@ -1524,10 +1530,18 @@
           else _takeFrom('following', 1);
         }
 
-        // Rellenar con lo que quede.
+        // Rellenar con lo que quede — forzar inclusión de todos los posts restantes
+        // sin importar la penalización de diversidad (un ranking no debe perder candidatos).
         allSorted.forEach(function (sp) {
           if (result.length >= total) return;
-          _addPost(sp);
+          if (used[sp.note.id]) return;
+          used[sp.note.id] = true;
+          result.push(sp.note);
+          windowState.push({
+            authorId: sp.note.authorId || sp.note.userId || '',
+            flair: sp.note.flair || '',
+            format: ContentAnalyzer.detectFormat(sp.note)
+          });
         });
 
         return result;

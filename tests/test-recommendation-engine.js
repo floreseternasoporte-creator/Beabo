@@ -51,20 +51,24 @@ var passed = 0;
 var failed = 0;
 
 function test(name, fn) {
-  try {
-    fn();
-    console.log('  ✓ ' + name);
-    passed++;
-  } catch (e) {
-    console.log('  ✗ ' + name + ': ' + e.message);
-    failed++;
-  }
+  return Promise.resolve()
+    .then(function () { return fn(); })
+    .then(function () {
+      console.log('  \u2713 ' + name);
+      passed++;
+    })
+    .catch(function (e) {
+      console.log('  \u2717 ' + name + ': ' + e.message);
+      failed++;
+    });
 }
 
 function approx(a, b, eps) {
   eps = eps || 0.01;
   return Math.abs(a - b) < eps;
 }
+
+async function runAll() {
 
 console.log('\n========================================');
 console.log('DrexRecEngine v2 — Tests');
@@ -73,47 +77,47 @@ console.log('========================================\n');
 // --- ContentAnalyzer ---
 console.log('ContentAnalyzer:');
 
-test('extractKeywords devuelve palabras relevantes', function () {
+await test('extractKeywords devuelve palabras relevantes', function () {
   var kws = Engine.ContentAnalyzer.extractKeywords('La música es increíble, música para el alma');
   assert(kws.length > 0, 'Debe devolver keywords');
   assert(kws.indexOf('musica') >= 0 || kws.indexOf('increible') >= 0, 'Debe incluir palabras clave relevantes');
 });
 
-test('extractKeywords filtra stopwords', function () {
+await test('extractKeywords filtra stopwords', function () {
   var kws = Engine.ContentAnalyzer.extractKeywords('el la los las de que con');
   assert(kws.length === 0, 'No debe devolver stopwords');
 });
 
-test('detectFormat detecta video', function () {
+await test('detectFormat detecta video', function () {
   var fmt = Engine.ContentAnalyzer.detectFormat({ videoUrl: 'http://example.com/v.mp4', content: 'test' });
   assert(fmt === 'video', 'Debe detectar video, got: ' + fmt);
 });
 
-test('detectFormat detecta galería', function () {
+await test('detectFormat detecta galería', function () {
   var fmt = Engine.ContentAnalyzer.detectFormat({ imageCount: 5, content: 'test' });
   assert(fmt === 'gallery', 'Debe detectar gallery, got: ' + fmt);
 });
 
-test('detectFormat detecta texto', function () {
+await test('detectFormat detecta texto', function () {
   var fmt = Engine.ContentAnalyzer.detectFormat({ content: 'Hola mundo' });
   assert(fmt === 'text', 'Debe detectar text, got: ' + fmt);
 });
 
-test('cosineSim calcula similitud', function () {
+await test('cosineSim calcula similitud', function () {
   var tv1 = { a: 0.5, b: 0.5 };
   var tv2 = { a: 0.5, b: 0.5 };
   var sim = Engine.ContentAnalyzer.cosineSim(tv1, tv2);
   assert(approx(sim, 1.0, 0.01), 'Vectores idénticos deben tener similitud 1.0, got: ' + sim);
 });
 
-test('cosineSim vectores ortogonales', function () {
+await test('cosineSim vectores ortogonales', function () {
   var tv1 = { a: 1.0 };
   var tv2 = { b: 1.0 };
   var sim = Engine.ContentAnalyzer.cosineSim(tv1, tv2);
   assert(approx(sim, 0.0, 0.01), 'Vectores ortogonales deben tener similitud 0, got: ' + sim);
 });
 
-test('contentQuality premia multimedia', function () {
+await test('contentQuality premia multimedia', function () {
   var q1 = Engine.ContentAnalyzer.contentQuality({ content: 'Hola', imageCount: 0 });
   var q2 = Engine.ContentAnalyzer.contentQuality({ content: 'Hola mundo de prueba', imageCount: 3, videoUrl: 'x' });
   assert(q2 > q1, 'Post con multimedia debe tener mayor calidad');
@@ -122,7 +126,7 @@ test('contentQuality premia multimedia', function () {
 // --- ProfileStore ---
 console.log('\nProfileStore:');
 
-test('load devuelve un perfil con estructura V2', function () {
+await test('load devuelve un perfil con estructura V2', function () {
   return Engine.ProfileStore.load().then(function (p) {
     assert(p !== null, 'Perfil no debe ser null');
     assert(p.v === 2, 'Versión debe ser 2');
@@ -137,7 +141,7 @@ test('load devuelve un perfil con estructura V2', function () {
   });
 });
 
-test('markInteracted y hasInteracted funcionan', function () {
+await test('markInteracted y hasInteracted funcionan', function () {
   return Engine.ProfileStore.load().then(function () {
     Engine.ProfileStore.markInteracted('note-123');
     assert(Engine.ProfileStore.hasInteracted('note-123') === true, 'Debe marcar como interactuado');
@@ -148,7 +152,7 @@ test('markInteracted y hasInteracted funcionan', function () {
 // --- SignalTracker ---
 console.log('\nSignalTracker:');
 
-test('train registra interacción en el perfil', function () {
+await test('train registra interacción en el perfil', function () {
   return Engine.ProfileStore.load().then(function () {
     var before = Engine.ProfileStore.get().totalInteractions || 0;
     Engine.SignalTracker.train({
@@ -161,7 +165,7 @@ test('train registra interacción en el perfil', function () {
   });
 });
 
-test('trainById con meta en caché funciona', function () {
+await test('trainById con meta en caché funciona', function () {
   return Engine.ProfileStore.load().then(function () {
     global._drexNoteMeta['note-test'] = {
       flair: 'meme',
@@ -180,7 +184,7 @@ test('trainById con meta en caché funciona', function () {
 // --- SessionModel ---
 console.log('\nSessionModel:');
 
-test('record y sessionAffinity funcionan', function () {
+await test('record y sessionAffinity funcionan', function () {
   Engine.SessionModel.record({
     flair: 'musica',
     authorId: 'author-1',
@@ -194,7 +198,7 @@ test('record y sessionAffinity funcionan', function () {
   assert(affinity > 0, 'Afinidad de sesión debe ser positiva');
 });
 
-test('sessionAffinity es 0 sin interacciones recientes', function () {
+await test('sessionAffinity es 0 sin interacciones recientes', function () {
   Engine.SessionModel.reset();
   var affinity = Engine.SessionModel.sessionAffinity({
     flair: 'musica',
@@ -207,7 +211,7 @@ test('sessionAffinity es 0 sin interacciones recientes', function () {
 // --- TrendingModel ---
 console.log('\nTrendingModel:');
 
-test('trendingScore de post fresco con votos es positivo', function () {
+await test('trendingScore de post fresco con votos es positivo', function () {
   var score = Engine.TrendingModel.trendingScore({
     timestamp: Date.now() - 3600000, // 1 hora atrás
     upvotes: 15,
@@ -219,12 +223,12 @@ test('trendingScore de post fresco con votos es positivo', function () {
   assert(score > 0, 'Trending score debe ser positivo');
 });
 
-test('isFresh detecta post de menos de 24h', function () {
+await test('isFresh detecta post de menos de 24h', function () {
   assert(Engine.TrendingModel.isFresh({ timestamp: Date.now() - 3600000 }) === true, 'Post de 1h debe ser fresh');
   assert(Engine.TrendingModel.isFresh({ timestamp: Date.now() - 90000000 }) === false, 'Post de >24h no debe ser fresh');
 });
 
-test('isViral detecta post con alta velocidad', function () {
+await test('isViral detecta post con alta velocidad', function () {
   var viral = Engine.TrendingModel.isViral({
     timestamp: Date.now() - 3600000,
     upvotes: 30,
@@ -235,7 +239,7 @@ test('isViral detecta post con alta velocidad', function () {
   assert(viral === true, 'Post con 50+ interacciones en 1h debe ser viral');
 });
 
-test('isViral rechaza post lento', function () {
+await test('isViral rechaza post lento', function () {
   var notViral = Engine.TrendingModel.isViral({
     timestamp: Date.now() - 86400000, // 24h
     upvotes: 2,
@@ -249,12 +253,12 @@ test('isViral rechaza post lento', function () {
 // --- ColdStartModel ---
 console.log('\nColdStartModel:');
 
-test('isColdStartUser detecta perfil nuevo', function () {
+await test('isColdStartUser detecta perfil nuevo', function () {
   assert(Engine.ColdStartModel.isColdStartUser({ totalInteractions: 5 }) === true, '5 interacciones = cold start');
   assert(Engine.ColdStartModel.isColdStartUser({ totalInteractions: 50 }) === false, '50 interacciones no es cold start');
 });
 
-test('newPostBoost da boost a posts frescos', function () {
+await test('newPostBoost da boost a posts frescos', function () {
   var boost = Engine.ColdStartModel.newPostBoost({ timestamp: Date.now() - 3600000 });
   assert(boost > 0, 'Post de 1h debe recibir boost');
   var oldBoost = Engine.ColdStartModel.newPostBoost({ timestamp: Date.now() - 90000000 });
@@ -264,7 +268,7 @@ test('newPostBoost da boost a posts frescos', function () {
 // --- RankingModel ---
 console.log('\nRankingModel:');
 
-test('scorePost devuelve un número', function () {
+await test('scorePost devuelve un número', function () {
   var score = Engine.RankingModel.scorePost({
     id: 'test-1',
     timestamp: Date.now() - 3600000,
@@ -279,7 +283,7 @@ test('scorePost devuelve un número', function () {
   assert(typeof score.components.popularity === 'number', 'Popularity debe ser número');
 });
 
-test('scorePost penaliza posts ya vistos', function () {
+await test('scorePost penaliza posts ya vistos', function () {
   return Engine.ProfileStore.load().then(function () {
     var profile = Engine.ProfileStore.get();
     profile.interactedPosts['seen-post'] = true;
@@ -300,7 +304,7 @@ test('scorePost penaliza posts ya vistos', function () {
   });
 });
 
-test('diversity penalty reduce score de posts repetidos', function () {
+await test('diversity penalty reduce score de posts repetidos', function () {
   return Engine.ProfileStore.load().then(function () {
     var profile = Engine.ProfileStore.get();
     var windowState = [];
@@ -331,7 +335,7 @@ test('diversity penalty reduce score de posts repetidos', function () {
 // --- DiversityMixer ---
 console.log('\nDiversityMixer:');
 
-test('mixFeed reordena para evitar repetición de autores', function () {
+await test('mixFeed reordena para evitar repetición de autores', function () {
   return Engine.ProfileStore.load().then(function () {
     var posts = [];
     for (var i = 0; i < 20; i++) {
@@ -353,14 +357,14 @@ test('mixFeed reordena para evitar repetición de autores', function () {
     scored.sort(function (a, b) { return b.score.total - a.score.total; });
 
     var mixed = Engine.DiversityMixer.mixFeed(scored, { profile: Engine.ProfileStore.get() });
-    assert(mixed.length > 0, 'Debe devolver al menos algunos posts');
+    assert(mixed.length === 20, 'Debe devolver todos los posts (got ' + mixed.length + ')');
   });
 });
 
 // --- BanditExplorer ---
 console.log('\nBanditExplorer:');
 
-test('getWeights devuelve pesos para todos los buckets', function () {
+await test('getWeights devuelve pesos para todos los buckets', function () {
   var w = Engine.BanditExplorer.getWeights();
   var buckets = ['personal', 'trending', 'fresh', 'following', 'explore'];
   buckets.forEach(function (b) {
@@ -369,7 +373,7 @@ test('getWeights devuelve pesos para todos los buckets', function () {
   });
 });
 
-test('recordReward ajusta pesos', function () {
+await test('recordReward ajusta pesos', function () {
   var before = Engine.BanditExplorer.getWeights();
   Engine.BanditExplorer.recordReward('trending', 10);
   Engine.BanditExplorer.recordReward('trending', 10);
@@ -382,14 +386,14 @@ test('recordReward ajusta pesos', function () {
 // --- QualitySignals ---
 console.log('\nQualitySignals:');
 
-test('engagementRatio calcula ratio', function () {
+await test('engagementRatio calcula ratio', function () {
   var r = Engine.QualitySignals.engagementRatio({
     upvotes: 10, downvotes: 2, commentsCount: 5, ecoCount: 1
   });
   assert(r > 0 && r <= 1, 'Engagement ratio debe estar entre 0 y 1');
 });
 
-test('controversyScore detecta controversia', function () {
+await test('controversyScore detecta controversia', function () {
   var c = Engine.QualitySignals.controversyScore({
     upvotes: 50, downvotes: 50
   });
@@ -404,7 +408,7 @@ test('controversyScore detecta controversia', function () {
 // --- SocialGraph ---
 console.log('\nSocialGraph:');
 
-test('socialBoost da boost a following', function () {
+await test('socialBoost da boost a following', function () {
   var boost = Engine.SocialGraph.socialBoost(
     { authorId: 'followed-author' },
     { 'followed-author': { followedAt: Date.now() } }
@@ -421,7 +425,7 @@ test('socialBoost da boost a following', function () {
 // --- Explainability ---
 console.log('\nExplainability:');
 
-test('explainPost devuelve desglose', function () {
+await test('explainPost devuelve desglose', function () {
   var exp = Engine.Explainability.explainPost({
     id: 'explain-1',
     timestamp: Date.now() - 3600000,
@@ -437,7 +441,7 @@ test('explainPost devuelve desglose', function () {
 // --- Integración ---
 console.log('\nIntegración:');
 
-test('rankFeed ordena posts por score', function () {
+await test('rankFeed ordena posts por score', function () {
   var posts = [
     { id: 'a', timestamp: Date.now() - 3600000, upvotes: 50, commentsCount: 10, content: 'post popular' },
     { id: 'b', timestamp: Date.now() - 7200000, upvotes: 2, commentsCount: 0, content: 'post poco popular' }
@@ -447,7 +451,7 @@ test('rankFeed ordena posts por score', function () {
   assert(ranked[0].id === 'a', 'Post más popular debe ir primero');
 });
 
-test('Compatibilidad V1: drexRecScore funciona', function () {
+await test('Compatibilidad V1: drexRecScore funciona', function () {
   var score = global.drexRecScore({
     id: 'v1-test',
     timestamp: Date.now() - 3600000,
@@ -457,13 +461,13 @@ test('Compatibilidad V1: drexRecScore funciona', function () {
   assert(typeof score === 'number', 'drexRecScore debe devolver número');
 });
 
-test('Compatibilidad V1: drexRecTrain no falla', function () {
+await test('Compatibilidad V1: drexRecTrain no falla', function () {
   global.drexRecTrain({ flair: 'musica', authorId: 'a1', text: 'música' }, 3);
   // No debe lanzar error.
   assert(true, 'drexRecTrain debe ejecutarse sin error');
 });
 
-test('Compatibilidad V1: DREX_REC tiene weights', function () {
+await test('Compatibilidad V1: DREX_REC tiene weights', function () {
   assert(global.DREX_REC !== undefined, 'DREX_REC debe existir');
   assert(typeof global.DREX_REC.weights === 'object', 'DREX_REC.weights debe ser objeto');
   assert(global.DREX_REC.weights.upvote !== undefined, 'Debe tener weight upvote');
@@ -477,3 +481,6 @@ console.log('Resumen: ' + passed + ' pasados, ' + failed + ' fallidos');
 console.log('========================================');
 
 process.exit(failed > 0 ? 1 : 0);
+}
+
+runAll().catch(function(e) { console.error(e); process.exit(1); });
