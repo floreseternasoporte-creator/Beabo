@@ -40690,10 +40690,11 @@ function renderAccountsList(accounts) {
       socialLinksNode.innerHTML = socialLinksHTML;
 
 
-      DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value').then(async postsSnap => {
+      const memo = _getAuthorPostsMemo(authorId);
+      memo.postsPromise.then(async postsSnap => {
         if (currentViewedAuthorId !== authorId) return;
         let collabCount = 0;
-        try { collabCount = (await fetchCollabPosts(authorId)).length; } catch (_) {}
+        try { collabCount = (await memo.collabPromise).length; } catch (_) {}
         if (currentViewedAuthorId !== authorId) return;
         if (authorPostsNode) authorPostsNode.textContent = formatNumber((postsSnap.numChildren() || 0) + collabCount);
       });
@@ -40720,6 +40721,7 @@ function renderAccountsList(accounts) {
   }
 
   function closeAuthorProfile() {
+    _authorPostsMemo = null;
     closeFollowersModal();
     closeFollowingModal();
     closeAuthorPostsView();
@@ -40996,10 +40998,27 @@ function renderAccountsList(accounts) {
       </div>`;
   }
 
+  // Memo de queries por perfil abierto: el contador de posts y el grid pedían
+  // la misma query (posts del autor por authorId) + las colaboraciones,
+  // duplicando todas las lecturas en cada apertura de perfil. Se comparte
+  // mientras el perfil siga abierto; se limpia al cerrarlo o cambiar de autor.
+  let _authorPostsMemo = null; // {authorId, postsPromise, collabPromise}
+  function _getAuthorPostsMemo(authorId) {
+    if (!_authorPostsMemo || _authorPostsMemo.authorId !== authorId) {
+      _authorPostsMemo = {
+        authorId,
+        postsPromise: DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value'),
+        collabPromise: fetchCollabPosts(authorId)
+      };
+    }
+    return _authorPostsMemo;
+  }
+
   function _loadAuthorPostsContent(authorId, container) {
+    const memo = _getAuthorPostsMemo(authorId);
     Promise.all([
-      DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value'),
-      fetchCollabPosts(authorId)
+      memo.postsPromise,
+      memo.collabPromise
     ]).then(async ([snapshot, collabPosts]) => {
       if (currentViewedAuthorId !== authorId) return;
       container.innerHTML = "";
