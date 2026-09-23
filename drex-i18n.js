@@ -2426,6 +2426,13 @@ var APP_ENGLISH_TEXT = {
 "Cargando...":"Loading...",
 "alguien":"someone",
 "Alguien":"Someone",
+
+"Permisos de mensajes guardados correctamente.":"Message permissions saved.",
+"Perfil actualizado":"Profile updated",
+"No se pudo procesar el video. Inténtalo de nuevo.":"Couldn't process the video. Try again.",
+"@{u} bloqueado":"@{u} blocked",
+"Recuperamos tu nombre de usuario: @{u}":"We recovered your username: @{u}",
+"Entraste a tu fiesta (el aviso del feed no se publicó{d}":"You joined your party (the feed notice wasn't published{d}",
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4857,6 +4864,13 @@ var APP_CHINESE_TEXT = {
 "Cargando...":"加载中...",
 "alguien":"某人",
 "Alguien":"某人",
+
+"Permisos de mensajes guardados correctamente.":"消息权限已保存。",
+"Perfil actualizado":"个人资料已更新",
+"No se pudo procesar el video. Inténtalo de nuevo.":"无法处理该视频，请重试。",
+"@{u} bloqueado":"已屏蔽 @{u}",
+"Recuperamos tu nombre de usuario: @{u}":"已找回你的用户名：@{u}",
+"Entraste a tu fiesta (el aviso del feed no se publicó{d}":"你已进入你的派对（动态通知未能发布{d}",
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6582,7 +6596,14 @@ var APP_PORTUGUESE_TEXT = {
 "Cargando...":"Carregando...",
 "alguien":"alguém",
 "Alguien":"Alguém",
-  };
+  
+"Permisos de mensajes guardados correctamente.":"Permissões de mensagens salvas.",
+"Perfil actualizado":"Perfil atualizado",
+"No se pudo procesar el video. Inténtalo de nuevo.":"Não foi possível processar o vídeo. Tente novamente.",
+"@{u} bloqueado":"@{u} bloqueado",
+"Recuperamos tu nombre de usuario: @{u}":"Recuperamos seu nome de usuário: @{u}",
+"Entraste a tu fiesta (el aviso del feed no se publicó{d}":"Você entrou na sua festa (o aviso do feed não foi publicado{d}",
+};
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
   "Escribe tu texto aquí...":"在这里写下你的文本…",
