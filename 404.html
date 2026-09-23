@@ -31237,8 +31237,16 @@ let chatTypingListener = null;
     const renderMessageNode = (msg, msgId) => {
       const currentUserId = DrexCloud.auth().currentUser?.uid || '';
       const mine = msg.senderId === currentUserId;
-      const resolvedId = msgId || msg.id || '';
-      if (resolvedId && container.querySelector('[data-msg-id="' + resolvedId + '"]')) return;
+      let resolvedId = msgId || msg.id || '';
+      // SEC ciclo 12: `resolvedId` fluye a innerHTML (data-msg-id, data-del-id,
+      // id="timer-"/"reactions-") y a querySelector. Fuentes: la clave push de
+      // Realtime DB (alfabeto [A-Za-z0-9_-]) y `msg.id` del payload — este
+      // último lo controla el remitente, y `{ id: msgId, ...msg }` deja que un
+      // `id` forjado en el payload sobreescriba la clave al persistir el caché.
+      // Todo id legítimo es un push ID: lo que no pase la whitelist se trata
+      // como "sin id" (ruta ya existente para resolvedId === '').
+      if (!/^[A-Za-z0-9_-]+$/.test(resolvedId)) resolvedId = '';
+      if (resolvedId && container.querySelector('[data-msg-id="' + CSS.escape(resolvedId) + '"]')) return;
       
       const msgTimestamp = msg.timestamp || msg.createdAt || Date.now();
       const msgDate = new Date(msgTimestamp).toDateString();
@@ -31259,12 +31267,12 @@ let chatTypingListener = null;
         _lastChatMsgNode = null;
       }
       if (msg.deletedForAll) {
-        if (container.querySelector('.deleted-placeholder[data-del-id="' + resolvedId + '"]')) return;
+        if (container.querySelector('.deleted-placeholder[data-del-id="' + CSS.escape(resolvedId) + '"]')) return;
         const del = document.createElement('div');
         del.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
         if (resolvedId) del.dataset.msgId = resolvedId;
         del.dataset.msgTs = '0';
-        del.innerHTML = `<div class="deleted-placeholder flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--theme-border)] text-[var(--theme-muted)] text-xs italic select-none" data-del-id="${resolvedId}"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-linecap="round"/></svg>${mine ? 'Eliminaste este mensaje' : 'Mensaje eliminado'}</div>`;
+        del.innerHTML = `<div class="deleted-placeholder flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--theme-border)] text-[var(--theme-muted)] text-xs italic select-none" data-del-id="${escapeHtml(resolvedId)}"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-linecap="round"/></svg>${mine ? 'Eliminaste este mensaje' : 'Mensaje eliminado'}</div>`;
         container.appendChild(del);
         container.scrollTop = container.scrollHeight;
         _lastChatMsgMeta = null;
@@ -31319,7 +31327,7 @@ let chatTypingListener = null;
         const innerContent = msg.images?.length
           ? `<img src="${escapeHtml(msg.images[0])}" loading="lazy" class="rounded-2xl block" style="max-width:200px;max-height:200px;object-fit:cover" alt="Foto">`
           : `<p class="text-[15px] leading-snug break-words chat-msg-text" data-chat-mine="${mine ? 1 : 0}">${escapeHtml(msg.text || '')}</p>`;
-        content = `<div class="relative">${innerContent}<div class="flex items-center gap-1 mt-1 opacity-70"><svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5" stroke-linecap="round"/></svg><span class="text-[10px] font-bold" id="timer-${resolvedId}">${label}</span></div></div>`;
+        content = `<div class="relative">${innerContent}<div class="flex items-center gap-1 mt-1 opacity-70"><svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5" stroke-linecap="round"/></svg><span class="text-[10px] font-bold" id="timer-${escapeHtml(resolvedId)}">${label}</span></div></div>`;
         setTimeout(() => _startMsgCountdown(resolvedId, msg.autoDestroyAt, conversationId), 100);
       } else if (msg.autoDestroyAt && msg.autoDestroyAt <= Date.now()) {
         content = `<p class="text-[13px] italic opacity-50">Mensaje eliminado</p>`;
@@ -31380,10 +31388,10 @@ let chatTypingListener = null;
           <div class="flex items-end gap-2 max-w-[85%]">
             <img class="group-sender-avatar w-8 h-8 rounded-full object-cover border border-[var(--theme-border)] shrink-0 cursor-pointer" loading="lazy" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==" data-uid="${escapeHtml(senderId)}" alt="${escapeHtml(senderName)}">
             <div class="flex flex-col items-start min-w-0">
-              <div class="msg-bubble ${((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : 'bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-4 py-2.5'} rounded-3xl select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
+              <div class="msg-bubble ${((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : 'bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-4 py-2.5'} rounded-3xl select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${escapeHtml(resolvedId)}">
                 ${replyBlock}${content}
               </div>
-              <div id="reactions-${resolvedId}" class="flex flex-wrap gap-1 mt-0.5 justify-start px-1"></div>
+              <div id="reactions-${escapeHtml(resolvedId)}" class="flex flex-wrap gap-1 mt-0.5 justify-start px-1"></div>
               ${timeStr ? `<span class="chat-msg-time text-xs text-[var(--theme-muted)] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">Editado</span>' : ''}</span>` : ''}
             </div>
           </div>
@@ -31414,10 +31422,10 @@ let chatTypingListener = null;
           ? `<img class="dm-avatar w-9 h-9 rounded-full object-cover shrink-0 cursor-pointer" loading="lazy" src="${escapeHtml(_currentChatOtherImage || _CHAT_DEFAULT_AVATAR)}" alt="">`
           : '';
         const bubbleInner = `
-          <div class="msg-bubble ${((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : (mine ? 'bg-[var(--drex-brand)] text-white px-4 py-2.5' : 'bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-4 py-2.5')} rounded-3xl ${showDmAvatar ? '' : 'max-w-[75%]'} select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${resolvedId}">
+          <div class="msg-bubble ${((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : (mine ? 'bg-[var(--drex-brand)] text-white px-4 py-2.5' : 'bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-4 py-2.5')} rounded-3xl ${showDmAvatar ? '' : 'max-w-[75%]'} select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${escapeHtml(resolvedId)}">
             ${replyBlock}${content}
           </div>
-          <div id="reactions-${resolvedId}" class="flex flex-wrap gap-1 mt-0.5 ${mine ? 'justify-end' : 'justify-start'} px-1"></div>
+          <div id="reactions-${escapeHtml(resolvedId)}" class="flex flex-wrap gap-1 mt-0.5 ${mine ? 'justify-end' : 'justify-start'} px-1"></div>
           ${timeStr ? `<span class="chat-msg-time text-xs text-[var(--theme-muted)] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">Editado</span>' : ''}</span>` : ''}
         `;
         wrapper.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
@@ -31611,11 +31619,15 @@ const _startChatListeners = () => {
       const changedCallback = changedSnap => {
         const changedMsg = changedSnap.val();
         if (changedMsg?.deletedForAll) {
-          const existingWrapper = container.querySelector('[data-msg-id="' + changedSnap.key + '"]');
+          // SEC ciclo 12: igual que resolvedId en renderMessageNode — la clave
+          // del snapshot la puede forjar un cliente con escritura; whitelist +
+          // escape antes de querySelector/innerHTML.
+          const changedKey = /^[A-Za-z0-9_-]+$/.test(changedSnap.key || '') ? changedSnap.key : '';
+          const existingWrapper = changedKey && container.querySelector('[data-msg-id="' + CSS.escape(changedKey) + '"]');
           if (existingWrapper) {
             const isMine = changedMsg.senderId === (DrexCloud.auth().currentUser?.uid || '');
             existingWrapper.className = `w-full flex flex-col ${isMine ? 'items-end' : 'items-start'}`;
-            existingWrapper.innerHTML = `<div class="deleted-placeholder flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#dce1e5] text-[#b6c0d1] text-xs italic select-none" data-del-id="${changedSnap.key}"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-linecap="round"/></svg>${isMine ? 'Eliminaste este mensaje' : 'Mensaje eliminado'}</div>`;
+            existingWrapper.innerHTML = `<div class="deleted-placeholder flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#dce1e5] text-[#b6c0d1] text-xs italic select-none" data-del-id="${escapeHtml(changedKey)}"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-linecap="round"/></svg>${isMine ? 'Eliminaste este mensaje' : 'Mensaje eliminado'}</div>`;
           }
         }
       };
