@@ -29618,6 +29618,7 @@ function clearAccountScopedState() {
   try {
     musicQueue = []; musicQueueIdx = -1;
     musicExploreCache = []; musicSearchCache = []; musicMineCache = [];
+    musicAuthorBlockCache = []; musicAuthorBlockUid = null;
     musicHistoryCache = []; musicFavoritesCache = [];
     musicTopCache = []; musicArtistCache = []; musicPlaylistsCache = [];
     musicPlaylistDetailCache = null; musicAdBreakPending = null;
@@ -43896,6 +43897,8 @@ let musicQueueIdx = -1;
 let musicUrlCache = new Map();   // trackId -> blob URL
 let musicExploreCache = [];
 let musicSearchCache = [];
+let musicAuthorBlockCache = []; // C20: caché propio del bloque musical del perfil
+let musicAuthorBlockUid = null; // de autor (ya no contamina musicSearchCache).
 let musicMineCache = [];
 let musicUploading = false;
 let musicUploadState = { audioFile: null, audioDataUrl: null, audioName: '', duration: 0, coverDataUrl: '', editingId: null, artistName: '' };
@@ -44949,18 +44952,24 @@ window.renderAuthorMusicBlock = function (authorId, container) {
   block.id = 'author-music-block';
   block.className = 'px-4 pt-4';
   container.prepend(block);
+  // C20: guarda anti-stale para la carrera A→B entre perfiles de autor.
+  musicAuthorBlockUid = authorId;
   musicDb().ref('musicTracks').orderByChild('authorId').equalTo(authorId).limitToLast(10).once('value').then(snap => {
+    if (musicAuthorBlockUid !== authorId || !block.isConnected) return;
     const arr = [];
     snap.forEach(ch => arr.push({ ...(ch.val() || {}), id: ch.key }));
     if (!arr.length) { block.remove(); return; }
     arr.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
-    musicSearchCache = arr;
+    // C20: caché propio del bloque de autor (ctx 'authorblock'). Antes se
+    // sobrescribía musicSearchCache y se corrompían la lista de búsqueda,
+    // el play por índice y los favoritos del tab Música.
+    musicAuthorBlockCache = arr;
     block.innerHTML = `
       <div class="flex items-center gap-2 mb-2 px-1">
         <span class="text-[var(--brand-indigo-text)]">${MUSIC_NOTE_SVG}</span>
         <h3 class="text-[15px] font-extrabold text-[var(--theme-text)]">Música</h3>
       </div>
-      <div class="space-y-2 mb-2">${arr.map((t, i) => musicTrackRowHTML(t, i, 'search', false)).join('')}</div>`;
+      <div class="space-y-2 mb-2">${arr.map((t, i) => musicTrackRowHTML(t, i, 'authorblock', false)).join('')}</div>`;
   }).catch(() => { block.remove(); });
 };
 
@@ -45394,7 +45403,7 @@ function musicGetAudioUrl(trackId) {
   });
 }
 window.musicPlayFromList = function (ctx, idx) {
-  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicSortedMine() : ctx === 'top' ? musicTopCache : ctx === 'favorites' ? musicFavArrForCtx('favorites') : ctx === 'history' ? musicHistoryCache : ctx === 'artist' ? musicArtistCache : ctx === 'playlist' ? (musicPlaylistDetailCache ? musicPlaylistDetailCache.tracks : []) : ctx === 'spotlight' ? (typeof drexSpotlightTracks !== 'undefined' ? drexSpotlightTracks : []) : musicSearchCache;
+  const arr = ctx === 'explore' ? musicExploreCache : ctx === 'mine' ? musicSortedMine() : ctx === 'top' ? musicTopCache : ctx === 'favorites' ? musicFavArrForCtx('favorites') : ctx === 'history' ? musicHistoryCache : ctx === 'artist' ? musicArtistCache : ctx === 'authorblock' ? musicAuthorBlockCache : ctx === 'playlist' ? (musicPlaylistDetailCache ? musicPlaylistDetailCache.tracks : []) : ctx === 'spotlight' ? (typeof drexSpotlightTracks !== 'undefined' ? drexSpotlightTracks : []) : musicSearchCache;
   if (!arr || !arr[idx]) return;
   musicQueue = arr.slice();
   musicQueueIdx = idx;
@@ -45778,6 +45787,7 @@ function musicFavArrForCtx(ctx) {
   if (ctx === 'top') return musicTopCache;
   if (ctx === 'history') return musicHistoryCache;
   if (ctx === 'artist') return musicArtistCache;
+  if (ctx === 'authorblock') return musicAuthorBlockCache;
   if (ctx === 'favorites') return musicFavoritesCache.map(f => Object.assign({}, f, { id: f.trackId }));
   return musicSearchCache;
 }
