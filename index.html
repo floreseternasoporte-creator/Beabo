@@ -29126,7 +29126,16 @@ function saveNote() {
       ...meta
     };
 
-    newNotificationRef.set(notificationData);
+    // FIX: la escritura se confirma con reintento automático (la key del push ya
+    // está fijada, así que reintentar el set() es idempotente). Antes era
+    // fire-and-forget: los await addNotification() resolvían antes de que la
+    // escritura completara y en red inestable la notificación se perdía en
+    // silencio, sin reintento y con rejection sin manejar.
+    try {
+      await _runWithAutoRetry(() => newNotificationRef.set(notificationData), 'notificacion');
+    } catch (err) {
+      try { console.warn('addNotification: escritura fallida tras reintentos', err && err.message); } catch (_) {}
+    }
 
     // No se adjunta en notificaciones del sistema.
     try {
