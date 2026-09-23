@@ -23980,7 +23980,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       return;
     }
 
-    setUsernameUI('checking', 'Verificando disponibilidad…');
+    setUsernameUI('checking', appT('Verificando disponibilidad…'));
 
     usernameCheckTimer = setTimeout(() => {
       onceWithTimeout(DrexCloud.database().ref('usernames/' + raw), 12000).then(snap => {
@@ -31018,36 +31018,39 @@ const _startChatListeners = () => {
     const pendingFilesEarly = (typeof chatFileAttachments !== 'undefined' ? chatFileAttachments : []).filter(a => !a.failed);
     if (!text && !chatPhotoAttachments.length && !pendingFilesEarly.length) return;
 
-    // Grupos: no hay permisos de DM
+    // Grupos: no hay permisos de DM (flujo sin cambios)
     if (currentChatIsGroup) { sendChatMessageInternal(); return; }
 
-    if (!currentChatRecipient) return;
+    const recipientUid = currentChatRecipient;
+    if (!recipientUid) return;
 
-    DrexCloud.database().ref('users/' + currentChatRecipient).once('value').then(snapshot => {
+    // B5: la burbuja optimista ("Enviando") se pinta DE INMEDIATO dentro de
+    // sendChatMessageInternal; la verificación de dmPermission/amistad corre
+    // EN PARALELO y, si se deniega, se hace rollback (eliminar burbuja + toast).
+    // Si la verificación falla por red, se deja enviar: el backend autoriza.
+    const dmPermissionPromise = DrexCloud.database().ref('users/' + recipientUid).once('value').then(snapshot => {
       const recipientData = snapshot.val() || {};
       const dmPermission = recipientData.dmPermission || 'all';
-      
+
       const isFollowing = () => new Promise(resolve =>
-        DrexCloud.database().ref('followers/' + currentChatRecipient + '/' + user.uid).once('value').then(snap => resolve(snap.exists()))
+        DrexCloud.database().ref('followers/' + recipientUid + '/' + user.uid).once('value').then(snap => resolve(snap.exists()))
       );
       const isFollowedBy = () => new Promise(resolve =>
-        DrexCloud.database().ref('followers/' + user.uid + '/' + currentChatRecipient).once('value').then(snap => resolve(snap.exists()))
+        DrexCloud.database().ref('followers/' + user.uid + '/' + recipientUid).once('value').then(snap => resolve(snap.exists()))
       );
 
-      Promise.all([isFollowing(), isFollowedBy()]).then(([following, followedBy]) => {
+      return Promise.all([isFollowing(), isFollowedBy()]).then(([following, followedBy]) => {
         const areFriends = following && followedBy;
-        if (dmPermission === 'none') { showMiniToast(appT('Esta persona no tiene los permisos de mensaje activado.')); return; }
-        if (dmPermission === 'friends' && !areFriends) { showMiniToast(appT('Solo los amigos pueden escribir a esta persona.')); return; }
-        sendChatMessageInternal();
+        if (dmPermission === 'none') return appT('Esta persona no tiene los permisos de mensaje activado.');
+        if (dmPermission === 'friends' && !areFriends) return appT('Solo los amigos pueden escribir a esta persona.');
+        return null;
       });
-    }).catch(() => {
-      // Si no se pudo verificar el permiso (red), intentar enviar de todos modos;
-      // las reglas del backend son las que realmente autorizan la escritura.
-      sendChatMessageInternal();
-    });
+    }).catch(() => null);
+
+    sendChatMessageInternal(dmPermissionPromise);
   }
 
-  async function sendChatMessageInternal() {
+  async function sendChatMessageInternal(dmPermissionPromise) {
     const user = DrexCloud.auth().currentUser;
     const input = document.getElementById('chat-room-input');
     if (!user || !input || !currentChatRoomId) return;
@@ -31060,50 +31063,76 @@ const _startChatListeners = () => {
     const stillUploading = chatPhotoAttachments.some(a => a.uploading) || (typeof chatFileAttachments !== 'undefined' && chatFileAttachments.some(a => a.uploading));
     if (stillUploading) return;
 
-    // Anti-doble-envío: en iPhone un doble tap llegaba a enviar el mensaje dos
-    // veces (el input se limpia después del await de verificación de bloqueo).
+    // Anti-doble-envío: el candado se toma de forma sincrónica antes de pintar,
+    // para que un doble tap no dispare dos envíos mientras las verificaciones
+    // corren en paralelo.
     if (window._drexChatSending) return;
     window._drexChatSending = true;
 
-    if (!currentChatIsGroup && currentChatRecipient) {
-      try {
-        const [iBlockedThem, theyBlockedMe] = await Promise.all([
-          DrexCloud.database().ref('blocks/' + user.uid + '/' + currentChatRecipient).once('value'),
-          DrexCloud.database().ref('blocks/' + currentChatRecipient + '/' + user.uid).once('value')
-        ]);
-        if (iBlockedThem.exists()) {
-          showMiniToast(appT('Has bloqueado a este usuario. Desbloquéalo para poder enviarle mensajes.'));
-          window._drexChatSending = false;
-          return;
-        }
-        if (theyBlockedMe.exists()) {
-          showMiniToast(appT('No puedes enviar mensajes a este usuario.'));
-          window._drexChatSending = false;
-          return;
-        }
-      } catch (e) {
-        console.error('Error verificando bloqueo antes de enviar mensaje:', e);
-      }
-    }
-
-    const imageUrls = pendingPhotos.map(a => a.cloudUrl);
-    const sentAt = Date.now();
-
-    // FIX: si algo falla construyendo el mensaje, liberar el candado para no bloquear envíos futuros
+    // B5: pintar la burbuja optimista ("Enviando") ANTES de cualquier
+    // verificación de red, para que el botón nunca se sienta muerto en
+    // conexiones lentas. El push real solo ocurre tras las verificaciones.
+    let painted = null;
     try {
-      await _sendChatMessageBuildAndPush(user, input, text, imageUrls, sentAt, pendingPhotos, pendingFiles);
+      painted = _paintOptimisticChatBubble(user, text, pendingPhotos, pendingFiles);
     } catch (e) {
-      console.error('Error construyendo mensaje:', e);
+      console.error('Error pintando burbuja optimista:', e);
+    }
+    if (!painted) {
       window._drexChatSending = false;
       showMiniToast(appT('No se pudo enviar el mensaje. Inténtalo de nuevo.'));
       return;
     }
-    return;
+
+    // Verificaciones en paralelo (red): bloqueo (solo DM) + permiso DM.
+    // Cada una resuelve null (permitido) o el mensaje de denegación (traducido).
+    const denialChecks = [];
+    if (!currentChatIsGroup && currentChatRecipient) {
+      denialChecks.push(
+        Promise.all([
+          DrexCloud.database().ref('blocks/' + user.uid + '/' + currentChatRecipient).once('value'),
+          DrexCloud.database().ref('blocks/' + currentChatRecipient + '/' + user.uid).once('value')
+        ]).then(([iBlockedThem, theyBlockedMe]) => {
+          if (iBlockedThem.exists()) return appT('Has bloqueado a este usuario. Desbloquéalo para poder enviarle mensajes.');
+          if (theyBlockedMe.exists()) return appT('No puedes enviar mensajes a este usuario.');
+          return null;
+        }).catch(e => {
+          console.error('Error verificando bloqueo antes de enviar mensaje:', e);
+          return null;
+        })
+      );
+      if (dmPermissionPromise) denialChecks.push(dmPermissionPromise);
+    }
+    const denial = (await Promise.all(denialChecks)).find(Boolean) || null;
+    if (denial) {
+      // Rollback: la burbuja nunca llegó al backend, basta con quitarla del
+      // DOM y de la caché, y restaurar el texto al input.
+      _rollbackOptimisticChatBubble(painted);
+      showMiniToast(denial);
+      return;
+    }
+
+    // Verificaciones OK: aplicar efectos del composer y hacer el push real.
+    try {
+      await _pushOptimisticChatMessage(user, painted);
+    } catch (e) {
+      console.error('Error enviando mensaje:', e);
+      window._drexChatSending = false;
+      showMiniToast(appT('No se pudo enviar el mensaje. Inténtalo de nuevo.'));
+    }
   }
 
-  async function _sendChatMessageBuildAndPush(user, input, text, imageUrls, sentAt, pendingPhotos, pendingFiles) {
+  // B5: construye el payload y pinta la burbuja optimista ("Enviando") de forma
+  // SINCRÓNICA, sin esperar ninguna verificación de red. Limpia el input de
+  // inmediato (el rollback lo restaura si el envío se deniega); el resto de
+  // efectos del composer se aplican en _pushOptimisticChatMessage.
+  function _paintOptimisticChatBubble(user, text, pendingPhotos, pendingFiles) {
     const replyCtx = chatReplyContext;
+    const viewOnceOn = (typeof chatViewOnceActive !== 'undefined' && chatViewOnceActive);
+    const timerSecs = (typeof _chatTimerSecs !== 'undefined' ? _chatTimerSecs : 0);
     const fileMetas = (pendingFiles || []).map(a => ({ fileId: a.fileId, name: a.name, size: a.size, mime: a.mime, chunks: a.chunks }));
+    const imageUrls = (pendingPhotos || []).map(a => a.cloudUrl);
+    const sentAt = Date.now();
     const payload = {
       senderId: user.uid,
       text: text || '',
@@ -31113,28 +31142,23 @@ const _startChatListeners = () => {
     if (!payload.images) delete payload.images;
     if (fileMetas.length) payload.files = fileMetas;
     if (replyCtx) payload.replyTo = replyCtx;
-    if (typeof chatViewOnceActive !== 'undefined' && chatViewOnceActive) {
-      payload.viewOnce = true;
-      toggleChatViewOnce();
-    }
-    if (_chatTimerSecs > 0) {
-      payload.autoDestroyAt = Date.now() + _chatTimerSecs * 1000;
-      setChatTimer(0);
-    }
+    if (viewOnceOn) payload.viewOnce = true;
+    if (timerSecs > 0) payload.autoDestroyAt = Date.now() + timerSecs * 1000;
 
-    const msgRef = DrexCloud.database().ref('conversationMessages/' + currentChatRoomId).push();
+    const conversationId = currentChatRoomId;
+    const msgRef = DrexCloud.database().ref('conversationMessages/' + conversationId).push();
     const messageId = msgRef.key;
     // tempMsgId en scope de función: se usa en los .then()/.catch() de msgRef.set(),
     // que están fuera del bloque if (container). Declararlo dentro causaba
     // ReferenceError y el mensaje quedaba atascado en "Enviando".
     const tempMsgId = 'opt-' + messageId;
 
-    const currentCache = chatMessagesMemoryCache.get(currentChatRoomId) || [];
+    const currentCache = chatMessagesMemoryCache.get(conversationId) || [];
     chatMessagesMemoryCache.set(
-      currentChatRoomId,
+      conversationId,
       [...currentCache, { id: messageId, ...payload }].slice(-CHAT_MESSAGES_LIMIT)
     );
-    _persistChatMessages(currentChatRoomId, chatMessagesMemoryCache.get(currentChatRoomId));
+    _persistChatMessages(conversationId, chatMessagesMemoryCache.get(conversationId));
     const container = document.getElementById('chat-room-messages');
     if (container) {
       const empty = document.getElementById('chat-room-empty-state');
@@ -31178,15 +31202,57 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       container.scrollTop = container.scrollHeight;
     }
 
+    const inputEl = document.getElementById('chat-room-input');
+    if (inputEl) { inputEl.value = ''; updateChatToolbarMode(); }
+
+    return {
+      msgRef, messageId, tempMsgId, payload, imageUrls, fileMetas, text,
+      conversationId,
+      recipientId: currentChatRecipient,
+      isGroup: currentChatIsGroup,
+      groupMembers: Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) },
+      lastMessage: imageUrls.length ? '📷 Foto' : (fileMetas.length ? '📎 Archivo' : text),
+      viewOnceOn, timerSecs,
+    };
+  }
+
+  // B5: rollback de la burbuja optimista cuando una verificación deniega el
+  // envío. El push nunca ocurrió (solo corre tras las verificaciones), así que
+  // no hay mensaje huérfano en el backend: basta quitar la burbuja del DOM y
+  // su entrada de la caché, y devolver el texto al input.
+  function _rollbackOptimisticChatBubble(painted) {
+    window._drexChatSending = false;
+    try {
+      const bubble = document.getElementById(painted.tempMsgId);
+      if (bubble) bubble.remove();
+      const cache = chatMessagesMemoryCache.get(painted.conversationId) || [];
+      const pruned = cache.filter(m => m && m.id !== painted.messageId);
+      if (pruned.length !== cache.length) {
+        chatMessagesMemoryCache.set(painted.conversationId, pruned);
+        _persistChatMessages(painted.conversationId, pruned);
+      }
+      const inputEl = document.getElementById('chat-room-input');
+      if (inputEl && !inputEl.value && painted.text) {
+        inputEl.value = painted.text;
+        updateChatToolbarMode();
+      }
+    } catch (e) {
+      console.error('Error en rollback de burbuja optimista:', e);
+    }
+  }
+
+  // B5: el push real, solo después de que las verificaciones en paralelo
+  // autorizaron el envío. Aplica los efectos del composer y conserva el manejo
+  // de éxito/error original (check de "enviado", notificaciones, preview).
+  async function _pushOptimisticChatMessage(user, painted) {
+    const { msgRef, tempMsgId, payload, imageUrls, fileMetas, text,
+            conversationId, recipientId, isGroup, groupMembers,
+            lastMessage, viewOnceOn, timerSecs } = painted;
+
     clearChatReply();
-    const recipientId = currentChatRecipient;
-    const conversationId = currentChatRoomId;
-    const isGroup = currentChatIsGroup;
-    const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
-    const lastMessage = imageUrls.length ? '📷 Foto' : (fileMetas.length ? '📎 Archivo' : text);
-    input.value = '';
+    if (viewOnceOn && typeof chatViewOnceActive !== 'undefined' && chatViewOnceActive) toggleChatViewOnce();
+    if (timerSecs > 0) setChatTimer(0);
     clearChatDraft();
-    updateChatToolbarMode();
     clearChatPhotoAttachment();
     clearChatFileAttachment();
     markChatRoomRead(conversationId);
@@ -31237,6 +31303,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         groupMembers
       }).catch(() => {});
     }).catch((err) => {
+
       window._drexChatSending = false;
       console.error('Error al enviar mensaje:', err);
       document.getElementById(tempMsgId)?.remove();
@@ -31248,7 +31315,6 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         : appT('No se pudo enviar el mensaje{c}. Inténtalo de nuevo.').replace('{c}', code ? ' (' + code + ')' : ''));
     });
   }
-
 
   let activeReactionMsgId = null;
   let msgReactionListeners = new Map();
@@ -39035,6 +39101,9 @@ function closeSubpageView() {
       ['music-sleep-sheet', () => typeof window.musicSleepSheetClose === 'function' && window.musicSleepSheetClose()],
       ['music-xfade-sheet', () => typeof window.musicXfadeSheetClose === 'function' && window.musicXfadeSheetClose()],
       ['music-playlist-sheet', () => typeof window.musicHidePlaylistSheet === 'function' && window.musicHidePlaylistSheet()],
+      // Reproductor de música (z-[160]): está DEBAJO de sus hojas (z-[165]/z-[170]),
+      // que cierran primero; Atrás lo minimiza en vez de navegar.
+      ['music-player-view', () => { try { window.minimizeMusicPlayer && window.minimizeMusicPlayer(); } catch (_) {} }],
       // El picker de GIF (z-121) flota sobre todo, incluso sobre los comentarios.
       ['gif-picker-sheet', () => typeof closeGifPicker === 'function' && closeGifPicker()],
       // El picker de stickers (z-121) también flota sobre todo.
@@ -39065,6 +39134,9 @@ function closeSubpageView() {
       ['fiesta-games-sheet', () => typeof fiestaCloseGamesSheet === 'function' && fiestaCloseGamesSheet()],
       ['fiesta-room-view', () => typeof leaveFiesta === 'function' && leaveFiesta(true)],
       ['historial-view', () => typeof closeHistorialView === 'function' && closeHistorialView()],
+      // Vista de música (z-50): por debajo del reproductor (z-[160]); Atrás la
+      // cierra en vez de navegar.
+      ['music-view', () => { try { window.closeMusicSection && window.closeMusicSection(); } catch (_) {} }],
     ];
     for (const [id, closeFn, isOpenFn] of candidates) {
       const el = document.getElementById(id);
@@ -44648,7 +44720,7 @@ function _drexReportRenderStep2() {
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
       </button>
       <h2>Reportar</h2>
-      <p>Motivo: <b>${appT(_drexReportReason.label)}</b> · <button onclick="drexReportBackToReasons()" class="drex-report-change">cambiar</button></p>
+      <p>Motivo: <b>${appT(_drexReportReason.label)}</b> · <button onclick="drexReportBackToReasons()" class="drex-report-change">${appT('cambiar')}</button></p>
     </div>
     <div class="drex-report-details">
       <label for="drex-report-text">Cuéntanos más <span>(opcional)</span></label>
@@ -44777,7 +44849,7 @@ async function drexReportSubmit() {
   const user = DrexCloud.auth().currentUser;
   if (!user || !_drexReportTarget || !_drexReportReason) return;
   const btn = document.getElementById('drex-report-send');
-  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  if (btn) { btn.disabled = true; btn.textContent = appT('Enviando…'); }
   const t = _drexReportTarget;
   const r = _drexReportReason;
   const detailsEl = document.getElementById('drex-report-text');
@@ -44850,7 +44922,7 @@ async function drexAppealSubmit() {
   const message = ta ? ta.value.trim().slice(0, 1000) : '';
   if (!message) { if (typeof showMiniToast === 'function') showMiniToast(appT('Escribe el motivo de tu apelación.')); return; }
   const btn = document.getElementById('drex-appeal-send');
-  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  if (btn) { btn.disabled = true; btn.textContent = appT('Enviando…'); }
   try {
     const me = DrexCloud.auth().currentUser;
     let uid = me ? me.uid : '';
