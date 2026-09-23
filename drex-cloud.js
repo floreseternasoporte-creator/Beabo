@@ -1005,6 +1005,14 @@ function withCredRetry(opFn) {
     // demanda al pintar la tarjeta (ver hydrateLegacyNoteImages en index.html).
     var lightImages = (pk === 'communityNotes');
     var wantScan = lightImages ? want + 3 : want;
+    // PERF ciclo 8 H4: la fase 1 es el detector de cambios de la válvula de
+    // huella (abajo): acotarla con Limit como hace readLeavesBoundedPrefix
+    // para no traer páginas de 1 MB en cada ciclo de polling. El bucle ya
+    // pagina con LastEvaluatedKey hasta reunir wantScan prefijos, así el
+    // conjunto de prefijos (y por tanto la huella) es idéntico al de antes:
+    // solo cambia cuántos ítems lee cada query de fase 1.
+    var phase1Limit = Math.max(100, wantScan * 10);
+    var phase1sks = []; // H4: todos los sk vistos en fase 1 (huella de cambio)
     // Paginación "cargar anteriores": endAt (timestamp) se traduce a cota de
     // pushId (misma hipótesis de correlación tiempo/pushId que el path sin
     // endAt). Sin esto, cada "cargar anteriores" descargaba el pk COMPLETO.
@@ -1018,7 +1026,8 @@ function withCredRetry(opFn) {
         KeyConditionExpression: 'pk = :pk',
         ExpressionAttributeValues: { ':pk': pk },
         ProjectionExpression: 'sk',
-        ScanIndexForward: false
+        ScanIndexForward: false,
+        Limit: phase1Limit // H4: acotar la fase 1 (ver arriba)
       };
       // La cota endAt se aplica en el SERVIDOR (KeyConditionExpression), no
       // solo saltando en cliente: si hay mucho contenido más nuevo que endAt,
@@ -1038,7 +1047,9 @@ function withCredRetry(opFn) {
           var sk = (arr[i].sk === undefined || arr[i].sk === null) ? '' : String(arr[i].sk);
           var first = sk.split('/')[0];
           if (endSk && first >= endSk) continue; // más nuevo que endAt: saltar
-          if (first && !seen[first]) { seen[first] = 1; prefixes.push(first); }
+          if (!first) continue; // H4: espejo de H3 (la huella no cubre sk vacíos)
+          phase1sks.push(sk); // H4: huella (antes del filtro seen: cubre atributos)
+          if (!seen[first]) { seen[first] = 1; prefixes.push(first); }
           if (lightImages && first) {
             var rel = sk.slice(first.length + 1);
             if (rel === 'imageUrl' || rel === 'imageUrls' || rel.indexOf('imageUrls/') === 0) {
@@ -1073,7 +1084,39 @@ function withCredRetry(opFn) {
         return out;
       });
     }
-    return phase1(null).then(phase2);
+    // PERF ciclo 8 H4: válvula de huella para el FEED (pk='communityNotes'),
+    // con el mismo patrón de H3 en readLeavesBoundedPrefix: la fase 1 (ya
+    // acotada con Limit arriba) actúa como detector de cambios. Si la lista
+    // de sk es idéntica a la de la última fase 2 y no venció la válvula de
+    // staleness (H3_STALE_MS), se reutilizan las hojas cacheadas y se salta
+    // la fase 2 (~85 posts × ~10 hojas menos por ciclo en idle).
+    // La huella cubre TODOS los sk vistos en fase 1: posts nuevos, borrados y
+    // cambios de atributo (p. ej. imagen agregada) la invalidan de inmediato y
+    // la fase 2 corre en ese mismo ciclo (~3 s, igual que antes). Los cambios
+    // puros de valor sin tocar atributos (votos, contadores, texto editado,
+    // votos de encuesta) no mueven los sk: la válvula fuerza una fase 2
+    // completa cada 30 s para que ningún child_changed quede tragado para
+    // siempre (retraso acotado, no pérdida; mismo trade-off aceptado en H3).
+    // Las escrituras LOCALES invalidan el caché vía notifyLocal (ver
+    // invalidateBoundedPrefixCache con prefixSeg ''), así el eco local
+    // re-renderiza al instante. Solo aplica al feed; otros callers de
+    // readLeavesBounded (p. ej. musicSearch) conservan el camino viejo intacto.
+    var useFeedCache = (pk === 'communityNotes');
+    var feedCacheKey = 'FEEDv1\n' + pk + '\n' + limitN + '\n' +
+      ((endAt === undefined || endAt === null) ? '' : String(endAt));
+    return phase1(null).then(function () {
+      if (!useFeedCache) return phase2();
+      var fp = phase1sks.join('\n');
+      var now = Date.now();
+      var hit = _boundedPrefixCache[feedCacheKey];
+      if (hit && hit.fp === fp && (now - hit.ts) < H3_STALE_MS) {
+        return hit.leaves;
+      }
+      return phase2().then(function (leaves) {
+        _boundedPrefixCacheStore(feedCacheKey, { pk: pk, prefixSeg: '', fp: fp, leaves: leaves, ts: now });
+        return leaves;
+      });
+    });
   }
 
   // PERF 2026-09-23: variante acotada de readLeavesBounded para rutas de 2
@@ -1127,7 +1170,9 @@ function withCredRetry(opFn) {
       var e = _boundedPrefixCache[k];
       if (!e || e.pk !== pk) return;
       var p = e.prefixSeg;
-      if (!tail || tail === p || p.indexOf(tail + '/') === 0 || tail.indexOf(p + '/') === 0) {
+      // H4: prefixSeg '' = caché del feed (lectura de pk completo): cualquier
+      // escritura local bajo el pk la invalida (eco local instantáneo).
+      if (p === '' || !tail || tail === p || p.indexOf(tail + '/') === 0 || tail.indexOf(p + '/') === 0) {
         delete _boundedPrefixCache[k];
       }
     });
