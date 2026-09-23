@@ -17176,6 +17176,7 @@ function saveNote() {
           await DrexCloud.database().ref('fiestas/' + n.fiestaId + '/status').set('ended').catch(() => {});
           await DrexCloud.database().ref('fiestaReactions/' + n.fiestaId).remove().catch(() => {});
           await DrexCloud.database().ref('fiestaKicked/' + n.fiestaId).remove().catch(() => {});
+          await _fiestaRemoveSignals(n.fiestaId);
         }
       } catch (_) {}
     }
@@ -35981,59 +35982,164 @@ function renderAccountsList(accounts) {
     if (u) openFollowingModal(u.uid);
   }
 
+  // C53-P1: anti-carrera. Sin esto, la respuesta lenta de seguidores(A)
+  // pintaba su lista sobre seguidores(B) si el usuario cambiaba rapido.
+  let _followersModalTarget = null;
+  let _followingModalTarget = null;
+
+  // C53-P2: paginacion por keyset (50/pagina). Antes se leia la lista
+  // completa y se hidrataban N perfiles en paralelo + N filas al DOM.
+  const FOLLOWERS_PAGE_SIZE = 50;
+  let _followersPaging = null; // { lastKey, done, loading }
+
   function openFollowersModal(uid) {
     const targetId = uid || currentViewedAuthorId;
     if (!targetId) return;
+    _followersModalTarget = targetId; // C53-P1
+    _followersPaging = { lastKey: null, done: false, loading: false }; // C53-P2
     const followersListDiv = document.getElementById('followers-list');
     followersListDiv.innerHTML = `<div class="py-6 text-center">${getSpinnerMarkup()}</div>`;
-    DrexCloud.database().ref('followers/' + targetId).once('value').then(snapshot => {
-      const ids = [];
-      snapshot.forEach(child => ids.push(child.key));
-      if (!ids.length) {
-        followersListDiv.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#6b7280]">Este usuario aún no tiene seguidores.</div>';
-        return;
-      }
-      // N+1 evitado: los perfiles pasan por el caché canónico de sesión
-      // (_getCachedAuthorProfiles: Promise.all + TTL 120 s, uids deduplicados).
-      // Mismos datos y mismo orden que la lectura cruda anterior.
-      _getCachedAuthorProfiles(ids).then(profiles => {
-        followersListDiv.innerHTML = ids.map(uid => buildAuthorRelationRow(uid, profiles.get(uid) || {})).join('');
-      });
-    }).catch(() => {
-      window.paintLoadError(followersListDiv, 'No se pudieron cargar los seguidores. Revisa tu conexión.', () => openFollowersModal(targetId));
-    });
+    _loadFollowersPage();
     document.getElementById('followers-modal').classList.remove('hidden');
   }
 
+  function _loadFollowersPage() {
+    const targetId = _followersModalTarget;
+    const st = _followersPaging;
+    if (!targetId || !st || st.done || st.loading) return;
+    st.loading = true;
+    const followersListDiv = document.getElementById('followers-list');
+    const moreBtn = document.getElementById('followers-more-btn');
+    if (moreBtn) moreBtn.disabled = true;
+    let q = DrexCloud.database().ref('followers/' + targetId).orderByKey();
+    q = st.lastKey ? q.startAt(st.lastKey).limitToFirst(FOLLOWERS_PAGE_SIZE + 1)
+                   : q.limitToFirst(FOLLOWERS_PAGE_SIZE);
+    const onPageError = (firstPage) => {
+      st.loading = false;
+      if (_followersModalTarget !== targetId) return; // C53-P1
+      if (firstPage) {
+        window.paintLoadError(followersListDiv, 'No se pudieron cargar los seguidores. Revisa tu conexión.', () => openFollowersModal(targetId));
+      } else {
+        const b = document.getElementById('followers-more-btn');
+        if (b) b.disabled = false;
+        showMiniToast('No se pudieron cargar más seguidores.');
+      }
+    };
+    q.once('value').then(snapshot => {
+      if (_followersModalTarget !== targetId) return; // C53-P1: respuesta tardia
+      const ids = [];
+      snapshot.forEach(child => ids.push(child.key));
+      if (st.lastKey && ids.length && ids[0] === st.lastKey) ids.shift(); // startAt es inclusivo
+      const firstPage = !st.lastKey;
+      if (ids.length) st.lastKey = ids[ids.length - 1];
+      if (ids.length < FOLLOWERS_PAGE_SIZE) st.done = true;
+      st.loading = false;
+      if (firstPage && !ids.length) {
+        followersListDiv.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#6b7280]">Este usuario aún no tiene seguidores.</div>';
+        return;
+      }
+      if (!firstPage && !ids.length) {
+        const b = document.getElementById('followers-more-btn');
+        if (b && b.parentElement) b.parentElement.remove();
+        return;
+      }
+      // N+1 evitado por pagina: solo los visibles pasan por el cache canonico
+      // (_getCachedAuthorProfiles: Promise.all + TTL 120 s, uids deduplicados).
+      _getCachedAuthorProfiles(ids).then(profiles => {
+        if (_followersModalTarget !== targetId) return; // C53-P1: respuesta tardia
+        const rowsHtml = ids.map(uid => buildAuthorRelationRow(uid, profiles.get(uid) || {})).join('');
+        const b = document.getElementById('followers-more-btn');
+        if (b && b.parentElement) b.parentElement.remove();
+        if (firstPage) followersListDiv.innerHTML = rowsHtml;
+        else followersListDiv.insertAdjacentHTML('beforeend', rowsHtml);
+        if (!st.done) {
+          followersListDiv.insertAdjacentHTML('beforeend',
+            '<div class="py-4 text-center"><button id="followers-more-btn" type="button" onclick="_loadFollowersPage()" class="w-full min-h-[44px] flex items-center justify-center gap-2 py-3 rounded-xl border border-[var(--theme-border)] bg-[var(--theme-surface)] text-sm font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-surface-muted)] active:opacity-80 transition-all"><span>Cargar más</span></button></div>');
+        }
+      }).catch(() => onPageError(firstPage));
+    }).catch(() => onPageError(!st.lastKey));
+  }
+
   function closeFollowersModal() {
+    _followersModalTarget = null; // C53-P1
+    _followersPaging = null; // C53-P2
     document.getElementById('followers-modal').classList.add('hidden');
   }
+
+  // C53-P2: paginacion por keyset (50/pagina), igual que seguidores.
+  const FOLLOWING_PAGE_SIZE = 50;
+  let _followingPaging = null; // { lastKey, done, loading }
 
   function openFollowingModal(uid) {
     const targetId = uid || currentViewedAuthorId;
     if (!targetId) return;
+    _followingModalTarget = targetId; // C53-P1
+    _followingPaging = { lastKey: null, done: false, loading: false }; // C53-P2
     const followingListDiv = document.getElementById('following-list');
     followingListDiv.innerHTML = `<div class="py-6 text-center">${getSpinnerMarkup()}</div>`;
-    DrexCloud.database().ref('following/' + targetId).once('value').then(snapshot => {
-      const ids = [];
-      snapshot.forEach(child => ids.push(child.key));
-      if (!ids.length) {
-        followingListDiv.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#6b7280]">Este usuario todavía no sigue a nadie.</div>';
-        return;
-      }
-      // N+1 evitado: los perfiles pasan por el caché canónico de sesión
-      // (_getCachedAuthorProfiles: Promise.all + TTL 120 s, uids deduplicados).
-      // Mismos datos y mismo orden que la lectura cruda anterior.
-      _getCachedAuthorProfiles(ids).then(profiles => {
-        followingListDiv.innerHTML = ids.map(uid => buildAuthorRelationRow(uid, profiles.get(uid) || {})).join('');
-      });
-    }).catch(() => {
-      window.paintLoadError(followingListDiv, 'No se pudieron cargar los seguidos. Revisa tu conexión.', () => openFollowingModal(targetId));
-    });
+    _loadFollowingPage();
     document.getElementById('following-modal').classList.remove('hidden');
   }
 
+  function _loadFollowingPage() {
+    const targetId = _followingModalTarget;
+    const st = _followingPaging;
+    if (!targetId || !st || st.done || st.loading) return;
+    st.loading = true;
+    const followingListDiv = document.getElementById('following-list');
+    const moreBtn = document.getElementById('following-more-btn');
+    if (moreBtn) moreBtn.disabled = true;
+    let q = DrexCloud.database().ref('following/' + targetId).orderByKey();
+    q = st.lastKey ? q.startAt(st.lastKey).limitToFirst(FOLLOWING_PAGE_SIZE + 1)
+                   : q.limitToFirst(FOLLOWING_PAGE_SIZE);
+    const onPageError = (firstPage) => {
+      st.loading = false;
+      if (_followingModalTarget !== targetId) return; // C53-P1
+      if (firstPage) {
+        window.paintLoadError(followingListDiv, 'No se pudieron cargar los seguidos. Revisa tu conexión.', () => openFollowingModal(targetId));
+      } else {
+        const b = document.getElementById('following-more-btn');
+        if (b) b.disabled = false;
+        showMiniToast('No se pudieron cargar más seguidos.');
+      }
+    };
+    q.once('value').then(snapshot => {
+      if (_followingModalTarget !== targetId) return; // C53-P1: respuesta tardia
+      const ids = [];
+      snapshot.forEach(child => ids.push(child.key));
+      if (st.lastKey && ids.length && ids[0] === st.lastKey) ids.shift(); // startAt es inclusivo
+      const firstPage = !st.lastKey;
+      if (ids.length) st.lastKey = ids[ids.length - 1];
+      if (ids.length < FOLLOWING_PAGE_SIZE) st.done = true;
+      st.loading = false;
+      if (firstPage && !ids.length) {
+        followingListDiv.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#6b7280]">Este usuario todavía no sigue a nadie.</div>';
+        return;
+      }
+      if (!firstPage && !ids.length) {
+        const b = document.getElementById('following-more-btn');
+        if (b && b.parentElement) b.parentElement.remove();
+        return;
+      }
+      // N+1 evitado por pagina: solo los visibles pasan por el cache canonico.
+      _getCachedAuthorProfiles(ids).then(profiles => {
+        if (_followingModalTarget !== targetId) return; // C53-P1: respuesta tardia
+        const rowsHtml = ids.map(uid => buildAuthorRelationRow(uid, profiles.get(uid) || {})).join('');
+        const b = document.getElementById('following-more-btn');
+        if (b && b.parentElement) b.parentElement.remove();
+        if (firstPage) followingListDiv.innerHTML = rowsHtml;
+        else followingListDiv.insertAdjacentHTML('beforeend', rowsHtml);
+        if (!st.done) {
+          followingListDiv.insertAdjacentHTML('beforeend',
+            '<div class="py-4 text-center"><button id="following-more-btn" type="button" onclick="_loadFollowingPage()" class="w-full min-h-[44px] flex items-center justify-center gap-2 py-3 rounded-xl border border-[var(--theme-border)] bg-[var(--theme-surface)] text-sm font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-surface-muted)] active:opacity-80 transition-all"><span>Cargar más</span></button></div>');
+        }
+      }).catch(() => onPageError(firstPage));
+    }).catch(() => onPageError(!st.lastKey));
+  }
+
   function closeFollowingModal() {
+    _followingModalTarget = null; // C53-P1
+    _followingPaging = null; // C53-P2
     document.getElementById('following-modal').classList.add('hidden');
   }
 
@@ -42666,6 +42772,7 @@ function fiestaWatchRoom() {
         if (_zid) {
           DrexCloud.database().ref('fiestas/' + _zid + '/status').set('ended').catch(() => {});
           if (typeof markFiestaNotesEnded === 'function') markFiestaNotesEnded(_zid);
+          _fiestaRemoveSignals(_zid); // C53-F1: sin anfitrion que limpie, el invitado lo hace
         }
       } catch (_) {}
       leaveFiesta(true);
@@ -43284,6 +43391,7 @@ async function leaveFiesta(silent) {
     await markFiestaNotesEnded(id);
     await DrexCloud.database().ref('fiestaReactions/' + id).remove().catch(() => {});
     await DrexCloud.database().ref('fiestaKicked/' + id).remove().catch(() => {});
+    await _fiestaRemoveSignals(id);
   }
   fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener'; fiestaPeerDownSince = {};
   fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false; fiestaHostMutedLocal = false;
@@ -43291,6 +43399,17 @@ async function leaveFiesta(silent) {
   const v = document.getElementById('fiesta-room-view');
   v.classList.add('hidden'); v.classList.remove('flex');
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
+}
+
+// C53-F1: las senales WebRTC (offers/answers/candidatos ICE, que incluyen
+// IPs locales/publicas del par) nunca se borraban al terminar la fiesta:
+// endFiesta, leaveFiesta(host), cascadeDeleteNote y el reaper zombi solo
+// limpiaban fiestaReactions + fiestaKicked. El subarbol fiestaSignals/<id>
+// quedaba huerfano para siempre (y el inbox de quien crasheaba, porque el
+// onDisconnect solo borra fiestaMembers). Best-effort como sus hermanos.
+async function _fiestaRemoveSignals(id) {
+  if (!id) return;
+  try { await DrexCloud.database().ref('fiestaSignals/' + id).remove(); } catch (_) {}
 }
 
 // Marca las tarjetas del feed de una fiesta como terminadas.
@@ -43311,6 +43430,7 @@ async function endFiesta() {
   await markFiestaNotesEnded(id);
   await DrexCloud.database().ref('fiestaReactions/' + id).remove().catch(() => {});
   await DrexCloud.database().ref('fiestaKicked/' + id).remove().catch(() => {});
+  await _fiestaRemoveSignals(id);
 }
 </script>
 <script>
