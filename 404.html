@@ -33234,6 +33234,14 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     if (!msgId || !currentChatRoomId) return;
     DrexCloud.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).once('value').then(snap => {
       _fwdMsgData = snap.val() || {};
+      // C47-F1: un mensaje "ver una vez" no se puede reenviar. Copiarlo crearía
+      // un mensaje permanente (sin el flag viewOnce) y rompería su promesa de
+      // privacidad. Fail-closed: aviso y no se abre el diálogo de destino.
+      if (_fwdMsgData.viewOnce) {
+        showMiniToast(appT('No puedes reenviar un mensaje de ver una vez.'));
+        _fwdMsgData = null;
+        return;
+      }
       openChatForwardDialog();
     }).catch(() => {});
   }
@@ -33275,6 +33283,14 @@ ${getSpinnerMarkup('drex-spinner-inline')}
 
   async function doForwardMessage(convId, otherUid) {
     if (!_fwdMsgData) return;
+    // C47-F3: closeChatForwardDialog() pone _fwdMsgData = null; el dato hay que
+    // capturarlo ANTES de cerrar el diálogo. Sin esto, cada reenvío lanzaba
+    // TypeError en `_fwdMsgData.text` y la función estaba 100% muerta
+    // (toast "Error al reenviar" en todos los intentos).
+    const fwdData = _fwdMsgData;
+    // C47-F1 (defensa en profundidad): aunque triggerChatForward ya bloquea,
+    // un viewOnce nunca debe reenviarse aunque esta función se invoque directa.
+    if (fwdData.viewOnce) { _fwdMsgData = null; return; }
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
     closeChatForwardDialog();
@@ -33286,13 +33302,20 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     try {
       const msgRef = DrexCloud.database().ref('conversationMessages/' + targetConvId).push();
       const payload = { senderId: user.uid, timestamp: Date.now(), forwarded: true };
-      if (_fwdMsgData.text) payload.text = _fwdMsgData.text;
-      if (_fwdMsgData.images && _fwdMsgData.images.length) payload.images = _fwdMsgData.images;
-      else if (_fwdMsgData.image) payload.image = _fwdMsgData.image;
+      if (fwdData.text) payload.text = fwdData.text;
+      if (fwdData.images && fwdData.images.length) payload.images = fwdData.images;
+      else if (fwdData.image) payload.image = fwdData.image;
+      // C47-F2: reenviar un mensaje con archivos producía una burbuja vacía —
+      // los adjuntos nunca se copiaban al payload. Se copian solo las metas
+      // (el contenido vive en chatFiles/<fileId> y se comparte por referencia).
+      if (fwdData.files && fwdData.files.length) payload.files = fwdData.files.map(f => ({ fileId: f.fileId, name: f.name, size: f.size, mime: f.mime, chunks: f.chunks }));
+      // C47-F2b: lo mismo para publicaciones compartidas (type/sharedPost).
+      if (fwdData.type === 'sharedPost' && fwdData.sharedPost) { payload.type = 'sharedPost'; payload.sharedPost = fwdData.sharedPost; }
       await msgRef.set(payload);
-      const preview = (_fwdMsgData.images || _fwdMsgData.image) ? '📷 Foto' : (_fwdMsgData.text || '');
+      const preview = (fwdData.type === 'sharedPost' && fwdData.sharedPost) ? '📌 Publicación' :
+        ((fwdData.files && fwdData.files.length) ? '📎 Archivo' :
+        ((fwdData.images || fwdData.image) ? '📷 Foto' : (fwdData.text || '')));
       await DrexCloud.database().ref('conversations/' + targetConvId).update({ lastMessage: preview, lastMessageTime: Date.now(), lastMessageSenderId: user.uid });
-      _fwdMsgData = null;
     } catch(e) { showMiniToast(appT('Error al reenviar. Intenta de nuevo.')); }
   }
 
