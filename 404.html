@@ -22691,14 +22691,13 @@ function saveNote() {
     } catch (_) {}
   }
 
-  function updateChatUnreadBadge() {
+  function updateChatUnreadBadge(snap) {
     const user = DrexCloud.auth().currentUser;
     const badge = document.getElementById('chat-unread-badge');
     if (!badge) return;
     if (!user) { badge.classList.add('hidden'); return; }
 
-    DrexCloud.database().ref('userConversations/' + user.uid).once('value').then(snap => {
-      const map = snap.val() || {};
+    const computeFromMap = (map) => {
       let unread = 0;
       Object.entries(map).forEach(([convoId, meta]) => {
         if (!meta || typeof meta !== 'object') return;
@@ -22720,7 +22719,18 @@ function saveNote() {
         badge.textContent = '0';
         syncDesktopChatBadge('0', false);
       }
-    }).catch(() => {});
+    };
+
+    if (snap && snap.val) {
+      // Quick win: el listener permanente ya entrega el snapshot; no hay
+      // necesidad de otro .once('value') sobre la misma ruta.
+      computeFromMap(snap.val() || {});
+    } else {
+      // Ruta defensiva: llamadas sin snapshot (mute listeners, mark-read, etc.)
+      DrexCloud.database().ref('userConversations/' + user.uid).once('value').then(s2 => {
+        computeFromMap(s2.val() || {});
+      }).catch(() => {});
+    }
   }
 
   function setupChatUnreadBadge(userId) {
@@ -22729,8 +22739,8 @@ function saveNote() {
       chatUnreadBadgeRef = null;
     }
     chatUnreadBadgeRef = DrexCloud.database().ref('userConversations/' + userId);
-    chatUnreadBadgeRef.on('value', () => {
-      updateChatUnreadBadge();
+    chatUnreadBadgeRef.on('value', (snap) => {
+      updateChatUnreadBadge(snap);
     });
     loadChatMutes(userId);
   }
