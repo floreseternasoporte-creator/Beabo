@@ -2471,6 +2471,12 @@ var APP_ENGLISH_TEXT = {
 "No puedes cambiar tu nombre de usuario hasta dentro de {n} días.":"You can't change your username for {n} more days.",
 "No se pudieron subir {n} foto{p}. Verifica tu conexión e intenta con imágenes más livianas.":"Couldn't upload {n} photo{p}. Check your connection and try lighter images.",
 "No se pudo reactivar tu cuenta. Inténtalo de nuevo.":"Could not reactivate your account. Try again.",
+"Caché liberado: {n} {e} ({s}).":"Cache cleared: {n} {e} ({s}).",
+"elemento":"item",
+"elementos":"items",
+"No había caché acumulado por liberar.":"There was no cached data to clear.",
+"Llegaste al límite de 2 canciones por día. Vuelve mañana.":"You've reached the limit of 2 songs per day. Come back tomorrow.",
+"No se pudo publicar. Revisa tu conexión e inténtalo de nuevo.":"Couldn't publish. Check your connection and try again.",
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4947,6 +4953,12 @@ var APP_CHINESE_TEXT = {
 "No puedes cambiar tu nombre de usuario hasta dentro de {n} días.":"你还需要 {n} 天才能更改用户名。",
 "No se pudieron subir {n} foto{p}. Verifica tu conexión e intenta con imágenes más livianas.":"有 {n} 张照片上传失败，请检查网络连接并尝试更小的图片。",
 "No se pudo reactivar tu cuenta. Inténtalo de nuevo.":"无法重新激活你的账号。请重试。",
+"Caché liberado: {n} {e} ({s}).":"已清理缓存：{n}{e}（{s}）。",
+"elemento":"项",
+"elementos":"项",
+"No había caché acumulado por liberar.":"没有可清理的缓存。",
+"Llegaste al límite de 2 canciones por día. Vuelve mañana.":"你已达到每天 2 首歌曲的上限，请明天再来。",
+"No se pudo publicar. Revisa tu conexión e inténtalo de nuevo.":"发布失败，请检查网络连接并重试。",
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6724,6 +6736,12 @@ var APP_PORTUGUESE_TEXT = {
 "No puedes cambiar tu nombre de usuario hasta dentro de {n} días.":"Você não pode alterar seu nome de usuário por mais {n} dias.",
 "No se pudieron subir {n} foto{p}. Verifica tu conexión e intenta con imágenes más livianas.":"Não foi possível enviar {n} foto{p}. Verifique sua conexão e tente imagens mais leves.",
 "No se pudo reactivar tu cuenta. Inténtalo de nuevo.":"Não foi possível reativar sua conta. Tente novamente.",
+"Caché liberado: {n} {e} ({s}).":"Cache liberado: {n} {e} ({s}).",
+"elemento":"elemento",
+"elementos":"elementos",
+"No había caché acumulado por liberar.":"Não havia cache acumulado para liberar.",
+"Llegaste al límite de 2 canciones por día. Vuelve mañana.":"Você atingiu o limite de 2 músicas por dia. Volte amanhã.",
+"No se pudo publicar. Revisa tu conexión e inténtalo de nuevo.":"Não foi possível publicar. Verifique sua conexão e tente novamente.",
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
