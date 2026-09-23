@@ -22679,19 +22679,60 @@ function saveNote() {
     }
   }
 
-  // Chat unread badge
+  // Chat unread badge — agregación server-side (chatUnread/<uid>/<convoId> = {c, r}).
+  // Convención de path idéntica a userConversations/<uid>: hereda cualquier
+  // aislamiento por prefijo de uid que aplique a userConversations.
+  // Nota: queda pendiente verificar en la política IAM de drex-kv que el prefijo
+  // chatUnread/<uid> tiene el mismo aislamiento por uid que userConversations/<uid>.
   let chatUnreadBadgeRef = null;
+  let chatUnreadBadgeUid = null;
+  let chatUnreadAggCache = {};     // último snapshot de chatUnread/<uid>
+  let chatUnreadAggActive = false; // true cuando el nodo agregado existe (fin de la ventana legacy)
   const CHAT_LAST_READ_PREFIX = 'drex_chat_last_read_v1_';
 
   function getChatLastReadKey(uid, conversationId) {
     return CHAT_LAST_READ_PREFIX + uid + '_' + conversationId;
   }
 
+  // Incrementa el agregado de no-leídos para los destinatarios de un mensaje.
+  // Se llama desde updateChatConversationPreview, tras el fan-out de updatedAt.
+  // - Al remitente NO se le incrementa: tu propio mensaje no te marca no-leído
+  //   (corrige el quirk del diseño §1.4; decisión de producto).
+  // - Grupos con >50 miembros: se degrada a NO incrementar. Costo documentado:
+  //   cada mensaje sumaría 1 transacción (~0.5 RCU de lectura + ~4 WCU por las
+  //   2 hojas {c,r}) por miembro, sobre un fan-out que ya escribe O(miembros)
+  //   hojas en userConversations; sin medición no se justifica otro umbral.
+  //   Para esos miembros el badge cae al fallback legacy (LEGACY-ROLLBACK).
+  // - El agregado es dato DERIVADO: todo va en try/catch; si falla, el mensaje
+  //   igual se envía (eventual consistency: el siguiente mensaje lo recupera).
+  function bumpChatUnread(conversationId, memberUids, senderUid, msgTs) {
+    if (!conversationId || !Array.isArray(memberUids) || !memberUids.length || !senderUid || !msgTs) return;
+    if (memberUids.length > 50) return; // degradación documentada para grupos grandes
+    memberUids.forEach(uid => {
+      if (!uid || uid === senderUid) return;
+      try {
+        DrexCloud.database().ref('chatUnread/' + uid + '/' + conversationId).transaction(cur => {
+          const r = Number((cur && cur.r) || 0);
+          if (!(msgTs > r)) return undefined; // mensaje anterior a la última lectura: aborta sin escribir
+          return { c: Number((cur && cur.c) || 0) + 1, r: r };
+        }).catch(() => {});
+      } catch (_) {}
+    });
+  }
+
   function markChatConversationRead(conversationId) {
     const user = DrexCloud.auth().currentUser;
     if (!user || !conversationId) return;
+    const now = Date.now();
     try {
-      localStorage.setItem(getChatLastReadKey(user.uid, conversationId), String(Date.now()));
+      localStorage.setItem(getChatLastReadKey(user.uid, conversationId), String(now));
+    } catch (_) {}
+    try {
+      // Reset server-side del agregado; el listener de chatUnread/<uid> lo
+      // confirma en <=1 ciclo de polling (3 s).
+      if (chatUnreadAggActive) chatUnreadAggCache[conversationId] = { c: 0, r: now }; // optimista
+      DrexCloud.database().ref('chatUnread/' + user.uid + '/' + conversationId)
+        .transaction(() => ({ c: 0, r: now })).catch(() => {});
     } catch (_) {}
     updateChatUnreadBadge();
   }
@@ -22751,44 +22792,80 @@ function saveNote() {
     } catch (_) {}
   }
 
+  function paintChatUnreadBadge(unread) {
+    const badge = document.getElementById('chat-unread-badge');
+    if (!badge) return;
+    const txt = unread > 99 ? '99+' : String(unread);
+    if (unread > 0) {
+      badge.textContent = txt;
+      badge.classList.remove('hidden');
+      syncDesktopChatBadge(txt, true);
+    } else {
+      badge.classList.add('hidden');
+      badge.textContent = '0';
+      syncDesktopChatBadge('0', false);
+    }
+  }
+
+  // Suma del agregado excluyendo silenciadas (los mutes se siguen escuchando igual).
+  function sumChatUnreadAgg(agg, uid) {
+    let unread = 0;
+    Object.entries(agg || {}).forEach(([convoId, st]) => {
+      if (!st || typeof st !== 'object') return;
+      if (isChatConversationMuted(convoId, uid)) return;
+      unread += Number(st.c || 0);
+    });
+    return unread;
+  }
+
+  // LEGACY-ROLLBACK: cómputo viejo (updatedAt > lastRead en localStorage).
+  // Solo se usa cuando chatUnread/<uid> aún no tiene datos (ventana de migración;
+  // ausente ≡ 0 una vez completada). Eliminar cuando las lecturas del path viejo sean 0.
+  function computeLegacyChatUnread(map, uid) {
+    let unread = 0;
+    Object.entries(map || {}).forEach(([convoId, meta]) => {
+      if (!meta || typeof meta !== 'object') return;
+      const updatedAt = Number(meta.updatedAt || 0);
+      if (!updatedAt) return;
+      if (isChatConversationMuted(convoId, uid)) return;
+      let lastRead = 0;
+      try { lastRead = Number(localStorage.getItem(getChatLastReadKey(uid, convoId))) || 0; } catch (_) {}
+      if (updatedAt > lastRead) unread++;
+    });
+    return unread;
+  }
+
   function updateChatUnreadBadge(snap) {
     const user = DrexCloud.auth().currentUser;
     const badge = document.getElementById('chat-unread-badge');
     if (!badge) return;
     if (!user) { badge.classList.add('hidden'); return; }
 
-    const computeFromMap = (map) => {
-      let unread = 0;
-      Object.entries(map).forEach(([convoId, meta]) => {
-        if (!meta || typeof meta !== 'object') return;
-        const updatedAt = Number(meta.updatedAt || 0);
-        if (!updatedAt) return;
-        if (isChatConversationMuted(convoId, user.uid)) return;
-        let lastRead = 0;
-        try { lastRead = Number(localStorage.getItem(getChatLastReadKey(user.uid, convoId))) || 0; } catch (_) {}
-        if (updatedAt > lastRead) unread++;
-      });
-
-      const txt = unread > 99 ? '99+' : String(unread);
-      if (unread > 0) {
-        badge.textContent = txt;
-        badge.classList.remove('hidden');
-        syncDesktopChatBadge(txt, true);
-      } else {
-        badge.classList.add('hidden');
-        badge.textContent = '0';
-        syncDesktopChatBadge('0', false);
-      }
-    };
-
     if (snap && snap.val) {
-      // Quick win: el listener permanente ya entrega el snapshot; no hay
-      // necesidad de otro .once('value') sobre la misma ruta.
-      computeFromMap(snap.val() || {});
+      const agg = snap.val() || {};
+      chatUnreadAggCache = agg;
+      chatUnreadAggActive = Object.keys(agg).length > 0;
+      if (chatUnreadAggActive) {
+        paintChatUnreadBadge(sumChatUnreadAgg(agg, user.uid));
+      } else {
+        // LEGACY-ROLLBACK: nodo chatUnread/<uid> ausente (aún sin escrituras
+        // agregadas) → cómputo viejo con userConversations/<uid>. Eliminar tras el rollout.
+        DrexCloud.database().ref('userConversations/' + user.uid).once('value').then(s2 => {
+          if (DrexCloud.auth().currentUser?.uid !== user.uid) return; // la sesión cambió mientras tanto
+          paintChatUnreadBadge(computeLegacyChatUnread(s2.val() || {}, user.uid));
+        }).catch(() => {});
+      }
+      return;
+    }
+    // Ruta defensiva: llamadas sin snapshot (mute listeners, mark-read, etc.).
+    if (chatUnreadBadgeUid === user.uid && chatUnreadAggActive) {
+      paintChatUnreadBadge(sumChatUnreadAgg(chatUnreadAggCache, user.uid));
+    } else if (chatUnreadBadgeRef && chatUnreadBadgeUid === user.uid) {
+      chatUnreadBadgeRef.once('value').then(s2 => updateChatUnreadBadge(s2)).catch(() => {});
     } else {
-      // Ruta defensiva: llamadas sin snapshot (mute listeners, mark-read, etc.)
+      // LEGACY-ROLLBACK: sin listener agregado para este usuario → cómputo viejo.
       DrexCloud.database().ref('userConversations/' + user.uid).once('value').then(s2 => {
-        computeFromMap(s2.val() || {});
+        paintChatUnreadBadge(computeLegacyChatUnread(s2.val() || {}, user.uid));
       }).catch(() => {});
     }
   }
@@ -22798,7 +22875,10 @@ function saveNote() {
       chatUnreadBadgeRef.off('value');
       chatUnreadBadgeRef = null;
     }
-    chatUnreadBadgeRef = DrexCloud.database().ref('userConversations/' + userId);
+    chatUnreadBadgeUid = userId || null;
+    chatUnreadAggCache = {};
+    chatUnreadAggActive = false;
+    chatUnreadBadgeRef = DrexCloud.database().ref('chatUnread/' + userId);
     chatUnreadBadgeRef.on('value', (snap) => {
       updateChatUnreadBadge(snap);
     });
@@ -22812,6 +22892,9 @@ function saveNote() {
     if (chatMuteUserRef) { chatMuteUserRef.off('value'); chatMuteUserRef = null; }
     if (chatMuteGroupRef) { chatMuteGroupRef.off('value'); chatMuteGroupRef = null; }
     chatMuteCache.users = {}; chatMuteCache.groups = {}; chatMuteListenerUid = null;
+    chatUnreadAggCache = {};
+    chatUnreadAggActive = false;
+    chatUnreadBadgeUid = null;
     if (chatUnreadBadgeRef) {
       chatUnreadBadgeRef.off('value');
       chatUnreadBadgeRef = null;
@@ -29229,9 +29312,15 @@ let chatTypingListener = null;
     if (!user) return;
     DrexCloud.database().ref('userConversations/' + user.uid).once('value').then(snap => {
       const map = snap.val() || {};
-      const now = String(Date.now());
+      const now = Date.now();
+      const nowStr = String(now);
       Object.keys(map).forEach(convoId => {
-        try { localStorage.setItem(getChatLastReadKey(user.uid, convoId), now); } catch (_) {}
+        try { localStorage.setItem(getChatLastReadKey(user.uid, convoId), nowStr); } catch (_) {}
+        try {
+          if (chatUnreadAggActive) chatUnreadAggCache[convoId] = { c: 0, r: now }; // optimista
+          DrexCloud.database().ref('chatUnread/' + user.uid + '/' + convoId)
+            .transaction(() => ({ c: 0, r: now })).catch(() => {});
+        } catch (_) {}
       });
       updateChatUnreadBadge();
     }).catch(() => {});
@@ -29588,6 +29677,7 @@ let chatTypingListener = null;
     if (!user || !conversationId) return;
     const updatedAt = Date.now();
     const updates = {};
+    let aggMemberUids = null; // destinatarios para bumpChatUnread (paso 1)
 
     const isGroupConversation = options.isGroup ?? currentChatIsGroup;
     if (isGroupConversation) {
@@ -29600,6 +29690,7 @@ let chatTypingListener = null;
           currentGroupMembers = memberUids;
         } catch (_) {}
       }
+      aggMemberUids = memberUids;
       memberUids.forEach(uid => {
         updates['userConversations/' + uid + '/' + conversationId + '/isGroup'] = true;
         updates['userConversations/' + uid + '/' + conversationId + '/groupId'] = conversationId;
@@ -29619,11 +29710,15 @@ let chatTypingListener = null;
       updates['userConversations/' + recipientId + '/' + conversationId + '/otherUid'] = user.uid;
       updates['userConversations/' + recipientId + '/' + conversationId + '/updatedAt'] = updatedAt;
       updates['userConversations/' + recipientId + '/' + conversationId + '/lastMessage'] = lastMessage;
+      aggMemberUids = [user.uid, recipientId];
     }
 
     if (!Object.keys(updates).length) return;
     chatConversationCache.loadedAt = 0;
     try { localStorage.removeItem(CHAT_CONVERSATIONS_CACHE_KEY); } catch (_) {}
+    // Agregación server-side de no-leídos: fire-and-forget tras el fan-out.
+    // bumpChatUnread nunca bloquea ni rompe el envío (el agregado es derivado).
+    try { bumpChatUnread(conversationId, aggMemberUids, user.uid, updatedAt); } catch (_) {}
     return DrexCloud.database().ref().update(updates).catch(() => {});
   }
 
@@ -29907,6 +30002,11 @@ let chatTypingListener = null;
   function isChatConversationUnread(item) {
     const user = DrexCloud.auth().currentUser;
     if (!user || !item?.id) return false;
+    if (chatUnreadAggActive) {
+      const st = chatUnreadAggCache[item.id];
+      return !!st && Number(st.c || 0) > 0;
+    }
+    // LEGACY-ROLLBACK: sin datos agregados → comparación vieja updatedAt > lastRead.
     let lastRead = 0;
     try { lastRead = Number(localStorage.getItem(getChatLastReadKey(user.uid, item.id))) || 0; } catch (_) {}
     return Number(item.updatedAt || 0) > lastRead;
@@ -30113,6 +30213,12 @@ let chatTypingListener = null;
     if (!convoId) return;
     try {
       localStorage.removeItem(getChatLastReadKey(user.uid, convoId));
+      // Opción (a) del diseño: c=1 conservando r (aproxima "hay algo sin leer").
+      if (chatUnreadAggActive) chatUnreadAggCache[convoId] = { c: 1, r: Number((chatUnreadAggCache[convoId] || {}).r) || 0 };
+      DrexCloud.database().ref('chatUnread/' + user.uid + '/' + convoId).transaction(cur => ({
+        c: 1,
+        r: Number((cur && cur.r) || 0)
+      })).catch(() => {});
       updateChatUnreadBadge();
       renderChatConversations(allChatConversations);
       showMiniToast(appT('Marcada como no leída'));
@@ -30158,14 +30264,24 @@ let chatTypingListener = null;
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
     try {
+      let removedConvoId = null;
       if (type === 'group') {
+        removedConvoId = id;
         await DrexCloud.database().ref('userConversations/' + user.uid + '/' + id).remove();
       } else {
         const item = allChatConversations.find(i => i.otherUid === id);
         const convId = item?.id;
         if (convId) {
+          removedConvoId = convId;
           await DrexCloud.database().ref('userConversations/' + user.uid + '/' + convId).remove();
         }
+      }
+      // Limpieza del agregado: sin la entrada de userConversations, un
+      // chatUnread/<uid>/<convoId> huérfano seguiría descargándose en cada poll del badge.
+      if (removedConvoId) {
+        try { delete chatUnreadAggCache[removedConvoId]; } catch (_) {}
+        try { await DrexCloud.database().ref('chatUnread/' + user.uid + '/' + removedConvoId).remove().catch(() => {}); } catch (_) {}
+        updateChatUnreadBadge();
       }
       chatConversationCache = { items: [], loadedAt: 0 };
       loadChatConversations();
@@ -33118,6 +33234,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       updates['groupChats/' + currentChatRoomId + '/members/' + target.uid] = null;
       updates['groupChats/' + currentChatRoomId + '/admins/' + target.uid] = null;
       updates['userConversations/' + target.uid + '/' + currentChatRoomId] = null;
+      // Limpieza del agregado de no-leídos del miembro expulsado.
+      updates['chatUnread/' + target.uid + '/' + currentChatRoomId] = null;
       await DrexCloud.database().ref().update(updates);
       await DrexCloud.database().ref('conversationMessages/' + currentChatRoomId).push({
         system: true,
@@ -33142,6 +33260,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       updates['groupChats/' + currentChatRoomId + '/members/' + user.uid] = null;
       updates['groupChats/' + currentChatRoomId + '/admins/' + user.uid] = null;
       updates['userConversations/' + user.uid + '/' + currentChatRoomId] = null;
+      // Limpieza del agregado de no-leídos (evita huérfanos en el poll del badge).
+      updates['chatUnread/' + user.uid + '/' + currentChatRoomId] = null;
       // Si el creador se va, transferir la propiedad al siguiente administrador (o al primer miembro restante)
       if (currentGroupCreatedBy === user.uid) {
         const remaining = (currentGroupMembers || []).filter(uid => uid !== user.uid);
@@ -33153,8 +33273,12 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         }
       }
       await DrexCloud.database().ref().update(updates);
+      try { delete chatUnreadAggCache[currentChatRoomId]; } catch (_) {}
       // A28: si ya no queda ningún miembro, el grupo se elimina por completo
       // (ficha, mensajes y referencias) en lugar de quedar huérfano.
+      // Nota: los chatUnread/<otroUid>/<roomId> de los demás miembros quedan
+      // huérfanos (se corrigen al abrir la sala o con el siguiente mensaje);
+      // no se hace fan-out de borrado por costo.
       const leftRoomId = currentChatRoomId;
       const membersSnap = await DrexCloud.database().ref('groupChats/' + leftRoomId + '/members').once('value').catch(() => null);
       if (membersSnap && !membersSnap.exists()) {
