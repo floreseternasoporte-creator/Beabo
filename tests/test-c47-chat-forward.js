@@ -46,8 +46,8 @@ const trig = extractFn(html, 'triggerChatForward');
 const dof = extractFn(html, 'doForwardMessage');
 check('F1: triggerChatForward bloquea viewOnce con toast',
   /_fwdMsgData\.viewOnce/.test(trig) && /No puedes reenviar un mensaje de ver una vez/.test(trig));
-check('F1: doForwardMessage tiene guard defensivo para viewOnce',
-  /if\s*\(\s*fwdData\.viewOnce\s*\)/.test(dof));
+check('F1: doForwardMessage tiene guard defensivo para viewOnce (C51-C1: tambien cubre autoDestroyAt)',
+  /if\s*\(\s*fwdData\.viewOnce(\s*\|\|\s*fwdData\.autoDestroyAt)?\s*\)/.test(dof));
 check('F2: doForwardMessage copia las metas de files',
   /payload\.files\s*=\s*fwdData\.files\.map/.test(dof) && /fileId:\s*f\.fileId/.test(dof));
 check('F2b: doForwardMessage copia type/sharedPost',
