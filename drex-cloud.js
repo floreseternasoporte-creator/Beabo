@@ -2600,11 +2600,28 @@ function withCredRetry(opFn) {
       var now = Date.now();
       var map = Object.create(null); // oldKey -> newKey (sin prototipo: seguro ante segmentos raros)
       var i, j;
+      // Cláusula (c), refinamiento: el pin declara la key como FINAL
+      // (dependientes ya persistidos bajo ella). Ninguna key pineada entra al
+      // mapa, ni siquiera vía otras ops no pineadas que la referencien como
+      // último segmento (p. ej. trozos en noteVideos/<K> encolados cuando la
+      // red cayó a mitad de la subida, con la nota pineada en la misma cola):
+      // todo lo acoplado a una key pineada conserva esa key.
+      var pinned = Object.create(null);
+      for (i = 0; i < qq.length; i++) {
+        var op0 = qq[i];
+        if (op0 && op0.type === 'set' && op0.noReseal) {
+          var segs0 = String(op0.path || '').split('/');
+          pinned[segs0[segs0.length - 1]] = true;
+        }
+      }
       for (i = 0; i < qq.length; i++) {
         var op = qq[i];
-        if (!op || op.type !== 'set' || op.resealed) continue;
+        // op.noReseal (contrato de reseal, ciclo 14): las ops pineadas nunca
+        // entran al mapa old->new: conservan su key al vaciar.
+        if (!op || op.type !== 'set' || op.resealed || op.noReseal) continue;
         var segs = String(op.path || '').split('/');
         var last = segs[segs.length - 1];
+        if (pinned[last]) continue; // acoplada a una key pineada: conservar
         if (looksLikePushId(last, now)) {
           if (!map[last]) map[last] = newPushId();
           op._resealLast = last; // marca temporal de la pasada 1
@@ -2670,14 +2687,26 @@ function withCredRetry(opFn) {
         });
       })();
     }
-    function enqueueSet(segs, value) {
+    function enqueueSet(segs, value, options) {
       var q = load();
       var op = { id: newOpId(), type: 'set', path: segs.join('/'), value: value, ts: Date.now(), tries: 0 };
+      // CONTRATO DE RESEAL, cláusula (c) (ciclo 14): pin opt-in de la key.
+      // La app lo usa cuando ya persistió dependientes bajo una key
+      // pre-reservada (trozos de video/foto, fan-out de grupo a key final):
+      // re-sellar rompería el acoplamiento porque el mapa old->new solo
+      // cubre ops encoladas, no bytes ya escritos. La marca viaja persistida
+      // en la op (sobrevive a reinicios). Exactly-once intacto: set() es
+      // idempotente y los reintentos reusan la misma key. Costo aceptado: la
+      // key conserva su timestamp de generación (los receptores la ven tras
+      // el re-baseline en vez del siguiente ciclo delta).
+      if (options && options.noReseal) op.noReseal = true;
       var dup = null;
       for (var i = 0; i < q.length; i++) {
         if (q[i].type === 'set' && q[i].path === op.path) { dup = q[i]; break; }
       }
-      if (dup) { op.id = dup.id; q[q.indexOf(dup)] = op; } // coalescing: último gana
+      // El pin es sticky por path: una vez que hubo dependientes persistidos
+      // bajo la key, ninguna reescritura posterior la libera.
+      if (dup) { op.id = dup.id; if (dup.noReseal) op.noReseal = true; q[q.indexOf(dup)] = op; } // coalescing: último gana
       else q.push(op);
       save(q);
       echoLocal(segs, value);
@@ -2723,13 +2752,15 @@ function withCredRetry(opFn) {
 
   Ref.prototype.toString = function () { return this._segs.join('/'); };
 
-  Ref.prototype.set = function (value) {
+  Ref.prototype.set = function (value, options) {
     var segs = this._segs;
     // OUTBOX (esqueleto): sin red, la escritura se encola en vez de fallar.
     if (Outbox.shouldQueue()) {
       var selfRef = this;
       var origPath = segs.join('/');
-      return Outbox.enqueueSet(segs, value).then(function (res) {
+      // options.noReseal (contrato de reseal, ciclo 14, cláusula c): la app
+      // pinea la key cuando ya persistió dependientes bajo ella.
+      return Outbox.enqueueSet(segs, value, options).then(function (res) {
         // RE-SELLADO (ciclo 13): si al vaciar la op se escribió con un push
         // ID fresco, el ref del llamador debe apuntar a donde quedó el valor
         // de verdad: pushAsync resuelve con el ref ya actualizado y los
