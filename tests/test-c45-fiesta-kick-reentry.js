@@ -59,7 +59,9 @@ check('expulsado: avisa con el toast de expulsión',
 function runCase(kicked) {
   const writes = [], toasts = [], reads = [];
   const server = {
-    'fiestas/f1': { status: 'live', hostId: 'alice', maxSpeakers: 6 },
+    // C52-F1: las fiestas reales siempre llevan createdAt (createFiesta lo
+    // escribe); sin él, el gate zombi trataría la sala como antiquísima.
+    'fiestas/f1': { status: 'live', hostId: 'alice', createdAt: Date.now(), maxSpeakers: 6 },
     'fiestaMembers/f1': {},
   };
   if (kicked) server['fiestaKicked/f1/bob'] = { at: Date.now(), by: 'alice' };
