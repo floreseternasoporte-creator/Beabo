@@ -13240,6 +13240,9 @@ function saveNote() {
     _videoModalPlayIcon(false);
     _videoModalLoading(true);
     modal.classList.remove('hidden');
+    // A11y H3/H4: guardar foco y moverlo dentro del modal al abrirse.
+    _saveOverlayFocus();
+    try { const _vf = modal.querySelector('button:not([disabled])'); if (_vf) _vf.focus({ preventScroll: true }); } catch (_) {}
     const cached = _videoModalCache[noteId];
     const startPlayback = (dataUrl) => {
       if (_videoModalNoteId !== noteId) return; // se cerró antes de terminar
@@ -13287,6 +13290,7 @@ function saveNote() {
     _videoModalBigPlay(false);
     _videoModalPlayIcon(false);
     if (modal) modal.classList.add('hidden');
+    _restoreOverlayFocus();
   }
 
   // Negro puro, chrome mínimo (X + contador + puntos), swipe horizontal entre
@@ -14253,17 +14257,9 @@ function saveNote() {
   function _feedImageModalKeydown(e) {
     const modal = document.getElementById('image-modal');
     if (!modal || modal.classList.contains('hidden')) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      // Prioridad de cierre: opciones del post → hoja de reporte → comentarios → hoja → visor.
-      const _po = document.getElementById('post-options-overlay');
-      if (_po && !_po.classList.contains('hidden')) { if (typeof closePostOptionsSheet === 'function') closePostOptionsSheet(); return; }
-      if (typeof drexReportIsOpen === 'function' && drexReportIsOpen()) { if (typeof drexReportClose === 'function') drexReportClose(); return; }
-      const _cv = document.getElementById('comments-view');
-      if (_cv && !_cv.classList.contains('hidden')) return;
-      if (_feedImageModalDetailsOpen) _closeFeedImageModalDetails(); else closeImageModal();
-      return;
-    }
+    // A11y H2: Escape lo maneja el keydown global (_drexOverlayA11yKeys), que
+    // cierra el overlay visible más alto (incluidos comentarios/reporte sobre
+    // el visor). Aquí solo quedan flechas/rotar y la trampa de Tab propia.
     if (e.key === 'ArrowLeft') { e.preventDefault(); _feedImageModalNav(-1); return; }
     if (e.key === 'ArrowRight') { e.preventDefault(); _feedImageModalNav(1); return; }
     if (e.key === 'r' || e.key === 'R') { e.preventDefault(); _feedImageModalRotate(); return; }
@@ -14586,8 +14582,8 @@ function saveNote() {
     document.addEventListener('keydown', (e) => {
       const modal = document.getElementById('image-modal');
       if (!modal || modal.classList.contains('hidden')) return;
-      if (e.key === 'Escape') { const _cv = document.getElementById('comments-view'); if (_cv && !_cv.classList.contains('hidden')) return; if (_feedImageModalDetailsOpen) _closeFeedImageModalDetails(); else closeImageModal(); }
-      else if (e.key === 'ArrowRight') _feedImageModalNav(1);
+      // A11y H2: Escape lo maneja el keydown global (cierra el topmost real).
+      if (e.key === 'ArrowRight') _feedImageModalNav(1);
       else if (e.key === 'ArrowLeft') _feedImageModalNav(-1);
     });
   }
@@ -14844,16 +14840,20 @@ function saveNote() {
   }
   // A11y genérico para overlays: guardar/restaurar foco (las hojas inferiores
   // no lo hacían; el visor de fotos y los pickers ya tenían su propia versión).
-  let _overlayPrevFocus = null;
+  let _overlayFocusStack = [];
   function _saveOverlayFocus() {
     const a = document.activeElement;
-    if (a && a !== document.body) _overlayPrevFocus = a;
+    // Pila (no ranura única): los overlays se apilan (comentarios sobre el
+    // visor, reporte sobre comentarios…) y cada cierre debe devolver el foco
+    // al nivel anterior, no siempre al primero.
+    _overlayFocusStack.push(a && a !== document.body ? a : null);
+    if (_overlayFocusStack.length > 12) _overlayFocusStack.shift();
   }
   function _restoreOverlayFocus() {
-    if (_overlayPrevFocus && document.contains(_overlayPrevFocus)) {
-      try { _overlayPrevFocus.focus({ preventScroll: true }); } catch (_) {}
+    const prev = _overlayFocusStack.pop();
+    if (prev && document.contains(prev)) {
+      try { prev.focus({ preventScroll: true }); } catch (_) {}
     }
-    _overlayPrevFocus = null;
   }
   // Saturación 0..10 (y −10..0 en negativo): ningún gusto domina la frescura.
   function _drexRecSat(v) {
@@ -16798,6 +16798,8 @@ function saveNote() {
     // El botón atrás del teléfono debe cerrar el menú, no navegar.
     if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
     _saveOverlayFocus();
+    // A11y H4: el foco entra a la hoja al abrirse.
+    try { const _pf = sheet.querySelector('button:not([disabled])'); if (_pf) _pf.focus({ preventScroll: true }); } catch (_) {}
     requestAnimationFrame(() => sheet.classList.add('open'));
   }
 
@@ -19135,6 +19137,8 @@ function saveNote() {
       mainApp.classList.add('hidden');
     }
     commentsView?.classList.remove('hidden');
+    // A11y H4: el foco entra a la vista de comentarios al abrirse.
+    try { const _cf = commentsView?.querySelector('button:not([disabled])'); if (_cf) _cf.focus({ preventScroll: true }); } catch (_) {}
     // La entrada de ruta dinámica es el guard de Atrás (igual que el permalink):
     // un segundo push (guard de overlay) dejaba la URL stale y atrapaba el Atrás
     // en un ciclo cerrar->reabrir.
@@ -39266,8 +39270,11 @@ function closeSubpageView() {
   function _pushOverlayBackGuard() {
     try { history.pushState({ drexOverlayGuard: true }, '', location.href); } catch (_) {}
   }
-  function closeTopmostOverlayForBack() {
-    const candidates = [
+  // A11y H1/H2: la lista de overlays vive aquí una sola vez. El Esc global,
+  // la trampa de Tab genérica y el gestor de foco la reutilizan vía
+  // _drexTopmostOverlay() / _drexIsOverlayOpen().
+  function _drexOverlayCandidates() {
+    return [
       // Orden de arriba hacia abajo: lo último que se abrió se cierra primero.
       // El menú de acciones del comentario (z-9998) flota sobre todo.
       // OJO: usa la clase .active (no .hidden) para mostrarse, así que su
@@ -39288,6 +39295,8 @@ function closeSubpageView() {
       ['gif-picker-sheet', () => typeof closeGifPicker === 'function' && closeGifPicker()],
       // El picker de stickers (z-121) también flota sobre todo.
       ['sticker-sheet', () => typeof closeStickerPicker === 'function' && closeStickerPicker()],
+      // El panel lateral (drawer z-121, overlay z-120): Atrás/Esc lo cierran.
+      ['side-panel-overlay', () => typeof closeSidePanel === 'function' && closeSidePanel()],
       // El menú de opciones y la hoja de reporte flotan sobre el visor y la hoja.
       ['drex-report-sheet', () => typeof drexReportClose === 'function' && drexReportClose()],
       // Hojas de chat (z-[95]/z-[98]) flotan sobre el menú de opciones (z-89).
@@ -39300,6 +39309,8 @@ function closeSubpageView() {
       // frente a z-30): si la hoja sigue abierta detrás, atrás debe cerrar
       // primero los comentarios, no la hoja invisible.
       ['comments-view', () => typeof closeCommentsView === 'function' && closeCommentsView()],
+      // El modal de video (z-92) flota sobre el visor de fotos.
+      ['video-modal', () => typeof closeVideoModal === 'function' && closeVideoModal()],
       ['image-modal-details', () => typeof _closeFeedImageModalDetails === 'function' && _closeFeedImageModalDetails()],
       ['image-modal', () => typeof closeImageModal === 'function' && closeImageModal()],
       ['author-photo-viewer', () => typeof closeAuthorPhotoViewer === 'function' && closeAuthorPhotoViewer()],
@@ -39318,15 +39329,25 @@ function closeSubpageView() {
       // cierra en vez de navegar.
       ['music-view', () => { try { window.closeMusicSection && window.closeMusicSection(); } catch (_) {} }],
     ];
-    for (const [id, closeFn, isOpenFn] of candidates) {
+  }
+  function _drexIsOverlayOpen(id, el, isOpenFn) {
+    return typeof isOpenFn === 'function'
+      ? !!isOpenFn(el)
+      : !!(el && !el.classList.contains('hidden') && el.style.display !== 'none');
+  }
+  // Devuelve {id, el, closeFn} del overlay visible más alto, o null.
+  function _drexTopmostOverlay() {
+    for (const [id, closeFn, isOpenFn] of _drexOverlayCandidates()) {
       const el = document.getElementById(id);
-      const isOpen = typeof isOpenFn === 'function'
-        ? isOpenFn(el)
-        : (el && !el.classList.contains('hidden') && el.style.display !== 'none');
-      if (isOpen) {
-        try { closeFn(); } catch (_) {}
-        return id;
-      }
+      if (_drexIsOverlayOpen(id, el, isOpenFn)) return { id, el, closeFn };
+    }
+    return null;
+  }
+  function closeTopmostOverlayForBack() {
+    const top = _drexTopmostOverlay();
+    if (top) {
+      try { top.closeFn(); } catch (_) {}
+      return top.id;
     }
     return null;
   }
@@ -39336,6 +39357,120 @@ function closeSubpageView() {
   window.closeOverlaysForTabSwitch = closeOverlaysForTabSwitch;
   window._pushOverlayBackGuard = _pushOverlayBackGuard;
   window.closeTopmostOverlayForBack = closeTopmostOverlayForBack;
+
+  // A11y H1/H2: Escape global + trampa de Tab genérica para hojas/modales.
+  // Un solo keydown cubre todos los overlays de _drexOverlayCandidates():
+  // Esc cierra el overlay visible más alto (antes solo el visor de fotos
+  // respondía) y Tab queda confinado dentro de la hoja/modal superior.
+  // El visor de fotos conserva su propio trap (_feedImageModalKeydown).
+  (function _drexOverlayA11yKeys() {
+    if (window.__drexOverlayA11yKeys) return;
+    window.__drexOverlayA11yKeys = true;
+    // Hojas/modales donde Tab se confina. Las vistas completas
+    // (chat-room-view, fiesta-room-view…) no se listan: no hay nada detrás
+    // a lo que escapar. image-modal tiene su propio trap y se excluye.
+    const TRAPPABLE = new Set([
+      'comment-actions-sheet', 'share-post-overlay',
+      'music-lyrics-sheet', 'music-sleep-sheet', 'music-xfade-sheet', 'music-playlist-sheet',
+      'gif-picker-sheet', 'sticker-sheet', 'drex-report-sheet',
+      'group-member-actions-sheet', 'conv-options-sheet', 'post-options-sheet',
+      'comments-view', 'video-modal', 'author-photo-viewer', 'author-profile-modal',
+      'user-actions-sheet', 'verify-sheet', 'chat-options-panel',
+      'saved-folder-picker-overlay', 'account-switcher-overlay',
+      'fiesta-games-sheet', 'fiesta-listeners-sheet',
+      'edit-post-overlay', 'cover-fullscreen-view',
+    ]);
+    // Contenedor real donde confinar el foco (el overlay a veces es solo el backdrop).
+    const TRAP_BOX = { 'side-panel-overlay': 'side-panel-drawer' };
+    function trapTab(box, e) {
+      const focusables = Array.from(box.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), ' +
+        'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter(el => el.offsetParent !== null && el.getAttribute('aria-hidden') !== 'true');
+      if (!focusables.length) return;
+      const first = focusables[0], last = focusables[focusables.length - 1];
+      if (!box.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+        return;
+      }
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.defaultPrevented) return;
+      if (typeof _drexTopmostOverlay !== 'function') return;
+      if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const top = _drexTopmostOverlay();
+        if (top) {
+          e.preventDefault();
+          try { top.closeFn(); } catch (_) {}
+        }
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const top = _drexTopmostOverlay();
+      if (!top || top.id === 'image-modal' || !TRAPPABLE.has(top.id)) return;
+      const box = document.getElementById(TRAP_BOX[top.id] || top.id) || top.el;
+      if (box) trapTab(box, e);
+    });
+  })();
+
+  // A11y H3/H4: gestión CENTRAL de foco para overlays. Observa la lista de
+  // _drexOverlayCandidates(): al abrirse un overlay se guarda el foco en la
+  // pila y se mueve dentro del diálogo; al cerrarse se restaura al nivel
+  // anterior. Los overlays con gestión propia (image-modal, post-options-sheet,
+  // drex-report-sheet, comments-view, video-modal) se excluyen para no duplicar.
+  (function _drexOverlayFocusManager() {
+    if (window.__drexOverlayFocusManager) return;
+    window.__drexOverlayFocusManager = true;
+    const OWN_MANAGED = new Set(['image-modal', 'post-options-sheet', 'drex-report-sheet', 'comments-view', 'video-modal']);
+    const FOCUS_BOX = { 'side-panel-overlay': 'side-panel-drawer' };
+    let managedIds = null;
+    function isManaged(id) {
+      if (!managedIds) {
+        managedIds = new Set();
+        for (const [cid] of _drexOverlayCandidates()) {
+          if (!OWN_MANAGED.has(cid)) managedIds.add(cid);
+        }
+      }
+      return managedIds.has(id);
+    }
+    const prevOpen = new Map();
+    function focusablesOf(box) {
+      return Array.from(box.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), ' +
+        'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter(el => el.offsetParent !== null && el.getAttribute('aria-hidden') !== 'true');
+    }
+    const mo = new MutationObserver(function (muts) {
+      for (const m of muts) {
+        const t = m.target;
+        if (!t || t.nodeType !== 1 || !t.id || !isManaged(t.id)) continue;
+        const entry = _drexOverlayCandidates().find(c => c[0] === t.id);
+        const open = _drexIsOverlayOpen(t.id, t, entry && entry[2]);
+        if (open === prevOpen.get(t.id)) continue;
+        prevOpen.set(t.id, open);
+        try {
+          if (open) {
+            _saveOverlayFocus();
+            const box = document.getElementById(FOCUS_BOX[t.id] || t.id);
+            if (box) {
+              const f = focusablesOf(box);
+              // No robar el foco si ya está dentro (apertura programática).
+              if (f.length && !box.contains(document.activeElement)) {
+                const auto = box.querySelector('[data-autofocus]');
+                (auto && f.includes(auto) ? auto : f[0]).focus({ preventScroll: true });
+              }
+            }
+          } else {
+            _restoreOverlayFocus();
+          }
+        } catch (_) {}
+      }
+    });
+    if (document.body) mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+  })();
 
 function handleSubpageHash() {
   // A23: Atrás cierra primero el overlay/vista abierto antes que navegar.
@@ -45006,6 +45141,8 @@ async function drexReportOpen(type, data) {
   document.getElementById('drex-report-sheet')?.classList.remove('hidden');
     if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
   if (typeof _saveOverlayFocus === 'function') _saveOverlayFocus();
+  // A11y H4: el foco entra a la hoja de reporte al abrirse.
+  try { const _rf = document.getElementById('drex-report-sheet')?.querySelector('button:not([disabled])'); if (_rf) _rf.focus({ preventScroll: true }); } catch (_) {}
   if (typeof setBottomNavVisibility === 'function') { try { setBottomNavVisibility(false); } catch (_) {} }
 }
 
