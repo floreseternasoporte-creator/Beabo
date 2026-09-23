@@ -41821,7 +41821,12 @@ function fiestaWatchRoom() {
   // WEPLAY2: chat público de la sala (últimos 50 mensajes).
   if (fiestaRefs.chat) { try { fiestaRefs.chat.off(); } catch (_) {} }
   fiestaRefs.chat = DrexCloud.database().ref('fiestas/' + id + '/chat').limitToLast(50);
-  fiestaRefs.chat.on('child_added', snap => { fiestaAppendChatMsg(snap.val() || {}); });
+  // DELTA-SYNC 2026-09-23 (ciclo 11): la ruta es append-only con hijos push ID
+  // (solo push/pushAsync: mensajes y avisos sys de entrar/salir; nunca ediciones
+  // ni borrados) -> onDelta es seguro: tras la lectura inicial (ultimos 50,
+  // identica a antes) cada ciclo pide solo sk > watermark (~0.5 RCU en vez de
+  // 3.0-5.5 de la fase 1+2 acotada). Ver tests/test-c11-fiesta-chat-ondelta.js.
+  fiestaRefs.chat.onDelta(snap => { fiestaAppendChatMsg(snap.val() || {}); });
   if (fiestaRefs.heal) clearInterval(fiestaRefs.heal);
   if (fiestaRefs.heartbeat) clearInterval(fiestaRefs.heartbeat);
   fiestaRefs.heartbeat = setInterval(() => {
