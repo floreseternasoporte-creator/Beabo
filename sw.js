@@ -6,7 +6,7 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v12'; // v12: handlers push + notificationclick (2026-09-19)
+const DREX_SW_VERSION = 'drex-v13'; // v13: networkFirst solo cachea res.ok + fallback offline a index.html en navegación (2026-09-22)
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',
@@ -49,14 +49,26 @@ self.addEventListener('activate', event => {
 
 // Red primero con respaldo a caché: la app sigue abriendo sin conexión,
 // pero una versión nueva siempre llega en cuanto hay red.
+// FIX: solo se cachean respuestas OK (antes un 404/500 quedaba guardado y se
+// servía offline como si fuera la app). En navegación offline sin copia en
+// caché, fallback final a ./index.html para que las rutas profundas abran la
+// app en vez de quedarse en blanco (los .js sin caché siguen fallando como
+// error de red: servirles HTML rompería el parseo).
 function networkFirst(req, cacheKey) {
+  const isNavigate = req.mode === 'navigate';
   return fetch(req)
     .then(res => {
-      const copy = res.clone();
-      caches.open(DREX_SW_VERSION).then(cache => cache.put(cacheKey, copy)).catch(() => {});
+      if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(DREX_SW_VERSION).then(cache => cache.put(cacheKey, copy)).catch(() => {});
+      }
       return res;
     })
-    .catch(() => caches.match(cacheKey));
+    .catch(() => caches.match(cacheKey).then(cached => {
+      if (cached) return cached;
+      if (isNavigate) return caches.match('./index.html');
+      return undefined;
+    }));
 }
 
 // ============================================================
@@ -126,10 +138,14 @@ self.addEventListener('fetch', event => {
   } catch (e) { /* sigue al fallback de estáticos */ }
 
   // Estáticos inmutables (iconos, imágenes): caché primero, red como respaldo.
+  // Solo se guardan respuestas OK u opacas (cross-origin sin CORS): un 404 no
+  // debe envenenar la caché.
   event.respondWith(
     caches.match(req).then(cached => cached || fetch(req).then(res => {
-      const copy = res.clone();
-      caches.open(DREX_SW_VERSION).then(cache => cache.put(req, copy)).catch(() => {});
+      if (res && (res.ok || res.type === 'opaque')) {
+        const copy = res.clone();
+        caches.open(DREX_SW_VERSION).then(cache => cache.put(req, copy)).catch(() => {});
+      }
       return res;
     }))
   );
