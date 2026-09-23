@@ -38510,6 +38510,14 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   }
 
   let _lastChatTypingSentAt = 0;
+  // FIX fuga de listeners: el handle del onDisconnect del typing se guarda y
+  // se cancela al re-armar o al dejar de escribir. Antes cada ráfaga sumaba
+  // 2 listeners permanentes.
+  let _chatTypingDisconnectHandle = null;
+  function _cancelChatTypingDisconnect() {
+    try { if (_chatTypingDisconnectHandle && typeof _chatTypingDisconnectHandle.cancel === 'function') _chatTypingDisconnectHandle.cancel(); } catch (_) {}
+    _chatTypingDisconnectHandle = null;
+  }
   function handleChatTyping() {
     const user = DrexCloud.auth().currentUser;
     if (!user || !currentChatRoomId) return;
@@ -38521,7 +38529,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       _lastChatTypingSentAt = now;
       const typingRef = DrexCloud.database().ref('typing/' + currentChatRoomId + '/' + user.uid);
       typingRef.set(Date.now());
-      typingRef.onDisconnect().remove();
+      _cancelChatTypingDisconnect();
+      try { _chatTypingDisconnectHandle = typingRef.onDisconnect().remove(); } catch (_) {}
     }
     if (chatTypingTimer) clearTimeout(chatTypingTimer);
     chatTypingTimer = setTimeout(() => stopChatTyping(), 3000);
@@ -38530,6 +38539,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   function stopChatTyping() {
     const user = DrexCloud.auth().currentUser;
     if (!user || !currentChatRoomId) return;
+    _cancelChatTypingDisconnect();
     DrexCloud.database().ref('typing/' + currentChatRoomId + '/' + user.uid).remove().catch(() => {});
     if (chatTypingTimer) { clearTimeout(chatTypingTimer); chatTypingTimer = null; }
   }
@@ -46731,6 +46741,13 @@ const FIESTA_ICE = { iceServers: [ { urls: ['stun:stun.l.google.com:19302', 'stu
 let fiestaCur = null;
 let fiestaJoining = false; // evita doble-toque: una sola entrada en curso
 let fiestaMyUid = null;
+// FIX fuga de listeners: el handle del onDisconnect armado se guarda y se
+// cancela al re-armar/salir. Antes cada arm() sumaba listeners permanentes.
+let fiestaDisconnectHandle = null;
+function _fiestaCancelDisconnect() {
+  try { if (fiestaDisconnectHandle && typeof fiestaDisconnectHandle.cancel === 'function') fiestaDisconnectHandle.cancel(); } catch (_) {}
+  fiestaDisconnectHandle = null;
+}
 let fiestaMyRole = 'listener';
 let fiestaLocalStream = null;
 let fiestaMuted = false;
@@ -46788,7 +46805,8 @@ async function fiestaReassertMembership() {
       joinedAt: Date.now(),
       lastSeen: Date.now()
     });
-    try { node.onDisconnect().remove(); } catch (_) {}
+    _fiestaCancelDisconnect();
+    try { fiestaDisconnectHandle = node.onDisconnect().remove(); } catch (_) {}
     if (typeof fiestaSyncPeers === 'function') fiestaSyncPeers();
   } catch (_) {}
 }
@@ -47091,7 +47109,7 @@ async function joinFiesta(id, asSpeaker) {
     // en "Couldn't join the party". push() ya traga el error de escritura
     // internamente (console.warn), así que el aviso es fire-and-forget real.
     DrexCloud.database().ref('fiestas/' + id + '/chat').push({ sys: true, text: (prof.name || '') + ' ' + appT('se unió a la sala'), ts: Date.now() });
-    mRef.child(user.uid).onDisconnect().remove();
+    try { fiestaDisconnectHandle = mRef.child(user.uid).onDisconnect().remove(); } catch (_) {}
 
     document.getElementById('fiesta-view')?.classList.add('hidden');
     fiestaShowRoom();
@@ -47118,6 +47136,7 @@ async function joinFiesta(id, asSpeaker) {
     try { mRef.child(user.uid).remove().catch(() => {}); } catch (_) {}
     fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener';
     fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false; fiestaHostMutedLocal = false;
+    _fiestaCancelDisconnect();
     if (!opened) showMiniToast(appT('No se pudo entrar a la fiesta. Revisa tu conexión e inténtalo de nuevo.') + (_emsg ? ' [' + _emsg + ']' : ''));
     return false;
   } finally {
@@ -47758,7 +47777,7 @@ async function leaveFiesta(silent) {
   }
   if (id && uid) {
     const mRef = DrexCloud.database().ref('fiestaMembers/' + id + '/' + uid);
-    try { mRef.onDisconnect().cancel(); } catch (_) {}
+    _fiestaCancelDisconnect();
     await mRef.remove().catch(() => {});
     await DrexCloud.database().ref('fiestaSignals/' + id + '/' + uid).remove().catch(() => {});
   }
@@ -47772,6 +47791,7 @@ async function leaveFiesta(silent) {
   }
   fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener'; fiestaPeerDownSince = {};
   fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false; fiestaHostMutedLocal = false;
+  _fiestaCancelDisconnect();
   const v = document.getElementById('fiesta-room-view');
   v.classList.add('hidden'); v.classList.remove('flex');
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
