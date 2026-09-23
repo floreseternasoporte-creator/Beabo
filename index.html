@@ -17105,6 +17105,10 @@ function saveNote() {
     } catch (_) {}
     DrexCloud.database().ref('noteImages/' + noteId).remove().catch(() => {});
     DrexCloud.database().ref('noteVideos/' + noteId).remove().catch(() => {});
+    // FIX AUDITORÍA FEED/COMENTARIOS 2026-09-23 (ciclo 24): borrar un post
+    // dejaba postComments/<noteId> huérfano (toda la conversación y sus
+    // respuestas) creciendo sin límite en la BD; la cascada nunca lo tocaba.
+    DrexCloud.database().ref('postComments/' + noteId).remove().catch(() => {});
     try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
     _closeViewerIfShowingNote(noteId);
     return true;
@@ -45409,8 +45413,10 @@ window.deleteMusicTrack = async function (trackId) {
     await musicDb().ref('musicTracks/' + trackId).remove().catch(() => {});
     await musicDb().ref('musicByAuthor/' + uid + '/' + trackId).remove().catch(() => {});
     await musicDb().ref('musicSearch/' + trackId).remove().catch(() => {});
-    if (t.announceNoteId) await musicDb().ref('communityNotes/' + t.announceNoteId).remove().catch(() => {});
-    try { if (t.announceNoteId) await musicDb().ref('notesByAuthor/' + uid + '/' + t.announceNoteId).remove().catch(() => {}); } catch (_) {}
+    // FIX AUDITORÍA FEED/COMENTARIOS 2026-09-23 (ciclo 24): el anuncio se
+    // borraba con remove() directo, esquivando la cascada compartida
+    // (comentarios huérfanos, índices postsByGroup/notesByAuthor, medios).
+    if (t.announceNoteId && typeof cascadeDeleteNote === 'function') { try { await cascadeDeleteNote(t.announceNoteId); } catch (_) {} }
     musicUrlCache.delete(trackId);
     if (musicCurrentTrackId() === trackId) musicStopAndHide();
     loadMyMusic(); loadProfileMusic();
