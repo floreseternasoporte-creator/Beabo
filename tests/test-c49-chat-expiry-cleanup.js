@@ -87,6 +87,8 @@ function makeRef(p) {
     setTimeout: () => 0,
     document: { getElementById: () => null },
     _msgCountdownIntervals: {},
+    _chatFileMetaCache: {},
+    _chatFileDataUrlCache: {},
     DrexCloud: {
       auth: () => ({ currentUser: { uid: 'uidA' } }),
       database: () => ({ ref: (p) => makeRef(p) }),
@@ -94,6 +96,8 @@ function makeRef(p) {
   };
   ctx1.Date = { now: () => NOW };
   vm.createContext(ctx1);
+  // C50-C1: _startMsgCountdown libera los archivos del mensaje expirado.
+  vm.runInContext(extractFn(html, '_releaseChatFileRef') + '\n' + extractFn(html, '_releaseChatFileRefsOfMsg'), ctx1);
   vm.runInContext(extractFn(html, '_startMsgCountdown'), ctx1);
   vm.runInContext('_startMsgCountdown("m1",' + (NOW - 5000) + ',"room1")', ctx1);
   assert(ivCbs.length === 1, 'el intervalo del countdown arranca');
@@ -120,12 +124,16 @@ function makeRef(p) {
     document: { getElementById: () => null },
     escapeHtml: (s) => String(s),
     _t: fakeTrigger,
+    _chatFileMetaCache: {},
+    _chatFileDataUrlCache: {},
     DrexCloud: {
       auth: () => ({ currentUser: { uid: 'uidA' } }),
       database: () => ({ ref: (p) => makeRef(p) }),
     },
   };
   vm.createContext(ctx2);
+  // C50-C1: openViewOnceMessage libera los archivos del mensaje consumido.
+  vm.runInContext(extractFn(html, '_releaseChatFileRef') + '\n' + extractFn(html, '_releaseChatFileRefsOfMsg'), ctx2);
   vm.runInContext(extractFn(html, 'openViewOnceMessage'), ctx2);
   vm.runInContext('openViewOnceMessage("m9","room2",_t)', ctx2);
   await new Promise(r => setImmediate(r));

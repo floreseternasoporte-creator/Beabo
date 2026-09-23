@@ -83,7 +83,9 @@ var DrexCloud = {
   auth: function () { return { currentUser: { uid: 'uidA' } }; },
   database: function () { return { ref: function (p) { return makeRef(p); } }; },
 };
-` + extractFn(html, '_removeChatMsgNodeInstant') + '\n' + extractFn(html, 'deleteChatMessageForAll');
+var _chatFileMetaCache = {};
+var _chatFileDataUrlCache = {};
+` + extractFn(html, '_releaseChatFileRef') + '\n' + extractFn(html, '_releaseChatFileRefsOfMsg') + '\n' + extractFn(html, '_removeChatMsgNodeInstant') + '\n' + extractFn(html, 'deleteChatMessageForAll');
     const ctx = { console, JSON, Object, Array, Promise, Date, Math, String, Number, setTimeout, fakeEl, makeRef };
     vm.createContext(ctx);
     vm.runInContext(code, ctx);
