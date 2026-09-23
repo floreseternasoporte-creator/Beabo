@@ -25631,6 +25631,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       clearUserStats();
       clearChatConversationCache(); // C11-2: sin fugas entre cuentas
       _notifActorCache = null; _notifActorPromise = null; // C13: sin fuga de identidad entre cuentas
+      clearAccountScopedState(); // C14: sin fugas entre cuentas (fiesta, música, cachés, timers)
       // FIX: el motor de recomendaciones no debe conservar ni persistir el
       // perfil de la cuenta que cerró sesión (evita contaminar la próxima
       // cuenta con gustos ajenos si una lectura quedó en vuelo).
@@ -29282,6 +29283,86 @@ function clearChatConversationCache() {
   allChatConversations = [];
   try { localStorage.removeItem(CHAT_CONVERSATIONS_CACHE_KEY); } catch (_) {}
 }
+
+// C14: limpieza centralizada de estado por-cuenta al cerrar sesión / cambiar
+// de cuenta. La rama de logout ya limpiaba badges, stats, caché de
+// conversaciones (C11-2), caché de actor de notificaciones (C13) y el motor
+// de recomendaciones; la auditoría C14 encontró más fugas entre cuentas:
+//   - sesión de fiesta activa: micrófono, peers WebRTC, listeners, intervalos
+//     (heartbeat/heal/status), juegos y variables de sala sobrevivían;
+//   - snapshot del feed en DrexCache (la cuenta B veía el feed de A hasta 2 min);
+//   - mensajes de chat en DrexCache (chat:msgs:*) + chatMessagesMemoryCache;
+//   - historial de música, búsquedas recientes y posts ocultos en claves
+//     GLOBALES de localStorage que la cuenta B heredaba;
+//   - reproducción de música en curso: la cola de A seguía sonando en la
+//     sesión de B con el mini-reproductor mostrando su pista;
+//   - sala de chat abierta: listeners (mensajes, typing, presencia, receipts,
+//     reacciones, pinned, miembros) y estado de la conversación de A;
+//   - listener de bloqueos + conjunto de bloqueados de A;
+//   - temporizadores de tiempo en pantalla: el restore del modo silencio
+//     podía aplicar los ajustes de notificaciones de A sobre la cuenta B
+//     (y guardarlos en su nodo userSettings/<uidB>).
+// Se llama desde la rama de logout de onAuthStateChanged: cubre logout
+// manual, cambio de cuenta y "agregar cuenta" (todos pasan por signOut()).
+function clearAccountScopedState() {
+  // 1. Fiesta: teardown solo-local (sin escrituras a DB: ya no hay sesión).
+  //    fiestaFullCleanup() para micrófono, peers WebRTC, listeners,
+  //    intervalos y juegos; luego se resetean las variables de la sala.
+  try {
+    if (typeof fiestaFullCleanup === 'function') fiestaFullCleanup();
+    if (typeof _fiestaCancelDisconnect === 'function') _fiestaCancelDisconnect();
+  } catch (_) {}
+  try {
+    fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener';
+    fiestaPeerDownSince = {}; fiestaMuted = false; fiestaMembers = {};
+    fiestaAmHost = false; fiestaHostMutedLocal = false; fiestaReasserting = false;
+  } catch (_) {}
+  try {
+    const _frv = document.getElementById('fiesta-room-view');
+    if (_frv) { _frv.classList.add('hidden'); _frv.classList.remove('flex'); }
+  } catch (_) {}
+
+  // 2. Sala de chat abierta: desuscribe listeners y resetea el estado.
+  try { if (currentChatRoomId && typeof closeChatRoomView === 'function') closeChatRoomView(); } catch (_) {}
+  try { if (typeof detachChatMessagesListener === 'function') detachChatMessagesListener(); } catch (_) {}
+
+  // 3. Cachés de chat en memoria + DrexCache (claves no scoped por uid).
+  try { chatMessagesMemoryCache.clear(); } catch (_) {}
+  try { if (window.DrexCache) { window.DrexCache.invalidate('chat'); window.DrexCache.invalidate('feed'); } } catch (_) {}
+
+  // 4. Música: detener reproducción y limpiar estado por-cuenta.
+  try { if (typeof window.musicStopAndHide === 'function') window.musicStopAndHide(); } catch (_) {}
+  try { musicUrlCache.forEach(u => { try { URL.revokeObjectURL(u); } catch (_) {} }); musicUrlCache.clear(); } catch (_) {}
+  try {
+    musicQueue = []; musicQueueIdx = -1;
+    musicExploreCache = []; musicSearchCache = []; musicMineCache = [];
+    musicHistoryCache = []; musicFavoritesCache = [];
+    musicTopCache = []; musicArtistCache = []; musicPlaylistsCache = [];
+    musicPlaylistDetailCache = null; musicAdBreakPending = null;
+    musicLyricsState = { original: '', translated: null, showing: 'original', langName: '', canRetry: false };
+    musicUploadState = { audioFile: null, audioDataUrl: null, audioName: '', duration: 0, coverDataUrl: '', editingId: null, artistName: '' };
+  } catch (_) {}
+  try {
+    localStorage.removeItem('drex_music_history');
+    localStorage.removeItem('drex_recent_searches');
+    localStorage.removeItem('drex_hidden_posts');
+    localStorage.removeItem('drex_notification_settings_v1');
+    localStorage.removeItem('drex_st_notif_backup');
+  } catch (_) {}
+
+  // 5. Bloqueos: desuscribir el listener de A y vaciar su conjunto.
+  try { if (blockedAccountsRef) { try { blockedAccountsRef.off(); } catch (_) {} blockedAccountsRef = null; } } catch (_) {}
+  try { blockedAccountsSet = new Set(); } catch (_) {}
+
+  // 6. Tiempo en pantalla: parar el tracking y matar timers pendientes
+  //    (el restore del modo silencio NO debe despertar en la sesión de B).
+  try { if (typeof stopScreenTimeTracking === 'function') stopScreenTimeTracking(); } catch (_) {}
+  try { clearTimeout(_quietModeRestoreTimer); _quietModeRestoreTimer = null; } catch (_) {}
+
+  // 7. Ajustes de notificaciones en memoria (B los recarga de su propio nodo).
+  try { notifSettings = {}; } catch (_) {}
+}
+
 
 let chatTypingTimer = null;
 let chatTypingListener = null;
