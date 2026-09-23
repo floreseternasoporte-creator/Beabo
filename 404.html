@@ -12855,6 +12855,12 @@ function saveNote() {
       } catch (_) {}
     }).catch(error => {
       console.error('Error al publicar:', error);
+      // Telemetría: un fallo de publicación es señal directa de fiabilidad
+      // (el usuario pierde su post). Se reporta con stack, muestreado.
+      try {
+        _noteFail('publish-fail');
+        if (window.DrexCloud && DrexCloud.reliability) DrexCloud.reliability.reportError(error, 'publish');
+      } catch (_) {}
       // El composer NO se limpia: fotos/video y texto se conservan para
       // reintentar sin perder nada.
       showMiniToast(appT('No se pudo publicar. Revisa tu conexión e inténtalo de nuevo (no perdiste tu contenido).'));
@@ -16030,6 +16036,7 @@ function saveNote() {
         feedWindowSchedulePrune();
       } catch (renderError) {
         console.error('Error renderizando publicación:', note && note.id, renderError);
+        try { _noteFail('feed-render-fail'); } catch (_) {}
       }
     }
 
@@ -16245,6 +16252,7 @@ function saveNote() {
           maybeShowEmptyState();
         }).catch(err => {
           console.error('Error cargando posts anteriores:', err);
+          try { _noteFail('feed-older-fail'); } catch (_) {}
           loadingOlder = false;
           if (alive()) setOlderLoading(false);
         });
@@ -30344,6 +30352,16 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     saveLoginAttempts(attempts);
   }
 
+  // Telemetría de login: solo los fallos NO atribuibles al usuario son señal
+  // de fiabilidad (red, Cognito/Lambda caídos, errores desconocidos). Los de
+  // credenciales, validación, verificación o estado de cuenta son
+  // comportamiento esperado y no se reportan (serían ruido). Nunca viajan
+  // identificadores: solo el objeto de error (mensaje genérico + stack).
+  function _isReportableLoginError(error) {
+    const code = (error && error.code) || '';
+    return !/^(auth\/(wrong-password|invalid-credential|invalid-login-credentials|user-not-found|user-disabled|invalid-email|weak-password|email-already-in-use|operation-not-allowed|needs-confirmation|user-not-confirmed|password-reset-required|invalid-verification-code|code-expired|too-many-requests|popup-closed-by-user|cancelled-popup-request|popup-blocked|account-exists-with-different-credential))$/.test(code);
+  }
+
   authForm.addEventListener('submit', e => {
     e.preventDefault();
     authError.classList.add('hidden');
@@ -30398,6 +30416,14 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         localStorage.setItem('drex_last_login_method', isUsername ? 'username' : 'email');
       })
       .catch(error => {
+        // Telemetría: los fallos no atribuibles al usuario se reportan con
+        // stack para diagnóstico (muestreados al 10 % por el colector).
+        try {
+          if (typeof _isReportableLoginError === 'function' && _isReportableLoginError(error)) {
+            _noteFail('login-fail');
+            if (window.DrexCloud && DrexCloud.reliability) DrexCloud.reliability.reportError(error, 'login');
+          }
+        } catch (_) {}
         if (error && error.code === 'auth/needs-confirmation') {
           if (isUsername) {
             // Con usuario no se conoce el correo (el servidor no lo revela):
@@ -31845,6 +31871,12 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     } else if (error.code === 'auth/account-exists-with-different-credential') {
       showMiniToast(appT('Ya existe una cuenta con este correo usando otro método de inicio de sesión.'));
     } else {
+      try {
+        if (typeof _isReportableLoginError === 'function' && _isReportableLoginError(error)) {
+          _noteFail('login-social-fail');
+          if (window.DrexCloud && DrexCloud.reliability) DrexCloud.reliability.reportError(error, 'login-social');
+        }
+      } catch (_) {}
       showMiniToast(appT('Error al iniciar sesión con ') + providerName + ': ' + error.message);
     }
   }
