@@ -15634,25 +15634,572 @@ function saveNote() {
     return card + card + card;
   }
 
+
+  // ===== Refactor snf*: constantes de módulo del feed (antes dentro de _subscribeNotesFeed) =====
+  const FEED_PAGE_SIZE = 50;
+  const FEED_WINDOW_MAX_LIVE = 120; // tarjetas reales máximas en el DOM
+  // Scroll listener con identidad estable a nivel módulo: el DOM deduplica
+  // addEventListener por referencia idéntica; el ctx activo se resuelve aquí.
+  let _snfActiveCtx = null;
+  function _snfScrollHandler() {
+    const c = _snfActiveCtx;
+    if (c) snfFeedWindowSchedulePrune(c);
+  }
+
+  // ===== Refactor snf*: funciones extraidas de _subscribeNotesFeed (sin cambio de comportamiento) =====
+  function snfFeedWindowEnsureIO(ctx) {
+    if (ctx._feedWindowIO) return ctx._feedWindowIO;
+    ctx._feedWindowIO = new IntersectionObserver((entries) => {
+      if (!ctx.alive()) return;
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          ctx._feedWindowIO.unobserve(entry.target);
+          snfFeedWindowRemount(ctx, entry.target);
+        }
+      }
+    }, { rootMargin: '1600px 0px 1600px 0px' });
+    return ctx._feedWindowIO;
+  }
+
+  function snfFeedWindowEnsureScroll(ctx) {
+    if (ctx._feedWindowScrollOn) return;
+    ctx._feedWindowScrollOn = true;
+    _snfActiveCtx = ctx;
+    const target = document.getElementById('scrollable-content') || window;
+    target.addEventListener('scroll', _snfScrollHandler, { passive: true });
+  }
+
+  function snfFeedWindowSchedulePrune(ctx) {
+    snfFeedWindowEnsureScroll(ctx);
+    if (ctx._feedWindowRaf) return;
+    ctx._feedWindowRaf = requestAnimationFrame(() => {
+      ctx._feedWindowRaf = 0;
+      snfFeedWindowPrune(ctx);
+    });
+  }
+
+  // Sustituye una tarjeta lejana por un marcador de igual altura.
+  function snfFeedWindowPruneCard(ctx, cardEl) {
+    const noteId = cardEl.getAttribute('data-note-id');
+    const rec = noteId && ctx._feedWindowStore.get(noteId);
+    if (!rec || !rec.note || !cardEl.isConnected) return;
+    rec.ui = snfFeedWindowHarvestUI(cardEl, noteId);
+    let hgt = 0;
+    try { hgt = Math.round(cardEl.getBoundingClientRect().height); } catch (_) {}
+    if (!hgt || hgt < 80) hgt = 320;
+    const ph = document.createElement('div');
+    ph.id = 'postph-' + noteId;
+    ph.className = 'drex-post-ph w-full';
+    ph.setAttribute('aria-hidden', 'true');
+    // Se copia el dataset (postType para el filtro, feedTs/feedScore/
+    // recScore para el orden): el marcador ocupa el lugar exacto.
+    const ds = cardEl.dataset;
+    for (const k in ds) { try { ph.dataset[k] = ds[k]; } catch (_) {} }
+    ph.style.height = hgt + 'px';
+    cardEl.replaceWith(ph);
+    snfFeedWindowEnsureIO(ctx).observe(ph);
+  }
+
+  function snfFeedWindowPrune(ctx) {
+    if (!ctx.alive()) return;
+    try {
+      if (!ctx.feedContainer || !ctx.feedContainer.isConnected) return;
+      const cards = ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"]');
+      if (cards.length <= FEED_WINDOW_MAX_LIVE) return;
+      const vh = window.innerHeight || 800;
+      const minDist = Math.max(vh * 1.5, 600);
+      const scored = [];
+      for (let i = 0; i < cards.length; i++) {
+        const r = cards[i].getBoundingClientRect();
+        const dist = r.bottom < 0 ? -r.bottom : (r.top > vh ? r.top - vh : 0);
+        scored.push({ el: cards[i], dist });
+      }
+      scored.sort((a, b) => b.dist - a.dist);
+      let toPrune = cards.length - FEED_WINDOW_MAX_LIVE;
+      for (let k = 0; k < scored.length && toPrune > 0; k++) {
+        if (scored[k].dist > minDist) { snfFeedWindowPruneCard(ctx, scored[k].el); toPrune--; }
+      }
+    } catch (_) {}
+  }
+
+  // Reconstruye una tarjeta podada con los mismos builders de siempre.
+  function snfFeedWindowRemount(ctx, ph) {
+    try {
+      if (!ph || !ph.isConnected) return;
+      const noteId = ph.getAttribute('data-note-id');
+      const rec = noteId && ctx._feedWindowStore.get(noteId);
+      if (!rec || !rec.note) return;
+      const note = rec.note;
+      const ui = rec.ui || {};
+      const el = document.createElement('div');
+      el.id = 'post-' + noteId;
+      el.className = 'drex-post w-full';
+      const ds = ph.dataset;
+      for (const k in ds) { try { el.dataset[k] = ds[k]; } catch (_) {} }
+      el.innerHTML = buildDrexPostCardHTML(note, {
+        user: ctx.user,
+        userVote: ui.userVote !== undefined && ui.userVote !== null ? ui.userVote : (ctx.userVotes[note.id] || null),
+        hasEchoed: ui.hasEchoed !== undefined && ui.hasEchoed !== null ? ui.hasEchoed : Boolean(ctx.userEcos[note.id]),
+        avatarIdPrefix: 'feed-author-'
+      });
+      ph.replaceWith(el);
+      hydrateQuickFollowButtons(el);
+      hydrateSaveButtons(el);
+      applyFeedTypeFilter();
+      _enhancePostCard(el);
+      try { drexRecObserveCard(el); } catch (_) {}
+      if (el.dataset.feedPaginated === '1') {
+        try { snfEnsureCardVisibilityObserver(ctx).observe(el); } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  // La tarjeta está podada: no hay DOM que actualizar, se refrescan los
+  // datos guardados para que la reconstrucción salga al día. Devuelve true
+  // si la nota estaba podada (el llamador ya no debe montarla de nuevo).
+  function snfFeedWindowRefreshPruned(ctx, note) {
+    try {
+      const rec = note && note.id && ctx._feedWindowStore.get(note.id);
+      if (!rec) return false;
+      const ph = document.getElementById('postph-' + note.id);
+      if (!ph) return false;
+      rec.note = note;
+      return true;
+    } catch (_) { return false; }
+  }
+
+  // Mantiene al día la copia guardada cuando un listener en vivo actualiza
+  // contadores de una tarjeta visible (luego podrá podarse sin perderlos).
+  function snfFeedWindowNoteUpdated(ctx, note) {
+    try {
+      const rec = note && note.id && ctx._feedWindowStore.get(note.id);
+      if (rec) rec.note = note;
+    } catch (_) {}
+  }
+
+  function snfFeedWindowRemove(ctx, noteId) {
+    try {
+      ctx._feedWindowStore.delete(noteId);
+      const ph = noteId && document.getElementById('postph-' + noteId);
+      if (ph) {
+        try { snfFeedWindowEnsureIO(ctx).unobserve(ph); } catch (_) {}
+        ph.remove();
+      }
+    } catch (_) {}
+  }
+
+  function snfFeedWindowTrack(ctx, noteId, note) {
+    try {
+      if (noteId && note) {
+        const prev = ctx._feedWindowStore.get(noteId);
+        ctx._feedWindowStore.set(noteId, { note, ui: prev ? prev.ui : null });
+      }
+    } catch (_) {}
+  }
+
+  function snfClearFeedSkeleton(ctx) {
+    try { ctx.feedContainer.querySelectorAll(':scope > .feed-skeleton').forEach(el => el.remove()); } catch (_) {}
+  }
+
+  function snfMaybeShowEmptyState(ctx) {
+    if (!ctx.alive() || !ctx.initialValueSeen || ctx.pendingInitial > 0) return;
+    snfClearFeedSkeleton(ctx);
+    try {
+      const hasPosts = !!ctx.feedContainer.querySelector(':scope > div[id^="post-"], :scope > div[id^="postph-"]');
+      const hasEmpty = !!ctx.feedContainer.querySelector(':scope > .feed-empty-state');
+      if (!hasPosts && !hasEmpty) ctx.feedContainer.innerHTML = snfFeedEmptyHTML(ctx.feedMode);
+    } catch (_) {}
+  }
+
+  function snfClearEmptyState(ctx) {
+    try {
+      const es = ctx.feedContainer.querySelector(':scope > .feed-empty-state');
+      if (es) es.remove();
+    } catch (_) {}
+  }
+
+  // Convierte un child crudo en nota lista para render, o null si se filtra
+  // (grupo, no seguido, cuenta privada sin acceso, oculto por moderación).
+  async function snfPrepareFeedNote(ctx, key, rawNote) {
+    try {
+      if (!rawNote || rawNote.groupId) return null;
+      if (ctx.feedMode === 'following' && ctx.followingMap && !(rawNote.authorId && ctx.followingMap[rawNote.authorId])) return null;
+      if (currentFeedFlairFilter && rawNote.flair !== currentFeedFlairFilter) return null;
+      const authorId = rawNote.authorId || rawNote.userId || '';
+      if (authorId && authorId !== ctx.currentUserId) {
+        const isPrivate = await isAccountPrivate(authorId);
+        if (isPrivate) {
+          const canView = await canCurrentUserViewPrivateAccount(authorId);
+          if (!canView) return null;
+        }
+      }
+      if (shouldHideNoteForCurrentUser(key, rawNote)) return null;
+      const note = { ...rawNote, id: key };
+      if (authorId) {
+        const profile = await _fetchAuthorProfileCached(authorId).catch(() => ({})) || {};
+        note.authorLearningLanguage = note.authorLearningLanguage || profile.learningLanguage || '';
+        note.authorLearningLanguageName = note.authorLearningLanguageName || profile.learningLanguageName || '';
+        note.authorCountryCode = note.authorCountryCode || profile.countryCode || detectProfileCountryCode(profile.country || profile.location || '');
+      }
+      return note;
+    } catch (_) { return null; }
+  }
+
+  // Actualiza solo contadores de una tarjeta existente (sin parpadeo).
+  // Devuelve true si la tarjeta existía.
+  function snfUpdateFeedPostCounters(ctx, note) {
+    snfFeedWindowNoteUpdated(ctx, note);
+    const existingPost = document.getElementById(`post-${note.id}`);
+    if (!existingPost) return false;
+    const scoreSpan = existingPost.querySelector(`#score-${note.id}`);
+    const ecoBtn = existingPost.querySelector(`#eco-${note.id}`);
+    const ecoSpan = ecoBtn ? ecoBtn.querySelector('span') : null;
+    if (scoreSpan) scoreSpan.textContent = formatVoteScore(Number(note.upvotes || 0) - Number(note.downvotes || 0));
+    if (ecoBtn && !ecoBtn.classList.contains('animating')) {
+      const hasEchoed = Boolean(ctx.userEcos[note.id]);
+      ecoBtn.classList.toggle('active', hasEchoed);
+      if (ecoSpan) ecoSpan.textContent = ecoCountOf(note);
+    }
+    setCommentsCountUI(note.id, note.commentsCount);
+    if (ctx.feedMode === 'popular') {
+      const newScore = Number(note.upvotes || 0) - Number(note.downvotes || 0);
+      existingPost.dataset.feedScore = String(newScore);
+      // Recolocar la tarjeta para mantener el orden por puntaje (mayor primero).
+      const kids = ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"]');
+      let placed = false;
+      for (const kid of kids) {
+        if (kid === existingPost) continue;
+        if (newScore > parseFloat(kid.dataset.feedScore || '0')) {
+          ctx.feedContainer.insertBefore(existingPost, kid);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) ctx.feedContainer.appendChild(existingPost);
+    }
+    return true;
+  }
+
+  function snfMountFeedPost(ctx, note, appendAtBottom = false) {
+    try {
+      if (!note || !note.id) return;
+      if (ctx.feedLoadedIds.has(note.id)) {
+        // Ventana virtual: si la tarjeta está podada, solo se refrescan
+        // sus datos guardados; si ya está montada, no se duplica.
+        if (snfFeedWindowRefreshPruned(ctx, note)) return;
+        return;
+      }
+      ctx.feedLoadedIds.add(note.id);
+      const noteTs = Number(note.timestamp || 0);
+      if (noteTs > 0 && noteTs < ctx.oldestLoadedTs) ctx.oldestLoadedTs = noteTs;
+      snfClearEmptyState(ctx);
+      snfClearFeedSkeleton(ctx);
+      const noteElement = document.createElement('div');
+      noteElement.id = `post-${note.id}`;
+      noteElement.className = 'drex-post w-full';
+      noteElement.dataset.noteId = note.id;
+      noteElement.dataset.postType = note.postType || '';
+      noteElement.dataset.feedTs = String(noteTs);
+      if (ctx.feedMode === 'popular') {
+        noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0));
+      }
+      // Drex Rec: metadatos para entrenar con interacciones futuras.
+      try {
+        _drexNoteMetaPut(note.id, {
+          flair: note.flair || null,
+          authorId: note.authorId || note.userId || null,
+          text: note.content || note.text || '',
+          ts: noteTs,
+          up: Number(note.upvotes || 0),
+          down: Number(note.downvotes || 0),
+          cc: Number(note.commentsCount || 0)
+        });
+      } catch (_) { _noteFail('feed-meta'); }
+      noteElement.innerHTML = buildDrexPostCardHTML(note, {
+        user: ctx.user,
+        userVote: ctx.userVotes[note.id] || null,
+        hasEchoed: Boolean(ctx.userEcos[note.id]),
+        avatarIdPrefix: 'feed-author-'
+      });
+      if (ctx.feedMode === 'popular') {
+        // Insertar ordenado por puntaje (mayor primero).
+        const score = Number(note.upvotes || 0) - Number(note.downvotes || 0);
+        const kids = ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"]');
+        let placed = false;
+        for (const kid of kids) {
+          if (score > parseFloat(kid.dataset.feedScore || '0')) {
+            ctx.feedContainer.insertBefore(noteElement, kid);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          if (ctx.olderSentinel) ctx.feedContainer.insertBefore(noteElement, ctx.olderSentinel);
+          else ctx.feedContainer.appendChild(noteElement);
+        }
+      } else if (ctx.feedMode === 'foryou') {
+        // Drex Rec: "Para ti" se ordena por puntaje personal, no por fecha.
+        drexRecInsertForYou(ctx.feedContainer, noteElement, note);
+      } else if (appendAtBottom) {
+        // Paginación: los más viejos van al fondo, antes del centinela.
+        if (ctx.olderSentinel) ctx.feedContainer.insertBefore(noteElement, ctx.olderSentinel);
+        else ctx.feedContainer.appendChild(noteElement);
+      } else {
+        // Lo nuevo arriba (child_added llega en orden ascendente de fecha).
+        ctx.feedContainer.prepend(noteElement);
+      }
+      const adFrag = document.createDocumentFragment();
+      maybeInsertFeedAd(adFrag, ctx.adCount++);
+      if (adFrag.children.length) {
+        noteElement.after(adFrag);
+        pushDrexAdSlots(ctx.feedContainer);
+      }
+      hydrateQuickFollowButtons(noteElement);
+      hydrateSaveButtons(noteElement);
+      applyFeedTypeFilter();
+      _enhancePostCard(noteElement);
+      try { drexRecObserveCard(noteElement); } catch (_) { _noteFail('feed-observe'); }
+      if (appendAtBottom) {
+        noteElement.dataset.feedPaginated = '1';
+        try { snfEnsureCardVisibilityObserver(ctx).observe(noteElement); } catch (_) {}
+      }
+      // Ventana virtual: registrar la tarjeta y podar si hay demasiadas.
+      snfFeedWindowTrack(ctx, note.id, note);
+      snfFeedWindowSchedulePrune(ctx);
+    } catch (renderError) {
+      console.error('Error renderizando publicación:', note && note.id, renderError);
+      try { _noteFail('feed-render-fail'); } catch (_) {}
+    }
+  }
+
+  // Monta el batch inicial (una sola vez): lo ordena con el motor V2 y
+  // pinta las tarjetas en ese orden.
+  function snfMountInitialBatch(ctx) {
+    if (!ctx.alive() || ctx._initialBatchMounted) return;
+    ctx._initialBatchMounted = true;
+    if (ctx._initialBatch.length > 1) {
+      try {
+        if (window.DrexRecEngine && typeof window.DrexRecEngine.rankFeed === 'function') {
+          var _rankCtx = {};
+          var _p = window.DrexRecEngine.ProfileStore ? window.DrexRecEngine.ProfileStore.get() : null;
+          if (_p) _rankCtx.profile = _p;
+          if (ctx.followingMap) _rankCtx.followingMap = ctx.followingMap;
+          _rankCtx.feedMode = ctx.feedMode;
+          var _ranked = window.DrexRecEngine.rankFeed(ctx._initialBatch, _rankCtx);
+          if (_ranked && _ranked.length === ctx._initialBatch.length) {
+            ctx._initialBatch = _ranked;
+          }
+        }
+      } catch (_) { _noteFail('feed-rank'); }
+    }
+    // Montar los posts (en el orden del ranking, si se aplicó).
+    ctx._initialBatch.forEach(function (note) {
+      if (!snfUpdateFeedPostCounters(ctx, note)) snfMountFeedPost(ctx, note);
+      else { snfClearEmptyState(ctx); snfAdoptLiveCard(ctx, note.id); }
+    });
+    ctx._initialBatch = [];
+  }
+
+  function snfSetOlderLoading(ctx, on) {
+    if (!ctx.olderSentinel) return;
+    const loader = ctx.olderSentinel.querySelector('.older-loader');
+    if (loader) loader.style.display = on ? '' : 'none';
+  }
+
+  function snfFinishOlderSentinel(ctx) {
+    try { if (_feedOlderObserver) _feedOlderObserver.disconnect(); } catch (_) {}
+    _feedOlderObserver = null;
+    if (ctx.olderSentinel && ctx.olderSentinel.isConnected) {
+      ctx.olderSentinel.innerHTML = '<div class="feed-end-of-list text-xs text-[#9aa5ad] py-2">Estás al día</div>';
+    }
+    ctx.olderSentinel = null;
+  }
+
+  function snfSetupOlderSentinel(ctx) {
+    if (!ctx.alive() || ctx.olderSentinel || ctx.olderExhausted) return;
+    ctx.olderSentinel = document.createElement('div');
+    ctx.olderSentinel.id = 'feed-older-sentinel';
+    ctx.olderSentinel.className = 'py-6 text-center';
+    ctx.olderSentinel.innerHTML = `<div class="older-loader" style="display:none">${getSpinnerMarkup()}</div>`;
+    ctx.feedContainer.appendChild(ctx.olderSentinel);
+    try { if (_feedOlderObserver) _feedOlderObserver.disconnect(); } catch (_) {}
+    _feedOlderObserver = new IntersectionObserver((entries) => {
+      if (!ctx.alive()) return;
+      for (const entry of entries) {
+        if (entry.isIntersecting) { snfLoadOlderPosts(ctx); break; }
+      }
+    }, { rootMargin: '600px' });
+    _feedOlderObserver.observe(ctx.olderSentinel);
+  }
+
+  // Carga una página de posts anteriores a los ya visibles (lectura única,
+  // sin suscripción en vivo: los contadores de esas tarjetas se actualizan
+  // con el voto optimista local).
+  function snfLoadOlderPosts(ctx, depth = 0) {
+    if (!ctx.alive() || ctx.loadingOlder || ctx.olderExhausted || !ctx.initialValueSeen || ctx.pendingInitial > 0) return;
+    if (!isFinite(ctx.oldestLoadedTs)) return;
+    ctx.loadingOlder = true;
+    snfSetOlderLoading(ctx, true);
+    DrexCloud.database().ref('communityNotes')
+      .orderByChild('timestamp').endAt(ctx.oldestLoadedTs - 1).limitToLast(FEED_PAGE_SIZE)
+      .once('value').then(async (snap) => {
+        if (!ctx.alive()) { ctx.loadingOlder = false; return; }
+        const raw = [];
+        snap.forEach(child => { raw.push([child.key, child.val() || {}]); });
+        if (raw.length) {
+          const minTs = Math.min(...raw.map(([k, v]) => Number(v.timestamp || 0)).filter(t => t > 0));
+          if (isFinite(minTs) && minTs < ctx.oldestLoadedTs) ctx.oldestLoadedTs = minTs;
+        }
+        // Orden visual de más nuevo a más viejo, igual que la primera página.
+        raw.sort((a, b) => Number(b[1].timestamp || 0) - Number(a[1].timestamp || 0));
+        let mounted = 0;
+        for (const [key, val] of raw) {
+          if (!ctx.alive()) break;
+          const note = await snfPrepareFeedNote(ctx, key, val).catch(() => null);
+          if (note && ctx.alive()) { snfMountFeedPost(ctx, note, true); mounted++; }
+        }
+        if (!ctx.alive()) { ctx.loadingOlder = false; return; }
+        ctx.loadingOlder = false;
+        snfSetOlderLoading(ctx, false);
+        if (raw.length < FEED_PAGE_SIZE) {
+          ctx.olderExhausted = true;
+          snfFinishOlderSentinel(ctx);
+        } else if (mounted === 0 && depth < 5) {
+          // Página llena pero todo filtrado (p. ej. privados): seguir con la
+          // siguiente sin mostrar otro spinner.
+          snfLoadOlderPosts(ctx, depth + 1);
+          return;
+        }
+        snfMaybeShowEmptyState(ctx);
+      }).catch(err => {
+        console.error('Error cargando posts anteriores:', err);
+        try { _noteFail('feed-older-fail'); } catch (_) {}
+        ctx.loadingOlder = false;
+        if (ctx.alive()) snfSetOlderLoading(ctx, false);
+      });
+  }
+
+  // Observa la visibilidad de las tarjetas paginadas: solo mientras se ven
+  // en pantalla mantienen sus 3 listeners de contadores.
+  function snfEnsureCardVisibilityObserver(ctx) {
+    if (ctx.cardVisibilityObserver) return ctx.cardVisibilityObserver;
+    ctx.cardVisibilityObserver = new IntersectionObserver((entries) => {
+      if (!ctx.alive()) return;
+      for (const entry of entries) {
+        const el = entry.target;
+        const pid = el.dataset ? el.dataset.noteId : null;
+        if (!pid) continue;
+        if (entry.isIntersecting) snfAttachPostCounterSubs(ctx, pid, el);
+        else snfDetachPostCounterSubs(ctx, pid);
+      }
+    }, { rootMargin: '300px' });
+    return ctx.cardVisibilityObserver;
+  }
+
+  function snfAttachPostCounterSubs(ctx, pid, el) {
+    if (!ctx.alive() || ctx.postCounterSubs.has(pid)) return;
+    if (!el || !el.isConnected || !el.dataset.feedPaginated) return;
+    const state = { up: null, down: null, comments: null };
+    const baseRef = DrexCloud.database().ref('communityNotes/' + pid);
+    const subs = [];
+    const pushCounter = () => {
+      const card = document.getElementById('post-' + pid);
+      if (!card) { snfDetachPostCounterSubs(ctx, pid); return; }
+      snfUpdateFeedPostCounters(ctx, {
+        id: pid,
+        upvotes: state.up || 0,
+        downvotes: state.down || 0,
+        commentsCount: state.comments || 0
+      });
+    };
+    const checkGone = () => {
+      // Fuera de la ventana en vivo no llega child_removed: si los 3 campos
+      // son null, el post fue borrado.
+      if (state.up == null && state.down == null && state.comments == null) {
+        const card = document.getElementById('post-' + pid);
+        if (card) { try { card.remove(); } catch (_) {} }
+        ctx.feedLoadedIds.delete(pid);
+        snfDetachPostCounterSubs(ctx, pid);
+        snfMaybeShowEmptyState(ctx);
+        return true;
+      }
+      return false;
+    };
+    [['upvotes', 'up'], ['downvotes', 'down'], ['commentsCount', 'comments']].forEach(([field, key]) => {
+      const r = baseRef.child(field);
+      const cb = (snap) => {
+        if (!ctx.alive()) return;
+        state[key] = snap.val();
+        if (checkGone()) return;
+        pushCounter();
+      };
+      try { r.on('value', cb); } catch (_) {}
+      subs.push({ ref: r, cb: cb });
+    });
+    ctx.postCounterSubs.set(pid, subs);
+  }
+
+  function snfDetachPostCounterSubs(ctx, pid) {
+    const subs = ctx.postCounterSubs.get(pid);
+    if (!subs) return;
+    ctx.postCounterSubs.delete(pid);
+    subs.forEach(({ ref, cb }) => { try { ref.off('value', cb); } catch (_) {} });
+  }
+
+  // La ventana en vivo adoptó esta tarjeta: ya la cubre child_changed.
+  function snfAdoptLiveCard(ctx, pid) {
+    if (!pid || !ctx.postCounterSubs.has(pid)) return;
+    snfDetachPostCounterSubs(ctx, pid);
+    try {
+      const card = document.getElementById('post-' + pid);
+      if (card) {
+        delete card.dataset.feedPaginated;
+        if (ctx.cardVisibilityObserver) ctx.cardVisibilityObserver.unobserve(card);
+      }
+    } catch (_) {}
+  }
+
+  function snfTeardownCardObservers(ctx) {
+    try { if (ctx.cardVisibilityObserver) ctx.cardVisibilityObserver.disconnect(); } catch (_) {}
+    ctx.cardVisibilityObserver = null;
+    ctx.postCounterSubs.forEach((subs) => {
+      subs.forEach(({ ref, cb }) => { try { ref.off('value', cb); } catch (_) {} });
+    });
+    ctx.postCounterSubs = new Map();
+  }
+
   function _subscribeNotesFeed(feedContainer, user, userVotes, userEcos, feedMode = 'foryou', followingMap = null) {
-    const notesRef = DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
-    notesRef.off();
-    const myGeneration = ++_notesFeedGeneration;
-    const alive = () => myGeneration === _notesFeedGeneration;
-    const currentUserId = (user && user.uid) || '';
-    let adCount = 0;
-    let pendingInitial = 0;
-    let initialValueSeen = false;
+    // Refactor snf*: todo el estado mutable del scope viaja en `ctx`; las
+    // funciones extraidas de primer nivel lo reciben como primer parámetro.
+    const ctx = {
+      feedContainer, user, userVotes, userEcos, feedMode, followingMap,
+      notesRef: null, myGeneration: 0, alive: null, currentUserId: '',
+      adCount: 0, pendingInitial: 0, initialValueSeen: false,
+      _feedSnapshotRaw: new Map(),
+      feedLoadedIds: new Set(), oldestLoadedTs: Infinity,
+      loadingOlder: false, olderExhausted: false, olderSentinel: null,
+      _feedWindowStore: new Map(),
+      _feedWindowIO: null, _feedWindowRaf: 0, _feedWindowScrollOn: false,
+      postCounterSubs: new Map(), cardVisibilityObserver: null,
+      _initialBatch: [], _initialBatchMounted: false
+    };
+    ctx.notesRef = DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
+    ctx.notesRef.off();
+    ctx.myGeneration = ++_notesFeedGeneration;
+    ctx.alive = () => ctx.myGeneration === _notesFeedGeneration;
+    ctx.currentUserId = (ctx.user && ctx.user.uid) || '';
+    ctx.adCount = 0;
+    ctx.pendingInitial = 0;
+    ctx.initialValueSeen = false;
     // Snapshot para guardar en DrexCache al completar la carga inicial.
-    const _feedSnapshotRaw = new Map();
+    ctx._feedSnapshotRaw = new Map();
     // Paginación infinita: el feed en vivo cubre los últimos 50; al llegar al
     // fondo se cargan páginas anteriores de 50 con una lectura única.
-    const FEED_PAGE_SIZE = 50;
-    let feedLoadedIds = new Set();
-    let oldestLoadedTs = Infinity;
-    let loadingOlder = false;
-    let olderExhausted = false;
-    let olderSentinel = null;
+    ctx.feedLoadedIds = new Set();
+    ctx.oldestLoadedTs = Infinity;
+    ctx.loadingOlder = false;
+    ctx.olderExhausted = false;
+    ctx.olderSentinel = null;
     // ===== Ventana virtual del feed (windowing ligero) =====
     // El feed pagina sin límite y cada tarjeta es un innerHTML pesado: con
     // cientos de posts el DOM se vuelve lento (scroll, filtros, votos).
@@ -15661,451 +16208,136 @@ function saveNote() {
     // (placeholder) de la misma altura —el scroll no salta y el orden se
     // conserva— y se reconstruyen al acercarse (IntersectionObserver).
     // No se toca buildDrexPostCardHTML: la reconstrucción la reutiliza.
-    const FEED_WINDOW_MAX_LIVE = 120; // tarjetas reales máximas en el DOM
-    const _feedWindowStore = new Map(); // noteId -> { note, ui }
-    let _feedWindowIO = null;
-    let _feedWindowRaf = 0;
-    let _feedWindowScrollOn = false;
-    function feedWindowEnsureIO() {
-      if (_feedWindowIO) return _feedWindowIO;
-      _feedWindowIO = new IntersectionObserver((entries) => {
-        if (!alive()) return;
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            _feedWindowIO.unobserve(entry.target);
-            feedWindowRemount(entry.target);
-          }
-        }
-      }, { rootMargin: '1600px 0px 1600px 0px' });
-      return _feedWindowIO;
-    }
-    function feedWindowEnsureScroll() {
-      if (_feedWindowScrollOn) return;
-      _feedWindowScrollOn = true;
-      const target = document.getElementById('scrollable-content') || window;
-      target.addEventListener('scroll', feedWindowSchedulePrune, { passive: true });
-    }
-    function feedWindowSchedulePrune() {
-      feedWindowEnsureScroll();
-      if (_feedWindowRaf) return;
-      _feedWindowRaf = requestAnimationFrame(() => {
-        _feedWindowRaf = 0;
-        feedWindowPrune();
-      });
-    }
-    // Sustituye una tarjeta lejana por un marcador de igual altura.
-    function feedWindowPruneCard(cardEl) {
-      const noteId = cardEl.getAttribute('data-note-id');
-      const rec = noteId && _feedWindowStore.get(noteId);
-      if (!rec || !rec.note || !cardEl.isConnected) return;
-      rec.ui = snfFeedWindowHarvestUI(cardEl, noteId);
-      let hgt = 0;
-      try { hgt = Math.round(cardEl.getBoundingClientRect().height); } catch (_) {}
-      if (!hgt || hgt < 80) hgt = 320;
-      const ph = document.createElement('div');
-      ph.id = 'postph-' + noteId;
-      ph.className = 'drex-post-ph w-full';
-      ph.setAttribute('aria-hidden', 'true');
-      // Se copia el dataset (postType para el filtro, feedTs/feedScore/
-      // recScore para el orden): el marcador ocupa el lugar exacto.
-      const ds = cardEl.dataset;
-      for (const k in ds) { try { ph.dataset[k] = ds[k]; } catch (_) {} }
-      ph.style.height = hgt + 'px';
-      cardEl.replaceWith(ph);
-      feedWindowEnsureIO().observe(ph);
-    }
-    function feedWindowPrune() {
-      if (!alive()) return;
-      try {
-        if (!feedContainer || !feedContainer.isConnected) return;
-        const cards = feedContainer.querySelectorAll(':scope > div[id^="post-"]');
-        if (cards.length <= FEED_WINDOW_MAX_LIVE) return;
-        const vh = window.innerHeight || 800;
-        const minDist = Math.max(vh * 1.5, 600);
-        const scored = [];
-        for (let i = 0; i < cards.length; i++) {
-          const r = cards[i].getBoundingClientRect();
-          const dist = r.bottom < 0 ? -r.bottom : (r.top > vh ? r.top - vh : 0);
-          scored.push({ el: cards[i], dist });
-        }
-        scored.sort((a, b) => b.dist - a.dist);
-        let toPrune = cards.length - FEED_WINDOW_MAX_LIVE;
-        for (let k = 0; k < scored.length && toPrune > 0; k++) {
-          if (scored[k].dist > minDist) { feedWindowPruneCard(scored[k].el); toPrune--; }
-        }
-      } catch (_) {}
-    }
-    // Reconstruye una tarjeta podada con los mismos builders de siempre.
-    function feedWindowRemount(ph) {
-      try {
-        if (!ph || !ph.isConnected) return;
-        const noteId = ph.getAttribute('data-note-id');
-        const rec = noteId && _feedWindowStore.get(noteId);
-        if (!rec || !rec.note) return;
-        const note = rec.note;
-        const ui = rec.ui || {};
-        const el = document.createElement('div');
-        el.id = 'post-' + noteId;
-        el.className = 'drex-post w-full';
-        const ds = ph.dataset;
-        for (const k in ds) { try { el.dataset[k] = ds[k]; } catch (_) {} }
-        el.innerHTML = buildDrexPostCardHTML(note, {
-          user: user,
-          userVote: ui.userVote !== undefined && ui.userVote !== null ? ui.userVote : (userVotes[note.id] || null),
-          hasEchoed: ui.hasEchoed !== undefined && ui.hasEchoed !== null ? ui.hasEchoed : Boolean(userEcos[note.id]),
-          avatarIdPrefix: 'feed-author-'
-        });
-        ph.replaceWith(el);
-        hydrateQuickFollowButtons(el);
-        hydrateSaveButtons(el);
-        applyFeedTypeFilter();
-        _enhancePostCard(el);
-        try { drexRecObserveCard(el); } catch (_) {}
-        if (el.dataset.feedPaginated === '1') {
-          try { ensureCardVisibilityObserver().observe(el); } catch (_) {}
-        }
-      } catch (_) {}
-    }
-    // La tarjeta está podada: no hay DOM que actualizar, se refrescan los
-    // datos guardados para que la reconstrucción salga al día. Devuelve true
-    // si la nota estaba podada (el llamador ya no debe montarla de nuevo).
-    function feedWindowRefreshPruned(note) {
-      try {
-        const rec = note && note.id && _feedWindowStore.get(note.id);
-        if (!rec) return false;
-        const ph = document.getElementById('postph-' + note.id);
-        if (!ph) return false;
-        rec.note = note;
-        return true;
-      } catch (_) { return false; }
-    }
-    // Mantiene al día la copia guardada cuando un listener en vivo actualiza
-    // contadores de una tarjeta visible (luego podrá podarse sin perderlos).
-    function feedWindowNoteUpdated(note) {
-      try {
-        const rec = note && note.id && _feedWindowStore.get(note.id);
-        if (rec) rec.note = note;
-      } catch (_) {}
-    }
-    function feedWindowRemove(noteId) {
-      try {
-        _feedWindowStore.delete(noteId);
-        const ph = noteId && document.getElementById('postph-' + noteId);
-        if (ph) {
-          try { feedWindowEnsureIO().unobserve(ph); } catch (_) {}
-          ph.remove();
-        }
-      } catch (_) {}
-    }
-    function feedWindowTrack(noteId, note) {
-      try {
-        if (noteId && note) {
-          const prev = _feedWindowStore.get(noteId);
-          _feedWindowStore.set(noteId, { note, ui: prev ? prev.ui : null });
-        }
-      } catch (_) {}
-    }
+    ctx._feedWindowStore = new Map(); // noteId -> { note, ui }
+    ctx._feedWindowIO = null;
+    ctx._feedWindowRaf = 0;
+    ctx._feedWindowScrollOn = false;
     try { if (_feedOlderObserver) _feedOlderObserver.disconnect(); } catch (_) {}
     _feedOlderObserver = null;
     // Contadores en vivo solo para tarjetas paginadas (las 50 en vivo ya las
     // cubre child_changed): 3 listeners diminutos por tarjeta visible.
-    let postCounterSubs = new Map();
-    let cardVisibilityObserver = null;
+    ctx.postCounterSubs = new Map();
+    ctx.cardVisibilityObserver = null;
     try { if (typeof _feedCardsTeardown === 'function') _feedCardsTeardown(); } catch (_) {}
     _feedCardsTeardown = null;
     // Si el contenedor conserva tarjetas de una suscripción previa del mismo
     // modo, reconstruir el estado de paginación desde el DOM en vez de
     // partir de cero (si no, el scroll infinito quedaría roto).
     try {
-      const prevSentinel = feedContainer.querySelector('#feed-older-sentinel');
+      const prevSentinel = ctx.feedContainer.querySelector('#feed-older-sentinel');
       if (prevSentinel) {
-        if (prevSentinel.querySelector('.feed-end-of-list')) olderExhausted = true;
+        if (prevSentinel.querySelector('.feed-end-of-list')) ctx.olderExhausted = true;
         prevSentinel.remove();
       }
-      olderSentinel = null;
-      feedContainer.querySelectorAll(':scope > div[id^="post-"]').forEach(el => {
+      ctx.olderSentinel = null;
+      ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"]').forEach(el => {
         const pid = el.dataset.noteId || String(el.id || '').replace(/^post-/, '');
-        if (pid) feedLoadedIds.add(pid);
+        if (pid) ctx.feedLoadedIds.add(pid);
         const ts = Number(el.dataset.feedTs || 0);
-        if (ts > 0 && ts < oldestLoadedTs) oldestLoadedTs = ts;
+        if (ts > 0 && ts < ctx.oldestLoadedTs) ctx.oldestLoadedTs = ts;
       });
     } catch (_) {}
 
     // Si venimos de otra pestaña, reconstruimos desde cero para no arrastrar
     // orden o contenido del modo previo.
-    if (feedContainer.dataset.feedMode !== feedMode) {
-      feedContainer.innerHTML = '';
-      feedContainer.dataset.feedMode = feedMode;
-      feedLoadedIds = new Set();
-      oldestLoadedTs = Infinity;
-      loadingOlder = false;
-      olderExhausted = false;
-      olderSentinel = null;
+    if (ctx.feedContainer.dataset.feedMode !== ctx.feedMode) {
+      ctx.feedContainer.innerHTML = '';
+      ctx.feedContainer.dataset.feedMode = ctx.feedMode;
+      ctx.feedLoadedIds = new Set();
+      ctx.oldestLoadedTs = Infinity;
+      ctx.loadingOlder = false;
+      ctx.olderExhausted = false;
+      ctx.olderSentinel = null;
     }
 
     // DrexCache feed: si el contenedor está vacío y hay un snapshot fresco,
     // pintarlo al instante (sin spinner). Los listeners en vivo actualizan
     // contadores y agregan/quitan por encima; no hay duplicados porque
-    // mountFeedPost registra el id en feedLoadedIds al montar (idempotente).
+    // snfMountFeedPost registra el id en feedLoadedIds al montar (idempotente).
     try {
-      const _snap = (window.DrexCache && window.DrexCache.get('feed', 'snapshot:' + feedMode)) || null;
-      const _hasCards = !!feedContainer.querySelector(':scope > div[id^="post-"]');
+      const _snap = (window.DrexCache && window.DrexCache.get('feed', 'snapshot:' + ctx.feedMode)) || null;
+      const _hasCards = !!ctx.feedContainer.querySelector(':scope > div[id^="post-"]');
       if (_snap && _snap.length && !_hasCards) {
-        feedContainer.innerHTML = '';
+        ctx.feedContainer.innerHTML = '';
         Promise.all(_snap.map(function (entry) {
           if (!entry || !entry.id) return Promise.resolve(null);
-          return prepareFeedNote(entry.id, entry.note || {}).catch(() => null);
+          return snfPrepareFeedNote(ctx, entry.id, entry.note || {}).catch(() => null);
         })).then(function (notes) {
-          if (!alive()) return;
+          if (!ctx.alive()) return;
           notes.filter(n => n && n.id).sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0))
-            .forEach(note => { try { mountFeedPost(note); } catch (_) {} });
-          maybeShowEmptyState();
+            .forEach(note => { try { snfMountFeedPost(ctx, note); } catch (_) {} });
+          snfMaybeShowEmptyState(ctx);
         });
       }
     } catch (_) {}
 
     // Sin snapshot ni tarjetas: mostrar esqueleto de carga inicial.
     try {
-      const _hasCards = !!feedContainer.querySelector(':scope > div[id^="post-"]');
-      if (!_hasCards && !feedContainer.querySelector(':scope > .feed-skeleton')) {
-        feedContainer.innerHTML = snfFeedSkeletonHTML();
+      const _hasCards = !!ctx.feedContainer.querySelector(':scope > div[id^="post-"]');
+      if (!_hasCards && !ctx.feedContainer.querySelector(':scope > .feed-skeleton')) {
+        ctx.feedContainer.innerHTML = snfFeedSkeletonHTML();
       }
     } catch (_) {}
 
-    function clearFeedSkeleton() {
-      try { feedContainer.querySelectorAll(':scope > .feed-skeleton').forEach(el => el.remove()); } catch (_) {}
-    }
-
-    function maybeShowEmptyState() {
-      if (!alive() || !initialValueSeen || pendingInitial > 0) return;
-      clearFeedSkeleton();
-      try {
-        const hasPosts = !!feedContainer.querySelector(':scope > div[id^="post-"], :scope > div[id^="postph-"]');
-        const hasEmpty = !!feedContainer.querySelector(':scope > .feed-empty-state');
-        if (!hasPosts && !hasEmpty) feedContainer.innerHTML = snfFeedEmptyHTML(feedMode);
-      } catch (_) {}
-    }
-
-    function clearEmptyState() {
-      try {
-        const es = feedContainer.querySelector(':scope > .feed-empty-state');
-        if (es) es.remove();
-      } catch (_) {}
-    }
-
-    // Convierte un child crudo en nota lista para render, o null si se filtra
-    // (grupo, no seguido, cuenta privada sin acceso, oculto por moderación).
-    async function prepareFeedNote(key, rawNote) {
-      try {
-        if (!rawNote || rawNote.groupId) return null;
-        if (feedMode === 'following' && followingMap && !(rawNote.authorId && followingMap[rawNote.authorId])) return null;
-        if (currentFeedFlairFilter && rawNote.flair !== currentFeedFlairFilter) return null;
-        const authorId = rawNote.authorId || rawNote.userId || '';
-        if (authorId && authorId !== currentUserId) {
-          const isPrivate = await isAccountPrivate(authorId);
-          if (isPrivate) {
-            const canView = await canCurrentUserViewPrivateAccount(authorId);
-            if (!canView) return null;
-          }
-        }
-        if (shouldHideNoteForCurrentUser(key, rawNote)) return null;
-        const note = { ...rawNote, id: key };
-        if (authorId) {
-          const profile = await _fetchAuthorProfileCached(authorId).catch(() => ({})) || {};
-          note.authorLearningLanguage = note.authorLearningLanguage || profile.learningLanguage || '';
-          note.authorLearningLanguageName = note.authorLearningLanguageName || profile.learningLanguageName || '';
-          note.authorCountryCode = note.authorCountryCode || profile.countryCode || detectProfileCountryCode(profile.country || profile.location || '');
-        }
-        return note;
-      } catch (_) { return null; }
-    }
-
-    // Actualiza solo contadores de una tarjeta existente (sin parpadeo).
-    // Devuelve true si la tarjeta existía.
-    function updateFeedPostCounters(note) {
-      feedWindowNoteUpdated(note);
-      const existingPost = document.getElementById(`post-${note.id}`);
-      if (!existingPost) return false;
-      const scoreSpan = existingPost.querySelector(`#score-${note.id}`);
-      const ecoBtn = existingPost.querySelector(`#eco-${note.id}`);
-      const ecoSpan = ecoBtn ? ecoBtn.querySelector('span') : null;
-      if (scoreSpan) scoreSpan.textContent = formatVoteScore(Number(note.upvotes || 0) - Number(note.downvotes || 0));
-      if (ecoBtn && !ecoBtn.classList.contains('animating')) {
-        const hasEchoed = Boolean(userEcos[note.id]);
-        ecoBtn.classList.toggle('active', hasEchoed);
-        if (ecoSpan) ecoSpan.textContent = ecoCountOf(note);
-      }
-      setCommentsCountUI(note.id, note.commentsCount);
-      if (feedMode === 'popular') {
-        const newScore = Number(note.upvotes || 0) - Number(note.downvotes || 0);
-        existingPost.dataset.feedScore = String(newScore);
-        // Recolocar la tarjeta para mantener el orden por puntaje (mayor primero).
-        const kids = feedContainer.querySelectorAll(':scope > div[id^="post-"]');
-        let placed = false;
-        for (const kid of kids) {
-          if (kid === existingPost) continue;
-          if (newScore > parseFloat(kid.dataset.feedScore || '0')) {
-            feedContainer.insertBefore(existingPost, kid);
-            placed = true;
-            break;
-          }
-        }
-        if (!placed) feedContainer.appendChild(existingPost);
-      }
-      return true;
-    }
-
-    function mountFeedPost(note, appendAtBottom = false) {
-      try {
-        if (!note || !note.id) return;
-        if (feedLoadedIds.has(note.id)) {
-          // Ventana virtual: si la tarjeta está podada, solo se refrescan
-          // sus datos guardados; si ya está montada, no se duplica.
-          if (feedWindowRefreshPruned(note)) return;
-          return;
-        }
-        feedLoadedIds.add(note.id);
-        const noteTs = Number(note.timestamp || 0);
-        if (noteTs > 0 && noteTs < oldestLoadedTs) oldestLoadedTs = noteTs;
-        clearEmptyState();
-        clearFeedSkeleton();
-        const noteElement = document.createElement('div');
-        noteElement.id = `post-${note.id}`;
-        noteElement.className = 'drex-post w-full';
-        noteElement.dataset.noteId = note.id;
-        noteElement.dataset.postType = note.postType || '';
-        noteElement.dataset.feedTs = String(noteTs);
-        if (feedMode === 'popular') {
-          noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0));
-        }
-        // Drex Rec: metadatos para entrenar con interacciones futuras.
-        try {
-          _drexNoteMetaPut(note.id, {
-            flair: note.flair || null,
-            authorId: note.authorId || note.userId || null,
-            text: note.content || note.text || '',
-            ts: noteTs,
-            up: Number(note.upvotes || 0),
-            down: Number(note.downvotes || 0),
-            cc: Number(note.commentsCount || 0)
-          });
-        } catch (_) { _noteFail('feed-meta'); }
-        noteElement.innerHTML = buildDrexPostCardHTML(note, {
-          user: user,
-          userVote: userVotes[note.id] || null,
-          hasEchoed: Boolean(userEcos[note.id]),
-          avatarIdPrefix: 'feed-author-'
-        });
-        if (feedMode === 'popular') {
-          // Insertar ordenado por puntaje (mayor primero).
-          const score = Number(note.upvotes || 0) - Number(note.downvotes || 0);
-          const kids = feedContainer.querySelectorAll(':scope > div[id^="post-"]');
-          let placed = false;
-          for (const kid of kids) {
-            if (score > parseFloat(kid.dataset.feedScore || '0')) {
-              feedContainer.insertBefore(noteElement, kid);
-              placed = true;
-              break;
-            }
-          }
-          if (!placed) {
-            if (olderSentinel) feedContainer.insertBefore(noteElement, olderSentinel);
-            else feedContainer.appendChild(noteElement);
-          }
-        } else if (feedMode === 'foryou') {
-          // Drex Rec: "Para ti" se ordena por puntaje personal, no por fecha.
-          drexRecInsertForYou(feedContainer, noteElement, note);
-        } else if (appendAtBottom) {
-          // Paginación: los más viejos van al fondo, antes del centinela.
-          if (olderSentinel) feedContainer.insertBefore(noteElement, olderSentinel);
-          else feedContainer.appendChild(noteElement);
-        } else {
-          // Lo nuevo arriba (child_added llega en orden ascendente de fecha).
-          feedContainer.prepend(noteElement);
-        }
-        const adFrag = document.createDocumentFragment();
-        maybeInsertFeedAd(adFrag, adCount++);
-        if (adFrag.children.length) {
-          noteElement.after(adFrag);
-          pushDrexAdSlots(feedContainer);
-        }
-        hydrateQuickFollowButtons(noteElement);
-        hydrateSaveButtons(noteElement);
-        applyFeedTypeFilter();
-        _enhancePostCard(noteElement);
-        try { drexRecObserveCard(noteElement); } catch (_) { _noteFail('feed-observe'); }
-        if (appendAtBottom) {
-          noteElement.dataset.feedPaginated = '1';
-          try { ensureCardVisibilityObserver().observe(noteElement); } catch (_) {}
-        }
-        // Ventana virtual: registrar la tarjeta y podar si hay demasiadas.
-        feedWindowTrack(note.id, note);
-        feedWindowSchedulePrune();
-      } catch (renderError) {
-        console.error('Error renderizando publicación:', note && note.id, renderError);
-        try { _noteFail('feed-render-fail'); } catch (_) {}
-      }
-    }
-
     // DrexRecEngine V2: buffer para carga inicial — acumular posts y
     // ordenarlos con el motor completo antes de montarlos.
-    var _initialBatch = [];
-    var _initialBatchMounted = false;
+    ctx._initialBatch = [];
+    ctx._initialBatchMounted = false;
 
-    notesRef.on('child_added', (snap) => {
-      if (!alive()) return;
+    ctx.notesRef.on('child_added', (snap) => {
+      if (!ctx.alive()) return;
       // Acumular crudo para el snapshot de DrexCache (solo carga inicial).
-      if (!initialValueSeen) {
-        try { _feedSnapshotRaw.set(snap.key, _trimFeedNoteForCache(snap.val())); } catch (_) {}
+      if (!ctx.initialValueSeen) {
+        try { ctx._feedSnapshotRaw.set(snap.key, _trimFeedNoteForCache(snap.val())); } catch (_) {}
       }
-      pendingInitial++;
-      prepareFeedNote(snap.key, snap.val() || {}).then((note) => {
-        pendingInitial--;
-        if (!alive()) { maybeShowEmptyState(); return; }
-        if (!note) { maybeShowEmptyState(); return; }
+      ctx.pendingInitial++;
+      snfPrepareFeedNote(ctx, snap.key, snap.val() || {}).then((note) => {
+        ctx.pendingInitial--;
+        if (!ctx.alive()) { snfMaybeShowEmptyState(ctx); return; }
+        if (!note) { snfMaybeShowEmptyState(ctx); return; }
         // FIX carrera del batch inicial: si el 'value' ya llegó pero el batch
         // aún no se montó (se espera a los prepareFeedNote en vuelo), el post
         // pertenece a la carga inicial y entra al batch para el ranking V2.
         // Solo los posts que llegan con el batch ya montado van por la ruta
         // "en vivo". Antes, los que resolvían después del 'value' se montaban
         // sin ranking por la ruta en vivo.
-        if (initialValueSeen && _initialBatchMounted) {
+        if (ctx.initialValueSeen && ctx._initialBatchMounted) {
           // Carga inicial ya montada: montar directamente (posts nuevos en vivo).
-          if (!updateFeedPostCounters(note)) mountFeedPost(note);
-          else { clearEmptyState(); adoptLiveCard(note.id); }
+          if (!snfUpdateFeedPostCounters(ctx, note)) snfMountFeedPost(ctx, note);
+          else { snfClearEmptyState(ctx); snfAdoptLiveCard(ctx, note.id); }
         } else {
           // Aún en carga inicial: acumular para ordenar con el motor V2.
-          _initialBatch.push(note);
+          ctx._initialBatch.push(note);
         }
-        maybeShowEmptyState();
+        snfMaybeShowEmptyState(ctx);
       });
     });
 
-    notesRef.on('child_changed', (snap) => {
-      if (!alive()) return;
-      prepareFeedNote(snap.key, snap.val() || {}).then((note) => {
-        if (!alive()) return;
+    ctx.notesRef.on('child_changed', (snap) => {
+      if (!ctx.alive()) return;
+      snfPrepareFeedNote(ctx, snap.key, snap.val() || {}).then((note) => {
+        if (!ctx.alive()) return;
         if (!note) {
           // El post dejó de ser visible (p. ej. la cuenta se hizo privada).
           const el = document.getElementById(`post-${snap.key}`);
           if (el) { try { el.remove(); } catch (_) {} }
-          maybeShowEmptyState();
+          snfMaybeShowEmptyState(ctx);
           return;
         }
-        if (!updateFeedPostCounters(note)) mountFeedPost(note);
-        else adoptLiveCard(note.id);
+        if (!snfUpdateFeedPostCounters(ctx, note)) snfMountFeedPost(ctx, note);
+        else snfAdoptLiveCard(ctx, note.id);
       });
     });
 
-    notesRef.on('child_removed', (snap) => {
-      if (!alive()) return;
-      feedLoadedIds.delete(snap.key);
-      feedWindowRemove(snap.key);
+    ctx.notesRef.on('child_removed', (snap) => {
+      if (!ctx.alive()) return;
+      ctx.feedLoadedIds.delete(snap.key);
+      snfFeedWindowRemove(ctx, snap.key);
       try {
         const el = document.getElementById(`post-${snap.key}`);
         if (el) el.remove();
       } catch (_) {}
-      maybeShowEmptyState();
+      snfMaybeShowEmptyState(ctx);
     });
 
     // Marca el fin de la carga inicial (se dispara tras los child_added
@@ -16114,17 +16346,17 @@ function saveNote() {
     // (Ref.prototype.once ignora el callback estilo Firebase). Con la forma de
     // callback, este bloque JAMÁS se ejecutaba: el batch inicial nunca se
     // montaba y el feed quedaba en esqueleto eterno. Se usa la forma promesa.
-    notesRef.once('value').then(() => {
-      initialValueSeen = true;
+    ctx.notesRef.once('value').then(() => {
+      ctx.initialValueSeen = true;
       // Guardar snapshot en DrexCache (TTL 2 min): la próxima apertura del
       // feed pinta al instante y los listeners en vivo corrigen por encima.
       try {
-        if (alive() && _feedSnapshotRaw.size && window.DrexCache) {
-          const arr = Array.from(_feedSnapshotRaw.entries()).map(([id, note]) => ({ id, note }));
-          window.DrexCache.set('feed', 'snapshot:' + feedMode, arr, 120000);
+        if (ctx.alive() && ctx._feedSnapshotRaw.size && window.DrexCache) {
+          const arr = Array.from(ctx._feedSnapshotRaw.entries()).map(([id, note]) => ({ id, note }));
+          window.DrexCache.set('feed', 'snapshot:' + ctx.feedMode, arr, 120000);
         }
       } catch (_) {}
-      _feedSnapshotRaw.clear();
+      ctx._feedSnapshotRaw.clear();
 
       // DrexRecEngine V2: ordenar el batch inicial con el motor completo.
       // FIX carrera: el 'value' puede llegar antes de que terminen los
@@ -16132,14 +16364,14 @@ function saveNote() {
       // pendingInitial llegue a 0 para que el ranking vea el batch completo.
       const _batchWaitStart = Date.now();
       const _waitAndMountInitial = () => {
-        if (!alive()) return;
-        if (pendingInitial > 0 && Date.now() - _batchWaitStart < 8000) {
+        if (!ctx.alive()) return;
+        if (ctx.pendingInitial > 0 && Date.now() - _batchWaitStart < 8000) {
           setTimeout(_waitAndMountInitial, 60);
           return;
         }
-        _mountInitialBatch();
-        maybeShowEmptyState();
-        setupOlderSentinel();
+        snfMountInitialBatch(ctx);
+        snfMaybeShowEmptyState(ctx);
+        snfSetupOlderSentinel(ctx);
       };
       _waitAndMountInitial();
     }).catch((feedLoadError) => {
@@ -16150,210 +16382,15 @@ function saveNote() {
         _noteFail('feed-load-fail');
         if (window.DrexCloud && DrexCloud.reliability) DrexCloud.reliability.reportError(feedLoadError, 'feed-load');
       } catch (_) {}
-      try { clearFeedSkeleton(); } catch (_) {}
+      try { snfClearFeedSkeleton(ctx); } catch (_) {}
       try {
-        const _fleHasPosts = !!feedContainer.querySelector(':scope > div[id^="post-"], :scope > div[id^="postph-"]');
-        const _fleHasEmpty = !!feedContainer.querySelector(':scope > .feed-empty-state');
-        if (!_fleHasPosts && !_fleHasEmpty) feedContainer.innerHTML = snfFeedEmptyHTML(feedMode);
+        const _fleHasPosts = !!ctx.feedContainer.querySelector(':scope > div[id^="post-"], :scope > div[id^="postph-"]');
+        const _fleHasEmpty = !!ctx.feedContainer.querySelector(':scope > .feed-empty-state');
+        if (!_fleHasPosts && !_fleHasEmpty) ctx.feedContainer.innerHTML = snfFeedEmptyHTML(ctx.feedMode);
       } catch (_) {}
     });
 
-    // Monta el batch inicial (una sola vez): lo ordena con el motor V2 y
-    // pinta las tarjetas en ese orden.
-    function _mountInitialBatch() {
-      if (!alive() || _initialBatchMounted) return;
-      _initialBatchMounted = true;
-      if (_initialBatch.length > 1) {
-        try {
-          if (window.DrexRecEngine && typeof window.DrexRecEngine.rankFeed === 'function') {
-            var _rankCtx = {};
-            var _p = window.DrexRecEngine.ProfileStore ? window.DrexRecEngine.ProfileStore.get() : null;
-            if (_p) _rankCtx.profile = _p;
-            if (followingMap) _rankCtx.followingMap = followingMap;
-            _rankCtx.feedMode = feedMode;
-            var _ranked = window.DrexRecEngine.rankFeed(_initialBatch, _rankCtx);
-            if (_ranked && _ranked.length === _initialBatch.length) {
-              _initialBatch = _ranked;
-            }
-          }
-        } catch (_) { _noteFail('feed-rank'); }
-      }
-      // Montar los posts (en el orden del ranking, si se aplicó).
-      _initialBatch.forEach(function (note) {
-        if (!updateFeedPostCounters(note)) mountFeedPost(note);
-        else { clearEmptyState(); adoptLiveCard(note.id); }
-      });
-      _initialBatch = [];
-    }
-
-    function setOlderLoading(on) {
-      if (!olderSentinel) return;
-      const loader = olderSentinel.querySelector('.older-loader');
-      if (loader) loader.style.display = on ? '' : 'none';
-    }
-
-    function finishOlderSentinel() {
-      try { if (_feedOlderObserver) _feedOlderObserver.disconnect(); } catch (_) {}
-      _feedOlderObserver = null;
-      if (olderSentinel && olderSentinel.isConnected) {
-        olderSentinel.innerHTML = '<div class="feed-end-of-list text-xs text-[#9aa5ad] py-2">Estás al día</div>';
-      }
-      olderSentinel = null;
-    }
-
-    function setupOlderSentinel() {
-      if (!alive() || olderSentinel || olderExhausted) return;
-      olderSentinel = document.createElement('div');
-      olderSentinel.id = 'feed-older-sentinel';
-      olderSentinel.className = 'py-6 text-center';
-      olderSentinel.innerHTML = `<div class="older-loader" style="display:none">${getSpinnerMarkup()}</div>`;
-      feedContainer.appendChild(olderSentinel);
-      try { if (_feedOlderObserver) _feedOlderObserver.disconnect(); } catch (_) {}
-      _feedOlderObserver = new IntersectionObserver((entries) => {
-        if (!alive()) return;
-        for (const entry of entries) {
-          if (entry.isIntersecting) { loadOlderPosts(); break; }
-        }
-      }, { rootMargin: '600px' });
-      _feedOlderObserver.observe(olderSentinel);
-    }
-
-    // Carga una página de posts anteriores a los ya visibles (lectura única,
-    // sin suscripción en vivo: los contadores de esas tarjetas se actualizan
-    // con el voto optimista local).
-    function loadOlderPosts(depth = 0) {
-      if (!alive() || loadingOlder || olderExhausted || !initialValueSeen || pendingInitial > 0) return;
-      if (!isFinite(oldestLoadedTs)) return;
-      loadingOlder = true;
-      setOlderLoading(true);
-      DrexCloud.database().ref('communityNotes')
-        .orderByChild('timestamp').endAt(oldestLoadedTs - 1).limitToLast(FEED_PAGE_SIZE)
-        .once('value').then(async (snap) => {
-          if (!alive()) { loadingOlder = false; return; }
-          const raw = [];
-          snap.forEach(child => { raw.push([child.key, child.val() || {}]); });
-          if (raw.length) {
-            const minTs = Math.min(...raw.map(([k, v]) => Number(v.timestamp || 0)).filter(t => t > 0));
-            if (isFinite(minTs) && minTs < oldestLoadedTs) oldestLoadedTs = minTs;
-          }
-          // Orden visual de más nuevo a más viejo, igual que la primera página.
-          raw.sort((a, b) => Number(b[1].timestamp || 0) - Number(a[1].timestamp || 0));
-          let mounted = 0;
-          for (const [key, val] of raw) {
-            if (!alive()) break;
-            const note = await prepareFeedNote(key, val).catch(() => null);
-            if (note && alive()) { mountFeedPost(note, true); mounted++; }
-          }
-          if (!alive()) { loadingOlder = false; return; }
-          loadingOlder = false;
-          setOlderLoading(false);
-          if (raw.length < FEED_PAGE_SIZE) {
-            olderExhausted = true;
-            finishOlderSentinel();
-          } else if (mounted === 0 && depth < 5) {
-            // Página llena pero todo filtrado (p. ej. privados): seguir con la
-            // siguiente sin mostrar otro spinner.
-            loadOlderPosts(depth + 1);
-            return;
-          }
-          maybeShowEmptyState();
-        }).catch(err => {
-          console.error('Error cargando posts anteriores:', err);
-          try { _noteFail('feed-older-fail'); } catch (_) {}
-          loadingOlder = false;
-          if (alive()) setOlderLoading(false);
-        });
-    }
-
-    // Observa la visibilidad de las tarjetas paginadas: solo mientras se ven
-    // en pantalla mantienen sus 3 listeners de contadores.
-    function ensureCardVisibilityObserver() {
-      if (cardVisibilityObserver) return cardVisibilityObserver;
-      cardVisibilityObserver = new IntersectionObserver((entries) => {
-        if (!alive()) return;
-        for (const entry of entries) {
-          const el = entry.target;
-          const pid = el.dataset ? el.dataset.noteId : null;
-          if (!pid) continue;
-          if (entry.isIntersecting) attachPostCounterSubs(pid, el);
-          else detachPostCounterSubs(pid);
-        }
-      }, { rootMargin: '300px' });
-      return cardVisibilityObserver;
-    }
-
-    function attachPostCounterSubs(pid, el) {
-      if (!alive() || postCounterSubs.has(pid)) return;
-      if (!el || !el.isConnected || !el.dataset.feedPaginated) return;
-      const state = { up: null, down: null, comments: null };
-      const baseRef = DrexCloud.database().ref('communityNotes/' + pid);
-      const subs = [];
-      const pushCounter = () => {
-        const card = document.getElementById('post-' + pid);
-        if (!card) { detachPostCounterSubs(pid); return; }
-        updateFeedPostCounters({
-          id: pid,
-          upvotes: state.up || 0,
-          downvotes: state.down || 0,
-          commentsCount: state.comments || 0
-        });
-      };
-      const checkGone = () => {
-        // Fuera de la ventana en vivo no llega child_removed: si los 3 campos
-        // son null, el post fue borrado.
-        if (state.up == null && state.down == null && state.comments == null) {
-          const card = document.getElementById('post-' + pid);
-          if (card) { try { card.remove(); } catch (_) {} }
-          feedLoadedIds.delete(pid);
-          detachPostCounterSubs(pid);
-          maybeShowEmptyState();
-          return true;
-        }
-        return false;
-      };
-      [['upvotes', 'up'], ['downvotes', 'down'], ['commentsCount', 'comments']].forEach(([field, key]) => {
-        const r = baseRef.child(field);
-        const cb = (snap) => {
-          if (!alive()) return;
-          state[key] = snap.val();
-          if (checkGone()) return;
-          pushCounter();
-        };
-        try { r.on('value', cb); } catch (_) {}
-        subs.push({ ref: r, cb: cb });
-      });
-      postCounterSubs.set(pid, subs);
-    }
-
-    function detachPostCounterSubs(pid) {
-      const subs = postCounterSubs.get(pid);
-      if (!subs) return;
-      postCounterSubs.delete(pid);
-      subs.forEach(({ ref, cb }) => { try { ref.off('value', cb); } catch (_) {} });
-    }
-
-    // La ventana en vivo adoptó esta tarjeta: ya la cubre child_changed.
-    function adoptLiveCard(pid) {
-      if (!pid || !postCounterSubs.has(pid)) return;
-      detachPostCounterSubs(pid);
-      try {
-        const card = document.getElementById('post-' + pid);
-        if (card) {
-          delete card.dataset.feedPaginated;
-          if (cardVisibilityObserver) cardVisibilityObserver.unobserve(card);
-        }
-      } catch (_) {}
-    }
-
-    function teardownCardObservers() {
-      try { if (cardVisibilityObserver) cardVisibilityObserver.disconnect(); } catch (_) {}
-      cardVisibilityObserver = null;
-      postCounterSubs.forEach((subs) => {
-        subs.forEach(({ ref, cb }) => { try { ref.off('value', cb); } catch (_) {} });
-      });
-      postCounterSubs = new Map();
-    }
-    _feedCardsTeardown = teardownCardObservers;
+    _feedCardsTeardown = () => snfTeardownCardObservers(ctx);
   }
 
   function closeImageModal() {
