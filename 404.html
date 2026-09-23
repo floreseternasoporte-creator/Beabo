@@ -16013,8 +16013,14 @@ function saveNote() {
         pendingInitial--;
         if (!alive()) { maybeShowEmptyState(); return; }
         if (!note) { maybeShowEmptyState(); return; }
-        if (initialValueSeen) {
-          // Carga inicial ya completada: montar directamente (posts nuevos en vivo).
+        // FIX carrera del batch inicial: si el 'value' ya llegó pero el batch
+        // aún no se montó (se espera a los prepareFeedNote en vuelo), el post
+        // pertenece a la carga inicial y entra al batch para el ranking V2.
+        // Solo los posts que llegan con el batch ya montado van por la ruta
+        // "en vivo". Antes, los que resolvían después del 'value' se montaban
+        // sin ranking por la ruta en vivo.
+        if (initialValueSeen && _initialBatchMounted) {
+          // Carga inicial ya montada: montar directamente (posts nuevos en vivo).
           if (!updateFeedPostCounters(note)) mountFeedPost(note);
           else { clearEmptyState(); adoptLiveCard(note.id); }
         } else {
@@ -16067,8 +16073,29 @@ function saveNote() {
       _feedSnapshotRaw.clear();
 
       // DrexRecEngine V2: ordenar el batch inicial con el motor completo.
-      if (alive() && _initialBatch.length > 1 && !_initialBatchMounted) {
-        _initialBatchMounted = true;
+      // FIX carrera: el 'value' puede llegar antes de que terminen los
+      // prepareFeedNote en vuelo. Se espera (con cota de 8 s) a que
+      // pendingInitial llegue a 0 para que el ranking vea el batch completo.
+      const _batchWaitStart = Date.now();
+      const _waitAndMountInitial = () => {
+        if (!alive()) return;
+        if (pendingInitial > 0 && Date.now() - _batchWaitStart < 8000) {
+          setTimeout(_waitAndMountInitial, 60);
+          return;
+        }
+        _mountInitialBatch();
+        maybeShowEmptyState();
+        setupOlderSentinel();
+      };
+      _waitAndMountInitial();
+    });
+
+    // Monta el batch inicial (una sola vez): lo ordena con el motor V2 y
+    // pinta las tarjetas en ese orden.
+    function _mountInitialBatch() {
+      if (!alive() || _initialBatchMounted) return;
+      _initialBatchMounted = true;
+      if (_initialBatch.length > 1) {
         try {
           if (window.DrexRecEngine && typeof window.DrexRecEngine.rankFeed === 'function') {
             var _rankCtx = {};
@@ -16082,24 +16109,14 @@ function saveNote() {
             }
           }
         } catch (_) {}
-        // Montar los posts en el orden del ranking.
-        _initialBatch.forEach(function (note) {
-          if (!updateFeedPostCounters(note)) mountFeedPost(note);
-          else { clearEmptyState(); adoptLiveCard(note.id); }
-        });
-        _initialBatch = [];
-      } else if (alive() && _initialBatch.length && !_initialBatchMounted) {
-        _initialBatchMounted = true;
-        _initialBatch.forEach(function (note) {
-          if (!updateFeedPostCounters(note)) mountFeedPost(note);
-          else { clearEmptyState(); adoptLiveCard(note.id); }
-        });
-        _initialBatch = [];
       }
-
-      maybeShowEmptyState();
-      setupOlderSentinel();
-    });
+      // Montar los posts (en el orden del ranking, si se aplicó).
+      _initialBatch.forEach(function (note) {
+        if (!updateFeedPostCounters(note)) mountFeedPost(note);
+        else { clearEmptyState(); adoptLiveCard(note.id); }
+      });
+      _initialBatch = [];
+    }
 
     function setOlderLoading(on) {
       if (!olderSentinel) return;
