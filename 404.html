@@ -85,6 +85,7 @@
     })();
   </script>
 <script src="drex-cloud.js"></script>
+<script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
        abierto) y se oculta al recuperarse. Lenguaje simple, sin tecnicismos;
@@ -13599,6 +13600,8 @@ function saveNote() {
     if (_feedImageModalDetailsOpen) return;
     const noteId = _feedImageModalNoteId;
     if (!noteId) return;
+    // DrexRecEngine V2: entrenar con señal de "click en media".
+    try { if (typeof drexRecTrainById === 'function') drexRecTrainById(noteId, DREX_REC.weights.mediaClick || 0.8); } catch (_) {}
     const wrap = document.getElementById('image-modal-details');
     const panel = document.getElementById('image-modal-details-panel');
     const content = document.getElementById('image-modal-details-content');
@@ -14776,6 +14779,9 @@ function saveNote() {
   let _drexRecSaveTimer = null;
   // Metadatos de posts montados (para entrenar con interacciones futuras).
   let _drexNoteMeta = {};
+  // DrexRecEngine V2: exponer el cache de metadatos para que el motor
+  // externo (drex-rec-engine.js) pueda acceder sin lecturas DB extra.
+  try { window._drexNoteMeta = _drexNoteMeta; } catch (_) {}
   function _drexRecEmptyProfile() {
     return { v: 1, updatedAt: Date.now(), flairs: {}, authors: {}, keywords: {} };
   }
@@ -15101,6 +15107,10 @@ function saveNote() {
 
     Promise.all([userVotesPromise, userEcosPromise, followingPromise, recProfilePromise]).then(([userVotes, userEcos, followingMap]) => {
       _subscribeNotesFeed(feedContainer, user, userVotes, userEcos, feedMode, followingMap);
+      // DrexRecEngine V2: reordenar "Para ti" cuando el perfil V2 ya está cargado.
+      if (feedMode === 'foryou' && typeof drexRecResortForYou === 'function') {
+        setTimeout(() => { try { drexRecResortForYou(); } catch (_) {} }, 1200);
+      }
     });
   }
 
@@ -15960,6 +15970,11 @@ function saveNote() {
       }
     }
 
+    // DrexRecEngine V2: buffer para carga inicial — acumular posts y
+    // ordenarlos con el motor completo antes de montarlos.
+    var _initialBatch = [];
+    var _initialBatchMounted = false;
+
     notesRef.on('child_added', (snap) => {
       if (!alive()) return;
       // Acumular crudo para el snapshot de DrexCache (solo carga inicial).
@@ -15971,8 +15986,14 @@ function saveNote() {
         pendingInitial--;
         if (!alive()) { maybeShowEmptyState(); return; }
         if (!note) { maybeShowEmptyState(); return; }
-        if (!updateFeedPostCounters(note)) mountFeedPost(note);
-        else { clearEmptyState(); adoptLiveCard(note.id); }
+        if (initialValueSeen) {
+          // Carga inicial ya completada: montar directamente (posts nuevos en vivo).
+          if (!updateFeedPostCounters(note)) mountFeedPost(note);
+          else { clearEmptyState(); adoptLiveCard(note.id); }
+        } else {
+          // Aún en carga inicial: acumular para ordenar con el motor V2.
+          _initialBatch.push(note);
+        }
         maybeShowEmptyState();
       });
     });
@@ -16017,6 +16038,38 @@ function saveNote() {
         }
       } catch (_) {}
       _feedSnapshotRaw.clear();
+
+      // DrexRecEngine V2: ordenar el batch inicial con el motor completo.
+      if (alive() && _initialBatch.length > 1 && !_initialBatchMounted) {
+        _initialBatchMounted = true;
+        try {
+          if (window.DrexRecEngine && typeof window.DrexRecEngine.rankFeed === 'function') {
+            var _rankCtx = {};
+            var _p = window.DrexRecEngine.ProfileStore ? window.DrexRecEngine.ProfileStore.get() : null;
+            if (_p) _rankCtx.profile = _p;
+            if (followingMap) _rankCtx.followingMap = followingMap;
+            _rankCtx.feedMode = feedMode;
+            var _ranked = window.DrexRecEngine.rankFeed(_initialBatch, _rankCtx);
+            if (_ranked && _ranked.length === _initialBatch.length) {
+              _initialBatch = _ranked;
+            }
+          }
+        } catch (_) {}
+        // Montar los posts en el orden del ranking.
+        _initialBatch.forEach(function (note) {
+          if (!updateFeedPostCounters(note)) mountFeedPost(note);
+          else { clearEmptyState(); adoptLiveCard(note.id); }
+        });
+        _initialBatch = [];
+      } else if (alive() && _initialBatch.length && !_initialBatchMounted) {
+        _initialBatchMounted = true;
+        _initialBatch.forEach(function (note) {
+          if (!updateFeedPostCounters(note)) mountFeedPost(note);
+          else { clearEmptyState(); adoptLiveCard(note.id); }
+        });
+        _initialBatch = [];
+      }
+
       maybeShowEmptyState();
       setupOlderSentinel();
     });
@@ -16969,6 +17022,8 @@ function saveNote() {
 
   function hidePostForUser() {
     if (!currentPostOptionsNoteId) return;
+    // DrexRecEngine V2: entrenar con señal negativa de "ocultar".
+    try { if (typeof drexRecTrainById === 'function') drexRecTrainById(currentPostOptionsNoteId, DREX_REC.weights.hide || -5); } catch (_) {}
     const hiddenPosts = getHiddenPosts();
     if (!hiddenPosts.includes(currentPostOptionsNoteId)) {
       hiddenPosts.push(currentPostOptionsNoteId);
@@ -18844,6 +18899,8 @@ function saveNote() {
   };
 
   function openCommentsView(noteId) {
+    // DrexRecEngine V2: entrenar con señal de "abrir comentarios".
+    try { if (typeof drexRecTrainById === 'function') drexRecTrainById(noteId, DREX_REC.weights.openComments || 0.7); } catch (_) {}
     currentPostId = noteId;
     const user = DrexCloud.auth().currentUser;
     const commentsView = document.getElementById('comments-view');
