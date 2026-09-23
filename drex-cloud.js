@@ -959,6 +959,21 @@ function withCredRetry(opFn) {
   // rango por abajo. Ante cualquier anomalia en el formato, se usa la
   // cota original sin solape (comportamiento previo).
   var DELTA_OVERLAP_MS = 15000;
+  // RE-BASELINE PERIODICO ANTI CLOCK-SKEW (ciclo 12, P3): el solape de 15s
+  // (deltaFromSk) cubre skew y retrasos de hasta 15s, pero una escritura con
+  // timestamp >15s en el pasado que aterriza DESPUES de que el watermark
+  // (_deltaSk) avanzo es invisible para el rango delta para siempre (reloj
+  // del escritor muy atrasado, escritura retrasada por la cola offline que
+  // se vacia al volver la red, etc.). Cada DELTA_FULL_EVERY ciclos delta
+  // exitosos, el grupo hace UNA lectura completa en vez del rango: el dedup
+  // de dispatchSnapshot (l.kids) suprime re-disparos de lo ya visto, la poda
+  // de la lectura completa mantiene l.kids consistente con lo que existe de
+  // verdad, y el watermark se re-fija al maximo de la lectura completa.
+  // Costo acotado: la bandeja de senales es pequena y el chat de fiesta va
+  // con limitToLast(50) (lectura acotada de 3 segmentos, ~3-5 RCU). El eco
+  // local (pollGroup con opts.local) NUNCA fuerza re-baseline: va al ritmo
+  // del usuario y su lectura ya incluye la escritura propia.
+  var DELTA_FULL_EVERY = 40; // ciclos delta exitosos entre re-baselines
   function pushIdTime(id) {
     var t = 0;
     for (var i = 0; i < 8; i++) {
@@ -2291,7 +2306,14 @@ function withCredRetry(opFn) {
     // DELTA-SYNC (parche parcial): si todos los oyentes del grupo son
     // child_added con delta habilitado y ya tienen línea base, se pide solo
     // lo nuevo (sk > último visto) en vez de re-descargar todo.
-    var useDelta = ls.length > 0 && ls.every(function (l) {
+    // RE-BASELINE (ciclo 12, P3; ver DELTA_FULL_EVERY): si ya se cumplieron
+    // los ciclos delta exitosos, este ciclo lee completo aunque todos tengan
+    // watermark. El contador solo avanza en ciclos delta EXITOSOS y se
+    // reinicia con cada lectura completa, asi un fallo no salta el
+    // re-baseline: queda pendiente para el proximo ciclo. No aplica al eco
+    // local (st es undefined ahi): ese va al ritmo del usuario.
+    var dueFull = !!st && (st.deltaCycles || 0) >= DELTA_FULL_EVERY;
+    var useDelta = !dueFull && ls.length > 0 && ls.every(function (l) {
       return l.eventType === 'child_added' && l._delta === true && typeof l._deltaSk === 'string';
     });
     var readP = useDelta
@@ -2303,6 +2325,12 @@ function withCredRetry(opFn) {
         });
     readP.then(function (r) {
       pollGroupSucceeded(key);
+      // Contador del re-baseline (ciclo 12, P3): avanza solo en ciclos delta
+      // exitosos; una lectura completa (forzada o no) lo reinicia.
+      // pollGroupSucceeded no lo toca. En el eco local (st undefined) no se
+      // cuenta. Un ciclo fallido no lo avanza ni lo reinicia: el re-baseline
+      // pendiente sigue pendiente.
+      if (st) st.deltaCycles = r.delta ? (st.deltaCycles || 0) + 1 : 0;
       ls.forEach(function (l) {
         dispatchSnapshot(l, r.snap, r.delta);
         if (l._delta === true) {
@@ -5363,6 +5391,8 @@ function withCredRetry(opFn) {
         invalidateBoundedPrefixCache: invalidateBoundedPrefixCache,
         readLeaves: readLeaves,
         DELTA_OVERLAP_MS: DELTA_OVERLAP_MS,
+        // [RE-BASELINE] ciclos delta exitosos entre lecturas completas (2026-09-23)
+        DELTA_FULL_EVERY: DELTA_FULL_EVERY,
         mapAuthError: mapAuthError,
         DataSnapshot: DataSnapshot,
         Ref: Ref,
@@ -5396,6 +5426,12 @@ function withCredRetry(opFn) {
           if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         },
         listenerCount: function () { return listeners.length; },
+        // [RE-BASELINE] solo pruebas (ciclo 12): ciclos delta exitosos
+        // acumulados por grupo (pollGroupKey). Sin efecto en la app.
+        deltaCyclesForTest: function (groupKey) {
+          var s = pollCircuit[groupKey];
+          return s ? (s.deltaCycles || 0) : 0;
+        },
         // [SESIONES] Ing. #5: superficie de pruebas del registro de sesiones.
         drexSessions: {
           register: drexSessionsRegister,
