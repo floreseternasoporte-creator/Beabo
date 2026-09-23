@@ -16708,8 +16708,8 @@ function saveNote() {
       return;
     }
     // A9: mantener followingCount (antes nunca se actualizaba).
-    DrexCloud.database().ref('users/' + targetUserId + '/followersCount').transaction(c => (c || 0) + 1);
-    DrexCloud.database().ref('users/' + currentUser.uid + '/followingCount').transaction(c => (c || 0) + 1);
+    DrexCloud.database().ref('users/' + targetUserId + '/followersCount').transactionBlind(c => (c || 0) + 1);
+    DrexCloud.database().ref('users/' + currentUser.uid + '/followingCount').transactionBlind(c => (c || 0) + 1);
     if (typeof addNotification === 'function') {
       addNotification(targetUserId, `${senderName} te comenzó a seguir`, 'follow', { actionType: 'profile', actionId: currentUser.uid });
     }
@@ -16730,8 +16730,8 @@ function saveNote() {
     if (accept) {
       await DrexCloud.database().ref('followers/' + user.uid + '/' + requesterUid).set({ followedAt: Date.now() });
       await DrexCloud.database().ref('following/' + requesterUid + '/' + user.uid).set({ followedAt: Date.now() });
-      DrexCloud.database().ref('users/' + user.uid + '/followersCount').transaction(c => (c || 0) + 1);
-      DrexCloud.database().ref('users/' + requesterUid + '/followingCount').transaction(c => (c || 0) + 1);
+      DrexCloud.database().ref('users/' + user.uid + '/followersCount').transactionBlind(c => (c || 0) + 1);
+      DrexCloud.database().ref('users/' + requesterUid + '/followingCount').transactionBlind(c => (c || 0) + 1);
       if (typeof addNotification === 'function') {
         const uSnap = await DrexCloud.database().ref('users/' + user.uid).once('value');
         const myName = uSnap.val()?.username || 'Alguien';
@@ -17382,8 +17382,8 @@ function saveNote() {
             showMiniToast(appT('No se pudo dejar de seguir. Intenta de nuevo.'));
             return;
           }
-          DrexCloud.database().ref('users/' + targetId + '/followersCount').transaction(c => Math.max(0, (c || 1) - 1));
-          DrexCloud.database().ref('users/' + user.uid + '/followingCount').transaction(c => Math.max(0, (c || 1) - 1));
+          DrexCloud.database().ref('users/' + targetId + '/followersCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
+          DrexCloud.database().ref('users/' + user.uid + '/followingCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
           _invalidatePrivacyCaches(targetId);
           showMiniToast(appT('Dejaste de seguir a @') + (currentPostOptionsAuthorData?.username || 'usuario'));
           closeUserActionsSheet();
@@ -17450,12 +17450,12 @@ function saveNote() {
       updates['followRequests/' + myUid + '/' + targetId] = null;
       await db.ref().update(updates);
       if (iFollowThem) {
-        db.ref('users/' + targetId + '/followersCount').transaction(c => Math.max(0, (c || 1) - 1));
-        db.ref('users/' + myUid + '/followingCount').transaction(c => Math.max(0, (c || 1) - 1));
+        db.ref('users/' + targetId + '/followersCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
+        db.ref('users/' + myUid + '/followingCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
       }
       if (theyFollowMe) {
-        db.ref('users/' + myUid + '/followersCount').transaction(c => Math.max(0, (c || 1) - 1));
-        db.ref('users/' + targetId + '/followingCount').transaction(c => Math.max(0, (c || 1) - 1));
+        db.ref('users/' + myUid + '/followersCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
+        db.ref('users/' + targetId + '/followingCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
       }
       if (typeof _invalidatePrivacyCaches === 'function') {
         _invalidatePrivacyCaches(targetId);
@@ -18558,7 +18558,7 @@ function saveNote() {
         postEcoRef.remove(),
         legacyUserEcoRef.remove(),
         legacyPostEcoRef.remove(),
-        noteRef.transaction(bumpEcoCount(-1))
+        noteRef.transactionBlind(bumpEcoCount(-1))
         ]);
         refreshHistorialIfVisible();
         if (typeof refreshProfileEcosIfVisible === 'function') refreshProfileEcosIfVisible();
@@ -18578,7 +18578,7 @@ function saveNote() {
         postEcoRef.set(payload),
         legacyUserEcoRef.remove(),
         legacyPostEcoRef.remove(),
-        noteRef.transaction(bumpEcoCount(1))
+        noteRef.transactionBlind(bumpEcoCount(1))
         ]);
 
         // Drex Rec: el eco es una señal fuerte de interés.
@@ -20347,7 +20347,7 @@ function saveNote() {
     if (!noteId || !delta) return;
     try {
       DrexCloud.database().ref('communityNotes/' + noteId + '/commentsCount')
-        .transaction(function (cur) {
+        .transactionBlind(function (cur) {
           const next = (Number(cur) || 0) + delta;
           return next < 0 ? 0 : next;
         })
@@ -20471,7 +20471,7 @@ function saveNote() {
     const commentRef = DrexCloud.database().ref('postComments/' + noteId + '/' + commentPath);
     const editedAt = Date.now();
 
-    return commentRef.transaction(comment => {
+    return commentRef.transactionBlind(comment => {
       if (!comment) return undefined;
       if (comment.authorId !== user.uid) return;
       comment.content = cleanedContent;
@@ -22693,7 +22693,7 @@ function saveNote() {
   function bumpNotifUnread(userId) {
     if (!userId) return;
     try {
-      DrexCloud.database().ref('notifUnread/' + userId).transaction(cur => {
+      DrexCloud.database().ref('notifUnread/' + userId).transactionBlind(cur => {
         const c = Number((cur && cur.c) || 0);
         const r = Number((cur && cur.r) || 0);
         return { c: c + 1, r: r };
@@ -22717,7 +22717,7 @@ function saveNote() {
         paintNotifUnreadBadge(0);
       }
       DrexCloud.database().ref('notifUnread/' + userId)
-        .transaction(() => ({ c: 0, r: now })).catch(() => {});
+        .transactionBlind(() => ({ c: 0, r: now })).catch(() => {});
     } catch (_) {}
   }
 
@@ -22728,7 +22728,7 @@ function saveNote() {
   function decrementNotifUnread(userId, k) {
     if (!userId || !(k > 0)) return;
     try {
-      DrexCloud.database().ref('notifUnread/' + userId).transaction(cur => {
+      DrexCloud.database().ref('notifUnread/' + userId).transactionBlind(cur => {
         const c = Number((cur && cur.c) || 0);
         const r = Number((cur && cur.r) || 0);
         return { c: Math.max(0, c - k), r: r };
@@ -22985,7 +22985,7 @@ function saveNote() {
     memberUids.forEach(uid => {
       if (!uid || uid === senderUid) return;
       try {
-        DrexCloud.database().ref('chatUnread/' + uid + '/' + conversationId).transaction(cur => {
+        DrexCloud.database().ref('chatUnread/' + uid + '/' + conversationId).transactionBlind(cur => {
           const r = Number((cur && cur.r) || 0);
           if (!(msgTs > r)) return undefined; // mensaje anterior a la última lectura: aborta sin escribir
           return { c: Number((cur && cur.c) || 0) + 1, r: r };
@@ -23006,7 +23006,7 @@ function saveNote() {
       // confirma en <=1 ciclo de polling (3 s).
       if (chatUnreadAggActive) chatUnreadAggCache[conversationId] = { c: 0, r: now }; // optimista
       DrexCloud.database().ref('chatUnread/' + user.uid + '/' + conversationId)
-        .transaction(() => ({ c: 0, r: now })).catch(() => {});
+        .transactionBlind(() => ({ c: 0, r: now })).catch(() => {});
     } catch (_) {}
     updateChatUnreadBadge();
   }
@@ -24691,7 +24691,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       // un fallo parcial (la reserva quedó hecha pero el perfil no se guardó):
       // se reutiliza en vez de reportarlo como "tomado".
       const claim = await DrexCloud.database().ref('usernames/' + username)
-        .transaction(cur => (cur === null || cur === user.uid ? user.uid : undefined));
+        .transactionBlind(cur => (cur === null || cur === user.uid ? user.uid : undefined));
       if (!claim.committed) {
         setUsernameUI('taken', '@' + username + ' ya está en uso. Prueba otro.');
         usernameIsAvailable = false;
@@ -28717,7 +28717,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
           // A10: reserva atómica del nuevo username (igual que en el registro):
           // si ya está tomado por otro usuario, se rechaza el cambio.
           const claim = await DrexCloud.database().ref('usernames/' + nextUsername)
-            .transaction(cur => (cur === null || cur === user.uid ? user.uid : undefined));
+            .transactionBlind(cur => (cur === null || cur === user.uid ? user.uid : undefined));
           if (!claim.committed) {
             showMiniToast(appT("Ese nombre de usuario ya está en uso. Prueba otro."));
             return false;
@@ -29655,7 +29655,7 @@ let chatTypingListener = null;
         try {
           if (chatUnreadAggActive) chatUnreadAggCache[convoId] = { c: 0, r: now }; // optimista
           DrexCloud.database().ref('chatUnread/' + user.uid + '/' + convoId)
-            .transaction(() => ({ c: 0, r: now })).catch(() => {});
+            .transactionBlind(() => ({ c: 0, r: now })).catch(() => {});
         } catch (_) {}
       });
       updateChatUnreadBadge();
@@ -30592,7 +30592,7 @@ let chatTypingListener = null;
       localStorage.removeItem(getChatLastReadKey(user.uid, convoId));
       // Opción (a) del diseño: c=1 conservando r (aproxima "hay algo sin leer").
       if (chatUnreadAggActive) chatUnreadAggCache[convoId] = { c: 1, r: Number((chatUnreadAggCache[convoId] || {}).r) || 0 };
-      DrexCloud.database().ref('chatUnread/' + user.uid + '/' + convoId).transaction(cur => ({
+      DrexCloud.database().ref('chatUnread/' + user.uid + '/' + convoId).transactionBlind(cur => ({
         c: 1,
         r: Number((cur && cur.r) || 0)
       })).catch(() => {});
@@ -33070,7 +33070,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       // El formato viejo "<correolocal>_<uid4>" exponia el correo de registro
       // en el perfil publico (ej. "zam.privacy_e12c"). Ahora es neutro.
       const fallbackUsername = _neutralFallbackUsername(user);
-      return ref.transaction(current => {
+      return ref.transactionBlind(current => {
         const cur = current || {};
         if (cur.username) return; // abortar: ya hay username real, no tocar
         cur.email = cur.email || user.email || '';
@@ -33110,7 +33110,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       if (_isRealPhotoUrl(data.profileImage)) return null; // tiene foto: nada que hacer
       const providerPhoto = (user.photoURL && String(user.photoURL).trim()) || '';
       if (_isRealPhotoUrl(providerPhoto)) {
-        return ref.transaction(cur => {
+        return ref.transactionBlind(cur => {
           cur = cur || {};
           if (_isRealPhotoUrl(cur.profileImage)) return; // ya la recuperaron
           cur.profileImage = providerPhoto;
@@ -33128,7 +33128,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
             }
           });
           if (!best) return null;
-          return ref.transaction(cur => {
+          return ref.transactionBlind(cur => {
             cur = cur || {};
             if (_isRealPhotoUrl(cur.profileImage)) return;
             cur.profileImage = best;
@@ -33219,7 +33219,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         return DrexCloud.database().ref('usernameByUid/' + user.uid).once('value').then(revSnap => {
           const realName = revSnap.val() || null;
           if (!realName || realName === currentName.toLowerCase()) return null; // irrecuperable: se deja el temporal
-          return ref.transaction(cur => {
+          return ref.transactionBlind(cur => {
             cur = cur || {};
             if (cur.username !== currentName) return; // ya cambió: no pisar
             cur.username = realName;
@@ -33251,7 +33251,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       return DrexCloud.database().ref('usernames/' + current).once('value').then(idxSnap => {
         if (idxSnap.val() === user.uid) return null; // reclamado de verdad: no tocar
         if (idxSnap.exists()) return null; // de otro usuario: no tocar
-        return ref.transaction(cur => {
+        return ref.transactionBlind(cur => {
           cur = cur || {};
           if (String(cur.username || '').toLowerCase() !== current) return; // cambio: no pisar
           cur.usernameIsFallback = true;
@@ -34909,7 +34909,7 @@ function renderAccountsList(accounts) {
           }
           const tRes = await authorFollowersRef.transaction(current => Math.max(0, (current || 1) - 1)).catch(() => null);
           // A9: mantener followingCount propio.
-          DrexCloud.database().ref('users/' + currentUser.uid + '/followingCount').transaction(c => Math.max(0, (c || 1) - 1));
+          DrexCloud.database().ref('users/' + currentUser.uid + '/followingCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
           const countEl = document.getElementById('author-followers');
           if (countEl && tRes && tRes.committed) countEl.textContent = formatNumber(tRes.snapshot.val() || 0);
           _invalidatePrivacyCaches(currentViewedAuthorId);
@@ -41011,7 +41011,7 @@ async function submitCorrection() {
       timestamp: Date.now(), helpfulCount: 0
     };
     await corrRef.set(payload);
-    await DrexCloud.database().ref('languageExercises/' + ex.id + '/correctionsCount').transaction(function(c) { return (c || 0) + 1; });
+    await DrexCloud.database().ref('languageExercises/' + ex.id + '/correctionsCount').transactionBlind(function(c) { return (c || 0) + 1; });
     try {
       if (typeof addNotification === 'function' && ex.authorId !== me.uid) {
         const lang = practicarLangByCode(ex.language);
@@ -43727,8 +43727,8 @@ window.musicToggleFollowArtist = async function (artistId) {
     if (snap.exists()) {
       await fRef.remove();
       await db.ref('following/' + me.uid + '/' + artistId).remove().catch(() => {});
-      db.ref('users/' + artistId + '/followersCount').transaction(c => Math.max(0, (c || 1) - 1)).catch(() => {});
-      db.ref('users/' + me.uid + '/followingCount').transaction(c => Math.max(0, (c || 1) - 1)).catch(() => {});
+      db.ref('users/' + artistId + '/followersCount').transactionBlind(c => Math.max(0, (c || 1) - 1)).catch(() => {});
+      db.ref('users/' + me.uid + '/followingCount').transactionBlind(c => Math.max(0, (c || 1) - 1)).catch(() => {});
       musicPaintFollowButtons(false);
       if (typeof showMiniToast === 'function') showMiniToast(appT('Dejaste de seguir al artista'));
     } else {
@@ -43746,8 +43746,8 @@ window.musicToggleFollowArtist = async function (artistId) {
       } else {
         await fRef.set({ followedAt: Date.now() });
         await db.ref('following/' + me.uid + '/' + artistId).set({ followedAt: Date.now() }).catch(() => {});
-        db.ref('users/' + artistId + '/followersCount').transaction(c => (c || 0) + 1).catch(() => {});
-        db.ref('users/' + me.uid + '/followingCount').transaction(c => (c || 0) + 1).catch(() => {});
+        db.ref('users/' + artistId + '/followersCount').transactionBlind(c => (c || 0) + 1).catch(() => {});
+        db.ref('users/' + me.uid + '/followingCount').transactionBlind(c => (c || 0) + 1).catch(() => {});
         if (typeof addNotification === 'function') addNotification(artistId, `${myName} te comenzó a seguir`, 'follow', { actionType: 'profile', actionId: me.uid });
         musicPaintFollowButtons(true);
         if (typeof showMiniToast === 'function') showMiniToast(appT('Ahora sigues a este artista'));
@@ -44791,8 +44791,8 @@ function musicStartTrack(t) {
     audio.src = url;
     audio.play().catch(() => {});
     // Contar reproducción (global + semanal para el Top Drex)
-    try { musicDb().ref('musicTracks/' + t.id + '/plays').transaction(c => (c || 0) + 1); } catch (_) {}
-    try { musicDb().ref('musicWeekly/' + musicWeekId() + '/' + t.id + '/plays').transaction(c => ((c | 0) || 0) + 1); } catch (_) {}
+    try { musicDb().ref('musicTracks/' + t.id + '/plays').transactionBlind(c => (c || 0) + 1); } catch (_) {}
+    try { musicDb().ref('musicWeekly/' + musicWeekId() + '/' + t.id + '/plays').transactionBlind(c => ((c | 0) || 0) + 1); } catch (_) {}
   }).catch(() => {
     if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo cargar el audio.'));
     musicSyncPlayUI();
@@ -45415,8 +45415,8 @@ function musicBeginCrossfade(ni, fade) {
         try { fadeEl.volume = 1; } catch (_) {}
         musicXfading = false;
         try { musicSongsSinceAd++; } catch (_) {}
-        try { musicDb().ref('musicTracks/' + next.id + '/plays').transaction(c => (c || 0) + 1); } catch (_) {}
-        try { musicDb().ref('musicWeekly/' + musicWeekId() + '/' + next.id + '/plays').transaction(c => ((c | 0) || 0) + 1); } catch (_) {}
+        try { musicDb().ref('musicTracks/' + next.id + '/plays').transactionBlind(c => (c || 0) + 1); } catch (_) {}
+        try { musicDb().ref('musicWeekly/' + musicWeekId() + '/' + next.id + '/plays').transactionBlind(c => ((c | 0) || 0) + 1); } catch (_) {}
         musicSyncPlayUI();
         renderMusicQueueList();
       }
@@ -45543,10 +45543,10 @@ window.voteMusicTrack = function (voteType) {
       try {
         const wref = musicDb().ref('musicWeekly/' + musicWeekId() + '/' + trackId);
         const _wCatch = p => { try { p.catch(() => {}); } catch (_) {} };
-        if (serverVote === 'up') _wCatch(wref.child('up').transaction(c => Math.max(0, ((c | 0) || 0) - 1)));
-        if (serverVote === 'down') _wCatch(wref.child('down').transaction(c => Math.max(0, ((c | 0) || 0) - 1)));
-        if (newVote === 'up') _wCatch(wref.child('up').transaction(c => ((c | 0) || 0) + 1));
-        if (newVote === 'down') _wCatch(wref.child('down').transaction(c => ((c | 0) || 0) + 1));
+        if (serverVote === 'up') _wCatch(wref.child('up').transactionBlind(c => Math.max(0, ((c | 0) || 0) - 1)));
+        if (serverVote === 'down') _wCatch(wref.child('down').transactionBlind(c => Math.max(0, ((c | 0) || 0) - 1)));
+        if (newVote === 'up') _wCatch(wref.child('up').transactionBlind(c => ((c | 0) || 0) + 1));
+        if (newVote === 'down') _wCatch(wref.child('down').transactionBlind(c => ((c | 0) || 0) + 1));
       } catch (_) {}
       if (newVote === null) { try { userVoteRef.remove(); } catch (_) {} }
       else { try { userVoteRef.set(newVote); } catch (_) {} }
