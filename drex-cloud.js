@@ -2525,25 +2525,45 @@ function withCredRetry(opFn) {
     return p;
   };
 
-  // onDisconnect best-effort: intenta la escritura al ocultar/cerrar la página
+  // onDisconnect best-effort: intenta la escritura al ocultar/cerrar la página.
+  // FIX: set/update/remove devuelven un handle cancelable. Antes cada arm()
+  // añadía listeners permanentes a pagehide/visibilitychange que jamás se
+  // quitaban (fuga: cada entrada a fiesta o ráfaga de typing sumaba 2), y
+  // cancel() era no-op. Ahora el handle cancela con active=false +
+  // removeEventListener; el llamador debe guardarlo y cancelarlo al salir.
   Ref.prototype.onDisconnect = function () {
     var ref = this;
     function arm(fn) {
-      function handler() { try { var r = fn(); if (r && r.catch) r.catch(function () {}); } catch (e) {} }
+      var active = true;
+      function handler() {
+        if (!active) return;
+        try { var r = fn(); if (r && r.catch) r.catch(function () {}); } catch (e) {}
+      }
+      function onVis() { if (global.document.visibilityState === 'hidden') handler(); }
       if (typeof global.addEventListener === 'function') {
         global.addEventListener('pagehide', handler);
         if (typeof global.document !== 'undefined' && global.document.addEventListener) {
-          global.document.addEventListener('visibilitychange', function () {
-            if (global.document.visibilityState === 'hidden') handler();
-          });
+          global.document.addEventListener('visibilitychange', onVis);
         }
       }
+      return {
+        cancel: function () {
+          active = false;
+          try {
+            if (typeof global.removeEventListener === 'function') global.removeEventListener('pagehide', handler);
+            if (typeof global.document !== 'undefined' && global.document.removeEventListener) {
+              global.document.removeEventListener('visibilitychange', onVis);
+            }
+          } catch (e) {}
+          return Promise.resolve();
+        }
+      };
     }
     return {
-      set: function (v) { arm(function () { return ref.set(v); }); return Promise.resolve(); },
-      update: function (o) { arm(function () { return ref.update(o); }); return Promise.resolve(); },
-      remove: function () { arm(function () { return ref.remove(); }); return Promise.resolve(); },
-      cancel: function () { return Promise.resolve(); } // documentado: no-op
+      set: function (v) { return arm(function () { return ref.set(v); }); },
+      update: function (o) { return arm(function () { return ref.update(o); }); },
+      remove: function () { return arm(function () { return ref.remove(); }); },
+      cancel: function () { return Promise.resolve(); } // sin handle previo: no-op
     };
   };
 
