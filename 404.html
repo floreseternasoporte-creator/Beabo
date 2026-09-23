@@ -10443,7 +10443,12 @@ function saveNote() {
 
   function _paintProfileLoadMore() {
     const full = _profilePostsGridN >= _profilePostsPage && _profilePostsPage > 0;
-    const visible = full && (_profilePostsTotal === null || _profilePostsPage < _profilePostsTotal);
+    // C11-1: "<=" en vez de "<". Con total exacto == página, un post nuevo
+    // mantiene la página llena (n == page) y el total ya no se re-mide: con
+    // "<" el botón se ocultaba y el post quedaba inalcanzable. Con "<=" el
+    // botón sigue visible; al pulsarlo la página crece y el total se re-mide
+    // exacto (si no había más posts, el botón se auto-oculta: sin bucle).
+    const visible = full && (_profilePostsTotal === null || _profilePostsPage <= _profilePostsTotal);
     ['profile-load-more-area', 'profile-load-more-area-desktop'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.classList.toggle('hidden', !visible);
@@ -25621,6 +25626,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       clearNotificationsBadge();
       clearChatUnreadBadge();
       clearUserStats();
+      clearChatConversationCache(); // C11-2: sin fugas entre cuentas
       // FIX: el motor de recomendaciones no debe conservar ni persistir el
       // perfil de la cuenta que cerró sesión (evita contaminar la próxima
       // cuenta con gustos ajenos si una lectura quedó en vuelo).
@@ -29260,6 +29266,18 @@ const CHAT_MESSAGES_LIMIT = 80;
 const CHAT_USERS_CACHE_KEY = 'drex_chat_users_cache_v1';
 const CHAT_CONVERSATIONS_CACHE_KEY = 'drex_chat_conversations_cache_v1';
 let chatInboxFilter = 'all';
+
+// C11-2: limpieza de la caché de conversaciones al cerrar sesión / cambiar
+// de cuenta. La caché (en memoria + localStorage, clave GLOBAL) sobrevivía
+// al logout: al entrar con otra cuenta, el badge híbrido (sumChatUnreadHybrid)
+// contaba las conversaciones de la cuenta anterior como no leídas (lastRead
+// del uid nuevo = 0 < updatedAt) y el inbox podía pintar la lista ajena
+// hasta 25 s (TTL). Se llama desde la rama de logout de onAuthStateChanged.
+function clearChatConversationCache() {
+  chatConversationCache = { items: [], loadedAt: 0 };
+  allChatConversations = [];
+  try { localStorage.removeItem(CHAT_CONVERSATIONS_CACHE_KEY); } catch (_) {}
+}
 
 let chatTypingTimer = null;
 let chatTypingListener = null;
