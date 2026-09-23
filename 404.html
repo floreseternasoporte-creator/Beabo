@@ -14764,7 +14764,14 @@ function saveNote() {
      Sin perfil (usuario nuevo), el orden equivale a frescura +
      popularidad: un "Para ti" razonable por defecto.
      ================================================================ */
-  const DREX_REC = {
+  // DREX_REC: fuente única de constantes del motor de recomendaciones.
+  // drex-rec-engine.js publica window.DREX_REC (V2, documentado en
+  // docs/RECOMMENDATION-ENGINE.md). Este binding local lo refleja EN VIVO
+  // cuando el motor ya cargó; antes de eso (o si el motor falló) usa los
+  // valores V1 como fallback de arranque. Antes era un objeto estático V1
+  // que ocultaba (shadowing léxico) al window.DREX_REC V2: las lecturas
+  // nunca veían los pesos V2 aunque el motor estuviera activo.
+  const _DREX_REC_V1 = {
     profilePath: 'userInterests',
     decayHalfLifeDays: 14,
     viewMs: 2000,
@@ -14773,6 +14780,20 @@ function saveNote() {
     maxKeywords: 300,
     weights: { view: 0.6, deepView: 1.0, up: 3, down: -3.5, unvote: -1, save: 4, eco: 4, comment: 5, follow: 6, publish: 2 }
   };
+  const DREX_REC = new Proxy(_DREX_REC_V1, {
+    get(t, p) {
+      try {
+        const w = (typeof window !== 'undefined' && window.DREX_REC) || null;
+        if (w && p in w) return w[p];
+      } catch (_) {}
+      return t[p];
+    }
+  });
+  // Contador best-effort para catches que antes tragaban el error en silencio
+  // (auditoría arquitectura P0). Nunca lanza; sin DrexCloud es no-op.
+  function _noteFail(tag) {
+    try { if (window.DrexCloud && DrexCloud.reliability) DrexCloud.reliability.note(tag); } catch (_) {}
+  }
   // Saturación 0..10 (y −10..0 en negativo): ningún gusto domina la frescura.
   function _drexRecSat(v) {
     v = Number(v) || 0;
@@ -15941,7 +15962,7 @@ function saveNote() {
             down: Number(note.downvotes || 0),
             cc: Number(note.commentsCount || 0)
           });
-        } catch (_) {}
+        } catch (_) { _noteFail('feed-meta'); }
         noteElement.innerHTML = buildDrexPostCardHTML(note, {
           user: user,
           userVote: userVotes[note.id] || null,
@@ -15985,7 +16006,7 @@ function saveNote() {
         hydrateSaveButtons(noteElement);
         applyFeedTypeFilter();
         _enhancePostCard(noteElement);
-        try { drexRecObserveCard(noteElement); } catch (_) {}
+        try { drexRecObserveCard(noteElement); } catch (_) { _noteFail('feed-observe'); }
         if (appendAtBottom) {
           noteElement.dataset.feedPaginated = '1';
           try { ensureCardVisibilityObserver().observe(noteElement); } catch (_) {}
@@ -16109,7 +16130,7 @@ function saveNote() {
               _initialBatch = _ranked;
             }
           }
-        } catch (_) {}
+        } catch (_) { _noteFail('feed-rank'); }
       }
       // Montar los posts (en el orden del ranking, si se aplicó).
       _initialBatch.forEach(function (note) {
@@ -17532,7 +17553,7 @@ function saveNote() {
             else if (newVote === 'down') drexRecTrainById(noteId, DREX_REC.weights.down);
             else drexRecTrainById(noteId, DREX_REC.weights.unvote);
           }
-        } catch (_) {}
+        } catch (_) { _noteFail('vote-train'); }
         return { ok: true };
       });
 
