@@ -32693,6 +32693,20 @@ const _startChatListeners = () => {
     if (replyCtx) payload.replyTo = replyCtx;
     if (viewOnceOn) payload.viewOnce = true;
     if (timerSecs > 0) payload.autoDestroyAt = Date.now() + timerSecs * 1000;
+    // C45-C1: el toggle de "Mensajes temporales" de la sala era decorativo:
+    // se guardaba en chatSettings/<roomId>/disappearing pero ningún mensaje
+    // expiraba jamás. Ahora los mensajes enviados con el toggle activo
+    // llevan autoDestroyAt (el mismo pipeline del temporizador del
+    // composer: cuenta regresiva + borrado al expirar). Semántica tipo
+    // WhatsApp: solo aplica a mensajes enviados DESPUÉS de activar el
+    // toggle. Si el temporizador del composer también está puesto, gana el
+    // más cercano.
+    const _disappearMs = (typeof _disappearEnabled !== 'undefined' && _disappearEnabled &&
+      typeof _disappearDurationMs === 'number' && _disappearDurationMs > 0) ? _disappearDurationMs : 0;
+    if (_disappearMs > 0) {
+      const _disappearAt = Date.now() + _disappearMs;
+      if (!payload.autoDestroyAt || _disappearAt < payload.autoDestroyAt) payload.autoDestroyAt = _disappearAt;
+    }
 
     const conversationId = currentChatRoomId;
     const msgRef = DrexCloud.database().ref('conversationMessages/' + conversationId).push();
@@ -42250,6 +42264,13 @@ async function joinFiesta(id, asSpeaker) {
     const snap = await DrexCloud.database().ref('fiestas/' + id).once('value');
     const f = snap.val();
     if (!f || f.status !== 'live') { showMiniToast(appT('Esta fiesta ya terminó.')); return false; }
+    // C45-F1: respetar la lista de expulsados también en la ENTRADA. El gate
+    // solo existía en fiestaReassertMembership (para quien ya estaba
+    // dentro): un expulsado volvía a tocar "Unirse" y reentraba al
+    // instante, dejando la expulsión del anfitrión sin efecto. Ahora la
+    // entrada lee fiestaKicked/<id>/<uid> antes de escribir la membresía.
+    const _kickSnap = await DrexCloud.database().ref('fiestaKicked/' + id + '/' + user.uid).once('value');
+    if (_kickSnap && _kickSnap.exists()) { showMiniToast(appT('Fuiste expulsado de la fiesta.')); return false; }
     const mSnap = await mRef.once('value');
     const members = mSnap.val() || {};
     // FIX 2026-09-21: si quedó un registro atorado de una sesión anterior
