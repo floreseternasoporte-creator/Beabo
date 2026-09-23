@@ -59,8 +59,8 @@
 
   <!-- Font Awesome CDN: no bloqueante (media=print + onload). Los iconos se
        pintan tras cargar el CSS sin demorar el primer pintado. -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha384-t1nt8BQoYMLFN5p42tRAtuAAFQaCQODekUVeKKZrEnEyp4H2R0RHFz0KWpmj7i8g" crossorigin="anonymous" media="print" onload="this.media='all'" />
-  <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha384-t1nt8BQoYMLFN5p42tRAtuAAFQaCQODekUVeKKZrEnEyp4H2R0RHFz0KWpmj7i8g" crossorigin="anonymous" /></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'" />
+  <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" /></noscript>
   <!-- DrexSheet: hoja inferior reutilizable (estilos) -->
   <link rel="stylesheet" href="drex-sheet.css" />
   <!-- AWS: SDK JS v2 (pineado) + Amazon Cognito + adaptador DrexCloud (antes del código de la app) -->
@@ -14709,18 +14709,12 @@ function saveNote() {
   const _quickFollowStateCache = new Map();
   function getQuickFollowButtonMarkup(targetUserId, currentUserId) {
     if (!targetUserId || !currentUserId || targetUserId === currentUserId) return '';
-    // FIX XSS (auditoría seguridad 2026-09-23): el uid llega crudo de la BD
-    // (authorId de comentarios, forjable por el remitente: mismo modelo de
-    // amenaza que el fileId de archivos de chat). Se escapa aquí una sola vez:
-    // cubre el atributo entre comillas dobles (") y el literal JS entre
-    // comillas simples (').
-    const safeTargetUserId = escapeInlineSingleQuote(targetUserId);
     return `
       <button type="button"
         class="quick-follow-btn"
-        data-follow-user-id="${safeTargetUserId}"
+        data-follow-user-id="${targetUserId}"
         data-following="false"
-        onclick="event.stopPropagation(); event.preventDefault(); quickFollowUser('${safeTargetUserId}', this)"
+        onclick="event.stopPropagation(); event.preventDefault(); quickFollowUser('${targetUserId}', this)"
         aria-label="Seguir usuario">
         +
       </button>
@@ -15587,7 +15581,7 @@ function saveNote() {
                 <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-avatar-btn ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}" aria-label="Ver perfil de ${safeAuthorName}">
                   <img id="${authorAvatarId}" data-author-id="${safeAuthorId}" data-author-avatar src="${safeAuthorImage}" alt="${safeAuthorName}" onerror="this.onerror=null;this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='" class="w-full h-full object-cover">
                 </button>
-                ${getQuickFollowButtonMarkup(note.authorId || '', user?.uid || '')}
+                ${getQuickFollowButtonMarkup(safeAuthorId, user?.uid || '')}
               </div>`}
                 <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}"><span data-author-name>${safeAuthorName}</span>${safeAuthorVerifiedIcon}${primaryCollab ? `<span class="font-normal text-[var(--theme-muted)]"> y </span>${escapeHtml(primaryCollab.name || 'Colaborador')}${getVerificationIconByAuthor('', primaryCollab.uid || '', 12)}` : ''}</button>
                 <span class="drex-post-time">· ${formatRelativeTime(safeTimestamp)}</span>
@@ -18288,7 +18282,7 @@ function saveNote() {
     results.innerHTML = users.slice(0, 30).map(u => {
       const checked = _sharePostSelectedUids.has(u.uid);
       return `
-      <button onclick="toggleSharePostRecipient('${escapeInlineSingleQuote(u.uid)}')" class="w-full flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-[#f0f4f9] transition text-left">
+      <button onclick="toggleSharePostRecipient('${u.uid}')" class="w-full flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-[#f0f4f9] transition text-left">
         <img src="${u.image}" class="w-11 h-11 rounded-full object-cover border border-[#e7ecf3]" alt="${escapeHtml(u.name)}">
         <p class="flex-1 font-semibold text-sm text-[#1c2b4a] truncate">${escapeHtml(u.name)}</p>
         <span class="w-5 h-5 rounded-full border-2 ${checked ? 'bg-[var(--drex-brand)] border-[var(--drex-brand)]' : 'border-[#cbd5e1]'} flex items-center justify-center flex-shrink-0">
@@ -22704,11 +22698,14 @@ function saveNote() {
   // Se llama desde updateChatConversationPreview, tras el fan-out de updatedAt.
   // - Al remitente NO se le incrementa: tu propio mensaje no te marca no-leído
   //   (corrige el quirk del diseño §1.4; decisión de producto).
-  // - Grupos con >50 miembros: se degrada a NO incrementar. Costo documentado:
-  //   cada mensaje sumaría 1 transacción (~0.5 RCU de lectura + ~4 WCU por las
-  //   2 hojas {c,r}) por miembro, sobre un fan-out que ya escribe O(miembros)
-  //   hojas en userConversations; sin medición no se justifica otro umbral.
-  //   Para esos miembros el badge cae al fallback legacy (LEGACY-ROLLBACK).
+  // - Grupos con >50 miembros: degradación a BOOLEANA por hoja simple `u`
+  //   (mitigación recomendada en el diseño §3/Paso 1): updateChatConversationPreview
+  //   escribe `chatUnread/<uid>/<convoId>/u = updatedAt` dentro del mismo fan-out
+  //   multi-path (sin transacción; +1 hoja por miembro, sin round-trip extra).
+  //   Badge e inbox la cuentan como ">=1 no leído" si u > r. Costo documentado:
+  //   1 transacción por miembro (~0.5 RCU de lectura + ~4 WCU por las 2 hojas
+  //   {c,r}) sobre un fan-out que ya escribe O(miembros) hojas en
+  //   userConversations no se justifica sin medición.
   // - El agregado es dato DERIVADO: todo va en try/catch; si falla, el mensaje
   //   igual se envía (eventual consistency: el siguiente mensaje lo recupera).
   function bumpChatUnread(conversationId, memberUids, senderUid, msgTs) {
@@ -22820,6 +22817,8 @@ function saveNote() {
       if (!st || typeof st !== 'object') return;
       if (isChatConversationMuted(convoId, uid)) return;
       unread += Number(st.c || 0);
+      // Hoja `u` (grupos >50 miembros): cuenta como 1 no-leído si es posterior a `r`.
+      if (Number(st.u || 0) > Number(st.r || 0)) unread += 1;
     });
     return unread;
   }
@@ -27209,17 +27208,14 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       snap.forEach(child => entries.push({ uid: child.key, ...(child.val() || {}) }));
       entries.reverse();
       entries.forEach(req => {
-        // FIX XSS (auditoría seguridad 2026-09-23): req.uid es la key del nodo
-        // followRequests/<uid>/<requesterUid>, escrita por el solicitante.
-        const safeReqUid = escapeInlineSingleQuote(req.uid);
         const row = document.createElement('div');
         row.id = 'follow-request-row-' + req.uid;
         row.className = 'bg-white border border-[#dce1e5] rounded-2xl p-3 flex items-center gap-3';
         row.innerHTML = `
           <img src="${getSafeMediaUrl(req.requesterImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-11 h-11 rounded-full object-cover border border-[#e7ecf3]">
           <p class="flex-1 font-semibold text-sm text-[#1c2b4a] truncate">${escapeHtml(req.requesterName || 'Usuario')}</p>
-          <button onclick="respondToFollowRequest('${safeReqUid}', true)" class="tap44 px-3 py-1.5 rounded-full bg-[var(--drex-brand)] text-white text-xs font-bold active:opacity-80 transition">Aceptar</button>
-          <button onclick="respondToFollowRequest('${safeReqUid}', false)" class="tap44 px-3 py-1.5 rounded-full bg-[#f0f4f9] text-[#5c6974] text-xs font-bold active:opacity-80 transition">Rechazar</button>
+          <button onclick="respondToFollowRequest('${req.uid}', true)" class="tap44 px-3 py-1.5 rounded-full bg-[var(--drex-brand)] text-white text-xs font-bold active:opacity-80 transition">Aceptar</button>
+          <button onclick="respondToFollowRequest('${req.uid}', false)" class="tap44 px-3 py-1.5 rounded-full bg-[#f0f4f9] text-[#5c6974] text-xs font-bold active:opacity-80 transition">Rechazar</button>
         `;
         list.appendChild(row);
       });
@@ -29706,6 +29702,12 @@ let chatTypingListener = null;
         updates['userConversations/' + uid + '/' + conversationId + '/updatedAt'] = updatedAt;
         const prefix = uid === user.uid ? 'Tú' : (payload.senderName || 'Usuario');
         updates['userConversations/' + uid + '/' + conversationId + '/lastMessage'] = prefix + ': ' + lastMessage;
+        // Degradación booleana (>50 miembros): hoja simple `u` en este mismo
+        // update multi-path, sin transacción (ver bumpChatUnread). El remitente
+        // se excluye igual que en el bump: su propio mensaje no lo marca no-leído.
+        if (memberUids.length > 50 && uid && uid !== user.uid) {
+          updates['chatUnread/' + uid + '/' + conversationId + '/u'] = updatedAt;
+        }
       });
     } else {
       const recipientId = options.recipientId || currentChatRecipient;
@@ -29725,7 +29727,9 @@ let chatTypingListener = null;
     if (!Object.keys(updates).length) return;
     chatConversationCache.loadedAt = 0;
     try { localStorage.removeItem(CHAT_CONVERSATIONS_CACHE_KEY); } catch (_) {}
-    // Agregación server-side de no-leídos: fire-and-forget tras el fan-out.
+    // Agregación server-side de no-leídos: fire-and-forget junto al fan-out
+    // (se invoca antes de resolver el update; todos los llamadores ya guardaron
+    // el mensaje, así que el bump es semánticamente seguro aunque el fan-out falle).
     // bumpChatUnread nunca bloquea ni rompe el envío (el agregado es derivado).
     try { bumpChatUnread(conversationId, aggMemberUids, user.uid, updatedAt); } catch (_) {}
     return DrexCloud.database().ref().update(updates).catch(() => {});
@@ -30013,7 +30017,10 @@ let chatTypingListener = null;
     if (!user || !item?.id) return false;
     if (chatUnreadAggActive) {
       const st = chatUnreadAggCache[item.id];
-      return !!st && Number(st.c || 0) > 0;
+      if (!st) return false;
+      if (Number(st.c || 0) > 0) return true;
+      // Hoja `u` (grupos >50 miembros): u > r => hay mensajes sin leer.
+      return Number(st.u || 0) > Number(st.r || 0);
     }
     // LEGACY-ROLLBACK: sin datos agregados → comparación vieja updatedAt > lastRead.
     let lastRead = 0;
@@ -30354,7 +30361,7 @@ let chatTypingListener = null;
         return;
       }
       list.innerHTML = users.slice(0, 30).map((item, index) => `
-        <button onclick="openChatFromUserSelection('${escapeInlineSingleQuote(item.uid)}')" class="hover:border-[var(--drex-brand)] w-full text-left bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-2xl p-3 transition animate-pulse" style="animation-delay:${index * 0.03}s;animation-duration:0.7s;">
+        <button onclick="openChatFromUserSelection('${item.uid}')" class="hover:border-[var(--drex-brand)] w-full text-left bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-2xl p-3 transition animate-pulse" style="animation-delay:${index * 0.03}s;animation-duration:0.7s;">
           <div class="flex items-center gap-3">
             <img src="${item.image}" class="w-12 h-12 rounded-full object-cover border border-[var(--theme-border)]" alt="${escapeHtml(item.name)}">
             <p class="font-black text-[var(--theme-text)] truncate">${escapeHtml(item.name)}</p>
