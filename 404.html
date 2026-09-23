@@ -15598,6 +15598,42 @@ function saveNote() {
   // comentario, un post nuevo). Ahora con listeners granulares
   // (child_added/changed/removed) cada evento solo descarga el post que
   // cambió: mucho menos datos y batería.
+
+  // ===== Refactor snf*: helpers del feed extraídos de _subscribeNotesFeed =====
+  // Funciones puras de primer nivel (hoisting a nivel archivo). Sin cambio
+  // de comportamiento: solo movimiento mecánico.
+
+  // Cosecha el estado de UI que vive solo en el DOM (voto, eco) antes de
+  // podar, para que la reconstrucción no lo pierda. Los contadores salen
+  // de `note` (se refresca con child_changed) y el guardado de
+  // _userSavedPosts (lo repinta hydrateSaveButtons al reconstruir).
+  function snfFeedWindowHarvestUI(cardEl, noteId) {
+    const ui = { userVote: null, hasEchoed: null };
+    try {
+      const up = cardEl.querySelector('#upvote-' + noteId);
+      const down = cardEl.querySelector('#downvote-' + noteId);
+      if (up && up.classList.contains('active')) ui.userVote = 'up';
+      else if (down && down.classList.contains('active')) ui.userVote = 'down';
+      else ui.userVote = null;
+      const eco = cardEl.querySelector('#eco-' + noteId);
+      if (eco) ui.hasEchoed = eco.classList.contains('active');
+    } catch (_) {}
+    return ui;
+  }
+
+  function snfFeedEmptyHTML(feedMode) {
+    return feedMode === 'following'
+      ? '<div class="feed-empty-state bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-3xl p-6 text-center text-sm text-[var(--theme-muted)] shadow-sm">Todavía no sigues a nadie que haya publicado. Explora perfiles y sigue a alguien para ver sus posts aquí.</div>'
+      : '<div class="feed-empty-state bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-3xl p-6 text-center text-sm text-[var(--theme-muted)] shadow-sm">Aún no hay posts. Sé la primera persona en publicar.</div>';
+  }
+
+  // Esqueleto de carga inicial: solo cuando no hay snapshot en caché ni
+  // tarjetas ya montadas. Se retira al llegar el primer post o el vacío.
+  function snfFeedSkeletonHTML() {
+    const card = '<div class="feed-skeleton"><div class="flex items-center gap-3 mb-3"><div class="sk sk-round w-10 h-10"></div><div class="flex-1"><div class="sk h-3 w-1/3 mb-2"></div><div class="sk h-2 w-1/4"></div></div></div><div class="sk h-3 w-full mb-2"></div><div class="sk h-3 w-5/6 mb-2"></div><div class="sk h-40 w-full"></div></div>';
+    return card + card + card;
+  }
+
   function _subscribeNotesFeed(feedContainer, user, userVotes, userEcos, feedMode = 'foryou', followingMap = null) {
     const notesRef = DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     notesRef.off();
@@ -15630,23 +15666,6 @@ function saveNote() {
     let _feedWindowIO = null;
     let _feedWindowRaf = 0;
     let _feedWindowScrollOn = false;
-    // Cosecha el estado de UI que vive solo en el DOM (voto, eco) antes de
-    // podar, para que la reconstrucción no lo pierda. Los contadores salen
-    // de `note` (se refresca con child_changed) y el guardado de
-    // _userSavedPosts (lo repinta hydrateSaveButtons al reconstruir).
-    function feedWindowHarvestUI(cardEl, noteId) {
-      const ui = { userVote: null, hasEchoed: null };
-      try {
-        const up = cardEl.querySelector('#upvote-' + noteId);
-        const down = cardEl.querySelector('#downvote-' + noteId);
-        if (up && up.classList.contains('active')) ui.userVote = 'up';
-        else if (down && down.classList.contains('active')) ui.userVote = 'down';
-        else ui.userVote = null;
-        const eco = cardEl.querySelector('#eco-' + noteId);
-        if (eco) ui.hasEchoed = eco.classList.contains('active');
-      } catch (_) {}
-      return ui;
-    }
     function feedWindowEnsureIO() {
       if (_feedWindowIO) return _feedWindowIO;
       _feedWindowIO = new IntersectionObserver((entries) => {
@@ -15679,7 +15698,7 @@ function saveNote() {
       const noteId = cardEl.getAttribute('data-note-id');
       const rec = noteId && _feedWindowStore.get(noteId);
       if (!rec || !rec.note || !cardEl.isConnected) return;
-      rec.ui = feedWindowHarvestUI(cardEl, noteId);
+      rec.ui = snfFeedWindowHarvestUI(cardEl, noteId);
       let hgt = 0;
       try { hgt = Math.round(cardEl.getBoundingClientRect().height); } catch (_) {}
       if (!hgt || hgt < 80) hgt = 320;
@@ -15849,22 +15868,10 @@ function saveNote() {
     try {
       const _hasCards = !!feedContainer.querySelector(':scope > div[id^="post-"]');
       if (!_hasCards && !feedContainer.querySelector(':scope > .feed-skeleton')) {
-        feedContainer.innerHTML = feedSkeletonHTML();
+        feedContainer.innerHTML = snfFeedSkeletonHTML();
       }
     } catch (_) {}
 
-    function feedEmptyHTML() {
-      return feedMode === 'following'
-        ? '<div class="feed-empty-state bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-3xl p-6 text-center text-sm text-[var(--theme-muted)] shadow-sm">Todavía no sigues a nadie que haya publicado. Explora perfiles y sigue a alguien para ver sus posts aquí.</div>'
-        : '<div class="feed-empty-state bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-3xl p-6 text-center text-sm text-[var(--theme-muted)] shadow-sm">Aún no hay posts. Sé la primera persona en publicar.</div>';
-    }
-
-    // Esqueleto de carga inicial: solo cuando no hay snapshot en caché ni
-    // tarjetas ya montadas. Se retira al llegar el primer post o el vacío.
-    function feedSkeletonHTML() {
-      const card = '<div class="feed-skeleton"><div class="flex items-center gap-3 mb-3"><div class="sk sk-round w-10 h-10"></div><div class="flex-1"><div class="sk h-3 w-1/3 mb-2"></div><div class="sk h-2 w-1/4"></div></div></div><div class="sk h-3 w-full mb-2"></div><div class="sk h-3 w-5/6 mb-2"></div><div class="sk h-40 w-full"></div></div>';
-      return card + card + card;
-    }
     function clearFeedSkeleton() {
       try { feedContainer.querySelectorAll(':scope > .feed-skeleton').forEach(el => el.remove()); } catch (_) {}
     }
@@ -15875,7 +15882,7 @@ function saveNote() {
       try {
         const hasPosts = !!feedContainer.querySelector(':scope > div[id^="post-"], :scope > div[id^="postph-"]');
         const hasEmpty = !!feedContainer.querySelector(':scope > .feed-empty-state');
-        if (!hasPosts && !hasEmpty) feedContainer.innerHTML = feedEmptyHTML();
+        if (!hasPosts && !hasEmpty) feedContainer.innerHTML = snfFeedEmptyHTML(feedMode);
       } catch (_) {}
     }
 
@@ -16147,7 +16154,7 @@ function saveNote() {
       try {
         const _fleHasPosts = !!feedContainer.querySelector(':scope > div[id^="post-"], :scope > div[id^="postph-"]');
         const _fleHasEmpty = !!feedContainer.querySelector(':scope > .feed-empty-state');
-        if (!_fleHasPosts && !_fleHasEmpty) feedContainer.innerHTML = feedEmptyHTML();
+        if (!_fleHasPosts && !_fleHasEmpty) feedContainer.innerHTML = snfFeedEmptyHTML(feedMode);
       } catch (_) {}
     });
 
