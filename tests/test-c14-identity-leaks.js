@@ -62,6 +62,7 @@ const leaks = [
   ['L10 screen-time: timer de restore del modo silencio matado', '_quietModeRestoreTimer = null'],
   ['L10 screen-time: backup de notifs de A eliminado', "removeItem('drex_st_notif_backup')"],
   ['L11 notificaciones: toggles en memoria reseteados', 'notifSettings = {};'],
+  ['L12 borradores de chat: claves drex_chat_draft_* eliminadas', 'drex_chat_draft_'],
 ];
 for (const [name, anchor] of leaks) {
   check(name + ' [falla sin el fix C14]', hasCall && !!fnSrc && fnSrc.includes(anchor));
@@ -78,15 +79,21 @@ if (fnSrc) {
       ['drex_hidden_posts', JSON.stringify(['postA1'])],
       ['drex_notification_settings_v1', JSON.stringify({likes:false})],
       ['drex_st_notif_backup', JSON.stringify({likes:false})],
+      ['drex_chat_draft_group1', 'texto sin enviar de A en el grupo'],
       ['selectedLanguage', 'es'],
       ['drex_last_login_method', 'email'],
       ['drex_st_settings', '{}']
     ]);
-    var localStorage = {
+    var localStorage = new Proxy({
       getItem: k => __store.has(k) ? __store.get(k) : null,
       setItem: (k, v) => __store.set(k, String(v)),
       removeItem: k => { __store.delete(k); }
-    };
+    }, {
+      // Como el localStorage real: las claves son propiedades propias
+      // enumerables (Object.keys las ve; lo necesita clearAllChatDrafts).
+      ownKeys: () => Array.from(__store.keys()),
+      getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true })
+    });
     var window = {};
     window.DrexCache = { invalidated: [], invalidate(ns) { this.invalidated.push(ns); } };
     window.musicStopAndHide = function () { calls.push('musicStopAndHide'); };
@@ -148,6 +155,7 @@ if (fnSrc) {
      'drex_notification_settings_v1', 'drex_st_notif_backup'].forEach(k =>
        assert(localStorage.getItem(k) === null, 'localStorage ' + k + ' sobrevive'));
     assert(blockedAccountsRef === null && blockedAccountsSet.size === 0, 'bloqueos de A sobreviven');
+    assert(localStorage.getItem('drex_chat_draft_group1') === null, 'borrador de chat de A sobrevive');
     assert(_quietModeRestoreTimer === null && __clearedTimeouts.includes(999), 'quiet-mode timer sobrevive');
     assert(Object.keys(notifSettings).length === 0, 'notifSettings de A sobrevive');
     // Regresión: el flujo normal no se rompe — claves de dispositivo intactas.
