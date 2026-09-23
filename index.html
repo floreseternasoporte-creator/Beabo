@@ -41829,7 +41829,16 @@ function fiestaWatchRoom() {
   // (rango sk) en vez de re-descargar la bandeja (ver drex-cloud.js).
   fiestaRefs.inbox.onDelta(snap => fiestaOnSignal(snap.key, snap.val()));
   fiestaRefs.reactions = DrexCloud.database().ref('fiestaReactions/' + id).limitToLast(30);
-  fiestaRefs.reactions.on('child_added', snap => {
+  // DELTA-SYNC 2026-09-23 (ciclo 12): la ruta es append-only con hijos push ID
+  // (solo .push en fiestaSendReaction; los .remove de leaveFiesta/endFiesta/
+  // cascadeDeleteNote borran el NODO completo, nunca hijos sueltos) ->
+  // onDelta es seguro: tras la lectura inicial (ultimos 30, identica a antes)
+  // cada ciclo pide solo sk > watermark (~0.5 RCU en vez de la fase 1+2
+  // acotada). El filtro de 20s hace segura la lectura inicial completa
+  // (reacciones viejas se suprimen igual que antes). Teardown sin cambios:
+  // fiestaFullCleanup() hace r.off() sobre el ref y off('child_added')
+  // desuscribe tambien al oyente delta (ver drex-cloud.js onDelta).
+  fiestaRefs.reactions.onDelta(snap => {
     const r = snap.val() || {};
     if (!r.e || r.from === fiestaMyUid) return;
     if (typeof fiestaIsAllowedReaction === 'function' && !fiestaIsAllowedReaction(r.e)) return;
