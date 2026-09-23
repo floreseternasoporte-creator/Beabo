@@ -4718,7 +4718,11 @@ document.addEventListener("DOMContentLoaded", function() {
           <span aria-hidden="true" class="text-base leading-none font-black">&times;</span>
         </button>
       </div>
-      <div id="monetag-feed-top" class="drex-ad-slot max-w-[680px] mx-auto" data-ad-slot="monetag" data-ad-zone="feed" style="display:none;">
+            <!-- GIVEAWAY c15: "Artistas destacados" (3 slots). Nace oculto;
+           loadFeaturedArtists() lo pinta solo con config valida en el
+           nodo featuredArtists y dentro de la ventana startsAt/endsAt. -->
+      <div id="featured-artists" class="hidden max-w-[680px] mx-auto px-4 pt-1 pb-2"></div>
+<div id="monetag-feed-top" class="drex-ad-slot max-w-[680px] mx-auto" data-ad-slot="monetag" data-ad-zone="feed" style="display:none;">
         <span class="drex-ad-label">Anuncio</span>
         <div class="drex-ad-body" style="position:relative;min-height:60px;display:flex;justify-content:center;"></div>
       </div>
@@ -29248,10 +29252,170 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     if (drexAppChromeAllowed()) document.getElementById('main-app')?.classList.remove('hidden');
     if (typeof window.setActiveNavTab === 'function') window.setActiveNavTab(0);
     loadNotes(false);
+    // GIVEAWAY c15: modulo "Artistas destacados" (invisible sin config valida).
+    try { loadFeaturedArtists(); } catch (_) {}
     try { if (typeof drexLoadSectionAds === 'function') drexLoadSectionAds(document.getElementById('main-app')); } catch (_) {}
     // Monetag In-Page Push (flotante): segunda empresa monetizando en el feed.
     try { if (typeof drexLoadMonetagIPP === 'function' && typeof MONETAG !== 'undefined' && MONETAG) drexLoadMonetagIPP(MONETAG.ippFeedZone); } catch (_) {}
   }
+  // ══════════════════════════════════════════════════════════════════
+  // GIVEAWAY ciclo 15 — "Artistas destacados" en el home (3 slots).
+  // Compromiso publico: destacar a 3 artistas indie en el homepage por una
+  // semana (deadline viernes 2026-09-25). Los nombres los elige el usuario;
+  // este modulo solo lee la configuracion y la pinta.
+  //
+  // Nodo de BD (raiz): `featuredArtists`
+  //   {
+  //     "slots": [ {"username":"artista1"}, {"username":"artista2"}, {"username":"artista3"} ],
+  //     "startsAt": 1758854400000,   // epoch ms: inicio de la semana destacada
+  //     "endsAt":   1759459200000,   // epoch ms: fin de la semana destacada
+  //     "title": "Artistas destacados"  // opcional; por defecto el texto i18n
+  //   }
+  // Reglas: sin config / slots vacios / fuera de ventana -> modulo OCULTO
+  // (cero ruido). Con config valida -> tarjetas con avatar+nombre que abren
+  // el perfil (/u/<usuario>) via openAuthorProfileByUsername. Cada slot se
+  // resuelve contra el indice usernames/<nombre>: solo usuarios reales
+  // obtienen tarjeta.
+  // ══════════════════════════════════════════════════════════════════
+  var FEATURED_ARTISTS_NODE = 'featuredArtists';
+  var FEATURED_ARTISTS_MAX_SLOTS = 3;
+
+  // Pura y testeable: ¿la config justifica mostrar el modulo ahora?
+  function featuredArtistsIsActive(cfg, nowMs) {
+    if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return false;
+    var slots = Array.isArray(cfg.slots) ? cfg.slots : [];
+    var valid = 0;
+    for (var i = 0; i < slots.length; i++) {
+      var s = slots[i];
+      if (s && typeof s.username === 'string' && s.username.trim()) valid++;
+    }
+    if (!valid) return false;
+    var now = (typeof nowMs === 'number' && isFinite(nowMs)) ? nowMs : Date.now();
+    var startsAt = Number(cfg.startsAt);
+    var endsAt = Number(cfg.endsAt);
+    if (isFinite(startsAt) && now < startsAt) return false;
+    if (isFinite(endsAt) && now > endsAt) return false;
+    return true;
+  }
+
+  // Normaliza los slots a [{username, uid|null}]: maximo 3, usernames unicos
+  // (insensible a mayusculas), sin cadenas vacias.
+  function featuredArtistsNormalizeSlots(cfg) {
+    var out = [];
+    var seen = {};
+    var slots = (cfg && Array.isArray(cfg.slots)) ? cfg.slots : [];
+    for (var i = 0; i < slots.length && out.length < FEATURED_ARTISTS_MAX_SLOTS; i++) {
+      var s = slots[i] || {};
+      var uname = (typeof s.username === 'string') ? s.username.trim() : '';
+      if (!uname) continue;
+      var key = uname.toLowerCase();
+      if (seen[key]) continue;
+      seen[key] = true;
+      var uid = (typeof s.uid === 'string' && s.uid.trim()) ? s.uid.trim() : null;
+      out.push({ username: uname, uid: uid });
+    }
+    return out;
+  }
+
+  // Tarjeta de un artista: avatar + nombre + @usuario. Todo interpolado va
+  // por los escapers probados (escapeHTML / escapeInlineSingleQuote /
+  // getSafeMediaUrl): el username viene de un nodo de BD editable.
+  function featuredArtistsCardHTML(p) {
+    var uname = String((p && p.username) || '').trim();
+    var d = (p && p.data) || {};
+    var fallbackName = (typeof appT === 'function') ? appT('Artista') : 'Artista';
+    var displayName = String(d.displayName || d.username || uname || fallbackName).trim() || fallbackName;
+    var safeName = escapeHTML(displayName);
+    var initial = (displayName.charAt(0) || 'D').toUpperCase();
+    var img = (typeof getSafeMediaUrl === 'function') ? getSafeMediaUrl(d.profileImage || '', '') : '';
+    var avatar = img
+      ? '<img src="' + img + '" alt="' + safeName + '" loading="lazy" class="w-14 h-14 rounded-full object-cover bg-[var(--theme-surface-subtle)]">'
+      : '<div class="w-14 h-14 rounded-full flex items-center justify-center text-xl font-black text-white shrink-0" style="background:var(--drex-brand)" aria-hidden="true">' + escapeHTML(initial) + '</div>';
+    var safeArg = (typeof escapeInlineSingleQuote === 'function') ? escapeInlineSingleQuote(uname) : uname;
+    var viewProfile = (typeof appT === 'function') ? appT('Ver perfil') : 'Ver perfil';
+    return '' +
+      '<button type="button" onclick="openAuthorProfileByUsername(\'' + safeArg + '\')" ' +
+      'class="flex flex-col items-center gap-1.5 py-3 px-1 rounded-2xl active:opacity-80 transition min-w-0" ' +
+      'aria-label="' + escapeHTML(viewProfile + ': @' + uname) + '">' +
+      avatar +
+      '<span class="text-[13px] font-bold text-[var(--theme-text)] leading-tight truncate w-full text-center">' + safeName + '</span>' +
+      '<span class="text-[11px] font-medium text-[var(--theme-muted)] leading-tight truncate w-full text-center">@' + escapeHTML(uname) + '</span>' +
+      '</button>';
+  }
+
+  // Seccion completa (pura): encabezado estilo Drex + rejilla de 3 tarjetas.
+  function featuredArtistsSectionHTML(profiles, cfg) {
+    var t = (typeof appT === 'function') ? appT : function (s) { return s; };
+    var titleRaw = (cfg && typeof cfg.title === 'string') ? cfg.title.trim() : '';
+    var title = titleRaw ? escapeHTML(titleRaw) : escapeHTML(t('Artistas destacados'));
+    var pill = escapeHTML(t('Giveaway'));
+    var cards = (profiles || []).map(featuredArtistsCardHTML).join('');
+    return '' +
+      '<section class="rounded-[18px] px-3.5 pt-3 pb-2" ' +
+      'style="border:1px solid color-mix(in srgb, var(--drex-brand) 22%, var(--theme-border));background:color-mix(in srgb, var(--drex-brand) 5%, var(--theme-surface));" ' +
+      'aria-label="' + title + '">' +
+      '<div class="flex items-center gap-2 mb-1">' +
+      '<span class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[13px] shrink-0" style="background:var(--drex-brand)" aria-hidden="true"><i class="fa-solid fa-gift"></i></span>' +
+      '<h2 class="text-[15px] font-extrabold text-[var(--theme-text)] truncate">' + title + '</h2>' +
+      '<span class="ml-auto text-[10px] font-black uppercase tracking-wider text-white rounded-full px-2 py-0.5 shrink-0" style="background:var(--drex-brand)">' + pill + '</span>' +
+      '</div>' +
+      '<div class="grid grid-cols-3 gap-1">' + cards + '</div>' +
+      '</section>';
+  }
+
+  function hideFeaturedArtists() {
+    try {
+      var el = document.getElementById('featured-artists');
+      if (el) { el.classList.add('hidden'); el.innerHTML = ''; }
+    } catch (_) {}
+  }
+
+  function renderFeaturedArtists(profiles, cfg) {
+    var el = document.getElementById('featured-artists');
+    if (!el || !profiles || !profiles.length) { hideFeaturedArtists(); return; }
+    el.innerHTML = featuredArtistsSectionHTML(profiles, cfg);
+    el.classList.remove('hidden');
+  }
+
+  // Orquestacion: lee el nodo featuredArtists, valida ventana, resuelve cada
+  // slot contra usernames/<nombre> (+ users/<uid> para avatar/nombre
+  // canonico) y pinta. Sin config valida o con error -> oculto, cero ruido.
+  var _featuredArtistsReq = 0;
+  function loadFeaturedArtists() {
+    var myReq = ++_featuredArtistsReq;
+    var db = null;
+    try { db = DrexCloud.database(); } catch (_) { return; }
+    if (!db || typeof db.ref !== 'function') return;
+    db.ref(FEATURED_ARTISTS_NODE).once('value').then(function (snap) {
+      if (myReq !== _featuredArtistsReq) return;
+      var cfg = null;
+      try { cfg = snap.val(); } catch (_) { cfg = null; }
+      if (!featuredArtistsIsActive(cfg)) { hideFeaturedArtists(); return; }
+      var slots = featuredArtistsNormalizeSlots(cfg);
+      var jobs = slots.map(function (s) {
+        var uname = s.username;
+        var uidJob = s.uid ? Promise.resolve(s.uid)
+          : db.ref('usernames/' + uname.toLowerCase()).once('value')
+              .then(function (x) { return x.val() || null; })
+              .catch(function () { return null; });
+        return uidJob.then(function (uid) {
+          if (!uid) return null;
+          return db.ref('users/' + uid).once('value')
+            .then(function (us) { return { username: uname, uid: uid, data: us.val() || {} }; })
+            .catch(function () { return null; });
+        });
+      });
+      return Promise.all(jobs).then(function (profiles) {
+        if (myReq !== _featuredArtistsReq) return;
+        var ok = profiles.filter(function (p) { return !!p; });
+        if (!ok.length) { hideFeaturedArtists(); return; }
+        renderFeaturedArtists(ok, cfg);
+      });
+    }).catch(function (err) {
+      try { console.error('featuredArtists: no se pudo cargar la configuracion', err); } catch (_) {}
+    });
+  }
+
 
   // Games feature removed
 
@@ -42583,6 +42747,11 @@ async function endFiesta() {
         const d = event.data || {};
         if (d.type === 'drex-push-open' && d.url) {
           const u = new URL(d.url, location.href);
+          // R10-1 (push hijack): valida el origen ANTES de convertir a ruta.
+          // Una data.url con origen atacante se ignora por completo: nunca
+          // se hace location.href = d.url con origen externo. Los push
+          // legitimos siempre apuntan al origen de la app.
+          if (u.origin !== location.origin) return;
           // Convierte la URL a ruta del router ('chat', 'post/abc', ...).
           let path = (u.hash || '').replace(/^#\/?/, '');
           if (!path) {
