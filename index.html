@@ -29770,6 +29770,18 @@ function clearAccountScopedState() {
 
   // 7. Ajustes de notificaciones en memoria (B los recarga de su propio nodo).
   try { notifSettings = {}; } catch (_) {}
+
+  // 8. Borradores de chat (C43-D2): las claves drex_chat_draft_<roomId> no
+  //    están scoped por uid y en las salas de grupo el roomId es el mismo
+  //    para todos los miembros — sin esto, el texto sin enviar de A se
+  //    restaura en el input de B al abrir la misma sala en el mismo
+  //    dispositivo (restoreChatDraft). Guardar borradores es preferencia
+  //    local, pero el borrador nunca debe cruzar cuentas. (Inline: la
+  //    función clearAllChatDrafts vive en otro closure; no es visible aquí.)
+  try {
+    Object.keys(localStorage).filter(k => k.indexOf('drex_chat_draft_') === 0)
+      .forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
+  } catch (_) {}
 }
 
 
@@ -36071,6 +36083,7 @@ function renderAccountsList(accounts) {
       showMiniToast(appT('Usuario desbloqueado'));
       if (typeof loadNotes === 'function') loadNotes(false);
       if (origin === 'profile' && typeof openAuthorProfile === 'function') openAuthorProfile(uid);
+      else if (origin === 'music-artist' && typeof window.musicOpenArtistProfile === 'function') window.musicOpenArtistProfile(uid);
     }).catch(() => showMiniToast(appT('No se pudo desbloquear. Intenta de nuevo.')));
   }
 
@@ -44583,6 +44596,16 @@ window.musicOpenArtistProfile = function (authorId) {
   const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
   const uid = authorId || (t && t.authorId);
   if (!uid) return;
+  // C43-D1: el deep link musica/artista/:uid no debe exponer identidad,
+  // canciones ni seguidores de una cuenta bloqueada — openAuthorProfile y
+  // musicSearchTracks sí lo filtran. Fail-closed: pantalla de bloqueo.
+  if (typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(uid)) {
+    try {
+      if (typeof showBlockedUserScreen === 'function') showBlockedUserScreen(uid, 'music-artist');
+      else if (typeof window.musicCloseArtistProfile === 'function') window.musicCloseArtistProfile();
+    } catch (_) {}
+    return;
+  }
   try { minimizeMusicPlayer(); } catch (_) {}
   musicArtistUid = uid;
   const view = document.getElementById('music-artist-view');
