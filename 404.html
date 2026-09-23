@@ -17223,6 +17223,9 @@ function saveNote() {
         });
         await DrexCloud.database().ref().update(updates).catch(() => {});
       }
+      // H2: este flujo puede correr fuera del modal (aceptar desde el chat):
+      // decrementa el agregado para que el badge no sobrecuente.
+      try { if (targets.length) decrementNotifUnread(me.uid, targets.length); } catch (_) {}
       if (typeof updateBadgeCount === 'function') updateBadgeCount(me.uid);
     } catch (_) {}
   }
@@ -22543,10 +22546,22 @@ function saveNote() {
     // fire-and-forget: los await addNotification() resolvían antes de que la
     // escritura completara y en red inestable la notificación se perdía en
     // silencio, sin reintento y con rejection sin manejar.
+    let notifWriteOk = false;
     try {
       await _runWithAutoRetry(() => newNotificationRef.set(notificationData), 'notificacion');
+      notifWriteOk = true;
     } catch (err) {
       try { console.warn('addNotification: escritura fallida tras reintentos', err && err.message); } catch (_) {}
+    }
+
+    // H2 (ciclo 8, rendimiento): agregado server-side del badge de notificaciones
+    // (notifUnread/<uid> = {c, r}). Solo se incrementa si la notificación
+    // realmente se creó (el early-return de shouldSkipNotificationFor de arriba
+    // ya excluyó los tipos desactivados por el destinatario).
+    // El agregado es dato DERIVADO: try/catch; si falla, la notificación igual
+    // quedó creada y el badge se recupera al abrir el modal (reset transaccional).
+    if (notifWriteOk) {
+      try { bumpNotifUnread(userId); } catch (_) {}
     }
 
     // No se adjunta en notificaciones del sistema.
@@ -22623,8 +22638,14 @@ function saveNote() {
     } catch (_) {}
   }
 
-  let notificationsListenerRef = null;
-  let notificationsBadgeRef = null;
+  // H2-STATE-BEGIN: estado del badge agregado de notificaciones (H2, ciclo 8).
+  // notifUnread/<uid> = {c, r}; el listener always-on lee <1 RCU por ciclo.
+  let notifUnreadBadgeRef = null;
+  let notifUnreadBadgeUid = null;
+  let notifUnreadAggCache = { c: 0, r: 0 }; // último snapshot de notifUnread/<uid>
+  let notifUnreadAggActive = false; // true cuando el nodo agregado existe (fin de la ventana legacy)
+  let notifUnreadLastDingC = -1;    // c visto al instalar el listener (no avisar del historial)
+  // H2-STATE-END
 
   function getLocalNotifications(userId) {
     try {
@@ -22654,84 +22675,260 @@ function saveNote() {
   // produce el mismo resultado con una fracción del tráfico/memoria.
   const NOTIF_BADGE_LIMIT = 100;
 
+  // H2-FNS-BEGIN: agregación server-side del badge de notificaciones (H2, ciclo 8).
+  // Nodo agregado: notifUnread/<uid> = { c: <no leídas>, r: <readAtMs> }.
+  // Convención de path idéntica a notifications/<uid>: hereda cualquier
+  // aislamiento por prefijo de uid que aplique a notifications.
+  // ⚠️ BLOQUEADOR DOCUMENTADO: queda pendiente verificar en la política IAM de
+  // drex-kv que el prefijo notifUnread/<uid> tiene el mismo aislamiento por uid
+  // que notifications/<uid> (mismo patrón que chatUnread/<uid> del ciclo 7).
+
+  // Incrementa el agregado de no-leídas del destinatario. Se llama desde
+  // addNotification, el embudo ÚNICO de creación de notificaciones (verificado
+  // en 3cd5a60a: no hay escrituras directas a notifications/<uid> fuera de
+  // addNotification; las demás escrituras en esa ruta son marcado de leído,
+  // collabStatus, actorId o appealDone — ninguna crea notificaciones).
+  // Costo: 1 transacción (~0.5 RCU de lectura + 2 hojas) por notificación
+  // creada, frente a ~1.300-1.600 RCU/ciclo del listener always-on anterior.
+  function bumpNotifUnread(userId) {
+    if (!userId) return;
+    try {
+      DrexCloud.database().ref('notifUnread/' + userId).transaction(cur => {
+        const c = Number((cur && cur.c) || 0);
+        const r = Number((cur && cur.r) || 0);
+        return { c: c + 1, r: r };
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // Reset transaccional del agregado (marcar como leído). El listener de
+  // notifUnread/<uid> lo confirma en <=1 ciclo de polling (3 s); además se
+  // actualiza el caché local de forma optimista para respuesta inmediata.
+  // NOTA: si el nodo aún no existe (ventana de migración), esta escritura lo
+  // crea con {c:0, r:now} y termina la ventana legacy para ese usuario
+  // (correcto: abrió el modal = vio sus notificaciones).
+  function resetNotifUnread(userId) {
+    if (!userId) return;
+    const now = Date.now();
+    try {
+      if (notifUnreadAggActive && notifUnreadBadgeUid === userId) {
+        notifUnreadAggCache = { c: 0, r: now };
+        notifUnreadLastDingC = 0;
+        paintNotifUnreadBadge(0);
+      }
+      DrexCloud.database().ref('notifUnread/' + userId)
+        .transaction(() => ({ c: 0, r: now })).catch(() => {});
+    } catch (_) {}
+  }
+
+  // Decremento del agregado al marcar notificaciones como leídas FUERA del modal
+  // (p. ej. aceptar/rechazar una colaboración desde el chat, o la bandeja de
+  // menciones con notificaciones llegadas mientras el modal estaba abierto).
+  // Acotado a 0; el agregado es derivado: try/catch.
+  function decrementNotifUnread(userId, k) {
+    if (!userId || !(k > 0)) return;
+    try {
+      DrexCloud.database().ref('notifUnread/' + userId).transaction(cur => {
+        const c = Number((cur && cur.c) || 0);
+        const r = Number((cur && cur.r) || 0);
+        return { c: Math.max(0, c - k), r: r };
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // Merge O(n) con Map de un snapshot de notifications/<uid> en localStorage
+  // (máx. 100, ordenadas por timestamp desc). Extraído del listener always-on
+  // anterior; ahora se usa en hidratación bajo demanda.
+  // sinceTs: avisa (sistema+sonido) de notificaciones no leídas con
+  // timestamp >= sinceTs (null = sin avisos, p. ej. hidratación del modal).
+  function mergeNotificationsSnapshot(userId, snapshot, sinceTs) {
+    if (!snapshot || !snapshot.exists || !snapshot.exists()) return;
+    let localNotes = getLocalNotifications(userId);
+    const localById = new Map();
+    for (const ln of localNotes) {
+      if (ln && ln.notificationId && !localById.has(ln.notificationId)) localById.set(ln.notificationId, ln);
+    }
+    snapshot.forEach(child => {
+      const n = child.val();
+      if (n && n.notificationId) {
+        const existing = localById.get(n.notificationId);
+        if (!existing) {
+          localNotes.unshift(n);
+          localById.set(n.notificationId, n);
+          // Aviso del sistema solo para notificaciones realmente nuevas
+          // (no el historial cargado al abrir la app o el modal).
+          if (sinceTs != null && !n.read && n.timestamp && n.timestamp >= sinceTs && !isChatNotificationMuted(n)) {
+            fireDrexSystemNotification(n.message, false);
+          }
+        } else {
+          existing.read = n.read;
+          if (n.actorId && !existing.actorId) {
+            existing.actorId = n.actorId;
+            existing.actorName = n.actorName || '';
+            existing.actorImage = n.actorImage || '';
+          }
+        }
+      }
+    });
+    localNotes.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    saveLocalNotifications(userId, localNotes);
+  }
+
+  // El agregado solo dice "cuántas", no "cuál": cuando c crece, la notificación
+  // más reciente se obtiene bajo demanda (1 lectura acotada, solo ante cambios
+  // reales — nunca cada 3 s) para conservar el aviso con mensaje del listener
+  // anterior. Si varias llegan entre dos polls, suena una sola vez.
+  function announceNewestNotification(userId) {
+    try {
+      DrexCloud.database().ref('notifications/' + userId)
+        .orderByChild('timestamp').limitToLast(1).once('value')
+        .then(snap => {
+          if (!snap || !snap.exists || !snap.exists()) return;
+          let newest = null;
+          snap.forEach(child => { newest = child.val(); });
+          if (newest && !newest.read && !isChatNotificationMuted(newest)) {
+            fireDrexSystemNotification(newest.message, false);
+          }
+        }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // Hidratación bajo demanda del detalle (H2): el modal ya no se alimenta del
+  // listener always-on. Al abrir (y al refrescar con el modal abierto) se trae
+  // la ventana acotada de notifications/<uid> una sola vez, se fusiona con
+  // localStorage y se renderiza la lista.
+  function hydrateNotificationsForModal(userId) {
+    if (!userId) return;
+    try {
+      DrexCloud.database().ref('notifications/' + userId)
+        .orderByChild('timestamp').limitToLast(NOTIF_BADGE_LIMIT).once('value')
+        .then(snap => {
+          const me = DrexCloud.auth().currentUser;
+          if (!me || me.uid !== userId) return; // la sesión cambió mientras tanto
+          mergeNotificationsSnapshot(userId, snap, null);
+          renderNotificationsList(userId);
+        }).catch(() => {
+          try { renderNotificationsList(userId); } catch (_) {}
+        });
+    } catch (_) {}
+  }
+
+  function paintNotifUnreadBadge(unread) {
+    const label = unread > 99 ? '99+' : String(unread);
+    const badge = document.getElementById('unread-notifications-count');
+    if (badge) {
+      if (unread > 0) { badge.textContent = label; badge.classList.remove('hidden'); }
+      else { badge.classList.add('hidden'); badge.textContent = '0'; }
+    }
+    const deskBadge = document.getElementById('notif-unread-badge-desktop');
+    if (deskBadge) {
+      if (unread > 0) { deskBadge.textContent = label; deskBadge.classList.remove('hidden'); }
+      else { deskBadge.classList.add('hidden'); }
+    }
+  }
+
+  // LEGACY-ROLLBACK: cómputo viejo (una lectura acotada de notifications/<uid>
+  // + conteo de no leídas en localStorage). Solo se usa cuando notifUnread/<uid>
+  // aún no existe (ventana de migración; ausente ≡ 0 una vez completada).
+  // Es de UN SOLO DISPARO por sesión, NO un listener always-on: en cuanto la
+  // primera notificación post-despliegue escribe el agregado, esta ruta deja de
+  // usarse para ese usuario. Eliminar cuando las lecturas del path viejo sean 0.
+  // NO TOCAR la ventana LEGACY-ROLLBACK de chatUnread (ciclo 7): es independiente.
+  function paintLegacyNotifUnreadBadge(userId) {
+    try {
+      DrexCloud.database().ref('notifications/' + userId)
+        .orderByChild('timestamp').limitToLast(NOTIF_BADGE_LIMIT).once('value')
+        .then(snap => {
+          const me = DrexCloud.auth().currentUser;
+          if (!me || me.uid !== userId) return; // la sesión cambió mientras tanto
+          mergeNotificationsSnapshot(userId, snap, null);
+          const unread = getLocalNotifications(userId).filter(n => n && !n.read).length;
+          paintNotifUnreadBadge(unread);
+        }).catch(() => {});
+    } catch (_) {}
+  }
+
+  function updateNotifUnreadBadge(snap) {
+    const user = DrexCloud.auth().currentUser;
+    const badge = document.getElementById('unread-notifications-count');
+    if (!badge) return;
+    if (!user) { badge.classList.add('hidden'); return; }
+
+    if (snap && snap.val) {
+      const agg = snap.val();
+      if (agg && typeof agg === 'object') {
+        const prevC = Number(notifUnreadAggCache.c || 0);
+        notifUnreadAggCache = { c: Number(agg.c || 0), r: Number(agg.r || 0) };
+        notifUnreadAggActive = true;
+        const nowC = notifUnreadAggCache.c;
+        paintNotifUnreadBadge(nowC);
+        // Aviso de nueva notificación: c creció respecto a lo último visto.
+        // (notifUnreadLastDingC = -1 en el primer snapshot: no avisar del historial.)
+        if (notifUnreadLastDingC < 0) {
+          notifUnreadLastDingC = nowC;
+        } else if (nowC > Math.max(prevC, notifUnreadLastDingC)) {
+          notifUnreadLastDingC = nowC;
+          announceNewestNotification(user.uid);
+        }
+        // El modal abierto muestra el detalle en vivo.
+        const modal = document.getElementById('notifications-modal');
+        if (modal && !modal.classList.contains('hidden')) {
+          hydrateNotificationsForModal(user.uid);
+        }
+        return;
+      }
+      // LEGACY-ROLLBACK: nodo notifUnread/<uid> ausente (aún sin escrituras
+      // agregadas) → cómputo viejo de un solo disparo. Eliminar tras el rollout.
+      notifUnreadAggActive = false;
+      paintLegacyNotifUnreadBadge(user.uid);
+      return;
+    }
+    // Ruta defensiva: llamadas sin snapshot.
+    if (notifUnreadBadgeUid === user.uid && notifUnreadAggActive) {
+      paintNotifUnreadBadge(Number(notifUnreadAggCache.c || 0));
+    } else if (notifUnreadBadgeRef && notifUnreadBadgeUid === user.uid) {
+      notifUnreadBadgeRef.once('value').then(s2 => updateNotifUnreadBadge(s2)).catch(() => {});
+    } else {
+      // LEGACY-ROLLBACK: sin listener agregado para este usuario → cómputo viejo.
+      paintLegacyNotifUnreadBadge(user.uid);
+    }
+  }
+  // H2-FNS-END
+
   function setupNotificationsBadge(userId) {
     const badge = document.getElementById('unread-notifications-count');
     if (!badge) return;
 
-    if (notificationsBadgeRef) {
-      notificationsBadgeRef.off('value');
-      notificationsBadgeRef = null;
+    if (notifUnreadBadgeRef) {
+      notifUnreadBadgeRef.off('value');
+      notifUnreadBadgeRef = null;
     }
+    notifUnreadBadgeUid = userId || null;
+    notifUnreadAggCache = { c: 0, r: 0 };
+    notifUnreadAggActive = false;
+    notifUnreadLastDingC = -1;
 
-    const baseRef = DrexCloud.database().ref('notifications/' + userId);
-    // OPTIMIZACIÓN (rendimiento): la suscripción en vivo solo lee las 100
-    // notificaciones más recientes en vez del subárbol completo. El badge
-    // cuenta no leídas sobre localStorage (máx. 100), así que el resultado
-    // es idéntico al de antes pero sin descargar miles de nodos.
-    notificationsBadgeRef = baseRef.orderByChild('timestamp').limitToLast(NOTIF_BADGE_LIMIT);
+    // H2 (ciclo 8, rendimiento): el badge always-on escucha el nodo agregado
+    // notifUnread/<uid> = {c, r} (<1 RCU por ciclo de polling) en vez del
+    // subárbol notifications/<uid> con limitToLast(100) (~1.300-1.600 RCU/ciclo,
+    // el listener always-on más caro del sistema). El merge con localStorage y
+    // el detalle se hacen bajo demanda al abrir el modal.
+    notifUnreadBadgeRef = DrexCloud.database().ref('notifUnread/' + userId);
+    notifUnreadBadgeRef.on('value', (snap) => {
+      updateNotifUnreadBadge(snap);
+    });
+
     // Limpieza de notificaciones antiguas (más de 30 días) para no acumular datos indefinidamente,
     // sin arriesgarnos a borrar notificaciones antes de que el usuario las vea.
-    // OPTIMIZACIÓN: la query solo trae las vencidas (filtrado en servidor con
-    // endAt) en vez de descargar el subárbol completo para inspeccionarlo.
+    // Se mantiene: es UNA sola query al instalar el listener, no el hot path del badge.
     const NOTIF_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-    baseRef.orderByChild('timestamp').endAt(Date.now() - NOTIF_MAX_AGE_MS).once('value').then(snap => {
-      if (!snap.exists()) return;
-      snap.forEach(child => {
-        child.ref.remove().catch(() => {});
-      });
-    }).catch(() => {});
-    const notifListenerStart = Date.now();
-    notificationsBadgeRef.on('value', snapshot => {
-      if (snapshot.exists()) {
-        let localNotes = getLocalNotifications(userId);
-        // OPTIMIZACIÓN: merge O(n) con Map en vez de O(n²) con
-        // some()/findIndex() dentro del forEach.
-        const localById = new Map();
-        for (const ln of localNotes) {
-          if (ln && ln.notificationId && !localById.has(ln.notificationId)) localById.set(ln.notificationId, ln);
-        }
-        snapshot.forEach(child => {
-          const n = child.val();
-          if (n && n.notificationId) {
-            const existing = localById.get(n.notificationId);
-            if (!existing) {
-              localNotes.unshift(n);
-              localById.set(n.notificationId, n);
-              // Aviso del sistema solo para notificaciones realmente nuevas
-              // (no el historial cargado al abrir la app).
-              if (!n.read && n.timestamp && n.timestamp >= notifListenerStart - 5000 && !isChatNotificationMuted(n)) {
-                fireDrexSystemNotification(n.message, false);
-              }
-            } else {
-              existing.read = n.read;
-              if (n.actorId && !existing.actorId) {
-                existing.actorId = n.actorId;
-                existing.actorName = n.actorName || '';
-                existing.actorImage = n.actorImage || '';
-              }
-            }
-          }
+    DrexCloud.database().ref('notifications/' + userId)
+      .orderByChild('timestamp').endAt(Date.now() - NOTIF_MAX_AGE_MS).once('value').then(snap => {
+        if (!snap.exists()) return;
+        snap.forEach(child => {
+          child.ref.remove().catch(() => {});
         });
-        localNotes.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        saveLocalNotifications(userId, localNotes);
-      }
-
-      const allNotes = getLocalNotifications(userId);
-      const unread = allNotes.filter(n => !n.read).length;
-
-      if (unread > 0) {
-        badge.textContent = unread > 99 ? '99+' : String(unread);
-        badge.classList.remove('hidden');
-      } else {
-        badge.classList.add('hidden');
-        badge.textContent = '0';
-      }
-      
-      const modal = document.getElementById('notifications-modal');
-      if (modal && !modal.classList.contains('hidden')) {
-        renderNotificationsList(userId);
-      }
-    });
+      }).catch(() => {});
   }
 
   function clearNotificationsBadge() {
@@ -22740,10 +22937,16 @@ function saveNote() {
       badge.classList.add('hidden');
       badge.textContent = '0';
     }
+    const deskBadge = document.getElementById('notif-unread-badge-desktop');
+    if (deskBadge) deskBadge.classList.add('hidden');
 
-    if (notificationsBadgeRef) {
-      notificationsBadgeRef.off('value');
-      notificationsBadgeRef = null;
+    notifUnreadAggCache = { c: 0, r: 0 };
+    notifUnreadAggActive = false;
+    notifUnreadBadgeUid = null;
+    notifUnreadLastDingC = -1;
+    if (notifUnreadBadgeRef) {
+      notifUnreadBadgeRef.off('value');
+      notifUnreadBadgeRef = null;
     }
   }
 
@@ -23035,7 +23238,11 @@ function saveNote() {
     setBottomNavVisibility(false);
     _mentionsLoaded = false;
     switchNotifTab('notif');
-    renderNotificationsList(currentUser.uid);
+    // H2: el detalle se hidrata bajo demanda (1 lectura acotada) y el agregado
+    // se resetea transaccionalmente al abrir: el badge se apaga en todos los
+    // dispositivos en <=1 ciclo de polling (3 s).
+    hydrateNotificationsForModal(currentUser.uid);
+    try { resetNotifUnread(currentUser.uid); } catch (_) {}
     try { if (typeof drexLoadSectionAds === 'function') drexLoadSectionAds(document.getElementById('notifications-modal')); } catch (_) {}
   }
 
@@ -23334,6 +23541,9 @@ function saveNote() {
 
   function markAllNotificationsRead(userId) {
     if (!userId) return;
+    // H2: reset transaccional del agregado (cubre "marcar todo leído" desde
+    // cualquier flujo; openNotifications ya lo hizo al abrir el modal).
+    try { resetNotifUnread(userId); } catch (_) {}
     const localNotes = getLocalNotifications(userId);
     const unreadIds = localNotes.filter(n => !n.read && n.notificationId).map(n => n.notificationId);
     if (!unreadIds.length) return;
@@ -23346,6 +23556,12 @@ function saveNote() {
   }
 
   function updateBadgeCount(userId) {
+    // H2: con el agregado activo, el badge sale de notifUnread/<uid>.
+    // LEGACY-ROLLBACK: sin agregado, del conteo local (comportamiento anterior).
+    if (notifUnreadAggActive && notifUnreadBadgeUid === userId) {
+      paintNotifUnreadBadge(Number(notifUnreadAggCache.c || 0));
+      return;
+    }
     const badge = document.getElementById('unread-notifications-count');
     const allNotes = getLocalNotifications(userId);
     const unread = allNotes.filter(n => !n.read).length;
@@ -23375,11 +23591,9 @@ function saveNote() {
     setBottomNavVisibility(true);
     const currentUser = DrexCloud.auth().currentUser;
     if (currentUser) markAllNotificationsRead(currentUser.uid);
-
-    if (notificationsListenerRef) {
-      notificationsListenerRef.off('value');
-      notificationsListenerRef = null;
-    }
+    // H2: el listener del badge (notifUnread/<uid>) es always-on y NO se da de
+    // baja al cerrar el modal. (Antes: bloque muerto sobre un ref que nunca se
+    // asignaba; el listener real tampoco se bajaba.)
   }
 
   let _currentNotifTab = 'notif';
@@ -23450,6 +23664,9 @@ function saveNote() {
         const updates = {};
         unreadKeys.forEach(k => { updates[k + '/read'] = true; });
         DrexCloud.database().ref('notifications/' + user.uid).update(updates).catch(() => {});
+        // H2: decrementa el agregado (pudo llegar alguna mención nueva mientras
+        // el modal estaba abierto, después del reset de openNotifications).
+        try { decrementNotifUnread(user.uid, unreadKeys.length); } catch (_) {}
         try { if (typeof updateBadgeCount === 'function') updateBadgeCount(user.uid); } catch (_) {}
       }
 
