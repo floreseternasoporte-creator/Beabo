@@ -4429,6 +4429,96 @@ function withCredRetry(opFn) {
   // Login social real via Cognito OAuth (Google / Facebook)
   // Redirige a Cognito, que hace el baile OAuth con el proveedor y regresa
   // con ?code= ; aquí se canjea por tokens y se abre la sesión.
+  // R2-1 (ciclo 16): helpers anti-login-CSRF + PKCE. El state/nonce/verifier
+  // viven en sessionStorage (no viajan a otra pestaña), con expiración corta
+  // y consumo single-use.
+  var OAUTH_STATE_KEY = 'drex.oauth.state';
+  var OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutos
+
+  function oauthB64Url(bytes) {
+    var s = '', i;
+    for (i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    var b = '';
+    try { b = global.btoa(s); } catch (e) { return ''; }
+    return b.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function oauthRandomString(nBytes) {
+    var bytes = new Uint8Array(nBytes || 32), i;
+    try {
+      var c = (typeof global !== 'undefined' && global.crypto) || null;
+      if (c && typeof c.getRandomValues === 'function') {
+        c.getRandomValues(bytes);
+        var s = oauthB64Url(bytes);
+        if (s) return s;
+      }
+    } catch (_) {}
+    // Respaldo sin WebCrypto: nunca debe fallar la generación.
+    var out = '';
+    var abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    for (i = 0; i < (nBytes || 32) * 2; i++) out += abc[Math.floor(Math.random() * 64)];
+    return out;
+  }
+
+  function oauthStateStore() {
+    try { if (typeof sessionStorage !== 'undefined') return sessionStorage; } catch (_) {}
+    return null;
+  }
+
+  function oauthStateSave(rec) {
+    var ss = oauthStateStore();
+    if (!ss) return false;
+    try { ss.setItem(OAUTH_STATE_KEY, JSON.stringify(rec)); return true; } catch (_) { return false; }
+  }
+
+  function oauthStateLoad() {
+    var ss = oauthStateStore();
+    if (!ss) return null;
+    try {
+      var raw = ss.getItem(OAUTH_STATE_KEY);
+      if (!raw) return null;
+      var rec = JSON.parse(raw);
+      if (!rec || !rec.state || !rec.verifier || !rec.createdAt) return null;
+      if (Date.now() - rec.createdAt > OAUTH_STATE_TTL_MS) return null; // expirado
+      return rec;
+    } catch (_) { return null; }
+  }
+
+  function oauthStateConsume() {
+    // Single-use: se borra al leer, ANTES de validar.
+    var rec = oauthStateLoad();
+    try { var ss = oauthStateStore(); if (ss) ss.removeItem(OAUTH_STATE_KEY); } catch (_) {}
+    return rec;
+  }
+
+  function oauthStatesEqual(a, b) {
+    // Comparación sin salida temprana (mitiga timing side-channel).
+    a = String(a || ''); b = String(b || '');
+    if (a.length !== b.length) return false;
+    var diff = 0, i;
+    for (i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return diff === 0;
+  }
+
+  function oauthCodeChallenge(verifier, cb) {
+    // PKCE S256 vía WebCrypto. Respaldo 'plain' si no hay subtle digest
+    // (Cognito lo acepta y sigue atando el code al verifier de la sesión).
+    try {
+      var c = (typeof global !== 'undefined' && global.crypto) || null;
+      var subtle = c && c.subtle;
+      if (subtle && typeof subtle.digest === 'function') {
+        var enc = null;
+        try { enc = new TextEncoder().encode(verifier); } catch (_) {}
+        if (enc) {
+          subtle.digest('SHA-256', enc).then(function (buf) {
+            cb({ challenge: oauthB64Url(new Uint8Array(buf)), method: 'S256' });
+          }, function () { cb({ challenge: verifier, method: 'plain' }); });
+          return;
+        }
+      }
+    } catch (_) {}
+    cb({ challenge: verifier, method: 'plain' });
+  }
   var SOCIAL_IDP = { Google: 'Google', Facebook: 'Facebook' };
 
   function oauthAvailable() {
@@ -4442,14 +4532,39 @@ function withCredRetry(opFn) {
       err.code = 'auth/operation-not-allowed';
       return Promise.reject(err);
     }
-    var url = 'https://' + AWS_CONFIG.oauthDomain + '/oauth2/authorize'
-      + '?identity_provider=' + encodeURIComponent(providerName)
-      + '&redirect_uri=' + encodeURIComponent(AWS_CONFIG.oauthRedirectUri)
-      + '&response_type=code'
-      + '&client_id=' + encodeURIComponent(AWS_CONFIG.userPoolClientId)
-      + '&scope=' + encodeURIComponent(AWS_CONFIG.oauthScope || 'email openid profile');
-    try { global.location.assign(url); }
-    catch (e) { global.location.href = url; }
+    // R2-1 (ciclo 16): protección login CSRF (RFC 6749 §10.12) + PKCE.
+    // - state criptográfico: el callback debe devolver el mismo state que
+    //   guardamos; un ?code= plantado por un atacante llega SIN state válido
+    //   y handleOAuthRedirect() lo rechaza sin canjearlo.
+    // - nonce: se envía en el authorize y se exige idéntico dentro del
+    //   id_token (defensa en profundidad OIDC).
+    // - PKCE (S256 donde hay WebCrypto, 'plain' como respaldo — Cognito lo
+    //   acepta): el code deja de ser bearer, solo quien guarda el verifier
+    //   puede canjearlo.
+    // Todo vive en sessionStorage con expiración corta y single-use.
+    var state = oauthRandomString(32);
+    var nonce = oauthRandomString(32);
+    var verifier = oauthRandomString(48); // 64 caracteres base64url
+    if (!oauthStateSave({ state: state, nonce: nonce, verifier: verifier, createdAt: Date.now() })) {
+      var err0 = new Error('No se pudo iniciar el login social de forma segura en este navegador.');
+      err0.code = 'auth/operation-not-allowed';
+      try { notifyAuthError('No se pudo iniciar el inicio de sesión social. Intenta de nuevo.'); } catch (_) {}
+      return Promise.reject(err0);
+    }
+    oauthCodeChallenge(verifier, function (pkce) {
+      var url = 'https://' + AWS_CONFIG.oauthDomain + '/oauth2/authorize'
+        + '?identity_provider=' + encodeURIComponent(providerName)
+        + '&redirect_uri=' + encodeURIComponent(AWS_CONFIG.oauthRedirectUri)
+        + '&response_type=code'
+        + '&client_id=' + encodeURIComponent(AWS_CONFIG.userPoolClientId)
+        + '&scope=' + encodeURIComponent(AWS_CONFIG.oauthScope || 'email openid profile')
+        + '&state=' + encodeURIComponent(state)
+        + '&nonce=' + encodeURIComponent(nonce)
+        + '&code_challenge=' + encodeURIComponent(pkce.challenge)
+        + '&code_challenge_method=' + encodeURIComponent(pkce.method);
+      try { global.location.assign(url); }
+      catch (e) { global.location.href = url; }
+    });
     return new Promise(function () {}); // la página navega fuera
   }
 
@@ -4460,13 +4575,17 @@ function withCredRetry(opFn) {
     return global.atob(s);
   }
 
-  function exchangeCodeForSession(code) {
+  function exchangeCodeForSession(code, rec) {
     var C = cognitoLib();
     if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
+    rec = rec || {};
     var body = 'grant_type=authorization_code'
       + '&client_id=' + encodeURIComponent(AWS_CONFIG.userPoolClientId)
       + '&code=' + encodeURIComponent(code)
-      + '&redirect_uri=' + encodeURIComponent(AWS_CONFIG.oauthRedirectUri);
+      + '&redirect_uri=' + encodeURIComponent(AWS_CONFIG.oauthRedirectUri)
+      // R2-1 (ciclo 16): PKCE — sin el verifier guardado en la ida, el code
+      // plantado/robo no se puede canjear (Cognito valida el challenge).
+      + '&code_verifier=' + encodeURIComponent(rec.verifier || '');
     // FIX 2026-09-18: el fetch al token endpoint no tenía timeout. Si se
     // colgaba, el login social se quedaba en spinner eterno (se había
     // disparado drex:oauth-pending pero la promesa jamás se resolvía).
@@ -4481,6 +4600,9 @@ function withCredRetry(opFn) {
       catch (e) { throw new Error('oauth/bad-token'); }
       var username = payload['cognito:username'] || payload.sub;
       if (!username) throw new Error('oauth/no-username');
+      // R2-1 (ciclo 16): el nonce dentro del id_token debe ser el que
+      // enviamos en el authorize. Falla cerrado si falta o difiere.
+      if (!rec.nonce || payload.nonce !== rec.nonce) throw new Error('oauth/bad-nonce');
       var cu = new C.CognitoUser({ Username: username, Pool: getUserPool() });
       var session = new C.CognitoUserSession({
         IdToken: new C.CognitoIdToken({ IdToken: tok.id_token }),
@@ -4503,6 +4625,9 @@ function withCredRetry(opFn) {
       var mErr = /[?&]error(?:_description)?=([^&]*)/.exec(qs);
       var mCode = /[?&]code=([^&]+)/.exec(qs);
       if (!mErr && !mCode) return;
+      // R2-1 (ciclo 16): single-use del state guardado en la ida. Se consume
+      // SIEMPRE (éxito o error) antes de validar: un intento solo vale una vez.
+      var rec = oauthStateConsume();
       // Limpiar la URL para no reprocesar
       try {
         var clean = loc.pathname + loc.hash;
@@ -4516,10 +4641,20 @@ function withCredRetry(opFn) {
         notifyAuthError(msg);
         return;
       }
+      // El callback DEBE traer el state que guardamos al iniciar el flujo.
+      // Un ?code= plantado (link malicioso, login CSRF) llega sin state
+      // válido: se rechaza y el code NUNCA se canjea.
+      var mState = /[?&]state=([^&]+)/.exec(qs);
+      var okState = false;
+      try { okState = !!(rec && mState && oauthStatesEqual(decodeURIComponent(mState[1]), rec.state)); } catch (e) {}
+      if (!okState) {
+        notifyAuthError('No se pudo completar el inicio de sesión. Intenta de nuevo.');
+        return;
+      }
       var code = decodeURIComponent(mCode[1]);
       notifyAuthPending();
       getAuth();
-      exchangeCodeForSession(code).then(function () {
+      exchangeCodeForSession(code, rec).then(function () {
         // establishSession ya notificó a los listeners
       }, function (err) {
         notifyAuthError('No se pudo completar el inicio de sesión. Intenta de nuevo.');
@@ -5688,6 +5823,17 @@ function withCredRetry(opFn) {
         Ref: Ref,
         TIMESTAMP_SENTINEL: TIMESTAMP_SENTINEL,
         AWS_CONFIG: AWS_CONFIG,
+        // R2-1 (ciclo 16): internos del login social para pruebas en node
+        oauth: {
+          federatedSignIn: federatedSignIn,
+          handleOAuthRedirect: handleOAuthRedirect,
+          stateKey: OAUTH_STATE_KEY,
+          stateTtlMs: OAUTH_STATE_TTL_MS,
+          loadState: oauthStateLoad,
+          consumeState: oauthStateConsume,
+          statesEqual: oauthStatesEqual,
+          codeChallenge: oauthCodeChallenge
+        },
         // [SEGURIDAD-2FA] detector TOTP puro (sin red) para pruebas (fix 2026-09-20)
         mfaDetectTotp: mfaDetectTotpFromUserData,
         // [DISPOSITIVOS] internos para pruebas en node
