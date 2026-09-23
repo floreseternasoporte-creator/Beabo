@@ -7226,6 +7226,7 @@ function fiestaGameEndForAll() {
 /* ---------- Sincronización remota (la llama fiestaWatchRoom) ---------- */
 function fiestaGameRemoteUpdate(game) {
   fiestaGame = game || null;
+  _fiestaGameStaleNotified = false; // C48-F1: rearmar la detección de anfitrión caído
   // C21: al salir de la fase de votación se olvida mi voto local y se libera
   // el guarda anti-doble-tally del dueño.
   if (!game || game.status !== 'vote') { fiestaGameMyVote = null; fiestaGameHostBusy = false; }
@@ -7281,6 +7282,7 @@ function fiestaGameCleanup() {
   fiestaGame = null;
   fiestaGameMySecret = null;
   fiestaGameHiddenLocal = false;
+  _fiestaGameStaleNotified = false; // C48-F1
   var v = document.getElementById('fiesta-game-view');
   if (v) { v.classList.add('hidden'); v.classList.remove('flex'); }
   var s = document.getElementById('fiesta-games-sheet');
@@ -7444,6 +7446,7 @@ function fiestaGameVote(target) {
 function fiestaGameStartTick() {
   fiestaGameStopTick();
   fiestaGameTickInt = setInterval(function () {
+    if (typeof fiestaGameCheckHostGone === 'function') fiestaGameCheckHostGone();
     var el = document.getElementById('fg-countdown');
     if (!el || !fiestaGame) return;
     var now = Date.now(), target = 0;
@@ -7456,6 +7459,41 @@ function fiestaGameStartTick() {
 }
 function fiestaGameStopTick() {
   if (fiestaGameTickInt) { clearInterval(fiestaGameTickInt); fiestaGameTickInt = null; }
+}
+/* C48-F1: si el anfitrión muere sin salir (su app se cierra de golpe: no hay
+   leaveFiesta y status queda 'live'), el juego quedaba CONGELADO en la fase
+   actual para todos los invitados: el host loop murió con su cliente, nadie
+   más avanza las fases, y fiestaGameStartNow/fiestaGameEndForAll exigen
+   fiestaAmHost (los invitados no tienen recuperación). Detección del lado
+   invitado: fase vencida + margen de 15 s y anfitrión ausente de
+   fiestaMembers → se oculta el juego localmente con aviso y se intenta
+   limpiar el doc huérfano (best-effort: si las reglas lo deniegan, la UI
+   queda desbloqueada igual). */
+var _fiestaGameStaleNotified = false;
+function fiestaGamePhaseEndsAt(g) {
+  if (!g) return 0;
+  if (g.status === 'describe') return g.turnEndsAt || 0;
+  if (g.status === 'vote') return g.voteEndsAt || 0;
+  if (g.status === 'deal') return g.dealEndsAt || 0;
+  if (g.status === 'reveal') return g.revealEndsAt || 0;
+  return 0;
+}
+function fiestaGameCheckHostGone() {
+  if (_fiestaGameStaleNotified || !fiestaGame || fiestaGame.status === 'final') return;
+  if (typeof fiestaAmHost !== 'undefined' && fiestaAmHost) return;
+  var endsAt = fiestaGamePhaseEndsAt(fiestaGame);
+  if (!endsAt || Date.now() < endsAt + 15000) return;
+  var hostUid = (typeof fiestaCur !== 'undefined' && fiestaCur && fiestaCur.data && fiestaCur.data.hostId) || null;
+  var hm = hostUid ? fiestaGameMember(hostUid) : null;
+  if (hm && Object.keys(hm).length) return; // el anfitrión sigue en la sala
+  _fiestaGameStaleNotified = true;
+  try {
+    if (typeof DrexCloud !== 'undefined' && fiestaCur && fiestaCur.id)
+      DrexCloud.database().ref('fiestas/' + fiestaCur.id + '/game').remove().catch(function () {});
+  } catch (_) {}
+  fiestaGameMySecret = null;
+  fiestaGameHideAll();
+  showMiniToast(appT('El juego se detuvo: el anfitrión se desconectó.'));
 }
 function fiestaGameRender() {
   var body = document.getElementById('fiesta-game-body');
@@ -33096,6 +33134,15 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         deletedForAll: true, text: '', images: null, image: null, gifUrl: null, sticker: null, type: 'deleted'
       }).catch(() => {});
       DrexCloud.database().ref('msgReactions/' + currentChatRoomId + '/' + msgId).remove().catch(() => {});
+      // C48-C1: si el mensaje eliminado estaba fijado, el pin quedaba huérfano
+      // en conversationPinned/<sala> y el banner seguía mostrando su texto
+      // original para ambos — el "eliminar para todos" no lo alcanzaba.
+      DrexCloud.database().ref('conversationPinned/' + currentChatRoomId).once('value').then(pinSnap => {
+        const pin = pinSnap.val();
+        if (pin && pin.msgId === msgId) {
+          DrexCloud.database().ref('conversationPinned/' + currentChatRoomId).remove().catch(() => {});
+        }
+      }).catch(() => {});
       if (!currentChatIsGroup) {
         DrexCloud.database().ref('conversationMessages/' + currentChatRoomId).limitToLast(1).once('value').then(lastSnap => {
           let isLast = false;
