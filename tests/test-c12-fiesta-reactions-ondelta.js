@@ -9,8 +9,13 @@
  *
  * A diferencia de copiar el callback a mano, este harness EXTRAE el código
  * real del index.html:
- *   - versión VIEJA: git show cd12a873:index.html  (on('child_added', ...))
  *   - versión NUEVA: index.html (raiz del repo)    (onDelta(...))
+ *   - versión VIEJA: reconstrucción sintáctica del bloque nuevo
+ *     (.onDelta( -> .on('child_added',). Válida porque el commit de la
+ *     migración cambió EXACTAMENTE esa línea con el cuerpo del callback
+ *     byte-idéntico (diff de un solo hunk verificado). Además evita depender
+ *     del historial de git: CI hace checkout shallow y `git show <sha>`
+ *     fallaría ahí.
  * y lo evalúa contra el PIPELINE REAL de drex-cloud.js (Ref.on / onDelta /
  * fireListener / dispatchSnapshot / pollGroup con delta) con un DynamoDB
  * falso. Así se prueba el código desplegado, no una copia.
@@ -37,7 +42,6 @@
  */
 const path = require('path');
 const fs = require('fs');
-const cp = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'index.html');
@@ -128,12 +132,13 @@ function extractAllowlist(html) {
   if (!m) throw new Error('no se encontro FIESTA_ALLOWED_REACTIONS');
   return m[0] + "\nfunction fiestaIsAllowedReaction(e) { return FIESTA_ALLOWED_REACTIONS.indexOf(e) !== -1; }";
 }
-const oldHtml = cp.execSync('git -C ' + ROOT + ' show cd12a873:index.html', { maxBuffer: 16 * 1024 * 1024 }).toString('utf8');
 const newHtml = fs.readFileSync(SRC, 'utf8');
-const OLD_CODE = extractRegistration(oldHtml);
 const NEW_CODE = extractRegistration(newHtml);
-if (!/\.on\('child_added'/.test(OLD_CODE)) throw new Error('el codigo viejo no usa on(child_added)');
 if (!/\.onDelta\(/.test(NEW_CODE)) throw new Error('el codigo nuevo no usa onDelta');
+// Reconstrucción del registro viejo a partir del nuevo (ver cabecera).
+const OLD_CODE = NEW_CODE.replace(/\.onDelta\(snap => \{/, ".on('child_added', snap => {");
+if (OLD_CODE === NEW_CODE) throw new Error('no se pudo reconstruir el registro viejo desde el nuevo');
+if (!/\.on\('child_added'/.test(OLD_CODE)) throw new Error('el codigo viejo no usa on(child_added)');
 
 function makeCtx(shown) {
   const allowSrc = extractAllowlist(newHtml);
