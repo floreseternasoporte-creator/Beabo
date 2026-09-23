@@ -7236,6 +7236,17 @@ function fiestaGameRemoteUpdate(game) {
     fiestaGameHideAll();
     return;
   }
+
+  // C55: el anfitrión que recarga a mitad del juego y reingresa queda con
+  // fiestaAmHost pero sin host loop (fiestaGameStartHostLoop solo se llamaba
+  // en fiestaGameStartNow). Sin reanudarlo las fases nunca avanzan y los
+  // invitados no detectan anfitrión ausente (sigue en fiestaMembers):
+  // juego congelado para siempre. Reanudar es seguro: el tick solo avanza
+  // fases vencidas y fiestaGameHostBusy evita doble tally.
+  if (fiestaGame.status !== 'final' && typeof fiestaAmHost !== 'undefined' &&
+      fiestaAmHost && !fiestaGameHostInt) {
+    fiestaGameStartHostLoop();
+  }
   if (!fiestaGameMySecret && fiestaCur && fiestaCur.id && fiestaMyUid &&
       (fiestaGame.players || []).indexOf(fiestaMyUid) !== -1) {
     DrexCloud.database().ref('fiestaGameSecrets/' + fiestaCur.id + '/' + fiestaMyUid).once('value')
