@@ -15,7 +15,7 @@ var APP_ENGLISH_TEXT = {
 "Escanea para ver este perfil":"Scan to view this profile",
 "Aún no se pudo cargar este perfil. Inténtalo de nuevo en un momento.":"This profile couldn't be loaded yet. Try again in a moment.",
 "No se pudo generar el código QR.":"Couldn't generate the QR code.",
-"Foto":"Photo",
+
 "Colaborar":"Collaborate",
 "Quitar colaboración":"Remove collaboration",
 "Aceptar":"Accept",
@@ -120,7 +120,7 @@ var APP_ENGLISH_TEXT = {
 "Sin caché acumulado por ahora":"No accumulated cache for now",
 "Limpiando caché...":"Cleaning cache...",
 "Caché eliminado en tiempo real correctamente.":"Cache cleared successfully in real time.",
-"Uso de caché estimado: 0 KB":"Estimated cache usage: 0 KB",
+
 "Cambia los menús y controles de Drex.":"Change Drex menus and controls.",
 "Cambiar":"Change",
 "Cambiar de cuenta":"Switch account",
@@ -128,7 +128,7 @@ var APP_ENGLISH_TEXT = {
 "Cancelar":"Cancel",
 "Cargando guardados...":"Loading saved...",
 "Cargando menciones...":"Loading mentions...",
-"Cargando...":"Loading...",
+
 "Cargar más comentarios":"Load more comments",
 "Centro de ayuda":"Help center",
 "Centro de seguridad":"Security center",
@@ -188,7 +188,7 @@ var APP_ENGLISH_TEXT = {
 "Confirmaciones de lectura":"Read receipts",
 "Confirmar contraseña":"Confirm password",
 "Confirmar fecha":"Confirm date",
-"Conoce más sobre Drex":"Learn more about Drex",
+
 "Conserva el texto pendiente solo aquí.":"Keep pending text only here.",
 "Contenido +18":"18+ Content",
 "Contenido Apropiado:":"Appropriate Content:",
@@ -228,7 +228,7 @@ var APP_ENGLISH_TEXT = {
 "Cuéntanos sobre ti":"Tell us about you",
 "Cálido":"Warm",
 "Cómo Utilizamos su Información":"How We Use Your Information",
-"Cómo protegemos tus datos":"How we protect your data",
+
 "Datos":"Data",
 "Datos locales del chat":"Local chat data",
 "Datos y Red":"Data and Network",
@@ -655,7 +655,7 @@ var APP_ENGLISH_TEXT = {
 "Toca para elegir una foto":"Tap to choose a photo",
 "Todavía no hay comentarios":"No comments yet",
 "Todo el mundo":"Everyone",
-"Todos":"All",
+
 "Todos pueden escribir":"Everyone can write",
 "Traducciones":"Translations",
 "Traducción automática":"Automatic translation",
@@ -803,7 +803,7 @@ var APP_ENGLISH_TEXT = {
 "1 semana":"1 week",
 "Acoso, insultos o ataques personales":"Harassment, insults or personal attacks",
 "Activo ahora":"Active now",
-"Activo ·":"Active ·",
+
 "Actualizado":"Updated",
 "Actualizando…":"Updating…",
 "Agrega al menos una persona":"Add at least one person",
@@ -812,7 +812,7 @@ var APP_ENGLISH_TEXT = {
 "Agregar nota temporal":"Add temporary note",
 "Agregar participante":"Add participant",
 "Agregar personas":"Add people",
-"Ajustes de cuenta":"Account settings","Seguridad y privacidad":"Security & privacy","Almacenamiento y datos":"Storage & data","Alertas":"Alerts","Modo descanso":"Rest mode","Bienestar":"Wellbeing","Ayuda":"Help","Sesión":"Session","Alertas y dispositivos":"Alerts & devices","Conoce más sobre Drex":"Learn more about Drex","Verificado":"Verified","Enviar enlace":"Send link","Aún no hay eventos de seguridad registrados.":"No security events recorded yet.","No se encontró un correo para enviar el código.":"No email found to send the code to.","Tu cuenta está desactivada.":"Your account is deactivated.","Esta cuenta no está disponible.":"This account is not available.","Volver a la app":"Back to App","Eliminación de cuenta":"Account Deletion","Solicita eliminar permanentemente tu cuenta de Drex y tus datos":"Request to permanently delete your Drex account and data","Cómo solicitar la eliminación":"How to Request Deletion","Para proteger tus datos, necesitamos una solicitud formal para procesar eliminaciones de cuenta. Sigue estos pasos:":"To ensure the security of your data, we require a formal request to process account deletions. Please follow these steps:","PASO 1":"STEP 1","PASO 2":"STEP 2","PASO 3":"STEP 3","Envía un correo desde tu dirección de correo registrada en Drex a":"Send an email from your registered Drex account email address to","Usa este asunto:":"Use the subject line:","\"Solicitud de eliminación de cuenta - [Tu nombre de usuario]\"":"\"Account Deletion Request - [Your Username]\"","Nuestro equipo de soporte verificará tu identidad y procesará la eliminación en un plazo de 7 días hábiles.":"Our support team will verify your identity and process the deletion within 7 business days.","Enviar correo de solicitud":"Send Deletion Request Email","¿Qué datos se eliminan?":"What Data is Deleted?","Cuando se procese tu solicitud, la siguiente información se eliminará permanentemente de nuestros servidores activos:":"When your request is processed, the following information will be permanently removed from our active servers:","Tu información de perfil (correo, nombre de usuario, bio, foto de perfil).":"Your profile information (Email, Username, Bio, Profile Picture).","Todas tus publicaciones y comentarios públicos en la comunidad Drex.":"All your public posts and comments on the Drex community.","Tu historial de votos e interacciones sociales.":"Your voting history and social interactions.","Tu tarjeta digital Drex Bank y tu historial de transacciones.":"Your Drex Bank digital card and transaction history.","Nota: algunos datos de transacciones pueden conservarse por un periodo limitado según lo exijan regulaciones financieras u obligaciones legales.":"Note: Some transaction data may be retained for a limited period as required by financial regulations or legal obligations.","Conservación de datos":"Data Retention","Una vez eliminados, tus datos no se pueden recuperar. Mantenemos una copia de seguridad de 30 días como periodo de gracia por seguridad antes del borrado final de nuestros sistemas. Después de este periodo, todos los identificadores personales se eliminan o se anonimizan por completo.":"Once deleted, your data cannot be recovered. We maintain a 30-day grace period backup for security purposes before final purging from our systems. After this period, all personal identifiers are completely erased or anonymized.","© 2026 Drex. Todos los derechos reservados.":"© 2026 Drex Platform. All Rights Reserved.","Seguridad y privacidad para la comunidad Drex.":"Security and Privacy for the Drex Community.","Pide a nuestro equipo que elimine tu cuenta":"Request our team to delete your account",
+"Ajustes de cuenta":"Account settings","Almacenamiento y datos":"Storage & data","Verificado":"Verified","Enviar enlace":"Send link","Aún no hay eventos de seguridad registrados.":"No security events recorded yet.","No se encontró un correo para enviar el código.":"No email found to send the code to.","Tu cuenta está desactivada.":"Your account is deactivated.","Esta cuenta no está disponible.":"This account is not available.","Volver a la app":"Back to App","Eliminación de cuenta":"Account Deletion","Solicita eliminar permanentemente tu cuenta de Drex y tus datos":"Request to permanently delete your Drex account and data","Cómo solicitar la eliminación":"How to Request Deletion","Para proteger tus datos, necesitamos una solicitud formal para procesar eliminaciones de cuenta. Sigue estos pasos:":"To ensure the security of your data, we require a formal request to process account deletions. Please follow these steps:","PASO 1":"STEP 1","PASO 2":"STEP 2","PASO 3":"STEP 3","Envía un correo desde tu dirección de correo registrada en Drex a":"Send an email from your registered Drex account email address to","Usa este asunto:":"Use the subject line:","\"Solicitud de eliminación de cuenta - [Tu nombre de usuario]\"":"\"Account Deletion Request - [Your Username]\"","Nuestro equipo de soporte verificará tu identidad y procesará la eliminación en un plazo de 7 días hábiles.":"Our support team will verify your identity and process the deletion within 7 business days.","Enviar correo de solicitud":"Send Deletion Request Email","¿Qué datos se eliminan?":"What Data is Deleted?","Cuando se procese tu solicitud, la siguiente información se eliminará permanentemente de nuestros servidores activos:":"When your request is processed, the following information will be permanently removed from our active servers:","Tu información de perfil (correo, nombre de usuario, bio, foto de perfil).":"Your profile information (Email, Username, Bio, Profile Picture).","Todas tus publicaciones y comentarios públicos en la comunidad Drex.":"All your public posts and comments on the Drex community.","Tu historial de votos e interacciones sociales.":"Your voting history and social interactions.","Tu tarjeta digital Drex Bank y tu historial de transacciones.":"Your Drex Bank digital card and transaction history.","Nota: algunos datos de transacciones pueden conservarse por un periodo limitado según lo exijan regulaciones financieras u obligaciones legales.":"Note: Some transaction data may be retained for a limited period as required by financial regulations or legal obligations.","Conservación de datos":"Data Retention","Una vez eliminados, tus datos no se pueden recuperar. Mantenemos una copia de seguridad de 30 días como periodo de gracia por seguridad antes del borrado final de nuestros sistemas. Después de este periodo, todos los identificadores personales se eliminan o se anonimizan por completo.":"Once deleted, your data cannot be recovered. We maintain a 30-day grace period backup for security purposes before final purging from our systems. After this period, all personal identifiers are completely erased or anonymized.","© 2026 Drex. Todos los derechos reservados.":"© 2026 Drex Platform. All Rights Reserved.","Seguridad y privacidad para la comunidad Drex.":"Security and Privacy for the Drex Community.","Pide a nuestro equipo que elimine tu cuenta":"Request our team to delete your account",
 "Al publicar contenido en Drex, usted nos otorga una licencia mundial, no exclusiva y libre de regalías para usar, copiar, reproducir, procesar y mostrar dicho contenido en relación con la prestación de nuestros servicios. Usted conserva la propiedad de su contenido original.":"By posting content on Drex, you grant us a worldwide, non-exclusive, royalty-free license to use, copy, reproduce, process and display such content in connection with providing our services. You retain ownership of your original content.",
 "Alerta de seguridad activada.":"Security alert enabled.",
 "Alerta de seguridad desactivada.":"Security alert disabled.",
@@ -862,7 +862,7 @@ var APP_ENGLISH_TEXT = {
 "Compartir publicación":"Share post",
 "Comunidad":"Community",
 "Conducta y Responsabilidades":"Conduct and Responsibilities",
-"Conectando…":"Connecting…",
+
 "Configura tus idiomas":"Set up your languages",
 "Contador de hoy reiniciado":"Today's counter reset",
 "Contamos con procedimientos para tratar cualquier sospecha de violación de datos personales y le notificaremos a usted y a cualquier regulador aplicable sobre una violación cuando estemos legalmente obligados a hacerlo.":"We have procedures in place to deal with any suspected personal data breach and will notify you and any applicable regulator of a breach where we are legally required to do so.",
@@ -986,7 +986,7 @@ var APP_ENGLISH_TEXT = {
 "Hemos implementado medidas de seguridad técnicas y organizativas adecuadas diseñadas para proteger la seguridad de cualquier información personal que procesemos. Sin embargo, recuerde también que no podemos garantizar que Internet sea 100% seguro. Aunque haremos todo lo posible para proteger su información personal, la transmisión de información personal hacia y desde nuestras aplicaciones es bajo su propio riesgo. Solo debe acceder a los servicios dentro de un entorno seguro.":"We have implemented appropriate technical and organizational security measures designed to protect the security of any personal information we process. However, please also remember that we cannot guarantee that the Internet is 100% secure. Although we will do our best to protect your personal information, transmission of personal information to and from our apps is at your own risk. You should only access the services within a secure environment.",
 "Hindi":"Hindi",
 "Historial":"History",
-"Hoy:":"Today:",
+
 "Hrvatski (Croata)":"Hrvatski (Croatian)",
 "Idioma guardado":"Language saved",
 "Idioma que estoy aprendiendo":"Language I'm learning",
@@ -1253,7 +1253,7 @@ var APP_ENGLISH_TEXT = {
 "Generar nuevos códigos de respaldo":"Generate new backup codes",
 "Agrega una capa extra de seguridad: además de tu contraseña, vas a necesitar un código de 6 dígitos generado por una app de autenticación (Google Authenticator, Authy, etc.) para iniciar sesión.":"Add an extra layer of security: besides your password, you will need a 6-digit code generated by an authenticator app (Google Authenticator, Authy, etc.) to sign in.",
 "Activar verificación en dos pasos":"Turn on two-step verification",
-"No se pudo cargar esta sección. Inténtalo de nuevo.":"Could not load this section. Try again.",
+
 "Verifica tu correo primero":"Verify your email first",
 "Para evitar que otra persona bloquee tu cuenta, confirma que controlas el correo vinculado antes de activar la verificación en dos pasos.":"To prevent someone else from locking your account, confirm you control the linked email before turning on two-step verification.",
 "Enviar enlace de verificación":"Send verification link",
@@ -1268,7 +1268,7 @@ var APP_ENGLISH_TEXT = {
 "Listo":"Done",
 "Disponible próximamente":"Coming soon",
 "Los códigos de respaldo aún no están disponibles. Inténtalo de nuevo más tarde.":"Backup codes are not available yet. Try again later.",
-"No se pudo generar. Inténtalo de nuevo.":"Could not generate them. Try again.",
+
 "Para desactivar la verificación en dos pasos, confirma tu identidad: escribe tu contraseña y un código actual de tu app de autenticación.":"To turn off two-step verification, confirm your identity: enter your password and a current code from your authenticator app.",
 "Desactivar verificación en dos pasos":"Turn off two-step verification",
 "Escribe tu contraseña.":"Enter your password.",
@@ -1396,7 +1396,7 @@ var APP_ENGLISH_TEXT = {
 "Para ti":"For you",
 "Descubre":"Discover",
 "Mi gente":"My people",
-"Destacados":"Top posts",
+
 "Mostrando destacados":"Showing top posts",
 "Mostrando tu gente":"Showing your people",
 "Populares":"Popular",
@@ -2543,7 +2543,7 @@ var APP_CHINESE_TEXT = {
 "Escanea para ver este perfil":"扫码查看此个人资料",
 "Aún no se pudo cargar este perfil. Inténtalo de nuevo en un momento.":"此个人资料尚未加载完成，请稍后再试。",
 "No se pudo generar el código QR.":"无法生成二维码。",
-"Foto":"照片",
+
 "Colaborar":"合作",
 "Quitar colaboración":"移除合作",
 "Aceptar":"接受",
@@ -2652,7 +2652,7 @@ var APP_CHINESE_TEXT = {
 "Cancelar":"取消",
 "Cargando guardados...":"正在加载收藏…",
 "Cargando menciones...":"正在加载提及…",
-"Cargando...":"加载中…",
+
 "Cargar más comentarios":"加载更多评论",
 "Centro de ayuda":"帮助中心",
 "Centro de seguridad":"安全中心",
@@ -2712,7 +2712,7 @@ var APP_CHINESE_TEXT = {
 "Confirmaciones de lectura":"已读回执",
 "Confirmar contraseña":"确认密码",
 "Confirmar fecha":"确认日期",
-"Conoce más sobre Drex":"了解更多关于 Drex 的信息",
+
 "Conserva el texto pendiente solo aquí.":"仅在此处保留待发送的文本。",
 "Contenido +18":"18+ 内容",
 "Contenido Apropiado:":"适宜内容：",
@@ -3311,7 +3311,7 @@ var APP_CHINESE_TEXT = {
 "1 semana":"1 周",
 "Acoso, insultos o ataques personales":"骚扰、辱骂或人身攻击",
 "Activo ahora":"当前在线",
-"Activo ·":"在线 ·",
+
 "Actualizado":"已更新",
 "Actualizando…":"更新中…",
 "Agrega al menos una persona":"至少添加一个人",
@@ -3369,7 +3369,7 @@ var APP_CHINESE_TEXT = {
 "Compartir publicación":"分享帖子",
 "Comunidad":"社区",
 "Conducta y Responsabilidades":"行为与责任",
-"Conectando…":"连接中…",
+
 "Configura tus idiomas":"设置你的语言",
 "Contador de hoy reiniciado":"今日计数已重置",
 "Contamos con procedimientos para tratar cualquier sospecha de violación de datos personales y le notificaremos a usted y a cualquier regulador aplicable sobre una violación cuando estemos legalmente obligados a hacerlo.":"我们已制定程序来处理任何疑似个人数据泄露的情况，并在法律要求时通知你和相关监管机构。",
@@ -3431,7 +3431,7 @@ var APP_CHINESE_TEXT = {
 "Eliminado de guardados":"已从收藏中移除",
 "Ella":"她",
 "En algunas regiones (como el Espacio Económico Europeo), usted tiene ciertos derechos según las leyes de protección de datos aplicables. Estos pueden incluir el derecho (i) a solicitar acceso y obtener una copia de su información personal, (ii) a solicitar la rectificación o eliminación; (iii) a restringir el procesamiento de su información personal; y (iv) si corresponde, a la portabilidad de los datos. En determinadas circunstancias, también puede tener derecho a oponerse al procesamiento de su información personal. Para realizar dicha solicitud, utilice los datos de contacto proporcionados. Consideraremos y actuaremos sobre cualquier solicitud de acuerdo con las leyes de protección de datos aplicables.":"在某些地区（如欧洲经济区），根据适用的数据保护法律，你享有一定的权利。这些权利可能包括：(i) 请求访问并获取你的个人信息副本；(ii) 请求更正或删除；(iii) 限制处理你的个人信息；(iv) 在适用情况下享有数据可携带权。在某些情况下，你还有权反对处理你的个人信息。如需提出此类请求，请使用提供的联系方式。我们将根据适用的数据保护法律考虑并处理任何请求。",
-"En ningún caso Drex, ni sus directores, empleados o afiliados, serán responsables por cualquier daño indirecto, incidental, especial o consecuente que surja de su uso de la plataforma. El servicio se proporciona \"tal cual\" y \"según disponibilidad\", sin garantías de ningún tipo, ya sean expresas o implícitas.":"在任何情况下，Drex 及其董事、员工或关联公司均不对因你使用平台而产生的任何间接、附带、特殊或后果性损害承担责任。服务按“现状”和“可用状态”提供，不作任何明示或暗示的保证。",
+
 "English (Inglés)":"英语",
 "Enlace copiado al portapapeles":"链接已复制到剪贴板",
 "Entendido":"知道了",
@@ -3492,7 +3492,7 @@ var APP_CHINESE_TEXT = {
 "Hemos implementado medidas de seguridad técnicas y organizativas adecuadas diseñadas para proteger la seguridad de cualquier información personal que procesemos. Sin embargo, recuerde también que no podemos garantizar que Internet sea 100% seguro. Aunque haremos todo lo posible para proteger su información personal, la transmisión de información personal hacia y desde nuestras aplicaciones es bajo su propio riesgo. Solo debe acceder a los servicios dentro de un entorno seguro.":"我们已实施适当的技术和组织安全措施，旨在保护我们处理的任何个人信息的安全。但也请记住，我们无法保证互联网 100% 安全。尽管我们会尽力保护你的个人信息，但个人信息在我们的应用之间的传输风险由你自行承担。你只能在安全的环境中访问服务。",
 "Hindi":"印地语",
 "Historial":"历史",
-"Hoy:":"今天：",
+
 "Hrvatski (Croata)":"克罗地亚语",
 "Idioma guardado":"语言已保存",
 "Idioma que estoy aprendiendo":"我正在学习的语言",
@@ -3522,7 +3522,7 @@ var APP_CHINESE_TEXT = {
 "La fusión de la tecnología textil y el diseño futurista. Piezas físicas creadas con la misma obsesión por el detalle que nuestro software, sirviendo como extensión de la identidad digital.":"纺织技术与未来主义设计的融合。实体作品以与软件同样的细节执着打造，成为数字身份的延伸。",
 "La información personal que recopilamos depende del contexto de sus interacciones con nosotros y las aplicaciones, las elecciones que realiza y los productos y funciones que utiliza. La información personal que recopilamos puede incluir lo siguiente: Nombre y datos de contacto, credenciales y datos de inicio de sesión en redes sociales.":"我们收集的个人信息取决于你与我们及应用互动的背景、你的选择以及你使用的产品和功能。我们收集的个人信息可能包括：姓名和联系方式、凭证和社交登录数据。",
 "La infraestructura que impulsa cada interacción en tiempo real.":"驱动每一次实时互动的基础设施。",
-"La mayoría de los navegadores web y algunos sistemas operativos móviles y aplicaciones móviles incluyen una función o configuración de No rastrear (\"DNT\") que puede activar para indicar su preferencia de privacidad de no tener datos sobre sus actividades de navegación en línea monitoreados y recopilados. En esta etapa, no se ha finalizado ningún estándar tecnológico uniforme para reconocer e implementar señales DNT. Como tal, actualmente no respondemos a las señales del navegador DNT ni a cualquier otro mecanismo que comunique automáticamente su elección de no ser rastreado en línea. Si se adopta un estándar para el seguimiento en línea que debamos seguir en el futuro, le informaremos sobre esa práctica en una versión revisada de esta política de privacidad.":"大多数网络浏览器以及一些移动操作系统和移动应用都包含“请勿追踪”（DNT）功能或设置，你可以激活它来表明不希望你的在线浏览活动数据被监控和收集的隐私偏好。目前，尚未最终确定统一的技术标准来识别和实施 DNT 信号。因此，我们目前不会响应 DNT 浏览器信号或任何其他自动传达你不被在线追踪选择的机制。如果未来采用了我们必须遵守的在线追踪标准，我们将在修订版的隐私政策中告知你这一做法。",
+
 "La nueva contraseña debe tener al menos 8 caracteres.":"新密码至少需要 8 个字符。",
 "La publicación contiene contenido sexual o desnudez":"该帖子包含性内容或裸露",
 "La publicación será visible para todos los usuarios de la plataforma.":"该帖子将对平台上的所有用户可见。",
@@ -3635,7 +3635,7 @@ var APP_CHINESE_TEXT = {
 "Personalizado":"自定义",
 "Personas que sigo":"我关注的人",
 "Pilares Principales":"核心支柱",
-"Podemos actualizar esta política de privacidad de vez en cuando. La versión actualizada se indicará mediante una fecha de \"Revisada\" actualizada y la versión actualizada entrará en vigencia tan pronto como sea accesible. Si realizamos cambios sustanciales en esta política de privacidad, podemos notificárselo mediante la publicación destacada de un aviso de dichos cambios o enviándole directamente una notificación. Le recomendamos que revise esta política de privacidad con frecuencia para estar informado de cómo protegemos su información.":"我们可能会不时更新本隐私政策。更新版本将通过更新的“修订”日期标明，并在可访问后立即生效。如果我们对本隐私政策进行重大更改，我们可能会通过显著发布此类更改的通知或直接向你发送通知来告知你。我们建议你经常查看本隐私政策，以了解我们如何保护你的信息。",
+
 "Podemos terminar o suspender su cuenta e interrumpir el acceso a los servicios de inmediato, sin previo aviso ni responsabilidad, por cualquier motivo, incluyendo, entre otros, si usted incumple los Términos.":"我们可能会立即终止或暂停你的账号并中断对服务的访问，无需事先通知或承担责任，原因包括但不限于你违反本条款。",
 "Podemos utilizar cookies y tecnologías de seguimiento similares (como balizas web y píxeles) para acceder o almacenar información. La información específica sobre cómo utilizamos dichas tecnologías y cómo puede rechazar ciertas cookies se establece en nuestra Política de Cookies.":"我们可能会使用 Cookie 和类似的追踪技术（如网络信标和像素）来访问或存储信息。有关我们如何使用此类技术以及你如何拒绝某些 Cookie 的具体信息，请参阅我们的 Cookie 政策。",
 "Podemos utilizar su información como parte de nuestros esfuerzos para mantener nuestras aplicaciones seguras y protegidas (por ejemplo, para el monitoreo y la prevención de fraudes).":"我们可能会将你的信息用于保障我们应用安全的工作中（例如欺诈监控和预防）。",
@@ -3758,7 +3758,7 @@ var APP_CHINESE_TEXT = {
 "Generar nuevos códigos de respaldo":"生成新的备用验证码",
 "Agrega una capa extra de seguridad: además de tu contraseña, vas a necesitar un código de 6 dígitos generado por una app de autenticación (Google Authenticator, Authy, etc.) para iniciar sesión.":"增加一层额外的安全保护：除了密码之外，登录时还需要身份验证器应用（Google Authenticator、Authy 等）生成的 6 位验证码。",
 "Activar verificación en dos pasos":"开启两步验证",
-"No se pudo cargar esta sección. Inténtalo de nuevo.":"无法加载此部分。请重试。",
+
 "Verifica tu correo primero":"请先验证你的邮箱",
 "Para evitar que otra persona bloquee tu cuenta, confirma que controlas el correo vinculado antes de activar la verificación en dos pasos.":"为防止他人锁定你的账号，请在开启两步验证之前确认你控制着关联的邮箱。",
 "Enviar enlace de verificación":"发送验证链接",
@@ -3773,7 +3773,7 @@ var APP_CHINESE_TEXT = {
 "Listo":"完成",
 "Disponible próximamente":"即将推出",
 "Los códigos de respaldo aún no están disponibles. Inténtalo de nuevo más tarde.":"备用验证码暂不可用。请稍后再试。",
-"No se pudo generar. Inténtalo de nuevo.":"无法生成。请重试。",
+
 "Para desactivar la verificación en dos pasos, confirma tu identidad: escribe tu contraseña y un código actual de tu app de autenticación.":"要停用两步验证，请确认你的身份：输入你的密码和身份验证器应用中的当前验证码。",
 "Desactivar verificación en dos pasos":"停用两步验证",
 "Escribe tu contraseña.":"请输入你的密码。",
@@ -3945,7 +3945,7 @@ var APP_CHINESE_TEXT = {
 "Para ti":"为你推荐",
 "Descubre":"发现",
 "Mi gente":"我的圈子",
-"Destacados":"精选",
+
 "Mostrando destacados":"正在显示精选",
 "Mostrando tu gente":"正在显示我的圈子",
 "Populares":"热门",
@@ -5188,7 +5188,7 @@ var APP_PORTUGUESE_TEXT = {
 "Actividad en la aplicación:":"Atividade no aplicativo:",
 "Actividad reciente":"Atividade recente",
 "Actividad semanal":"Atividade semanal",
-"Activo ·":"Ativo ·",
+
 "Actualiza el acceso de tu cuenta":"Atualize o acesso da sua conta",
 "Actualizar foto":"Atualizar foto",
 "Acuerdo completo:":"Acordo completo:",
@@ -5299,7 +5299,7 @@ var APP_PORTUGUESE_TEXT = {
 "Cargando tu música…":"Carregando sua música…",
 "Cargando tus votos...":"Carregando seus votos...",
 "Cargando video…":"Carregando vídeo…",
-"Cargando...":"Carregando...",
+
 "Cargar más comentarios":"Carregar mais comentários",
 "Carpeta creada":"Pasta criada",
 "Carpeta eliminada":"Pasta excluída",
@@ -5765,7 +5765,7 @@ var APP_PORTUGUESE_TEXT = {
 "Hola, ¿qué tal?":"Olá, tudo bem?",
 "Horas":"Horas",
 "Hoy":"Hoje",
-"Hoy:":"Hoje:",
+
 "Hubo un error al desactivar tu cuenta. Inténtalo de nuevo.":"Ocorreu um erro ao desativar sua conta. Tente novamente.",
 "Hubo un error al guardar la foto.":"Ocorreu um erro ao salvar a foto.",
 "Hubo un error al guardar la portada.":"Ocorreu um erro ao salvar a capa.",
