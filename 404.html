@@ -39019,21 +39019,14 @@ function confirmTwoFactorSetup() {
         () => renderMfaSetupSuccess(null)
       );
     }
-    await DrexCloud.database().ref('users/' + user.uid).update({ twoFactorEnabled: true });
+    // Fallback: el módulo de códigos de respaldo no cargó (script diferido
+    // bloqueado o ausente). El 2FA ya quedó activo en Cognito y la bandera
+    // local ya se guardó arriba: éxito sin códigos, no se rompe el flujo.
+    // (C22: esta rama lanzaba ReferenceError por `res` indefinido y mostraba
+    // un falso «No se pudo verificar el código» con el 2FA ya activo.)
     sessionStorage.setItem('drex2faVerified_' + user.uid, 'true');
-    if (typeof recordSecurityEvent === 'function') await recordSecurityEvent('Verificación en dos pasos activada', 'Se activó una app de autenticación y se generaron códigos de respaldo.');
-    if (typeof showSecurityAlertIfEnabled === 'function') showSecurityAlertIfEnabled('securityChangeAlerts', 'Se activó la verificación en dos pasos.');
-    // Códigos de respaldo (Ing. #2): si el servidor no los proveyó, se generan
-    // aquí (solo hashes SHA-256 en DynamoDB) y se muestran una sola vez.
-    const serverCodes = Array.isArray(res.backupCodes) ? res.backupCodes.filter(Boolean) : [];
-    if (serverCodes.length) { renderBackupCodesReveal(serverCodes); return; }
-    try {
-      const freshCodes = await DrexRecoveryCodes.generateAndStore();
-      renderBackupCodesReveal(freshCodes);
-    } catch (genErr) {
-      // Sin red no se pudieron guardar: la vista permite generarlos después.
-      DrexRecoveryCodes.openView();
-    }
+    renderMfaSetupSuccess(null);
+    return;
   }).catch(() => {
     if (errBox) { errBox.textContent = 'No se pudo verificar el código. Inténtalo de nuevo.'; errBox.classList.remove('hidden'); }
   });
