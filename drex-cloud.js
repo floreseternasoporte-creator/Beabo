@@ -1092,12 +1092,66 @@ function withCredRetry(opFn) {
   // como cota superior de hijo en la fase 1.
   // NOTA: la búsqueda dentro del chat (limitToLast(300) por tecla) ahora
   // cubre los últimos ~460 mensajes en vez del historial completo.
+  // PERF ciclo 8 H3: caché de fase 2 para lecturas acotadas bajo prefijo
+  // (conversationMessages/<id>, notifications/<uid>, fiestas/<id>/chat).
+  // Cada ciclo de polling (3 s) corría la 2-fase completa aunque no hubiera
+  // nada nuevo (~900 RCU/ciclo en salas de chat). Ahora la fase 1 (barata:
+  // solo proyecta sk) actúa como detector de cambios: si la lista de sk es
+  // idéntica a la de la última fase 2, se reutilizan las hojas cacheadas y
+  // se salta la fase 2 (~450 RCU menos por ciclo en idle).
+  // La huella cubre TODOS los sk de la fase 1 (no solo los nombres de hijo):
+  // altas, bajas y cambios de atributos (editedAt, deletedForAll, borrado de
+  // imágenes) la invalidan de inmediato y la fase 2 corre en ese mismo ciclo
+  // (mensajes nuevos y borrados/ediciones estructurales llegan en ~3 s, igual
+  // que antes). Los cambios puros de valor sin tocar atributos (p. ej. el
+  // segundo edit de texto del mismo mensaje) no mueven los sk: una válvula
+  // de staleness fuerza una fase 2 completa cada H3_STALE_MS para que ningún
+  // child_changed quede tragado para siempre (retraso acotado, no pérdida).
+  // Las escrituras LOCALES invalidan el caché vía notifyLocal, así el eco
+  // local (120 ms tras escribir) siempre re-renderiza al instante.
+  // El diff por clave de dispatchSnapshot no se toca: recibe el mismo
+  // snapshot que recibiría con la fase 2 y sigue evitando re-renders.
+  var _boundedPrefixCache = {}; // key -> { pk, prefixSeg, fp, leaves, ts }
+  var H3_STALE_MS = 30000;      // válvula anti-tragado de child_changed
+  var H3_CACHE_MAX = 40;        // tope de entradas (una por sala/prefijo)
+  function _boundedPrefixCacheKey(pk, prefixSeg, limitN, endAt, skewMargin) {
+    return pk + '\n' + prefixSeg + '\n' + limitN + '\n' +
+      ((typeof endAt === 'string' && endAt) ? endAt : '') + '\n' +
+      (skewMargin ? '1' : '0');
+  }
+  function invalidateBoundedPrefixCache(changedSegs) {
+    if (!changedSegs || !changedSegs.length) return;
+    var pk = changedSegs[0];
+    var tail = changedSegs.slice(1).join('/');
+    Object.keys(_boundedPrefixCache).forEach(function (k) {
+      var e = _boundedPrefixCache[k];
+      if (!e || e.pk !== pk) return;
+      var p = e.prefixSeg;
+      if (!tail || tail === p || p.indexOf(tail + '/') === 0 || tail.indexOf(p + '/') === 0) {
+        delete _boundedPrefixCache[k];
+      }
+    });
+  }
+  function _boundedPrefixCacheStore(key, entry) {
+    _boundedPrefixCache[key] = entry;
+    var keys = Object.keys(_boundedPrefixCache);
+    if (keys.length > H3_CACHE_MAX) {
+      // Evicción simple: fuera la entrada más vieja.
+      var oldestK = null, oldestT = Infinity;
+      keys.forEach(function (k) {
+        var t = _boundedPrefixCache[k] && _boundedPrefixCache[k].ts;
+        if (t < oldestT) { oldestT = t; oldestK = k; }
+      });
+      if (oldestK) delete _boundedPrefixCache[oldestK];
+    }
+  }
   function readLeavesBoundedPrefix(pk, prefixSeg, limitN, endAt, skewMargin) {
     var want = skewMargin ? Math.ceil(limitN * 1.5) + 10 : limitN + 10;
     var prefix = prefixSeg + '/';
     var endKey = (typeof endAt === 'string' && endAt) ? endAt : null;
     var children = [];
     var seen = {};
+    var phase1sks = []; // H3: todos los sk vistos en fase 1 (huella de cambio)
     function phase1(lastKey) {
       var p = {
         TableName: AWS_CONFIG.tableName,
@@ -1116,8 +1170,10 @@ function withCredRetry(opFn) {
           var sk = (arr[i].sk === undefined || arr[i].sk === null) ? '' : String(arr[i].sk);
           if (sk.indexOf(prefix) !== 0) continue;
           var child = sk.slice(prefix.length).split('/')[0];
-          if (!child || seen[child]) continue;
+          if (!child) continue;
           if (endKey && child > endKey) continue; // paginación: solo hijos <= cursor
+          phase1sks.push(sk); // H3: huella (antes del filtro seen: cubre atributos)
+          if (seen[child]) continue;
           seen[child] = 1;
           children.push(child);
           if (children.length >= want) break;
@@ -1162,7 +1218,23 @@ function withCredRetry(opFn) {
         return out;
       });
     }
-    return phase1(null).then(phase2);
+    // H3: la fase 1 ya corrió; si nada cambió desde la última fase 2, se
+    // reutilizan sus hojas sin pagar la fase 2. Si la huella cambió (hijo
+    // nuevo/eliminado o atributo agregado/quitado) o la válvula de staleness
+    // venció, la fase 2 corre y el caché se refresca.
+    var cacheKey = _boundedPrefixCacheKey(pk, prefixSeg, limitN, endAt, skewMargin);
+    return phase1(null).then(function () {
+      var fp = phase1sks.join('\n');
+      var now = Date.now();
+      var hit = _boundedPrefixCache[cacheKey];
+      if (hit && hit.fp === fp && (now - hit.ts) < H3_STALE_MS) {
+        return hit.leaves;
+      }
+      return phase2().then(function (leaves) {
+        _boundedPrefixCacheStore(cacheKey, { pk: pk, prefixSeg: prefixSeg, fp: fp, leaves: leaves, ts: now });
+        return leaves;
+      });
+    });
   }
 
   // Orden natural para las keys de imagen: imageUrls/0, imageUrls/1, ...,
@@ -2245,6 +2317,10 @@ function withCredRetry(opFn) {
 
   // Avisa a los oyentes afectados por una escritura propia (eco local inmediato)
   function notifyLocal(changedSegs) {
+    // H3: cualquier escritura local invalida el caché de fase 2 de los
+    // prefijos afectados: el eco local (abajo, 120 ms) debe re-leer completo
+    // para que el propio envío/edición/borrado se pinte al instante.
+    invalidateBoundedPrefixCache(changedSegs);
     // Eco local inmediato tras una escritura propia, agrupado por
     // (ruta + consulta) para no repetir la misma lectura N veces.
     var groups = {};
@@ -5182,6 +5258,8 @@ function withCredRetry(opFn) {
         deltaFromSk: deltaFromSk,
         // [PERF-BOUNDED-PREFIX] lectura acotada bajo prefijo (2026-09-23)
         readLeavesBoundedPrefix: readLeavesBoundedPrefix,
+        // [PERF-H3] invalidación del caché de fase 2 (2026-09-23)
+        invalidateBoundedPrefixCache: invalidateBoundedPrefixCache,
         readLeaves: readLeaves,
         DELTA_OVERLAP_MS: DELTA_OVERLAP_MS,
         mapAuthError: mapAuthError,
