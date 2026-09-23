@@ -40522,8 +40522,12 @@ function openPostPermalink(noteId, options = {}) {
 // El selector de grupo del composer está desactivado (nodo "groups" sin uso),
 // pero si alguna publicación llega a traer groupId, esta vista evita que su
 // contenido quede invisible para siempre: lista sus posts y abre cada uno.
+// C25: nonce anti-carrera para la vista de grupo (abrir A y luego B no debe
+// dejar que la respuesta tardía de A reemplace la lista de B).
+let _groupPostsSeq = 0;
 function openGroupPostsView(groupId, groupName) {
   if (!groupId) return;
+  const myReq = ++_groupPostsSeq;
   const view = document.getElementById('group-posts-view');
   const title = document.getElementById('group-posts-title');
   const list = document.getElementById('group-posts-list');
@@ -40533,20 +40537,29 @@ function openGroupPostsView(groupId, groupName) {
   view.classList.remove('hidden');
   if (typeof drexPushDynamicRoute === 'function') drexPushDynamicRoute('grupo/' + groupId, 'group-posts-view');
   DrexCloud.database().ref('communityNotes').orderByChild('groupId').equalTo(groupId).limitToLast(50).once('value').then(snapshot => {
+    if (myReq !== _groupPostsSeq) return; // respuesta tardía: el usuario ya abrió otro grupo
     const items = [];
     snapshot.forEach(child => { const v = child.val() || {}; items.push({ id: child.key, ...v }); });
     items.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
-    if (!items.length) {
+    // C25: mismo filtro de audiencia/bloqueos que el feed (shouldHideNoteForCurrentUser).
+    // Sin esto, la vista mostraba autor + 280 chars de posts 'following' cuyo
+    // audienceAllowedViewerIds no incluye al visor, aunque el feed los oculta y
+    // el permalink los bloquea ("para que un enlace no filtre contenido privado").
+    const visible = (typeof shouldHideNoteForCurrentUser === 'function')
+      ? items.filter(item => !shouldHideNoteForCurrentUser(item.id, item))
+      : items;
+    if (!visible.length) {
       list.innerHTML = '<p class="text-center text-sm text-[#9aa4ae] py-16 px-6">Este grupo a\u00fan no tiene publicaciones.</p>';
       return;
     }
-    list.innerHTML = items.map(item => `
+    list.innerHTML = visible.map(item => `
       <button onclick="closeGroupPostsView(); openPostPermalink('${escapeInlineSingleQuote(item.id)}')" class="w-full text-left bg-white border-b border-[#eef2f7] px-4 py-3 active:bg-[#f7fafc]">
         <span class="text-sm font-extrabold text-[#1c2b4a]">${escapeHtml(item.authorName || 'Usuario')}</span>
         <span class="text-xs text-[#9aa4ae] ml-2">${typeof formatRelativeTime === 'function' ? formatRelativeTime(Number(item.timestamp) || Date.now()) : ''}</span>
         <p class="text-sm text-[#1c2b4a] mt-1 line-clamp-3">${escapeHtml(String(item.text || '').slice(0, 280))}</p>
       </button>`).join('');
   }).catch(() => {
+    if (myReq !== _groupPostsSeq) return;
     list.innerHTML = '<p class="text-center text-sm text-[#9aa4ae] py-16 px-6">No se pudieron cargar las publicaciones del grupo.</p>';
   });
 }
