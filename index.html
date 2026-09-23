@@ -17300,7 +17300,7 @@ function saveNote() {
     if (!me || !noteId) return;
     try {
       const local = getLocalNotifications(me.uid);
-      const targets = local.filter(n => n && n.type === 'collab_invite' && (n.collabNoteId === noteId || n.actionId === noteId) && n.notificationId);
+      const targets = local.filter(n => n && n.type === 'collab_invite' && (n.collabNoteId === noteId || n.actionId === noteId) && n.notificationId && !n.read);
       const updated = local.map(n => (n && n.type === 'collab_invite' && (n.collabNoteId === noteId || n.actionId === noteId))
         ? { ...n, collabStatus: status, read: true } : n);
       saveLocalNotifications(me.uid, updated);
@@ -22796,6 +22796,10 @@ function saveNote() {
   // NOTA: si el nodo aún no existe (ventana de migración), esta escritura lo
   // crea con {c:0, r:now} y termina la ventana legacy para ese usuario
   // (correcto: abrió el modal = vio sus notificaciones).
+  // H2-RESET-RACE (documentado, sin fix de código): la escritura es ciega
+  // ({c:0} sin leer el valor): si un bump llega intercalado, se pierde y queda
+  // c=0 con 1 no-leída real. Inherente a "marcar todo leído"; se auto-corrige
+  // al cerrar el modal.
   function resetNotifUnread(userId) {
     if (!userId) return;
     const now = Date.now();
@@ -22877,6 +22881,10 @@ function saveNote() {
           snap.forEach(child => { newest = child.val(); });
           if (newest && !newest.read && !isChatNotificationMuted(newest)) {
             fireDrexSystemNotification(newest.message, false);
+          } else {
+            // H2-DING-3: c creció pero la más reciente no califica (silenciada
+            // o ya leída): sonar al menos el aviso genérico por las demás.
+            try { drexPlayNotificationSound(); } catch (_) {}
           }
         }).catch(() => {});
     } catch (_) {}
@@ -22955,6 +22963,11 @@ function saveNote() {
         // (notifUnreadLastDingC = -1 en el primer snapshot: no avisar del historial.)
         if (notifUnreadLastDingC < 0) {
           notifUnreadLastDingC = nowC;
+        } else if (nowC < notifUnreadLastDingC) {
+          // H2-DING-2: c decreció por vía remota (modal abierto en otro
+          // dispositivo/pestaña, colaboración aceptada fuera, ...). Bajar la
+          // marca para que la siguiente notificación sí avise.
+          notifUnreadLastDingC = nowC;
         } else if (nowC > Math.max(prevC, notifUnreadLastDingC)) {
           notifUnreadLastDingC = nowC;
           announceNewestNotification(user.uid);
@@ -22968,7 +22981,11 @@ function saveNote() {
       }
       // LEGACY-ROLLBACK: nodo notifUnread/<uid> ausente (aún sin escrituras
       // agregadas) → cómputo viejo de un solo disparo. Eliminar tras el rollout.
+      // H2-DING-1: nodo ausente ≡ c=0 conocido: fijar la marca del aviso para
+      // que la primera notificación post-despliegue sí suene (antes, -1 la
+      // trataba como historial y suprimía el primer aviso).
       notifUnreadAggActive = false;
+      notifUnreadLastDingC = 0;
       paintLegacyNotifUnreadBadge(user.uid);
       return;
     }
@@ -22979,6 +22996,8 @@ function saveNote() {
       notifUnreadBadgeRef.once('value').then(s2 => updateNotifUnreadBadge(s2)).catch(() => {});
     } else {
       // LEGACY-ROLLBACK: sin listener agregado para este usuario → cómputo viejo.
+      // H2-DING-1: igual que arriba, nodo ausente ≡ c=0 conocido.
+      notifUnreadLastDingC = 0;
       paintLegacyNotifUnreadBadge(user.uid);
     }
   }
