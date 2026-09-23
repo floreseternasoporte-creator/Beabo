@@ -18594,7 +18594,15 @@ function saveNote() {
   }
 
   function escapeInlineSingleQuote(value) {
-    return escapeSingleQuote(String(value || '')).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Valor destinado a un literal '...' dentro de un atributo HTML.
+    // Orden: & PRIMERO — si no, una secuencia como &#39; sería decodificada
+    // por el parser HTML a ' y rompería el literal JS antes de ejecutarse.
+    // &quot;/&lt;/&gt; van después para no re-escapar el & que introducen.
+    return escapeSingleQuote(String(value || ''))
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   function getSafeMediaUrl(url, fallback = '') {
@@ -18663,20 +18671,29 @@ function saveNote() {
 
   function renderTextWithMentions(text) {
     if (!text) return '';
-    const safeText = escapeHTML(text);
-    const withMentions = safeText.replace(/@([\p{L}\p{N}_-]+)/gu, (_, username) => {
-      const safeUsername = escapeInlineSingleQuote(username);
-      return `<a href="#" class="mention-link" onclick="openAuthorProfileByUsername('${safeUsername}');return false">@${safeUsername}</a>`;
-    });
-    // Hashtags: mismo tratamiento que las menciones, pero llevan a los
-    // resultados de búsqueda con ese término (ver openHashtagSearch más abajo).
-    // Antes se extraían solo para el algoritmo de recomendación interno;
-    // nunca eran clicables para la persona que lee el post.
-    const withHashtags = withMentions.replace(/#([\p{L}\p{N}_]+)/gu, (_, tag) => {
-      const safeTag = escapeInlineSingleQuote(tag);
-      return `<a href="#" class="hashtag-link" onclick="openHashtagSearch('${safeTag}');return false">#${safeTag}</a>`;
-    });
-    return withHashtags;
+    // Las menciones/hashtags se extraen del texto CRUDO ANTES de escapar: si
+    // el regex corriera sobre el texto ya escapado, casaría '#039' dentro de
+    // la entidad &#039; y los apóstrofes se pintarían como enlaces rotos.
+    const parts = [];
+    const tokenRe = /(@[\p{L}\p{N}_-]+|#[\p{L}\p{N}_]+)/gu;
+    let lastIndex = 0;
+    let match;
+    while ((match = tokenRe.exec(text)) !== null) {
+      parts.push(escapeHTML(text.slice(lastIndex, match.index)));
+      const token = match[0];
+      const body = token.slice(1);
+      const safeArg = escapeInlineSingleQuote(body);
+      if (token[0] === '@') {
+        parts.push(`<a href="#" class="mention-link" onclick="openAuthorProfileByUsername('${safeArg}');return false">@${escapeHTML(body)}</a>`);
+      } else {
+        // Hashtags: mismo tratamiento que las menciones, pero llevan a los
+        // resultados de búsqueda con ese término (ver openHashtagSearch).
+        parts.push(`<a href="#" class="hashtag-link" onclick="openHashtagSearch('${safeArg}');return false">#${escapeHTML(body)}</a>`);
+      }
+      lastIndex = match.index + token.length;
+    }
+    parts.push(escapeHTML(text.slice(lastIndex)));
+    return parts.join('');
   }
 
   function openHashtagSearch(tag) {
@@ -30827,7 +30844,7 @@ let chatTypingListener = null;
           ? `<img src="${escapeHtml(sp.thumbnailUrl)}" loading="lazy" class="w-full object-cover" style="max-height:160px" alt="">`
           : '';
         content = `
-          <div class="shared-post-card cursor-pointer select-none" style="width:210px" onclick="openSharedPostFromChat('${escapeInlineSingleQuote(sp.noteId)}','${sp.kind || 'post'}')">
+          <div class="shared-post-card cursor-pointer select-none" style="width:210px" onclick="openSharedPostFromChat('${escapeInlineSingleQuote(sp.noteId)}','${escapeInlineSingleQuote(sp.kind || 'post')}')">
             ${spThumb ? `<div class="relative rounded-xl overflow-hidden mb-1.5">${spThumb}</div>` : ''}
             <div class="flex items-center gap-1.5 mb-0.5">
               <img src="${escapeHtml(sp.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==')}" class="w-4 h-4 rounded-full object-cover">
@@ -30840,7 +30857,7 @@ let chatTypingListener = null;
         if (mine) {
           content = `<div class="flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-xs italic text-white/70">Ver una vez</span></div>`;
         } else {
-          content = `<div class="flex items-center gap-2 cursor-pointer select-none" onclick="openViewOnceMessage('${resolvedId}','${conversationId}',this)"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-sm font-bold">Ver (1 vez)</span></div>`;
+          content = `<div class="flex items-center gap-2 cursor-pointer select-none" onclick="openViewOnceMessage('${escapeInlineSingleQuote(resolvedId)}','${escapeInlineSingleQuote(conversationId)}',this)"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-sm font-bold">Ver (1 vez)</span></div>`;
         }
       } else {
         content = msgImages.length
@@ -39451,7 +39468,7 @@ function _renderPostPermalinkCard(note) {
   if (!body || !note || !note.id) return;
 
   const groupChipHTML = (note.groupId && note.groupName)
-    ? `<button onclick="openGroupPostsView('${escapeInlineSingleQuote(note.groupId)}', '${escapeSingleQuote(note.groupName)}')" class="mb-3 inline-flex items-center gap-1.5 text-xs font-bold text-[var(--theme-text)] bg-[var(--theme-surface-muted)] rounded-full px-3 py-1.5 active:bg-[var(--theme-surface-subtle)]">\uD83D\uDC65 ${escapeHtml(note.groupName)}</button>`
+    ? `<button onclick="openGroupPostsView('${escapeInlineSingleQuote(note.groupId)}', '${escapeInlineSingleQuote(note.groupName)}')" class="mb-3 inline-flex items-center gap-1.5 text-xs font-bold text-[var(--theme-text)] bg-[var(--theme-surface-muted)] rounded-full px-3 py-1.5 active:bg-[var(--theme-surface-subtle)]">\uD83D\uDC65 ${escapeHtml(note.groupName)}</button>`
     : '';
 
   // Tarjeta canónica única: el permalink reutiliza el mismo renderer del feed
