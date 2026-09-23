@@ -30939,7 +30939,15 @@ let chatTypingListener = null;
         clearInterval(_msgCountdownIntervals[msgId]);
         delete _msgCountdownIntervals[msgId];
         if (conversationId) {
-          DrexCloud.database().ref('conversationMessages/' + conversationId + '/' + msgId).remove().catch(() => {});
+          const _expMsgRef = DrexCloud.database().ref('conversationMessages/' + conversationId + '/' + msgId);
+          // C50-C1: el mensaje temporal puede llevar archivos adjuntos
+          // (chatFiles/<fileId>); hay que leerlo para liberar sus trozos:
+          // ambos participantes ya tienen el fileId en el payload, así que
+          // los trozos no deben sobrevivir a la expiración.
+          _expMsgRef.once('value').then(_expSnap => {
+            _releaseChatFileRefsOfMsg(_expSnap.val(), msgId);
+          }).catch(() => {});
+          _expMsgRef.remove().catch(() => {});
           // C49-C1: el mensaje temporal expiró — limpiar también el pin huérfano
           // (el banner cachea el texto del mensaje; misma familia que C48-C1) y
           // las reacciones huérfanas. El pin solo se borra si apunta a este mensaje.
@@ -30986,6 +30994,9 @@ let chatTypingListener = null;
           bubble.innerHTML = `<p class="text-sm break-words">${escapeHtml(txt)}</p>`;
           setTimeout(() => {
             msgRef.remove();
+            // C50-C1: el ver-una-vez podía llevar archivos (nunca se reenvía,
+            // C47-F1, así que sus fileIds no se comparten): liberar los trozos.
+            _releaseChatFileRefsOfMsg(msg, msgId);
             // C49-C1: limpiar pin y reacciones huérfanos del mensaje consumido
             // (misma familia que C48-C1: el pin cachea el texto).
             DrexCloud.database().ref('msgReactions/' + convoId + '/' + msgId).remove().catch(() => {});
@@ -31556,6 +31567,7 @@ let chatTypingListener = null;
     currentChatRecipient = otherUid;
     restoreChatDraft();
     clearChatPhotoAttachment();
+    clearChatFileAttachment(true);
     markChatConversationRead(currentChatRoomId);
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
@@ -31602,6 +31614,7 @@ let chatTypingListener = null;
     currentGroupIsCreator = false;
     currentGroupIsAdmin = false;
     clearChatPhotoAttachment();
+    clearChatFileAttachment(true);
     markChatConversationRead(groupId);
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
@@ -31666,6 +31679,7 @@ let chatTypingListener = null;
     currentGroupIsCreator = false;
     currentGroupIsAdmin = false;
     clearChatPhotoAttachment();
+    clearChatFileAttachment(true);
     stopChatTyping();
     detachChatTypingListener();
     detachAllMsgReactionListeners();
@@ -32357,6 +32371,42 @@ const _startChatListeners = () => {
   const _CHAT_FILE_DATAURL_CACHE_MAX = 4;
   const _chatFileDataUrlPending = {}; // fileId -> Promise en curso
 
+  // C50-C1: los trozos de `chatFiles/<fileId>` sobrevivían a TODAS las rutas
+  // de borrado (eliminar para todos, expiración de temporales, consumo de
+  // ver-una-vez, fallo de envío, descarte del composer): cualquiera con el
+  // fileId (ambos participantes lo reciben en el payload) podía seguir
+  // leyendo el archivo completo aunque el mensaje hubiera "desaparecido".
+  // Conteo de referencias en `chatFiles/<fileId>/refs` con base implícita 1
+  // (= el mensaje original; no requiere escritura extra al subir). El reenvío
+  // comparte el fileId por referencia (C47-F2): cada reenvío suma 1 y cada
+  // borrado resta 1; los trozos solo se borran al llegar a 0. `rel_<msgId>`
+  // hace el descuento idempotente por mensaje (la expiración de temporales
+  // corre en los dos clientes a la vez y no debe descontar dos veces).
+  function _releaseChatFileRef(fileId, msgId) {
+    if (!fileId) return;
+    try {
+      delete _chatFileMetaCache[fileId];
+      delete _chatFileDataUrlCache[fileId];
+    } catch (_) {}
+    if (!msgId) return;
+    const db = DrexCloud.database();
+    db.ref('chatFiles/' + fileId + '/rel_' + msgId).transaction(cur => cur ? undefined : true).then(res => {
+      if (!res || !res.committed) return;
+      return db.ref('chatFiles/' + fileId + '/refs').transaction(cur => {
+        const n = (Number(cur) || 1) - 1;
+        return n > 0 ? n : null;
+      }).then(res2 => {
+        if (res2 && res2.committed && res2.snapshot && !res2.snapshot.val()) {
+          db.ref('chatFiles/' + fileId).remove().catch(() => {});
+        }
+      });
+    }).catch(() => {});
+  }
+  function _releaseChatFileRefsOfMsg(msg, msgId) {
+    if (!msg || !msg.files || !msg.files.length || !msgId) return;
+    msg.files.forEach(f => { if (f && f.fileId) _releaseChatFileRef(f.fileId, msgId); });
+  }
+
   function _formatBytes(n) {
     n = Number(n) || 0;
     if (n < 1024) return n + ' B';
@@ -32421,7 +32471,12 @@ const _startChatListeners = () => {
     _renderChatFileAttachments();
   }
 
-  function clearChatFileAttachment() {
+  // C50-C2: dropUploaded=true al descartar (cerrar/cambiar de sala sin
+  // enviar): los adjuntos ya subidos nunca quedaron referenciados por ningún
+  // mensaje y sus trozos se liberan. Tras un envío exitoso se llama sin drop
+  // porque el mensaje recién creado sí los referencia.
+  function clearChatFileAttachment(dropUploaded) {
+    const _doomed = dropUploaded ? chatFileAttachments.slice() : [];
     chatFileAttachments.forEach(a => { a.cancelled = true; });
     chatFileAttachments = [];
     const input = document.getElementById('chat-file-input');
@@ -32431,6 +32486,7 @@ const _startChatListeners = () => {
     if (list) list.innerHTML = '';
     if (wrap) wrap.classList.add('hidden');
     updateChatToolbarMode();
+    _doomed.forEach(a => { if (a && a.fileId) _releaseChatFileRef(a.fileId, a.id); });
   }
 
   function _renderChatFileAttachments() {
@@ -32888,7 +32944,9 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       } catch (_) { payload.senderName = 'Usuario'; }
     }
 
+    let _chatSetOk = false;
     msgRef.set(payload).then(() => {
+      _chatSetOk = true;
       window._drexChatSending = false;
       const sentEl = document.getElementById(tempMsgId);
       if (sentEl) {
@@ -32925,6 +32983,13 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         groupMembers
       }).catch(() => {});
     }).catch((err) => {
+      // C50-C1: si el set() falló, el mensaje nunca existió pero los trozos
+      // ya estaban subidos (hasta 40 MB huérfanos por intento fallido).
+      // Si el set() sí funcionó (_chatSetOk), el mensaje los referencia y no
+      // se tocan.
+      if (!_chatSetOk) {
+        try { _releaseChatFileRefsOfMsg({ files: (painted && painted.fileMetas) || [] }, painted && painted.messageId); } catch (_) {}
+      }
 
       window._drexChatSending = false;
       console.error('Error al enviar mensaje:', err);
@@ -33152,8 +33217,13 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       const msg = snap.val();
       if (!msg || msg.senderId !== user.uid) return;
       DrexCloud.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).update({
-        deletedForAll: true, text: '', images: null, image: null, gifUrl: null, sticker: null, type: 'deleted'
+        deletedForAll: true, text: '', images: null, image: null, gifUrl: null, sticker: null, files: null, type: 'deleted'
       }).catch(() => {});
+      // C50-C1: "eliminar para todos" dejaba las metas de `files` y los trozos
+      // en chatFiles/<fileId>: el destinatario podía seguir descargando el
+      // archivo tras el borrado. Se liberan con conteo de referencias (el
+      // reenvío comparte fileId, C47-F2).
+      _releaseChatFileRefsOfMsg(msg, msgId);
       DrexCloud.database().ref('msgReactions/' + currentChatRoomId + '/' + msgId).remove().catch(() => {});
       // C48-C1: si el mensaje eliminado estaba fijado, el pin quedaba huérfano
       // en conversationPinned/<sala> y el banner seguía mostrando su texto
@@ -33380,6 +33450,17 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       // C47-F2b: lo mismo para publicaciones compartidas (type/sharedPost).
       if (fwdData.type === 'sharedPost' && fwdData.sharedPost) { payload.type = 'sharedPost'; payload.sharedPost = fwdData.sharedPost; }
       await msgRef.set(payload);
+      // C50-C1: el reenvío comparte los trozos por referencia (mismo fileId);
+      // sumar una referencia por archivo para que el borrado del original no
+      // rompa el adjunto del reenvío (ni viceversa). Best-effort: no bloquea
+      // ni interrumpe el reenvío aunque el ref no soporte transacciones.
+      try {
+        if (fwdData.files && fwdData.files.length) {
+          fwdData.files.forEach(f => {
+            if (f && f.fileId) DrexCloud.database().ref('chatFiles/' + f.fileId + '/refs').transactionBlind(c => (Number(c) || 1) + 1).catch(() => {});
+          });
+        }
+      } catch (_) {}
       const preview = (fwdData.type === 'sharedPost' && fwdData.sharedPost) ? '📌 Publicación' :
         ((fwdData.files && fwdData.files.length) ? '📎 Archivo' :
         ((fwdData.images || fwdData.image) ? '📷 Foto' : (fwdData.text || '')));
