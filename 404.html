@@ -6283,7 +6283,7 @@ if (scrollArea) {
       <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <div class="relative flex-1">
-      <input id="group-search-input" type="text" placeholder="Buscar en la conversación..." class="w-full h-10 pl-9 pr-3 rounded-full border border-[var(--theme-border)] bg-[var(--theme-surface-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-[#cbd5e1]" oninput="searchInGroupConversation(this.value)">
+      <input id="group-search-input" type="text" placeholder="Buscar en la conversación..." class="w-full h-10 pl-9 pr-3 rounded-full border border-[var(--theme-border)] bg-[var(--theme-surface-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-[#cbd5e1]" oninput="debouncedSearchInGroupConversation(this.value)">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--theme-muted)]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/></svg>
     </div>
   </div>
@@ -10361,16 +10361,38 @@ function saveNote() {
   // lecturas duplicadas tras re-login).
   let _userStatsRefs = [];
 
+  // H5: el listener de communityNotes (hojas completas de todos los posts
+  // propios, el más caro de loadUserStats) solo vive mientras el perfil está
+  // visible. Todo lo que pinta —grid de posts y conteos— está dentro de
+  // #profile-view, así que detach al cerrar el perfil no cambia nada visible.
+  let _userStatsUid = null;
+  let _profilePostsRef = null;
+  let _profilePostsObserver = null;
+
   function clearUserStats() {
     _userStatsRefs.forEach(r => { try { r.off('value'); } catch (e) {} });
     _userStatsRefs = [];
+    _detachProfilePostsListener();
+    if (_profilePostsObserver) { try { _profilePostsObserver.disconnect(); } catch (e) {} _profilePostsObserver = null; }
+    _userStatsUid = null;
   }
 
-  function loadUserStats(userId) {
-    clearUserStats(); // evita duplicar listeners si se llama dos veces
-    const _db = DrexCloud.database();
+  function _detachProfilePostsListener() {
+    if (_profilePostsRef) {
+      try { _profilePostsRef.off('value'); } catch (e) {}
+      const i = _userStatsRefs.indexOf(_profilePostsRef);
+      if (i >= 0) _userStatsRefs.splice(i, 1);
+      _profilePostsRef = null;
+    }
+  }
 
-    const _postsRef = _db.ref('communityNotes').orderByChild('authorId').equalTo(userId);
+  function _attachProfilePostsListener() {
+    if (_profilePostsRef || !_userStatsUid) return;
+    const _pv = document.getElementById('profile-view');
+    if (!_pv || _pv.classList.contains('hidden')) return;
+    const userId = _userStatsUid;
+    const _postsRef = DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(userId);
+    _profilePostsRef = _postsRef;
     _userStatsRefs.push(_postsRef);
     _postsRef.on('value', async postsSnapshot => {
       let collabPosts = [];
@@ -10393,6 +10415,29 @@ function saveNote() {
 
       loadUserPostsGrid(postsSnapshot, collabPosts);
     });
+  }
+
+  // H5: el perfil se abre/cierra desde muchos puntos (openProfile, cada vista
+  // que oculta #profile-view, el router). Un MutationObserver sobre la clase
+  // de #profile-view cubre todos los caminos sin tocarlos.
+  function _watchProfileViewVisibility() {
+    const _pv = document.getElementById('profile-view');
+    if (!_pv || _profilePostsObserver) return;
+    _profilePostsObserver = new MutationObserver(() => {
+      if (_pv.classList.contains('hidden')) _detachProfilePostsListener();
+      else _attachProfilePostsListener();
+    });
+    _profilePostsObserver.observe(_pv, { attributes: true, attributeFilter: ['class'] });
+    if (!_pv.classList.contains('hidden')) _attachProfilePostsListener();
+  }
+
+  function loadUserStats(userId) {
+    clearUserStats(); // evita duplicar listeners si se llama dos veces
+    _userStatsUid = userId;
+    // H5: el listener caro de communityNotes se adjunta solo cuando el perfil
+    // se abre (ver _watchProfileViewVisibility); aquí quedan los baratos.
+    _watchProfileViewVisibility();
+    const _db = DrexCloud.database();
 
     const _ecosRef = _db.ref('userEcos/' + userId);
     const _legacyEcosRef = _db.ref('userReposts/' + userId);
@@ -33197,7 +33242,35 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   }
 
   function closeGroupSearchInChat() {
+    // H4: cancelar la búsqueda pendiente si el panel se cierra antes de que
+    // dispare el debounce (evita una lectura de red inútil).
+    if (groupSearchDebounceTimer) { clearTimeout(groupSearchDebounceTimer); groupSearchDebounceTimer = null; }
     document.getElementById('group-search-panel')?.classList.add('hidden');
+  }
+
+  // H4: debounce del buscador del grupo. Sin esto, el oninput disparaba una
+  // lectura limitToLast(300) por tecla (~3.100 RCU/tecla).
+  let groupSearchDebounceTimer = null;
+  function debouncedSearchInGroupConversation(value) {
+    if (groupSearchDebounceTimer) clearTimeout(groupSearchDebounceTimer);
+    groupSearchDebounceTimer = setTimeout(() => {
+      groupSearchDebounceTimer = null;
+      searchInGroupConversation(value);
+    }, 350);
+  }
+
+  function _renderGroupSearchResults(matches, query) {
+    const results = document.getElementById('group-search-results');
+    if (!results) return;
+    if (!matches.length) {
+      results.innerHTML = '<p class="text-center text-sm text-[#9aa4ae] py-10">Sin resultados para "' + escapeHtml(query) + '"</p>';
+      return;
+    }
+    results.innerHTML = matches.slice(-40).reverse().map(m => `
+      <div class="p-3 rounded-2xl bg-[#f0f4f9] border border-[#eef2f7]">
+        <p class="text-xs font-bold text-[#6b7280] mb-1">${escapeHtml(m.senderName || 'Usuario')}</p>
+        <p class="text-sm text-[#1c2b4a]">${escapeHtml(m.text || '')}</p>
+      </div>`).join('');
   }
 
   function searchInGroupConversation(query) {
@@ -33209,18 +33282,21 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       return;
     }
     if (!currentChatRoomId) return;
-    DrexCloud.database().ref('conversationMessages/' + currentChatRoomId).limitToLast(300).once('value').then(snap => {
-      const all = snap.val() || {};
-      const matches = Object.values(all).filter(m => (m.text || '').toLowerCase().includes(q));
-      if (!matches.length) {
-        results.innerHTML = '<p class="text-center text-sm text-[#9aa4ae] py-10">Sin resultados para "' + escapeHtml(query) + '"</p>';
+    // H4: buscar primero en el caché en memoria (últimos 80 mensajes del
+    // grupo, 0 RCU). Si el término está cubierto por el caché, no se toca la
+    // red; si no hay coincidencias (o el caché está vacío), se baja a la red
+    // como antes — el debounce ya se aplicó en el oninput.
+    const cached = chatMessagesMemoryCache.get(currentChatRoomId) || [];
+    if (cached.length) {
+      const cacheMatches = cached.filter(m => (m.text || '').toLowerCase().includes(q));
+      if (cacheMatches.length) {
+        _renderGroupSearchResults(cacheMatches, query);
         return;
       }
-      results.innerHTML = matches.slice(-40).reverse().map(m => `
-        <div class="p-3 rounded-2xl bg-[#f0f4f9] border border-[#eef2f7]">
-          <p class="text-xs font-bold text-[#6b7280] mb-1">${escapeHtml(m.senderName || 'Usuario')}</p>
-          <p class="text-sm text-[#1c2b4a]">${escapeHtml(m.text || '')}</p>
-        </div>`).join('');
+    }
+    DrexCloud.database().ref('conversationMessages/' + currentChatRoomId).limitToLast(300).once('value').then(snap => {
+      const all = snap.val() || {};
+      _renderGroupSearchResults(Object.values(all).filter(m => (m.text || '').toLowerCase().includes(q)), query);
     }).catch(() => {
       results.innerHTML = '<p class="text-center text-sm text-red-400 py-10">No se pudo buscar en este momento</p>';
     });
@@ -41221,17 +41297,47 @@ function fiestaShowRoom() {
 
 function fiestaWatchRoom() {
   const id = fiestaCur.id;
-  fiestaRefs.doc = DrexCloud.database().ref('fiestas/' + id);
-  fiestaRefs.doc.on('value', snap => {
-    const f = snap.val();
-    if (!f || f.status === 'ended') {
-      showMiniToast(appT('La fiesta terminó.'));
-      leaveFiesta(true);
-    } else {
-      fiestaCur.data = f;
+  // H1-C8 (rendimiento): antes se escuchaba el subárbol COMPLETO de la fiesta
+  // con on('value') y cada ciclo (3 s en sala) re-descargaba también /chat
+  // (~5 hojas por mensaje). Ahora solo se suscriben las hojas que el callback
+  // realmente lee: status, game (subárbol: tiene hijos) y la cabecera
+  // (title, languageName, hostId, hostName, maxSpeakers). /chat mantiene su
+  // propio listener acotado (limitToLast 50). Sin cambios de comportamiento:
+  // fiestaCur.data sigue exponiendo los mismos campos y el overlay del juego
+  // se sincroniza igual que antes.
+  const _fbase = DrexCloud.database().ref('fiestas/' + id);
+  const _fkeys = ['status', 'game', 'title', 'languageName', 'hostId', 'hostName', 'maxSpeakers'];
+  // Re-entrada defensiva: soltar hojas previas (mismo patrón que fiestaRefs.chat).
+  _fkeys.forEach(k => {
+    const _rk = fiestaRefs['doc_' + k];
+    if (_rk) { try { _rk.off(); } catch (_) {} }
+  });
+  const _fdata = (fiestaCur.data && typeof fiestaCur.data === 'object') ? fiestaCur.data : {};
+  const _fset = (k, v) => {
+    // Réplica de `fiestaCur.data = f`: la hoja ausente desaparece del objeto.
+    if (v === null || v === undefined) delete _fdata[k]; else _fdata[k] = v;
+    fiestaCur.data = _fdata;
+  };
+  _fkeys.forEach(k => {
+    const _r = _fbase.child(k);
+    fiestaRefs['doc_' + k] = _r;
+    _r.on('value', snap => {
+      const v = snap.val();
+      if (k === 'status') {
+        // Equivale al antiguo `!f || f.status === 'ended'`: el doc nunca se
+        // borra (terminar = status 'ended'); status nulo = doc inexistente.
+        if (v === null || v === undefined || v === 'ended') {
+          showMiniToast(appT('La fiesta terminó.'));
+          leaveFiesta(true);
+        } else {
+          _fset(k, v);
+        }
+        return;
+      }
+      _fset(k, v);
       // FIESTA-JUEGOS: sincronizar overlay del juego en tiempo real
-      if (typeof fiestaGameRemoteUpdate === 'function') fiestaGameRemoteUpdate(f && f.game);
-    }
+      if (k === 'game' && typeof fiestaGameRemoteUpdate === 'function') fiestaGameRemoteUpdate(v || null);
+    });
   });
   fiestaRefs.members = DrexCloud.database().ref('fiestaMembers/' + id);
   fiestaRefs.members.on('value', snap => {
