@@ -40071,6 +40071,34 @@ function searchUserDirectoryByPrefix(q, limit) {
     .catch(() => []);
 }
 
+// Caché de la ventana de búsqueda (60 s): los chips y el texto libre
+// descargaban los 500 posts más recientes EN CADA invocación (~0.5-1 MB
+// por búsqueda). El raw se cachea sin filtrar por bloqueos; cada sitio
+// aplica isAccountBlockedForCurrentUser sobre el resultado.
+let _searchPostsRawCache = null; // {ts, posts: [{...note, id}]}
+const _SEARCH_POSTS_CACHE_TTL = 60000;
+function _getSearchPostsRaw() {
+  try {
+    const now = Date.now();
+    if (_searchPostsRawCache && (now - _searchPostsRawCache.ts) < _SEARCH_POSTS_CACHE_TTL) {
+      return Promise.resolve(_searchPostsRawCache.posts);
+    }
+  } catch (_) {}
+  return DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(500).once('value').then(snapshot => {
+    const posts = [];
+    snapshot.forEach(child => {
+      const note = child.val() || {};
+      posts.push({ ...note, id: child.key });
+    });
+    posts.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+    try { _searchPostsRawCache = { ts: Date.now(), posts }; } catch (_) {}
+    return posts;
+  });
+}
+
+// Nota: el raw conserva el orden de la DB (asc por timestamp); cada sitio
+// ordena como lo hacía antes del caché.
+
 function searchByType(type, label) {
   const initial = document.getElementById('search-initial-section');
   const loading = document.getElementById('search-query-loading');
@@ -40093,14 +40121,13 @@ function searchByType(type, label) {
   // de imagen). Antes descargaba communityNotes COMPLETO en cada toque del
   // chip. La búsqueda de texto libre sobre TODO el histórico requiere un
   // índice invertido (ver roadmap); el chip es una ayuda de exploración.
-  DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(500).once('value').then(snapshot => {
+  _getSearchPostsRaw().then(rawPosts => {
     const posts = [];
-    snapshot.forEach(child => {
-      const note = child.val() || {};
+    rawPosts.forEach(note => {
       if (note.groupId) return;
       const authorId = note.authorId || note.userId || '';
       if (typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(authorId)) return;
-      if (note.postType === type) posts.push({ ...note, id: child.key });
+      if (note.postType === type) posts.push(note);
     });
     posts.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
 
@@ -40246,13 +40273,12 @@ function performRealTimeSearch() {
 
   // Ventana acotada a los 500 posts más recientes (lectura ligera). Antes,
   // cada tecla descargaba communityNotes COMPLETO (con fotos inline).
-  const postsPromise = DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(500).once('value').then(async snapshot => {
+  const postsPromise = _getSearchPostsRaw().then(async rawPosts => {
     if (currentNonce !== searchRequestNonce) return { posts: [], photos: [] };
     const posts = [];
     const photos = [];
     const seenPhotos = new Set();
-    snapshot.forEach(child => {
-      const note = child.val() || {};
+    rawPosts.forEach(note => {
       const content = (note.content || '').toLowerCase();
       const authorId = note.authorId || note.userId || '';
       if (isAccountBlockedForCurrentUser(authorId)) return;
@@ -40289,7 +40315,7 @@ function performRealTimeSearch() {
       }
       
       if (matches) {
-        posts.push({ ...note, id: child.key });
+        posts.push(note);
       }
 
       const imgs = [];
@@ -40297,19 +40323,19 @@ function performRealTimeSearch() {
       if (note.imageUrl) imgs.push(note.imageUrl);
       if (imgs.length && matches) {
         imgs.forEach(url => {
-          const key = `${child.key}__${url}`;
+          const key = `${note.id}__${url}`;
           if (seenPhotos.has(key)) return;
           seenPhotos.add(key);
-          photos.push({ postId: child.key, url, authorName: note.authorName || 'Usuario', authorId });
+          photos.push({ postId: note.id, url, authorName: note.authorName || 'Usuario', authorId });
         });
       } else if (matches && Number(note.imageCount || 0) > 0) {
         // Formato nuevo: las fotos viven en noteImages/<postId>; la primera
         // se resuelve al pintar la retícula (renderPhotosList).
-        photos.push({ postId: child.key, url: null, imageCount: Number(note.imageCount), authorName: note.authorName || 'Usuario', authorId });
+        photos.push({ postId: note.id, url: null, imageCount: Number(note.imageCount), authorName: note.authorName || 'Usuario', authorId });
       } else if (matches && Array.isArray(note._imgKeys) && note._imgKeys.length) {
         // Post viejo: las fotos no viajaron en el poll; la primera se resuelve
         // bajo demanda al pintar la retícula (renderPhotosList).
-        photos.push({ postId: child.key, url: null, imgKeys: note._imgKeys.filter(k => typeof k === 'string' && k), authorName: note.authorName || 'Usuario', authorId });
+        photos.push({ postId: note.id, url: null, imgKeys: note._imgKeys.filter(k => typeof k === 'string' && k), authorName: note.authorName || 'Usuario', authorId });
       }
 
     });
