@@ -56,7 +56,7 @@
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <!-- Font Awesome CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <!-- DrexSheet: hoja inferior reutilizable (estilos) -->
@@ -64,9 +64,9 @@
   <!-- AWS: SDK JS v2 (pineado) + Amazon Cognito + adaptador DrexCloud (antes del código de la app) -->
   <!-- AWS SDK (~3.4 MB): diferido. Bloqueaba el primer pintado; nada lo usa
      durante el parseo del HTML (solo dentro de funciones). -->
-<script defer src="https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/aws-sdk@2.1692.0/dist/aws-sdk.min.js" integrity="sha384-bsVTXMksIT73n577G/meHKgRRSzJu77AotDGo6x838B7oRUm9U+NvG/o2FLodTic" crossorigin="anonymous"></script>
   <!-- Cognito Identity: diferido (solo se usa dentro de funciones). -->
-<script defer src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.15/dist/amazon-cognito-identity.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.15/dist/amazon-cognito-identity.min.js" integrity="sha384-tmLe+My/drouBT8LDBDX54/GtvpwceGWUwRKXHJfWra2DlJ/598zVtizduWyMqz5" crossorigin="anonymous"></script>
   <!-- drex-cloud.js: SINCRÓNICO a propósito. Expone window.DrexCloud y los
      bloques inline del body lo usan en el nivel superior durante el
      parseo (DrexCloud.auth().onAuthStateChanged). No lleva defer. -->
@@ -185,7 +185,7 @@
   <!-- hCaptcha API -->
   <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
   <!-- QRCode (solo se usa dentro de funciones): diferido. -->
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
   <style>
     /* ESTILOS BASE ADAPTADOS */
 body {
@@ -15418,8 +15418,9 @@ function saveNote() {
         const safeTimestamp = Number(note.timestamp) || Date.now();
         const safeAuthorId = escapeInlineSingleQuote(note.authorId || '');
         const safeAuthorName = escapeHtml(note.authorName || 'Usuario');
+        const safeId = escapeInlineSingleQuote(note.id || ''); // FIX XSS: id forjado vía DB
         const safeAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', safeAuthorId);
-        const authorAvatarId = `${(ctx && ctx.avatarIdPrefix) || 'post-author-'}${note.id}`;
+        const authorAvatarId = `${(ctx && ctx.avatarIdPrefix) || 'post-author-'}${safeId}`;
         let safeAuthorImage = note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
 
         if (user && safeAuthorId === user.uid) {
@@ -15449,11 +15450,11 @@ function saveNote() {
         return `
             ${renderPostTopActions(note.id, 'Opciones de publicación')}
             <div class="drex-vote-rail" role="group" aria-label="Votar publicación">
-              <button onclick="votePost('${note.id}', 'up')" id="upvote-${note.id}" class="drex-vote-btn drex-up ${userVote === 'up' ? 'active' : ''}" aria-label="Voto positivo" aria-pressed="${userVote === 'up'}">
+              <button onclick="votePost('${safeId}', 'up')" id="upvote-${safeId}" class="drex-vote-btn drex-up ${userVote === 'up' ? 'active' : ''}" aria-label="Voto positivo" aria-pressed="${userVote === 'up'}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 15.75l7.5-7.5 7.5 7.5"/></svg>
               </button>
-              <span id="score-${note.id}" class="drex-vote-score ${userVote === 'up' ? 'is-up' : ''}${userVote === 'down' ? 'is-down' : ''}">${formatVoteScore(score)}</span>
-              <button onclick="votePost('${note.id}', 'down')" id="downvote-${note.id}" class="drex-vote-btn drex-down ${userVote === 'down' ? 'active' : ''}" aria-label="Voto negativo" aria-pressed="${userVote === 'down'}">
+              <span id="score-${safeId}" class="drex-vote-score ${userVote === 'up' ? 'is-up' : ''}${userVote === 'down' ? 'is-down' : ''}">${formatVoteScore(score)}</span>
+              <button onclick="votePost('${safeId}', 'down')" id="downvote-${safeId}" class="drex-vote-btn drex-down ${userVote === 'down' ? 'active' : ''}" aria-label="Voto negativo" aria-pressed="${userVote === 'down'}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
               </button>
             </div>
@@ -15489,11 +15490,11 @@ function saveNote() {
               </span>`).join('')}
             </div>` : ''}
             <div class="drex-post-actions">
-              <button onclick="openCommentsView('${note.id}')" class="drex-action-pill" aria-label="Ver comentarios">
+              <button onclick="openCommentsView('${safeId}')" class="drex-action-pill" aria-label="Ver comentarios">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.8c0 4.3-3.9 7.7-8.7 7.7-1 0-2-.2-2.9-.5L4 20.5l1.2-3.4c-.8-1.3-1.2-2.7-1.2-4.3 0-4.3 3.9-7.8 8.7-7.8S21 7.5 21 11.8z"/></svg>
-                <span id="commentscount-${note.id}">${commentsCount}</span>
+                <span id="commentscount-${safeId}">${commentsCount}</span>
               </button>
-              <button onclick="toggleEco('${note.id}')" id="eco-${note.id}" class="drex-action-pill eco-btn ${hasEchoed ? 'active' : ''}" aria-label="Hacer eco de la publicación">
+              <button onclick="toggleEco('${safeId}')" id="eco-${safeId}" class="drex-action-pill eco-btn ${hasEchoed ? 'active' : ''}" aria-label="Hacer eco de la publicación">
                 <svg class="eco-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/>
                   <path d="M8.9 9.8A3.8 3.8 0 0 0 8.9 14.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -15503,16 +15504,16 @@ function saveNote() {
                 </svg>
                 <span>${ecosCount}</span>
               </button>
-              <button onclick="openPostShareMenu('${note.id}')" class="drex-action-icon" aria-label="Compartir">
+              <button onclick="openPostShareMenu('${safeId}')" class="drex-action-icon" aria-label="Compartir">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
               </button>
-              <button onclick="toggleSavePost('${note.id}', this)" id="save-${note.id}" class="drex-action-icon save-btn" aria-label="Guardar publicación">
+              <button onclick="toggleSavePost('${safeId}', this)" id="save-${safeId}" class="drex-action-icon save-btn" aria-label="Guardar publicación">
                 <svg class="save-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6-3.8L6.5 21V4.5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
               </button>
             </div>
-            ${commentsCount > 0 ? `<div class="drex-commenters" data-commenters-for="${note.id}"></div>` : ''}
+            ${commentsCount > 0 ? `<div class="drex-commenters" data-commenters-for="${safeId}"></div>` : ''}
           </div>
         `;
   }
@@ -37734,7 +37735,7 @@ const _startChatListeners = () => {
       for (let i = 0; i < dataUrl.length; i += CHAT_FILE_CHUNK_CHARS) {
         chunks.push(dataUrl.slice(i, i + CHAT_FILE_CHUNK_CHARS));
       }
-      entry.fileId = 'cf_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      entry.fileId = 'cf_' + Date.now().toString(36) + Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(36).padStart(2, '0')).join('');
       entry.chunks = chunks.length;
       entry.uploaded = 0;
       entry.progress = 0;
@@ -37854,6 +37855,11 @@ const _startChatListeners = () => {
   // Tarjeta de archivo dentro de la burbuja (icono por tipo, nombre, tamaño, descarga).
   function _renderChatFileCardHtml(f, mine, resolvedId) {
     const fileId = String(f.fileId || '');
+    // FIX XSS: el fileId lo genera el remitente (forjable vía DB). Solo se
+    // acepta el formato canónico 'cf_<base36>'; cualquier otro valor invalida
+    // el botón de descarga en vez de interpolarse en el onclick.
+    const validFileId = /^cf_[a-z0-9]+$/.test(fileId);
+    const safeFileId = escapeInlineSingleQuote(fileId);
     if (fileId) _chatFileMetaCache[fileId] = { fileId, name: f.name || 'archivo', size: f.size || 0, mime: f.mime || 'application/octet-stream', chunks: f.chunks || 0 };
     const dlLabel = escapeHtml(appT('Descargar archivo'));
     return `<div class="flex items-center gap-3 rounded-2xl border px-3 py-2.5 ${mine ? 'bg-white/15 border-white/25' : 'bg-[var(--theme-surface)] border-[var(--theme-border)]'}" style="min-width:200px;max-width:250px">
@@ -37862,7 +37868,7 @@ const _startChatListeners = () => {
         <p class="text-[13px] font-bold truncate ${mine ? 'text-white' : 'text-[var(--theme-text)]'}">${escapeHtml(f.name || 'Archivo')}</p>
         <p class="text-[11px] ${mine ? 'text-white/70' : 'text-[var(--theme-muted)]'}">${escapeHtml(_formatBytes(f.size || 0))}</p>
       </div>
-      <button type="button" onclick="downloadChatFile('${fileId}', this)" class="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:opacity-80 transition ${mine ? 'bg-white/25 text-white' : 'bg-[#2F33B8] text-white'}" aria-label="${dlLabel}">
+      <button type="button" ${validFileId ? `onclick="downloadChatFile('${safeFileId}', this)"` : 'disabled aria-disabled="true" title="' + escapeHtml(appT('Archivo no disponible')) + '"'} class="w-9 h-9 rounded-full flex items-center justify-center shrink-0 active:opacity-80 transition ${mine ? 'bg-white/25 text-white' : 'bg-[#2F33B8] text-white'}" aria-label="${dlLabel}">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M6 10l6 6 6-6"/><path d="M4 20h16"/></svg>
       </button>
     </div>`;
@@ -45331,11 +45337,23 @@ function renderParentalCodeGenerator(box, teenUid) {
 function generateParentalLinkCode() {
   const user = DrexCloud.auth().currentUser;
   if (!user) return;
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  // FIX seguridad: código con crypto (Math.random es predecible) y se invalida
+  // cualquier código previo del mismo usuario (antes quedaban varios válidos).
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  const code = String(100000 + (buf[0] % 900000));
   const createdAt = Date.now();
   const expiresAt = createdAt + 24 * 60 * 60 * 1000;
 
-  DrexCloud.database().ref('parentalLinkCodes/' + code).set({ teenUid: user.uid, createdAt, expiresAt }).then(() => {
+  const byUserRef = DrexCloud.database().ref('parentalLinkCodeByUser/' + user.uid);
+  byUserRef.once('value').then(snap => {
+    const prev = snap.val();
+    const updates = {};
+    if (prev && prev !== code) updates['parentalLinkCodes/' + prev] = null;
+    updates['parentalLinkCodes/' + code] = { teenUid: user.uid, createdAt, expiresAt };
+    updates['parentalLinkCodeByUser/' + user.uid] = code;
+    return DrexCloud.database().ref().update(updates);
+  }).then(() => {
     const display = document.getElementById('parental-code-display');
     if (display) {
       display.innerHTML = `
@@ -45382,20 +45400,39 @@ function linkParentalSupervision() {
     return;
   }
 
-  DrexCloud.database().ref('parentalLinkCodes/' + code).once('value').then(snap => {
-    const data = snap.val();
-    if (!data) throw new Error('invalid');
-    if (data.expiresAt < Date.now()) {
-      DrexCloud.database().ref('parentalLinkCodes/' + code).remove();
-      throw new Error('expired');
-    }
-    if (data.teenUid === user.uid) throw new Error('self');
+  // FIX seguridad: rate limit persistido en DB (5 intentos fallidos -> bloqueo
+  // de 15 min). Antes no había límite: 900k combinaciones eran enumerables.
+  const attemptRef = DrexCloud.database().ref('parentalLinkAttempts/' + user.uid);
+  const recordParentalAttempt = (prev, now) => {
+    const inWindow = prev && prev.resetAt > now;
+    const count = (inWindow ? (prev.count || 0) : 0) + 1;
+    const locked = count >= 5;
+    const resetAt = now + 15 * 60 * 1000;
+    return attemptRef.set(locked
+      ? { count, resetAt, lockedUntil: resetAt }
+      : { count, resetAt });
+  };
 
-    const updates = {};
-    updates['users/' + data.teenUid + '/supervisedBy'] = user.uid;
-    updates['users/' + user.uid + '/supervising/' + data.teenUid] = true;
-    updates['parentalLinkCodes/' + code] = null; // el código se consume, no se puede reusar
-    return DrexCloud.database().ref().update(updates);
+  attemptRef.once('value').then(snap => {
+    const prev = snap.val() || {};
+    const now = Date.now();
+    if (prev.lockedUntil && prev.lockedUntil > now) throw new Error('locked');
+    return DrexCloud.database().ref('parentalLinkCodes/' + code).once('value').then(codeSnap => {
+      const data = codeSnap.val();
+      if (!data) return recordParentalAttempt(prev, now).then(() => { throw new Error('invalid'); });
+      if (data.expiresAt < now) {
+        DrexCloud.database().ref('parentalLinkCodes/' + code).remove();
+        return recordParentalAttempt(prev, now).then(() => { throw new Error('expired'); });
+      }
+      if (data.teenUid === user.uid) throw new Error('self');
+
+      const updates = {};
+      updates['users/' + data.teenUid + '/supervisedBy'] = user.uid;
+      updates['users/' + user.uid + '/supervising/' + data.teenUid] = true;
+      updates['parentalLinkCodes/' + code] = null; // el código se consume, no se puede reusar
+      updates['parentalLinkAttempts/' + user.uid] = null; // éxito: limpiar intentos
+      return DrexCloud.database().ref().update(updates);
+    });
   }).then(() => {
     input.value = '';
     renderSupervisedAccountsList();
@@ -45405,6 +45442,7 @@ function linkParentalSupervision() {
     if (error.message === 'invalid') msg = 'Ese código no existe o ya fue usado.';
     if (error.message === 'expired') msg = 'Ese código expiró. Pídele a la otra persona que genere uno nuevo.';
     if (error.message === 'self') msg = 'No puedes vincular tu propia cuenta.';
+    if (error.message === 'locked') msg = 'Demasiados intentos fallidos. Espera 15 minutos antes de reintentar.';
     if (errBox) { errBox.textContent = msg; errBox.classList.remove('hidden'); }
   });
 }
