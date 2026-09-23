@@ -16829,84 +16829,121 @@ function saveNote() {
   // seguir directo crea una solicitud pendiente que el dueño debe aprobar.
   // Los 3 puntos de entrada existentes (feed, perfil, quick-follow) llaman a
   // esta única función para no triplicar la lógica de privacidad.
+  // C25: guarda anti-doble-tap por objetivo (los puntos de entrada de "seguir"
+  // —feed, perfil, hoja de usuario— convergen aquí). Sin ella, dos taps rápidos
+  // pasaban juntos el chequeo alreadyFollowing (ambas lecturas resuelven antes
+  // de que el set del primero aterrice) y los dos transactionBlind(+1) inflaban
+  // followersCount/followingCount en +2, además de duplicar la notificación.
+  const _followBusyByTarget = new Set();
   async function requestOrFollowUser(targetUserId, { onFollowed, onRequested, onAlready, onError } = {}) {
     const currentUser = DrexCloud.auth().currentUser;
     if (!currentUser || !targetUserId || currentUser.uid === targetUserId) return;
-
-    const followRef = DrexCloud.database().ref('followers/' + targetUserId + '/' + currentUser.uid);
-    let senderName = currentUser.displayName || 'Alguien';
+    if (_followBusyByTarget.has(targetUserId)) return;
+    _followBusyByTarget.add(targetUserId);
     try {
-      const [alreadyFollowing, alreadyRequested, targetIsPrivate] = await Promise.all([
-      followRef.once('value').then(s => s.exists()),
-      DrexCloud.database().ref('followRequests/' + targetUserId + '/' + currentUser.uid).once('value').then(s => s.exists()),
-      isAccountPrivate(targetUserId)
-      ]);
 
-      if (alreadyFollowing) { onAlready?.('following'); return; }
-      if (alreadyRequested) { onAlready?.('requested'); return; }
+      const followRef = DrexCloud.database().ref('followers/' + targetUserId + '/' + currentUser.uid);
+      let senderName = currentUser.displayName || 'Alguien';
+      try {
+        const [alreadyFollowing, alreadyRequested, targetIsPrivate] = await Promise.all([
+        followRef.once('value').then(s => s.exists()),
+        DrexCloud.database().ref('followRequests/' + targetUserId + '/' + currentUser.uid).once('value').then(s => s.exists()),
+        isAccountPrivate(targetUserId)
+        ]);
 
-      const senderSnap = await DrexCloud.database().ref('users/' + currentUser.uid).once('value');
-      const senderData = senderSnap.val() || {};
-      senderName = senderData.username || currentUser.displayName || 'Alguien';
+        if (alreadyFollowing) { onAlready?.('following'); return; }
+        if (alreadyRequested) { onAlready?.('requested'); return; }
 
-      if (targetIsPrivate) {
-        await DrexCloud.database().ref('followRequests/' + targetUserId + '/' + currentUser.uid).set({
-          requestedAt: Date.now(),
-          requesterName: senderName,
-          requesterImage: senderData.profileImage || ''
-        });
-        if (typeof addNotification === 'function') {
-          addNotification(targetUserId, `${senderName} quiere seguirte`, 'follow_request', { actionType: 'profile', actionId: currentUser.uid });
+        const senderSnap = await DrexCloud.database().ref('users/' + currentUser.uid).once('value');
+        const senderData = senderSnap.val() || {};
+        senderName = senderData.username || currentUser.displayName || 'Alguien';
+
+        if (targetIsPrivate) {
+          await DrexCloud.database().ref('followRequests/' + targetUserId + '/' + currentUser.uid).set({
+            requestedAt: Date.now(),
+            requesterName: senderName,
+            requesterImage: senderData.profileImage || ''
+          });
+          if (typeof addNotification === 'function') {
+            addNotification(targetUserId, `${senderName} quiere seguirte`, 'follow_request', { actionType: 'profile', actionId: currentUser.uid });
+          }
+          onRequested?.();
+          return;
         }
-        onRequested?.();
+
+        // A14: escritura en dos pasos con reversión: si el segundo falla, se
+        // deshace el primero para no dejar la relación a medias.
+        await followRef.set({ followedAt: Date.now() });
+        try {
+          await DrexCloud.database().ref('following/' + currentUser.uid + '/' + targetUserId).set({ followedAt: Date.now() });
+        } catch (e) {
+          await followRef.remove().catch(() => {});
+          throw e;
+        }
+      } catch (e) {
+        if (typeof onError === 'function') onError(e);
         return;
       }
-
-      // A14: escritura en dos pasos con reversión: si el segundo falla, se
-      // deshace el primero para no dejar la relación a medias.
-      await followRef.set({ followedAt: Date.now() });
-      try {
-        await DrexCloud.database().ref('following/' + currentUser.uid + '/' + targetUserId).set({ followedAt: Date.now() });
-      } catch (e) {
-        await followRef.remove().catch(() => {});
-        throw e;
+      // A9: mantener followingCount (antes nunca se actualizaba).
+      DrexCloud.database().ref('users/' + targetUserId + '/followersCount').transactionBlind(c => (c || 0) + 1);
+      DrexCloud.database().ref('users/' + currentUser.uid + '/followingCount').transactionBlind(c => (c || 0) + 1);
+      if (typeof addNotification === 'function') {
+        addNotification(targetUserId, `${senderName} te comenzó a seguir`, 'follow', { actionType: 'profile', actionId: currentUser.uid });
       }
-    } catch (e) {
-      if (typeof onError === 'function') onError(e);
-      return;
+      _invalidatePrivacyCaches(targetUserId);
+      // Drex Rec: seguir a alguien es la señal de afinidad más fuerte.
+      try { if (typeof drexRecTrainFollow === 'function') drexRecTrainFollow(targetUserId); } catch (_) {}
+      onFollowed?.();
+    } finally {
+      _followBusyByTarget.delete(targetUserId);
     }
-    // A9: mantener followingCount (antes nunca se actualizaba).
-    DrexCloud.database().ref('users/' + targetUserId + '/followersCount').transactionBlind(c => (c || 0) + 1);
-    DrexCloud.database().ref('users/' + currentUser.uid + '/followingCount').transactionBlind(c => (c || 0) + 1);
-    if (typeof addNotification === 'function') {
-      addNotification(targetUserId, `${senderName} te comenzó a seguir`, 'follow', { actionType: 'profile', actionId: currentUser.uid });
-    }
-    _invalidatePrivacyCaches(targetUserId);
-    // Drex Rec: seguir a alguien es la señal de afinidad más fuerte.
-    try { if (typeof drexRecTrainFollow === 'function') drexRecTrainFollow(targetUserId); } catch (_) {}
-    onFollowed?.();
   }
 
   // Aceptar/rechazar una solicitud de seguimiento pendiente (dueño de la cuenta privada).
+  // Aceptar/rechazar una solicitud de seguimiento pendiente (dueño de la cuenta privada).
+  // C25: guarda anti-doble-tap por solicitante + rollback A14 en la aceptación.
+  // Sin la guarda, dos taps en "Aceptar" ejecutaban dos veces los
+  // transactionBlind(+1) (el set de la relación es idempotente, los contadores
+  // no) y duplicaban la notificación "aceptó tu solicitud". Sin el rollback, un
+  // fallo en la segunda escritura dejaba la relación a medias (seguidor en
+  // followers/ sin su espejo en following/).
+  const _followRequestBusy = new Set();
   async function respondToFollowRequest(requesterUid, accept) {
     const user = DrexCloud.auth().currentUser;
     if (!user || !requesterUid) return;
+    if (_followRequestBusy.has(requesterUid)) return;
+    _followRequestBusy.add(requesterUid);
+    let failed = false;
+    try {
+      const requestRef = DrexCloud.database().ref('followRequests/' + user.uid + '/' + requesterUid);
+      await requestRef.remove();
 
-    const requestRef = DrexCloud.database().ref('followRequests/' + user.uid + '/' + requesterUid);
-    await requestRef.remove();
-
-    if (accept) {
-      await DrexCloud.database().ref('followers/' + user.uid + '/' + requesterUid).set({ followedAt: Date.now() });
-      await DrexCloud.database().ref('following/' + requesterUid + '/' + user.uid).set({ followedAt: Date.now() });
-      DrexCloud.database().ref('users/' + user.uid + '/followersCount').transactionBlind(c => (c || 0) + 1);
-      DrexCloud.database().ref('users/' + requesterUid + '/followingCount').transactionBlind(c => (c || 0) + 1);
-      if (typeof addNotification === 'function') {
-        const uSnap = await DrexCloud.database().ref('users/' + user.uid).once('value');
-        const myName = uSnap.val()?.username || 'Alguien';
-        addNotification(requesterUid, `${myName} aceptó tu solicitud de seguimiento`, 'follow', { actionType: 'profile', actionId: user.uid });
+      if (accept) {
+        const followersRef = DrexCloud.database().ref('followers/' + user.uid + '/' + requesterUid);
+        await followersRef.set({ followedAt: Date.now() });
+        try {
+          await DrexCloud.database().ref('following/' + requesterUid + '/' + user.uid).set({ followedAt: Date.now() });
+        } catch (e) {
+          // A14: revertir la primera escritura para no dejar la relación a medias.
+          await followersRef.remove().catch(() => {});
+          throw e;
+        }
+        DrexCloud.database().ref('users/' + user.uid + '/followersCount').transactionBlind(c => (c || 0) + 1);
+        DrexCloud.database().ref('users/' + requesterUid + '/followingCount').transactionBlind(c => (c || 0) + 1);
+        if (typeof addNotification === 'function') {
+          const uSnap = await DrexCloud.database().ref('users/' + user.uid).once('value');
+          const myName = uSnap.val()?.username || 'Alguien';
+          addNotification(requesterUid, `${myName} aceptó tu solicitud de seguimiento`, 'follow', { actionType: 'profile', actionId: user.uid });
+        }
+        _invalidatePrivacyCaches(user.uid);
       }
-      _invalidatePrivacyCaches(user.uid);
+    } catch (e) {
+      failed = true;
+      showMiniToast(appT('Ocurrió un error. Inténtalo de nuevo.'));
+    } finally {
+      _followRequestBusy.delete(requesterUid);
     }
+    if (failed) return;
     document.getElementById('follow-request-row-' + requesterUid)?.remove();
     const emptyState = document.getElementById('follow-requests-empty');
     if (emptyState && !document.getElementById('follow-requests-list')?.children.length) {
@@ -17542,10 +17579,18 @@ function saveNote() {
     currentPostOptionsAuthorData = null;
   }
 
+  // C25: guarda anti-doble-tap por objetivo (misma clase que D1/D2): sin ella,
+  // dos taps en "Dejar de seguir" ejecutaban dos veces el transactionBlind(-1) y
+  // los contadores quedaban en -2; la cancelación de solicitud pendiente también
+  // corría dos veces. Se libera en cada rama terminal (éxito o error).
+  const _userActionsFollowBusy = new Set();
   function toggleFollowFromUserActions() {
     const user = DrexCloud.auth().currentUser;
     const targetId = currentPostOptionsAuthorId;
     if (!user || !targetId) return;
+    if (_userActionsFollowBusy.has(targetId)) return;
+    _userActionsFollowBusy.add(targetId);
+    const _uafDone = () => _userActionsFollowBusy.delete(targetId);
     const followRef = DrexCloud.database().ref('followers/' + targetId + '/' + user.uid);
     followRef.once('value').then(snap => {
       if (snap.exists()) {
@@ -17554,39 +17599,48 @@ function saveNote() {
             await DrexCloud.database().ref('following/' + user.uid + '/' + targetId).remove();
           } catch (e) {
             await followRef.set({ followedAt: Date.now() }).catch(() => {});
+            _uafDone();
             showMiniToast(appT('No se pudo dejar de seguir. Intenta de nuevo.'));
             return;
           }
           DrexCloud.database().ref('users/' + targetId + '/followersCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
           DrexCloud.database().ref('users/' + user.uid + '/followingCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
           _invalidatePrivacyCaches(targetId);
+          _uafDone();
           showMiniToast(appT('Dejaste de seguir a @') + (currentPostOptionsAuthorData?.username || 'usuario'));
           closeUserActionsSheet();
-        }).catch(() => showMiniToast(appT('No se pudo dejar de seguir. Intenta de nuevo.')));
+        }).catch(() => { _uafDone(); showMiniToast(appT('No se pudo dejar de seguir. Intenta de nuevo.')); });
         return;
       }
       DrexCloud.database().ref('followRequests/' + targetId + '/' + user.uid).once('value').then(reqSnap => {
         if (reqSnap.exists()) {
           DrexCloud.database().ref('followRequests/' + targetId + '/' + user.uid).remove().then(() => {
+            _uafDone();
             showMiniToast(appT('Solicitud cancelada'));
             closeUserActionsSheet();
-          });
+          }).catch(() => { _uafDone(); showMiniToast(appT('No se pudo cancelar la solicitud.')); });
           return;
         }
+        // La guarda de requestOrFollowUser ya cubre el doble-tap de aquí en
+        // adelante; liberar la del sheet para no dejarla atascada si la
+        // llamada es absorbida en silencio por la otra guarda (ocupada).
+        _uafDone();
         requestOrFollowUser(targetId, {
           onFollowed: () => {
+            _uafDone();
             showMiniToast(appT('Ahora sigues a @') + (currentPostOptionsAuthorData?.username || 'usuario'));
             closeUserActionsSheet();
           },
           onRequested: () => {
+            _uafDone();
             showMiniToast(appT('Solicitud enviada a @') + (currentPostOptionsAuthorData?.username || 'usuario'));
             closeUserActionsSheet();
           },
-          onAlready: () => closeUserActionsSheet(),
-          onError: () => showMiniToast(appT('No se pudo seguir. Intenta de nuevo.'))
+          onAlready: () => { _uafDone(); closeUserActionsSheet(); },
+          onError: () => { _uafDone(); showMiniToast(appT('No se pudo seguir. Intenta de nuevo.')); }
         });
-      });
-    }).catch(() => showMiniToast(appT('Error al procesar')));
+      }).catch(() => { _uafDone(); showMiniToast(appT('Error al procesar')); });
+    }).catch(() => { _uafDone(); showMiniToast(appT('Error al procesar')); });
   }
 
   function hideAllPostsFromUserActions() {
