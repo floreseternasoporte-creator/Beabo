@@ -22876,6 +22876,7 @@ function saveNote() {
     } else {
       // LEGACY-ROLLBACK: sin listener agregado para este usuario → cómputo viejo.
       DrexCloud.database().ref('userConversations/' + user.uid).once('value').then(s2 => {
+        if (DrexCloud.auth().currentUser?.uid !== user.uid) return; // la sesión cambió mientras tanto
         paintChatUnreadBadge(computeLegacyChatUnread(s2.val() || {}, user.uid));
       }).catch(() => {});
     }
@@ -29671,8 +29672,15 @@ let chatTypingListener = null;
 
   function markChatRoomRead(conversationId) {
     const user = DrexCloud.auth().currentUser;
-    if (!user || !conversationId || !areChatReadReceiptsEnabled()) return;
-    DrexCloud.database().ref(`conversationReadAt/${conversationId}/${user.uid}`).set(Date.now());
+    if (!user || !conversationId) return;
+    if (areChatReadReceiptsEnabled()) {
+      DrexCloud.database().ref(`conversationReadAt/${conversationId}/${user.uid}`).set(Date.now());
+    }
+    // Ronda 6 (bugs): con la sala abierta, el bumpChatUnread del remitente
+    // incrementaba chatUnread/<uid>/<convoId>.c y nada lo reseteaba: el badge
+    // quedaba atorado en >=1 aunque el mensaje se leyó en vivo. El agregado
+    // del badge se resetea siempre (es independiente del ajuste de "Visto").
+    try { markChatConversationRead(conversationId); } catch (_) {}
   }
 
   let _chatReadMarkTimer = 0;
