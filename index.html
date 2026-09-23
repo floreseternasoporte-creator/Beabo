@@ -16096,7 +16096,11 @@ function saveNote() {
 
     // Marca el fin de la carga inicial (se dispara tras los child_added
     // iniciales): si no llegó ningún post visible, mostrar estado vacío.
-    notesRef.once('value', () => {
+    // FIX 2026-09-23: el shim DrexCloud implementa once() SOLO como promesa
+    // (Ref.prototype.once ignora el callback estilo Firebase). Con la forma de
+    // callback, este bloque JAMÁS se ejecutaba: el batch inicial nunca se
+    // montaba y el feed quedaba en esqueleto eterno. Se usa la forma promesa.
+    notesRef.once('value').then(() => {
       initialValueSeen = true;
       // Guardar snapshot en DrexCache (TTL 2 min): la próxima apertura del
       // feed pinta al instante y los listeners en vivo corrigen por encima.
@@ -16124,6 +16128,20 @@ function saveNote() {
         setupOlderSentinel();
       };
       _waitAndMountInitial();
+    }).catch((feedLoadError) => {
+      // La lectura inicial falló (red/permisos): antes no había ni señal (la
+      // promesa se descartaba en silencio). Se reporta a telemetría y se
+      // muestra el estado vacío en vez de dejar el esqueleto para siempre.
+      try {
+        _noteFail('feed-load-fail');
+        if (window.DrexCloud && DrexCloud.reliability) DrexCloud.reliability.reportError(feedLoadError, 'feed-load');
+      } catch (_) {}
+      try { clearFeedSkeleton(); } catch (_) {}
+      try {
+        const _fleHasPosts = !!feedContainer.querySelector(':scope > div[id^="post-"], :scope > div[id^="postph-"]');
+        const _fleHasEmpty = !!feedContainer.querySelector(':scope > .feed-empty-state');
+        if (!_fleHasPosts && !_fleHasEmpty) feedContainer.innerHTML = feedEmptyHTML();
+      } catch (_) {}
     });
 
     // Monta el batch inicial (una sola vez): lo ordena con el motor V2 y
