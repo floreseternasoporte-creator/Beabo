@@ -5828,7 +5828,7 @@ if (scrollArea) {
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
   }
-  .msg-menu-date { color: #8e8e93; }
+  .msg-menu-date { color: #6b7280; } /* A11y: #8e8e93 era 3.1:1 sobre blanco; AA 4.5+ */
   .msg-menu-row {
     display: flex; align-items: center; gap: 12px;
     width: 100%; padding: 10px 16px;
@@ -6843,6 +6843,10 @@ button:hover .fiesta-seat-free { border-color: color-mix(in srgb, var(--drex-bra
 #music-playlist-view button:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--drex-brand) 45%, transparent); }
 /* B2 (UX): anillo de foco visible global por teclado con el color de marca. */
 button:focus-visible, a:focus-visible, input:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--drex-brand) 45%, transparent); }
+/* A11y R8: las burbujas del chat son divs operables por teclado (role=button,
+   tabindex=0). El reset de Tailwind hace el outline transparente, así que el
+   anillo de foco-visible se aplica aquí igual que en button/a/input. */
+.msg-bubble[role="button"]:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--drex-brand) 45%, transparent); }
 @keyframes fiesta-float-up {
   0% { transform: translateY(0) scale(.5); opacity: 0; }
   15% { opacity: 1; transform: translateY(-40px) scale(1.2); }
@@ -31425,10 +31429,20 @@ let chatTypingListener = null;
         bubble.setAttribute('tabindex', '0');
         bubble.setAttribute('role', 'button');
         bubble.setAttribute('aria-keyshortcuts', 'Shift+F10');
-        try { bubble.setAttribute('aria-label', (typeof appT === 'function') ? appT('Opciones') : 'Opciones'); } catch (_) {}
+        // A11y R8-fix: el nombre accesible incluye un recorte del texto del
+        // mensaje; solo "Opciones" dejaba al lector de pantalla sin saber
+        // QUÉ mensaje abre el menú. Reusa la clave 'Opciones' (sin claves i18n nuevas).
+        try {
+          let _bubbleLbl = (typeof appT === 'function') ? appT('Opciones') : 'Opciones';
+          const _snippet = (bubble.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+          if (_snippet) _bubbleLbl += ': ' + _snippet;
+          bubble.setAttribute('aria-label', _bubbleLbl);
+        } catch (_) {}
         bubble.addEventListener('keydown', function (e) {
+          // A11y R8-fix: la tecla Menú dedicada (ContextMenu) también abre el
+          // menú, igual que las filas de conversación (showConvOptions).
           const openMsgMenu = (e.key === 'Enter' || e.key === ' ')
-            || (e.shiftKey && e.key === 'F10');
+            || (e.shiftKey && e.key === 'F10') || (e.key === 'ContextMenu');
           if (!openMsgMenu) return;
           e.preventDefault();
           const rect = bubble.getBoundingClientRect();
