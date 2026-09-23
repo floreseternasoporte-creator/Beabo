@@ -30461,6 +30461,21 @@ let chatTypingListener = null;
     openChatRoomFromInbox(uid);
   }
 
+  // UX chat (T1): el foco al composer al abrir una sala (DM o grupo) se hace
+  // SOLO en dispositivos no táctiles. En táctiles/iOS el teclado no se abre
+  // sin gesto del usuario de todos modos, así que forzar el foco es inútil
+  // y solo mueve el scroll / dispara el teclado fantasma.
+  function _drexIsTouchDevice() {
+    try {
+      if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+    } catch (_) {}
+    return 'ontouchstart' in window;
+  }
+  function focusChatRoomInputIfDesktop() {
+    if (_drexIsTouchDevice()) return;
+    document.getElementById('chat-room-input')?.focus();
+  }
+
   function openChatRoomFromInbox(otherUid) {
     const user = DrexCloud.auth().currentUser;
     if (!user || !otherUid) return;
@@ -30501,7 +30516,7 @@ let chatTypingListener = null;
       _loadAndApplyChatTheme(currentChatRoomId);
       if (typeof loadDisappearSettings === 'function') loadDisappearSettings();
       if (typeof _attachDoubleTapHeart === 'function') _attachDoubleTapHeart();
-      document.getElementById('chat-room-input')?.focus();
+      focusChatRoomInputIfDesktop();
     });
   }
 
@@ -30561,7 +30576,7 @@ let chatTypingListener = null;
     _loadAndApplyChatTheme(groupId);
     if (typeof loadDisappearSettings === 'function') loadDisappearSettings();
     if (typeof _attachDoubleTapHeart === 'function') _attachDoubleTapHeart();
-    document.getElementById('chat-room-input')?.focus();
+    focusChatRoomInputIfDesktop();
   }
 
   function closeChatRoomView() {
@@ -30915,14 +30930,17 @@ let chatTypingListener = null;
 
       const bubble = wrapper.querySelector('.msg-bubble');
       if (bubble && resolvedId) {
-        // A11y R8: la burbuja es operable por teclado: Enter/Espacio abre el
-        // menú de opciones del mensaje (responder, reaccionar, fijar…),
+        // A11y R8: la burbuja es operable por teclado: Enter/Espacio/Shift+F10
+        // abre el menú de opciones del mensaje (responder, reaccionar, fijar…),
         // antes solo alcanzable con long-press táctil.
         bubble.setAttribute('tabindex', '0');
         bubble.setAttribute('role', 'button');
+        bubble.setAttribute('aria-keyshortcuts', 'Shift+F10');
         try { bubble.setAttribute('aria-label', (typeof appT === 'function') ? appT('Opciones') : 'Opciones'); } catch (_) {}
         bubble.addEventListener('keydown', function (e) {
-          if (e.key !== 'Enter' && e.key !== ' ') return;
+          const openMsgMenu = (e.key === 'Enter' || e.key === ' ')
+            || (e.shiftKey && e.key === 'F10');
+          if (!openMsgMenu) return;
           e.preventDefault();
           const rect = bubble.getBoundingClientRect();
           showChatReactionPicker(resolvedId, rect, mine, msg.timestamp);
