@@ -29038,6 +29038,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         // Identidad canónica: tras editar el perfil se invalida la caché de
         // sesión para que feed/comentarios/búsqueda pinten nombre/foto nuevos.
         try { _drexProfileCache.delete(user.uid); } catch (_) {}
+        try { if (typeof _dirSearchProfileCache !== 'undefined') _dirSearchProfileCache.delete(user.uid); } catch (_) {}
         try { _invalidateAuthorProfileCache(user.uid); } catch (_) {}
         if (updates.username) {
           // Índice inverso usernameByUid/<uid> -> <nombre>: la reparación de
@@ -29106,6 +29107,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
 
       await DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
       try { _drexProfileCache.delete(user.uid); } catch (_) {}
+      try { if (typeof _dirSearchProfileCache !== 'undefined') _dirSearchProfileCache.delete(user.uid); } catch (_) {}
       try { _invalidateAuthorProfileCache(user.uid); } catch (_) {}
       document.getElementById('profile-image').src = cloudUrl;
       const desktopImg = document.getElementById('profile-image-desktop');
@@ -34734,6 +34736,16 @@ function openSearchView() {
 // consulta el índice usernames/ con begins_with (límite real en DynamoDB)
 // e hidrata solo los perfiles coincidentes. Antes, cada búsqueda descargaba
 // users COMPLETO (con fotos de perfil de hasta ~300KB) en cada tecla.
+//
+// PERF 2026-09-23 (ciclo 19) — caché corto de perfiles para la búsqueda de
+// directorio: hidratar hasta 30 perfiles completos costaba ~15 RCU por
+// búsqueda estabilizada (medido en qa-harness/test-c19-dirsearch-cost.js);
+// las pausas repetidas del mismo usuario re-leían lo mismo. TTL 120 s con
+// cap de 300 entradas, misma tolerancia que el caché de perfiles de
+// comentarios (DREX_PROFILE_CACHE_TTL). Se invalida al editar el perfil.
+const _dirSearchProfileCache = new Map(); // uid -> { data, ts }
+const DIR_SEARCH_PROFILE_CACHE_TTL = 120000;
+const DIR_SEARCH_PROFILE_CACHE_MAX = 300;
 function searchUserDirectoryByPrefix(q, limit) {
   const qq = String(q || '').toLowerCase().trim();
   if (!qq) return Promise.resolve([]);
@@ -34745,16 +34757,38 @@ function searchUserDirectoryByPrefix(q, limit) {
         const uid = child.val();
         if (typeof uid === 'string' && uid && child.key.charAt(0) !== '_') pairs.push([child.key, uid]);
       });
-      return Promise.all(pairs.map(([uname, uid]) =>
-        DrexCloud.database().ref('users/' + uid).once('value')
+      const now = Date.now();
+      const out = new Array(pairs.length);
+      const missingIdx = [];
+      pairs.forEach(([uname, uid], i) => {
+        const hit = _dirSearchProfileCache.get(uid);
+        if (hit && (now - hit.ts) < DIR_SEARCH_PROFILE_CACHE_TTL) {
+          out[i] = { ...hit.data, uid, username: hit.data.username || uname };
+        } else {
+          missingIdx.push(i);
+        }
+      });
+      if (!missingIdx.length) return out.filter(Boolean);
+      return Promise.all(missingIdx.map(i => {
+        const [uname, uid] = pairs[i];
+        return DrexCloud.database().ref('users/' + uid).once('value')
           .then(s2 => {
             const u = (s2 && s2.val()) || {};
+            if (u && Object.keys(u).length) {
+              if (_dirSearchProfileCache.size >= DIR_SEARCH_PROFILE_CACHE_MAX) {
+                const oldest = _dirSearchProfileCache.keys().next();
+                if (!oldest.done) _dirSearchProfileCache.delete(oldest.value);
+              }
+              _dirSearchProfileCache.set(uid, { data: u, ts: Date.now() });
+            }
             return { ...u, uid, username: u.username || uname };
           })
-          .catch(() => null)
-      ));
+          .catch(() => null);
+      })).then(arr => {
+        missingIdx.forEach((pi, k) => { out[pi] = arr[k]; });
+        return out.filter(Boolean);
+      });
     })
-    .then(arr => arr.filter(Boolean))
     .catch(() => []);
 }
 
@@ -35180,6 +35214,7 @@ function renderAccountsList(accounts) {
       const cloudUrl = await processImageFile(file);
       await DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
       try { _drexProfileCache.delete(user.uid); } catch (_) {}
+      try { if (typeof _dirSearchProfileCache !== 'undefined') _dirSearchProfileCache.delete(user.uid); } catch (_) {}
       try { _invalidateAuthorProfileCache(user.uid); } catch (_) {}
       if (profileImg) { profileImg.src = cloudUrl; profileImg.style.opacity = '1'; }
       const desktopImg = document.getElementById('profile-image-desktop');
