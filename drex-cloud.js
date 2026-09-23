@@ -1076,6 +1076,95 @@ function withCredRetry(opFn) {
     return phase1(null).then(phase2);
   }
 
+  // PERF 2026-09-23: variante acotada de readLeavesBounded para rutas de 2
+  // segmentos (pk + prefijo) con hijos push ID: p. ej.
+  // conversationMessages/<id> + limitToLast(80) de la sala de chat.
+  // Fase 1: localiza los hijos más nuevos con un escaneo ligero (solo sk,
+  // orden descendente, con Limit para no traer páginas de 1 MB). Fase 2:
+  // lee SOLO esos hijos con un único rango BETWEEN sobre la sort key.
+  // El costo por ciclo queda acotado a ~los N pedidos en vez de crecer con
+  // la conversación (conversaciones con menos de N mensajes leen lo mismo
+  // que antes: no hay regresión en salas pequeñas).
+  // Margen: sin orderBy o con orderByKey no hace falta margen (el orden por
+  // clave ES el criterio del límite); con orderBy timestamp/createdAt se usa
+  // el mismo margen anti-skew que readLeavesBounded (1.5x+10).
+  // endAt (clave, p. ej. paginación "anteriores" de comentarios) se aplica
+  // como cota superior de hijo en la fase 1.
+  // NOTA: la búsqueda dentro del chat (limitToLast(300) por tecla) ahora
+  // cubre los últimos ~460 mensajes en vez del historial completo.
+  function readLeavesBoundedPrefix(pk, prefixSeg, limitN, endAt, skewMargin) {
+    var want = skewMargin ? Math.ceil(limitN * 1.5) + 10 : limitN + 10;
+    var prefix = prefixSeg + '/';
+    var endKey = (typeof endAt === 'string' && endAt) ? endAt : null;
+    var children = [];
+    var seen = {};
+    function phase1(lastKey) {
+      var p = {
+        TableName: AWS_CONFIG.tableName,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :pfx)',
+        ExpressionAttributeValues: { ':pk': pk, ':pfx': prefix },
+        ProjectionExpression: 'sk',
+        ScanIndexForward: false,
+        Limit: Math.max(100, want * 10)
+      };
+      if (lastKey) p.ExclusiveStartKey = lastKey;
+      return withCredRetry(function () {
+        return dbTimeout(getDocClient().query(p).promise(), 'db-query-timeout');
+      }).then(function (res) {
+        var arr = res.Items || [];
+        for (var i = 0; i < arr.length; i++) {
+          var sk = (arr[i].sk === undefined || arr[i].sk === null) ? '' : String(arr[i].sk);
+          if (sk.indexOf(prefix) !== 0) continue;
+          var child = sk.slice(prefix.length).split('/')[0];
+          if (!child || seen[child]) continue;
+          if (endKey && child > endKey) continue; // paginación: solo hijos <= cursor
+          seen[child] = 1;
+          children.push(child);
+          if (children.length >= want) break;
+        }
+        if (children.length < want && res.LastEvaluatedKey) return phase1(res.LastEvaluatedKey);
+        return children;
+      });
+    }
+    function phase2() {
+      if (!children.length) return Promise.resolve([]);
+      var minChild = children[0];
+      for (var i = 1; i < children.length; i++) if (children[i] < minChild) minChild = children[i];
+      // Con endAt, el ':hi' se cierra en el cursor: con hijos de longitud
+      // fija (push IDs) excluye con exactitud a los hijos más nuevos que el
+      // cursor. El filtro de abajo es la red de seguridad para hijos de
+      // longitud variable. El ':lo' con '/' final impide que el rango alcance
+      // otros prefijos.
+      var hi = endKey ? prefix + endKey + String.fromCharCode(0xFFFF)
+                      : prefix + String.fromCharCode(0xFFFF);
+      return queryAll({
+        TableName: AWS_CONFIG.tableName,
+        KeyConditionExpression: 'pk = :pk AND sk BETWEEN :lo AND :hi',
+        ExpressionAttributeValues: {
+          ':pk': pk,
+          ':lo': prefix + minChild,
+          // U+FFFF: mayor que cualquier char ASCII de los push IDs.
+          ':hi': hi
+        }
+      }).then(function (items) {
+        var out = [];
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i];
+          var rawSk = (it.sk === undefined || it.sk === null) ? '' : String(it.sk);
+          if (rawSk.indexOf(prefix) !== 0) continue;
+          var childSeg = rawSk.slice(prefix.length).split('/')[0];
+          if (endKey && childSeg > endKey) continue; // red de seguridad
+          var skSegs = rawSk.split('/').filter(function (s) { return s !== ''; });
+          var v;
+          try { v = JSON.parse(it.v); } catch (e) { v = null; }
+          out.push({ segs: [pk].concat(skSegs), value: v });
+        }
+        return out;
+      });
+    }
+    return phase1(null).then(phase2);
+  }
+
   // Orden natural para las keys de imagen: imageUrls/0, imageUrls/1, ...,
   // imageUrls/10 (no lexicografico, que pondria el 10 antes que el 2).
   function sortImgKeys(keys) {
@@ -1173,6 +1262,21 @@ function withCredRetry(opFn) {
         (query.orderBy === 'timestamp' || query.orderBy === 'createdAt') &&
         query.equalTo === undefined && query.startAt === undefined) {
       return readLeavesBounded(pk, query.limitLast, query.endAt);
+    }
+    // PERF 2026-09-23: lectura ACOTADA bajo prefijo de 2 segmentos con
+    // limitToLast (p. ej. conversationMessages/<id> de la sala de chat, o
+    // notifications/<uid> del badge). ANTES: se descargaban TODAS las hojas
+    // bajo el prefijo en cada ciclo de polling (3 s) y applyQuery recortaba
+    // a N en cliente: abrir una sala con M mensajes costaba O(M) hojas por
+    // ciclo, sin cota. Mismo contrato de hijos push ID que la rama de arriba;
+    // con otro orderBy se conserva la lectura completa (p. ej.
+    // userConversations ordenado por updatedAt, cuyas claves NO son push ID).
+    if (segs.length === 2 && query && typeof query.limitLast === 'number' && query.limitLast > 0 &&
+        !query.limitFirst && query.equalTo === undefined && query.startAt === undefined &&
+        (query.orderByKey || query.orderBy === undefined ||
+         query.orderBy === 'timestamp' || query.orderBy === 'createdAt')) {
+      var skewMargin = !query.orderByKey && query.orderBy !== undefined;
+      return readLeavesBoundedPrefix(pk, segs[1], query.limitLast, query.endAt, skewMargin);
     }
     var jobs;
     if (skExact === '') {
@@ -5032,6 +5136,9 @@ function withCredRetry(opFn) {
         pushIdUpperBound: pushIdUpperBound,
         pushIdLowerBound: pushIdLowerBound,
         deltaFromSk: deltaFromSk,
+        // [PERF-BOUNDED-PREFIX] lectura acotada bajo prefijo (2026-09-23)
+        readLeavesBoundedPrefix: readLeavesBoundedPrefix,
+        readLeaves: readLeaves,
         DELTA_OVERLAP_MS: DELTA_OVERLAP_MS,
         mapAuthError: mapAuthError,
         DataSnapshot: DataSnapshot,
