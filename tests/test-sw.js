@@ -40,6 +40,7 @@ var fetchRoutes = {};
 global.fetch = function (req) {
   var url = cacheKeyOf(req);
   if (fetchRoutes[url] === 'REJECT') return Promise.reject(new Error('offline'));
+  if (fetchRoutes[url] === 'HANG') return new Promise(function () {}); // red colgada: nunca resuelve
   var r = fetchRoutes[url] || { ok: true, type: 'basic', body: 'OK:' + url };
   return Promise.resolve({
     ok: !!r.ok, type: r.type || 'basic', url: url,
@@ -115,6 +116,46 @@ async function runAll() {
     var res = await dispatchFetch(fakeRequest('https://x.test/Beabo/icon-192.png', ''));
     assert(res && !res.ok, 'devuelve el 404');
     assert(!store.get('https://x.test/Beabo/icon-192.png'), 'el 404 no debe cachearse');
+  });
+
+  console.log('\nsw.js — timeout de network-first (PERF 2026-09-23):');
+  // El var DREX_NETWORK_TIMEOUT_MS del SW queda visible tras el eval (mismo scope).
+  DREX_NETWORK_TIMEOUT_MS = 60;
+
+  await test('timeout configurado y positivo', async function () {
+    assert(typeof DREX_NETWORK_TIMEOUT_MS === 'number' && DREX_NETWORK_TIMEOUT_MS > 0,
+      'DREX_NETWORK_TIMEOUT_MS debe ser un número positivo');
+  });
+
+  await test('fetch colgado + caché: sirve la caché tras el timeout', async function () {
+    store.clear();
+    store.set('https://x.test/Beabo/drex-i18n.js', { ok: true, body: 'CACHE:i18n' });
+    fetchRoutes = { 'https://x.test/Beabo/drex-i18n.js': 'HANG' };
+    var t0 = Date.now();
+    var res = await dispatchFetch(fakeRequest('https://x.test/Beabo/drex-i18n.js', ''));
+    var ms = Date.now() - t0;
+    assert(res && res.body === 'CACHE:i18n', 'debe servir la copia en caché');
+    assert(ms < 2000, 'debe resolver rápido, no esperar a la red colgada (tardó ' + ms + 'ms)');
+  });
+
+  await test('fetch colgado sin caché (.js): falla limpio, sin bloqueo infinito', async function () {
+    store.clear();
+    fetchRoutes = { 'https://x.test/Beabo/drex-cloud.js': 'HANG' };
+    var settled = await Promise.race([
+      dispatchFetch(fakeRequest('https://x.test/Beabo/drex-cloud.js', '')).then(function (r) { return { done: true, res: r }; }),
+      new Promise(function (resolve) { setTimeout(function () { resolve({ done: false }); }, 3000); })
+    ]);
+    assert(settled.done, 'la promesa debe resolverse (no quedarse colgada con la red)');
+    assert(settled.res === undefined, 'sin caché y sin red: undefined limpio');
+  });
+
+  await test('fetch rápido: el timeout no interfiere', async function () {
+    store.clear();
+    fetchRoutes = { 'https://x.test/Beabo/drex-i18n.js': { ok: true, body: 'RED:i18n' } };
+    var res = await dispatchFetch(fakeRequest('https://x.test/Beabo/drex-i18n.js', ''));
+    assert(res && res.ok, 'la red rápida debe ganar al timeout');
+    assert(store.get('https://x.test/Beabo/drex-i18n.js').body === 'RED:i18n',
+      'la respuesta de red debe quedar en caché');
   });
 
   console.log('\n========================================');

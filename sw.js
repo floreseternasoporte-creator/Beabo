@@ -6,7 +6,7 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v14'; // v14: precache incluye drex-i18n.js (diccionarios i18n extraídos del HTML, 2026-09-23)
+const DREX_SW_VERSION = 'drex-v15'; // v15: timeout en network-first (drex-i18n.js colgado ya no retrasa DOMContentLoaded, 2026-09-23)
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',
@@ -55,9 +55,37 @@ self.addEventListener('activate', event => {
 // caché, fallback final a ./index.html para que las rutas profundas abran la
 // app en vez de quedarse en blanco (los .js sin caché siguen fallando como
 // error de red: servirles HTML rompería el parseo).
+// PERF 2026-09-23: timeout para network-first. drex-i18n.js pesa ~619 KB y
+// carga con defer; si su fetch queda colgado (red lenta), el navegador puede
+// retrasar DOMContentLoaded/load aunque el script no bloquee el parse. Con el
+// timeout se sirve la copia en caché y la app arranca en <timeout> en vez de
+// quedarse esperando a la red. `var` (no const) para poder afinarlo en tests.
+var DREX_NETWORK_TIMEOUT_MS = 10000;
+function fetchWithTimeout(req, ms) {
+  ms = ms || DREX_NETWORK_TIMEOUT_MS;
+  var abort = null;
+  try { abort = new AbortController(); } catch (_) { /* SW antiguos */ }
+  var fetchP;
+  try {
+    fetchP = abort ? fetch(req, { signal: abort.signal }) : fetch(req);
+  } catch (e) {
+    fetchP = Promise.reject(e);
+  }
+  var timeoutP = new Promise(function (_, reject) {
+    setTimeout(function () {
+      if (abort) { try { abort.abort(); } catch (_) {} }
+      reject(new Error('network-timeout'));
+    }, ms);
+  });
+  var raced = Promise.race([fetchP, timeoutP]);
+  // Evita rejection sin manejar si la red responde DESPUÉS del timeout.
+  fetchP.catch(function () {});
+  return raced;
+}
+
 function networkFirst(req, cacheKey) {
   const isNavigate = req.mode === 'navigate';
-  return fetch(req)
+  return fetchWithTimeout(req)
     .then(res => {
       if (res && res.ok) {
         const copy = res.clone();
