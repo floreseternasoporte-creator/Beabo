@@ -21261,6 +21261,75 @@ function saveNote() {
     try { drexRenderPushCard(); } catch (_) {}
   }
 
+  // C18: desvincular el push de ESTE dispositivo al cerrar sesión.
+  // El endpoint push es por origen/navegador, no por cuenta: si la cuenta A
+  // cerraba sesión sin desvincular, pushSubscriptions/A/<subId> quedaba
+  // huérfano y A seguía recibiendo push en este navegador; peor: si la
+  // cuenta B iniciaba sesión aquí y activaba notificaciones, el mismo
+  // endpoint se registraba también bajo B y B veía los push de A.
+  // Solo se borra el registro de ESTE dispositivo (subId del endpoint
+  // actual); otros dispositivos de la cuenta no se tocan. No se anula la
+  // suscripción del navegador para que reactivar siga siendo un toque.
+  async function drexDetachPushOnLogout(uid) {
+    try {
+      if (!uid) return;
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      let reg = null;
+      try { reg = await navigator.serviceWorker.ready; } catch (_) { return; }
+      let sub = null;
+      try { sub = await reg.pushManager.getSubscription(); } catch (_) { return; }
+      if (!sub || !sub.endpoint) return;
+      const subId = _drexPushSubId(sub.endpoint);
+      try { await DrexCloud.database().ref('pushSubscriptions/' + uid + '/' + subId).remove(); } catch (_) {}
+      // Marcar para restaurar si la MISMA cuenta vuelve a entrar en esta pestaña.
+      try { sessionStorage.setItem('drex-push-detached:' + uid, subId); } catch (_) {}
+    } catch (_) {}
+  }
+
+  // C18: al iniciar sesión, si esta misma cuenta desvinculó su push al salir
+  // y la suscripción del navegador sigue siendo la misma, restaurar el
+  // registro (evita que la tarjeta diga "Activadas" sin registro en BD).
+  // Si entra OTRA cuenta, no se restaura nada: debe activarlo ella misma.
+  async function drexReconcilePushOnLogin(uid) {
+    try {
+      if (!uid) return;
+      let detachedSubId = null;
+      try { detachedSubId = sessionStorage.getItem('drex-push-detached:' + uid); } catch (_) {}
+      if (!detachedSubId) return;
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      let reg = null;
+      try { reg = await navigator.serviceWorker.ready; } catch (_) { return; }
+      let sub = null;
+      try { sub = await reg.pushManager.getSubscription(); } catch (_) { return; }
+      if (!sub || !sub.endpoint) return;
+      if (_drexPushSubId(sub.endpoint) !== detachedSubId) return; // cambió la suscripción: no restaurar
+      const ref = DrexCloud.database().ref('pushSubscriptions/' + uid + '/' + detachedSubId);
+      let exists = false;
+      try { const snap = await ref.once('value'); exists = !!(snap && snap.exists()); } catch (_) {}
+      if (!exists) {
+        let p256dh = '', auth = '';
+        try { p256dh = _u8ToB64Url(sub.getKey('p256dh')); } catch (_) {}
+        try { auth = _u8ToB64Url(sub.getKey('auth')); } catch (_) {}
+        let _appRoot = location.origin + '/';
+        try { const _m = location.pathname.match(/^(\/Beabo)\//); if (_m) _appRoot = location.origin + _m[1] + '/'; } catch (_) {}
+        let _hashMode = false;
+        try { _hashMode = typeof drexPathRoutingSupported === 'function' ? !drexPathRoutingSupported() : false; } catch (_) {}
+        try {
+          await ref.set({
+            endpoint: sub.endpoint,
+            keys: { p256dh: p256dh, auth: auth },
+            appRoot: _appRoot,
+            hashMode: _hashMode,
+            createdAt: Date.now(),
+            restoredAt: Date.now(),
+            ua: String(navigator.userAgent || '').slice(0, 160)
+          });
+        } catch (_) {}
+      }
+      try { sessionStorage.removeItem('drex-push-detached:' + uid); } catch (_) {}
+    } catch (_) {}
+  }
+
   async function drexTestPush() {
     try { drexPlayNotificationSound(); } catch (_) {}
     try {
@@ -25461,6 +25530,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       setupNotificationsBadge(user.uid);
       setupChatUnreadBadge(user.uid);
       startScreenTimeTracking();
+      // C18: si esta cuenta desvinculó su push al cerrar sesión en este
+      // dispositivo, restaurar el registro (misma suscripción del navegador).
+      try { if (typeof drexReconcilePushOnLogin === 'function') drexReconcilePushOnLogin(user.uid); } catch (_) {}
 
       loadUserStats(user.uid);
       setupBlockedAccountsListener(user.uid);
@@ -25829,6 +25901,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     const spinner = document.getElementById('signout-spinner');
     spinner.style.display = "flex";
     const currentUid = DrexCloud.auth().currentUser?.uid;
+    // C18: desvincular el push de este dispositivo de la cuenta saliente.
+    try { if (typeof drexDetachPushOnLogout === 'function') drexDetachPushOnLogout(currentUid); } catch (_) {}
     setTimeout(() => {
       DrexCloud.auth().signOut()
         .then(() => {
@@ -25977,6 +26051,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     closeAccountSwitcher();
     const spinner = document.getElementById('signout-spinner');
     if (spinner) spinner.style.display = 'flex';
+    // C18: desvincular el push de este dispositivo de la cuenta saliente
+    // (si no, la cuenta nueva heredaría el endpoint y vería sus push).
+    try { const _outUid = DrexCloud.auth().currentUser && DrexCloud.auth().currentUser.uid;
+      if (typeof drexDetachPushOnLogout === 'function') drexDetachPushOnLogout(_outUid); } catch (_) {}
     DrexCloud.auth().signOut().then(() => {
       if (spinner) spinner.style.display = 'none';
       window._drexSwitchAccountEmail = account.email;
@@ -29978,15 +30056,21 @@ let chatTypingListener = null;
     document.getElementById('create-group-chat-view')?.classList.add('hidden');
   }
 
+  // PERF ciclo 18: debounce de 220 ms en el buscador de crear-grupo (mismo patrón que searchUsersForNewChat). Sin esto, cada tecla disparaba 1 query al índice usernames/ + hasta 20 lecturas completas de perfil.
+  let _groupChatSearchDebounceTimer = null;
+
   function searchUsersForGroupChat(query) {
     const results = document.getElementById('group-chat-search-results');
     if (!results) return;
+    if (_groupChatSearchDebounceTimer) { clearTimeout(_groupChatSearchDebounceTimer); _groupChatSearchDebounceTimer = null; }
     if (!query || query.trim().length < 2) { results.innerHTML = ''; return; }
     const q = query.toLowerCase().trim();
     results.innerHTML = '<div class="text-sm text-[#6b7280] py-2 px-1">Buscando...</div>';
-    // Búsqueda por prefijo acotada en el servidor (índice usernames/): antes
-    // descargaba users COMPLETO en cada tecla.
-    searchUserDirectoryByPrefix(q, 20).then(accounts => {
+    _groupChatSearchDebounceTimer = setTimeout(() => {
+      _groupChatSearchDebounceTimer = null;
+      // Búsqueda por prefijo acotada en el servidor (índice usernames/): antes
+      // descargaba users COMPLETO en cada tecla.
+      searchUserDirectoryByPrefix(q, 20).then(accounts => {
       const users = accounts.map(u => ({ uid: u.uid, name: u.username || u.displayName || 'Usuario', image: u.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==' }));
       const me = DrexCloud.auth().currentUser;
       const filtered = users.filter(u => u.uid !== (me?.uid));
@@ -30003,7 +30087,8 @@ let chatTypingListener = null;
         }
         results.appendChild(item);
       });
-    }).catch(() => { results.innerHTML = '<div class="text-sm text-[#6b7280] py-2 px-1">Error al buscar.</div>'; });
+      }).catch(() => { results.innerHTML = '<div class="text-sm text-[#6b7280] py-2 px-1">Error al buscar.</div>'; });
+    }, 220);
   }
 
   function addUserToGroupChat(user) {
