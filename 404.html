@@ -5367,6 +5367,7 @@ function setBottomNavVisibility(show) {
     'drafts-list-view',           // z-85
     'block-account-confirm-modal',  // z-90
     'block-account-success-modal',   // z-91
+    'chat-quick-actions-backdrop',  // z-64 (fondo de la hoja de acciones rápidas)
     'video-modal'                     // visor de video a pantalla completa (z-92 < z-100 de la barra)
   ];
   // El visor de fotos del feed ya usa body.drex-viewer-open
@@ -28978,7 +28979,7 @@ function saveNote() {
   function translateAppSubtree(root = document.body, lang = getAppLanguage()) { if (!root) return; const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode); nodes.forEach(node => translateAppTextNode(node, lang)); translateAppAttributes(root, lang); }
   function syncAppLanguageUI(lang) { document.documentElement.lang = lang === 'zh' ? 'zh-CN' : (lang === 'pt' ? 'pt-BR' : lang); document.documentElement.setAttribute('data-app-language', lang); const preview = document.getElementById('app-language-preview'); if (preview) preview.textContent = lang === 'en' ? 'English' : (lang === 'zh' ? '中文' : (lang === 'pt' ? 'Português' : 'Español')); ['es','en','zh','pt'].forEach(code => { const option = document.getElementById('app-language-' + code); if (!option) return; const selected = code === lang; option.querySelector('.app-language-check')?.classList.toggle('hidden', !selected); option.setAttribute('aria-pressed', selected ? 'true' : 'false'); }); }
   function startAppLanguageObserver() { if (appLanguageObserver || !document.body) return; appLanguageObserver = new MutationObserver(mutations => { const obsLang = getAppLanguage(); if (obsLang === 'es') return; mutations.forEach(mutation => mutation.addedNodes.forEach(node => { if (node.nodeType === Node.TEXT_NODE) translateAppTextNode(node, obsLang); else if (node.nodeType === Node.ELEMENT_NODE) translateAppSubtree(node, obsLang); })); }); appLanguageObserver.observe(document.body, { childList:true, subtree:true }); }
-  function applyAppLanguage(lang = getAppLanguage()) { currentLanguage = lang; localStorage.setItem('selectedLanguage', lang); localStorage.setItem(APP_LANGUAGE_STORAGE_KEY, lang); const t = translations[lang] || translations.es; document.getElementById('auth-title') && (document.getElementById('auth-title').innerText = t.authTitle); if (emailInput) emailInput.placeholder = t.emailPlaceholder; if (passwordInput) passwordInput.placeholder = t.passwordPlaceholder; if (submitButton) submitButton.innerText = t.btnIniciarSesion; if (toggleAuth) toggleAuth.innerText = t.btnToggleAuth; ['btn-volver-search','btn-volver-author'].forEach(id => { const el=document.getElementById(id); if (el) el.innerText=t.btnVolver; }); const search=document.getElementById('search-input'); if (search) search.placeholder=t.searchPlaceholder; const posts=document.getElementById('search-posts-title'); if (posts) posts.innerText=t.searchBooks; const accounts=document.getElementById('search-accounts-title'); if (accounts) accounts.innerText=t.searchAuthors; const report=document.getElementById('report-title'); if (report) report.innerText=t.reportProfile; const reportInfo=document.getElementById('report-instructions'); if (reportInfo) reportInfo.innerText=t.reportInstructions; const reportButton=document.getElementById('btn-enviar-report'); if (reportButton) reportButton.innerText=t.btnSendReport; translateAppSubtree(document.body, lang); syncAppLanguageUI(lang); startAppLanguageObserver(); }
+  function applyAppLanguage(lang = getAppLanguage()) { currentLanguage = lang; localStorage.setItem('selectedLanguage', lang); localStorage.setItem(APP_LANGUAGE_STORAGE_KEY, lang); const t = translations[lang] || translations.es; document.getElementById('auth-title') && (document.getElementById('auth-title').innerText = t.authTitle); if (emailInput) emailInput.placeholder = t.emailPlaceholder; if (passwordInput) passwordInput.placeholder = t.passwordPlaceholder; if (submitButton) submitButton.innerText = t.btnIniciarSesion; if (toggleAuth) toggleAuth.innerText = t.btnToggleAuth; ['btn-volver-search','btn-volver-author'].forEach(id => { const el=document.getElementById(id); if (el) el.innerText=t.btnVolver; }); const search=document.getElementById('search-input'); if (search) search.placeholder=t.searchPlaceholder; const posts=document.getElementById('search-posts-title'); if (posts) posts.innerText=t.searchBooks; const accounts=document.getElementById('search-accounts-title'); if (accounts) accounts.innerText=t.searchAuthors; translateAppSubtree(document.body, lang); syncAppLanguageUI(lang); startAppLanguageObserver(); }
   function updateTranslations() { applyAppLanguage((typeof getAppLanguage === 'function') ? getAppLanguage() : 'es'); }
   function refreshVisibleLocationPickerLanguage() { const view=document.getElementById('location-config-view'); if (!view || view.classList.contains('hidden') || view.style.display === 'none' || typeof renderLocationCountries !== 'function') return; const query=document.getElementById('settings-country-search')?.value || ''; renderLocationCountries(query); if (typeof updateSelectedCountryLabel === 'function') updateSelectedCountryLabel(); }
   function setAppLanguage(lang) { const next = (lang === 'en' || lang === 'zh' || lang === 'pt') ? lang : 'es'; applyAppLanguage(next); refreshVisibleLocationPickerLanguage(); const user=DrexCloud.auth().currentUser; if (user) DrexCloud.database().ref('userSettings/' + user.uid + '/appLanguage').set(next).catch(() => {}); }
@@ -31352,7 +31353,6 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       socialCompletion: true
     };
     const fn = document.getElementById('regFirstName'); if (fn) fn.value = regData.firstName;
-    const ln = document.getElementById('regLastName'); if (ln) ln.value = regData.lastName;
     const bd = document.getElementById('regBirthDate'); if (bd && regData.birthDate) bd.value = regData.birthDate;
     if (typeof regBdInitFromValue === 'function') regBdInitFromValue(regData.birthDate || '');
     const afc = document.getElementById('auth-form'); if (afc) afc.classList.remove('hidden');
@@ -46996,21 +46996,6 @@ function fiestaStopLevels() {
   document.querySelectorAll('.fiesta-speaking').forEach(e => e.classList.remove('fiesta-speaking'));
 }
 // FIESTA-REDISENO: estado de audio compacto y traducido (vive discreto en la barra superior).
-function fiestaUpdateStatus() {
-  const el = document.getElementById('fiesta-conn-status');
-  if (!el || !fiestaCur) return;
-  const pcs = Object.values(fiestaPCs);
-  let txt = appT('Esperando a otros…');
-  let cls = 'text-white/50';
-  if (pcs.length) {
-    const st = pcs.map(x => x.connectionState);
-    if (st.some(x => x === 'failed') || st.some(x => x === 'disconnected')) { txt = appT('Reconectando…'); cls = 'text-amber-300'; }
-    else if (st.every(x => x === 'connected' || x === 'completed')) { txt = appT('En línea'); cls = 'text-emerald-300'; }
-    else { txt = appT('Conectando…'); cls = 'text-white/50'; }
-  } else if (fiestaMyRole !== 'speaker') txt = appT('Escuchando…');
-  el.textContent = txt;
-  el.className = 'truncate shrink-0 ' + cls;
-}
 function fiestaUnlockAudio() {
   if (fiestaAudioCtx && fiestaAudioCtx.state === 'suspended') fiestaAudioCtx.resume().catch(() => {});
   document.querySelectorAll('#fiesta-remote-audios audio').forEach(a => {
@@ -47285,16 +47270,9 @@ function fiestaShowRoom() {
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
   fiestaArmAudioUnlock();
   fiestaLevelCtx();
-  fiestaUpdateStatus();
   document.getElementById('fiesta-room-title').textContent = fiestaCur.data.title;
   // FIESTA-REDISENO: subtítulo = anfitrión · N en línea (lo pinta fiestaPaintRoomSub).
   fiestaPaintRoomSub();
-  var _fgl = document.getElementById('fiesta-games-label'); if (_fgl) _fgl.textContent = appT('Juegos');
-  var _fml = document.getElementById('fiesta-mute-label'); if (_fml) _fml.textContent = appT('Micrófono');
-  var _fsl = document.getElementById('fiesta-speak-label'); if (_fsl) _fsl.textContent = appT('Hablar');
-  var _frl = document.getElementById('fiesta-react-label'); if (_frl) _frl.textContent = appT('Reaccionar');
-  var _fel = document.getElementById('fiesta-exit-label'); if (_fel) _fel.textContent = appT('Salir');
-  var _fll = document.getElementById('fiesta-listeners-label'); if (_fll) _fll.textContent = appT('Oyentes');
   document.getElementById('fiesta-room-lang').textContent = fiestaCur.data.languageName || '';
   document.getElementById('fiesta-room-lang').style.display = fiestaCur.data.languageName ? '' : 'none';
   fiestaPaintControls();
@@ -47376,7 +47354,6 @@ function fiestaWatchRoom() {
   fiestaRefs.chat = DrexCloud.database().ref('fiestas/' + id + '/chat').limitToLast(50);
   fiestaRefs.chat.on('child_added', snap => { fiestaAppendChatMsg(snap.val() || {}); });
   if (fiestaRefs.heal) clearInterval(fiestaRefs.heal);
-  fiestaRefs.status = setInterval(fiestaUpdateStatus, 2500);
   if (fiestaRefs.heartbeat) clearInterval(fiestaRefs.heartbeat);
   fiestaRefs.heartbeat = setInterval(() => {
     if (!fiestaCur || !fiestaMyUid) return;
@@ -47723,8 +47700,7 @@ function fiestaSetupPC(uid, pc) {
       fiestaDbg('Fallo conexion con ' + fiestaPeerName(uid));
       fiestaHealPeer(uid);
     } else if (st === 'closed') fiestaDropPeer(uid);
-    fiestaUpdateStatus();
-  };
+    };
 }
 
 async function fiestaCallPeer(uid) {
