@@ -111,6 +111,7 @@ if (fnSrc) {
     var musicExploreCache = [1], musicSearchCache = [1], musicMineCache = [1],
         musicHistoryCache = [{ id: 't1' }], musicFavoritesCache = [{ id: 't1' }],
         musicTopCache = [1], musicArtistCache = [1], musicPlaylistsCache = [1],
+        musicAuthorBlockCache = [{ id: 'tA' }], musicAuthorBlockUid = 'uidA',
         musicPlaylistDetailCache = { id: 'p1' }, musicAdBreakPending = {},
         musicLyricsState = { original: 'x' },
         musicUploadState = { audioFile: {}, audioDataUrl: 'data:audio/A', audioName: 'a.mp3', duration: 10, coverDataUrl: 'data:img/A', editingId: null, artistName: 'A' };
@@ -138,6 +139,7 @@ if (fnSrc) {
     assert(musicHistoryCache.length === 0 && musicFavoritesCache.length === 0 &&
            musicExploreCache.length === 0 && musicMineCache.length === 0 &&
            musicTopCache.length === 0 && musicArtistCache.length === 0 &&
+           musicAuthorBlockCache.length === 0 && musicAuthorBlockUid === null &&
            musicPlaylistsCache.length === 0, 'caches de música no limpiados');
     assert(musicPlaylistDetailCache === null && musicAdBreakPending === null, 'detalle/ad música no reseteados');
     assert(musicUploadState.audioDataUrl === null && musicUploadState.audioFile === null, 'draft de subida no limpiado');
