@@ -1797,6 +1797,10 @@ function withCredRetry(opFn) {
   // isDelta = true → el snapshot trae SOLO hijos nuevos (delta-sync): no se
   // poda l.kids (los hijos viejos siguen existiendo, solo no se re-descargaron).
   function dispatchSnapshot(l, snap, isDelta) {
+      // P1: una lectura en vuelo puede resolverse DESPUÉS de off(). Sin este
+      // guard, el callback de un oyente dado de baja seguiría disparándose
+      // (ej. el listener del comentario fijado contaminaba la vista del post nuevo).
+      if (listeners.indexOf(l) === -1) return;
       if (l.eventType === 'value') {
         var j = _changeFingerprint(snap.val());
         if (j !== l.lastJson) { l.lastJson = j; callCb(l.cb, snap); }
@@ -2378,6 +2382,7 @@ function withCredRetry(opFn) {
     return function () {
       var i = listeners.indexOf(l);
       if (i !== -1) listeners.splice(i, 1);
+      l._pendingFire = false; // no re-disparar una lectura en vuelo tras off()
       if (l._deb) clearTimeout(l._deb);
       maybeStopPolling();
     };
@@ -2403,6 +2408,7 @@ function withCredRetry(opFn) {
       var sameEvent = !eventType || l.eventType === eventType;
       if (sameRef && sameQuery && sameEvent && (!cb || l.cb === cb)) {
         if (l._deb) clearTimeout(l._deb);
+        l._pendingFire = false; // no re-disparar una lectura en vuelo tras off()
         listeners.splice(i, 1);
       }
     }
