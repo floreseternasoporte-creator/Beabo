@@ -7045,6 +7045,8 @@ var FIESTA_GAME_WORDS_FALLBACK = [
 
 var fiestaGame = null;            // último doc fiestas/<id>/game
 var fiestaGameMySecret = null;    // {w, liar} de mi uid
+var fiestaGameMyVote = null;      // C21: mi voto de la ronda (los votos viven en secretos)
+var fiestaGameHostBusy = false;   // C21: evita doble tally por ticks solapados
 var fiestaGameHiddenLocal = false;
 var fiestaGameTickInt = null;     // intervalo de cuenta atrás (cliente)
 var fiestaGameHostInt = null;     // intervalo maestro (solo dueño)
@@ -7197,11 +7199,16 @@ function fiestaGameStartNow() {
     db.ref('fiestaGameSecrets/' + sid + '/' + u).set({ w: isLiar ? pair[1] : pair[0], liar: isLiar });
   });
   fiestaGameMySecret = null;
+  // C21: liars/pair/votes YA NO se publican en el doc compartido (todos los
+  // miembros lo reciben; era filtración total del juego). El dueño deriva
+  // mentirosos y palabras leyendo fiestaGameSecrets/<sid>/<uid> (el tally ya
+  // asumía esa lectura). Los votos van al subárbol de secretos.
   db.ref('fiestas/' + sid + '/game').set({
-    status: 'deal', players: uids, liars: liars, out: [],
-    round: 1, turnIndex: 0, votes: {}, pair: pair,
+    status: 'deal', players: uids, out: [],
+    round: 1, turnIndex: 0, voteCount: 0,
     dealEndsAt: now + 7000, startedAt: now
   });
+  try { db.ref('fiestaGameSecrets/' + sid + '/votes').remove(); } catch (_) {}
   fiestaGameHiddenLocal = false;
   fiestaCloseGamesSheet();
   fiestaGameStartHostLoop();
@@ -7219,6 +7226,9 @@ function fiestaGameEndForAll() {
 /* ---------- Sincronización remota (la llama fiestaWatchRoom) ---------- */
 function fiestaGameRemoteUpdate(game) {
   fiestaGame = game || null;
+  // C21: al salir de la fase de votación se olvida mi voto local y se libera
+  // el guarda anti-doble-tally del dueño.
+  if (!game || game.status !== 'vote') { fiestaGameMyVote = null; fiestaGameHostBusy = false; }
   if (!fiestaGame) {
     fiestaGameMySecret = null;
     fiestaGameStopHostLoop();
@@ -7297,10 +7307,19 @@ function fiestaGameHostTick() {
   } else if (g.status === 'describe') {
     if (now >= (g.turnEndsAt || 0)) fiestaGameHostNextTurn(ref, g);
   } else if (g.status === 'vote') {
-    var active = fiestaGameActivePlayers();
-    var votes = g.votes || {};
-    var voted = active.filter(function (u) { return votes[u]; }).length;
-    if (voted >= active.length || now >= (g.voteEndsAt || 0)) fiestaGameHostTally(ref, g);
+    // C21: los votos viven en fiestaGameSecrets/<sid>/votes/<uid> (ocultos a
+    // los jugadores). El dueño los cuenta y espeja SOLO el conteo al doc.
+    fiestaGameHostReadVotes(fiestaCur.id).then(function (votes) {
+      if (!fiestaAmHost || !fiestaGame || fiestaGame.status !== 'vote' || fiestaGameHostBusy) return;
+      var active = fiestaGameActivePlayers();
+      var voted = active.filter(function (u) { return votes[u]; }).length;
+      try { if (voted !== (fiestaGame.voteCount || 0)) ref.update({ voteCount: voted }); } catch (_) {}
+      if (voted >= active.length || Date.now() >= (fiestaGame.voteEndsAt || 0)) {
+        fiestaGameHostBusy = true;
+        try { fiestaGameHostTally(ref, fiestaGame, votes); }
+        catch (e) { fiestaGameHostBusy = false; }
+      }
+    }).catch(function () {});
   } else if (g.status === 'reveal') {
     if (now >= (g.revealEndsAt || 0)) fiestaGameHostAfterReveal(ref, g);
   }
@@ -7311,14 +7330,39 @@ function fiestaGameHostNextTurn(ref, g) {
   while (idx < order.length && (out.indexOf(order[idx]) !== -1 ||
       (typeof fiestaMembers !== 'undefined' && fiestaMembers && !fiestaMembers[order[idx]]))) idx++;
   if (idx >= order.length) {
-    ref.update({ status: 'vote', votes: {}, voteEndsAt: Date.now() + 30000 });
+    ref.update({ status: 'vote', voteCount: 0, voteEndsAt: Date.now() + 30000 });
+    try { DrexCloud.database().ref('fiestaGameSecrets/' + fiestaCur.id + '/votes').remove(); } catch (_) {}
   } else {
     ref.update({ turnIndex: idx, turnEndsAt: Date.now() + 30000 });
   }
 }
-function fiestaGameHostTally(ref, g) {
+/* C21: el dueño deriva mentirosos/palabras leyendo los secretos individuales
+   (fiestaGameSecrets/<sid>/<uid>) en vez de publicarlos en el doc compartido.
+   Devuelve {liars, pair, byUid}. Los votos se leen aparte (ocultos a jugadores). */
+function fiestaGameHostReadSecrets(sid, uids) {
+  var db = DrexCloud.database();
+  return Promise.all((uids || []).map(function (u) {
+    return db.ref('fiestaGameSecrets/' + sid + '/' + u).once('value').then(function (snap) {
+      var v = snap.val() || {};
+      return { u: u, w: v.w || '', liar: !!v.liar };
+    }).catch(function () { return { u: u, w: '', liar: false }; });
+  })).then(function (rows) {
+    var liars = [], civW = '', liarW = '', byUid = {};
+    rows.forEach(function (r) {
+      byUid[r.u] = r;
+      if (r.liar) { liars.push(r.u); if (!liarW && r.w) liarW = r.w; }
+      else if (!civW && r.w) civW = r.w;
+    });
+    return { liars: liars, pair: (civW && liarW) ? [civW, liarW] : null, byUid: byUid };
+  });
+}
+function fiestaGameHostReadVotes(sid) {
+  return DrexCloud.database().ref('fiestaGameSecrets/' + sid + '/votes').once('value').then(function (snap) {
+    return snap.val() || {};
+  }).catch(function () { return {}; });
+}
+function fiestaGameHostTally(ref, g, votes) {
   var active = fiestaGameActivePlayers();
-  var votes = g.votes || {};
   var counts = {};
   active.forEach(function (voter) {
     var t = votes[voter];
@@ -7333,25 +7377,31 @@ function fiestaGameHostTally(ref, g) {
   var sid = fiestaCur.id;
   if (!best || tie || bestN === 0) {
     if ((g.round || 1) >= 2) {
-      ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: g.pair, endedAt: now });
+      fiestaGameHostReadSecrets(sid, g.players || []).then(function (sec) {
+        ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: sec.pair, liars: sec.liars, endedAt: now });
+      }).catch(function () {
+        ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], endedAt: now });
+      });
     } else {
-      ref.update({ status: 'describe', round: (g.round || 1) + 1, turnIndex: fiestaGameFirstActive(g.out), votes: {}, turnEndsAt: now + 30000 });
+      ref.update({ status: 'describe', round: (g.round || 1) + 1, turnIndex: fiestaGameFirstActive(g.out), voteCount: 0, turnEndsAt: now + 30000 });
+      try { DrexCloud.database().ref('fiestaGameSecrets/' + sid + '/votes').remove(); } catch (_) {}
     }
     return;
   }
-  // Leer la palabra del eliminado para el revelado.
-  DrexCloud.database().ref('fiestaGameSecrets/' + sid + '/' + best).once('value').then(function (snap) {
-    var v = snap.val() || {};
-    fiestaGameHostEliminate(ref, g, best, v.w || '', !!v.liar, now);
+  // Secretos del eliminado (palabra para el revelado) + lista de mentirosos
+  // y par de palabras en una sola lectura (ya no viajan en el doc compartido).
+  fiestaGameHostReadSecrets(sid, g.players || []).then(function (sec) {
+    var info = sec.byUid[best] || { w: '', liar: false };
+    fiestaGameHostEliminate(ref, g, best, info.w, info.liar, now, sec.liars, sec.pair);
   }).catch(function () {
-    fiestaGameHostEliminate(ref, g, best, '', (g.liars || []).indexOf(best) !== -1, now);
+    fiestaGameHostEliminate(ref, g, best, '', false, now, [], null);
   });
 }
-function fiestaGameHostEliminate(ref, g, uid, word, isLiar, now) {
+function fiestaGameHostEliminate(ref, g, uid, word, isLiar, now, liars, pair) {
   var out = (g.out || []).concat([uid]);
-  var liarsLeft = (g.liars || []).filter(function (l) { return out.indexOf(l) === -1; });
+  var liarsLeft = (liars || []).filter(function (l) { return out.indexOf(l) === -1; });
   if (liarsLeft.length === 0) {
-    ref.update({ status: 'final', winner: 'civiles', out: out, pair: g.pair, endedAt: now });
+    ref.update({ status: 'final', winner: 'civiles', out: out, pair: pair, liars: liars, endedAt: now });
   } else {
     ref.update({ status: 'reveal', out: out,
       revealed: { uid: uid, liar: isLiar, word: word },
@@ -7361,7 +7411,13 @@ function fiestaGameHostEliminate(ref, g, uid, word, isLiar, now) {
 function fiestaGameHostAfterReveal(ref, g) {
   var now = Date.now();
   if ((g.round || 1) >= 2) {
-    ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: g.pair, endedAt: now });
+    // C21: pair/liars solo se publican al terminar (pantalla final), nunca
+    // durante el juego. Se derivan de los secretos, no del doc compartido.
+    fiestaGameHostReadSecrets(fiestaCur.id, g.players || []).then(function (sec) {
+      ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: sec.pair, liars: sec.liars, endedAt: now });
+    }).catch(function () {
+      ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], endedAt: now });
+    });
   } else {
     ref.update({ status: 'describe', round: (g.round || 1) + 1, turnIndex: fiestaGameFirstActive(g.out), votes: {}, revealed: null, turnEndsAt: now + 30000 });
   }
@@ -7378,7 +7434,10 @@ function fiestaGameVote(target) {
   if (!fiestaCur || !fiestaCur.id || !fiestaGame || fiestaGame.status !== 'vote') return;
   if (!target || target === fiestaMyUid) return;
   if (fiestaGameActivePlayers().indexOf(fiestaMyUid) === -1) return;
-  DrexCloud.database().ref('fiestas/' + fiestaCur.id + '/game/votes/' + fiestaMyUid).set(target).catch(function () {});
+  // C21: el voto va al subárbol de secretos (invisible para los demás
+  // jugadores); el dueño espeja solo el conteo (voteCount) al doc compartido.
+  fiestaGameMyVote = target;
+  DrexCloud.database().ref('fiestaGameSecrets/' + fiestaCur.id + '/votes/' + fiestaMyUid).set(target).catch(function () {});
 }
 
 /* ---------- Render ---------- */
@@ -7473,11 +7532,12 @@ function fiestaGameHTMLDescribe() {
 }
 function fiestaGameHTMLVote() {
   var g = fiestaGame, active = fiestaGameActivePlayers();
-  var votes = g.votes || {};
-  var voted = active.filter(function (u) { return votes[u]; }).length;
+  // C21: el conteo viene del espejo del dueño (voteCount); los destinos de
+  // los votos ajenos ya no viajan en el doc. Mi voto se recuerda en local.
+  var voted = g.voteCount || 0;
   var neverJoined = (g.players || []).indexOf(fiestaMyUid) === -1;
   var iAmOut = !neverJoined && active.indexOf(fiestaMyUid) === -1;
-  var myVote = votes[fiestaMyUid];
+  var myVote = (typeof fiestaGameMyVote !== 'undefined') ? fiestaGameMyVote : null;
   var grid;
   if (neverJoined || iAmOut) {
     grid = '<div class="text-white/40 text-sm mt-6">' + (neverJoined ? appT('Te uniste a mitad del juego: observa esta ronda.') : appT('Eliminado: observa la votación.')) + '</div>';
