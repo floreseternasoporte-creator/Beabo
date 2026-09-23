@@ -11,7 +11,8 @@ Contrato:
   cliente -> POST {app:'drex-web', v:1, batch:[{v,ts,kind,msg,stack,url,line,col,sig}]}
   - batch: lista de 1..10 eventos.
   - Cada evento se valida y acota (msg<=300, stack<=2048, url<=300,
-    kind<=32, sig<=100, ts entero dentro de ±1 día).
+    kind<=32, sig<=100, ts en ms (Date.now()) o segundos, dentro de
+    ±1 día tras normalizar a segundos).
   - Rate limiting atómico por IP (ventana fija, fail-open).
   - Responde 202 {ok:true}. Nunca hace eco de datos del cliente.
 
@@ -143,6 +144,31 @@ def _clean_int(v):
     return n
 
 
+def _clean_ts(v, now):
+    """Normaliza el timestamp del evento a segundos (epoch Unix).
+
+    El cliente web emite Date.now() en MILISEGUNDOS; también se aceptan
+    segundos por compatibilidad (y por el ejemplo de DEPLOY.md). Sin esta
+    normalización, un ts en ms jamás cae dentro de la ventana de ±1 día y
+    el evento real se rechaza; además el TTL (ts + 7 días) quedaría unos
+    56.000 años en el futuro y la limpieza automática nunca correría.
+    Devuelve el ts en segundos o None si no es válido.
+    """
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return None
+    if abs(n) > 2**53:
+        return None
+    if n >= 10**12:
+        # Milisegundos: 1e12 ms = 2001-09-09; el ms actual es ~1.75e12.
+        # Segundos válidos nunca llegan aquí (1e12 s = año 33658).
+        n = n // 1000
+    if abs(n - now) > 86400:
+        return None
+    return n
+
+
 def _valid_event(ev, now):
     """Valida y normaliza un evento. Devuelve dict limpio o None."""
     if not isinstance(ev, dict):
@@ -153,8 +179,8 @@ def _valid_event(ev, now):
     msg = _clean_str(ev.get("msg"), 300)
     if not msg:
         return None
-    ts = _clean_int(ev.get("ts"))
-    if ts is None or abs(ts - now) > 86400:
+    ts = _clean_ts(ev.get("ts"), now)
+    if ts is None:
         return None
     sig = _clean_str(ev.get("sig"), 100) or "nosig"
     # La firma viaja en la clave: solo caracteres seguros.
