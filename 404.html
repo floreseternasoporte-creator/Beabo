@@ -46728,6 +46728,11 @@ let fiestaRefs = {};
 let fiestaAmHost = false;
 let fiestaReasserting = false;
 let fiestaHostMuteToastShown = false;
+// FIX bypass de moderación: el silenciamiento del anfitrión se recuerda en
+// local para preservarlo al re-afirmar la membresía. Sin esto, el onDisconnect
+// borra el nodo al ocultar la app y el reassert con set() lo recreaba sin
+// mutedByHost, permitiendo al silenciado desmutearse solo.
+let fiestaHostMutedLocal = false;
 
 // Volver a la app (desbloquear el teléfono, cambiar de app): re-afirmar la
 // membresía por si el onDisconnect la borró al ocultarse, y resincronizar.
@@ -46755,11 +46760,18 @@ async function fiestaReassertMembership() {
     let prof = null;
     try { prof = await fiestaMyProfile(); } catch (_) {}
     const node = DrexCloud.database().ref('fiestaMembers/' + fiestaCur.id + '/' + fiestaMyUid);
+    // Preservar el silenciamiento del anfitrión al re-afirmar: si el nodo fue
+    // borrado por el onDisconnect, el registro ya no existe y se re-escribe
+    // mutedByHost desde el flag local; si existe, manda el servidor.
+    let curRec = null;
+    try { const _rs = await node.once('value'); curRec = (_rs && _rs.val()) || null; } catch (_) {}
+    if (curRec) fiestaHostMutedLocal = !!curRec.mutedByHost;
     await node.set({
       name: (prof && prof.name) || 'Usuario',
       photo: (prof && prof.photo) || '',
       role: fiestaMyRole || 'listener',
-      muted: !!fiestaMuted,
+      muted: !!fiestaMuted || fiestaHostMutedLocal,
+      mutedByHost: fiestaHostMutedLocal,
       joinedAt: Date.now(),
       lastSeen: Date.now()
     });
@@ -47053,13 +47065,13 @@ async function joinFiesta(id, asSpeaker) {
     fiestaMyRole = role;
     fiestaAmHost = f.hostId === user.uid;
     fiestaCur = { id, data: f };
-    fiestaMuted = false;
+    fiestaMuted = false; fiestaHostMutedLocal = false;
     fiestaMembers = {};
 
     // Limpiar senales viejas de mi buzon antes de que alguien me escriba
     await DrexCloud.database().ref('fiestaSignals/' + id + '/' + user.uid).remove().catch(() => {});
     const prof = await fiestaMyProfile();
-    await mRef.child(user.uid).set({ name: prof.name, photo: prof.photo, role, muted: false, joinedAt: Date.now() });
+    await mRef.child(user.uid).set({ name: prof.name, photo: prof.photo, role, muted: false, mutedByHost: false, joinedAt: Date.now() });
     // WEPLAY2: aviso de entrada en el chat de la sala.
     // FIX 2026-09-21: push() devuelve un Ref, NO una promesa (no tiene .catch);
     // encadenar .catch lanzaba TypeError y el catch de joinFiesta lo convertía
@@ -47092,7 +47104,7 @@ async function joinFiesta(id, asSpeaker) {
     try { _emsg = String((e && (e.message || e.code)) || '').slice(0, 140); } catch (_) {}
     try { mRef.child(user.uid).remove().catch(() => {}); } catch (_) {}
     fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener';
-    fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false;
+    fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false; fiestaHostMutedLocal = false;
     if (!opened) showMiniToast(appT('No se pudo entrar a la fiesta. Revisa tu conexión e inténtalo de nuevo.') + (_emsg ? ' [' + _emsg + ']' : ''));
     return false;
   } finally {
@@ -47150,6 +47162,9 @@ function fiestaWatchRoom() {
   fiestaRefs.members.on('value', snap => {
     fiestaMembers = snap.val() || {};
     const myMemberRec = fiestaMembers[fiestaMyUid];
+    // El registro del servidor es autoritativo cuando existe: mantiene el
+    // flag local de silenciamiento del anfitrión (ver fiestaHostMutedLocal).
+    if (myMemberRec) fiestaHostMutedLocal = !!myMemberRec.mutedByHost;
     if (!myMemberRec) {
       // Mi registro desapareció: puede ser el onDisconnect al ocultar la app
       // (bloquear el teléfono / cambiar de app) o una expulsión del anfitrión.
@@ -47743,7 +47758,7 @@ async function leaveFiesta(silent) {
     await DrexCloud.database().ref('fiestaKicked/' + id).remove().catch(() => {});
   }
   fiestaCur = null; fiestaMyUid = null; fiestaMyRole = 'listener'; fiestaPeerDownSince = {};
-  fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false;
+  fiestaMuted = false; fiestaMembers = {}; fiestaAmHost = false; fiestaHostMutedLocal = false;
   const v = document.getElementById('fiesta-room-view');
   v.classList.add('hidden'); v.classList.remove('flex');
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
