@@ -2097,6 +2097,9 @@ var APP_ENGLISH_TEXT = {
 "Enviamos un código de 6 dígitos a {e}. Escríbelo aquí junto con tu nueva contraseña.":"We sent a 6-digit code to {e}. Enter it here along with your new password.",
 "Enviamos el código a {e}. Escríbelo y elige tu nueva contraseña.":"We sent the code to {e}. Enter it and choose your new password.",
 "Drex también protege los comentarios: este texto parece ofensivo o inseguro y no se podrá publicar.":"Drex also protects comments: this text looks offensive or unsafe and cannot be posted."
+,
+"Artistas destacados":"Featured artists",
+"Giveaway":"Giveaway"
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4192,6 +4195,9 @@ var APP_CHINESE_TEXT = {
 "Enviamos un código de 6 dígitos a {e}. Escríbelo aquí junto con tu nueva contraseña.":"我们已将6位验证码发送至{e}，请在此输入验证码和新密码。",
 "Enviamos el código a {e}. Escríbelo y elige tu nueva contraseña.":"我们已将验证码发送至{e}，请输入验证码并设置新密码。",
 "Drex también protege los comentarios: este texto parece ofensivo o inseguro y no se podrá publicar.":"Drex 也会保护评论区：这段文字似乎具有攻击性或不安全，无法发布。"
+,
+"Artistas destacados":"精选艺术家",
+"Giveaway":"赠奖活动"
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6278,6 +6284,9 @@ var APP_PORTUGUESE_TEXT = {
 "Enviamos un código de 6 dígitos a {e}. Escríbelo aquí junto con tu nueva contraseña.":"Enviamos um código de 6 dígitos para {e}. Digite-o aqui junto com sua nova senha.",
 "Enviamos el código a {e}. Escríbelo y elige tu nueva contraseña.":"Enviamos o código para {e}. Digite-o e escolha sua nova senha.",
 "Drex también protege los comentarios: este texto parece ofensivo o inseguro y no se podrá publicar.":"O Drex também protege os comentários: este texto parece ofensivo ou inseguro e não poderá ser publicado."
+,
+"Artistas destacados":"Artistas em destaque",
+"Giveaway":"Giveaway"
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
