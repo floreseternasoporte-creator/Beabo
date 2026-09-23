@@ -946,6 +946,45 @@ function withCredRetry(opFn) {
   // que todo id con tiempo <= ts ordena estrictamente antes que esta cota
   // (los 12 caracteres de sufijo son el mínimo '-'). Permite paginar "los N
   // anteriores a X" con una condición sobre sk, sin descargar el pk completo.
+  // OVERLAP ANTI CLOCK-SKEW (delta-sync): los push IDs llevan el reloj del
+  // dispositivo escritor en sus primeros 8 caracteres. Si un par tiene el
+  // reloj adelantado, su senal avanza _deltaSk y una senal posterior con
+  // timestamp menor (reloj atrasado o escritura retrasada) quedaria por
+  // debajo del watermark y se perderia para siempre (offers/answers/ICE
+  // de WebRTC rotos en silencio). Para evitarlo, cada ciclo delta re-pide
+  // una ventana de ~15s por debajo del maximo visto. El dedup de
+  // dispatchSnapshot (l.kids) evita re-disparar lo ya procesado, y el
+  // BETWEEN de DynamoDB ya es inclusivo (re-descarga fromSk cada ciclo),
+  // asi que el solape no cambia la semantica de entrega: solo ensancha el
+  // rango por abajo. Ante cualquier anomalia en el formato, se usa la
+  // cota original sin solape (comportamiento previo).
+  var DELTA_OVERLAP_MS = 15000;
+  function pushIdTime(id) {
+    var t = 0;
+    for (var i = 0; i < 8; i++) {
+      var c = PUSH_CHARS.indexOf(id.charAt(i));
+      if (c < 0) return null;
+      t = t * 64 + c;
+    }
+    return t;
+  }
+  function pushIdLowerBound(ts) {
+    var now = Math.floor(Number(ts) || 0);
+    if (now < 0) now = 0;
+    var timeStampChars = new Array(8);
+    for (var i = 7; i >= 0; i--) {
+      timeStampChars[i] = PUSH_CHARS.charAt(now % 64);
+      now = Math.floor(now / 64);
+    }
+    // Sufijo minimo: la menor clave posible con ese timestamp.
+    return timeStampChars.join('') + '------------';
+  }
+  function deltaFromSk(minSk) {
+    if (typeof minSk !== 'string' || minSk.length < 8) return minSk;
+    var t = pushIdTime(minSk);
+    if (t === null) return minSk;
+    return pushIdLowerBound(t - DELTA_OVERLAP_MS);
+  }
   function pushIdUpperBound(ts) {
     var now = Math.floor(Number(ts) || 0) + 1;
     var timeStampChars = new Array(8);
@@ -1961,7 +2000,7 @@ function withCredRetry(opFn) {
       return l.eventType === 'child_added' && l._delta === true && typeof l._deltaSk === 'string';
     });
     var readP = useDelta
-      ? readRefValueDelta(ls[0].ref, minDeltaSk(ls)).then(function (r) {
+      ? readRefValueDelta(ls[0].ref, deltaFromSk(minDeltaSk(ls))).then(function (r) {
           return { snap: r.snap, delta: true, maxSk: r.maxSk };
         })
       : readRefValue(ls[0].ref).then(function (snap) {
@@ -4988,6 +5027,12 @@ function withCredRetry(opFn) {
         unflatten: unflatten,
         applyQuery: applyQuery,
         newPushId: newPushId,
+        // [ONDELTA-OVERLAP] internos para pruebas en node (fix 2026-09-23)
+        pushIdTime: pushIdTime,
+        pushIdUpperBound: pushIdUpperBound,
+        pushIdLowerBound: pushIdLowerBound,
+        deltaFromSk: deltaFromSk,
+        DELTA_OVERLAP_MS: DELTA_OVERLAP_MS,
         mapAuthError: mapAuthError,
         DataSnapshot: DataSnapshot,
         Ref: Ref,
