@@ -22851,6 +22851,23 @@ function saveNote() {
     return unread;
   }
 
+  // FIX-C7-1: badge híbrido durante la migración perezosa. Suma el agregado
+  // (conversaciones migradas) + chequeo legacy RESTRINGIDO a las
+  // conversaciones SIN entrada agregada. No reintroduce la lectura completa
+  // de userConversations: usa la lista en memoria del inbox (allChatConversations).
+  function sumChatUnreadHybrid(agg, uid) {
+    let unread = sumChatUnreadAgg(agg, uid);
+    try {
+      (allChatConversations || []).forEach(item => {
+        if (!item || !item.id) return;
+        if (agg && Object.prototype.hasOwnProperty.call(agg, item.id)) return; // migrada → manda el agregado
+        if (isChatConversationMuted(item.id, uid)) return;
+        if (isLegacyChatConversationUnread(item, uid)) unread += 1;
+      });
+    } catch (_) {}
+    return unread;
+  }
+
   // LEGACY-ROLLBACK: cómputo viejo (updatedAt > lastRead en localStorage).
   // Solo se usa cuando chatUnread/<uid> aún no tiene datos (ventana de migración;
   // ausente ≡ 0 una vez completada). Eliminar cuando las lecturas del path viejo sean 0.
@@ -22879,7 +22896,7 @@ function saveNote() {
       chatUnreadAggCache = agg;
       chatUnreadAggActive = Object.keys(agg).length > 0;
       if (chatUnreadAggActive) {
-        paintChatUnreadBadge(sumChatUnreadAgg(agg, user.uid));
+        paintChatUnreadBadge(sumChatUnreadHybrid(agg, user.uid));
       } else {
         // LEGACY-ROLLBACK: nodo chatUnread/<uid> ausente (aún sin escrituras
         // agregadas) → cómputo viejo con userConversations/<uid>. Eliminar tras el rollout.
@@ -22892,7 +22909,7 @@ function saveNote() {
     }
     // Ruta defensiva: llamadas sin snapshot (mute listeners, mark-read, etc.).
     if (chatUnreadBadgeUid === user.uid && chatUnreadAggActive) {
-      paintChatUnreadBadge(sumChatUnreadAgg(chatUnreadAggCache, user.uid));
+      paintChatUnreadBadge(sumChatUnreadHybrid(chatUnreadAggCache, user.uid));
     } else if (chatUnreadBadgeRef && chatUnreadBadgeUid === user.uid) {
       chatUnreadBadgeRef.once('value').then(s2 => updateChatUnreadBadge(s2)).catch(() => {});
     } else {
@@ -29936,6 +29953,9 @@ let chatTypingListener = null;
     if (chatConversationCache.items.length && (now - chatConversationCache.loadedAt) < CHAT_CACHE_TTL_MS) {
       allChatConversations = chatConversationCache.items.slice();
       renderChatConversations(allChatConversations);
+      // FIX-C7-1: la lista del inbox ya está disponible → el badge híbrido
+      // puede incluir el chequeo legacy de las conversaciones no migradas.
+      try { if (chatUnreadAggActive && chatUnreadBadgeUid === user.uid) updateChatUnreadBadge(); } catch (_) {}
       return;
     }
 
@@ -30003,6 +30023,9 @@ let chatTypingListener = null;
       });
       chatConversationCache = { items: allChatConversations.slice(), loadedAt: Date.now() };
       try { localStorage.setItem(CHAT_CONVERSATIONS_CACHE_KEY, JSON.stringify(chatConversationCache)); } catch (_) {}
+      // FIX-C7-1: la lista del inbox ya está disponible → el badge híbrido
+      // puede incluir el chequeo legacy de las conversaciones no migradas.
+      try { if (chatUnreadAggActive && chatUnreadBadgeUid === user.uid) updateChatUnreadBadge(); } catch (_) {}
       renderChatConversations(allChatConversations);
     }).catch(() => {
       container.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#6b7280]">No pudimos cargar tus chats.</div>';
@@ -30051,20 +30074,32 @@ let chatTypingListener = null;
     return (document.getElementById('chat-search-input')?.value || '').trim().toLowerCase();
   }
 
+  // FIX-C7-1: chequeo legacy POR CONVERSACIÓN (updatedAt > lastRead en
+  // localStorage). Durante la migración perezosa, una conversación sin entrada
+  // agregada conserva este chequeo en vez de tratarse como leída.
+  function isLegacyChatConversationUnread(item, uid) {
+    if (!item || !item.id || !uid) return false;
+    let lastRead = 0;
+    try { lastRead = Number(localStorage.getItem(getChatLastReadKey(uid, item.id))) || 0; } catch (_) {}
+    return Number(item.updatedAt || 0) > lastRead;
+  }
+
   function isChatConversationUnread(item) {
     const user = DrexCloud.auth().currentUser;
     if (!user || !item?.id) return false;
     if (chatUnreadAggActive) {
       const st = chatUnreadAggCache[item.id];
-      if (!st) return false;
-      if (Number(st.c || 0) > 0) return true;
-      // Hoja `u` (grupos >50 miembros): u > r => hay mensajes sin leer.
-      return Number(st.u || 0) > Number(st.r || 0);
+      if (st && typeof st === 'object') {
+        if (Number(st.c || 0) > 0) return true;
+        // Hoja `u` (grupos >50 miembros): u > r => hay mensajes sin leer.
+        return Number(st.u || 0) > Number(st.r || 0);
+      }
+      // FIX-C7-1: fallback POR CONVERSACIÓN (no global): sin entrada agregada
+      // para esta conversación, el chequeo legacy sigue mandando.
+      return isLegacyChatConversationUnread(item, user.uid);
     }
     // LEGACY-ROLLBACK: sin datos agregados → comparación vieja updatedAt > lastRead.
-    let lastRead = 0;
-    try { lastRead = Number(localStorage.getItem(getChatLastReadKey(user.uid, item.id))) || 0; } catch (_) {}
-    return Number(item.updatedAt || 0) > lastRead;
+    return isLegacyChatConversationUnread(item, user.uid);
   }
 
   function filterChatInboxConversations(items = []) {
