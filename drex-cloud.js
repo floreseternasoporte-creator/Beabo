@@ -1278,6 +1278,24 @@ function withCredRetry(opFn) {
       var skewMargin = !query.orderByKey && query.orderBy !== undefined;
       return readLeavesBoundedPrefix(pk, segs[1], query.limitLast, query.endAt, skewMargin);
     }
+    // PERF 2026-09-23 (ciclo 7, H1): lectura ACOTADA bajo prefijo de 3
+    // segmentos con limitToLast (chat de fiestas: fiestas/<id>/chat +
+    // limitToLast(50) del oyente child_added de la sala). ANTES: cada ciclo
+    // de polling (3 s) descargaba TODAS las hojas bajo el prefijo con
+    // begins_with (sin cota: crece con la duración de la fiesta; cada
+    // mensaje = ~5 ítems) y applyQuery recortaba a N en el cliente. Ahora se
+    // reutiliza la variante acotada de 2 fases con el prefijo compuesto
+    // '<id>/chat' (los hijos siguen siendo push IDs ordenados por tiempo):
+    // el costo por ciclo queda acotado a ~los N pedidos, igual que en la
+    // rama de 2 segmentos. Con otras formas de consulta (filtros,
+    // limitToFirst, orderBy no temporal) se conserva la lectura completa.
+    if (segs.length === 3 && query && typeof query.limitLast === 'number' && query.limitLast > 0 &&
+        !query.limitFirst && query.equalTo === undefined && query.startAt === undefined &&
+        (query.orderByKey || query.orderBy === undefined ||
+         query.orderBy === 'timestamp' || query.orderBy === 'createdAt')) {
+      var skewMargin3 = !query.orderByKey && query.orderBy !== undefined;
+      return readLeavesBoundedPrefix(pk, segs[1] + '/' + segs[2], query.limitLast, query.endAt, skewMargin3);
+    }
     var jobs;
     if (skExact === '') {
       jobs = [queryAll({
