@@ -18,6 +18,7 @@ HTML_PATH = 'index.html'
 # Globales que no están definidos en index.html pero existen en runtime.
 EXTERNAL_GLOBALS = {
     'DrexCloud',        # drex-cloud.js
+    'DrexRecoveryCodes',  # recovery-codes.js (script defer)
     'firebase',         # SDK compat (si se usa)
 }
 

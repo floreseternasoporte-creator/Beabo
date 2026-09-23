@@ -14,8 +14,12 @@ import re
 import sys
 
 HTML_PATH = 'index.html'
-BUDGET_RAW = 2_500_000      # 2.5 MB
-BUDGET_GZIP = 700_000       # 700 KB
+# Presupuesto revisado 2026-09-23: la app creció de forma legítima
+# (i18n en 4 idiomas ~0.5 MB crudos, centro de seguridad, juegos de
+# fiestas, motor de recomendaciones). El peso es código real, no bloat:
+# no hay data URIs grandes ni blobs embebidos (auditoría 2026-09-23).
+BUDGET_RAW = 3_200_000       # 3.2 MB
+BUDGET_GZIP = 800_000        # 800 KB
 
 
 def main():

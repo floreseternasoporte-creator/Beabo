@@ -36,6 +36,11 @@ EXEMPT = {
     'comments-view': 'vista',
     'search-view': 'vista',
     'profile-view': 'vista',
+    'music-view': 'vista (sección principal; gestiona la barra ella misma)',
+    'music-playlist-view': 'vista',
+    'music-artist-view': 'vista',
+    'music-upload-view': 'vista',
+    'music-followers-view': 'vista',
     'image-modal': 'usa body.drex-viewer-open (no el guard)',
     'signout-spinner': 'transitorio (cierre de sesión)',
 }
