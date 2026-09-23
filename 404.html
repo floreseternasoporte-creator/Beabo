@@ -17,7 +17,7 @@
   <!-- favicon personalizado llamado ashhh.ico -->
   <link rel="icon" href="icon-192.png" />
   <link rel="manifest" href="./manifest.json" />
-  <meta name="theme-color" content="#f0f4f9" />
+  <meta name="theme-color" content="#2F33B8" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -14794,6 +14794,19 @@ function saveNote() {
   function _noteFail(tag) {
     try { if (window.DrexCloud && DrexCloud.reliability) DrexCloud.reliability.note(tag); } catch (_) {}
   }
+  // A11y genérico para overlays: guardar/restaurar foco (las hojas inferiores
+  // no lo hacían; el visor de fotos y los pickers ya tenían su propia versión).
+  let _overlayPrevFocus = null;
+  function _saveOverlayFocus() {
+    const a = document.activeElement;
+    if (a && a !== document.body) _overlayPrevFocus = a;
+  }
+  function _restoreOverlayFocus() {
+    if (_overlayPrevFocus && document.contains(_overlayPrevFocus)) {
+      try { _overlayPrevFocus.focus({ preventScroll: true }); } catch (_) {}
+    }
+    _overlayPrevFocus = null;
+  }
   // Saturación 0..10 (y −10..0 en negativo): ningún gusto domina la frescura.
   function _drexRecSat(v) {
     v = Number(v) || 0;
@@ -16673,6 +16686,7 @@ function saveNote() {
     setBottomNavVisibility(false);
     // El botón atrás del teléfono debe cerrar el menú, no navegar.
     if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
+    _saveOverlayFocus();
     requestAnimationFrame(() => sheet.classList.add('open'));
   }
 
@@ -16685,6 +16699,7 @@ function saveNote() {
     }
     if (overlay) overlay.classList.add('hidden');
     setBottomNavVisibility(true);
+    _restoreOverlayFocus();
     currentPostOptionsNoteId = null;
     currentPostOptionsNoteData = null;
   }
@@ -18964,10 +18979,17 @@ function saveNote() {
     node.appendChild(wrap);
   };
 
+  // A11y: al cerrar los comentarios se devuelve el foco a quien los abrió
+  // (mismo patrón que _feedImageModalPrevFocus en el visor de fotos).
+  let _commentsPrevFocus = null;
   function openCommentsView(noteId) {
     // DrexRecEngine V2: entrenar con señal de "abrir comentarios".
     try { if (typeof drexRecTrainById === 'function') drexRecTrainById(noteId, DREX_REC.weights.openComments || 0.7); } catch (_) {}
     currentPostId = noteId;
+    const _cvActive = document.activeElement;
+    if (_cvActive && !document.getElementById('comments-view')?.contains(_cvActive)) {
+      _commentsPrevFocus = _cvActive;
+    }
     const user = DrexCloud.auth().currentUser;
     const commentsView = document.getElementById('comments-view');
     const mainApp = document.getElementById('main-app');
@@ -19052,6 +19074,11 @@ function saveNote() {
 
   function closeCommentsView() {
     document.getElementById('comments-view').classList.add('hidden');
+    // A11y: devolver el foco a quien abrió los comentarios.
+    if (_commentsPrevFocus && document.contains(_commentsPrevFocus)) {
+      try { _commentsPrevFocus.focus({ preventScroll: true }); } catch (_) {}
+    }
+    _commentsPrevFocus = null;
     // Si los comentarios se abrieron encima del visor, se restaura su z-index.
     if (window._commentsFromViewer) {
       window._commentsFromViewer = false;
@@ -51445,6 +51472,7 @@ function drexReportClose() {
   if (o) o.classList.add('hidden');
   _drexReportTarget = null;
   _drexReportReason = null;
+  if (typeof _restoreOverlayFocus === 'function') _restoreOverlayFocus();
   if (typeof setBottomNavVisibility === 'function') { try { setBottomNavVisibility(true); } catch (_) {} }
 }
 
@@ -51589,6 +51617,7 @@ async function drexReportOpen(type, data) {
   _drexReportRenderStep1();
   document.getElementById('drex-report-overlay')?.classList.remove('hidden');
   document.getElementById('drex-report-sheet')?.classList.remove('hidden');
+  if (typeof _saveOverlayFocus === 'function') _saveOverlayFocus();
   if (typeof setBottomNavVisibility === 'function') { try { setBottomNavVisibility(false); } catch (_) {} }
 }
 
