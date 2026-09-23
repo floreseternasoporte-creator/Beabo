@@ -679,7 +679,9 @@ function probeDb() {
 
 // API pública de fiabilidad (se expone como DrexCloud.reliability).
 var RelPublicApi = {
-  // Disyuntor de un subsistema ('db' | 'auth' | 'storage').
+  // Contador best-effort para catches que antes tragaban el error en silencio.
+  // Uso: DrexCloud.reliability.note('vote-train-fail'). Nunca lanza.
+  note: function (tag) { relNote(tag); },  // Disyuntor de un subsistema ('db' | 'auth' | 'storage').
   circuit: function (name) { return circuitRegistry[name] || null; },
   resetCircuits: function () {
     Object.keys(circuitRegistry).forEach(function (k) { circuitRegistry[k].recordSuccess(); });
@@ -1742,9 +1744,6 @@ function withCredRetry(opFn) {
     });
   }
 
-  function safeJson(v) {
-    try { return JSON.stringify(v); } catch (e) { return null; }
-  }
   // Huella de cambio liviana para oyentes: las fotos se guardan como data
   // URLs en base64 (hasta ~300 KB cada una) y un feed con posts de varias
   // fotos suma decenas de MB. Comparar con JSON.stringify del snapshot

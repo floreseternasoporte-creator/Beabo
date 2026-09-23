@@ -162,6 +162,12 @@ El objeto `DREX_REC` se actualiza para usar las constantes V2.
 2. Los puntos de entrenamiento existentes usan las funciones puenteadas.
 3. Nuevas señales: ocultar post, abrir comentarios, click en media.
 4. `loadNotes()` reordena "Para ti" 1.2s después de cargar el perfil V2.
+5. **Regla de orden de carga:** el JS inline corre en parse-time, ANTES que el
+   `defer` del motor. Ningún código inline de top-level puede asumir
+   `DrexRecEngine`/`window.DREX_REC` definidos; los usos van en callbacks o
+   tras guards `typeof`. El binding `DREX_REC` inline es un Proxy que refleja
+   `window.DREX_REC` (V2) en vivo y usa `_DREX_REC_V1` como fallback de
+   arranque — no leerlo como objeto estático.
 
 ## Tests
 

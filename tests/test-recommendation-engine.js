@@ -547,6 +547,69 @@ await test('Engine.reset() limpia perfil y promesas en vuelo', async function ()
   assert(Engine.ProfileStore.get() === null, 'tras reset + lectura stale, get() debe ser null');
 });
 
+// --- Bridge V1->V2: contrato real con index.html (gap detectado en auditoría) ---
+console.log('Bridge (contrato con index.html):');
+
+await test('Bridge: globals que index.html invoca existen y no lanzan', function () {
+  ['drexRecTrainById', 'drexRecResortForYou', 'drexRecObserveCard', 'drexRecInsertForYou', 'drexRecTrainFollow'].forEach(function (n) {
+    assert(typeof global[n] === 'function', n + ' debe ser función global');
+  });
+  global.drexRecTrainById('note-x', 3); // no debe lanzar
+  global.drexRecTrainFollow('author-y'); // no debe lanzar
+  assert(true, 'llamadas del bridge no lanzan');
+});
+
+await test('Bridge: DrexRecEngine expone trainById/resortForYou/trainFollow', function () {
+  ['trainById', 'resortForYou', 'trainFollow'].forEach(function (m) {
+    assert(typeof Engine[m] === 'function', 'DrexRecEngine.' + m + ' debe existir');
+  });
+});
+
+// --- Pin de pesos efectivos (split-brain DREX_REC: auditoría arquitectura) ---
+console.log('Pesos efectivos (DREX_REC):');
+
+await test('V2: window.DREX_REC.weights tiene los valores documentados', function () {
+  var w = global.DREX_REC.weights;
+  assert.strictEqual(w.view, 0.3, 'view V2');
+  assert.strictEqual(w.deepView, 1.2, 'deepView V2');
+  assert.strictEqual(w.up, 3.0, 'up V2');
+  assert.strictEqual(w.eco, 4.5, 'eco V2');
+  assert.strictEqual(w.publish, 2.0, 'publish V2');
+  assert.strictEqual(w.hide, -5.0, 'hide V2');
+  assert.strictEqual(w.mediaClick, 0.8, 'mediaClick V2');
+  assert.strictEqual(w.openComments, 0.7, 'openComments V2');
+  assert.strictEqual(global.DREX_REC.viewMs, 1000, 'viewMs V2');
+});
+
+await test('V1 fallback inline (_DREX_REC_V1) conserva sus valores documentados', function () {
+  var fs = require('fs');
+  var html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+  var m = html.match(/const _DREX_REC_V1 = (\{[\s\S]*?\n  \});/);
+  assert(m, '_DREX_REC_V1 debe existir en index.html');
+  var v1 = (new Function('return (' + m[1] + ');'))();
+  assert.strictEqual(v1.weights.view, 0.6, 'V1 view');
+  assert.strictEqual(v1.weights.eco, 4, 'V1 eco');
+  assert.strictEqual(v1.viewMs, 2000, 'V1 viewMs');
+  assert.strictEqual(v1.profilePath, 'userInterests', 'V1 profilePath');
+});
+
+await test('Binding DREX_REC: refleja window en vivo, fallback V1 sin motor', function () {
+  var v1 = { weights: { view: 0.6 } };
+  var binding = new Proxy(v1, { get: function (t, p) {
+    var w = (typeof window !== 'undefined' && window.DREX_REC) || null;
+    if (w && p in w) return w[p];
+    return t[p];
+  }});
+  assert.strictEqual(binding.weights.view, 0.3, 'con motor: V2');
+  var saved = global.DREX_REC;
+  delete global.DREX_REC;
+  try {
+    assert.strictEqual(binding.weights.view, 0.6, 'sin motor: fallback V1');
+  } finally {
+    global.DREX_REC = saved;
+  }
+});
+
 // --- Resumen ---
 console.log('\n========================================');
 console.log('Resumen: ' + passed + ' pasados, ' + failed + ' fallidos');
