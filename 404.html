@@ -12947,8 +12947,13 @@ function saveNote() {
     // VIDEO-POSTS: si la key ya se reservó (video: los trozos se subieron
     // primero), se escribe con set() y la promesa resuelve con el ref, igual
     // que pushAsync. Si falla, se limpian los trozos huérfanos.
+    // CONTRATO DE RESEAL, cláusula (c) (C14-01): si ya se persistieron
+    // dependientes bajo la key reservada (trozos en noteVideos/<key>, fotos en
+    // noteImages/<key>), la key NO se re-sella: el mapa old->new del Outbox
+    // solo cubre ops encoladas y los bytes ya escritos quedarían huérfanos.
+    const pinNoteKey = !!(preReservedRef && (note.video || note.imageCount));
     const writePromise = preReservedRef
-      ? preReservedRef.set(note).then(() => preReservedRef).catch(err => {
+      ? preReservedRef.set(note, pinNoteKey ? { noReseal: true } : undefined).then(() => preReservedRef).catch(err => {
           // FIX AUDITORÍA POSTS 2026-09-22 (4): antes solo se limpiaban los
           // trozos de video; las fotos escritas en noteImages/<id> quedaban
           // huérfanas si la escritura final de la nota fallaba. Ahora se
@@ -17696,6 +17701,9 @@ function saveNote() {
   // No reintenta errores de permisos ni de validación. Las escrituras núcleo
   // usan claves pre-generadas para que el reintento sea idempotente.
   const _commentCoreDone = new Set(); // claves de comentarios/respuestas ya escritas
+  // C14-03: clave pre-generada -> clave final tras el reseal del Outbox. La ruta de
+  // deduplicado de writeReplyCore/writeCommentCore debe devolver la key final, no la léxica.
+  const _commentKeyFinal = new Map();
   function _isRetryableNetError(err) {
     try {
       const code = String((err && (err.code || err.name)) || '').toLowerCase();
@@ -20323,11 +20331,26 @@ function saveNote() {
         if (targetReply && targetReply.commentId) {
           const repliesRef = DrexCloud.database().ref('postComments/' + noteId + '/' + targetReply.commentId + '/replies');
           const writeReplyCore = () => {
-            if (_commentCoreDone.has(_newReplyKey)) return Promise.resolve({ key: _newReplyKey });
-            return repliesRef.child(_newReplyKey).set(payload).then(() => {
+            if (_commentCoreDone.has(_newReplyKey)) {
+              // Deduplicado tras reintento: devolver la key FINAL (post-reseal), nunca la pre-generada.
+              return Promise.resolve({ key: _commentKeyFinal.get(_newReplyKey) || _newReplyKey });
+            }
+            const childRef = repliesRef.child(_newReplyKey);
+            return childRef.set(payload).then(() => {
+              // CONTRATO DE RESEAL, cláusula (a) (C14-03): tras await set(), la key real es
+              // childRef.key (Ref.set actualiza _segs si el Outbox re-selló). Devolver la
+              // variable léxica dejaría el índice userComments y la UI optimista apuntando
+              // a una key fantasma.
+              const finalKey = childRef.key;
               _commentCoreDone.add(_newReplyKey);
-              if (_commentCoreDone.size > 1000) _commentCoreDone.delete(_commentCoreDone.values().next().value);
-              return { key: _newReplyKey };
+              if (finalKey && finalKey !== _newReplyKey) _commentKeyFinal.set(_newReplyKey, finalKey);
+              _commentCoreDone.add(finalKey);
+              if (_commentCoreDone.size > 1000) {
+                const oldest = _commentCoreDone.values().next().value;
+                _commentCoreDone.delete(oldest);
+                _commentKeyFinal.delete(oldest);
+              }
+              return { key: finalKey };
             });
           };
           return Promise.all([
@@ -20367,11 +20390,26 @@ function saveNote() {
 
         const commentsRef = DrexCloud.database().ref('postComments/' + noteId);
         const writeCommentCore = () => {
-          if (_commentCoreDone.has(_newCommentKey)) return Promise.resolve({ key: _newCommentKey });
-          return commentsRef.child(_newCommentKey).set(payload).then(() => {
+          if (_commentCoreDone.has(_newCommentKey)) {
+            // Deduplicado tras reintento: devolver la key FINAL (post-reseal), nunca la pre-generada.
+            return Promise.resolve({ key: _commentKeyFinal.get(_newCommentKey) || _newCommentKey });
+          }
+          const childRef = commentsRef.child(_newCommentKey);
+          return childRef.set(payload).then(() => {
+            // CONTRATO DE RESEAL, cláusula (a) (C14-03): tras await set(), la key real es
+            // childRef.key (Ref.set actualiza _segs si el Outbox re-selló). Devolver la
+            // variable léxica dejaría el índice userComments y la UI optimista apuntando
+            // a una key fantasma.
+            const finalKey = childRef.key;
             _commentCoreDone.add(_newCommentKey);
-            if (_commentCoreDone.size > 1000) _commentCoreDone.delete(_commentCoreDone.values().next().value);
-            return { key: _newCommentKey };
+            if (finalKey && finalKey !== _newCommentKey) _commentKeyFinal.set(_newCommentKey, finalKey);
+            _commentCoreDone.add(finalKey);
+            if (_commentCoreDone.size > 1000) {
+              const oldest = _commentCoreDone.values().next().value;
+              _commentCoreDone.delete(oldest);
+              _commentKeyFinal.delete(oldest);
+            }
+            return { key: finalKey };
           });
         };
         return DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(noteSnap => {
@@ -29851,12 +29889,16 @@ let chatTypingListener = null;
           console.error('Error al subir la foto del grupo:', e);
         }
       }
-      const groupId = DrexCloud.database().ref('groupChats').push().key;
+      // CONTRATO DE RESEAL (C14-09): se conserva el ref, no solo la key léxica.
+      // Tras `await gref.set(...)`, gref.key es SIEMPRE la key final (Ref.set actualiza
+      // _segs si el Outbox re-selló al vaciar): toda escritura dependiente usa la key
+      // final, nunca la variable léxica (mismo patrón que trackRef.update({announceNoteId: noteRef.key})).
+      const gref = DrexCloud.database().ref('groupChats').push();
       const members = { [user.uid]: true };
       groupChatSelectedUsers.forEach(u => { members[u.uid] = true; });
       const admins = { [user.uid]: true };
       const createdAt = Date.now();
-      await DrexCloud.database().ref('groupChats/' + groupId).set({
+      await gref.set({
         name: groupName,
         image: groupImage,
         createdBy: user.uid,
@@ -29864,21 +29906,25 @@ let chatTypingListener = null;
         members,
         admins
       });
-      // Fan-out: escribir en userConversations de todos los miembros para que aparezca en el inbox
+      const finalGroupId = gref.key;
+      // Fan-out: escribir en userConversations de todos los miembros para que aparezca en el inbox.
+      // Cláusula (b) del contrato: el fan-out se expresa como set() (uno por miembro) para
+      // que sea Outbox-aware y viaje en el mismo mapa de reseal que el grupo. Ref.update()
+      // NO es Outbox-aware: offline rechazaba y el grupo quedaba fantasma (existía sin inbox).
+      // La key ya es final aquí: los sets llevan { noReseal: true } para que un segundo
+      // corte de red no los re-selle a una key inexistente.
       const allMemberUids = Object.keys(members);
-      const inboxUpdates = {};
-      allMemberUids.forEach(uid => {
-        inboxUpdates['userConversations/' + uid + '/' + groupId] = {
+      await Promise.all(allMemberUids.map(uid =>
+        DrexCloud.database().ref('userConversations/' + uid + '/' + finalGroupId).set({
           isGroup: true,
-          groupId,
+          groupId: finalGroupId,
           groupName,
           groupImage,
           updatedAt: createdAt,
           lastMessage: 'Grupo creado'
-        };
-      });
-      await DrexCloud.database().ref().update(inboxUpdates);
-      await DrexCloud.database().ref('conversationMessages/' + groupId).push({
+        }, { noReseal: true })
+      ));
+      await DrexCloud.database().ref('conversationMessages/' + finalGroupId).push({
         system: true,
         text: 'Grupo "' + groupName + '" creado',
         timestamp: createdAt
