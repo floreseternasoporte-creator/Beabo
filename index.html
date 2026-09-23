@@ -4753,7 +4753,7 @@ document.addEventListener("DOMContentLoaded", function() {
           <path d="M20 12a8 8 0 1 0-14.9 4.1L4 20l4.1-1.1A8 8 0 0 0 20 12Z"/>
           <path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/>
         </svg>
-        <span id="chat-unread-badge" class="hidden absolute -top-1 -right-0.5 bg-[var(--drex-brand)] text-white text-[9px] font-black min-w-[1.1rem] h-[1.1rem] px-1 rounded-full flex items-center justify-center leading-none pointer-events-none">0</span>
+        <span id="chat-unread-badge" role="status" class="hidden absolute -top-1 -right-0.5 bg-[var(--drex-brand)] text-white text-[9px] font-black min-w-[1.1rem] h-[1.1rem] px-1 rounded-full flex items-center justify-center leading-none pointer-events-none">0</span>
       </button>
       <!-- Botón Practicar idiomas -->
       <button id="nav-btn-practicar" data-nav-index="2" onclick="openPracticar()" class="nav-btn p-2 flex items-center justify-center text-gray-400 transition-all duration-300 active:opacity-80 relative" aria-label="Practicar idiomas">
@@ -4795,7 +4795,7 @@ document.addEventListener("DOMContentLoaded", function() {
     <button class="dsb-item" onclick="openChatInboxView();drexSidebarActive(this)" aria-label="Mensajes">
       <svg fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 0-14.9 4.1L4 20l4.1-1.1A8 8 0 0 0 20 12Z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/></svg>
       <span class="dsb-label">Mensajes</span>
-      <span id="chat-unread-badge-desktop" class="dsb-badge hidden">0</span>
+      <span id="chat-unread-badge-desktop" role="status" class="dsb-badge hidden">0</span>
     </button>
     <button class="dsb-item" onclick="openPracticar();drexSidebarActive(this)" aria-label="Practicar idiomas">
       <svg fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M4.7 12h14.6"/><path d="M12 3.4a12.6 12.6 0 0 1 3 8.6 12.6 12.6 0 0 1-3 8.6 12.6 12.6 0 0 1-3-8.6A12.6 12.6 0 0 1 12 3.4Z"/></svg>
@@ -22792,12 +22792,25 @@ function saveNote() {
       if (el) el.classList.add('dsb-active');
     } catch (_) {}
   }
-  function syncDesktopChatBadge(txt, show) {
+  // A11y R8: etiqueta del badge con el conteo ("Chat: 3").
+  // role="status" anuncia el cambio solo cuando el texto/etiqueta cambian.
+  // Usa la clave existente 'Chat' (traducida ES/EN/ZH/PT) para no introducir
+  // claves i18n nuevas.
+  function chatUnreadA11yLabel(txt) {
+    try {
+      const t = (typeof appT === 'function') ? appT : function (s) { return s; };
+      return t('Chat') + ': ' + txt;
+    } catch (_) { return 'Chat: ' + txt; }
+  }
+
+  function syncDesktopChatBadge(txt, show, a11yLabel) {
     try {
       const d = document.getElementById('chat-unread-badge-desktop');
       if (!d) return;
       d.textContent = txt;
       d.classList.toggle('hidden', !show);
+      if (show && a11yLabel) d.setAttribute('aria-label', a11yLabel);
+      else d.removeAttribute('aria-label');
     } catch (_) {}
   }
 
@@ -22805,14 +22818,23 @@ function saveNote() {
     const badge = document.getElementById('chat-unread-badge');
     if (!badge) return;
     const txt = unread > 99 ? '99+' : String(unread);
+    // A11y R8: no reescribir el DOM si el conteo no cambió: cada escritura
+    // en un role="status" dispara un anuncio del lector.
+    if (badge.dataset.a11yCount === txt) {
+      badge.classList.toggle('hidden', !(unread > 0));
+      return;
+    }
+    badge.dataset.a11yCount = txt;
     if (unread > 0) {
       badge.textContent = txt;
       badge.classList.remove('hidden');
-      syncDesktopChatBadge(txt, true);
+      badge.setAttribute('aria-label', chatUnreadA11yLabel(txt));
+      syncDesktopChatBadge(txt, true, chatUnreadA11yLabel(txt));
     } else {
       badge.classList.add('hidden');
       badge.textContent = '0';
-      syncDesktopChatBadge('0', false);
+      badge.removeAttribute('aria-label');
+      syncDesktopChatBadge('0', false, '');
     }
   }
 
@@ -22899,8 +22921,8 @@ function saveNote() {
 
   function clearChatUnreadBadge() {
     const badge = document.getElementById('chat-unread-badge');
-    if (badge) { badge.classList.add('hidden'); badge.textContent = '0'; }
-    syncDesktopChatBadge('0', false);
+    if (badge) { badge.classList.add('hidden'); badge.textContent = '0'; badge.removeAttribute('aria-label'); delete badge.dataset.a11yCount; }
+    syncDesktopChatBadge('0', false, '');
     if (chatMuteUserRef) { chatMuteUserRef.off('value'); chatMuteUserRef = null; }
     if (chatMuteGroupRef) { chatMuteGroupRef.off('value'); chatMuteGroupRef = null; }
     chatMuteCache.users = {}; chatMuteCache.groups = {}; chatMuteListenerUid = null;
@@ -30132,6 +30154,7 @@ let chatTypingListener = null;
             <button onclick="openGroupChatRoom('${safeGroupId}')"
               ontouchstart="_convLongStart('group','${safeGroupId}','${safeGroupNameJs}')"
               ontouchend="_convLongEnd()" ontouchmove="_convLongEnd()"
+              onkeydown="if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){event.preventDefault();showConvOptions('group','${safeGroupId}','${safeGroupNameJs}');}"
               class="w-full text-left flex items-center gap-3 px-4 py-3 active:bg-[var(--theme-surface-muted)] transition">
               ${groupAvatarHtml}
               <div class="min-w-0 flex-1">
@@ -30158,6 +30181,7 @@ let chatTypingListener = null;
           <button onclick="openChatRoomFromInbox('${safeUid}')"
             ontouchstart="_convLongStart('dm','${safeUid}','${safeNameJs}')"
             ontouchend="_convLongEnd()" ontouchmove="_convLongEnd()"
+            onkeydown="if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){event.preventDefault();showConvOptions('dm','${safeUid}','${safeNameJs}');}"
             class="w-full text-left flex items-center gap-3 px-4 py-3 active:bg-[var(--theme-surface-muted)] transition">
             <div class="relative shrink-0">
               <img src="${safeImage}" class="w-14 h-14 rounded-full object-cover" alt="${safeName}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='">
@@ -30853,6 +30877,18 @@ let chatTypingListener = null;
 
       const bubble = wrapper.querySelector('.msg-bubble');
       if (bubble && resolvedId) {
+        // A11y R8: la burbuja es operable por teclado: Enter/Espacio abre el
+        // menú de opciones del mensaje (responder, reaccionar, fijar…),
+        // antes solo alcanzable con long-press táctil.
+        bubble.setAttribute('tabindex', '0');
+        bubble.setAttribute('role', 'button');
+        try { bubble.setAttribute('aria-label', (typeof appT === 'function') ? appT('Opciones') : 'Opciones'); } catch (_) {}
+        bubble.addEventListener('keydown', function (e) {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          const rect = bubble.getBoundingClientRect();
+          showChatReactionPicker(resolvedId, rect, mine, msg.timestamp);
+        });
         let pressTimer = null;
         const openPicker = e => {
           e.preventDefault();
@@ -39535,6 +39571,9 @@ function closeSubpageView() {
       ['user-actions-sheet', () => typeof closeUserActionsSheet === 'function' && closeUserActionsSheet()],
       ['verify-sheet', () => typeof closeVerificationSheet === 'function' && closeVerificationSheet()],
       ['group-posts-view', () => typeof closeGroupPostsView === 'function' && closeGroupPostsView()],
+      // A11y R8: el menú de opciones del mensaje (z-80) flota sobre la sala (z-66):
+      // Esc lo cierra primero y el foco entra/sale con la pila central.
+      ['chat-reaction-picker', () => typeof hideChatReactionPicker === 'function' && hideChatReactionPicker()],
       ['chat-room-view', () => typeof closeChatRoomView === 'function' && closeChatRoomView()],
       // FIESTA-JUEGOS: el visor del juego y la hoja de juegos cierran antes que la sala.
       ['fiesta-game-view', () => typeof fiestaGameHideLocal === 'function' && fiestaGameHideLocal()],
@@ -39592,6 +39631,7 @@ function closeSubpageView() {
       'gif-picker-sheet', 'sticker-sheet', 'drex-report-sheet',
       'group-member-actions-sheet', 'conv-options-sheet', 'post-options-sheet',
       'comments-view', 'video-modal', 'author-photo-viewer', 'author-profile-modal',
+      'chat-reaction-picker',
       'user-actions-sheet', 'verify-sheet', 'chat-options-panel',
       'saved-folder-picker-overlay', 'account-switcher-overlay',
       'fiesta-games-sheet', 'fiesta-listeners-sheet',
@@ -39720,6 +39760,7 @@ function closeSubpageView() {
       'gif-picker-sheet': 'Elegir un GIF',
       'sticker-sheet': 'Elegir un sticker',
       'conv-options-sheet': 'Opciones de la conversación',
+      'chat-reaction-picker': 'Opciones del mensaje',
       'group-member-actions-sheet': 'Opciones del miembro del grupo',
       'chat-options-panel': 'Opciones del chat',
       'saved-folder-picker-overlay': 'Elegir carpeta guardada',
