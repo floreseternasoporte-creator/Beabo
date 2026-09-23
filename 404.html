@@ -56,7 +56,7 @@
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
-<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.tailwindcss.com/3.4.17" integrity="sha384-igm5BeiBt36UU4gqwWS7imYmelpTsZlQ45FZf+XBn9MuJbn4nQr7yx1yFydocC/K" crossorigin="anonymous"></script>
   <!-- Font Awesome CDN: no bloqueante (media=print + onload). Los iconos se
        pintan tras cargar el CSS sin demorar el primer pintado. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'" />
@@ -17473,7 +17473,7 @@ function saveNote() {
     try {
       const code = String((err && (err.code || err.name)) || '').toLowerCase();
       const msg = String((err && err.message) || '').toLowerCase();
-      if (/permission|denied|unauthorized|invalid|ya no existe|no existe/.test(code + ' ' + msg)) return false;
+      if (/permission|denied|unauthorized|invalid|ya no existe|no existe|vacío|vacía|superar|caracteres/.test(code + ' ' + msg)) return false;
       return true;
     } catch (_) { return true; }
   }
@@ -18581,7 +18581,7 @@ function saveNote() {
     const safeText = escapeHTML(text);
     const withMentions = safeText.replace(/@([\p{L}\p{N}_-]+)/gu, (_, username) => {
       const safeUsername = escapeInlineSingleQuote(username);
-      return `<a href="javascript:void(0)" class="mention-link" onclick="openAuthorProfileByUsername('${safeUsername}')">@${safeUsername}</a>`;
+      return `<a href="#" class="mention-link" onclick="openAuthorProfileByUsername('${safeUsername}');return false">@${safeUsername}</a>`;
     });
     // Hashtags: mismo tratamiento que las menciones, pero llevan a los
     // resultados de búsqueda con ese término (ver openHashtagSearch más abajo).
@@ -18589,7 +18589,7 @@ function saveNote() {
     // nunca eran clicables para la persona que lee el post.
     const withHashtags = withMentions.replace(/#([\p{L}\p{N}_]+)/gu, (_, tag) => {
       const safeTag = escapeInlineSingleQuote(tag);
-      return `<a href="javascript:void(0)" class="hashtag-link" onclick="openHashtagSearch('${safeTag}')">#${safeTag}</a>`;
+      return `<a href="#" class="hashtag-link" onclick="openHashtagSearch('${safeTag}');return false">#${safeTag}</a>`;
     });
     return withHashtags;
   }
@@ -19097,6 +19097,7 @@ function saveNote() {
 
     if (user) {
       DrexCloud.database().ref('users/' + user.uid).once('value').then(snap => {
+        if (noteId !== currentPostId) return; // Carrera A→B: ya se abrió otro post.
         const userData = snap.val();
         const avatarEl = document.getElementById('current-user-avatar-comment');
         if (avatarEl) avatarEl.src = userData?.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
@@ -19104,6 +19105,7 @@ function saveNote() {
     }
 
     DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
+      if (noteId !== currentPostId) return; // Carrera A→B: ya se abrió otro post.
       // A16: no abrir ni comentar un post que ya no existe.
       if (!snapshot.exists()) {
         showMiniToast(appT('Esta publicación ya no existe.'));
@@ -19138,6 +19140,7 @@ function saveNote() {
         hydrateQuickFollowButtons(originalPostHost);
       });
     }).catch(() => {
+      if (noteId !== currentPostId) return; // Carrera A→B: ya se abrió otro post.
       window.paintLoadError(document.getElementById('original-post'), 'No se pudo cargar la publicación. Revisa tu conexión.', () => openCommentsView(noteId));
     });
 
@@ -19219,6 +19222,7 @@ function saveNote() {
     .limitToLast(COMMENTS_PAGE_SIZE + 1)
     .once('value')
     .then(snapshot => {
+      if (noteId !== currentPostId) return; // Carrera A→B: ya se abrió otro post.
       const allEntries = [];
       snapshot.forEach(child => { allEntries.push([child.key, child.val()]); });
       // allEntries está en orden ascendente de clave (más antiguo primero)
@@ -19241,6 +19245,7 @@ function saveNote() {
       _updateLoadMoreArea();
     })
     .catch(() => {
+      if (noteId !== currentPostId) return; // Carrera A→B: ya se abrió otro post.
       const commentsList = document.getElementById('comments-list-view');
       if (commentsList) {
         commentsList.innerHTML = `
@@ -19365,6 +19370,7 @@ function saveNote() {
     .limitToLast(COMMENTS_PAGE_SIZE + 2)
     .once('value')
     .then(snapshot => {
+      if (noteId !== currentPostId) return; // Carrera A→B: ya se abrió otro post.
       const allEntries = [];
       snapshot.forEach(child => {
         if (child.key !== cursorKey) allEntries.push([child.key, child.val()]);
@@ -19390,6 +19396,7 @@ function saveNote() {
       _updateLoadMoreArea();
     })
     .catch(() => {
+      if (noteId !== currentPostId) return; // Carrera A→B: ya se abrió otro post.
       if (btn)    btn.disabled = false;
       if (label)  label.textContent = 'Cargar más comentarios';
       if (spinner) spinner.classList.add('hidden');
@@ -24635,7 +24642,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         } catch (_) {}
 
         if (data) {
-          let displayName = data.username || "Usuario";
+          let displayName = escapeHTML(data.username || "Usuario");
           if (data.founder) {
             displayName += ' <span class="founder-tag">Fundador</span>';
           }
@@ -28029,7 +28036,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
           // Índice inverso usernameByUid/<uid> -> <nombre>: la reparación de
           // temporales lo lee puntual en vez de descargar usernames/ completo.
           DrexCloud.database().ref('usernameByUid/' + user.uid).set(String(updates.username).toLowerCase()).catch(() => {});
-          let newName = updates.username;
+          let newName = escapeHTML(updates.username);
           if (userData.founder) newName += ' <span class="founder-tag">Fundador</span>';
           newName += getVerificationIcon(userData.email || user.email, user.uid);
           const usernameLabel = document.getElementById('profile-username');
@@ -29697,6 +29704,7 @@ let chatTypingListener = null;
       if (item.isGroup) {
         const safeGroupId = escapeHtml(item.groupId);
         const safeGroupName = escapeHtml(item.groupName);
+        const safeGroupNameJs = escapeInlineSingleQuote(item.groupName);
         const groupAvatarHtml = item.groupImage
           ? `<img src="${escapeHtml(item.groupImage)}" class="w-14 h-14 rounded-full object-cover shrink-0" alt="${safeGroupName}" onerror="renderFallbackGroupAvatar(this)">`
           : `<div class="shrink-0 w-14 h-14 rounded-full flex items-center justify-center relative" style="background:linear-gradient(135deg,#e7ecf3 0%,#b6c0d1 100%)">
@@ -29705,7 +29713,7 @@ let chatTypingListener = null;
         return `
           <div>
             <button onclick="openGroupChatRoom('${safeGroupId}')"
-              ontouchstart="_convLongStart('group','${safeGroupId}','${safeGroupName}')"
+              ontouchstart="_convLongStart('group','${safeGroupId}','${safeGroupNameJs}')"
               ontouchend="_convLongEnd()" ontouchmove="_convLongEnd()"
               class="w-full text-left flex items-center gap-3 px-4 py-3 active:bg-[var(--theme-surface-muted)] transition">
               ${groupAvatarHtml}
@@ -29726,11 +29734,12 @@ let chatTypingListener = null;
       }
       const safeUid = escapeHtml(item.otherUid);
       const safeName = escapeHtml(item.otherName || 'Usuario');
+      const safeNameJs = escapeInlineSingleQuote(item.otherName || 'Usuario');
       const safeImage = item.otherImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
       return `
         <div>
           <button onclick="openChatRoomFromInbox('${safeUid}')"
-            ontouchstart="_convLongStart('dm','${safeUid}','${safeName}')"
+            ontouchstart="_convLongStart('dm','${safeUid}','${safeNameJs}')"
             ontouchend="_convLongEnd()" ontouchmove="_convLongEnd()"
             class="w-full text-left flex items-center gap-3 px-4 py-3 active:bg-[var(--theme-surface-muted)] transition">
             <div class="relative shrink-0">
@@ -30307,7 +30316,7 @@ let chatTypingListener = null;
           ? `<img src="${escapeHtml(sp.thumbnailUrl)}" loading="lazy" class="w-full object-cover" style="max-height:160px" alt="">`
           : '';
         content = `
-          <div class="shared-post-card cursor-pointer select-none" style="width:210px" onclick="openSharedPostFromChat('${escapeHtml(sp.noteId)}','${sp.kind || 'post'}')">
+          <div class="shared-post-card cursor-pointer select-none" style="width:210px" onclick="openSharedPostFromChat('${escapeInlineSingleQuote(sp.noteId)}','${sp.kind || 'post'}')">
             ${spThumb ? `<div class="relative rounded-xl overflow-hidden mb-1.5">${spThumb}</div>` : ''}
             <div class="flex items-center gap-1.5 mb-0.5">
               <img src="${escapeHtml(sp.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==')}" class="w-4 h-4 rounded-full object-cover">
@@ -33747,7 +33756,7 @@ function renderAccountsList(accounts) {
       // de users/ viene sin username, se conserva el DOM (nombre del post).
       const fetchedUsername = (authorData.username || '').trim();
       if (fetchedUsername) {
-        let authorNameHTML = fetchedUsername;
+        let authorNameHTML = escapeHTML(fetchedUsername);
         if (authorData.founder) {
           authorNameHTML += ' <span class="founder-tag">Fundador</span>';
         }
@@ -44267,13 +44276,15 @@ window.voteMusicTrack = function (voteType) {
       _musicVoteLock = false;
       if (!res || !res.committed) { musicPaintVoteUI(wasUp, wasDown, curScore); return; }
       const newVote = (serverVote === voteType) ? null : voteType;
-      // Votos semanales (Top Drex semanal real)
+      // Votos semanales (Top Drex semanal real). Best-effort: los rechazos
+      // async se tragan para no generar ruido en el canal de errores global.
       try {
         const wref = musicDb().ref('musicWeekly/' + musicWeekId() + '/' + trackId);
-        if (serverVote === 'up') wref.child('up').transaction(c => Math.max(0, ((c | 0) || 0) - 1));
-        if (serverVote === 'down') wref.child('down').transaction(c => Math.max(0, ((c | 0) || 0) - 1));
-        if (newVote === 'up') wref.child('up').transaction(c => ((c | 0) || 0) + 1);
-        if (newVote === 'down') wref.child('down').transaction(c => ((c | 0) || 0) + 1);
+        const _wCatch = p => { try { p.catch(() => {}); } catch (_) {} };
+        if (serverVote === 'up') _wCatch(wref.child('up').transaction(c => Math.max(0, ((c | 0) || 0) - 1)));
+        if (serverVote === 'down') _wCatch(wref.child('down').transaction(c => Math.max(0, ((c | 0) || 0) - 1)));
+        if (newVote === 'up') _wCatch(wref.child('up').transaction(c => ((c | 0) || 0) + 1));
+        if (newVote === 'down') _wCatch(wref.child('down').transaction(c => ((c | 0) || 0) + 1));
       } catch (_) {}
       if (newVote === null) { try { userVoteRef.remove(); } catch (_) {} }
       else { try { userVoteRef.set(newVote); } catch (_) {} }
