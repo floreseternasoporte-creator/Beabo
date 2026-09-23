@@ -10419,6 +10419,7 @@ function saveNote() {
   let _profilePostsTotalLoading = false;
   let _profilePostsGridN = 0;
   let _profileCollabCount = 0;
+  let _profilePostsGen = 0; // C9-B: generación de adjuntos; invalida callbacks en vuelo tras re-adjuntar
   let _profilePostsLoadingMore = false;
 
   function _paintProfilePostsCount() {
@@ -10464,6 +10465,8 @@ function saveNote() {
     const _pv = document.getElementById('profile-view');
     if (!_pv || _pv.classList.contains('hidden')) return;
     const userId = _userStatsUid;
+    const _gen = ++_profilePostsGen; // C9-B: los callbacks viejos en `await` se invalidan al re-adjuntar
+    const _pageAtAttach = _profilePostsPage; // C9-B: comparar contra la página pedida, no el valor vivo
     const _postsRef = DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(userId).limitToLast(_profilePostsPage);
     _profilePostsRef = _postsRef;
     _userStatsRefs.push(_postsRef);
@@ -10472,10 +10475,11 @@ function saveNote() {
       let collabPosts = [];
       try { collabPosts = await fetchCollabPosts(userId); } catch (_) {}
       if (_userStatsUid !== userId) return;
+      if (_gen !== _profilePostsGen) return; // C9-B: "Cargar más" re-adjuntó mientras este callback esperaba
       const n = postsSnapshot.numChildren();
       _profilePostsGridN = n;
       _profileCollabCount = collabPosts.length;
-      if (n < _profilePostsPage) {
+      if (n < _pageAtAttach) {
         // La página no va llena: tenemos el set completo → total exacto en vivo.
         _profilePostsTotal = n;
       } else if (_profilePostsTotal === null && !_profilePostsTotalLoading) {
@@ -22734,6 +22738,7 @@ function saveNote() {
   let notifUnreadAggCache = { c: 0, r: 0 }; // último snapshot de notifUnread/<uid>
   let notifUnreadAggActive = false; // true cuando el nodo agregado existe (fin de la ventana legacy)
   let notifUnreadLastDingC = -1;    // c visto al instalar el listener (no avisar del historial)
+  let notifUnreadLastAnnouncedId = null; // C9-A: id de la última notificación avisada (anti re-ding tras reset remoto)
   // H2-STATE-END
 
   function getLocalNotifications(userId) {
@@ -22779,6 +22784,17 @@ function saveNote() {
   // collabStatus, actorId o appealDone — ninguna crea notificaciones).
   // Costo: 1 transacción (~0.5 RCU de lectura + 2 hojas) por notificación
   // creada, frente a ~1.300-1.600 RCU/ciclo del listener always-on anterior.
+  // C9 (observación de migración, SIN cambio de código): al crear el agregado
+  // por primer bump se siembra c=1 aunque haya notificaciones legacy sin leer
+  // (el badge cae p. ej. de 5 a 1). Sembrar el conteo legacy NO es barato ni
+  // seguro aquí: bumpNotifUnread corre en el dispositivo del ACTOR (quien crea
+  // la notificación), que no tiene el localStorage del destinatario; la única
+  // fuente correcta sería leer notifications/<uid> en el servidor (la lectura
+  // cara del subárbol completo que el agregado se creó para eliminar), la
+  // notificación recién creada ya está incluida en ese conteo (sumar +1 la
+  // duplicaría) y dos primeros bumps concurrentes sembrarían dos veces. Se
+  // deja el comportamiento actual: el modal muestra el detalle real y el
+  // reset al abrirlo reconcilia el agregado.
   function bumpNotifUnread(userId) {
     if (!userId) return;
     try {
@@ -22876,15 +22892,49 @@ function saveNote() {
       DrexCloud.database().ref('notifications/' + userId)
         .orderByChild('timestamp').limitToLast(1).once('value')
         .then(snap => {
+          const me = DrexCloud.auth().currentUser;
+          if (!me || me.uid !== userId) return; // C9: la sesión cambió mientras tanto
           if (!snap || !snap.exists || !snap.exists()) return;
           let newest = null;
           snap.forEach(child => { newest = child.val(); });
           if (newest && !newest.read && !isChatNotificationMuted(newest)) {
+            // C9-A: recordar la última notificación avisada (el agregado
+            // solo dice "cuántas": la rama de decrecimiento la usa para no
+            // re-avisar la misma tras un reset remoto).
+            if (newest.notificationId) notifUnreadLastAnnouncedId = newest.notificationId;
             fireDrexSystemNotification(newest.message, false);
           } else {
             // H2-DING-3: c creció pero la más reciente no califica (silenciada
             // o ya leída): sonar al menos el aviso genérico por las demás.
+            if (newest && newest.notificationId) notifUnreadLastAnnouncedId = newest.notificationId;
             try { drexPlayNotificationSound(); } catch (_) {}
+          }
+        }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // C9-A: variante condicional de announceNewestNotification para la rama de
+  // decrecimiento de updateNotifUnreadBadge. El polling (3 s) coalesca un
+  // reset remoto (3→0) y un bump nuevo (0→1) en un solo snapshot {c:1}: la
+  // marca bajaba en silencio y la notificación nueva jamás sonaba. Se obtiene
+  // la más reciente (1 lectura acotada) y solo se avisa si es una notificación
+  // realmente nueva: id distinta de la última avisada, no leída y no
+  // silenciada. El reset remoto puro no suena (misma id ya avisada, o la
+  // más nueva está leída/silenciada).
+  function announceNewestNotificationIfNew(userId) {
+    try {
+      DrexCloud.database().ref('notifications/' + userId)
+        .orderByChild('timestamp').limitToLast(1).once('value')
+        .then(snap => {
+          const me = DrexCloud.auth().currentUser;
+          if (!me || me.uid !== userId) return; // la sesión cambió mientras tanto
+          if (!snap || !snap.exists || !snap.exists()) return;
+          let newest = null;
+          snap.forEach(child => { newest = child.val(); });
+          if (newest && newest.notificationId && newest.notificationId !== notifUnreadLastAnnouncedId
+              && !newest.read && !isChatNotificationMuted(newest)) {
+            notifUnreadLastAnnouncedId = newest.notificationId;
+            fireDrexSystemNotification(newest.message, false);
           }
         }).catch(() => {});
     } catch (_) {}
@@ -22968,6 +23018,16 @@ function saveNote() {
           // dispositivo/pestaña, colaboración aceptada fuera, ...). Bajar la
           // marca para que la siguiente notificación sí avise.
           notifUnreadLastDingC = nowC;
+          // C9-A: el snapshot puede traer un reset remoto + un bump nuevo
+          // coalescados (3→0→1 llega como {c:1}): avisar la más nueva solo
+          // si es una notificación jamás avisada (1 lectura acotada).
+          // C10: si el modal está abierto EN ESTE dispositivo, el reset fue
+          // local (openNotifications) y el usuario ya está viendo las
+          // notificaciones: no avisar (evita ding espurio al abrir el modal).
+          const _notifModalEl = document.getElementById('notifications-modal');
+          if (!_notifModalEl || _notifModalEl.classList.contains('hidden')) {
+            announceNewestNotificationIfNew(user.uid);
+          }
         } else if (nowC > Math.max(prevC, notifUnreadLastDingC)) {
           notifUnreadLastDingC = nowC;
           announceNewestNotification(user.uid);
@@ -23015,6 +23075,7 @@ function saveNote() {
     notifUnreadAggCache = { c: 0, r: 0 };
     notifUnreadAggActive = false;
     notifUnreadLastDingC = -1;
+    notifUnreadLastAnnouncedId = null;
 
     // H2 (ciclo 8, rendimiento): el badge always-on escucha el nodo agregado
     // notifUnread/<uid> = {c, r} (<1 RCU por ciclo de polling) en vez del
@@ -23052,6 +23113,7 @@ function saveNote() {
     notifUnreadAggActive = false;
     notifUnreadBadgeUid = null;
     notifUnreadLastDingC = -1;
+    notifUnreadLastAnnouncedId = null;
     if (notifUnreadBadgeRef) {
       notifUnreadBadgeRef.off('value');
       notifUnreadBadgeRef = null;
