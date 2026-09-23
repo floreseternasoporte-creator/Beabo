@@ -281,12 +281,14 @@
         .replace(/[ç]/g, 'c');
     }
 
-    // Palabras clave: latinas (4+ letras, sin stopwords) + bigramas CJK.
-    function extractKeywords(text) {
-      var out = [];
+    // Frecuencias de términos en una sola pasada: normaliza el texto y corre
+    // los regex una sola vez. Lo usan extractKeywords (con bigramas latinos)
+    // y extractTopicVector (sin bigramas). Evita duplicar _normalize +
+    // 3 regex por cada análisis.
+    function _termFreq(text, withBigrams) {
+      var freq = {};
       try {
         var t = _normalize(text);
-        var freq = {};
         // Palabras latinas
         var words = (t.match(/[a-z]{4,}/g) || []);
         for (var i = 0; i < words.length; i++) {
@@ -294,13 +296,15 @@
           if (w.length <= 20 && !STOPWORDS[w]) freq[w] = (freq[w] || 0) + 1;
         }
         // N-grams de 2 palabras (bigrams) en español/inglés
-        var bigrams = (t.match(/[a-z]+ [a-z]+/g) || []);
-        for (var j = 0; j < bigrams.length; j++) {
-          var parts = bigrams[j].split(' ');
-          if (parts.length === 2 && !STOPWORDS[parts[0]] && !STOPWORDS[parts[1]] &&
-              parts[0].length >= 3 && parts[1].length >= 3) {
-            var bg = parts[0] + '_' + parts[1];
-            freq[bg] = (freq[bg] || 0) + 0.7; // bigrams pesan un poco menos
+        if (withBigrams) {
+          var bigrams = (t.match(/[a-z]+ [a-z]+/g) || []);
+          for (var j = 0; j < bigrams.length; j++) {
+            var parts = bigrams[j].split(' ');
+            if (parts.length === 2 && !STOPWORDS[parts[0]] && !STOPWORDS[parts[1]] &&
+                parts[0].length >= 3 && parts[1].length >= 3) {
+              var bg = parts[0] + '_' + parts[1];
+              freq[bg] = (freq[bg] || 0) + 0.7; // bigrams pesan un poco menos
+            }
           }
         }
         // Bigramas CJK solapados
@@ -312,6 +316,15 @@
             freq[bi] = (freq[bi] || 0) + 1;
           }
         }
+      } catch (_) {}
+      return freq;
+    }
+
+    // Palabras clave: latinas (4+ letras, sin stopwords) + bigramas CJK.
+    function extractKeywords(text) {
+      var out = [];
+      try {
+        var freq = _termFreq(text, true);
         // Top 12 por frecuencia
         var keys = Object.keys(freq);
         keys.sort(function (a, b) { return freq[b] - freq[a]; });
@@ -325,21 +338,7 @@
     function extractTopicVector(text) {
       var tv = {};
       try {
-        var t = _normalize(text);
-        var freq = {};
-        var words = (t.match(/[a-z]{4,}/g) || []);
-        for (var i = 0; i < words.length; i++) {
-          var w = words[i];
-          if (w.length <= 20 && !STOPWORDS[w]) freq[w] = (freq[w] || 0) + 1;
-        }
-        var cjk = (t.match(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]{2,}/g) || []);
-        for (var j = 0; j < cjk.length; j++) {
-          var seg = cjk[j];
-          for (var m = 0; m + 1 < seg.length && m < 14; m++) {
-            var bi = seg.slice(m, m + 2);
-            freq[bi] = (freq[bi] || 0) + 1;
-          }
-        }
+        var freq = _termFreq(text, false);
         var total = 0;
         for (var k in freq) total += freq[k];
         if (total > 0) {
