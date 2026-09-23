@@ -22369,6 +22369,12 @@ function saveNote() {
     }
   }
 
+  // Límite de notificaciones que rastrea el badge (suscripción + localStorage).
+  // El conteo de no leídas ya se calculaba sobre un máximo de 100 (slice en
+  // saveLocalNotifications), así que limitar la query a las 100 más recientes
+  // produce el mismo resultado con una fracción del tráfico/memoria.
+  const NOTIF_BADGE_LIMIT = 100;
+
   function setupNotificationsBadge(userId) {
     const badge = document.getElementById('unread-notifications-count');
     if (!badge) return;
@@ -22378,44 +22384,51 @@ function saveNote() {
       notificationsBadgeRef = null;
     }
 
-    notificationsBadgeRef = DrexCloud.database().ref('notifications/' + userId);
+    const baseRef = DrexCloud.database().ref('notifications/' + userId);
+    // OPTIMIZACIÓN (rendimiento): la suscripción en vivo solo lee las 100
+    // notificaciones más recientes en vez del subárbol completo. El badge
+    // cuenta no leídas sobre localStorage (máx. 100), así que el resultado
+    // es idéntico al de antes pero sin descargar miles de nodos.
+    notificationsBadgeRef = baseRef.orderByChild('timestamp').limitToLast(NOTIF_BADGE_LIMIT);
     // Limpieza de notificaciones antiguas (más de 30 días) para no acumular datos indefinidamente,
     // sin arriesgarnos a borrar notificaciones antes de que el usuario las vea.
+    // OPTIMIZACIÓN: la query solo trae las vencidas (filtrado en servidor con
+    // endAt) en vez de descargar el subárbol completo para inspeccionarlo.
     const NOTIF_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-    notificationsBadgeRef.once('value').then(snap => {
+    baseRef.orderByChild('timestamp').endAt(Date.now() - NOTIF_MAX_AGE_MS).once('value').then(snap => {
       if (!snap.exists()) return;
-      const now = Date.now();
       snap.forEach(child => {
-        const n = child.val();
-        if (n && n.timestamp && (now - n.timestamp) > NOTIF_MAX_AGE_MS) {
-          child.ref.remove().catch(() => {});
-        }
+        child.ref.remove().catch(() => {});
       });
     }).catch(() => {});
     const notifListenerStart = Date.now();
     notificationsBadgeRef.on('value', snapshot => {
       if (snapshot.exists()) {
         let localNotes = getLocalNotifications(userId);
+        // OPTIMIZACIÓN: merge O(n) con Map en vez de O(n²) con
+        // some()/findIndex() dentro del forEach.
+        const localById = new Map();
+        for (const ln of localNotes) {
+          if (ln && ln.notificationId && !localById.has(ln.notificationId)) localById.set(ln.notificationId, ln);
+        }
         snapshot.forEach(child => {
           const n = child.val();
           if (n && n.notificationId) {
-            const exists = localNotes.some(ln => ln.notificationId === n.notificationId);
-            if (!exists) {
+            const existing = localById.get(n.notificationId);
+            if (!existing) {
               localNotes.unshift(n);
+              localById.set(n.notificationId, n);
               // Aviso del sistema solo para notificaciones realmente nuevas
               // (no el historial cargado al abrir la app).
               if (!n.read && n.timestamp && n.timestamp >= notifListenerStart - 5000 && !isChatNotificationMuted(n)) {
                 fireDrexSystemNotification(n.message, false);
               }
             } else {
-              const idx = localNotes.findIndex(ln => ln.notificationId === n.notificationId);
-              if (idx !== -1) {
-                localNotes[idx].read = n.read;
-                if (n.actorId && !localNotes[idx].actorId) {
-                  localNotes[idx].actorId = n.actorId;
-                  localNotes[idx].actorName = n.actorName || '';
-                  localNotes[idx].actorImage = n.actorImage || '';
-                }
+              existing.read = n.read;
+              if (n.actorId && !existing.actorId) {
+                existing.actorId = n.actorId;
+                existing.actorName = n.actorName || '';
+                existing.actorImage = n.actorImage || '';
               }
             }
           }
