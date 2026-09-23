@@ -2423,6 +2423,9 @@ var APP_ENGLISH_TEXT = {
 "Enlace":"Link",
 "Enlace de tu perfil":"Link on your profile",
 "Aparecerá en tu perfil público con un icono; al tocarlo se abre en una pestaña nueva. Déjalo vacío para quitarlo.":"It will appear on your public profile with an icon; tapping it opens it in a new tab. Leave it empty to remove it.",
+"Cargando...":"Loading...",
+"alguien":"someone",
+"Alguien":"Someone",
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4851,6 +4854,9 @@ var APP_CHINESE_TEXT = {
 "Enlace":"链接",
 "Enlace de tu perfil":"你主页上的链接",
 "Aparecerá en tu perfil público con un icono; al tocarlo se abre en una pestaña nueva. Déjalo vacío para quitarlo.":"它会带着图标显示在你的公开主页上；点击后在新标签页中打开。留空即可移除。",
+"Cargando...":"加载中...",
+"alguien":"某人",
+"Alguien":"某人",
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6573,6 +6579,9 @@ var APP_PORTUGUESE_TEXT = {
 "Enlace":"Link",
 "Enlace de tu perfil":"Link do seu perfil",
 "Aparecerá en tu perfil público con un icono; al tocarlo se abre en una pestaña nueva. Déjalo vacío para quitarlo.":"Ele aparecerá no seu perfil público com um ícone; ao tocar, abre em uma nova aba. Deixe vazio para remover.",
+"Cargando...":"Carregando...",
+"alguien":"alguém",
+"Alguien":"Alguém",
   };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
