@@ -42,7 +42,7 @@ const dc = {
     }, 0)) };
   },
 };
-const P = '/home/hatch/workspace/drex-work-c13outbox/src/drex-cloud.js';
+const P = require('path').join(__dirname, '..', 'drex-cloud.js'); // C13-fix: ruta relativa al repo (la absoluta solo existía en la máquina del worker)
 const M = require(P);
 M.__internals.setDocClient(dc);
 const I = M.__internals;
