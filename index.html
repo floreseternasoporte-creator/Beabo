@@ -45354,6 +45354,12 @@ window.publishMusic = async function () {
     return ok;
   };
 
+  // C27-M1: hoisted para la limpieza del catch — si el meta-write falla tras
+  // escribir los chunks, musicAudio/<trackId> quedaría huérfano (sin nodo en
+  // musicTracks, inalcanzable para deleteMusicTrack).
+  let trackId = null;
+  let metaSaved = false;
+
   try {
     const userSnap = await musicDb().ref('users/' + uid).once('value');
     const userData = userSnap.val() || {};
@@ -45391,7 +45397,7 @@ window.publishMusic = async function () {
     musicSetProgress(30, `Subiendo audio (${chunks.length} partes)…`);
 
     const trackRef = musicDb().ref('musicTracks').push(); // reserva la key
-    const trackId = trackRef.key;
+    trackId = trackRef.key;
     const chunkObj = {};
     chunks.forEach((c, i) => chunkObj['chunk_' + String(i).padStart(5, '0')] = c);
     await musicDb().ref('musicAudio/' + trackId).set(chunkObj);
@@ -45409,6 +45415,7 @@ window.publishMusic = async function () {
       plays: 0, likes: 0
     };
     await trackRef.set(meta);
+    metaSaved = true; // C27-M1: el track es válido; el catch no debe borrar sus chunks
     // Índice por autor: las vistas "Tu música" leen musicByAuthor/<uid> en vez
     // de escanear musicTracks completo (era la causa del "Cargando..." eterno).
     await musicDb().ref('musicByAuthor/' + uid + '/' + trackId).set({ t: meta.createdAt }).catch(() => {});
@@ -45469,6 +45476,12 @@ window.publishMusic = async function () {
     if (typeof loadNotes === 'function') { try { loadNotes(false); } catch (_) {} }
   } catch (err) {
     console.error('Error al publicar música:', err);
+    // C27-M1: los chunks se escribieron pero el meta no (o falló antes de
+    // guardarlo): borrar el audio huérfano. Best-effort, nunca bloquea.
+    // Si metaSaved, el track es válido y no se toca.
+    if (trackId && !metaSaved) {
+      try { musicDb().ref('musicAudio/' + trackId).remove().catch(() => {}); } catch (_) {}
+    }
     done(false, appT('No se pudo publicar. Revisa tu conexión e inténtalo de nuevo.'));
   }
 };
