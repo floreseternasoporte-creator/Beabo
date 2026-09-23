@@ -115,8 +115,9 @@ async function main() {
   check('snapshot.val() === 6', r1.snapshot && r1.snapshot.val() === 6, JSON.stringify(r1.snapshot && r1.snapshot.val()));
   check('BD quedó en 6', (await leafVal('counters', 'n')) === 6);
   check('1 escritura', writesFull === 1, 'writes=' + writesFull);
-  check('2 lecturas (inicial + re-read post-commit)', readsFull === 4, 'reads=' + readsFull);
-  // readLeaves = begins_with query + get exacto = 2 ops por lectura
+  check('2 lecturas (inicial + re-read post-commit)', readsFull === 2, 'reads=' + readsFull);
+  // OPT-1 (ciclo 10): readLeaves puntual = 1 sola query begins_with (antes
+  // begins_with + get = 2 ops por lectura)
 
   console.log('[2] Escalar: transactionBlind() omite el re-read, mismo commit');
   resetLog();
@@ -126,7 +127,7 @@ async function main() {
   check('snapshot === null', r2.snapshot === null);
   check('BD quedó en 7 (idéntico estado final)', (await leafVal('counters', 'n')) === 7);
   check('1 escritura', writesBlind === 1, 'writes=' + writesBlind);
-  check('solo la lectura inicial (2 ops menos que transaction)', readsBlind === readsFull - 2,
+  check('solo la lectura inicial (1 op menos que transaction)', readsBlind === readsFull - 1,
         'blind=' + readsBlind + ' full=' + readsFull);
 
   console.log('[3] Objeto multi-hoja: equivalencia + ahorro del re-read del subárbol');
@@ -146,7 +147,7 @@ async function main() {
   check('snapshot === null', r4.snapshot === null);
   const finalObj = await DrexCloud.database().ref('chatUnread/u1/convo1').once('value').then(s => s.val());
   check('BD: c === 4 y r intacto', finalObj && finalObj.c === 4 && finalObj.r === 100, JSON.stringify(finalObj));
-  check('blind ahorra el re-read del subárbol', readsBlindO === readsFullO - 2,
+  check('blind ahorra el re-read del subárbol', readsBlindO === readsFullO - 1,
         'blind=' + readsBlindO + ' full=' + readsFullO);
 
   console.log('[4] Aborto (updateFn -> undefined): idéntico en ambos, sin escritura');

@@ -1421,19 +1421,28 @@ function withCredRetry(opFn) {
         ExpressionAttributeValues: { ':pk': pk }
       })];
     } else {
+      // PERF 2026-09-23 (ciclo 10, OPT-1): una sola query begins_with(skExact)
+      // cubre el ítem exacto y sus hijos. Antes eran dos operaciones por cada
+      // lectura puntual (begins_with(skExact + '/') + get(skExact)): las 7
+      // hojas del doc de fiesta, fiestaMembers/<id> y cada lectura pequeña al
+      // abrir el chat pagaban 2 ops. El filtro cliente deja exactamente el
+      // mismo conjunto que la unión anterior; el ítem exacto se reordena al
+      // final para conservar el orden previo (hijos primero), del que depende
+      // unflatten cuando un nodo tiene valor exacto e hijos a la vez.
       jobs = [
         queryAll({
           TableName: AWS_CONFIG.tableName,
           KeyConditionExpression: 'pk = :pk AND begins_with(sk, :pfx)',
-          ExpressionAttributeValues: { ':pk': pk, ':pfx': skExact + '/' }
-        }),
-        withCredRetry(function () {
-          // PERF 2026-09-21: consistencia eventual también aquí (ver nota en queryAll).
-          return dbTimeout(getDocClient().get({
-            TableName: AWS_CONFIG.tableName,
-            Key: { pk: pk, sk: skExact },
-            ConsistentRead: false
-          }).promise(), 'db-get-timeout').then(function (res) { return res.Item ? [res.Item] : []; });
+          ExpressionAttributeValues: { ':pk': pk, ':pfx': skExact }
+        }).then(function (qItems) {
+          var exact = null;
+          var rest = [];
+          for (var qi = 0; qi < qItems.length; qi++) {
+            var qsk = (qItems[qi].sk === undefined || qItems[qi].sk === null) ? '' : String(qItems[qi].sk);
+            if (qsk === skExact) exact = qItems[qi];
+            else if (qsk.indexOf(skExact + '/') === 0) rest.push(qItems[qi]);
+          }
+          return exact ? rest.concat([exact]) : rest;
         })
       ];
     }
@@ -2129,19 +2138,46 @@ function withCredRetry(opFn) {
       }
       }
 
+  // PERF 2026-09-23 (ciclo 10, OPT-6): lecturas iniciales en vuelo por
+  // grupo. Varios on() sincrónicos sobre el mismo grupo (p. ej. child_added +
+  // child_changed de la sala de chat) lanzaban una lectura completa CADA UNO;
+  // la segunda ni siquiera aprovechaba el caché H3 (arrancaba antes de que la
+  // primera lo poblara). Ahora la segunda reutiliza el snapshot de la primera
+  // en vuelo: una sola lectura por grupo también al suscribir, con el mismo
+  // dispatch por oyente que recibiría con lectura propia (mismo snapshot,
+  // más consistente). dispatchSnapshot ya ignora oyentes dados de baja.
+  var _inflightInitialReads = {}; // groupKey -> { promise, waiters: [l] }
   function fireListener(l) {
     // No apilar lecturas: si la anterior aún no terminó (lectura pesada con
     // muchas fotos), se marca un re-disparo pendiente en vez de lanzar otra
     // lectura encima. Sin esto, los ciclos de polling se solapaban y la
     // pestaña del iPhone se quedaba sin memoria.
     if (l._reading) { l._pendingFire = true; return Promise.resolve(); }
+    var fGk = pollGroupKey(l);
+    var fInf = _inflightInitialReads[fGk];
+    if (fInf) {
+      l._reading = true; // la lectura en vuelo del grupo lo cubre
+      fInf.waiters.push(l);
+      return fInf.promise;
+    }
     l._reading = true;
-    return readRefValue(l.ref).then(function (snap) {
+    var fEntry = { waiters: [] };
+    var fP = readRefValue(l.ref).then(function (snap) {
       dispatchSnapshot(l, snap);
+      fEntry.waiters.forEach(function (w) { dispatchSnapshot(w, snap); });
     }).catch(function () { /* el próximo ciclo reintenta */ }).then(function () {
+      delete _inflightInitialReads[fGk];
       l._reading = false;
       if (l._pendingFire) { l._pendingFire = false; fireListener(l); }
+      fEntry.waiters.forEach(function (w) {
+        w._reading = false;
+        if (w._pendingFire) { w._pendingFire = false; fireListener(w); }
+      });
+      fEntry.waiters.length = 0;
     });
+    fEntry.promise = fP;
+    _inflightInitialReads[fGk] = fEntry;
+    return fP;
   }
 
   // Clave de agrupación: oyentes sobre la MISMA ruta y la MISMA consulta
