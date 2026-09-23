@@ -44,7 +44,7 @@
 
   var root = (typeof window !== 'undefined') ? window : global;
 
-  /* ---------------- i18n (patrón appT3 de la app: en/es/zh) ---------------- */
+  /* ---------------- i18n (tabla propia en/es/zh; el PT cae a es) ---------------- */
   var STRINGS = {
     // UI principal
     title: { en: 'Download your data', es: 'Descargar mis datos', zh: '下载我的数据' },
@@ -175,9 +175,6 @@
   function t(key) {
     var entry = STRINGS[key];
     if (!entry) return key;
-    try {
-      if (typeof global.appT3 === 'function') return global.appT3(entry.en, entry.es, entry.zh);
-    } catch (_) {}
     var lang = detectLang();
     return entry[lang] || entry.es;
   }
