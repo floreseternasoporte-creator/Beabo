@@ -22862,8 +22862,11 @@ function saveNote() {
       if (!st || typeof st !== 'object') return;
       if (isChatConversationMuted(convoId, uid)) return;
       unread += Number(st.c || 0);
-      // Hoja `u` (grupos >50 miembros): cuenta como 1 no-leído si es posterior a `r`.
-      if (Number(st.u || 0) > Number(st.r || 0)) unread += 1;
+      // Hoja `u` (grupos >50 miembros): cuenta como 1 no-leído si es posterior a `r`,
+      // salvo que `c` ya esté contando (tras "marcar como no leída" c=1 reemplaza
+      // el nodo y borra `u`; el fan-out del siguiente mensaje fusiona `u` de nuevo
+      // y sin este guard el badge sumaría c(1)+u(1)=2).
+      if (Number(st.u || 0) > Number(st.r || 0) && !(Number(st.c || 0) > 0)) unread += 1;
     });
     return unread;
   }
@@ -30589,6 +30592,7 @@ let chatTypingListener = null;
     subscribeChatMessages(groupId);
     subscribeChatTyping(groupId);
     subscribeConversationPinned(groupId);
+    subscribeGroupMembersListener(groupId);
     updateChatToolbarMode();
     _loadAndApplyChatTheme(groupId);
     if (typeof loadDisappearSettings === 'function') loadDisappearSettings();
@@ -30599,6 +30603,7 @@ let chatTypingListener = null;
   function closeChatRoomView() {
     detachChatMessagesListener();
     detachConversationPinnedListener();
+    detachGroupMembersListener();
     try { clearTimeout(_chatReadMarkTimer); } catch (_) {}
     currentChatRoomId = null;
     currentChatRecipient = null;
@@ -30631,6 +30636,37 @@ let chatTypingListener = null;
     try { if (typeof window._resetChatViewport === 'function') window._resetChatViewport(); } catch (_) {}
     document.getElementById('chat-inbox-view')?.classList.remove('hidden');
     loadChatConversations();
+  }
+
+  // H1 (ciclo 8): listener liviano sobre groupChats/<id>/members que mantiene
+  // currentGroupMembers fresca mientras la sala está abierta. Sin él, si un
+  // miembro sale/es expulsado con la sala abierta, la lista queda stale y el
+  // fan-out de envío recrea chatUnread/<ex-miembro>/<sala> = {c:1} que el
+  // kick/leave había borrado (badge fantasma permanente: el ex-miembro no puede
+  // abrir la sala para limpiarlo y el bump nunca resetea).
+  let _chatGroupMembersListener = null;
+  function detachGroupMembersListener() {
+    if (_chatGroupMembersListener) {
+      try { _chatGroupMembersListener.ref.off('value', _chatGroupMembersListener.callback); } catch (_) {}
+      _chatGroupMembersListener = null;
+    }
+  }
+  function subscribeGroupMembersListener(groupId) {
+    // Detach previo: la sala pudo abrirse sin pasar por closeChatRoomView
+    // (openChatInboxView solo oculta la vista), así nunca queda colgado el
+    // listener de la sala anterior ni corrompe la lista de la nueva.
+    detachGroupMembersListener();
+    const ref = DrexCloud.database().ref('groupChats/' + groupId + '/members');
+    const callback = snapshot => {
+      const memberUids = Object.keys(snapshot.val() || {});
+      currentGroupMembers = memberUids;
+      const subtitle = document.getElementById('chat-room-group-subtitle');
+      if (subtitle && currentChatRoomId === groupId && currentChatIsGroup) {
+        subtitle.textContent = memberUids.length + ' participante' + (memberUids.length !== 1 ? 's' : '');
+      }
+    };
+    ref.on('value', callback);
+    _chatGroupMembersListener = { ref, callback };
   }
 
   let _chatRoomHeaderGen = 0;
@@ -33419,8 +33455,14 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       // A28: si ya no queda ningún miembro, el grupo se elimina por completo
       // (ficha, mensajes y referencias) en lugar de quedar huérfano.
       // Nota: los chatUnread/<otroUid>/<roomId> de los demás miembros quedan
-      // huérfanos (se corrigen al abrir la sala o con el siguiente mensaje);
-      // no se hace fan-out de borrado por costo.
+      // huérfanos; no se hace fan-out de borrado por costo. Los miembros
+      // restantes los limpian al abrir la sala (markChatConversationRead), pero
+      // para un EX-miembro el badge es fantasma PERMANENTE: no puede abrir la
+      // sala y el bump nunca resetea el agregado que el kick/leave borró, así
+      // que el siguiente mensaje con la lista de miembros stale lo recrearía
+      // (c:1) para siempre. La prevención es el listener de miembros de
+      // openGroupChatRoom, que mantiene currentGroupMembers fresca y evita el
+      // fan-out a ex-miembros.
       const leftRoomId = currentChatRoomId;
       const membersSnap = await DrexCloud.database().ref('groupChats/' + leftRoomId + '/members').once('value').catch(() => null);
       if (membersSnap && !membersSnap.exists()) {
