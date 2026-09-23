@@ -42154,6 +42154,23 @@ let fiestaHostMuteToastShown = false;
 // borra el nodo al ocultar la app y el reassert con set() lo recreaba sin
 // mutedByHost, permitiendo al silenciado desmutearse solo.
 let fiestaHostMutedLocal = false;
+// C52-F1: fiesta zombi — el anfitrión murió sin terminarla (su onDisconnect
+// solo borra su registro de fiestaMembers; el status queda 'live' para
+// siempre). Se rastrea la ausencia continua del anfitrión para caducar la
+// entrada/sala sin falsos positivos (un anfitrión vivo se re-afirma en <8s).
+let _fiestaHostAbsentSince = 0;
+// C52-F1: true si el anfitrión lleva ausente de fiestaMembers más de 90 s.
+// Extraída como función nombrada para que el watcher y los tests la usen.
+function _fiestaCheckHostAbsent() {
+  try {
+    const hid = (typeof fiestaCur !== 'undefined' && fiestaCur && fiestaCur.data && fiestaCur.data.hostId) || null;
+    if (!hid || fiestaAmHost) { _fiestaHostAbsentSince = 0; return false; }
+    const members = (typeof fiestaMembers !== 'undefined' && fiestaMembers) || {};
+    if (members[hid]) { _fiestaHostAbsentSince = 0; return false; }
+    if (!_fiestaHostAbsentSince) _fiestaHostAbsentSince = Date.now();
+    return (Date.now() - _fiestaHostAbsentSince) > 90000;
+  } catch (_) { return false; }
+}
 
 // Volver a la app (desbloquear el teléfono, cambiar de app): re-afirmar la
 // membresía por si el onDisconnect la borró al ocultarse, y resincronizar.
@@ -42489,6 +42506,21 @@ async function joinFiesta(id, asSpeaker) {
     if (_kickSnap && _kickSnap.exists()) { showMiniToast(appT('Fuiste expulsado de la fiesta.')); return false; }
     const mSnap = await mRef.once('value');
     const members = mSnap.val() || {};
+    // C52-F1: fiesta zombi — el anfitrión murió sin terminarla (su
+    // onDisconnect solo borra su registro de miembros; el status queda
+    // 'live' para siempre y la tarjeta del feed sigue ofreciendo "Unirse").
+    // Si el anfitrión no está en la sala y la fiesta tiene más de 60 s de
+    // creada, se rechaza la entrada y se marca terminada (best-effort). El
+    // margen de 60 s cubre la ventana entre la publicación del aviso en el
+    // feed y el registro del anfitrión en fiestaMembers.
+    if (f.hostId && !members[f.hostId] && (Date.now() - (f.createdAt || 0)) > 60000) {
+      showMiniToast(appT('Esta fiesta ya terminó.'));
+      try {
+        await DrexCloud.database().ref('fiestas/' + id + '/status').set('ended').catch(() => {});
+        if (typeof markFiestaNotesEnded === 'function') await markFiestaNotesEnded(id);
+      } catch (_) {}
+      return false;
+    }
     // FIX 2026-09-21: si quedó un registro atorado de una sesión anterior
     // (la app se cerró sin disparar onDisconnect), se reclama en vez de
     // bloquear la entrada. Antes mostraba "Ya estás en esta fiesta." y nunca
@@ -42623,6 +42655,22 @@ function fiestaWatchRoom() {
   fiestaRefs.members = DrexCloud.database().ref('fiestaMembers/' + id);
   fiestaRefs.members.on('value', snap => {
     fiestaMembers = snap.val() || {};
+    // C52-F1: fiesta zombi — el anfitrión murió y el status quedó 'live'.
+    // Si lleva ausente >90 s se sale de la sala muerta y se marca la fiesta
+    // como terminada (best-effort) para que las tarjetas del feed caduquen.
+    if (_fiestaCheckHostAbsent()) {
+      _fiestaHostAbsentSince = 0;
+      showMiniToast(appT('La fiesta terminó.'));
+      try {
+        const _zid = fiestaCur && fiestaCur.id;
+        if (_zid) {
+          DrexCloud.database().ref('fiestas/' + _zid + '/status').set('ended').catch(() => {});
+          if (typeof markFiestaNotesEnded === 'function') markFiestaNotesEnded(_zid);
+        }
+      } catch (_) {}
+      leaveFiesta(true);
+      return;
+    }
     const myMemberRec = fiestaMembers[fiestaMyUid];
     // El registro del servidor es autoritativo cuando existe: mantiene el
     // flag local de silenciamiento del anfitrión (ver fiestaHostMutedLocal).
@@ -43202,6 +43250,7 @@ function fiestaFullCleanup() {
   if (fiestaLocalStream) { fiestaLocalStream.getTracks().forEach(t => t.stop()); fiestaLocalStream = null; }
   Object.values(fiestaRefs).forEach(r => { try { r.off(); } catch (_) {} });
   fiestaRefs = {};
+  _fiestaHostAbsentSince = 0; // C52-F1: rearmar el rastreador de anfitrión ausente
   // FIESTA-JUEGOS: ocultar overlays, parar timers
   if (typeof fiestaGameCleanup === 'function') fiestaGameCleanup();
 }
