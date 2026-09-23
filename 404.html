@@ -8522,6 +8522,12 @@ function fiestaGameHTMLFinal() {
         <h3 id="profile-posts-title" class="text-[15px] font-extrabold text-[var(--theme-text)]">Tus publicaciones</h3>
       </div>
       <div id="user-posts" class="flex flex-col"></div>
+      <div id="profile-load-more-area" class="hidden px-4 py-4">
+        <button id="profile-load-more-btn" onclick="_profilePostsLoadMore()"
+          class="w-full min-h-[44px] flex items-center justify-center gap-2 py-3 rounded-xl border border-[var(--theme-border)] bg-[var(--theme-surface)] text-sm font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-surface-muted)] active:opacity-80 transition-all">
+          <span>Cargar más publicaciones</span>
+        </button>
+      </div>
     </div>
 
     <!-- Música del usuario -->
@@ -8639,6 +8645,12 @@ function fiestaGameHTMLFinal() {
 
               <!-- Lista de publicaciones -->
               <div id="user-posts-desktop" class="flex flex-col"></div>
+              <div id="profile-load-more-area-desktop" class="hidden px-4 py-4">
+                <button id="profile-load-more-btn-desktop" onclick="_profilePostsLoadMore()"
+                  class="w-full min-h-[44px] flex items-center justify-center gap-2 py-3 rounded-xl border border-[var(--theme-border)] bg-[var(--theme-surface)] text-sm font-semibold text-[var(--theme-muted)] hover:bg-[var(--theme-surface-muted)] active:opacity-80 transition-all">
+                  <span>Cargar más publicaciones</span>
+                </button>
+              </div>
             </div>
 
             <!-- Tab de Ecos -->
@@ -10384,6 +10396,67 @@ function saveNote() {
       if (i >= 0) _userStatsRefs.splice(i, 1);
       _profilePostsRef = null;
     }
+    // PERF H3: resetear la paginación al cerrar el perfil ("Cargar más"
+    // re-adjunta sin pasar por aquí, así conserva página y total).
+    _profilePostsPage = PROFILE_POSTS_PAGE;
+    _profilePostsTotal = null;
+    _profilePostsTotalLoading = false;
+    _profilePostsGridN = 0;
+    _profileCollabCount = 0;
+    _paintProfileLoadMore();
+  }
+
+  // PERF ciclo 9 H3: paginación del grid de publicaciones del perfil.
+  // Antes el listener hidrataba TODO el historial del autor cada 3 s (costo
+  // lineal en nº de posts: ~105 RCU/ciclo con 50 posts). Ahora pide páginas
+  // de 30 vía limitToLast + el índice notesByAuthor (cada ciclo lee el índice
+  // pequeño + ≤30 posts), con botón "Cargar más". El total exacto se lee una
+  // vez por apertura (dispara el backfill del índice si hace falta); si la
+  // página no va llena, el set está completo y el total se conoce en vivo.
+  const PROFILE_POSTS_PAGE = 30;
+  let _profilePostsPage = PROFILE_POSTS_PAGE;
+  let _profilePostsTotal = null; // null = aún no conocido
+  let _profilePostsTotalLoading = false;
+  let _profilePostsGridN = 0;
+  let _profileCollabCount = 0;
+  let _profilePostsLoadingMore = false;
+
+  function _paintProfilePostsCount() {
+    const base = (_profilePostsTotal === null ? _profilePostsGridN : _profilePostsTotal);
+    const postsCount = base + _profileCollabCount;
+    const profilePostsTitle = document.getElementById('profile-posts-title');
+    if (profilePostsTitle) profilePostsTitle.textContent = `${postsCount} posts`;
+    const profilePostsHeader = document.getElementById('profile-posts-header');
+    const sidebarPostsCount = document.getElementById('sidebar-posts-count');
+    const profilePostsCountMobile = document.getElementById('profile-posts-count-mobile');
+    if (profilePostsHeader) profilePostsHeader.textContent = `${postsCount} ${appT('publicaciones')}`;
+    if (sidebarPostsCount) sidebarPostsCount.textContent = postsCount;
+    if (profilePostsCountMobile) profilePostsCountMobile.textContent = formatNumber(postsCount);
+    const sidebarTotalViews = document.getElementById('sidebar-total-views');
+    if (sidebarTotalViews) sidebarTotalViews.textContent = postsCount;
+  }
+
+  function _paintProfileLoadMore() {
+    const full = _profilePostsGridN >= _profilePostsPage && _profilePostsPage > 0;
+    const visible = full && (_profilePostsTotal === null || _profilePostsPage < _profilePostsTotal);
+    ['profile-load-more-area', 'profile-load-more-area-desktop'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('hidden', !visible);
+    });
+  }
+
+  function _profilePostsLoadMore() {
+    if (_profilePostsLoadingMore || !_userStatsUid) return;
+    _profilePostsLoadingMore = true;
+    _profilePostsPage += PROFILE_POSTS_PAGE;
+    if (_profilePostsRef) {
+      try { _profilePostsRef.off('value'); } catch (e) {}
+      const i = _userStatsRefs.indexOf(_profilePostsRef);
+      if (i >= 0) _userStatsRefs.splice(i, 1);
+      _profilePostsRef = null;
+    }
+    _attachProfilePostsListener();
+    _profilePostsLoadingMore = false;
   }
 
   function _attachProfilePostsListener() {
@@ -10391,28 +10464,33 @@ function saveNote() {
     const _pv = document.getElementById('profile-view');
     if (!_pv || _pv.classList.contains('hidden')) return;
     const userId = _userStatsUid;
-    const _postsRef = DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(userId);
+    const _postsRef = DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(userId).limitToLast(_profilePostsPage);
     _profilePostsRef = _postsRef;
     _userStatsRefs.push(_postsRef);
     _postsRef.on('value', async postsSnapshot => {
+      if (_userStatsUid !== userId) return;
       let collabPosts = [];
       try { collabPosts = await fetchCollabPosts(userId); } catch (_) {}
-      const postsCount = postsSnapshot.numChildren() + collabPosts.length;
-
-      const profilePostsTitle = document.getElementById('profile-posts-title');
-      if (profilePostsTitle) profilePostsTitle.textContent = `${postsCount} posts`;
-
-      const profilePostsHeader = document.getElementById('profile-posts-header');
-      const sidebarPostsCount = document.getElementById('sidebar-posts-count');
-      const profilePostsCountMobile = document.getElementById('profile-posts-count-mobile');
-
-      if (profilePostsHeader) profilePostsHeader.textContent = `${postsCount} ${appT('publicaciones')}`;
-      if (sidebarPostsCount) sidebarPostsCount.textContent = postsCount;
-      if (profilePostsCountMobile) profilePostsCountMobile.textContent = formatNumber(postsCount);
-
-      const sidebarTotalViews = document.getElementById('sidebar-total-views');
-      if (sidebarTotalViews) sidebarTotalViews.textContent = postsCount;
-
+      if (_userStatsUid !== userId) return;
+      const n = postsSnapshot.numChildren();
+      _profilePostsGridN = n;
+      _profileCollabCount = collabPosts.length;
+      if (n < _profilePostsPage) {
+        // La página no va llena: tenemos el set completo → total exacto en vivo.
+        _profilePostsTotal = n;
+      } else if (_profilePostsTotal === null && !_profilePostsTotalLoading) {
+        // Página llena y total desconocido: una lectura exacta por apertura.
+        _profilePostsTotalLoading = true;
+        DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(userId).once('value').then(snap => {
+          _profilePostsTotalLoading = false;
+          if (_userStatsUid !== userId) return;
+          _profilePostsTotal = snap.numChildren();
+          _paintProfilePostsCount();
+          _paintProfileLoadMore();
+        }).catch(() => { _profilePostsTotalLoading = false; });
+      }
+      _paintProfilePostsCount();
+      _paintProfileLoadMore();
       loadUserPostsGrid(postsSnapshot, collabPosts);
     });
   }
@@ -12882,6 +12960,14 @@ function saveNote() {
         if (ref1 && ref1.key && note.authorId) {
           DrexCloud.database().ref('notesByAuthor/' + note.authorId + '/' + ref1.key)
             .set({ t: note.timestamp || Date.now() }).catch(() => {});
+          // PERF H3: si el perfil del autor está abierto, su total de posts crece.
+          try {
+            if (typeof _profilePostsTotal !== 'undefined' && _userStatsUid === note.authorId && _profilePostsTotal !== null) {
+              _profilePostsTotal++;
+              _paintProfilePostsCount();
+              _paintProfileLoadMore();
+            }
+          } catch (_) {}
         }
       } catch (_) {}
       // Índices por dimensión: postsByGroup/<gid>/<pid> y postsByFiesta/<fid>/<pid>
@@ -16928,6 +17014,9 @@ function saveNote() {
     }
     await DrexCloud.database().ref('communityNotes/' + noteId).remove();
     try { const _delAid = n.authorId || n.userId; if (_delAid) await DrexCloud.database().ref('notesByAuthor/' + _delAid + '/' + noteId).remove().catch(() => {}); } catch (_) {}
+    // PERF H3: si el perfil del autor está abierto, su total de posts decrece
+    // (el listener en vivo lo auto-corrige si la página deja de ir llena).
+    try { const _delUid = n.authorId || n.userId; if (typeof _profilePostsTotal !== 'undefined' && _delUid && _userStatsUid === _delUid && _profilePostsTotal !== null && _profilePostsTotal > 0) { _profilePostsTotal--; _paintProfilePostsCount(); _paintProfileLoadMore(); } } catch (_) {}
     try {
       if (n.groupId) await DrexCloud.database().ref('postsByGroup/' + n.groupId + '/' + noteId).remove().catch(() => {});
       if (n.fiestaId) await DrexCloud.database().ref('postsByFiesta/' + n.fiestaId + '/' + noteId).remove().catch(() => {});
@@ -31091,7 +31180,11 @@ let chatTypingListener = null;
         _lastChatMsgNode = null;
         return;
       }
-      const msgImages = msg.images && msg.images.length ? msg.images : (msg.image ? [msg.image] : []);
+      // SEC ciclo 9 A1: filtrar URLs en origen (igual que el media grid): una
+      // URL `javascript:` sobrevivía al escape de entidades del JSON inline y
+      // llegaba a _carouselPhotos, donde saveCarouselPhoto la ejecutaba vía a.href.
+      const msgImages = (msg.images && msg.images.length ? msg.images : (msg.image ? [msg.image] : []))
+        .map(u => getSafeMediaUrlRaw(u)).filter(Boolean);
       const hasText = !!(msg.text && msg.text.trim());
       const hasFiles = !!(msg.files && msg.files.length);
       const imagesHtml = msgImages.length ? (() => {
@@ -32729,8 +32822,12 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   function saveCarouselPhoto() {
     const url = _carouselPhotos[_carouselIndex];
     if (!url) return;
+    // SEC ciclo 9 A1 (defensa en profundidad): re-validar el esquema en el
+    // sumidero; un href 'javascript:' + click() ejecutaría script en el origen.
+    const safeUrl = getSafeMediaUrlRaw(url);
+    if (!safeUrl) return;
     const a = document.createElement('a');
-    a.href = url;
+    a.href = safeUrl;
     a.download = 'drex-photo-' + Date.now() + '.jpg';
     a.target = '_blank';
     document.body.appendChild(a);
@@ -34476,7 +34573,20 @@ function performRealTimeSearch() {
   });
 }
 
-document.getElementById('search-input').addEventListener('input', performRealTimeSearch);
+// PERF ciclo 9 H4: debounce de 350 ms en la búsqueda principal (mismo patrón
+// que el buscador de grupo). Sin esto, cada tecla disparaba una query al índice
+// usernames + hidratación de hasta 30 perfiles. Vaciar el campo sigue siendo
+// instantáneo (resetSearchView no toca red).
+let _mainSearchDebounceTimer = null;
+document.getElementById('search-input').addEventListener('input', () => {
+  if (_mainSearchDebounceTimer) clearTimeout(_mainSearchDebounceTimer);
+  const _q = (document.getElementById('search-input').value || '').trim();
+  if (!_q) { performRealTimeSearch(); return; }
+  _mainSearchDebounceTimer = setTimeout(() => {
+    _mainSearchDebounceTimer = null;
+    performRealTimeSearch();
+  }, 350);
+});
 
 function renderPostsList(posts) {
   const list = document.getElementById('search-posts-list');
