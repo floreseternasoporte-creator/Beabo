@@ -33048,6 +33048,17 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       editedAt: Date.now()
     }).then(() => {
       modal.classList.add('hidden');
+      // C56-C1: si el mensaje editado estaba fijado, el pin de
+      // conversationPinned/<sala> cacheaba el texto original y el banner lo
+      // seguia revelando para siempre (misma familia que C48-C1/C49-C1: la
+      // edicion quedaba sin efecto en el banner). Se sincroniza el texto del
+      // pin SOLO si pin.msgId === msgId (los pins de otros mensajes no se tocan).
+      DrexCloud.database().ref('conversationPinned/' + currentChatRoomId).once('value').then(pinSnap => {
+        const pin = pinSnap.val();
+        if (pin && pin.msgId === msgId) {
+          DrexCloud.database().ref('conversationPinned/' + currentChatRoomId).update({ text: newText }).catch(() => {});
+        }
+      }).catch(() => {});
     }).catch(() => showMiniToast(appT('No se pudo editar el mensaje.')));
   }
 
