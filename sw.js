@@ -6,11 +6,12 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v13'; // v13: networkFirst solo cachea res.ok + fallback offline a index.html en navegación (2026-09-22)
+const DREX_SW_VERSION = 'drex-v14'; // v14: precache incluye drex-i18n.js (diccionarios i18n extraídos del HTML, 2026-09-23)
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',
   './drex-cloud.js',
+  './drex-i18n.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
