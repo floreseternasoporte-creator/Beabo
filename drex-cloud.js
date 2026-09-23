@@ -2516,7 +2516,14 @@ function withCredRetry(opFn) {
         listeners.slice().forEach(function (l) {
           if (!pathsOverlap(l.ref._segs, segs)) return;
           var rel = segs.slice(l.ref._segs.length).join('/');
-          dispatchSnapshot(l, rel ? snap.child(rel) : snap);
+          // C13: solo eco en la ruta exacta. Para un oyente del PADRE,
+          // snap.child(rel) es un snapshot vacío que NO muestra el eco y,
+          // peor, dispatchSnapshot sin isDelta poda l.kids por completo: el
+          // siguiente re-read (notifyLocal tras el flush) re-disparaba todos
+          // los hijos como "nuevos" (parpadeo/duplicado en la vista del
+          // emisor) y un oyente 'value' recibía un evento espurio vacío.
+          if (rel) return;
+          dispatchSnapshot(l, snap);
         });
       } catch (e) {}
     }
@@ -2543,10 +2550,100 @@ function withCredRetry(opFn) {
           console.warn('Outbox: operación descartada (no retriable)', op.path, err && err.message);
       } catch (e) {}
     }
+    // RE-SELLADO DE PUSH IDs AL VACIAR (ciclo 13; follow-up del re-baseline
+    // periódico del ciclo 12). push()/pushAsync() generan el ID al llamarse:
+    // si la escritura se encola offline, al vaciar la cola el ID lleva el
+    // timestamp de su generación (minutos/horas atrás) y su sort key queda
+    // POR DEBAJO del watermark de los receptores: el rango delta (sk > último
+    // visto) no la ve hasta el próximo re-baseline completo (hasta ~32 s en
+    // fiestas con polling rápido, ~120 s normal). Al vaciar, cada op 'set'
+    // cuyo último segmento sea un push ID genuino se re-sella con un ID
+    // fresco (timestamp ≈ ahora): el siguiente ciclo delta la entrega sin
+    // esperar el re-baseline.
+    // Condiciones de seguridad:
+    //  - looksLikePushId: forma estricta (20 chars del alfabeto PUSH_CHARS y
+    //    timestamp decodificable en [2020-01-01, ahora+60 s]). Una ruta fija
+    //    (p. ej. users/<uid>/name) jamás se re-sella.
+    //  - Mapa oldKey->newKey por vaciado (dos pasadas): las ops acopladas por
+    //    la misma key reservada (communityNotes/<K> + noteImages/<K> +
+    //    noteVideos/<K>) se re-sellan a la MISMA key nueva, y los segmentos
+    //    intermedios que referencien una key re-sellada en este vaciado
+    //    (communityNotes/<K>/comments/<C>) se traducen igual. Sin el mapa el
+    //    acoplamiento quedaría roto (trozos huérfanos, comentarios colgando).
+    //  - Una sola pasada al inicio del vaciado + persistencia inmediata: un
+    //    reintento con backoff o un reinicio tras crash reusa la key nueva;
+    //    set() es idempotente (deleteSubtree + put sobre la misma ruta), así
+    //    que se preserva el exactamente-una-vez: sin duplicados ni pérdidas.
+    //  - Eco local: para oyentes child_* sobre el padre el eco es no-op (no
+    //    registra nada en l.kids), así que el re-sellado no produce dobles
+    //    disparos locales: la lectura real tras el flush entrega la key
+    //    nueva exactamente una vez.
+    //  - El llamador ve la key nueva: Ref.set() actualiza this._segs cuando
+    //    la ruta final difiere (pushAsync resuelve con el ref ya actualizado;
+    //    índices notesByAuthor/postsByFiesta, menciones y permalinks usan la
+    //    key real).
+    var RESEAL_MIN_TS = 1577836800000; // 2020-01-01: ningún push ID nuestro es anterior
+    var RESEAL_FUTURE_SKEW_MS = 60000;
+    function looksLikePushId(seg, now) {
+      if (typeof seg !== 'string' || seg.length !== 20) return false;
+      for (var i = 0; i < 20; i++) if (PUSH_CHARS.indexOf(seg.charAt(i)) < 0) return false;
+      var t = pushIdTime(seg);
+      if (t === null || t === undefined) return false;
+      if (t < RESEAL_MIN_TS || t > now + RESEAL_FUTURE_SKEW_MS) return false;
+      return true;
+    }
+    // Re-sella la cola al inicio del vaciado. Devuelve true si cambió algo
+    // (el llamador persiste). Dos pasadas: (1) construir el mapa old->new con
+    // los últimos segmentos push ID; (2) reescribir los segmentos a través
+    // del mapa para que las referencias a keys re-selladas sigan consistentes.
+    function resealQueue(qq) {
+      var now = Date.now();
+      var map = Object.create(null); // oldKey -> newKey (sin prototipo: seguro ante segmentos raros)
+      var i, j;
+      for (i = 0; i < qq.length; i++) {
+        var op = qq[i];
+        if (!op || op.type !== 'set' || op.resealed) continue;
+        var segs = String(op.path || '').split('/');
+        var last = segs[segs.length - 1];
+        if (looksLikePushId(last, now)) {
+          if (!map[last]) map[last] = newPushId();
+          op._resealLast = last; // marca temporal de la pasada 1
+        }
+      }
+      var keys = Object.keys(map);
+      if (!keys.length) {
+        for (i = 0; i < qq.length; i++) if (qq[i]) delete qq[i]._resealLast;
+        return false;
+      }
+      for (i = 0; i < qq.length; i++) {
+        var o2 = qq[i];
+        if (!o2 || o2.type !== 'set' || o2.resealed) { if (o2) delete o2._resealLast; continue; }
+        var wasLast = !!o2._resealLast;
+        delete o2._resealLast;
+        var s2 = String(o2.path || '').split('/');
+        var oldLast = s2[s2.length - 1];
+        for (j = 0; j < s2.length; j++) if (map[s2[j]]) s2[j] = map[s2[j]];
+        var newPath = s2.join('/');
+        if (wasLast) {
+          o2.path = newPath;
+          o2.resealed = true;
+          o2.resealedFrom = oldLast;
+        } else if (newPath !== o2.path) {
+          // No era push ID ella misma, pero referenciaba una key re-sellada.
+          o2.path = newPath;
+          o2.resealed = true;
+          o2.resealedFrom = null;
+        }
+      }
+      return true;
+    }
     function flush() {
       if (flushing || isOffline()) return;
       var qq = load();
       if (!qq.length) return;
+      // RE-SELLADO (ciclo 13): IDs frescos antes de enviar; se persiste
+      // para que reintentos/reinicios reusen las mismas keys (idempotencia).
+      if (resealQueue(qq)) save(qq);
       flushing = true;
       (function step() {
         var cur = load();
@@ -2629,7 +2726,18 @@ function withCredRetry(opFn) {
   Ref.prototype.set = function (value) {
     var segs = this._segs;
     // OUTBOX (esqueleto): sin red, la escritura se encola en vez de fallar.
-    if (Outbox.shouldQueue()) return Outbox.enqueueSet(segs, value);
+    if (Outbox.shouldQueue()) {
+      var selfRef = this;
+      var origPath = segs.join('/');
+      return Outbox.enqueueSet(segs, value).then(function (res) {
+        // RE-SELLADO (ciclo 13): si al vaciar la op se escribió con un push
+        // ID fresco, el ref del llamador debe apuntar a donde quedó el valor
+        // de verdad: pushAsync resuelve con el ref ya actualizado y los
+        // índices secundarios / menciones / permalinks usan la key real.
+        if (res && res.path && res.path !== origPath) selfRef._segs = splitPath(res.path);
+        return res;
+      });
+    }
     var leaves = flatten(value, segs);
     return deleteSubtree(segs).then(function () {
       if (!leaves.length) return null;
