@@ -1206,6 +1206,26 @@ function withCredRetry(opFn) {
         ScanIndexForward: false,
         Limit: Math.max(100, want * 10)
       };
+      // PERF ciclo 11: tope de ventana en fase 1 para paginacion con endAt
+      // ("cargar anteriores" sobre hijos push ID, p. ej. comentarios). Sin
+      // esto, la fase 1 escaneaba desde el hijo mas nuevo y el filtro
+      // `child > endKey` solo se aplicaba en cliente: con mucho historial
+      // tras el cursor se leia de mas en cada pagina (medido: 57k sk en 137
+      // paginas para traer 32 comentarios con 20k de historial).
+      // La cota se aplica en el SERVIDOR (KeyConditionExpression): DynamoDB
+      // poda sin leer lo mas nuevo que el cursor (las key conditions no
+      // consumen RCU en los items descartados), igual que hizo H4 del ciclo 8
+      // para la rama de 1 segmento (`sk < :endSk`). Para hijos de longitud
+      // fija (push IDs), `sk < prefix+endKey+U+FFFF` equivale EXACTAMENTE al
+      // filtro cliente `child <= endKey`; el filtro cliente se conserva como
+      // red de seguridad (hijos de longitud variable: como mucho quedarian de
+      // extra los que tengan a endKey como prefijo estricto, y el cliente ya
+      // los descarta). El stream que ve la fase 1 es identico -> mismos
+      // `children`, misma huella H3 y resultado byte-identico.
+      if (endKey) {
+        p.KeyConditionExpression = 'pk = :pk AND begins_with(sk, :pfx) AND sk < :endBound';
+        p.ExpressionAttributeValues[':endBound'] = prefix + endKey + String.fromCharCode(0xFFFF);
+      }
       if (lastKey) p.ExclusiveStartKey = lastKey;
       return withCredRetry(function () {
         return dbTimeout(getDocClient().query(p).promise(), 'db-query-timeout');
