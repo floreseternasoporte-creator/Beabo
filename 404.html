@@ -13374,7 +13374,13 @@ function saveNote() {
   function _unsubscribeFeedImageModalDetailsLive() {
     try { if (_feedImageModalDetailsVoteRef) _feedImageModalDetailsVoteRef.off(); } catch (_) {}
     try { if (_feedImageModalDetailsCommentsRef) _feedImageModalDetailsCommentsRef.off(); } catch (_) {}
-    try { if (_feedImageModalDetailsAuthorRef) _feedImageModalDetailsAuthorRef.off(); } catch (_) {}
+    try {
+      // La ref del autor ahora es una lista de refs hijo (username,
+      // displayName, profileImage); se apagan todas. Se mantiene el
+      // soporte al formato anterior (una sola ref) por si acaso.
+      if (Array.isArray(_feedImageModalDetailsAuthorRef)) _feedImageModalDetailsAuthorRef.forEach(r => { try { r.off(); } catch (_) {} });
+      else if (_feedImageModalDetailsAuthorRef) _feedImageModalDetailsAuthorRef.off();
+    } catch (_) {}
     try { if (_feedImageModalDetailsConnRef) _feedImageModalDetailsConnRef.off(); } catch (_) {}
     _feedImageModalDetailsVoteRef = null;
     _feedImageModalDetailsCommentsRef = null;
@@ -13438,19 +13444,38 @@ function saveNote() {
         const n = nSnap.val() || {};
         const authorId = n.authorId || n.userId || '';
         if (!authorId || !_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
-        const userRef = DrexCloud.database().ref('users/' + authorId);
-        _feedImageModalDetailsAuthorRef = userRef;
-        userRef.on('value', uSnap => {
+        // Alcance minimo: la hoja solo muestra el nombre y el avatar del
+        // autor, asi que se escuchan esos 3 campos hijo en vez de todo el
+        // nodo users/<authorId> (cualquier cambio en otro campo - conteos,
+        // ajustes, etc. - re-disparaba el render del modal). El
+        // comportamiento en vivo se conserva: si el autor cambia su nombre
+        // o foto con la hoja abierta, se refresca igual que antes.
+        const _au = { username: '', displayName: '' };
+        const _refreshAuthorName = () => {
           if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
-          const u = uSnap.val() || {};
           const content = document.getElementById('image-modal-details-content');
           if (!content) return;
           const nameEl = content.querySelector('#image-modal-details-author-name');
-          const nextName = u.username || u.displayName || '';
+          const nextName = _au.username || _au.displayName || '';
           if (nameEl && nextName) nameEl.textContent = nextName;
-          const avatarEl = content.querySelector('#image-modal-details-author-avatar');
-          if (avatarEl && u.profileImage) avatarEl.src = u.profileImage;
+        };
+        const _authorFieldSubs = [];
+        [
+          ['username', v => { _au.username = String(v || ''); _refreshAuthorName(); }],
+          ['displayName', v => { _au.displayName = String(v || ''); _refreshAuthorName(); }],
+          ['profileImage', v => {
+            if (!_feedImageModalDetailsOpen || _feedImageModalNoteId !== noteId) return;
+            const content = document.getElementById('image-modal-details-content');
+            if (!content) return;
+            const avatarEl = content.querySelector('#image-modal-details-author-avatar');
+            if (avatarEl && v) avatarEl.src = v;
+          }]
+        ].forEach(([field, apply]) => {
+          const r = DrexCloud.database().ref('users/' + authorId + '/' + field);
+          _authorFieldSubs.push(r);
+          r.on('value', fSnap => apply(fSnap.val()));
         });
+        _feedImageModalDetailsAuthorRef = _authorFieldSubs;
       }).catch(() => {});
       // Recuperación ante desconexión: si se cae la red con la hoja abierta
       // se muestra un aviso; al volver la conexión se re-suscribe todo para
@@ -21779,6 +21804,10 @@ function saveNote() {
      área segura. No toca ningún elemento propio (ids drex-*, nav, modals…). */
   var __drexAdGuardianOn = false;
   function drexAdSafeAreaFix(scanDeep) {
+    // Devuelve cuántos contenedores de anuncios de terceros encontró (0 =
+    // no hay bloques de anuncios en el DOM): el guardián lo usa para
+    // volverse perezoso cuando no hay nada que vigilar.
+    var __adFound = 0;
     try {
       var sat = 'env(safe-area-inset-top, 0px)';
       var sab = 'env(safe-area-inset-bottom, 0px)';
@@ -21805,6 +21834,7 @@ function saveNote() {
             var looksAd = el.querySelector('iframe') ||
               /profitableratecpm|highrevenueformat|nap5k|monetag|adsterra|>Ad</i.test(inner);
             if (!looksAd) return;
+            __adFound++;
             if (r.top < 28 && el.getAttribute('data-drex-sat') !== '1') {
               el.style.setProperty('top', sat, 'important');
               el.setAttribute('data-drex-sat', '1');
@@ -21816,22 +21846,70 @@ function saveNote() {
         })(kids[k]);
       }
     } catch (_) {}
+    return __adFound;
   }
+  /* Guardián perezoso: el MutationObserver amplio solo vive mientras hay
+     contenedores de anuncios de terceros en el DOM. Cuando 3 pasadas
+     seguidas no encuentran ninguno, el observer se desconecta (en una SPA
+     con mutaciones constantes, observar documentElement entero cuesta) y
+     queda un barrido barato cada 30s para re-armarlo en cuanto aparezca
+     un anuncio. El intervalo se alarga a 60s con la pestana oculta y hay
+     una pasada inmediata al volver a visible, asi la deteccion no se
+     rompe: si el bloqueador o la red quitan un anuncio, el siguiente
+     barrido lo ve y el fallback de mediacion (ocultar el bloque sin
+     esqueleto) sigue funcionando igual. */
+  var __drexAdGuardianObserver = null;
+  var __drexAdGuardianIdleTicks = 0;
+  var __drexAdGuardianTimer = null;
   function drexAdSafeAreaGuardian() {
     if (__drexAdGuardianOn) return;
     __drexAdGuardianOn = true;
     var last = 0;
+    function armObserver() {
+      if (__drexAdGuardianObserver || typeof MutationObserver === 'undefined') return;
+      try {
+        __drexAdGuardianObserver = new MutationObserver(throttled);
+        __drexAdGuardianObserver.observe(document.documentElement, { childList: true, subtree: true });
+      } catch (_) { __drexAdGuardianObserver = null; }
+    }
+    function disarmObserver() {
+      try { if (__drexAdGuardianObserver) __drexAdGuardianObserver.disconnect(); } catch (_) {}
+      __drexAdGuardianObserver = null;
+    }
+    function scheduleNext(found) {
+      // Intervalo adaptativo: 8s con anuncios activos, 30s en reposo sin
+      // anuncios (solo re-arme), 60s con la pestana oculta.
+      var delay = document.hidden ? 60000 : (found > 0 || __drexAdGuardianIdleTicks < 3 ? 8000 : 30000);
+      try { clearTimeout(__drexAdGuardianTimer); } catch (_) {}
+      __drexAdGuardianTimer = setTimeout(drexAdSafeAreaTick, delay);
+    }
+    function drexAdSafeAreaTick() {
+      var found = 0;
+      try { found = drexAdSafeAreaFix(false) || 0; } catch (_) {}
+      if (found > 0) {
+        __drexAdGuardianIdleTicks = 0;
+        armObserver();
+      } else {
+        __drexAdGuardianIdleTicks++;
+        if (__drexAdGuardianIdleTicks >= 3) disarmObserver();
+      }
+      scheduleNext(found);
+    }
     function throttled() {
       var now = Date.now();
       if (now - last < 2500) return;
       last = now;
-      drexAdSafeAreaFix(false);
+      drexAdSafeAreaTick();
     }
+    // Al volver la pestana a visible, pasada inmediata: el intervalo
+    // alargado de 60s no retrasa la deteccion.
     try {
-      new MutationObserver(throttled).observe(document.documentElement, { childList: true, subtree: true });
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) { try { drexAdSafeAreaTick(); } catch (_) {} }
+      });
     } catch (_) {}
-    setInterval(function () { try { if (!document.hidden) drexAdSafeAreaFix(false); } catch (_) {} }, 8000);
-    setTimeout(function () { drexAdSafeAreaFix(false); }, 2000);
+    armObserver();
+    setTimeout(function () { try { drexAdSafeAreaTick(); } catch (_) {} }, 2000);
   }
   function initAdsterra() {
     try { drexProbeAdblock(); } catch (_) {}
