@@ -127,6 +127,16 @@ self.addEventListener('notificationclick', event => {
   const target = (event.notification.data && event.notification.data.url) || './';
   let targetUrl = target;
   try { targetUrl = new URL(target, self.registration.scope).href; } catch (_) {}
+  // R10-1 (push hijack): data.url se arma en el backend con el appRoot que
+  // escribe el cliente; una suscripcion plantada puede traer un origen
+  // atacante. Solo se navega dentro del origen de la app; si no coincide,
+  // se cae a la raiz de la app ('./'). Los push legitimos siempre apuntan
+  // al origen de la app, asi que su comportamiento no cambia.
+  try {
+    if (new URL(targetUrl).origin !== self.location.origin) {
+      targetUrl = new URL('./', self.registration.scope).href;
+    }
+  } catch (_) { targetUrl = new URL('./', self.registration.scope).href; }
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
