@@ -41857,6 +41857,7 @@ document.addEventListener('input', function(e) {
 const FIESTA_ICE = { iceServers: [ { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302', 'stun:stun3.l.google.com:19302', 'stun:stun4.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' } ], iceCandidatePoolSize: 10 };
 let fiestaCur = null;
 let fiestaJoining = false; // evita doble-toque: una sola entrada en curso
+let _creatingFiesta = false; // C26: evita doble-toque en "Crear fiesta" (2 salas, 2 avisos, doble fan-out)
 let fiestaMyUid = null;
 // FIX fuga de listeners: el handle del onDisconnect armado se guarda y se
 // cancela al re-armar/salir. Antes cada arm() sumaba listeners permanentes.
@@ -42080,69 +42081,75 @@ async function createFiesta() {
     showMiniToast(appT('Ponle un título a tu fiesta.'));
     return;
   }
-  const prof = await fiestaMyProfile();
-  const ref = DrexCloud.database().ref('fiestas').push();
-  await ref.set({
-    title: title.slice(0, 60), language: lang, languageName: fiestaLangName(lang),
-    description: desc.slice(0, 140), hostId: user.uid, hostName: prof.name, hostPhoto: prof.photo,
-    status: 'live', createdAt: Date.now(), maxSpeakers
-  });
-  // La fiesta se publica en el feed principal
-  const note = {
-    content: desc || title,
-    authorId: user.uid,
-    authorName: prof.name,
-    authorImage: prof.photo,
-    timestamp: Date.now(),
-    likes: 0, comments: 0, viewsCount: 0,
-    format: 'post',
-    audience: { id: 'public', label: 'P\u00fablico' },
-    fiestaId: ref.key,
-    fiestaTitle: title.slice(0, 60),
-    fiestaLang: fiestaLangName(lang),
-    fiestaDesc: desc.slice(0, 140),
-    fiestaStatus: 'live',
-    fiestaMax: maxSpeakers
-  };
-  // FIX 2026-09-21: pushAsync() rechaza si el aviso no se guarda de verdad.
-  // Con push()+_writePromise el error se tragaba en silencio y la app mostraba
-  // "Fiesta publicada en el feed" aunque la tarjeta nunca existía (nadie la
-  // encontraba). Si el aviso falla, la sala SÍ existe: se entra igual a la
-  // fiesta y se dice la verdad en el aviso.
-  let _fiestaNoteRef = null, _noteErr = '';
+  // FIX C26 (2026-09-23): un segundo toque en "Crear fiesta" no crea otra sala
+  // en paralelo (antes: 2 salas + 2 avisos en el feed + 2 fan-outs a seguidores).
+  if (_creatingFiesta) return;
+  _creatingFiesta = true;
   try {
-    _fiestaNoteRef = await DrexCloud.database().ref('communityNotes').pushAsync(note);
-    // Índice notesByAuthor: el aviso de fiesta también es un post del autor.
-    try { if (_fiestaNoteRef && _fiestaNoteRef.key) DrexCloud.database().ref('notesByAuthor/' + user.uid + '/' + _fiestaNoteRef.key).set({ t: note.timestamp || Date.now() }).catch(() => {}); } catch (_) {}
-    // Índice postsByFiesta: "terminar fiesta" ya no escanea communityNotes completo.
-    try { if (_fiestaNoteRef && _fiestaNoteRef.key && ref.key) DrexCloud.database().ref('postsByFiesta/' + ref.key + '/' + _fiestaNoteRef.key).set({ t: note.timestamp || Date.now() }).catch(() => {}); } catch (_) {}
-  } catch (e) {
-    try { _noteErr = String((e && (e.message || e.code)) || '').slice(0, 120); } catch (_) {}
-  }
-  // Avisar a los seguidores de la fiesta nueva (respeta su toggle "Fiestas").
-  try {
-    if (typeof notifyFollowersOfNewContent === 'function') {
-      notifyFollowersOfNewContent(user.uid, prof.name, 'fiesta',
-        prof.name + ' inició una fiesta: ' + title.slice(0, 60),
-        { actionType: 'post', actionId: _fiestaNoteRef ? _fiestaNoteRef.key : null, actorId: user.uid, fiestaId: ref.key });
+    const prof = await fiestaMyProfile();
+    const ref = DrexCloud.database().ref('fiestas').push();
+    await ref.set({
+      title: title.slice(0, 60), language: lang, languageName: fiestaLangName(lang),
+      description: desc.slice(0, 140), hostId: user.uid, hostName: prof.name, hostPhoto: prof.photo,
+      status: 'live', createdAt: Date.now(), maxSpeakers
+    });
+    // La fiesta se publica en el feed principal
+    const note = {
+      content: desc || title,
+      authorId: user.uid,
+      authorName: prof.name,
+      authorImage: prof.photo,
+      timestamp: Date.now(),
+      likes: 0, comments: 0, viewsCount: 0,
+      format: 'post',
+      audience: { id: 'public', label: 'P\u00fablico' },
+      fiestaId: ref.key,
+      fiestaTitle: title.slice(0, 60),
+      fiestaLang: fiestaLangName(lang),
+      fiestaDesc: desc.slice(0, 140),
+      fiestaStatus: 'live',
+      fiestaMax: maxSpeakers
+    };
+    // FIX 2026-09-21: pushAsync() rechaza si el aviso no se guarda de verdad.
+    // Con push()+_writePromise el error se tragaba en silencio y la app mostraba
+    // "Fiesta publicada en el feed" aunque la tarjeta nunca existía (nadie la
+    // encontraba). Si el aviso falla, la sala SÍ existe: se entra igual a la
+    // fiesta y se dice la verdad en el aviso.
+    let _fiestaNoteRef = null, _noteErr = '';
+    try {
+      _fiestaNoteRef = await DrexCloud.database().ref('communityNotes').pushAsync(note);
+      // Índice notesByAuthor: el aviso de fiesta también es un post del autor.
+      try { if (_fiestaNoteRef && _fiestaNoteRef.key) DrexCloud.database().ref('notesByAuthor/' + user.uid + '/' + _fiestaNoteRef.key).set({ t: note.timestamp || Date.now() }).catch(() => {}); } catch (_) {}
+      // Índice postsByFiesta: "terminar fiesta" ya no escanea communityNotes completo.
+      try { if (_fiestaNoteRef && _fiestaNoteRef.key && ref.key) DrexCloud.database().ref('postsByFiesta/' + ref.key + '/' + _fiestaNoteRef.key).set({ t: note.timestamp || Date.now() }).catch(() => {}); } catch (_) {}
+    } catch (e) {
+      try { _noteErr = String((e && (e.message || e.code)) || '').slice(0, 120); } catch (_) {}
     }
-  } catch (_) {}
-  document.getElementById('fiesta-title').value = '';
-  document.getElementById('fiesta-desc').value = '';
-  closeFiestaSection();
-  if (_fiestaNoteRef) showMiniToast(appT('Fiesta publicada en el feed.'));
-  else showMiniToast(appT('Entraste a tu fiesta (el aviso del feed no se publicó{d}').replace('{d}', _noteErr ? ': [' + _noteErr + '])' : ').'));
-  // El creador entra DIRECTO a su sala, como antes. Si el primer intento falla
-  // por una condición de carrera (la sala se creó hace milisegundos y alguna
-  // escritura/lectura aún no se asentó), se reintenta una vez automáticamente.
-  // joinFiesta es idempotente y su catch hace rollback completo, así que el
-  // reintento es seguro.
-  let _joinedOk = false;
-  try { _joinedOk = await joinFiesta(ref.key, true); } catch (_) { _joinedOk = false; }
-  if (!_joinedOk && !fiestaCur) {
-    await new Promise(r => setTimeout(r, 1500));
+    // Avisar a los seguidores de la fiesta nueva (respeta su toggle "Fiestas").
+    try {
+      if (typeof notifyFollowersOfNewContent === 'function') {
+        notifyFollowersOfNewContent(user.uid, prof.name, 'fiesta',
+          prof.name + ' inició una fiesta: ' + title.slice(0, 60),
+          { actionType: 'post', actionId: _fiestaNoteRef ? _fiestaNoteRef.key : null, actorId: user.uid, fiestaId: ref.key });
+      }
+    } catch (_) {}
+    document.getElementById('fiesta-title').value = '';
+    document.getElementById('fiesta-desc').value = '';
+    closeFiestaSection();
+    if (_fiestaNoteRef) showMiniToast(appT('Fiesta publicada en el feed.'));
+    else showMiniToast(appT('Entraste a tu fiesta (el aviso del feed no se publicó{d}').replace('{d}', _noteErr ? ': [' + _noteErr + '])' : ').'));
+    // El creador entra DIRECTO a su sala, como antes. Si el primer intento falla
+    // por una condición de carrera (la sala se creó hace milisegundos y alguna
+    // escritura/lectura aún no se asentó), se reintenta una vez automáticamente.
+    // joinFiesta es idempotente y su catch hace rollback completo, así que el
+    // reintento es seguro.
+    let _joinedOk = false;
     try { _joinedOk = await joinFiesta(ref.key, true); } catch (_) { _joinedOk = false; }
-  }
+    if (!_joinedOk && !fiestaCur) {
+      await new Promise(r => setTimeout(r, 1500));
+      try { _joinedOk = await joinFiesta(ref.key, true); } catch (_) { _joinedOk = false; }
+    }
+  } finally { _creatingFiesta = false; }
 }
 
 const FIESTA_PHONE_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
