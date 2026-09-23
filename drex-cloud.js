@@ -1081,8 +1081,86 @@ function withCredRetry(opFn) {
         return prefixes;
       });
     }
-    function phase2() {
-      if (!prefixes.length) return Promise.resolve([]);
+    // PERF ciclo 15 (C14-07): la fase 2 hacía N queries begins_with (una por
+    // post: 85 ops × 0.5 RCU de suelo aunque cada hoja pese bytes -> ~42.5
+    // RCU por fase 2). Los prefijos son CONTIGUOS en orden de sk: la fase 1
+    // los recolectó en un barrido descendente exhaustivo hasta reunir
+    // wantScan, así que el rango [minP+'/', maxP+U+FFFF] cubre EXACTAMENTE el
+    // mismo conjunto de ítems que las N queries (cualquier prefijo entre
+    // minP y maxP fue visto sí o sí por el barrido). Una sola query BETWEEN
+    // (+ el mismo FilterExpression anti-imágenes) reemplaza las N: ~42.5 ->
+    // ~4 RCU por fase 2. Mismo orden de hojas (prefijo descendente según
+    // encuentro de fase 1; sk ascendente dentro del prefijo), mismos
+    // _imgKeys al final del bloque de cada prefijo, mismo fallback por
+    // prefijo si la query única falla. La huella/fp, la válvula H3_STALE_MS,
+    // el caché y el dispatch no se tocan: el contenido es byte-idéntico.
+    function phase2Single() {
+      var minP = prefixes[0], maxP = prefixes[0], i, pfx;
+      for (i = 1; i < prefixes.length; i++) {
+        pfx = prefixes[i];
+        if (pfx < minP) minP = pfx;
+        if (pfx > maxP) maxP = pfx;
+      }
+      var rank = {};
+      for (i = 0; i < prefixes.length; i++) rank[prefixes[i]] = i;
+      var q = {
+        TableName: AWS_CONFIG.tableName,
+        KeyConditionExpression: 'pk = :pk AND sk BETWEEN :lo AND :hi',
+        // :lo = minP (no minP + '/'): el item exacto del prefijo menor tambien
+        // viajaba en el camino viejo (begins_with lo incluia; readLeaves lo
+        // ponia al final del grupo). En modo light se filtra abajo porque
+        // readLeavesLight usaba begins_with(pfx + '/') y nunca lo devolvia.
+        ExpressionAttributeValues: { ':pk': pk, ':lo': minP, ':hi': maxP + String.fromCharCode(0xFFFF) }
+      };
+      if (lightImages) {
+        q.FilterExpression = 'NOT contains(sk, :img)';
+        q.ExpressionAttributeValues[':img'] = '/imageUrl';
+      }
+      return queryAll(q).then(function (items) {
+        var out = [], k, it, rawSk, skSegs, v, first, isExact;
+        for (k = 0; k < items.length; k++) {
+          it = items[k];
+          rawSk = (it.sk === undefined || it.sk === null) ? '' : String(it.sk);
+          if (rawSk === EMPTY_SK) rawSk = ''; // espejo de readLeavesLight
+          skSegs = rawSk.split('/').filter(function (x) { return x !== ''; });
+          first = skSegs[0] || '';
+          // El camino viejo descartaba por cliente todo sk cuyo primer
+          // segmento no fuera el prefijo consultado. Con paginacion (endAt)
+          // la fase 1 salta first >= endSk, asi que un primo no recolectado
+          // puede caer dentro del BETWEEN: se descarta igual.
+          if (rank[first] === undefined) continue;
+          // En modo light el item exacto (sk === prefijo) nunca viajaba
+          // (begins_with con '/'); en modo normal si, al final del grupo.
+          isExact = (rawSk === first);
+          if (lightImages && isExact) continue;
+          try { v = JSON.parse(it.v); } catch (e) { v = null; }
+          out.push({ segs: [pk].concat(skSegs), value: v, _sk: rawSk, _p: first, _ex: isExact ? 1 : 0 });
+        }
+        // Orden identico al camino por prefijo: grupos en orden de fase 1,
+        // dentro del grupo por sk ascendente, item exacto al final
+        // (el camino viejo hacia rest.concat([exact])).
+        out.sort(function (a, b) {
+          var ra = rank[a._p], rb = rank[b._p];
+          if (ra !== rb) return ra - rb;
+          if (a._ex !== b._ex) return a._ex - b._ex;
+          return a._sk < b._sk ? -1 : (a._sk > b._sk ? 1 : 0);
+        });
+        var res = [], lastP = null;
+        function pushImgKeys(p) {
+          if (lightImages && imgKeysByPrefix[p] && imgKeysByPrefix[p].length) {
+            res.push({ segs: [pk, p, '_imgKeys'], value: sortImgKeys(imgKeysByPrefix[p]) });
+          }
+        }
+        for (k = 0; k < out.length; k++) {
+          if (out[k]._p !== lastP) { if (lastP !== null) pushImgKeys(lastP); lastP = out[k]._p; }
+          delete out[k]._sk; delete out[k]._p; delete out[k]._ex;
+          res.push(out[k]);
+        }
+        if (lastP !== null) pushImgKeys(lastP);
+        return res;
+      });
+    }
+    function phase2PerPrefix() {
       return Promise.all(prefixes.map(function (pfx) {
         var pr = lightImages
           ? readLeavesLight([pk, pfx]).catch(function () { return readLeaves([pk, pfx]); })
@@ -1098,6 +1176,11 @@ function withCredRetry(opFn) {
         lists.forEach(function (ll) { out = out.concat(ll); });
         return out;
       });
+    }
+    function phase2() {
+      if (!prefixes.length) return Promise.resolve([]);
+      // Si la query única falla, fallback al camino por prefijo (el de antes).
+      return phase2Single().catch(function () { return phase2PerPrefix(); });
     }
     // PERF ciclo 8 H4: válvula de huella para el FEED (pk='communityNotes'),
     // con el mismo patrón de H3 en readLeavesBoundedPrefix: la fase 1 (ya
@@ -2486,6 +2569,29 @@ function withCredRetry(opFn) {
     var flushing = false;
     var retryTimer = null;
     var bypass = false; // runOp escribe directo, sin re-encolar
+    // R5-1 (ciclo 15): SCOPE POR CUENTA.
+    // Cada op se etiqueta al encolarla con el uid del usuario actual (ver
+    // enqueueSet). En el vaciado, las ops cuyo dueño no sea el usuario
+    // actual se SALTAN: no se ejecutan, no se dropean y no se re-sellan en
+    // ese flush; quedan encoladas y persistidas para cuando su dueño vuelva.
+    //   op.uid === me      -> se procesa.
+    //   op.uid ausente     -> sin dueño (encolada sin sesión, o colas
+    //                         persistidas por versiones anteriores): se
+    //                         procesa con el comportamiento legacy.
+    //   op.uid !== me (o no hay sesión) -> se salta.
+    function currentOutboxUid() {
+      try {
+        var u = (typeof authInstance !== 'undefined' && authInstance) ? authInstance.currentUser : null;
+        return (u && u.uid) ? String(u.uid) : null;
+      } catch (e) { return null; }
+    }
+    function opOwnedByOther(op, me) {
+      return !!(op && op.uid && op.uid !== me);
+    }
+    function firstRunnableOp(cur, me) {
+      for (var i = 0; i < cur.length; i++) if (!opOwnedByOther(cur[i], me)) return cur[i];
+      return null;
+    }
 
     function load() {
       try {
@@ -2534,8 +2640,16 @@ function withCredRetry(opFn) {
       catch (e) { return Promise.reject(e); }
       finally { bypass = false; }
     }
-    function scheduleFlush(ms) {
+    // R5-1 (ciclo 15): cancela el reintento programado SIN tocar la cola
+    // persistida. Se usa en signOutUser/handleExpiredSession para que el
+    // timer no dispare sin sesión (AccessDenied no reintentable -> dropHead
+    // silencioso) ni bajo otra sesión (escritura ajena). Las ops quedan
+    // encoladas para la próxima sesión de su dueño.
+    function cancelRetry() {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    }
+    function scheduleFlush(ms) {
+      cancelRetry();
       retryTimer = setTimeout(function () { retryTimer = null; flush(); }, ms);
     }
     function settleAll(op, ok, val) {
@@ -2596,7 +2710,10 @@ function withCredRetry(opFn) {
     // (el llamador persiste). Dos pasadas: (1) construir el mapa old->new con
     // los últimos segmentos push ID; (2) reescribir los segmentos a través
     // del mapa para que las referencias a keys re-selladas sigan consistentes.
-    function resealQueue(qq) {
+    // R5-1: `me` es el uid del usuario actual (o null sin sesión). Las ops
+    // de otra cuenta no entran al mapa old->new ni se reescriben en este
+    // flush: las ops saltadas simplemente no se resealan en este flush.
+    function resealQueue(qq, me) {
       var now = Date.now();
       var map = Object.create(null); // oldKey -> newKey (sin prototipo: seguro ante segmentos raros)
       var i, j;
@@ -2618,7 +2735,8 @@ function withCredRetry(opFn) {
         var op = qq[i];
         // op.noReseal (contrato de reseal, ciclo 14): las ops pineadas nunca
         // entran al mapa old->new: conservan su key al vaciar.
-        if (!op || op.type !== 'set' || op.resealed || op.noReseal) continue;
+        // R5-1: las ops de otra cuenta tampoco (se saltan en este flush).
+        if (!op || op.type !== 'set' || op.resealed || op.noReseal || opOwnedByOther(op, me)) continue;
         var segs = String(op.path || '').split('/');
         var last = segs[segs.length - 1];
         if (pinned[last]) continue; // acoplada a una key pineada: conservar
@@ -2634,7 +2752,7 @@ function withCredRetry(opFn) {
       }
       for (i = 0; i < qq.length; i++) {
         var o2 = qq[i];
-        if (!o2 || o2.type !== 'set' || o2.resealed) { if (o2) delete o2._resealLast; continue; }
+        if (!o2 || o2.type !== 'set' || o2.resealed || opOwnedByOther(o2, me)) { if (o2) delete o2._resealLast; continue; }
         var wasLast = !!o2._resealLast;
         delete o2._resealLast;
         var s2 = String(o2.path || '').split('/');
@@ -2660,12 +2778,18 @@ function withCredRetry(opFn) {
       if (!qq.length) return;
       // RE-SELLADO (ciclo 13): IDs frescos antes de enviar; se persiste
       // para que reintentos/reinicios reusen las mismas keys (idempotencia).
-      if (resealQueue(qq)) save(qq);
+      // R5-1: el mapa old->new solo cubre las ops que este flush puede
+      // procesar (las del usuario actual o sin dueño).
+      if (resealQueue(qq, currentOutboxUid())) save(qq);
       flushing = true;
       (function step() {
         var cur = load();
-        if (!cur.length || isOffline()) { flushing = false; return; }
-        var op = cur[0];
+        if (isOffline()) { flushing = false; return; }
+        // R5-1: el dueño se re-evalúa en cada paso (la cuenta pudo cambiar
+        // a mitad del vaciado). Las ops de otra cuenta se SALTAN: quedan en
+        // la cola, intactas y persistidas, para cuando su dueño vuelva.
+        var op = firstRunnableOp(cur, currentOutboxUid());
+        if (!op) { flushing = false; return; }
         runOp(op).then(function () {
           save(load().filter(function (o) { return o.id !== op.id; }));
           settleAll(op, true, { flushed: true, path: op.path });
@@ -2690,6 +2814,13 @@ function withCredRetry(opFn) {
     function enqueueSet(segs, value, options) {
       var q = load();
       var op = { id: newOpId(), type: 'set', path: segs.join('/'), value: value, ts: Date.now(), tries: 0 };
+      // R5-1 (ciclo 15): scope por cuenta. La op se etiqueta con el uid del
+      // usuario actual al encolarla. Sin sesión, la op queda SIN etiqueta
+      // (campo uid ausente): conserva el comportamiento legacy (se intenta
+      // en el flush sin sesión) y las colas persistidas por versiones
+      // anteriores (sin uid) se tratan igual.
+      var _owner = currentOutboxUid();
+      if (_owner) op.uid = _owner;
       // CONTRATO DE RESEAL, cláusula (c) (ciclo 14): pin opt-in de la key.
       // La app lo usa cuando ya persistió dependientes bajo una key
       // pre-reservada (trozos de video/foto, fan-out de grupo a key final):
@@ -2700,9 +2831,15 @@ function withCredRetry(opFn) {
       // key conserva su timestamp de generación (los receptores la ven tras
       // el re-baseline en vez del siguiente ciclo delta).
       if (options && options.noReseal) op.noReseal = true;
+      // R5-1: el coalescing también respeta el scope por cuenta: solo
+      // coalesce ops del MISMO dueño (misma uid, o ambas sin uid). Sin esto,
+      // una escritura de B reemplazaría silenciosamente una op pendiente de
+      // A con el mismo path. El pin noReseal sigue sticky dentro del dueño.
+      var _myOwner = op.uid || null;
+      var _sameOwner = function (o) { return (o.uid || null) === _myOwner; };
       var dup = null;
       for (var i = 0; i < q.length; i++) {
-        if (q[i].type === 'set' && q[i].path === op.path) { dup = q[i]; break; }
+        if (q[i].type === 'set' && q[i].path === op.path && _sameOwner(q[i])) { dup = q[i]; break; }
       }
       // El pin es sticky por path: una vez que hubo dependientes persistidos
       // bajo la key, ninguna reescritura posterior la libera.
@@ -2729,6 +2866,7 @@ function withCredRetry(opFn) {
       shouldQueue: shouldQueue,
       enqueueSet: enqueueSet,
       flush: flush,
+      cancelRetry: cancelRetry, // R5-1: cancela el backoff en signOut
       isOffline: isOffline,
       pending: load
     };
@@ -3317,6 +3455,10 @@ function withCredRetry(opFn) {
     currentCognitoUser = null;
     if (authInstance) authInstance.currentUser = null;
     if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+    // R5-1 (ciclo 15): como en signOutUser, el backoff del outbox no debe
+    // disparar sin sesión (la sesión murió: sin este cancel, el timer
+    // intentaría las ops sin credenciales -> dropHead silencioso).
+    try { Outbox.cancelRetry(); } catch (e) {}
     _awsCredentials = null;
     _docClient = null;
     restoreSeq++;
@@ -3695,6 +3837,11 @@ function withCredRetry(opFn) {
           try { console.warn('[DrexCloud] getUserAttributes no disponible; sesión establecida con datos del token.'); } catch (_) {}
         }
         authInstance.currentUser = makeCurrentUser(cognitoUser, useAttrs || []);
+        // R5-1 (ciclo 15): al abrir sesión, vaciar las ops del outbox que
+        // quedaron encoladas para este usuario (p. ej. tras un signOut con
+        // backoff pendiente: el timer se canceló pero la cola sobrevivió).
+        // flush() es no-op sin red o con la cola vacía.
+        try { Outbox.flush(); } catch (_) {}
         // Reparación no bloqueante del índice de login por username
         // (cuentas creadas antes de esa función). Corre en segundo plano;
         // el login no espera ni depende de ella.
@@ -4268,6 +4415,10 @@ function withCredRetry(opFn) {
       currentCognitoUser = null;
       if (authInstance) authInstance.currentUser = null;
       if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+      // R5-1 (ciclo 15): cancelar el reintento del outbox en vuelo. La cola
+      // persistida NO se toca: las ops del usuario quedan encoladas para su
+      // próxima sesión (el flush las salta mientras no sea su dueño).
+      try { Outbox.cancelRetry(); } catch (e) {}
       _awsCredentials = null;
       _docClient = null;
       notifyAuthListeners();
