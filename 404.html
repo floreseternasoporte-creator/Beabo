@@ -30938,7 +30938,19 @@ let chatTypingListener = null;
       if (secsLeft <= 0) {
         clearInterval(_msgCountdownIntervals[msgId]);
         delete _msgCountdownIntervals[msgId];
-        if (conversationId) DrexCloud.database().ref('conversationMessages/' + conversationId + '/' + msgId).remove().catch(() => {});
+        if (conversationId) {
+          DrexCloud.database().ref('conversationMessages/' + conversationId + '/' + msgId).remove().catch(() => {});
+          // C49-C1: el mensaje temporal expiró — limpiar también el pin huérfano
+          // (el banner cachea el texto del mensaje; misma familia que C48-C1) y
+          // las reacciones huérfanas. El pin solo se borra si apunta a este mensaje.
+          DrexCloud.database().ref('msgReactions/' + conversationId + '/' + msgId).remove().catch(() => {});
+          DrexCloud.database().ref('conversationPinned/' + conversationId).once('value').then(pinSnap => {
+            const pin = pinSnap.val();
+            if (pin && pin.msgId === msgId) {
+              DrexCloud.database().ref('conversationPinned/' + conversationId).remove().catch(() => {});
+            }
+          }).catch(() => {});
+        }
         const bubble = el?.closest('[data-msg-id]');
         if (bubble) bubble.remove();
         return;
@@ -30974,6 +30986,15 @@ let chatTypingListener = null;
           bubble.innerHTML = `<p class="text-sm break-words">${escapeHtml(txt)}</p>`;
           setTimeout(() => {
             msgRef.remove();
+            // C49-C1: limpiar pin y reacciones huérfanos del mensaje consumido
+            // (misma familia que C48-C1: el pin cachea el texto).
+            DrexCloud.database().ref('msgReactions/' + convoId + '/' + msgId).remove().catch(() => {});
+            DrexCloud.database().ref('conversationPinned/' + convoId).once('value').then(pinSnap => {
+              const pin = pinSnap.val();
+              if (pin && pin.msgId === msgId) {
+                DrexCloud.database().ref('conversationPinned/' + convoId).remove().catch(() => {});
+              }
+            }).catch(() => {});
             if (bubble) bubble.innerHTML = '<p class="text-xs italic opacity-50">Mensaje visto · eliminado</p>';
           }, 5000);
         }
