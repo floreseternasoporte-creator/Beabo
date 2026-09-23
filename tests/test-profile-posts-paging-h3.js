@@ -5,7 +5,8 @@
 //       desconocido → dispara once('value') para el total (una vez).
 //  H3c. "Cargar más" sube la página a 60 y re-adjunta con el nuevo límite.
 //  H3d. _paintProfileLoadMore: visible solo si la página va llena y (total
-//       desconocido o página < total).
+//       desconocido o página <= total) — C11-1: con total exacto == página
+//       el botón sigue visible (un post nuevo mantiene n == page).
 //  H3e. _paintProfilePostsCount pinta total+collab en los 4 destinos.
 //  H3f. Carrera de cambio de perfil: el callback no pinta si _userStatsUid cambió.
 //  H4a. Input con texto → performRealTimeSearch NO corre de inmediato, corre
@@ -132,6 +133,13 @@ const tick = () => new Promise(r => setTimeout(r, 20));
   check('H3b total=47 tras el once()', vm.runInContext('_profilePostsTotal', sandbox) === 47);
   check('H3e pinta "49 posts" (47+2)', painted['profile-posts-title'] === '49 posts');
   check('H3d botón visible si página llena y total>page', hiddenState['profile-load-more-area'] === false);
+  // H3d2 (C11-1): borde página == total → botón VISIBLE (con "<" se ocultaba
+  // y un post nuevo quedaba inalcanzable); total < página → oculto.
+  vm.runInContext('_profilePostsTotal = 30; _paintProfileLoadMore();', sandbox);
+  check('H3d borde page==total → botón visible', hiddenState['profile-load-more-area'] === false);
+  vm.runInContext('_profilePostsTotal = 29; _paintProfileLoadMore();', sandbox);
+  check('H3d total<page → botón oculto', hiddenState['profile-load-more-area'] === true);
+  vm.runInContext('_profilePostsTotal = 47; _paintProfileLoadMore();', sandbox); // restaurar para H3c
 
   // H3c: cargar más → página 60 y re-query con limitToLast(60)
   queryLog.length = 0;
