@@ -13,7 +13,8 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const HTML_PATH = process.argv[2] || '/home/hatch/workspace/beabo/index.html';
+const path = require('path');
+const HTML_PATH = process.argv[2] || path.join(__dirname, '..', 'index.html');
 const html = fs.readFileSync(HTML_PATH, 'utf8');
 const scripts = [...html.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
 console.log('scripts inline extraídos:', scripts.length);
