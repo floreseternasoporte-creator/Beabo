@@ -14789,7 +14789,23 @@ function saveNote() {
   let _drexRecProfilePromise = null;
   let _drexRecSaveTimer = null;
   // Metadatos de posts montados (para entrenar con interacciones futuras).
+  // Caché puro: ante un miss el motor re-lee de la DB y lo repuebla, así que
+  // evictar es seguro. Topado con FIFO (iPhone: memoria limitada), mismo
+  // patrón que _noteImagesCache.
   let _drexNoteMeta = {};
+  const _drexNoteMetaOrder = [];
+  const _DREX_NOTE_META_MAX = 300;
+  function _drexNoteMetaPut(noteId, meta) {
+    try {
+      if (!noteId) return;
+      if (!_drexNoteMeta[noteId]) _drexNoteMetaOrder.push(noteId);
+      _drexNoteMeta[noteId] = meta;
+      while (_drexNoteMetaOrder.length > _DREX_NOTE_META_MAX) {
+        const oldId = _drexNoteMetaOrder.shift();
+        if (oldId !== noteId) delete _drexNoteMeta[oldId];
+      }
+    } catch (_) {}
+  }
   // DrexRecEngine V2: exponer el cache de metadatos para que el motor
   // externo (drex-rec-engine.js) pueda acceder sin lecturas DB extra.
   try { window._drexNoteMeta = _drexNoteMeta; } catch (_) {}
@@ -14922,7 +14938,7 @@ function saveNote() {
       DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(snap => {
         const n = snap.val() || {};
         const meta = { flair: n.flair || null, authorId: n.authorId || n.userId || null, text: n.content || n.text || '' };
-        _drexNoteMeta[noteId] = meta;
+        _drexNoteMetaPut(noteId, meta);
         drexRecTrain(meta, weight);
       }).catch(() => {});
     } catch (_) {}
@@ -15915,7 +15931,7 @@ function saveNote() {
         }
         // Drex Rec: metadatos para entrenar con interacciones futuras.
         try {
-          _drexNoteMeta[note.id] = {
+          _drexNoteMetaPut(note.id, {
             flair: note.flair || null,
             authorId: note.authorId || note.userId || null,
             text: note.content || note.text || '',
@@ -15923,7 +15939,7 @@ function saveNote() {
             up: Number(note.upvotes || 0),
             down: Number(note.downvotes || 0),
             cc: Number(note.commentsCount || 0)
-          };
+          });
         } catch (_) {}
         noteElement.innerHTML = buildDrexPostCardHTML(note, {
           user: user,
