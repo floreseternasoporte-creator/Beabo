@@ -583,6 +583,11 @@
     }
 
     // Carga el perfil (V2 o migra V1).
+    // FIX carrera entre cuentas: el uid se captura al iniciar la lectura y
+    // cada continuación asíncrona verifica que siga siendo el actual antes de
+    // asignar _profile. Sin esto, si A cierra sesión y B entra mientras la
+    // lectura de A vuela, el perfil de A quedaba bajo el UID de B (y un
+    // flush() posterior lo persistía contaminado).
     function load() {
       var uid = _getCurrentUid();
       if (!uid) return Promise.resolve(_emptyProfile());
@@ -590,11 +595,15 @@
       if (_profilePromise && _profileUid === uid) return _profilePromise;
 
       _profileUid = uid;
+      var requestedUid = uid;
       var db = _getDB();
       if (!db) { _profile = _emptyProfile(); return Promise.resolve(_profile); }
 
-      _profilePromise = db.ref(PROFILE_PATH_V2 + '/' + uid).once('value')
+      function _stale() { return requestedUid !== _getCurrentUid(); }
+
+      var p = db.ref(PROFILE_PATH_V2 + '/' + uid).once('value')
         .then(function (snap) {
+          if (_stale()) { if (_profilePromise === p) _profilePromise = null; return _profile; }
           var raw = snap.val();
           if (raw && typeof raw === 'object' && raw.v === ENGINE_VERSION) {
             _profile = _applyDecay(_deepClone(raw));
@@ -602,6 +611,7 @@
             // Intentar migrar V1
             return db.ref(PROFILE_PATH_V1 + '/' + uid).once('value')
               .then(function (v1snap) {
+                if (_stale()) { if (_profilePromise === p) _profilePromise = null; return _profile; }
                 var v1 = v1snap.val();
                 _profile = _migrateV1(v1);
                 // Guardar la migración inmediatamente
@@ -609,6 +619,7 @@
                 return _profile;
               })
               .catch(function () {
+                if (_stale()) { if (_profilePromise === p) _profilePromise = null; return _profile; }
                 _profile = _emptyProfile();
                 return _profile;
               });
@@ -616,9 +627,11 @@
           return _profile;
         })
         .catch(function () {
+          if (_stale()) { if (_profilePromise === p) _profilePromise = null; return _profile; }
           _profile = _emptyProfile();
           return _profile;
         });
+      _profilePromise = p;
 
       return _profilePromise;
     }

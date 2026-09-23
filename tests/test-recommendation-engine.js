@@ -475,6 +475,78 @@ await test('Compatibilidad V1: DREX_REC tiene weights', function () {
   assert(global.DREX_REC.weights.save !== undefined, 'Debe tener weight save');
 });
 
+// --- ProfileStore: carrera entre cuentas ---
+console.log('ProfileStore (carrera entre cuentas):');
+
+// Mock con lecturas diferidas para simular la carrera A -> B.
+var _raceResolvers = [];
+var _raceCurrentUid = 'user-A';
+global.DrexCloud = {
+  database: function () {
+    return {
+      ref: function (path) {
+        return {
+          once: function () {
+            return new Promise(function (resolve) {
+              _raceResolvers.push({ path: path, resolve: resolve });
+            });
+          },
+          set: function () { return Promise.resolve(); }
+        };
+      }
+    };
+  },
+  auth: function () { return { currentUser: _raceCurrentUid ? { uid: _raceCurrentUid } : null }; }
+};
+function _resolveRace(pathSuffix, val) {
+  for (var i = 0; i < _raceResolvers.length; i++) {
+    if (_raceResolvers[i].path.indexOf(pathSuffix) !== -1) {
+      var r = _raceResolvers.splice(i, 1)[0];
+      r.resolve({ val: function () { return val; } });
+      return true;
+    }
+  }
+  return false;
+}
+function _v2Profile(marker) {
+  return { v: 2, marker: marker, updatedAt: Date.now(), lastActive: Date.now() };
+}
+
+await test('load() descarta la lectura stale si el uid cambió (A->B)', async function () {
+  Engine.ProfileStore.reset();
+  _raceResolvers = [];
+  _raceCurrentUid = 'user-A';
+  var pA = Engine.ProfileStore.load(); // lectura de A en vuelo
+  assert(_raceResolvers.length === 1, 'debe haber 1 lectura en vuelo');
+  _raceCurrentUid = 'user-B'; // cambio de cuenta antes de que resuelva
+  assert(_resolveRace('userInterestsV2/user-A', _v2Profile('PERFIL-DE-A')), 'resolver lectura de A');
+  await pA;
+  var got = Engine.ProfileStore.get();
+  assert(!got || got.marker !== 'PERFIL-DE-A', 'el perfil de A no debe asignarse con uid B');
+});
+
+await test('load() posterior para B lee y asigna su propio perfil', async function () {
+  _raceResolvers = [];
+  _raceCurrentUid = 'user-B';
+  var pB = Engine.ProfileStore.load();
+  assert(_raceResolvers.length === 1, 'debe iniciar lectura nueva para B');
+  assert(_resolveRace('userInterestsV2/user-B', _v2Profile('PERFIL-DE-B')), 'resolver lectura de B');
+  await pB;
+  var got = Engine.ProfileStore.get();
+  assert(got && got.marker === 'PERFIL-DE-B', 'el perfil de B debe asignarse');
+});
+
+await test('Engine.reset() limpia perfil y promesas en vuelo', async function () {
+  _raceResolvers = [];
+  _raceCurrentUid = 'user-C';
+  var pC = Engine.ProfileStore.load();
+  Engine.reset(); // logout: invalida todo
+  _raceCurrentUid = null;
+  assert(_resolveRace('userInterestsV2/user-C', _v2Profile('PERFIL-DE-C')), 'resolver lectura de C');
+  await pC;
+  assert(Engine.ProfileStore.get() === null, 'tras reset + lectura stale, get() debe ser null');
+});
+
 // --- Resumen ---
 console.log('\n========================================');
 console.log('Resumen: ' + passed + ' pasados, ' + failed + ' fallidos');
