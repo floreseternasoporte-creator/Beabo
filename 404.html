@@ -18186,7 +18186,7 @@ function saveNote() {
         const matches = accounts.map(u => ({
           uid: u.uid,
           name: u.username || u.displayName || 'Usuario',
-          image: u.profileImage || ''
+          image: getSafeMediaUrl(u.profileImage) || ''
         }));
         renderSharePostResults(matches);
       }).catch(() => {
@@ -29928,7 +29928,7 @@ let chatTypingListener = null;
       const users = accounts.map(u => ({
         uid: u.uid,
         name: u.username || u.displayName || 'Usuario',
-        image: u.profileImage || ''
+        image: getSafeMediaUrl(u.profileImage) || ''
       }));
       if (!users.length) {
         list.innerHTML = '<div class="bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-2xl p-5 text-center text-[var(--theme-muted)]">No encontramos usuarios.</div>';
@@ -31361,7 +31361,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       const active = myReaction === emoji;
       const svg = _reactionSvg[emoji] || '';
       const col = _reactionColor[emoji] || 'text-[#5c6974]';
-      return `<button onclick="window._lastReactionMsgId='${msgId}';activeReactionMsgId='${msgId}';submitChatReaction('${emoji}')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border transition active:opacity-80 ${active ? 'bg-[color-mix(in_srgb,var(--drex-brand)_10%,transparent)] border-[var(--drex-brand)]' : 'bg-white border-[#dce1e5]'} ${col}"><span class="flex items-center">${svg}</span><span class="text-xs text-[#5c6974] font-semibold">${count}</span></button>`;
+      return `<button onclick="window._lastReactionMsgId='${escapeInlineSingleQuote(msgId)}';activeReactionMsgId='${escapeInlineSingleQuote(msgId)}';submitChatReaction('${escapeInlineSingleQuote(emoji)}')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border transition active:opacity-80 ${active ? 'bg-[color-mix(in_srgb,var(--drex-brand)_10%,transparent)] border-[var(--drex-brand)]' : 'bg-white border-[#dce1e5]'} ${col}"><span class="flex items-center">${svg}</span><span class="text-xs text-[#5c6974] font-semibold">${count}</span></button>`;
     }).join('');
   }
 
@@ -32877,7 +32877,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
           matches.push({
             uid: u.uid,
             name: u.username || u.displayName || 'Usuario',
-            image: u.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='
+            image: getSafeMediaUrl(u.profileImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='
           });
         });
         if (!matches.length) {
@@ -40153,7 +40153,7 @@ const FIESTA_PHONE_ICON = '<svg class="w-5 h-5" fill="none" stroke="currentColor
 function renderFiestaCardHTML(note) {
   if (!note || !note.fiestaId) return '';
   const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const fid = esc(note.fiestaId);
+  const fid = escapeInlineSingleQuote(note.fiestaId);
   const title = esc(note.fiestaTitle || 'Fiesta');
   const lang = esc(note.fiestaLang || '');
   const desc = esc(note.fiestaDesc || '');
@@ -42074,7 +42074,8 @@ window.musicSwitchTab = function (tab) {
 /* ---------- Filas de canciones ---------- */
 function musicCoverHTML(t, cls) {
   cls = cls || 'w-12 h-12 rounded-xl';
-  if (t.coverImage) return `<img src="${t.coverImage}" class="${cls} object-cover shrink-0 bg-[var(--theme-surface-muted)]" alt="">`;
+  const safeCover = getSafeMediaUrl(t.coverImage);
+  if (safeCover) return `<img src="${safeCover}" class="${cls} object-cover shrink-0 bg-[var(--theme-surface-muted)]" alt="">`;
   return `<div class="${cls} shrink-0 flex items-center justify-center text-[var(--brand-indigo-text)] bg-[color-mix(in_srgb,var(--drex-brand)_10%,transparent)]">${MUSIC_NOTE_SVG}</div>`;
 }
 function musicTrackRowHTML(t, i, ctx, withActions) {
@@ -44429,8 +44430,9 @@ window.renderMusicCardHTML = function (note) {
   const title = musicEsc(note.musicTitle || 'Canción sin título');
   const artist = musicEsc(note.musicArtist || note.authorName || 'Artista');
   const dur = Number(note.musicDuration || 0);
-  const cover = note.musicCover
-    ? `<img src="${note.musicCover}" class="music-feed-cover" alt="">`
+  const safeMusicCover = getSafeMediaUrl(note.musicCover);
+  const cover = safeMusicCover
+    ? `<img src="${safeMusicCover}" class="music-feed-cover" alt="">`
     : `<div class="music-feed-cover music-feed-cover--empty">♫</div>`;
   return `
   <div class="music-feed-card" onclick="openMusicTrackFromFeed('${tid}')">
