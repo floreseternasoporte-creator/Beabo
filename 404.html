@@ -16914,6 +16914,18 @@ function saveNote() {
     let failed = false;
     try {
       const requestRef = DrexCloud.database().ref('followRequests/' + user.uid + '/' + requesterUid);
+      // C44-C1: la lista de solicitudes se carga con once('value') (snapshot,
+      // no en vivo). Si el solicitante canceló después de abrirse la vista,
+      // la fila es stale: verificar que la solicitud siga existiendo antes de
+      // crear la relación de seguimiento.
+      let reqSnap = null;
+      try { reqSnap = await requestRef.once('value'); } catch (e) { reqSnap = null; }
+      if (!reqSnap || !reqSnap.exists()) {
+        document.getElementById('follow-request-row-' + requesterUid)?.remove();
+        if (typeof updateFollowRequestsCountLabel === 'function') updateFollowRequestsCountLabel();
+        showMiniToast(appT('Esta solicitud ya no existe'));
+        return;
+      }
       await requestRef.remove();
 
       if (accept) {
@@ -34173,9 +34185,13 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     thumb.style.transform = enabled ? 'translateX(1.25rem)' : 'translateX(0.25rem)';
   }
 
-  function toggleGroupAdminsOnly() {
+  async function toggleGroupAdminsOnly() {
     if (!currentChatRoomId) return;
-    if (!currentGroupIsAdmin) { showMiniToast && showMiniToast(appT('Solo los administradores pueden cambiar esto')); return; }
+    // C44-G1: como el resto de mutaciones de grupo (patrón A30), el rol se
+    // relee del servidor antes de escribir. El caché currentGroupIsAdmin
+    // podía quedar stale (admin degradado con el panel abierto) y permitir
+    // cambiar el flag "Solo admins escriben" sin ser admin.
+    if (!(await verifyGroupAdminFresh(false))) { showMiniToast && showMiniToast(appT('Solo los administradores pueden cambiar esto')); return; }
     const ref = DrexCloud.database().ref('groupChats/' + currentChatRoomId + '/adminsOnly');
     ref.once('value').then(snap => {
       const next = !snap.val();
