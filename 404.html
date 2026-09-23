@@ -34312,8 +34312,11 @@ function renderAccountsList(accounts) {
         followersListDiv.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#7b878f]">Este usuario aún no tiene seguidores.</div>';
         return;
       }
-      Promise.all(ids.map(uid => DrexCloud.database().ref('users/' + uid).once('value').then(s => ({ uid, data: s.val() || {} })))).then(items => {
-        followersListDiv.innerHTML = items.map(item => buildAuthorRelationRow(item.uid, item.data)).join('');
+      // N+1 evitado: los perfiles pasan por el caché canónico de sesión
+      // (_getCachedAuthorProfiles: Promise.all + TTL 120 s, uids deduplicados).
+      // Mismos datos y mismo orden que la lectura cruda anterior.
+      _getCachedAuthorProfiles(ids).then(profiles => {
+        followersListDiv.innerHTML = ids.map(uid => buildAuthorRelationRow(uid, profiles.get(uid) || {})).join('');
       });
     }).catch(() => {
       window.paintLoadError(followersListDiv, 'No se pudieron cargar los seguidores. Revisa tu conexión.', () => openFollowersModal(targetId));
@@ -34337,8 +34340,11 @@ function renderAccountsList(accounts) {
         followingListDiv.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#7b878f]">Este usuario todavía no sigue a nadie.</div>';
         return;
       }
-      Promise.all(ids.map(uid => DrexCloud.database().ref('users/' + uid).once('value').then(s => ({ uid, data: s.val() || {} })))).then(items => {
-        followingListDiv.innerHTML = items.map(item => buildAuthorRelationRow(item.uid, item.data)).join('');
+      // N+1 evitado: los perfiles pasan por el caché canónico de sesión
+      // (_getCachedAuthorProfiles: Promise.all + TTL 120 s, uids deduplicados).
+      // Mismos datos y mismo orden que la lectura cruda anterior.
+      _getCachedAuthorProfiles(ids).then(profiles => {
+        followingListDiv.innerHTML = ids.map(uid => buildAuthorRelationRow(uid, profiles.get(uid) || {})).join('');
       });
     }).catch(() => {
       window.paintLoadError(followingListDiv, 'No se pudieron cargar los seguidos. Revisa tu conexión.', () => openFollowingModal(targetId));
