@@ -2620,8 +2620,22 @@ function withCredRetry(opFn) {
       .join('\n');
   }
 
-  Ref.prototype.transaction = function (updateFn, onComplete) {
-    var ref = this;
+  // transactionBlind(): variante opt-in de transaction() para callers que NO
+  // consumen el snapshot devuelto (solo les importa `committed`, o nada).
+  // PERF (H4, ciclo 8): transaction() hace un re-read post-commit
+  // (ref.once('value')) tras cada escritura exitosa para devolver el snapshot
+  // fresco al estilo Firebase. Ese re-read cuesta ~0.5 RCU (hoja escalar) o
+  // mas (objeto multi-hoja) y NO afecta la atomicidad: la escritura
+  // condicional ya se aplico antes de el. Para contadores ciegos
+  // (followersCount, plays, chatUnread por destinatario, claims de username,
+  // reparaciones de perfil...) el re-read es puro desperdicio, y ademas un
+  // fallo del re-read convierte un commit exitoso en promesa rechazada.
+  // transactionBlind() omite el re-read y devuelve
+  // { committed, snapshot: null }. La semantica de `committed` es identica
+  // (true = la escritura se aplico; false = updateFn aborto) y el reintento
+  // ante ConditionalCheckFailed se conserva igual. NO migrar aqui callers
+  // que lean res.snapshot o el snap de onComplete: recibirian null.
+  function runTransaction(ref, updateFn, onComplete, skipReread) {
     var MAX_ATTEMPTS = 6;
     var MAX_TRANSACT_ITEMS = 90; // margen bajo el límite de 100 de DynamoDB
     function isScalar(v) { return v === null || v === undefined || typeof v !== 'object'; }
@@ -2632,6 +2646,12 @@ function withCredRetry(opFn) {
         return err.CancellationReasons.some(function (r) { return r && r.Code === 'ConditionalCheckFailed'; });
       }
       return false;
+    }
+    // Lectura del snapshot a devolver: con skipReread se omite el
+    // ref.once('value') post-commit y se devuelve snapshot null.
+    function finishRead() {
+      if (skipReread) return Promise.resolve({ committed: true, snapshot: null });
+      return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
     }
     function run(attempt) {
       return readLeaves(ref._segs).then(function (leaves) {
@@ -2647,7 +2667,7 @@ function withCredRetry(opFn) {
           return putLeafConditional(segs[0], segs.slice(1).join('/'), JSON.stringify(newVal), expectedJson)
             .then(function () {
               notifyLocal(segs);
-              return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
+              return finishRead();
             })
             .catch(function (err) {
               if (isConditionalCancel(err) && attempt < MAX_ATTEMPTS) return run(attempt + 1);
@@ -2660,7 +2680,7 @@ function withCredRetry(opFn) {
             return transactObjectLeaves(segs, leaves, newVal)
               .then(function () {
                 notifyLocal(segs);
-                return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
+                return finishRead();
               })
               .catch(function (err) {
                 if (isConditionalCancel(err) && attempt < MAX_ATTEMPTS) return run(attempt + 1);
@@ -2678,7 +2698,7 @@ function withCredRetry(opFn) {
             throw new Error('transaction(): contención excesiva, intente de nuevo');
           }
           return ref.set(newVal).then(function () {
-            return ref.once('value').then(function (s2) { return { committed: true, snapshot: s2 }; });
+            return finishRead();
           });
         });
       });
@@ -2689,6 +2709,12 @@ function withCredRetry(opFn) {
                  function (err) { onComplete(err, false, null); throw err; });
     }
     return p;
+  }
+  Ref.prototype.transaction = function (updateFn, onComplete) {
+    return runTransaction(this, updateFn, onComplete, false);
+  };
+  Ref.prototype.transactionBlind = function (updateFn, onComplete) {
+    return runTransaction(this, updateFn, onComplete, true);
   };
 
   // onDisconnect best-effort: intenta la escritura al ocultar/cerrar la página.
@@ -3031,7 +3057,7 @@ function withCredRetry(opFn) {
         if (username.length < 3 || username.length > 30) return null;
         return new Ref(splitPath('users/' + uid + '/usernameIsFallback')).once('value').then(function (fb) {
           if (fb.val() === true) return null; // temporal: no se indexa
-          return new Ref(splitPath('usernames/' + username)).transaction(function (cur) {
+          return new Ref(splitPath('usernames/' + username)).transactionBlind(function (cur) {
             return (cur === null || cur === uid) ? uid : undefined;
           });
         });
