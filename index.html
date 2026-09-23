@@ -41381,6 +41381,47 @@ function drexInitRouteObserver() {
   } catch (_) {}
 })();
 
+// C46-G1: unirse a un grupo desde su enlace de invitacion (?joinGroup=<id>).
+// Antes el enlace era un callejon sin salida para no-miembros: solo abria la
+// sala si ya eras miembro; si no, mostraba un toast sin forma de unirse,
+// aunque el boton promete "Comparte el grupo con un enlace".
+async function joinGroupViaInviteLink(groupId) {
+  const failToast = () => {
+    try { if (typeof showMiniToast === 'function') showMiniToast(appT('Ese grupo ya no está disponible o no eres miembro.')); } catch (_) {}
+  };
+  try {
+    const me = DrexCloud.auth().currentUser;
+    if (!me) { failToast(); return; }
+    const gSnap = await DrexCloud.database().ref('groupChats/' + groupId).once('value');
+    const g = gSnap.val();
+    if (!g) { failToast(); return; }
+    if (g.members && g.members[me.uid]) {
+      if (typeof openGroupChatRoom === 'function') openGroupChatRoom(groupId);
+      return;
+    }
+    const now = Date.now();
+    const updates = {};
+    updates['groupChats/' + groupId + '/members/' + me.uid] = true;
+    updates['userConversations/' + me.uid + '/' + groupId] = {
+      isGroup: true, groupId: groupId, groupName: g.name || 'Grupo',
+      updatedAt: now, lastMessage: 'Te uniste al grupo'
+    };
+    await DrexCloud.database().ref().update(updates);
+    let uName = me.displayName || 'Alguien';
+    try {
+      const uSnap = await DrexCloud.database().ref('users/' + me.uid).once('value');
+      uName = ((uSnap && uSnap.val()) || {}).username || me.displayName || 'Alguien';
+    } catch (_) {}
+    try {
+      await DrexCloud.database().ref('conversationMessages/' + groupId)
+        .push({ system: true, text: uName + ' se unió al grupo', timestamp: now })._writePromise;
+    } catch (_) {}
+    if (typeof openGroupChatRoom === 'function') openGroupChatRoom(groupId);
+  } catch (e) {
+    failToast();
+  }
+}
+
 function consumePendingDeepLinks() {
   let pendingUser = null, pendingGroup = null;
   try {
@@ -41390,15 +41431,7 @@ function consumePendingDeepLinks() {
     sessionStorage.removeItem('drex_pending_join_group');
   } catch (_) {}
   if (pendingGroup && typeof DrexCloud !== 'undefined') {
-    const me = DrexCloud.auth().currentUser;
-    DrexCloud.database().ref('groupChats/' + pendingGroup + '/members/' + (me ? me.uid : '-'))
-      .once('value').then(snap => {
-        if (snap.exists() && typeof openGroupChatRoom === 'function') {
-          openGroupChatRoom(pendingGroup);
-        } else if (typeof showMiniToast === 'function') {
-          showMiniToast(appT('Ese grupo ya no está disponible o no eres miembro.'));
-        }
-      }).catch(() => {});
+    joinGroupViaInviteLink(pendingGroup);
   } else if (pendingUser && typeof openAuthorProfileByUsername === 'function') {
     setTimeout(() => {
       try { openAuthorProfileByUsername(pendingUser); }
@@ -46386,6 +46419,18 @@ function musicStartMix() {
 }
 /* ---------- Votos en canciones (igual que las publicaciones) ---------- */
 var _musicVoteLock = false;
+// C46-M1: si la cancion actual cambio mientras el voto volaba, repintar el
+// estado de la cancion ACTUAL en vez de pintar el resultado de la anterior
+// sobre su UI (los botones de voto son globales al reproductor).
+function _musicVoteRepaint(trackId, paintFn) {
+  try {
+    if (typeof musicCurrentTrackId === 'function' && musicCurrentTrackId() !== trackId) {
+      if (typeof musicLoadVoteState === 'function') musicLoadVoteState();
+      return;
+    }
+  } catch (_) {}
+  paintFn();
+}
 function musicPaintVoteUI(isUp, isDown, score) {
   try {
     const up = document.getElementById('music-upvote-btn');
@@ -46450,7 +46495,7 @@ window.voteMusicTrack = function (voteType) {
       return tr;
     }).then(res => {
       _musicVoteLock = false;
-      if (!res || !res.committed) { musicPaintVoteUI(wasUp, wasDown, curScore); return; }
+      if (!res || !res.committed) { _musicVoteRepaint(trackId, () => musicPaintVoteUI(wasUp, wasDown, curScore)); return; }
       const newVote = (serverVote === voteType) ? null : voteType;
       // Votos semanales (Top Drex semanal real). Best-effort: los rechazos
       // async se tragan para no generar ruido en el canal de errores global.
@@ -46467,7 +46512,7 @@ window.voteMusicTrack = function (voteType) {
       const un = res.snapshot ? res.snapshot.val() : null;
       if (un) {
         t.upvotes = (un.upvotes | 0) || 0; t.downvotes = (un.downvotes | 0) || 0;
-        musicPaintVoteUI(newVote === 'up', newVote === 'down', t.upvotes - t.downvotes);
+        _musicVoteRepaint(trackId, () => musicPaintVoteUI(newVote === 'up', newVote === 'down', t.upvotes - t.downvotes));
         if (newVote === 'up' && serverVote !== 'up' && un.authorId && un.authorId !== user.uid && typeof addNotification === 'function') {
           try {
             DrexCloud.database().ref('users/' + user.uid).once('value').then(us => {
@@ -46479,7 +46524,7 @@ window.voteMusicTrack = function (voteType) {
         }
       }
     });
-  }).catch(() => { _musicVoteLock = false; musicPaintVoteUI(wasUp, wasDown, curScore); });
+  }).catch(() => { _musicVoteLock = false; _musicVoteRepaint(trackId, () => musicPaintVoteUI(wasUp, wasDown, curScore)); });
 };
 window.musicPrev = function () {
   if (!musicQueue.length) return;
