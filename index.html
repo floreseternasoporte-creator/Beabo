@@ -21770,13 +21770,48 @@ function saveNote() {
       setTimeout(function () { try { s.remove(); } catch (_) {} }, 12000);
     } catch (_) {}
   }
+  /* Motor perezoso de interstitials (perf): cadena de setTimeout que solo
+     existe mientras hay URL de interstitial configurada y la pestaña está
+     visible. Antes: setInterval(15s) siempre activo con sesión, que con
+     interstitialUrl='' (desactivado) despertaba cada 15s para no hacer
+     nada, y con la pestaña oculta cada tick volvía temprano en el chequeo
+     de visibilidad. Funcionalidad publicitaria intacta: con la pestaña
+     visible y URL configurada, la elegibilidad se evalúa cada 15s y el
+     cooldown interstitialMinSec no cambia. */
+  var __adsterraInterstitialTimer = null;
+  function adsterraInterstitialKick() {
+    try {
+      if (__adsterraInterstitialTimer) return; // ya hay un tick programado
+      if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.interstitialUrl) return; // desactivado: cero trabajo
+      if (document.hidden) return; // oculto: el tick volvería temprano igual
+      __adsterraInterstitialTimer = setTimeout(function () {
+        __adsterraInterstitialTimer = null;
+        try { adsterraMaybeInterstitial(); } catch (_) {}
+        adsterraInterstitialKick(); // reprogramar la cadena
+      }, 15000);
+    } catch (_) {}
+  }
   function adsterraInterstitialEngine() {
     try {
-      if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.interstitialUrl) return;
+      if (typeof ADSTERRA === 'undefined' || !ADSTERRA) return;
       ['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function (ev) {
-        window.addEventListener(ev, function () { adsterraLastInteract = Date.now(); }, { passive: true });
+        window.addEventListener(ev, function () {
+          adsterraLastInteract = Date.now();
+          adsterraInterstitialKick(); // re-arma si la URL se configuró tarde
+        }, { passive: true });
       });
-      setInterval(adsterraMaybeInterstitial, 15000);
+      try {
+        document.addEventListener('visibilitychange', function () {
+          if (document.hidden) {
+            // suspender: el tick oculto no mostraba nada de todos modos
+            try { clearTimeout(__adsterraInterstitialTimer); } catch (_) {}
+            __adsterraInterstitialTimer = null;
+          } else {
+            adsterraInterstitialKick(); // reanudar sin esperar el ciclo
+          }
+        });
+      } catch (_) {}
+      adsterraInterstitialKick();
     } catch (_) {}
   }
 
@@ -21911,6 +21946,52 @@ function saveNote() {
     armObserver();
     setTimeout(function () { try { drexAdSafeAreaTick(); } catch (_) {} }, 2000);
   }
+  /* Guardián del título perezoso (perf): antes era un setInterval ciego
+     cada 2.5s siempre activo con sesión. Ahora un MutationObserver sobre
+     <title> dispara la restauración SOLO cuando el título cambia de verdad
+     (document.title = x reescribe el nodo <title> del DOM), más un
+     observer sobre <head> por si un script de terceros reemplaza el nodo
+     <title> completo. Regla idéntica a la anterior: si el título deja de
+     mencionar a Drex, se restaura a 'Drex'. Con la pestaña oculta no se
+     restaura (como antes); al volver a visible hay una pasada inmediata. */
+  var __drexTitleGuardianOn = false;
+  function drexTitleGuardian() {
+    try {
+      if (__drexTitleGuardianOn) return;
+      __drexTitleGuardianOn = true;
+      if (typeof MutationObserver === 'undefined') return;
+      function enforce() {
+        try {
+          if (document.hidden) return;
+          var t = String(document.title || '');
+          if (t.indexOf('Drex') < 0) document.title = 'Drex';
+        } catch (_) {}
+      }
+      var titleObs = null, titleEl = null;
+      function armTitle() {
+        var tel = null;
+        try { tel = document.querySelector('title'); } catch (_) {}
+        if (tel === titleEl) return; // mismo nodo: el observer sigue vivo
+        try { if (titleObs) titleObs.disconnect(); } catch (_) {}
+        titleObs = null; titleEl = tel;
+        if (!tel) return;
+        try {
+          titleObs = new MutationObserver(function () { enforce(); });
+          titleObs.observe(tel, { characterData: true, childList: true, subtree: true });
+        } catch (_) { titleObs = null; }
+      }
+      armTitle();
+      try {
+        var headObs = new MutationObserver(function () { armTitle(); });
+        headObs.observe(document.head || document.documentElement, { childList: true });
+      } catch (_) {}
+      try {
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) enforce();
+        });
+      } catch (_) {}
+    } catch (_) {}
+  }
   function initAdsterra() {
     try { drexProbeAdblock(); } catch (_) {}
     adsterraPreload();
@@ -21942,15 +22023,7 @@ function saveNote() {
       /* Guardián del título de la pestaña: algunos scripts de anuncios de
          terceros reescriben document.title ("(1) New Message!"). Si el
          título deja de mencionar a Drex, lo restauramos. */
-      try {
-        setInterval(function () {
-          try {
-            if (document.hidden) return;
-            var t = String(document.title || '');
-            if (t.indexOf('Drex') < 0) document.title = 'Drex';
-          } catch (_) {}
-        }, 2500);
-      } catch (_) {}
+      try { drexTitleGuardian(); } catch (_) {}
     } catch (_) {}
   }
   // initAdsterra() se movió a las rutas con sesión (ver abajo):
