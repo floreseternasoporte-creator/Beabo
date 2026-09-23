@@ -12752,15 +12752,6 @@ function saveNote() {
   function publishNoteToDatabase(note, preReservedRef) {
     const preModeration = evaluateContentModeration(note.content || '', note.imageUrls || note.imageUrl || []);
     if (preModeration.flagged) {
-      // H2 (fuga de almacenamiento MEDIA): las fotos/video ya se subieron a
-      // noteImages/<key> / noteVideos/<key> con la key reservada ANTES de
-      // evaluar la moderación. Si se aborta aquí sin limpiar, esos bytes
-      // quedan huérfanos (ninguna nota los referencia). Se borran best-effort,
-      // igual que la limpieza del fallo de escritura más abajo.
-      if (preReservedRef && preReservedRef.key) {
-        if (note.video) DrexCloud.database().ref('noteVideos/' + preReservedRef.key).remove().catch(() => {});
-        if (note.imageCount) DrexCloud.database().ref('noteImages/' + preReservedRef.key).remove().catch(() => {});
-      }
       showMiniToast(appT('Tu nota no puede ser publicada porque contiene contenido inapropiado.'));
       notePostPublishing = false;
       renderNotePostPhotoPreviews();
@@ -13581,7 +13572,7 @@ function saveNote() {
     const cc = Number(note.commentsCount || 0);
     const rc = ecoCountOf(note);
     const avatar = note.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
-    const safeId = escapeInlineSingleQuote(note.id || '');
+    const safeId = escapeHtml(note.id || '');
     // Pila de avatares de quienes comentaron último: se ve si hay conversación
     // sin abrir los comentarios.
     const avatarStack = _viewerDetailsAvatarStackHTML(recentAvatars);
@@ -13699,7 +13690,7 @@ function saveNote() {
       content.innerHTML = `
         <div class="text-center py-10">
           <p class="text-[#7b878f] text-sm font-semibold mb-4">Está tardando más de lo normal.<br>Revisa tu conexión.</p>
-          <button onclick="_loadFeedImageModalDetailsContent('${escapeInlineSingleQuote(noteId)}')" class="min-h-[44px] px-6 rounded-full bg-[var(--drex-brand)] text-white font-bold text-[15px] active:opacity-80 transition">Reintentar</button>
+          <button onclick="_loadFeedImageModalDetailsContent('${noteId}')" class="min-h-[44px] px-6 rounded-full bg-[var(--drex-brand)] text-white font-bold text-[15px] active:opacity-80 transition">Reintentar</button>
         </div>`;
     }, _FEED_IMAGE_MODAL_DETAILS_LOAD_TIMEOUT_MS);
     const user = DrexCloud.auth().currentUser;
@@ -13734,7 +13725,7 @@ function saveNote() {
       content.innerHTML = `
         <div class="text-center py-10">
           <p class="text-[#7b878f] text-sm font-semibold mb-4">No se pudo cargar la publicación.</p>
-          <button onclick="_loadFeedImageModalDetailsContent('${escapeInlineSingleQuote(noteId)}')" class="min-h-[44px] px-6 rounded-full bg-[var(--drex-brand)] text-white font-bold text-[15px] active:opacity-80 transition">Reintentar</button>
+          <button onclick="_loadFeedImageModalDetailsContent('${noteId}')" class="min-h-[44px] px-6 rounded-full bg-[var(--drex-brand)] text-white font-bold text-[15px] active:opacity-80 transition">Reintentar</button>
         </div>`;
       return;
     }
@@ -17518,14 +17509,9 @@ function saveNote() {
 
     // Un mismo post puede estar visible en varias superficies a la vez (feed,
     // perfil, permalink): se actualizan TODAS sus instancias, no solo la primera.
-    // H1a: CSS.escape para que un noteId forjado (con `"` u otros metacaracteres
-    // CSS) nunca lance SyntaxError en el selector. Sin esto, la excepción se
-    // lanzaba DESPUÉS de tomar _postVoteLocks y ANTES de registrar el .finally,
-    // dejando el lock tomado para siempre (DoS de votos de ese post).
-    const _voteSel = (prefix) => '[id="' + prefix + '-' + CSS.escape(noteId) + '"]';
-    const upvoteBtns = Array.from(document.querySelectorAll(_voteSel('upvote')));
-    const downvoteBtns = Array.from(document.querySelectorAll(_voteSel('downvote')));
-    const scoreLabels = Array.from(document.querySelectorAll(_voteSel('score')));
+    const upvoteBtns = Array.from(document.querySelectorAll('[id="upvote-' + noteId + '"]'));
+    const downvoteBtns = Array.from(document.querySelectorAll('[id="downvote-' + noteId + '"]'));
+    const scoreLabels = Array.from(document.querySelectorAll('[id="score-' + noteId + '"]'));
     const upvoteBtn = upvoteBtns[0] || null;
     const downvoteBtn = downvoteBtns[0] || null;
     const scoreLabel = scoreLabels[0] || null;
@@ -17883,7 +17869,7 @@ function saveNote() {
     const folders = Object.entries(_userSavedFolders || {});
 
     const rowHtml = (id, name, isActive) => `
-    <button onclick="moveSavedPostToFolder('${escapeInlineSingleQuote(noteId)}', ${id ? `'${id}'` : 'null'})" class="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-[#f0f4f9] transition text-left">
+    <button onclick="moveSavedPostToFolder('${noteId}', ${id ? `'${id}'` : 'null'})" class="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-[#f0f4f9] transition text-left">
       <span class="text-sm font-semibold text-[#1c2b4a]">${escapeHtml(name)}</span>
       ${isActive ? '<svg class="w-4 h-4 text-[#1c2b4a]" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>' : ''}
     </button>`;
@@ -18011,16 +17997,16 @@ function saveNote() {
           const timeAgo = typeof formatRelativeTime === 'function' ? formatRelativeTime(note.timestamp || Date.now()) : '';
           card.innerHTML = `
           <div class="flex items-start gap-3">
-            <img data-author-id="${escapeHtml(note.authorId || '')}" data-author-avatar src="${getSafeMediaUrl(note.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0">
+            <img data-author-id="${note.authorId || ''}" data-author-avatar src="${getSafeMediaUrl(note.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-9 h-9 rounded-full object-cover flex-shrink-0">
             <div class="flex-1 min-w-0">
-              <p class="font-semibold text-sm text-[#1c2b4a]" data-author-id="${escapeHtml(note.authorId || '')}" data-author-name>${escapeHtml(authorName)}</p>
-              <p class="text-sm text-[#5c6974] mt-0.5 leading-relaxed">${escapeHtml(content)}${note.content && note.content.length > 220 ? '...' : ''}</p>
+              <p class="font-semibold text-sm text-[#1c2b4a]" data-author-id="${note.authorId || ''}" data-author-name>${authorName}</p>
+              <p class="text-sm text-[#5c6974] mt-0.5 leading-relaxed">${content}${note.content && note.content.length > 220 ? '...' : ''}</p>
               <div class="flex items-center justify-between mt-2">
                 <p class="text-xs text-[#b6c0d1]">${timeAgo}</p>
                 <div class="flex gap-2">
                   <button onclick="openCommentsView('${escapeInlineSingleQuote(noteId)}')" class="text-xs text-[#6b7280] hover:text-[#1c2b4a] transition px-2 py-1 rounded-full bg-[#f0f4f9]">Ver post</button>
-                  <button onclick="openSavedFolderPicker('${escapeInlineSingleQuote(noteId)}')" class="text-xs text-[#6b7280] hover:text-[#1c2b4a] transition px-2 py-1 rounded-full bg-[#f0f4f9]">Mover</button>
-                  <button onclick="removeSavedPost('${escapeInlineSingleQuote(noteId)}', this)" class="text-xs text-[#c0392b] hover:text-[#922b21] transition px-2 py-1 rounded-full bg-red-50">Eliminar</button>
+                  <button onclick="openSavedFolderPicker('${noteId}')" class="text-xs text-[#6b7280] hover:text-[#1c2b4a] transition px-2 py-1 rounded-full bg-[#f0f4f9]">Mover</button>
+                  <button onclick="removeSavedPost('${noteId}', this)" class="text-xs text-[#c0392b] hover:text-[#922b21] transition px-2 py-1 rounded-full bg-red-50">Eliminar</button>
                 </div>
               </div>
             </div>
@@ -19104,8 +19090,10 @@ function saveNote() {
       mainApp.classList.add('hidden');
     }
     commentsView?.classList.remove('hidden');
+    // La entrada de ruta dinámica es el guard de Atrás (igual que el permalink):
+    // un segundo push (guard de overlay) dejaba la URL stale y atrapaba el Atrás
+    // en un ciclo cerrar->reabrir.
     if (typeof drexPushDynamicRoute === 'function') drexPushDynamicRoute('post/' + noteId + '/comentarios', 'comments-view');
-    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(false);
     document.body.classList.add('comments-view-open');
 
@@ -19198,10 +19186,28 @@ function saveNote() {
     clearStickerSelection('comment-input-main');
     updateCommentCharCounter();
     setCommentSubmitting(false);
+    // Cierre limpio de historial (trampa de Atrás): la vista de comentarios es
+    // un singleton; al cerrarse no debe quedar ninguna de sus rutas en la pila
+    // dinámica. Y si la URL aún apunta a post/<id>/comentarios (cierre por X o
+    // programático, no por Atrás), se reemplaza por la raíz para que el
+    // siguiente Atrás no reabra la vista.
+    const _closedCommentsPostId = currentPostId;
     currentPostId = null;
     currentCommentSort = 'best';
     const sel = document.getElementById('comment-sort-select');
     if (sel) sel.value = 'best';
+    try {
+      if (typeof __drexDynamicStack !== 'undefined' && __drexDynamicStack.length) {
+        for (let _csi = __drexDynamicStack.length - 1; _csi >= 0; _csi--) {
+          if (__drexDynamicStack[_csi] && __drexDynamicStack[_csi].view === 'comments-view') __drexDynamicStack.splice(_csi, 1);
+        }
+      }
+      if (_closedCommentsPostId && typeof drexRouteFromLocation === 'function' &&
+          drexRouteFromLocation() === 'post/' + _closedCommentsPostId + '/comentarios' &&
+          typeof drexReplaceRoute === 'function') {
+        drexReplaceRoute('/');
+      }
+    } catch (_) {}
   }
 
   function loadCommentsInView(noteId) {
@@ -39027,10 +39033,10 @@ function closeSubpageView() {
         : (el && !el.classList.contains('hidden') && el.style.display !== 'none');
       if (isOpen) {
         try { closeFn(); } catch (_) {}
-        return true;
+        return id;
       }
     }
-    return false;
+    return null;
   }
 
   // Exponer en window: otros bloques de script los llaman al cambiar de
@@ -39041,8 +39047,19 @@ function closeSubpageView() {
 
 function handleSubpageHash() {
   // A23: Atrás cierra primero el overlay/vista abierto antes que navegar.
-  if (typeof closeTopmostOverlayForBack === 'function' && closeTopmostOverlayForBack()) {
-    try { history.pushState({ drexOverlayGuard: true }, '', location.href); } catch (_) {}
+  const _closedViewId = (typeof closeTopmostOverlayForBack === 'function') ? closeTopmostOverlayForBack() : null;
+  if (_closedViewId) {
+    // Las vistas con ruta dinámica (p. ej. comentarios) ya consumieron su
+    // entrada de ruta como guard de Atrás: reponer un guard crearía una
+    // pulsación muerta y, con URL stale, la trampa de reapertura.
+    let _closedIsDynRoute = false;
+    try {
+      _closedIsDynRoute = (typeof DREX_ROUTES !== 'undefined') && (typeof drexIsDynamic === 'function') &&
+        DREX_ROUTES.some(r => r.view === _closedViewId && drexIsDynamic(r));
+    } catch (_) {}
+    if (!_closedIsDynRoute) {
+      try { history.pushState({ drexOverlayGuard: true }, '', location.href); } catch (_) {}
+    }
     return;
   }
   // Router de nodos por sección (/musica, /dormir, /post/:id, /u/:usuario...)
@@ -39172,6 +39189,21 @@ function drexPathRoutingSupported() {
 
 function drexViewVisible(el) {
   return !!(el && !el.classList.contains('hidden') && el.style.display !== 'none');
+}
+
+function drexReplaceRoute(route) {
+  // Como drexPushRoute pero con replaceState: normaliza la URL sin agregar
+  // una entrada al historial (evita dejar rutas stale debajo).
+  try {
+    if (drexPathRoutingSupported()) {
+      const base = drexBasePath();
+      const url = base + (route === '/' ? '/' : '/' + route);
+      history.replaceState({ drexRoute: route }, '', url);
+    } else {
+      const target = location.pathname + location.search + (route === '/' ? '' : '#' + route);
+      history.replaceState({ drexRoute: route }, '', target);
+    }
+  } catch (_) {}
 }
 
 function drexPushRoute(route) {
