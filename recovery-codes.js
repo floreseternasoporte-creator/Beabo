@@ -401,7 +401,7 @@
 
   function errorCard(msg) {
     return '<div class="bg-white rounded-2xl border border-[#dce1e5] p-5 shadow-sm text-center">' +
-      '<p class="text-sm text-[#7b878f]">' + esc(msg) + '</p></div>';
+      '<p class="text-sm text-[#6b7280]">' + esc(msg) + '</p></div>';
   }
 
   function renderView(mode) {
