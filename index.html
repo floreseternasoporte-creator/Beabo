@@ -33380,6 +33380,15 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         _fwdMsgData = null;
         return;
       }
+      // C51-C1: un mensaje temporal tampoco se puede reenviar. Copiarlo
+      // crearía un mensaje permanente (sin autoDestroyAt) y rompería la
+      // promesa de privacidad de "Mensajes temporales" (misma familia que
+      // C47-F1 con viewOnce). Fail-closed: aviso y no se abre el diálogo.
+      if (_fwdMsgData.autoDestroyAt) {
+        showMiniToast(appT('No puedes reenviar un mensaje temporal.'));
+        _fwdMsgData = null;
+        return;
+      }
       openChatForwardDialog();
     }).catch(() => {});
   }
@@ -33428,7 +33437,9 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     const fwdData = _fwdMsgData;
     // C47-F1 (defensa en profundidad): aunque triggerChatForward ya bloquea,
     // un viewOnce nunca debe reenviarse aunque esta función se invoque directa.
-    if (fwdData.viewOnce) { _fwdMsgData = null; return; }
+    // C51-C1: lo mismo para mensajes temporales (autoDestroyAt): el reenvio
+    // crearía una copia permanente.
+    if (fwdData.viewOnce || fwdData.autoDestroyAt) { _fwdMsgData = null; return; }
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
     closeChatForwardDialog();
