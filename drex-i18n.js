@@ -2134,6 +2134,16 @@ var APP_ENGLISH_TEXT = {
 "Sonará después de esta":"Will play right after this one",
 "La fila está llena":"The queue is full",
 "Ya está sonando":"Already playing"
+,
+"Antesala":"Waiting room",
+"Solicitudes de mensajes":"Message requests",
+"quiere enviarte mensajes":"wants to send you messages",
+"Solicitud":"Request",
+"Acepta la solicitud para responder":"Accept the request to reply",
+"Se envió como solicitud":"Sent as a request",
+"Solicitud eliminada":"Request deleted",
+"No se pudo aceptar la solicitud.":"Couldn't accept the request.",
+"No se pudo eliminar la solicitud.":"Couldn't delete the request."
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4266,6 +4276,16 @@ var APP_CHINESE_TEXT = {
 "Sonará después de esta":"将在此首之后播放",
 "La fila está llena":"播放队列已满",
 "Ya está sonando":"正在播放"
+,
+"Antesala":"等候室",
+"Solicitudes de mensajes":"消息请求",
+"quiere enviarte mensajes":"想给你发消息",
+"Solicitud":"请求",
+"Acepta la solicitud para responder":"接受请求后即可回复",
+"Se envió como solicitud":"已作为请求发送",
+"Solicitud eliminada":"已删除请求",
+"No se pudo aceptar la solicitud.":"无法接受请求。",
+"No se pudo eliminar la solicitud.":"无法删除请求。"
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6389,6 +6409,16 @@ var APP_PORTUGUESE_TEXT = {
 "Sonará después de esta":"Tocará logo após esta",
 "La fila está llena":"A fila está cheia",
 "Ya está sonando":"Já está tocando"
+,
+"Antesala":"Antessala",
+"Solicitudes de mensajes":"Solicitações de mensagem",
+"quiere enviarte mensajes":"quer enviar mensagens para você",
+"Solicitud":"Solicitação",
+"Acepta la solicitud para responder":"Aceite a solicitação para responder",
+"Se envió como solicitud":"Enviado como solicitação",
+"Solicitud eliminada":"Solicitação excluída",
+"No se pudo aceptar la solicitud.":"Não foi possível aceitar a solicitação.",
+"No se pudo eliminar la solicitud.":"Não foi possível excluir a solicitação."
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

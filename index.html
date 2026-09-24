@@ -1558,6 +1558,16 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
     .drex-marea-cta { display: inline-flex; align-items: center; justify-content: center; padding: 10px 22px; border-radius: 999px; border: 0; background: #2F33B8; color: #fff; font-size: 14px; font-weight: 800; cursor: pointer; }
     .drex-marea-cta:active { background: #232A94; }
 
+    /* ===== ANTESALA (C85): solicitudes de mensajes ===== */
+    .drex-antesala-tag { display:inline-block; font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#2F33B8; background:rgba(47,51,184,.10); border:1px solid rgba(47,51,184,.25); border-radius:999px; padding:2px 8px; margin-left:6px; vertical-align:1px; }
+    body.theme-dark .drex-antesala-tag { color:#a5b0ff; background:rgba(47,51,184,.28); border-color:rgba(165,176,255,.4); }
+    .drex-antesala-count { min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:#2F33B8; color:#fff; font-size:12px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+    .drex-antesala-accept { flex:1; padding:10px 0; border-radius:999px; border:0; background:#2F33B8; color:#fff; font-size:14px; font-weight:800; cursor:pointer; }
+    .drex-antesala-accept:active { background:#232A94; }
+    .drex-antesala-decline { flex:1; padding:10px 0; border-radius:999px; border:1.5px solid #e2e5ee; background:#fff; font-size:14px; font-weight:800; color:#5b6478; cursor:pointer; }
+    body.theme-dark .drex-antesala-decline { background:var(--theme-surface-subtle); border-color:var(--theme-border); color:var(--theme-muted); }
+    .drex-antesala-block { padding:10px 16px; border-radius:999px; border:0; background:transparent; font-size:14px; font-weight:800; color:#e5484d; cursor:pointer; }
+
     /* ===== MODO OSCURO: votaciones, spoiler y flairs del compositor ===== */
     body.theme-dark .note-poll-toggle { background: var(--theme-surface-muted); border-color: var(--theme-border); color: var(--theme-muted); }
     body.theme-dark .note-poll-toggle.active { border-color: #a5b0ff; background: color-mix(in srgb, var(--drex-brand) 28%, transparent); color: #a5b0ff; }
@@ -5737,6 +5747,24 @@ if (scrollArea) {
           <p id="chat-pinned-text" class="text-xs text-[var(--theme-text)] truncate">...</p>
         </div>
         <button onclick="event.stopPropagation();unpinChatMessage()" class="tap44 w-6 h-6 rounded-full bg-[var(--theme-surface-subtle)] text-[var(--theme-icon)] flex items-center justify-center shrink-0 text-xs active:opacity-80 transition" aria-label="Desanclar"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+      </div>
+    </div>
+
+    <!-- ANTESALA (C85): banner de solicitud pendiente -->
+    <div id="chat-antesala-banner" class="hidden border-b border-[var(--theme-border)] px-4 py-3" style="background:color-mix(in srgb, var(--drex-brand) 7%, transparent)">
+      <div class="flex items-center gap-3">
+        <span class="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style="background:rgba(47,51,184,.12);color:#2F33B8">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m2 7 10 6L22 7"/></svg>
+        </span>
+        <div class="min-w-0 flex-1">
+          <p id="chat-antesala-title" class="text-[13px] font-black text-[var(--theme-text)]">Antesala</p>
+          <p class="text-[13px] text-[var(--theme-muted)] truncate"><span id="chat-antesala-name" class="font-semibold text-[var(--theme-text)]"></span> <span id="chat-antesala-sub"></span></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 mt-2.5">
+        <button type="button" id="chat-antesala-accept" onclick="drexAntesalaAccept()" class="drex-antesala-accept">Aceptar</button>
+        <button type="button" id="chat-antesala-decline" onclick="drexAntesalaDecline()" class="drex-antesala-decline">Rechazar</button>
+        <button type="button" id="chat-antesala-block" onclick="drexAntesalaBlock()" class="drex-antesala-block">Bloquear</button>
       </div>
     </div>
 
@@ -25740,6 +25768,8 @@ function saveNote() {
     let unread = 0;
     Object.entries(agg || {}).forEach(([convoId, st]) => {
       if (!st || typeof st !== 'object') return;
+      // ANTESALA (C85): las solicitudes pendientes no suman al badge.
+      if (typeof drexAntesalaRequestIds !== 'undefined' && drexAntesalaRequestIds.has(convoId)) return;
       if (isChatConversationMuted(convoId, uid)) return;
       unread += Number(st.c || 0);
       // Hoja `u` (grupos >50 miembros): cuenta como 1 no-leído si es posterior a `r`,
@@ -25761,6 +25791,7 @@ function saveNote() {
       (allChatConversations || []).forEach(item => {
         if (!item || !item.id) return;
         if (agg && Object.prototype.hasOwnProperty.call(agg, item.id)) return; // migrada → manda el agregado
+        if (item.isRequest) return; // ANTESALA (C85): las solicitudes no suman al badge
         if (isChatConversationMuted(item.id, uid)) return;
         if (isLegacyChatConversationUnread(item, uid)) unread += 1;
       });
@@ -25775,6 +25806,7 @@ function saveNote() {
     let unread = 0;
     Object.entries(map || {}).forEach(([convoId, meta]) => {
       if (!meta || typeof meta !== 'object') return;
+      if (Number(meta.req) === 1) return; // ANTESALA (C85): las solicitudes no suman al badge
       const updatedAt = Number(meta.updatedAt || 0);
       if (!updatedAt) return;
       if (isChatConversationMuted(convoId, uid)) return;
@@ -25846,6 +25878,7 @@ function saveNote() {
     chatUnreadAggCache = {};
     chatUnreadAggActive = false;
     chatUnreadBadgeUid = null;
+    try { drexAntesalaRequestIds = new Set(); } catch (_) {} // ANTESALA (C85)
     if (chatUnreadBadgeRef) {
       chatUnreadBadgeRef.off('value');
       chatUnreadBadgeRef = null;
@@ -32577,6 +32610,9 @@ let chatTypingListener = null;
       const now = Date.now();
       const nowStr = String(now);
       Object.keys(map).forEach(convoId => {
+        // ANTESALA (C85): las solicitudes pendientes no se marcan como leídas
+        // en masa; se deciden una por una en la Antesala.
+        if (map[convoId] && Number(map[convoId].req) === 1) return;
         try { localStorage.setItem(getChatLastReadKey(user.uid, convoId), nowStr); } catch (_) {}
         try {
           if (chatUnreadAggActive) chatUnreadAggCache[convoId] = { c: 0, r: now }; // optimista
@@ -33023,6 +33059,11 @@ let chatTypingListener = null;
     closeGifPanel();
     const user = DrexCloud.auth().currentUser;
     if (!user || !currentChatRoomId) return;
+    // ANTESALA (C85): sin respuesta hasta aceptar la solicitud (defensa en fondo).
+    if (currentChatIsRequest && !currentChatIsGroup) {
+      showMiniToast(appT('Acepta la solicitud para responder'));
+      return;
+    }
     const conversationId = currentChatRoomId;
     const recipientId = currentChatRecipient;
     const isGroup = currentChatIsGroup;
@@ -33227,6 +33268,7 @@ let chatTypingListener = null;
     }
     if (chatConversationCache.items.length && (now - chatConversationCache.loadedAt) < CHAT_CACHE_TTL_MS) {
       allChatConversations = chatConversationCache.items.slice();
+      drexAntesalaRefreshRequestIds(allChatConversations); // ANTESALA (C85)
       renderChatConversations(allChatConversations);
       // FIX-C7-1: la lista del inbox ya está disponible → el badge híbrido
       // puede incluir el chequeo legacy de las conversaciones no migradas.
@@ -33261,7 +33303,8 @@ let chatTypingListener = null;
             groupImage: meta.groupImage || '',
             updatedAt,
             pinnedAt: Number(meta.pinnedAt || 0),
-            lastMessage
+            lastMessage,
+            isRequest: false // ANTESALA (C85): las solicitudes nunca son grupos
           };
         }
 
@@ -33282,6 +33325,7 @@ let chatTypingListener = null;
         return {
           id: convoId,
           isGroup: false,
+          isRequest: drexAntesalaCoreIsRequestMeta(meta), // ANTESALA (C85)
           otherUid,
           otherName: other.name || 'Usuario',
           otherImage: other.image || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==',
@@ -33296,6 +33340,7 @@ let chatTypingListener = null;
         if (pinDiff) return pinDiff;
         return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
       });
+      drexAntesalaRefreshRequestIds(allChatConversations); // ANTESALA (C85)
       chatConversationCache = { items: allChatConversations.slice(), loadedAt: Date.now() };
       try { localStorage.setItem(CHAT_CONVERSATIONS_CACHE_KEY, JSON.stringify(chatConversationCache)); } catch (_) {}
       // FIX-C7-1: la lista del inbox ya está disponible → el badge híbrido
@@ -33404,12 +33449,62 @@ let chatTypingListener = null;
     imgEl.replaceWith(div);
   }
 
+  // ANTESALA (C85): sección "Solicitudes" del inbox (fuera de la lista
+  // principal y de los filtros de chips).
+  function renderAntesalaRequestsSection(reqItems) {
+    if (!reqItems || !reqItems.length) return '';
+    const rows = reqItems.map((item, idx) => {
+      const timeStr = formatConvTime(item.updatedAt);
+      const isUnread = isChatConversationUnread(item);
+      const isLast = idx === reqItems.length - 1;
+      const hasRealPreview = !!(item.lastMessage && item.lastMessage !== 'Nueva conversación');
+      const preview = hasRealPreview ? escapeHtml(item.lastMessage) : '<span class="italic text-[var(--theme-muted)]">Nueva conversación</span>';
+      const divider = isLast ? '' : '<div class="ml-[76px] h-px bg-[var(--theme-surface-muted)]"></div>';
+      const nameCls = `truncate text-[16px] ${isUnread ? 'font-bold text-[var(--theme-text)]' : 'font-semibold text-[var(--theme-text)]'}`;
+      const previewCls = `text-[14px] truncate mt-0.5 ${isUnread ? 'text-[var(--theme-text)] font-semibold' : 'text-[var(--theme-muted)]'}`;
+      const safeUid = escapeInlineSingleQuote(item.otherUid);
+      const safeName = escapeHtml(item.otherName || 'Usuario');
+      const safeImage = item.otherImage || _CHAT_DEFAULT_AVATAR;
+      const reqTag = `<span class="drex-antesala-tag">${escapeHtml(appT('Solicitud'))}</span>`;
+      const timeCol = timeStr ? `<span class="text-[13px] leading-none ${isUnread ? 'text-[var(--brand-indigo-text)] font-semibold' : 'text-[var(--theme-muted)]'} shrink-0">${timeStr}</span>` : '';
+      return `
+        <div>
+          <button onclick="openChatRoomFromInbox('${safeUid}', {asRequest:true})"
+            class="w-full text-left flex items-center gap-3 px-4 py-3 active:bg-[var(--theme-surface-muted)] transition">
+            <div class="relative shrink-0">
+              <img src="${safeImage}" class="w-14 h-14 rounded-full object-cover" alt="${safeName}" onerror="this.src='${_CHAT_DEFAULT_AVATAR}'">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-start justify-between gap-2">
+                <p class="${nameCls}">${safeName}${reqTag}</p>
+                ${timeCol}
+              </div>
+              <p class="${previewCls}">${preview}</p>
+            </div>
+          </button>
+          ${divider}
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="mb-2">
+        <div class="flex items-center justify-between px-4 pt-1 pb-2">
+          <p class="text-[12px] font-black uppercase tracking-wide text-[var(--theme-muted)]">${escapeHtml(appT('Antesala'))} &middot; ${escapeHtml(appT('Solicitudes de mensajes'))}</p>
+          <span class="drex-antesala-count">${reqItems.length}</span>
+        </div>
+        <div class="rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-surface)] overflow-hidden">${rows}</div>
+      </div>`;
+  }
+
   function renderChatConversations(items) {
     const container = document.getElementById('chat-conversations-list');
     if (!container) return;
-    const visibleItems = filterChatInboxConversations(items);
-    if (!items.length) {
-      container.innerHTML = `
+    // ANTESALA (C85): partición chats/solicitudes antes de filtrar.
+    const _antesalaSplit = drexAntesalaCoreSplitInbox(items);
+    const _antesalaHtml = renderAntesalaRequestsSection(_antesalaSplit.requests);
+    const visibleItems = filterChatInboxConversations(_antesalaSplit.chats);
+    if (!_antesalaSplit.chats.length) {
+      container.innerHTML = _antesalaHtml + `
         <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
           <div class="w-16 h-16 rounded-full bg-[var(--theme-surface-muted)] flex items-center justify-center mb-4">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-[var(--theme-muted)]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -33420,7 +33515,7 @@ let chatTypingListener = null;
       return;
     }
     if (!visibleItems.length) {
-      container.innerHTML = `
+      container.innerHTML = _antesalaHtml + `
         <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
           <div class="w-16 h-16 rounded-full bg-[var(--theme-surface-muted)] flex items-center justify-center mb-4">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-[var(--theme-muted)]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -33512,8 +33607,9 @@ let chatTypingListener = null;
         </div>
       `;
     }).join('');
-    // Presencia online DMs
-    items.filter(i => !i.isGroup).forEach(item => {
+    container.innerHTML = _antesalaHtml + container.innerHTML;
+    // Presencia online DMs (solo chats: las filas de solicitud no tienen dot)
+    visibleItems.filter(i => !i.isGroup).forEach(item => {
       DrexCloud.database().ref('userPresence/' + item.otherUid + '/online').once('value').then(snap => {
         if (snap.val() === true) {
           const dot = document.getElementById('presence-dot-' + item.otherUid);
@@ -33751,7 +33847,8 @@ let chatTypingListener = null;
     document.getElementById('chat-room-input')?.focus();
   }
 
-  function openChatRoomFromInbox(otherUid) {
+  let currentChatIsRequest = false; // ANTESALA (C85): la sala abierta es una solicitud pendiente
+  function openChatRoomFromInbox(otherUid, opts) {
     const user = DrexCloud.auth().currentUser;
     if (!user || !otherUid) return;
     // Si lo tienes bloqueado: pantalla completa en vez del chat
@@ -33763,6 +33860,17 @@ let chatTypingListener = null;
     currentGroupMembers = [];
     currentChatRoomId = getDirectConversationId(user.uid, otherUid);
     currentChatRecipient = otherUid;
+    // ANTESALA (C85): detectar si esta conversación es una solicitud pendiente
+    // para mostrar el banner y bloquear el composer hasta aceptarla.
+    currentChatIsRequest = !!(opts && opts.asRequest);
+    renderAntesalaBanner(otherUid);
+    if (!currentChatIsRequest) {
+      const _meUid = user.uid, _roomId = currentChatRoomId;
+      DrexCloud.database().ref('userConversations/' + _meUid + '/' + _roomId + '/req').once('value').then(s => {
+        if (currentChatRoomId !== _roomId || currentChatIsGroup) return; // la sala cambió mientras tanto
+        if (Number(s.val()) === 1) { currentChatIsRequest = true; renderAntesalaBanner(otherUid); }
+      }).catch(() => {});
+    }
     restoreChatDraft();
     clearChatPhotoAttachment();
     clearChatFileAttachment(true);
@@ -33870,6 +33978,7 @@ let chatTypingListener = null;
     try { clearTimeout(_chatReadMarkTimer); } catch (_) {}
     currentChatRoomId = null;
     currentChatRecipient = null;
+    currentChatIsRequest = false; // ANTESALA (C85)
     currentChatIsGroup = false;
     currentGroupMembers = [];
     currentGroupCreatedBy = null;
@@ -33900,6 +34009,96 @@ let chatTypingListener = null;
     try { if (typeof window._resetChatViewport === 'function') window._resetChatViewport(); } catch (_) {}
     document.getElementById('chat-inbox-view')?.classList.remove('hidden');
     loadChatConversations();
+  }
+
+  // ANTESALA (C85): banner de solicitud pendiente en la sala + acciones.
+  function renderAntesalaBanner(otherUid) {
+    const banner = document.getElementById('chat-antesala-banner');
+    const inputRow = document.getElementById('chat-input-row');
+    const on = currentChatIsRequest && !currentChatIsGroup;
+    if (banner) {
+      banner.classList.toggle('hidden', !on);
+      if (on) {
+        let nm = '';
+        try {
+          const it = (allChatConversations || []).find(i => !i.isGroup && i.otherUid === otherUid);
+          nm = (it && it.otherName) || '';
+        } catch (_) {}
+        if (!nm) nm = ((document.getElementById('chat-room-username') || {}).textContent || '').trim() || 'Este usuario';
+        const titleEl = document.getElementById('chat-antesala-title');
+        const nameEl = document.getElementById('chat-antesala-name');
+        const subEl = document.getElementById('chat-antesala-sub');
+        if (titleEl) titleEl.textContent = appT('Antesala');
+        if (nameEl) nameEl.textContent = nm; // textContent: sin HTML inyectable
+        if (subEl) subEl.textContent = appT('quiere enviarte mensajes');
+        const bA = document.getElementById('chat-antesala-accept'); if (bA) bA.textContent = appT('Aceptar');
+        const bD = document.getElementById('chat-antesala-decline'); if (bD) bD.textContent = appT('Rechazar');
+        const bB = document.getElementById('chat-antesala-block'); if (bB) bB.textContent = appT('Bloquear');
+      }
+    }
+    if (inputRow) inputRow.classList.toggle('hidden', on);
+  }
+
+  async function drexAntesalaAccept() {
+    const user = DrexCloud.auth().currentUser;
+    const convId = currentChatRoomId;
+    if (!user || !convId) return;
+    try {
+      await DrexCloud.database().ref('userConversations/' + user.uid + '/' + convId + '/req').remove();
+      drexAntesalaRequestIds.delete(convId);
+      try {
+        const it = (allChatConversations || []).find(i => i.id === convId);
+        if (it) it.isRequest = false;
+      } catch (_) {}
+      chatConversationCache.loadedAt = 0;
+      try { localStorage.removeItem(CHAT_CONVERSATIONS_CACHE_KEY); } catch (_) {}
+      currentChatIsRequest = false;
+      renderAntesalaBanner(currentChatRecipient);
+      updateChatUnreadBadge();
+      showMiniToast(appT('Solicitud aceptada'));
+    } catch (_) {
+      showMiniToast(appT('No se pudo aceptar la solicitud.'));
+    }
+  }
+
+  async function drexAntesalaDecline(opts) {
+    const user = DrexCloud.auth().currentUser;
+    const convId = currentChatRoomId;
+    if (!user || !convId) return;
+    const silent = !!(opts && opts.silent);
+    try {
+      await DrexCloud.database().ref('userConversations/' + user.uid + '/' + convId).remove();
+      await DrexCloud.database().ref('chatUnread/' + user.uid + '/' + convId).remove().catch(() => {});
+      drexAntesalaRequestIds.delete(convId);
+      try {
+        allChatConversations = (allChatConversations || []).filter(i => i.id !== convId);
+      } catch (_) {}
+      chatConversationCache.loadedAt = 0;
+      try { localStorage.removeItem(CHAT_CONVERSATIONS_CACHE_KEY); } catch (_) {}
+      currentChatIsRequest = false;
+      closeChatRoomView(); // reabre el inbox y recarga la lista
+      updateChatUnreadBadge();
+      if (!silent) showMiniToast(appT('Solicitud eliminada'));
+    } catch (_) {
+      if (!silent) showMiniToast(appT('No se pudo eliminar la solicitud.'));
+    }
+  }
+
+  function drexAntesalaBlock() {
+    const user = DrexCloud.auth().currentUser;
+    const target = currentChatRecipient;
+    if (!user || !target) return;
+    const chatName = ((document.getElementById('chat-room-username') || {}).textContent || '').trim() || 'este usuario';
+    askBlockConfirmation(chatName, () => {
+      DrexCloud.database().ref('blocks/' + user.uid + '/' + target).set({ blockedAt: Date.now() })
+        .then(() => {
+          try { blockedAccountsSet.add(target); } catch (_) {}
+          try { breakFollowRelationsOnBlock(user.uid, target); } catch (_) {}
+          return drexAntesalaDecline({ silent: true });
+        })
+        .then(() => showMiniToast(appT('Usuario bloqueado')))
+        .catch(() => showMiniToast(appT('No se pudo bloquear al usuario. Intenta de nuevo.')));
+    });
   }
 
   // H1 (ciclo 8): listener liviano sobre groupChats/<id>/members que mantiene
@@ -33992,11 +34191,16 @@ let chatTypingListener = null;
       updates['userConversations/' + uidA + '/' + conversationId + '/otherUid'] = uidB;
     }
     if (!userBSnap.exists()) {
-      updates['userConversations/' + uidB + '/' + conversationId] = {
+      const entryB = {
         otherUid: uidA,
         updatedAt: now,
         lastMessage: 'Nueva conversación'
       };
+      // ANTESALA (C85): la entrada del destinatario nace como solicitud
+      // pendiente si considera al otro un desconocido (dmPermission 'all'
+      // sin amistad mutua). Falla cerrado: sin red no se marca.
+      try { if (await drexAntesalaShouldRequestFor(uidB, uidA)) entryB.req = 1; } catch (_) {}
+      updates['userConversations/' + uidB + '/' + conversationId] = entryB;
     } else if (!userBSnap.val()?.otherUid) {
       updates['userConversations/' + uidB + '/' + conversationId + '/otherUid'] = uidA;
     }
@@ -34004,6 +34208,59 @@ let chatTypingListener = null;
     if (!Object.keys(updates).length) return null;
     return DrexCloud.database().ref().update(updates);
   }
+
+  /* ══════════════════════════════════════════════════════════════
+     ANTESALA (C85) — solicitudes de mensajes
+     Un DM de un desconocido (dmPermission 'all' sin amistad mutua) nace
+     como solicitud pendiente: userConversations/<uid>/<conv>/req = 1.
+     El destinatario la ve en la sección "Antesala" del inbox, la lee y
+     decide: Aceptar (el chat pasa al inbox normal), Rechazar (se elimina
+     su entrada; si le escriben de nuevo vuelve a la Antesala) o Bloquear.
+     Mientras está pendiente no puede responder y no suma al badge.
+     ══════════════════════════════════════════════════════════════ */
+  function drexAntesalaCoreShouldRequest(dmPermission, areFriends) {
+    // 'none' y 'friends' ya deniegan el envío en el composer; aquí solo
+    // importa 'all' (o valores legacy): solicitud solo entre no-amigos.
+    if (dmPermission === 'none' || dmPermission === 'friends') return false;
+    return !areFriends;
+  }
+  function drexAntesalaCoreIsRequestMeta(meta) {
+    return !!meta && Number(meta.req) === 1;
+  }
+  function drexAntesalaCoreSplitInbox(items) {
+    const chats = [], requests = [];
+    (Array.isArray(items) ? items : []).forEach(it => {
+      if (it && it.isRequest && !it.isGroup) requests.push(it);
+      else chats.push(it);
+    });
+    return { chats, requests };
+  }
+  // Ids de conversaciones con solicitud pendiente (usuario actual): las
+  // solicitudes no suman al badge de no-leídos.
+  let drexAntesalaRequestIds = new Set();
+  function drexAntesalaRefreshRequestIds(items) {
+    try {
+      drexAntesalaRequestIds = new Set(
+        (Array.isArray(items) ? items : []).filter(i => i && i.isRequest && i.id).map(i => i.id)
+      );
+    } catch (_) { drexAntesalaRequestIds = new Set(); }
+  }
+  async function drexAntesalaShouldRequestFor(viewerUid, senderUid) {
+    try {
+      const db = DrexCloud.database();
+      const [permSnap, fwdSnap, backSnap] = await Promise.all([
+        db.ref('users/' + viewerUid + '/dmPermission').once('value'),
+        db.ref('followers/' + viewerUid + '/' + senderUid).once('value'),
+        db.ref('followers/' + senderUid + '/' + viewerUid).once('value')
+      ]);
+      const dmPermission = permSnap.val() || 'all';
+      const areFriends = fwdSnap.exists() && backSnap.exists();
+      return drexAntesalaCoreShouldRequest(dmPermission, areFriends);
+    } catch (_) { return false; }
+  }
+  /* ══════════════════════════════════════════════════════════════
+     /ANTESALA (C85)
+     ══════════════════════════════════════════════════════════════ */
 
   function detachChatMessagesListener() {
     if (chatMessagesListener?.ref && chatMessagesListener?.callback) {
@@ -34940,6 +35197,12 @@ const _startChatListeners = () => {
     const user = DrexCloud.auth().currentUser;
     const input = document.getElementById('chat-room-input');
     if (!user || !input || !currentChatRoomId) return;
+    // ANTESALA (C85): el destinatario de una solicitud no puede responder
+    // hasta aceptarla (el composer ya está oculto; esto es defensa en fondo).
+    if (currentChatIsRequest && !currentChatIsGroup) {
+      showMiniToast(appT('Acepta la solicitud para responder'));
+      return;
+    }
     const text = input.value.trim();
     const pendingFilesEarly = (typeof chatFileAttachments !== 'undefined' ? chatFileAttachments : []).filter(a => !a.failed);
     if (!text && !chatPhotoAttachments.length && !pendingFilesEarly.length) return;
@@ -34967,11 +35230,15 @@ const _startChatListeners = () => {
 
       return Promise.all([isFollowing(), isFollowedBy()]).then(([following, followedBy]) => {
         const areFriends = following && followedBy;
-        if (dmPermission === 'none') return appT('Esta persona no tiene los permisos de mensaje activado.');
-        if (dmPermission === 'friends' && !areFriends) return appT('Solo los amigos pueden escribir a esta persona.');
-        return null;
+        let denial = null;
+        if (dmPermission === 'none') denial = appT('Esta persona no tiene los permisos de mensaje activado.');
+        else if (dmPermission === 'friends' && !areFriends) denial = appT('Solo los amigos pueden escribir a esta persona.');
+        // ANTESALA (C85): shouldRequest indica si este envío nace como
+        // solicitud (aviso al remitente; la entrada req=1 la crea
+        // ensureConversationExists al abrir la sala).
+        return { denial, shouldRequest: !denial && drexAntesalaCoreShouldRequest(dmPermission, areFriends) };
       });
-    }).catch(() => null);
+    }).catch(() => ({ denial: null, shouldRequest: false }));
 
     sendChatMessageInternal(dmPermissionPromise);
   }
@@ -35027,7 +35294,10 @@ const _startChatListeners = () => {
           return null;
         })
       );
-      if (dmPermissionPromise) denialChecks.push(dmPermissionPromise);
+      // ANTESALA (C85): el chequeo resuelve {denial, shouldRequest}; solo el
+      // denial participa en el veto. El await de abajo no bloquea: la promesa
+      // ya está resuelta a estas alturas.
+      if (dmPermissionPromise) denialChecks.push(dmPermissionPromise.then(r => (r && r.denial) || null));
     }
     const denial = (await Promise.all(denialChecks)).find(Boolean) || null;
     if (denial) {
@@ -35037,6 +35307,11 @@ const _startChatListeners = () => {
       showMiniToast(denial);
       return;
     }
+
+    // ANTESALA (C85): el resultado del chequeo ya está resuelto; se anota
+    // en el pintado para el aviso al remitente tras el set() exitoso.
+    const _dmCheckResult = dmPermissionPromise ? await dmPermissionPromise : null;
+    try { if (painted) painted.wasRequest = !!(_dmCheckResult && _dmCheckResult.shouldRequest); } catch (_) {}
 
     // Verificaciones OK: aplicar efectos del composer y hacer el push real.
     try {
@@ -35222,6 +35497,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         const statusEl = sentEl.querySelector('.opt-send-status');
         if (statusEl) statusEl.innerHTML = `<svg class="w-3 h-3 text-[#6b7280]" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M4.5 12.75l6 6 9-13.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       }
+      // ANTESALA (C85): aviso al remitente cuando su mensaje nace como solicitud.
+      try { if (painted && painted.wasRequest) showMiniToast(appT('Se envió como solicitud')); } catch (_) {}
       if (typeof addNotification === 'function') {
         (async () => {
           try {
@@ -35237,8 +35514,12 @@ ${getSpinnerMarkup('drex-spinner-inline')}
                 }
               });
             } else if (recipientId) {
+              // ANTESALA (C85): si nace como solicitud, el texto lo refleja.
+              const notifText = (painted && painted.wasRequest)
+                ? `${senderName} te envió una solicitud de mensaje`
+                : `${senderName} te envió un mensaje: ${preview}`;
               // actionId debe ser el UID del remitente, ya que openChatRoomFromInbox espera el UID del otro usuario
-              addNotification(recipientId, `${senderName} te envió un mensaje: ${preview}`, 'message', { actionType: 'chat', actionId: user.uid });
+              addNotification(recipientId, notifText, 'message', { actionType: 'chat', actionId: user.uid });
             }
           } catch (e) {
             console.error('Error enviando notificación de mensaje:', e);
