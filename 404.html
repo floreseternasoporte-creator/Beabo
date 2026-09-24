@@ -26407,6 +26407,10 @@ function saveNote() {
       if (unread > 0) { deskBadge.textContent = label; deskBadge.classList.remove('hidden'); }
       else { deskBadge.classList.add('hidden'); }
     }
+    // C126: el icono de la app (PWA/TWA) refleja las no leídas (Badging API).
+    // Guarda con `typeof`: el bloque H2 se evalúa verbatim en el harness de
+    // tests (test-c9-notif-ding.js) sin esta función en su sandbox.
+    if (typeof drexSyncAppBadge === 'function') drexSyncAppBadge(unread);
   }
 
   // LEGACY-ROLLBACK: cómputo viejo (una lectura acotada de notifications/<uid>
@@ -26498,6 +26502,25 @@ function saveNote() {
   }
   // H2-FNS-END
 
+  // C126: Badging API — el icono de la app (PWA/TWA en Android) muestra la
+  // cuenta de notificaciones sin leer. Solo Chromium en Android lo implementa;
+  // fuera de ahí es no-op silencioso. Sin UI ni i18n: es un dato del sistema.
+  // Se sincroniza desde paintNotifUnreadBadge (único punto de pintado) y se
+  // limpia en clearNotificationsBadge (logout) para no filtrar el conteo de
+  // una cuenta a la siguiente.
+  function drexSyncAppBadge(unread) {
+    try {
+      const n = Math.max(0, Math.floor(Number(unread) || 0));
+      if (n > 0 && typeof navigator.setAppBadge === 'function') {
+        const r = navigator.setAppBadge(n);
+        if (r && typeof r.catch === 'function') r.catch(() => {});
+      } else if (n === 0 && typeof navigator.clearAppBadge === 'function') {
+        const r = navigator.clearAppBadge();
+        if (r && typeof r.catch === 'function') r.catch(() => {});
+      }
+    } catch (_) {}
+  }
+
   function setupNotificationsBadge(userId) {
     const badge = document.getElementById('unread-notifications-count');
     if (!badge) return;
@@ -26553,6 +26576,8 @@ function saveNote() {
       notifUnreadBadgeRef.off('value');
       notifUnreadBadgeRef = null;
     }
+    // C126: logout → el icono no puede conservar el conteo de la cuenta anterior.
+    if (typeof drexSyncAppBadge === 'function') drexSyncAppBadge(0);
   }
 
   // Chat unread badge — agregación server-side (chatUnread/<uid>/<convoId> = {c, r}).
