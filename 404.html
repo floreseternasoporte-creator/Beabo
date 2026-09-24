@@ -7468,7 +7468,17 @@ function fiestaGameVote(target) {
   // C21: el voto va al subárbol de secretos (invisible para los demás
   // jugadores); el dueño espeja solo el conteo (voteCount) al doc compartido.
   fiestaGameMyVote = target;
-  DrexCloud.database().ref('fiestaGameSecrets/' + fiestaCur.id + '/votes/' + fiestaMyUid).set(target).catch(function () {});
+  DrexCloud.database().ref('fiestaGameSecrets/' + fiestaCur.id + '/votes/' + fiestaMyUid).set(target).catch(function () {
+    // C78-F3: el .catch vacío dejaba fiestaGameMyVote apuntando a un voto que
+    // el dueño nunca contó (la UI lo mostraba seleccionado). Revertir el
+    // optimismo y avisar para que el jugador re-vote. Solo si seguimos en
+    // votación (si la fase avanzó, el voto ya es moot y fiestaGameMyVote se
+    // limpió en fiestaGameRemoteUpdate).
+    if (!fiestaGame || fiestaGame.status !== 'vote') return;
+    if (fiestaGameMyVote === target) fiestaGameMyVote = null;
+    try { if (typeof fiestaGameRender === 'function') fiestaGameRender(); } catch (_) {}
+    try { showMiniToast(appT('No se pudo enviar. Int\u00e9talo de nuevo.')); } catch (_) {}
+  });
 }
 
 /* ---------- Render ---------- */
@@ -30914,7 +30924,10 @@ let chatTypingListener = null;
       } catch(_) { payload.senderName = 'Usuario'; }
     }
     try {
-      await DrexCloud.database().ref('conversationMessages/' + conversationId).push(payload)._writePromise;
+      // C78-F1: pushAsync en vez de push()._writePromise (este nunca rechaza:
+      // el error se tragaba y se pintaba un preview "GIF" fantasma). Ahora el
+      // catch avisa "No se pudo enviar el GIF" como fue diseñado.
+      await DrexCloud.database().ref('conversationMessages/' + conversationId).pushAsync(payload);
       await updateChatConversationPreview('GIF', payload, { conversationId, recipientId, isGroup, groupMembers, senderUid: user.uid });
     } catch (_) {
       showMiniToast(appT('No se pudo enviar el GIF. Inténtalo de nuevo.'));
@@ -42163,7 +42176,10 @@ async function publishExercise() {
       language: lang, topic: topic, text: text,
       timestamp: Date.now(), correctionsCount: 0
     };
-    await DrexCloud.database().ref('languageExercises').push(payload)._writePromise;
+    // C78-F2: pushAsync en vez de push()._writePromise (este nunca rechaza:
+    // antes un fallo de red mostraba "Ejercicio publicado." y cerraba el
+    // composer sin guardar nada). Ahora el catch muestra el error real.
+    await DrexCloud.database().ref('languageExercises').pushAsync(payload);
     closePracticarComposer();
     if (typeof showMiniToast === 'function') showMiniToast(appT('Ejercicio publicado.'));
     loadPracticarFeed();
