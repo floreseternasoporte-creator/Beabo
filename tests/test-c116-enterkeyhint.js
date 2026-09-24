@@ -56,9 +56,14 @@ ok('emailInput enterkeyhint="next"', hasHint('emailInput', 'next'));
 ok('passwordInput enterkeyhint="go"', hasHint('passwordInput', 'go'));
 
 // ---------- 4. Registro por pasos: intermedios -> next ----------
+// (C138: regUsername paso de "next" a "go" porque Enter ahora equivale a
+// pulsar Continuar — no hay campo siguiente; regFirstName y regPasswordConfirm
+// recibieron "next" para completar la cadena honesta de Enter.)
+ok('regFirstName enterkeyhint="next"', hasHint('regFirstName', 'next'));
 ok('regEmail enterkeyhint="next"', hasHint('regEmail', 'next'));
 ok('regPassword enterkeyhint="next"', hasHint('regPassword', 'next'));
-ok('regUsername enterkeyhint="next"', hasHint('regUsername', 'next'));
+ok('regPasswordConfirm enterkeyhint="next"', hasHint('regPasswordConfirm', 'next'));
+ok('regUsername enterkeyhint="go"', hasHint('regUsername', 'go'));
 
 // ---------- 5. Los bindings de Enter que justifican "send"/"done" siguen en el JS ----------
 ok('chat-room-input: keydown Enter -> sendChatMessage',
