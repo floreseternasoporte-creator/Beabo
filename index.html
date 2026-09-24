@@ -19813,9 +19813,12 @@ function saveNote() {
   }
 
   // El autor acepta o rechaza (desde la notificación o desde el mensaje).
+  // C108: contrato de retorno — 'ok' | 'resolved' | 'error' | 'noop'. Nunca
+  // rechaza: los handlers de UI deciden qué pintar según el resultado, para
+  // no mostrar "aceptada" cuando la escritura falló ni dejar botones muertos.
   async function respondCollabInvite(noteId, inviterUid, accept) {
     const me = DrexCloud.auth().currentUser;
-    if (!me || !noteId || !inviterUid) return;
+    if (!me || !noteId || !inviterUid) return 'noop';
     let invite = null;
     try {
       const snap = await DrexCloud.database().ref('communityNotes/' + noteId + '/collabInvites/' + me.uid).once('value');
@@ -19823,7 +19826,11 @@ function saveNote() {
     } catch (_) {}
     if (!invite || invite.status !== 'pending') {
       showMiniToast(appT('Esta invitación ya no está disponible.'));
-      return;
+      // C108: sincronizar la notificación con el estado real para que no
+      // ofrezca botones sobre una invitación ya resuelta.
+      try { await markCollabInviteNotificationsDone(noteId, invite && invite.status === 'declined' ? 'declined' : 'accepted'); } catch (_) {}
+      try { if (typeof renderNotificationsList === 'function') renderNotificationsList(me.uid); } catch (_) {}
+      return 'resolved';
     }
     try {
       const meSnap = await DrexCloud.database().ref('users/' + me.uid).once('value');
@@ -19862,9 +19869,11 @@ function saveNote() {
       showMiniToast(accept ? appT('Colaboración aceptada. 🎉') : appT('Invitación rechazada.'));
       try { if (typeof renderNotificationsList === 'function') renderNotificationsList(me.uid); } catch (_) {}
       if (typeof refreshVisiblePostFeeds === 'function') refreshVisiblePostFeeds();
+      return 'ok';
     } catch (e) {
       console.error('Error respondiendo invitación de colaboración:', e);
       showMiniToast(appT('No se pudo procesar tu respuesta. Intenta de nuevo.'));
+      return 'error';
     }
   }
 
@@ -19944,15 +19953,33 @@ function saveNote() {
                 <button class="collab-decline-btn flex-1 bg-[var(--theme-surface-muted)] text-[var(--theme-icon)] text-xs font-bold py-2 rounded-xl active:opacity-80 transition">Rechazar</button>
               </div>
             </div>`;
+          // C108: el estado final solo se pinta si la respuesta quedó
+          // registrada; si falló, los botones se re-habilitan para reintentar.
+          const paintCollabResult = async (accept) => {
+            const btns = Array.from(card.querySelectorAll('button'));
+            btns.forEach(b => { b.disabled = true; });
+            let result = 'error';
+            try { result = await respondCollabInvite(invite.noteId, invite.inviterUid, accept); }
+            catch (_) { result = 'error'; }
+            if (result === 'error' || result === 'noop') {
+              btns.forEach(b => { b.disabled = false; });
+              return;
+            }
+            let finalAccepted = accept;
+            if (result === 'resolved') {
+              try {
+                const s = await DrexCloud.database().ref('communityNotes/' + invite.noteId + '/collabInvites/' + me.uid).once('value');
+                const st = ((s && s.val()) || {}).status;
+                finalAccepted = st === 'declined' ? false : (st === 'accepted' ? true : accept);
+              } catch (_) {}
+            }
+            card.innerHTML = doneHTML(finalAccepted);
+          };
           card.querySelector('.collab-accept-btn').addEventListener('click', async () => {
-            card.querySelectorAll('button').forEach(b => { b.disabled = true; });
-            await respondCollabInvite(invite.noteId, invite.inviterUid, true);
-            card.innerHTML = doneHTML(true);
+            try { await paintCollabResult(true); } catch (_) {}
           });
           card.querySelector('.collab-decline-btn').addEventListener('click', async () => {
-            card.querySelectorAll('button').forEach(b => { b.disabled = true; });
-            await respondCollabInvite(invite.noteId, invite.inviterUid, false);
-            card.innerHTML = doneHTML(false);
+            try { await paintCollabResult(false); } catch (_) {}
           });
         }
         wrapper.appendChild(card);
