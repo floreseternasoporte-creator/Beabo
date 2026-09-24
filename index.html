@@ -18152,6 +18152,41 @@ function saveNote() {
     if (!authorId || authorId === voterUid) return false;
     return true;
   }
+  // C153: updater puro para el anuncio de cierre de votación. Cuando la
+  // encuesta ya cerró (nowMs > endsAt) y ningún cliente la anunció todavía,
+  // marca poll.closeAnnounced = nowMs para que exactamente UN cliente
+  // dispare el aviso al autor con el resultado final. No-op (undefined):
+  // poll null, sin endsAt, aún abierta o ya anunciada. No toca options/
+  // total/voters: el shape que lee la transacción de voto queda intacto.
+  function pollCloseAnnounce(poll, nowMs) {
+    if (!poll) return;
+    const endsAt = Number(poll.endsAt) || 0;
+    if (!endsAt) return;
+    if (nowMs <= endsAt) return;
+    if (poll.closeAnnounced) return;
+    poll.closeAnnounced = nowMs;
+    return poll;
+  }
+  // C153: texto del aviso de cierre con el resultado final. Ganador = opción
+  // con más votos (la primera en caso de empate); sin votos, mensaje sin
+  // ganador. El render de notificaciones escapa el mensaje (escapeHTML), así
+  // que la pregunta/título van en crudo como en C147.
+  function pollCloseResultText(poll) {
+    const q = (poll && typeof poll.q === 'string') ? poll.q.trim() : '';
+    const options = (poll && Array.isArray(poll.options)) ? poll.options : [];
+    const total = Number(poll && poll.total) || 0;
+    let best = -1, bestV = -1;
+    options.forEach(function(o, i) {
+      const v = Number(o && o.v) || 0;
+      if (v > bestV) { bestV = v; best = i; }
+    });
+    const head = q ? 'Tu encuesta «' + q + '» cerró.' : 'Tu encuesta cerró.';
+    if (total <= 0 || best < 0 || bestV <= 0) return head + ' No recibió votos.';
+    const w = options[best] || {};
+    const wt = (typeof w.t === 'string' && w.t.trim()) ? w.t.trim() : ('Opción ' + (best + 1));
+    const pct = Math.round(bestV * 100 / total);
+    return head + ' Ganó «' + wt + '» con ' + pct + '% (' + total + ' voto' + (total === 1 ? '' : 's') + ').';
+  }
   function pollTimeLeftText(endsAt) {
     const ms = (Number(endsAt) || 0) - Date.now();
     if (ms <= 0) return appT('Votación cerrada');
@@ -18169,6 +18204,12 @@ function saveNote() {
     const voters = poll.voters || {};
     const myVote = uid ? voters[uid] : undefined;
     const closed = Date.now() > (Number(poll.endsAt) || 0);
+    // C153: detección oportunista del cierre de votación. Guarda typeof: los
+    // harnesses viejos (test-c143) ejecutan esta función en sandbox sin el
+    // anunciador. Ver maybeAnnouncePollClose.
+    if (typeof maybeAnnouncePollClose === 'function') {
+      try { maybeAnnouncePollClose(note && note.id, poll); } catch (_) {}
+    }
     const showResults = closed || myVote !== undefined;
     const canChangeVote = !closed && myVote !== undefined; // C143: votado y abierta -> se puede cambiar.
     const total = Number(poll.total) || 0;
@@ -18259,6 +18300,49 @@ function saveNote() {
         refreshHistorialIfVisible();
       }
     });
+  }
+  // C153: detección client-side del cierre de votación (sin AWS). Se invoca
+  // desde renderPostPollHTML —el único renderer de encuestas, así que cubre
+  // feed, permalink, búsqueda e Historial—. Si la encuesta acaba de cerrar y
+  // nadie la anunció, una transacción best-effort marca closeAnnounced; el
+  // cliente que gana la carrera avisa al AUTOR con el resultado final
+  // (tipo 'vote' para heredar el toggle 'likes' del destinatario, como C147;
+  // sin auto-aviso si el autor es quien la está viendo). Solo el autor: los
+  // votantes ya ven "Votación cerrada" + barras finales al revisitar la
+  // tarjeta, y avisar a cada votante sería N escrituras + spam. Oportunista:
+  // el primer cliente logueado que renderice la encuesta cerrada dispara el
+  // aviso; si las reglas RTDB (fuera del repo) deniegan la escritura, el voto
+  // y la UI siguen intactos (degradación documentada).
+  var _c153PollCloseTried = {};
+  function maybeAnnouncePollClose(noteId, poll) {
+    try {
+      if (!noteId || !poll) return;
+      if (_c153PollCloseTried[noteId]) return;
+      const endsAt = Number(poll.endsAt) || 0;
+      if (!endsAt || Date.now() <= endsAt) return;
+      if (poll.closeAnnounced) return;
+      const user = DrexCloud.auth().currentUser;
+      if (!user) return;
+      _c153PollCloseTried[noteId] = true;
+      DrexCloud.database().ref('communityNotes/' + noteId + '/poll').transaction(function(p) {
+        return pollCloseAnnounce(p, Date.now());
+      }, function(error, committed, snap) {
+        if (error || !committed || !snap) return;
+        const finalPoll = snap.val();
+        try {
+          DrexCloud.database().ref('communityNotes/' + noteId + '/authorId').once('value').then(function(aSnap) {
+            const authorId = aSnap && aSnap.val();
+            if (!authorId || authorId === user.uid) return;
+            const msg = pollCloseResultText(finalPoll);
+            try {
+              if (typeof addNotification === 'function') {
+                addNotification(authorId, msg, 'vote', { actionType: 'post', actionId: noteId });
+              }
+            } catch (_) {}
+          }).catch(function() {});
+        } catch (_) {}
+      });
+    } catch (_) {}
   }
 
   function wrapPostSpoiler(note, innerHTML) {
