@@ -27662,6 +27662,13 @@ function saveNote() {
             openChatInboxView();
           }
           break;
+        case 'home':
+          // C166: el tap en "Artista Destacado" abre el inicio, donde se
+          // pinta el módulo del giveaway. Guarda typeof (patrón C153).
+          if (typeof openHome === 'function') {
+            openHome();
+          }
+          break;
         case 'match':
           if (typeof openMatchListView === 'function') {
             openMatchListView();
@@ -33551,12 +33558,74 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         var ok = profiles.filter(function (p) { return !!p; });
         if (!ok.length) { hideFeaturedArtists(); return; }
         renderFeaturedArtists(ok, cfg);
+        // C166: anuncio exactamente-una-vez al artista destacado (el módulo
+        // se calculaba y pintaba pero el artista nunca se enteraba: ni push
+        // ni unread). Hook único en el pintado; guarda typeof (patrón C153).
+        try { if (typeof maybeAnnounceGiveaway === 'function') maybeAnnounceGiveaway(cfg, ok); } catch (_) {}
       });
     }).catch(function (err) {
       try { console.error('featuredArtists: no se pudo cargar la configuracion', err); } catch (_) {}
     });
   }
 
+
+  // ══════════════════════════════════════════════════════════════════
+  // C166: anuncio exactamente-una-vez al artista destacado en el giveaway
+  // ("Artistas destacados" en el inicio). El módulo se calculaba
+  // (featuredArtistsIsActive) y se pintaba (renderFeaturedArtists), pero el
+  // artista nunca se enteraba: ni push ni unread. Gemelo estructural del
+  // aviso de spotlight (C154): hook único en el pintado + transacción en
+  // featuredArtistsNotified/<startsAt>/<uid> (reutiliza el flag idempotente
+  // spotlightNotifyFlag) + guarda de sesión. Tipo 'music' → hereda el
+  // toggle 'followingPosts' del destinatario (notifTypeToPrefKey). Sin
+  // tipos nuevos. Sin auto-aviso: se excluye al propio visor (él ya ve el
+  // módulo pintado). Best-effort: no bloquea el pintado.
+  // ══════════════════════════════════════════════════════════════════
+  var _c166GiveawayTried = {};
+
+  // Pura y testeable: texto fijo en español (convención C147/C153/C154).
+  // Sin interpolación: cero superficie de inyección.
+  function giveawayNotifyText() {
+    return '¡Felicidades! Fuiste seleccionado como Artista Destacado en Drex.';
+  }
+
+  function maybeAnnounceGiveaway(cfg, profiles) {
+    try {
+      if (!featuredArtistsIsActive(cfg)) return;
+      var ok = (profiles || []).filter(function (p) { return p && p.uid; });
+      if (!ok.length) return;
+      var me = null;
+      try { me = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null; } catch (_) {}
+      if (!me) return;
+      var wk = 'na';
+      try { var _sa = cfg && cfg.startsAt; if (isFinite(Number(_sa))) wk = String(Number(_sa)); } catch (_) {}
+      for (var i = 0; i < ok.length; i++) {
+        (function (p) {
+          try {
+            var uid = p && p.uid;
+            if (!uid || uid === me.uid) return;
+            var gk = wk + '/' + uid;
+            if (_c166GiveawayTried[gk]) return;
+            _c166GiveawayTried[gk] = true;
+            var d = (p && p.data) || {};
+            var displayName = String(d.displayName || d.username || p.username || 'Artista');
+            var profileImage = d.profileImage || '';
+            DrexCloud.database().ref('featuredArtistsNotified/' + wk + '/' + uid).transaction(function (cur) {
+              return spotlightNotifyFlag(cur, Date.now());
+            }, function (error, committed) {
+              if (error || !committed) return;
+              if (typeof addNotification === 'function') {
+                addNotification(uid, giveawayNotifyText(), 'music', {
+                  actionType: 'home',
+                  actorId: uid, actorName: displayName, actorImage: profileImage
+                });
+              }
+            });
+          } catch (_) {}
+        })(ok[i]);
+      }
+    } catch (_) {}
+  }
 
   // Games feature removed
 
