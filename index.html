@@ -50988,7 +50988,21 @@ window.publishMusic = async function () {
       // Reflejar en el anuncio del feed si existe
       const tSnap = await musicDb().ref('musicTracks/' + musicUploadState.editingId).once('value');
       const annId = (tSnap.val() || {}).announceNoteId;
-      if (annId) musicDb().ref('communityNotes/' + annId).update({ content: `${title} — ${artistName}`, musicTitle: title, musicCover: musicUploadState.coverDataUrl || '' }).catch(() => {});
+      if (annId) {
+        // C169: delta de menciones al editar el título (patrón C168). El anuncio
+        // del feed pinta @menciones; avisar solo las NUEVAS respecto al
+        // contenido previo (lectura best-effort, nunca bloquea el guardado).
+        let _oldMusicContent = '';
+        try { const _cs = await musicDb().ref('communityNotes/' + annId + '/content').once('value'); _oldMusicContent = (_cs && _cs.val()) || ''; } catch (_) {}
+        const _newMusicContent = `${title} — ${artistName}`;
+        musicDb().ref('communityNotes/' + annId).update({ content: _newMusicContent, musicTitle: title, musicCover: musicUploadState.coverDataUrl || '' }).catch(() => {});
+        try {
+          if (typeof commentEditNewMentions === 'function' && typeof sendMentionNotifications === 'function') {
+            const _delta = commentEditNewMentions(_oldMusicContent, _newMusicContent);
+            if (_delta && _delta.length) sendMentionNotifications(_newMusicContent, uid, authorName, 'publicación', [uid], { postId: annId }, _delta).catch(() => {});
+          }
+        } catch (_) {}
+      }      if (annId) musicDb().ref('communityNotes/' + annId).update({ content: `${title} — ${artistName}`, musicTitle: title, musicCover: musicUploadState.coverDataUrl || '' }).catch(() => {});
       // Mantener el índice de búsqueda ligero: si no, musicSearchTracks
       // seguiría mostrando el título anterior al editar.
       musicDb().ref('musicSearch/' + musicUploadState.editingId).update({ ti: title }).catch(() => {});
@@ -51088,6 +51102,16 @@ window.publishMusic = async function () {
       }).catch(() => {});
     } catch (_) {}
 
+    // C169: menciones en el título de la canción. El anuncio del feed pinta
+    // @menciones como enlaces tocables (renderContentWithSticker) pero
+    // publishMusic nunca avisaba al mencionado (gemelo del hueco C168 en
+    // comentarios). Solo si el anuncio quedó publicado: es la superficie que
+    // pinta la mención. Fire-and-forget: nunca bloquea la publicación.
+    try {
+      if (noteRef && noteRef.key && typeof sendMentionNotifications === 'function') {
+        sendMentionNotifications(note.content, uid, authorName, 'publicación', [uid], { postId: noteRef.key }).catch(() => {});
+      }
+    } catch (_) {}
     // Anuncio automático en Discord (no bloquea la publicación).
     try { announceMusicOnDiscord({ title, artist: artistName, author: authorName, cover: musicUploadState.coverDataUrl || '', trackId }); } catch (_) {}
     musicSetProgress(100, '¡Listo!');
