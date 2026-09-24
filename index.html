@@ -18142,6 +18142,16 @@ function saveNote() {
     poll.voters[uid] = optIdx;
     return poll;
   }
+  // C147: decide si un voto en encuesta genera notificación al autor. Solo el
+  // PRIMER voto de cada usuario avisa (prevVoteIdx undefined); los cambios de
+  // voto (C143) no avisan — mismo criterio que votePost, que solo avisa del
+  // upvote nuevo. Sin aviso si el autor es el propio votante o falta authorId.
+  // Puro: se testea en sandbox sin BD.
+  function pollVoteNotifyDecision(prevVoteIdx, authorId, voterUid) {
+    if (prevVoteIdx !== undefined) return false;
+    if (!authorId || authorId === voterUid) return false;
+    return true;
+  }
   function pollTimeLeftText(endsAt) {
     const ms = (Number(endsAt) || 0) - Date.now();
     if (ms <= 0) return appT('Votación cerrada');
@@ -18196,7 +18206,11 @@ function saveNote() {
     // C143: si el DOM ya marca 'mine', este tap es un CAMBIO de voto.
     const hadVoted = !!document.querySelector(sel + ' .drex-poll-opt.mine');
     document.querySelectorAll(sel).forEach(function(el) { el.style.pointerEvents = 'none'; });
+    // C147: el updater captura el voto previo del usuario (server-accurate):
+    // si ya existía, este tap es un CAMBIO de voto y no genera aviso.
+    let _c147PrevVoteIdx;
     DrexCloud.database().ref('communityNotes/' + noteId + '/poll').transaction(function(poll) {
+      _c147PrevVoteIdx = (poll && poll.voters) ? poll.voters[user.uid] : undefined;
       return pollApplyVote(poll, user.uid, optIdx, Date.now());
     }, function(error, committed, snap) {
       document.querySelectorAll(sel).forEach(function(el) { el.style.pointerEvents = ''; });
@@ -18209,6 +18223,30 @@ function saveNote() {
         try {
           DrexCloud.database().ref('userPollVotes/' + user.uid + '/' + noteId).set(Date.now()).catch(() => {});
         } catch (_) {}
+        // C147: aviso al autor en el PRIMER voto (no en cambios de voto C143).
+        // El autor de una encuesta nunca se enteraba de que la votaban:
+        // votePost sí avisa de cada upvote nuevo. Se usa el tipo 'vote' para
+        // heredar el toggle 'likes' del destinatario (notifTypeToPrefKey →
+        // shouldSkipNotificationFor). Best-effort con catch: nunca rompe el
+        // voto ni la UI si la lectura/escritura falla (el voto ya quedó
+        // confirmado por la transacción).
+        if (typeof pollVoteNotifyDecision === 'function' && _c147PrevVoteIdx === undefined) {
+          try {
+            DrexCloud.database().ref('communityNotes/' + noteId + '/authorId').once('value').then(function (aSnap) {
+              const authorId = aSnap && aSnap.val();
+              if (!pollVoteNotifyDecision(_c147PrevVoteIdx, authorId, user.uid)) return;
+              DrexCloud.database().ref('users/' + user.uid).once('value').then(function (uSnap) {
+                const uv = (uSnap && uSnap.val()) || {};
+                const uName = uv.username || user.displayName || user.email || 'Alguien';
+                try {
+                  if (typeof addNotification === 'function') {
+                    addNotification(authorId, `A ${uName} le dio un voto en tu encuesta.`, 'vote', { actionType: 'post', actionId: noteId });
+                  }
+                } catch (_) {}
+              }).catch(() => {});
+            }).catch(() => {});
+          } catch (_) {}
+        }
         const html = renderPostPollHTML({ id: noteId, poll: snap.val() }, true);
         document.querySelectorAll(sel).forEach(function(el) { el.outerHTML = html; });
         if (hadVoted) showMiniToast(appT('Voto actualizado'));
