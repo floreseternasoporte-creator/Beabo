@@ -48211,6 +48211,29 @@ let musicAudioEl = null;
 let musicQueue = [];
 let musicQueueIdx = -1;
 let musicUrlCache = new Map();   // trackId -> blob URL
+// C99: tope LRU del caché de audio en memoria. Sin tope, cada canción
+// reproducida dejaba un blob URL (MBs) vivo hasta el cambio de cuenta;
+// el exceso se revoca al insertar el más nuevo (Map conserva orden de inserción).
+const DREX_MUSIC_URL_CACHE_MAX = 12;
+function musicUrlCacheSet(trackId, url) {
+  if (!trackId || !url) return;
+  const prev = musicUrlCache.get(trackId);
+  if (prev && prev !== url) { try { URL.revokeObjectURL(prev); } catch (_) {} }
+  musicUrlCache.delete(trackId); // reinsertar al final = más reciente
+  musicUrlCache.set(trackId, url);
+  while (musicUrlCache.size > DREX_MUSIC_URL_CACHE_MAX) {
+    const oldest = musicUrlCache.keys().next().value;
+    if (oldest === undefined) break;
+    const u = musicUrlCache.get(oldest);
+    musicUrlCache.delete(oldest);
+    try { if (u) URL.revokeObjectURL(u); } catch (_) {}
+  }
+}
+function musicUrlCacheRemove(trackId) {
+  const u = musicUrlCache.get(trackId);
+  musicUrlCache.delete(trackId);
+  try { if (u) URL.revokeObjectURL(u); } catch (_) {}
+}
 let musicExploreCache = [];
 let musicSearchCache = [];
 let musicAuthorBlockCache = []; // C20: caché propio del bloque musical del perfil
@@ -49454,7 +49477,7 @@ window.handleMusicAudioSelect = function (event) {
       if (titleInput && !titleInput.value) titleInput.value = file.name.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim().slice(0, 80);
       URL.revokeObjectURL(probe.src);
     };
-    probe.onerror = function () { if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo leer ese archivo de audio')); };
+    probe.onerror = function () { try { URL.revokeObjectURL(probe.src); } catch (_) {} if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo leer ese archivo de audio')); };
     probe.src = URL.createObjectURL(file);
   };
   reader.onerror = function () { if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo leer el archivo')); };
@@ -49752,7 +49775,7 @@ window.deleteMusicTrack = async function (trackId) {
     // borraba con remove() directo, esquivando la cascada compartida
     // (comentarios huérfanos, índices postsByGroup/notesByAuthor, medios).
     if (t.announceNoteId && typeof cascadeDeleteNote === 'function') { try { await cascadeDeleteNote(t.announceNoteId); } catch (_) {} }
-    musicUrlCache.delete(trackId);
+    musicUrlCacheRemove(trackId); // C99: revoca el blob URL, no solo lo olvida
     if (musicCurrentTrackId() === trackId) musicStopAndHide();
     else _musicPurgeDeletedFromQueue(trackId);
     loadMyMusic(); loadProfileMusic();
@@ -49792,7 +49815,7 @@ function musicGetAudioUrl(trackId) {
     const dataUrl = keys.map(k => obj[k]).join('');
     return fetch(dataUrl).then(r => r.blob()).then(blob => {
       const url = URL.createObjectURL(blob);
-      musicUrlCache.set(trackId, url);
+      musicUrlCacheSet(trackId, url); // C99: con tope LRU + revocación
       return url;
     });
   });
