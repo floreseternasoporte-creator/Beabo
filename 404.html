@@ -17432,7 +17432,7 @@ function saveNote() {
       const msgRef = DrexCloud.database().ref('conversationMessages/' + conversationId).push();
       await msgRef.set({ senderId: me.uid, text, timestamp: ts, collabInvite: { noteId, inviterUid: me.uid, inviterName } });
       if (typeof updateChatConversationPreview === 'function') {
-        await updateChatConversationPreview(text, { senderName: inviterName }, { conversationId, recipientId: authorId, isGroup: false }).catch(() => {});
+        await updateChatConversationPreview(text, { senderName: inviterName }, { conversationId, recipientId: authorId, isGroup: false, senderUid: me.uid }).catch(() => {});
       }
       showMiniToast(appT('Invitación de colaboración enviada.'));
     } catch (e) {
@@ -17485,7 +17485,7 @@ function saveNote() {
         await DrexCloud.database().ref('conversationMessages/' + conversationId).push()
           .set({ senderId: me.uid, text, timestamp: Date.now() });
         if (typeof updateChatConversationPreview === 'function') {
-          await updateChatConversationPreview(text, { senderName: myName }, { conversationId, recipientId: inviterUid, isGroup: false }).catch(() => {});
+          await updateChatConversationPreview(text, { senderName: myName }, { conversationId, recipientId: inviterUid, isGroup: false, senderUid: me.uid }).catch(() => {});
         }
       } catch (_) {}
       showMiniToast(accept ? appT('Colaboración aceptada. 🎉') : appT('Invitación rechazada.'));
@@ -30815,6 +30815,14 @@ let chatTypingListener = null;
     const user = DrexCloud.auth().currentUser;
     const conversationId = options.conversationId || currentChatRoomId;
     if (!user || !conversationId) return;
+    // C71-C1: el remitente real viaja en options.senderUid. El .then() del
+    // envío puede resolver DESPUÉS de un cambio de cuenta (un set() puede
+    // colgar hasta 25 s por dbTimeout y el switch de cuenta pide password),
+    // así que el currentUser fresco puede ser otra cuenta. Atribuir con el
+    // currentUser crearía entradas fantasma en userConversations/<nueva>/,
+    // lastSenderId corrupto en el nodo compartido y bumps de no-leídos
+    // erróneos. Sin senderUid se conserva el comportamiento legacy.
+    const senderUid = options.senderUid || user.uid;
     const updatedAt = Date.now();
     const updates = {};
     let aggMemberUids = null; // destinatarios para bumpChatUnread (paso 1)
@@ -30835,12 +30843,12 @@ let chatTypingListener = null;
         updates['userConversations/' + uid + '/' + conversationId + '/isGroup'] = true;
         updates['userConversations/' + uid + '/' + conversationId + '/groupId'] = conversationId;
         updates['userConversations/' + uid + '/' + conversationId + '/updatedAt'] = updatedAt;
-        const prefix = uid === user.uid ? 'Tú' : (payload.senderName || 'Usuario');
+        const prefix = uid === senderUid ? 'Tú' : (payload.senderName || 'Usuario');
         updates['userConversations/' + uid + '/' + conversationId + '/lastMessage'] = prefix + ': ' + lastMessage;
         // Degradación booleana (>50 miembros): hoja simple `u` en este mismo
         // update multi-path, sin transacción (ver bumpChatUnread). El remitente
         // se excluye igual que en el bump: su propio mensaje no lo marca no-leído.
-        if (memberUids.length > 50 && uid && uid !== user.uid) {
+        if (memberUids.length > 50 && uid && uid !== senderUid) {
           updates['chatUnread/' + uid + '/' + conversationId + '/u'] = updatedAt;
         }
       });
@@ -30848,15 +30856,15 @@ let chatTypingListener = null;
       const recipientId = options.recipientId || currentChatRecipient;
       if (!recipientId) return;
       updates['conversations/' + conversationId + '/lastMessage'] = lastMessage;
-      updates['conversations/' + conversationId + '/lastSenderId'] = user.uid;
+      updates['conversations/' + conversationId + '/lastSenderId'] = senderUid;
       updates['conversations/' + conversationId + '/updatedAt'] = updatedAt;
-      updates['userConversations/' + user.uid + '/' + conversationId + '/otherUid'] = recipientId;
-      updates['userConversations/' + user.uid + '/' + conversationId + '/updatedAt'] = updatedAt;
-      updates['userConversations/' + user.uid + '/' + conversationId + '/lastMessage'] = lastMessage;
-      updates['userConversations/' + recipientId + '/' + conversationId + '/otherUid'] = user.uid;
+      updates['userConversations/' + senderUid + '/' + conversationId + '/otherUid'] = recipientId;
+      updates['userConversations/' + senderUid + '/' + conversationId + '/updatedAt'] = updatedAt;
+      updates['userConversations/' + senderUid + '/' + conversationId + '/lastMessage'] = lastMessage;
+      updates['userConversations/' + recipientId + '/' + conversationId + '/otherUid'] = senderUid;
       updates['userConversations/' + recipientId + '/' + conversationId + '/updatedAt'] = updatedAt;
       updates['userConversations/' + recipientId + '/' + conversationId + '/lastMessage'] = lastMessage;
-      aggMemberUids = [user.uid, recipientId];
+      aggMemberUids = [senderUid, recipientId];
     }
 
     if (!Object.keys(updates).length) return;
@@ -30866,7 +30874,7 @@ let chatTypingListener = null;
     // (se invoca antes de resolver el update; todos los llamadores ya guardaron
     // el mensaje, así que el bump es semánticamente seguro aunque el fan-out falle).
     // bumpChatUnread nunca bloquea ni rompe el envío (el agregado es derivado).
-    try { bumpChatUnread(conversationId, aggMemberUids, user.uid, updatedAt); } catch (_) {}
+    try { bumpChatUnread(conversationId, aggMemberUids, senderUid, updatedAt); } catch (_) {}
     return DrexCloud.database().ref().update(updates).catch(() => {});
   }
 
@@ -30907,7 +30915,7 @@ let chatTypingListener = null;
     }
     try {
       await DrexCloud.database().ref('conversationMessages/' + conversationId).push(payload)._writePromise;
-      await updateChatConversationPreview('GIF', payload, { conversationId, recipientId, isGroup, groupMembers });
+      await updateChatConversationPreview('GIF', payload, { conversationId, recipientId, isGroup, groupMembers, senderUid: user.uid });
     } catch (_) {
       showMiniToast(appT('No se pudo enviar el GIF. Inténtalo de nuevo.'));
     }
@@ -33063,7 +33071,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         conversationId,
         recipientId,
         isGroup,
-        groupMembers
+        groupMembers,
+        senderUid: user.uid // C71-C1: remitente real (el .then puede resolver tras un cambio de cuenta)
       }).catch(() => {});
     }).catch((err) => {
       // C50-C1: si el set() falló, el mensaje nunca existió pero los trozos
@@ -33078,7 +33087,10 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       console.error('Error al enviar mensaje:', err);
       document.getElementById(tempMsgId)?.remove();
       const inputEl = document.getElementById('chat-room-input');
-      if (inputEl && !inputEl.value && text) { inputEl.value = text; updateChatToolbarMode(); }
+      // C71-C2: persistir el texto restaurado como borrador. El borrador se
+      // había limpiado al iniciar el envío; sin este saveChatDraft(), navegar
+      // o recargar tras un fallo en vuelo pierde el mensaje restaurado.
+      if (inputEl && !inputEl.value && text) { inputEl.value = text; updateChatToolbarMode(); try { saveChatDraft(); } catch (_) {} }
       const code = err && err.code;
       showMiniToast(code === 'PERMISSION_DENIED'
         ? appT('No tienes permiso para enviar mensajes en este chat.')
