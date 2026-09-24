@@ -46063,6 +46063,28 @@ window.publishMusic = async function () {
 
 /* ---------- Editar / eliminar ---------- */
 window.editMusicTrack = function (trackId) { openMusicUpload(trackId); };
+// C65-M1: el borrado solo detenia el reproductor si el track era el actual
+// (musicStopAndHide vacia la cola). Un track eliminado que seguia en
+// musicQueue en otra posicion dejaba la cola atascada: al avanzar,
+// musicStartTrack pintaba UI con datos obsoletos, registraba historial
+// fantasma (musicHistoryRecord dentro de musicPaintTrackUI) y el audio
+// fallaba ("No se pudo cargar el audio."), deteniendo el autoplay.
+// La purga ajusta musicQueueIdx para no saltar ni repetir canciones.
+function _musicPurgeDeletedFromQueue(trackId) {
+  if (!trackId || !Array.isArray(musicQueue)) return;
+  var qi = musicQueue.findIndex(function (t) { return t && t.id === trackId; });
+  if (qi === -1) return;
+  musicQueue.splice(qi, 1);
+  if (qi < musicQueueIdx) {
+    musicQueueIdx--;
+  } else if (qi === musicQueueIdx && typeof musicXfading !== 'undefined' && musicXfading) {
+    // Crossfade en vuelo hacia el track borrado: el audio aun reproduce el
+    // track anterior; retroceder para que musicNext no salte la siguiente.
+    musicQueueIdx = Math.max(0, musicQueueIdx - 1);
+  }
+  if (musicQueueIdx >= musicQueue.length) musicQueueIdx = musicQueue.length - 1;
+  try { if (typeof renderMusicQueueList === 'function') renderMusicQueueList(); } catch (_) {}
+}
 window.deleteMusicTrack = async function (trackId) {
   const uid = musicCurrentUid();
   if (!uid) return;
@@ -46081,6 +46103,7 @@ window.deleteMusicTrack = async function (trackId) {
     if (t.announceNoteId && typeof cascadeDeleteNote === 'function') { try { await cascadeDeleteNote(t.announceNoteId); } catch (_) {} }
     musicUrlCache.delete(trackId);
     if (musicCurrentTrackId() === trackId) musicStopAndHide();
+    else _musicPurgeDeletedFromQueue(trackId);
     loadMyMusic(); loadProfileMusic();
     if (typeof showMiniToast === 'function') showMiniToast(appT('Canción eliminada'));
     if (typeof loadNotes === 'function') { try { loadNotes(false); } catch (_) {} }
