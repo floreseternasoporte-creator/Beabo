@@ -1511,6 +1511,9 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
     .drex-poll-opt:last-of-type { margin-bottom: 4px; }
     .drex-poll-opt:active { transform: scale(.985); }
     .drex-poll-opt:not(.voted):hover { border-color: #2F33B8; }
+    /* C143: las opciones votadas son <button> cuando se puede cambiar el voto. */
+    button.drex-poll-opt.voted { cursor: pointer; }
+    button.drex-poll-opt.voted:hover { border-color: #2F33B8; }
     .drex-poll-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0;
       background: linear-gradient(90deg, #dfe3ff, #c9cfff); border-radius: 10px;
       transition: width .7s cubic-bezier(.3,.9,.3,1); }
@@ -17939,7 +17942,47 @@ function saveNote() {
     } catch (_) { return 'none'; }
   }
   // Spoiler: tapa texto + fotos + video con puntitos galaxia hasta que se toca.
+  // C143: i18n del cambio de voto en Votaciones.
+  (function () {
+    var EN = {
+      'Toca otra opción para cambiar tu voto': 'Tap another option to change your vote',
+      'Voto actualizado': 'Vote updated'
+    };
+    var ZH = {
+      'Toca otra opción para cambiar tu voto': '点击其他选项可更改你的投票',
+      'Voto actualizado': '投票已更新'
+    };
+    var PT = {
+      'Toca otra opción para cambiar tu voto': 'Toque em outra opção para mudar seu voto',
+      'Voto actualizado': 'Voto atualizado'
+    };
+    try {
+      if (typeof APP_ENGLISH_TEXT !== 'undefined') Object.assign(APP_ENGLISH_TEXT, EN);
+      if (typeof APP_CHINESE_TEXT !== 'undefined') Object.assign(APP_CHINESE_TEXT, ZH);
+      if (typeof APP_PORTUGUESE_TEXT !== 'undefined') Object.assign(APP_PORTUGUESE_TEXT, PT);
+    } catch (_) {}
+  })();
+
   /* ===== VOTACIÓN EN LA TARJETA (estilo Drex) ===== */
+  // C143: updater puro de la transacción de voto. Devuelve el poll mutado o
+  // undefined cuando no hay cambio (mismo voto, encuesta cerrada, opción
+  // inválida). Cambiar de voto resta la opción anterior y suma la nueva: el
+  // total solo crece con el PRIMER voto de cada usuario.
+  function pollApplyVote(poll, uid, optIdx, nowMs) {
+    if (!poll) return;
+    if (nowMs > (Number(poll.endsAt) || 0)) return;
+    if (!poll.options || !poll.options[optIdx]) return;
+    poll.voters = poll.voters || {};
+    const prev = poll.voters[uid];
+    if (prev === optIdx) return;
+    if (typeof prev === 'number' && poll.options[prev]) {
+      poll.options[prev].v = Math.max(0, (Number(poll.options[prev].v) || 0) - 1);
+    }
+    poll.options[optIdx].v = (Number(poll.options[optIdx].v) || 0) + 1;
+    if (prev === undefined) poll.total = (Number(poll.total) || 0) + 1;
+    poll.voters[uid] = optIdx;
+    return poll;
+  }
   function pollTimeLeftText(endsAt) {
     const ms = (Number(endsAt) || 0) - Date.now();
     if (ms <= 0) return appT('Votación cerrada');
@@ -17958,6 +18001,7 @@ function saveNote() {
     const myVote = uid ? voters[uid] : undefined;
     const closed = Date.now() > (Number(poll.endsAt) || 0);
     const showResults = closed || myVote !== undefined;
+    const canChangeVote = !closed && myVote !== undefined; // C143: votado y abierta -> se puede cambiar.
     const total = Number(poll.total) || 0;
     const safeId = escapeInlineSingleQuote(note.id || '');
     let html = '<div class="drex-poll" data-poll="' + escapeHtml(note.id || '') + '">';
@@ -17967,40 +18011,41 @@ function saveNote() {
       const pct = total > 0 ? Math.round(v * 100 / total) : 0;
       const mine = myVote === i;
       if (showResults) {
-        html += '<div class="drex-poll-opt voted' + (mine ? ' mine' : '') + '">' +
-          '<div class="drex-poll-bar" data-w="' + pct + '" style="width:' + (animateBars ? 0 : pct) + '%"></div>' +
+        const optInner = '<div class="drex-poll-bar" data-w="' + pct + '" style="width:' + (animateBars ? 0 : pct) + '%"></div>' +
           '<div class="drex-poll-label"><span>' + (mine ? DREX_POLL_CHECK_SVG : '') + escapeHtml(o.t || '') + '</span>' +
-          '<span class="drex-poll-pct">' + pct + '%</span></div></div>';
+          '<span class="drex-poll-pct">' + pct + '%</span></div>';
+        // C143: con la encuesta abierta, las opciones votadas siguen siendo
+        // botones para que el usuario pueda mover su voto a otra opción.
+        html += canChangeVote
+          ? '<button type="button" class="drex-poll-opt voted' + (mine ? ' mine' : '') + '" onclick="voteInPoll(\'' + safeId + '\',' + i + ')">' + optInner + '</button>'
+          : '<div class="drex-poll-opt voted' + (mine ? ' mine' : '') + '">' + optInner + '</div>';
       } else {
         html += '<button type="button" class="drex-poll-opt" onclick="voteInPoll(\'' + safeId + '\',' + i + ')">' +
           '<div class="drex-poll-label"><span>' + escapeHtml(o.t || '') + '</span></div></button>';
       }
     });
     html += '<div class="drex-poll-meta"><span>' + appT('{n} votos').replace('{n}', total) + '</span>' +
-      '<span>·</span><span>' + pollTimeLeftText(poll.endsAt) + '</span></div></div>';
+      '<span>·</span><span>' + pollTimeLeftText(poll.endsAt) + '</span>' +
+      (canChangeVote ? '<span>·</span><span>' + escapeHtml(appT('Toca otra opción para cambiar tu voto')) + '</span>' : '') +
+      '</div></div>';
     return html;
   }
   function voteInPoll(noteId, optIdx) {
     const user = DrexCloud.auth().currentUser;
     if (!user) { showMiniToast(appT('Inicia sesión para votar'));; return; }
     const sel = '[data-poll="' + CSS.escape(noteId) + '"]';
+    // C143: si el DOM ya marca 'mine', este tap es un CAMBIO de voto.
+    const hadVoted = !!document.querySelector(sel + ' .drex-poll-opt.mine');
     document.querySelectorAll(sel).forEach(function(el) { el.style.pointerEvents = 'none'; });
     DrexCloud.database().ref('communityNotes/' + noteId + '/poll').transaction(function(poll) {
-      if (!poll) return;
-      if (Date.now() > (Number(poll.endsAt) || 0)) return;
-      poll.voters = poll.voters || {};
-      if (poll.voters[user.uid] !== undefined) return;
-      if (!poll.options || !poll.options[optIdx]) return;
-      poll.options[optIdx].v = (Number(poll.options[optIdx].v) || 0) + 1;
-      poll.total = (Number(poll.total) || 0) + 1;
-      poll.voters[user.uid] = optIdx;
-      return poll;
+      return pollApplyVote(poll, user.uid, optIdx, Date.now());
     }, function(error, committed, snap) {
       document.querySelectorAll(sel).forEach(function(el) { el.style.pointerEvents = ''; });
       if (error) { showMiniToast(appT('No se pudo votar'));; return; }
       if (committed && snap && snap.val()) {
         const html = renderPostPollHTML({ id: noteId, poll: snap.val() }, true);
         document.querySelectorAll(sel).forEach(function(el) { el.outerHTML = html; });
+        if (hadVoted) showMiniToast(appT('Voto actualizado'));
         requestAnimationFrame(function() { requestAnimationFrame(function() {
           document.querySelectorAll(sel + ' .drex-poll-bar').forEach(function(bar) {
             const w = bar.getAttribute('data-w');
@@ -26906,7 +26951,10 @@ function saveNote() {
       return;
     }
 
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== "granted") {
+    // C143: solo pedir el permiso cuando está en 'default'. Si ya fue
+    // denegado, requestPermission() no vuelve a preguntar (resuelve
+    // 'denied' por spec): llamarlo en cada apertura era un no-op.
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
 
