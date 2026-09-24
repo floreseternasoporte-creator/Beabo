@@ -132,7 +132,7 @@ async function test(name, fn) {
       if (m) votes[m[1]] = sb._store[k];
     });
     const g2 = { status: 'vote', startedAt: sb._E2, players: ['A', 'B', 'G'], out: [], round: 1 };
-    const ref = { update: (v) => sb._docUpdates.push(v) };
+    const ref = { update: (v) => { sb._docUpdates.push(v); return Promise.resolve(); } }; // C80: update() real devuelve promesa
     vm.runInContext('fiestaGameHostTally(__ref, __g2, __votes)', Object.assign(sb, { __ref: ref, __g2: g2, __votes: votes }));
     await flush();
     return sb;
@@ -157,7 +157,7 @@ async function test(name, fn) {
       await flush();
       const votes = { G: sb._store['fiestaGameSecrets/SID/votes/G'] };
       const g2 = { status: 'vote', startedAt: sb._E2, players: ['A', 'B', 'G'], out: [], round: 1 };
-      const ref = { update: (v) => sb._docUpdates.push(v) };
+      const ref = { update: (v) => { sb._docUpdates.push(v); return Promise.resolve(); } }; // C80: update() real devuelve promesa
       vm.runInContext('fiestaGameHostTally(__ref, __g2, __votes)', Object.assign(sb, { __ref: ref, __g2: g2, __votes: votes }));
       await flush();
       assert.ok(sb._eliminated.includes('B'), 'el voto legítimo debe contar; eliminados=' + JSON.stringify(sb._eliminated));
@@ -167,7 +167,7 @@ async function test(name, fn) {
       const votes = { A: 'C' }; // escalar, formato anterior al fix
       const g2 = { status: 'vote', startedAt: sb._E2, players: ['A', 'B', 'C'], out: [], round: 1 };
       sb.fiestaGameActivePlayers = () => ['A', 'B', 'C'];
-      const ref = { update: (v) => sb._docUpdates.push(v) };
+      const ref = { update: (v) => { sb._docUpdates.push(v); return Promise.resolve(); } }; // C80: update() real devuelve promesa
       vm.runInContext('fiestaGameHostTally(__ref, __g2, __votes)', Object.assign(sb, { __ref: ref, __g2: g2, __votes: votes }));
       await flush();
       assert.ok(sb._eliminated.includes('C'), 'el voto legacy debe contar; eliminados=' + JSON.stringify(sb._eliminated));
