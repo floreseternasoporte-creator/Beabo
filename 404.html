@@ -10164,6 +10164,17 @@ function saveNote() {
         </div>
         <svg class="w-5 h-5 text-[var(--theme-icon)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
       </button>
+      <div class="follow-req-hairline ml-[60px] h-px bg-[var(--theme-border)]"></div>
+      <button onclick="openMutedChatsView()" class="w-full px-4 py-3 flex items-center justify-between gap-4 text-left active:bg-[var(--theme-surface-subtle)]">
+        <div class="flex items-center gap-4 min-w-0">
+          <svg class="w-7 h-7 shrink-0 text-[var(--theme-text)]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.143 17.082a24.848 24.848 0 003.844.148m-3.844-.148a24.848 24.848 0 01-3.844-.148M15 11a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0zm-9.75 3.036a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>
+          <div class="text-left">
+            <p class="text-[16px] text-[var(--theme-text)]">Silenciados</p>
+            <p class="text-[13px] text-[var(--theme-muted)] mt-0.5 leading-snug">Ver y reactivar chats silenciados</p>
+          </div>
+        </div>
+        <svg class="w-5 h-5 text-[var(--theme-icon)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+      </button>
       </div>
       <p class="mx-4 mt-5 bg-[var(--theme-surface-muted)] rounded-xl p-4 text-[13px] text-[var(--theme-muted)] leading-relaxed">Desde aquí puedes revisar y gestionar la lista de personas bloqueadas.</p>
     </div>
@@ -10259,6 +10270,18 @@ function saveNote() {
       <div class="w-9"></div>
     </div>
     <div id="blocked-accounts-list" class="flex-1 overflow-y-auto p-6 space-y-3"></div>
+  </div>
+
+  <!-- VISTA DE SILENCIADOS (C88): lista central de chats silenciados -->
+  <div id="muted-chats-view" class="fixed inset-0 bg-[var(--theme-bg)] z-[130] hidden flex flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border)] bg-[var(--theme-surface)]" style="padding-top:max(1rem,env(safe-area-inset-top));">
+      <button onclick="closeMutedChatsView()" class="tap44 text-[var(--theme-icon)] p-1" aria-label="Volver">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 class="text-xl font-black text-[var(--theme-text)] absolute left-1/2 -translate-x-1/2">Silenciados</h2>
+      <div class="w-9"></div>
+    </div>
+    <div id="muted-chats-list" class="flex-1 overflow-y-auto p-6 space-y-3"></div>
   </div>
 
   <!-- SECCIÓN DE DESACTIVAR/ELIMINAR CUENTA -->
@@ -25804,6 +25827,34 @@ function saveNote() {
     return isMuteActive(chatMuteCache.users[n.actionId]);
   }
 
+  // SILENCIADOS (C88) — lista central de chats silenciados con reactivación.
+  // Núcleo puro (sin DOM ni BD): normaliza los mapas chatMutes/<uid> y
+  // groupMutes/<uid> a una lista ordenada de entradas activas.
+  // muteUntil === 9999999999999 marca silencio "Siempre".
+  var DREX_MUTED_INDEFINITE_UNTIL = 9999999999999;
+  function drexMutedCoreIsActive(entry, nowMs) {
+    if (!entry) return false;
+    var until = Number((entry && entry.muteUntil) || 0);
+    return until > Number(nowMs || Date.now());
+  }
+  function drexMutedCoreCollect(mutedUsers, mutedGroups, nowMs) {
+    var now = Number(nowMs || Date.now());
+    var out = [];
+    function pushEach(map, kind) {
+      if (!map || typeof map !== 'object' || Array.isArray(map)) return;
+      Object.keys(map).forEach(function (id) {
+        if (!id) return;
+        var entry = map[id];
+        if (!drexMutedCoreIsActive(entry, now)) return; // vencidos fuera
+        out.push({ kind: kind, id: id, muteUntil: Number(entry.muteUntil) });
+      });
+    }
+    pushEach(mutedUsers, 'user');
+    pushEach(mutedGroups, 'group');
+    out.sort(function (a, b) { return b.muteUntil - a.muteUntil; }); // "Siempre" primero
+    return out;
+  }
+
   /* Sidebar de escritorio: marca el item activo + refleja el badge de chats no leídos */
   function drexSidebarActive(el) {
     try {
@@ -29211,6 +29262,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       'phone-config-view',
       'direct-messages-config-view',
       'blocked-accounts-view',
+      'muted-chats-view',
       'deactivate-delete-account-view',
       'deactivate-confirmation-view',
       'delete-reason-view',
@@ -30405,6 +30457,94 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     }).catch(() => {
       showMiniToast(appT('No se pudo desbloquear esta cuenta. Intenta de nuevo.'));
       renderBlockedAccountsList();
+    });
+  }
+
+  // SILENCIADOS (C88) — vista central de chats silenciados con reactivación.
+  function openMutedChatsView() {
+    const view = document.getElementById('muted-chats-view');
+    if (!view) return;
+    if (view.parentElement !== document.body) document.body.appendChild(view);
+    view.classList.remove('hidden');
+    view.style.display = 'flex';
+    renderMutedChatsList();
+  }
+
+  function closeMutedChatsView() {
+    const view = document.getElementById('muted-chats-view');
+    if (!view) return;
+    view.classList.add('hidden');
+    view.style.display = 'none';
+  }
+
+  // Etiqueta de vigencia: "Siempre" para el indefinido, "Hasta <fecha>" en
+  // el idioma de la app para los temporales (mapeo de locale = formatConvTime).
+  function drexMutedRemainingLabel(muteUntil) {
+    if (Number(muteUntil) >= DREX_MUTED_INDEFINITE_UNTIL) return appT('Siempre');
+    const lang = (typeof getAppLanguage === 'function' ? getAppLanguage() : 'es');
+    const locale = lang === 'en' ? 'en' : lang === 'zh' ? 'zh-CN' : lang === 'pt' ? 'pt' : 'es';
+    const d = new Date(Number(muteUntil)).toLocaleDateString([locale], { day: '2-digit', month: 'short' });
+    return appT('Hasta {d}').replace('{d}', d);
+  }
+
+  function renderMutedChatsList() {
+    const list = document.getElementById('muted-chats-list');
+    const user = DrexCloud.auth().currentUser;
+    if (!list) return;
+    if (!user) {
+      list.innerHTML = '<p class="text-sm text-[var(--theme-muted)]">' + escapeHTML(appT('Inicia sesión para ver los chats silenciados.')) + '</p>';
+      return;
+    }
+    list.innerHTML = '<div class="py-6 text-center">' + getSpinnerMarkup() + '</div>';
+    const db = DrexCloud.database();
+    Promise.all([
+      db.ref('chatMutes/' + user.uid).once('value'),
+      db.ref('groupMutes/' + user.uid).once('value')
+    ]).then(([userSnap, groupSnap]) => {
+      const entries = drexMutedCoreCollect(userSnap.val(), groupSnap.val());
+      if (!entries.length) {
+        list.innerHTML = '<p class="text-sm text-[var(--theme-muted)]">' + escapeHTML(appT('No tienes chats silenciados.')) + '</p>';
+        return null;
+      }
+      return Promise.all(entries.map(e => {
+        if (e.kind === 'user') {
+          return getChatUserProfile(e.id).then(p => ({
+            entry: e, title: p.name || 'Usuario', sub: '@' + (p.name || 'usuario'), image: p.image || ''
+          })).catch(() => ({ entry: e, title: 'Usuario', sub: '', image: '' }));
+        }
+        return db.ref('groupChats/' + e.id).once('value').then(s => {
+          const g = s.val() || {};
+          return { entry: e, title: g.name || appT('Grupo'), sub: appT('Grupo'), image: g.image || '' };
+        }).catch(() => ({ entry: e, title: appT('Grupo'), sub: appT('Grupo'), image: '' }));
+      }));
+    }).then(rows => {
+      if (!rows) return; // lista vacía ya pintada
+      list.innerHTML = rows.map(r => {
+        const rem = drexMutedRemainingLabel(r.entry.muteUntil);
+        const subLine = (r.sub ? escapeHTML(r.sub) + ' · ' : '') + escapeHTML(rem);
+        return '<div class="bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-2xl p-4 flex items-center gap-3 shadow-sm">' +
+          '<img src="' + getSafeMediaUrl(r.image) + '" alt="' + escapeHTML(r.title) + '" class="w-12 h-12 rounded-full object-cover">' +
+          '<div class="flex-1 min-w-0"><p class="font-bold text-[var(--theme-text)] truncate">' + escapeHTML(r.title) + '</p>' +
+          '<p class="text-xs text-[var(--theme-muted)] truncate">' + subLine + '</p></div>' +
+          '<button onclick="unmuteMutedChat(\'' + r.entry.kind + '\',\'' + escapeInlineSingleQuote(r.entry.id) + '\')" class="tap44 bg-[var(--drex-brand)] text-white px-3 py-2 rounded-xl text-sm font-semibold">' + escapeHTML(appT('Desactivar silencio')) + '</button></div>';
+      }).join('');
+    }).catch(() => {
+      list.innerHTML = '<p class="text-sm text-[#b91c1c]">' + escapeHTML(appT('No se pudo actualizar. Intenta de nuevo.')) + '</p>';
+    });
+  }
+
+  // Reactivar = quitar el silencio (mismo nodo que escriben los paneles de
+  // silenciar; sin esquema nuevo). Refresca la lista al terminar.
+  function unmuteMutedChat(kind, id) {
+    const user = DrexCloud.auth().currentUser;
+    if (!user || !id) return;
+    const path = (kind === 'group' ? 'groupMutes/' : 'chatMutes/') + user.uid + '/' + id;
+    DrexCloud.database().ref(path).remove().then(() => {
+      if (typeof showMiniToast === 'function') showMiniToast(appT('Chat reactivado'));
+      renderMutedChatsList();
+    }).catch(() => {
+      if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo actualizar. Intenta de nuevo.'));
+      renderMutedChatsList();
     });
   }
 
@@ -39429,6 +39569,7 @@ body,
 #cache-config-view,
 #privacy-config-view,
 #blocked-accounts-view,
+#muted-chats-view,
 #update-photo-view,
 #deactivate-delete-account-view,
 #deactivate-confirmation-view,
@@ -47409,7 +47550,7 @@ window.musicCardTap = function () {
    "abrir Configuración" porque settings-view cubre a music-view. */
 window.musicCloseCoveringViews = function () {
   try { if (typeof closeSettingsView === 'function') closeSettingsView(); } catch (_) {}
-  ['settings-view','chat-privacy-settings-view','notification-settings-view','screentime-view','theme-config-view','cache-config-view','account-config-view','privacy-config-view','phone-config-view','direct-messages-config-view','deactivate-delete-account-view','follow-requests-view','blocked-accounts-view','deactivate-confirmation-view','delete-reason-view','delete-confirmation-view','security-center-view','author-posts-view','chat-inbox-view','new-chat-view','create-group-chat-view','chat-room-view','fiesta-room-view','comments-view'].forEach(function (id) {
+  ['settings-view','chat-privacy-settings-view','notification-settings-view','screentime-view','theme-config-view','cache-config-view','account-config-view','privacy-config-view','phone-config-view','direct-messages-config-view','deactivate-delete-account-view','follow-requests-view','blocked-accounts-view','muted-chats-view','deactivate-confirmation-view','delete-reason-view','delete-confirmation-view','security-center-view','author-posts-view','chat-inbox-view','new-chat-view','create-group-chat-view','chat-room-view','fiesta-room-view','comments-view'].forEach(function (id) {
     try { document.getElementById(id)?.classList.add('hidden'); } catch (_) {}
   });
 };

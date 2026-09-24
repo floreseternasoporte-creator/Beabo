@@ -2149,7 +2149,13 @@ var APP_ENGLISH_TEXT = {
 "Publicación destacada.":"Post featured.",
 "Se quitó la publicación destacada.":"Featured post removed.",
 "Solo puedes destacar 3 publicaciones.":"You can only feature 3 posts.",
-"No se pudo actualizar. Intenta de nuevo.":"Couldn't update. Try again."
+"No se pudo actualizar. Intenta de nuevo.":"Couldn't update. Try again.",
+"Silenciados":"Muted",
+"Ver y reactivar chats silenciados":"View and unmute silenced chats",
+"No tienes chats silenciados.":"You have no muted chats.",
+"Inicia sesión para ver los chats silenciados.":"Sign in to see your muted chats.",
+"Hasta {d}":"Until {d}",
+"Chat reactivado":"Chat unmuted"
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4297,7 +4303,13 @@ var APP_CHINESE_TEXT = {
 "Publicación destacada.":"帖子已置顶。",
 "Se quitó la publicación destacada.":"已取消帖子置顶。",
 "Solo puedes destacar 3 publicaciones.":"最多只能置顶 3 个帖子。",
-"No se pudo actualizar. Intenta de nuevo.":"更新失败，请重试。"
+"No se pudo actualizar. Intenta de nuevo.":"更新失败，请重试。",
+"Silenciados":"已静音",
+"Ver y reactivar chats silenciados":"查看并取消静音的聊天",
+"No tienes chats silenciados.":"你没有已静音的聊天。",
+"Inicia sesión para ver los chats silenciados.":"登录以查看已静音的聊天。",
+"Hasta {d}":"至 {d}",
+"Chat reactivado":"已取消聊天静音"
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6436,7 +6448,13 @@ var APP_PORTUGUESE_TEXT = {
 "Publicación destacada.":"Publicação em destaque.",
 "Se quitó la publicación destacada.":"Destaque da publicação removido.",
 "Solo puedes destacar 3 publicaciones.":"Você só pode destacar 3 publicações.",
-"No se pudo actualizar. Intenta de nuevo.":"Não foi possível atualizar. Tente novamente."
+"No se pudo actualizar. Intenta de nuevo.":"Não foi possível atualizar. Tente novamente.",
+"Silenciados":"Silenciados",
+"Ver y reactivar chats silenciados":"Ver e reativar conversas silenciadas",
+"No tienes chats silenciados.":"Você não tem conversas silenciadas.",
+"Inicia sesión para ver los chats silenciados.":"Inicie sessão para ver as conversas silenciadas.",
+"Hasta {d}":"Até {d}",
+"Chat reactivado":"Conversa reativada"
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
