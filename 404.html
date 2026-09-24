@@ -715,6 +715,8 @@ body.theme-dark .border-white\/60 { border-color: var(--theme-border) !important
 body.theme-dark .border-white { border-color: var(--theme-surface) !important; }
 /* Enlace del perfil: el morado #2F33B8 no contrasta sobre fondo oscuro. */
 body.theme-dark #profile-link-anchor { color: #a5a9ff !important; }
+/* Escaparate (C86): mismas filas de enlace, mismo contraste en oscuro. */
+body.theme-dark #profile-links-list a { color: #a5a9ff !important; }
 body.theme-dark #search-view .search-tab-button:hover { color: var(--theme-icon) !important; }
 body.theme-dark #search-view .search-tab-button.active { color: var(--theme-icon) !important; border-bottom-color: var(--theme-muted) !important; }
 body.theme-dark #search-view .tab-button.active { color: var(--theme-icon) !important; border-bottom-color: var(--theme-muted) !important; }
@@ -8874,6 +8876,8 @@ function fiestaGameHTMLFinal() {
             <span id="profile-link-text" class="truncate"></span>
           </a>
         </div>
+        <!-- Escaparate: hasta 3 enlaces con título (C86); precede al enlace único legacy -->
+        <div id="profile-links-list" class="hidden"></div>
         <!-- Comunidad en una línea fluida -->
         <div class="mt-3 flex items-center justify-center flex-wrap gap-x-2 gap-y-1 text-sm text-[var(--theme-muted)]">
           <span class="whitespace-nowrap"><span id="profile-posts-count-mobile" class="font-extrabold text-[var(--theme-text)]">0</span> posts</span>
@@ -28059,7 +28063,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
               bioDisplay.classList.remove('hidden');
             }
           }
-          try { renderOwnProfileLink(data.website || ''); } catch (_) {}
+          try { renderOwnProfileShowcase(data.website || '', data.showcaseLinks); } catch (_) {}
           if (data.profileImage) {
             const profileImage = document.getElementById('profile-image');
             if (profileImage) profileImage.src = data.profileImage;
@@ -30478,20 +30482,43 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     }
   }
 
-  // ENLACE DE PERFIL (estilo Twitter/X): se edita aquí y se guarda en
-  // users/<uid>/website. Solo http(s); sanitizeWebsiteUrl descarta el resto.
+  // ENLACES DEL ESCAPARATE (estilo propio de Drex): hasta 3 enlaces con
+  // título, en users/<uid>/showcaseLinks. Solo http(s); sanitizeWebsiteUrl descarta el resto.
+  function _drexShowcaseReadEditor() {
+    const rows = [];
+    for (let i = 0; i < DREX_SHOWCASE_MAX_LINKS; i++) {
+      const t = document.getElementById('settings-showcase-t-' + i);
+      const u = document.getElementById('settings-showcase-u-' + i);
+      rows.push({ t: t ? t.value : '', u: u ? u.value : '' });
+    }
+    return rows;
+  }
   function openLinkConfigView() {
     const view = document.getElementById('link-config-view');
     if (!view) return;
-    const input = document.getElementById('settings-website');
     const user = DrexCloud.auth().currentUser;
-    if (input) {
-      input.value = '';
-      if (user) {
-        DrexCloud.database().ref('users/' + user.uid + '/website').once('value')
-          .then(s => { if (input.isConnected && document.activeElement !== input) input.value = s.val() || ''; })
-          .catch(() => {});
+    const paint = (links) => {
+      for (let i = 0; i < DREX_SHOWCASE_MAX_LINKS; i++) {
+        const t = document.getElementById('settings-showcase-t-' + i);
+        const u = document.getElementById('settings-showcase-u-' + i);
+        const l = (links && links[i]) || {};
+        if (t && document.activeElement !== t) t.value = l.t || '';
+        if (u && document.activeElement !== u) u.value = l.u || '';
       }
+    };
+    paint([]);
+    if (user) {
+      DrexCloud.database().ref('users/' + user.uid).once('value')
+        .then(s => {
+          const d = (s && s.val()) || {};
+          let links = drexShowcaseNormalizeLinks(d.showcaseLinks, (typeof sanitizeWebsiteUrl === 'function') ? sanitizeWebsiteUrl : null);
+          if (!links.length && d.website) {
+            const w = sanitizeWebsiteUrl(d.website);
+            if (w) links = [{ t: '', u: w }];
+          }
+          paint(links);
+        })
+        .catch(() => {});
     }
     if (view.parentElement !== document.body) document.body.appendChild(view);
     view.classList.remove('hidden');
@@ -30510,15 +30537,17 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
   function saveLinkConfig() {
     const actionButton = window.event?.currentTarget || null;
     setSavingButtonState(actionButton, true);
-    const input = document.getElementById('settings-website');
-    const raw = (input ? input.value : '').trim().slice(0, 300);
-    const safe = raw ? sanitizeWebsiteUrl(raw) : '';
-    if (raw && !safe) {
-      showMiniToast(appT('Ese enlace no es válido. Usa http:// o https://'));
-      setSavingButtonState(actionButton, false);
-      return;
+    const rows = _drexShowcaseReadEditor();
+    for (const r of rows) {
+      const raw = String(r.u || '').trim().slice(0, 300);
+      if (raw && !sanitizeWebsiteUrl(raw)) {
+        showMiniToast(appT('Ese enlace no es válido. Usa http:// o https://'));
+        setSavingButtonState(actionButton, false);
+        return;
+      }
     }
-    saveProfileField({ website: safe || '' }).then(saved => {
+    const links = drexShowcaseNormalizeLinks(rows, (typeof sanitizeWebsiteUrl === 'function') ? sanitizeWebsiteUrl : null);
+    saveProfileField({ showcaseLinks: links }).then(saved => {
       if (saved) closeLinkConfigView();
     }).finally(() => setSavingButtonState(actionButton, false));
   }
@@ -30531,6 +30560,50 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       label = u.hostname.replace(/^www\./, '') + (u.pathname && u.pathname !== '/' ? u.pathname : '');
     } catch (_) {}
     return label.length > 36 ? label.slice(0, 35) + '\u2026' : label;
+  }
+
+  // ESCAPARATE (C86): hasta 3 enlaces con título propio en el perfil.
+  // users/<uid>/showcaseLinks = [{t, u}]. Núcleo puro: sin DOM ni BD.
+  const DREX_SHOWCASE_MAX_LINKS = 3;
+  const DREX_SHOWCASE_MAX_TITLE = 40;
+  function drexShowcaseNormalizeLinks(entries, sanitizeUrl) {
+    const out = [];
+    if (!Array.isArray(entries)) return out;
+    const sanitize = (typeof sanitizeUrl === 'function') ? sanitizeUrl : function (x) { return x; };
+    for (const e of entries) {
+      if (out.length >= DREX_SHOWCASE_MAX_LINKS) break;
+      if (e == null) continue;
+      const rawU = (typeof e === 'string') ? e : e.u;
+      const u = sanitize(rawU);
+      if (!u) continue;
+      let t = '';
+      if (e && typeof e === 'object') t = String(e.t == null ? '' : e.t).trim().slice(0, DREX_SHOWCASE_MAX_TITLE);
+      out.push({ t: t, u: u });
+    }
+    return out;
+  }
+
+  // Pinta el escaparate en el perfil propio: una fila por enlace (título o
+  // dominio). Si no hay escaparate, cae al enlace único legacy `website`.
+  function renderOwnProfileShowcase(website, showcaseLinks) {
+    const list = document.getElementById('profile-links-list');
+    const links = drexShowcaseNormalizeLinks(showcaseLinks, (typeof sanitizeWebsiteUrl === 'function') ? sanitizeWebsiteUrl : null);
+    if (list) {
+      let html = '';
+      for (const l of links) {
+        const label = l.t ? escapeHtml(l.t) : escapeHtml(_shortLinkLabel(l.u));
+        html += '<div class="mt-2 max-w-xs"><a href="' + l.u + '" target="_blank" rel="noopener" class="tap44 inline-flex items-center gap-1.5 text-[14px] font-semibold text-[var(--brand-indigo-text)] hover:underline break-all">'
+          + '<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5M10.172 13.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" /></svg>'
+          + '<span class="truncate">' + label + '</span></a></div>';
+      }
+      list.innerHTML = html;
+      list.classList.toggle('hidden', links.length === 0);
+    }
+    // El enlace único legacy solo se pinta cuando no hay escaparate.
+    try {
+      if (links.length > 0) renderOwnProfileLink('');
+      else renderOwnProfileLink(website || '');
+    } catch (_) {}
   }
 
   // Pinta el enlace en el perfil propio: icono + dominio visible, abre en
@@ -31434,6 +31507,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         }
         if (Object.prototype.hasOwnProperty.call(updates, 'website')) {
           try { renderOwnProfileLink(updates.website || ''); } catch (_) {}
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, 'showcaseLinks')) {
+          try { renderOwnProfileShowcase(userData.website || '', updates.showcaseLinks); } catch (_) {}
         }
             showMiniToast(appT("Perfil actualizado"));
         return true;
@@ -38389,8 +38465,14 @@ function renderAccountsList(accounts) {
       }, 500);
 
       let socialLinksHTML = "";
+      const showcase = (typeof drexShowcaseNormalizeLinks === 'function')
+        ? drexShowcaseNormalizeLinks(authorData.showcaseLinks, sanitizeWebsiteUrl) : [];
+      for (const l of showcase) {
+        const lLabel = l.t ? escapeHtml(l.t) : escapeHtml(_shortLinkLabel(l.u));
+        socialLinksHTML += `<a href="${l.u}" target="_blank" rel="noopener" class="tap44 inline-flex items-center gap-2 max-w-full px-4 min-h-[44px] rounded-full bg-[#eef1fb] text-[var(--brand-indigo-text)] font-semibold text-[14px] active:opacity-70 transition"><i class="fa-solid fa-link text-sm shrink-0"></i><span class="truncate">${lLabel}</span></a>`;
+      }
       const safeWebsite = sanitizeWebsiteUrl(authorData.website);
-      if (safeWebsite) {
+      if (!showcase.length && safeWebsite) {
         socialLinksHTML += `<a href="${safeWebsite}" target="_blank" rel="noopener" class="tap44 inline-flex items-center gap-2 max-w-full px-4 min-h-[44px] rounded-full bg-[#eef1fb] text-[var(--brand-indigo-text)] font-semibold text-[14px] active:opacity-70 transition"><i class="fa-solid fa-link text-sm shrink-0"></i><span class="truncate">${escapeHtml(_shortLinkLabel(safeWebsite))}</span></a>`;
       }
       socialLinksNode.innerHTML = socialLinksHTML;
@@ -46247,14 +46329,27 @@ async function endFiesta() {
       <button onclick="closeLinkConfigView()" class="tap44 text-[var(--theme-icon)] p-1" aria-label="Volver">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <h2 class="text-xl font-black text-[var(--theme-text)] absolute left-1/2 -translate-x-1/2">Enlace</h2>
+      <h2 class="text-xl font-black text-[var(--theme-text)] absolute left-1/2 -translate-x-1/2">Escaparate</h2>
       <button onclick="saveLinkConfig()" class="text-[var(--brand-indigo-text)] min-h-[44px] flex items-center text-[var(--theme-text)] font-bold text-lg">Guardar</button>
     </div>
     <div class="flex-1 overflow-y-auto bg-[var(--theme-surface)] pb-8">
-      <div class="px-4 pt-5 space-y-5">
-      <label class="block mb-1.5 text-[15px] font-semibold text-[var(--theme-text)]">Enlace de tu perfil</label>
-      <input id="settings-website" type="url" inputmode="url" autocomplete="url" maxlength="300" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="https://tuenlace.com">
-      <p class="text-[13px] text-[var(--theme-muted)] mt-2">Aparecerá en tu perfil público con un icono; al tocarlo se abre en una pestaña nueva. Déjalo vacío para quitarlo.</p>
+      <div class="px-4 pt-5 space-y-4">
+      <p class="text-[13px] text-[var(--theme-muted)]">Añade hasta 3 enlaces que aparecerán en tu perfil. El título es opcional; si lo dejas vacío se muestra el dominio. Déjalos vacíos para quitarlos.</p>
+      <div class="rounded-2xl border border-[var(--theme-border)] p-4 space-y-3">
+        <p class="text-[15px] font-bold text-[var(--theme-text)]">Enlace 1</p>
+        <div><label class="block mb-1.5 text-[13px] font-semibold text-[var(--theme-text)]">Título <span class="font-normal text-[var(--theme-muted)]">(opcional)</span></label><input id="settings-showcase-t-0" type="text" maxlength="40" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="Mi tienda"></div>
+        <div><label class="block mb-1.5 text-[13px] font-semibold text-[var(--theme-text)]">URL</label><input id="settings-showcase-u-0" type="url" inputmode="url" autocomplete="url" maxlength="300" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="https://tuenlace.com"></div>
+      </div>
+      <div class="rounded-2xl border border-[var(--theme-border)] p-4 space-y-3">
+        <p class="text-[15px] font-bold text-[var(--theme-text)]">Enlace 2</p>
+        <div><label class="block mb-1.5 text-[13px] font-semibold text-[var(--theme-text)]">Título <span class="font-normal text-[var(--theme-muted)]">(opcional)</span></label><input id="settings-showcase-t-1" type="text" maxlength="40" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="Mi música"></div>
+        <div><label class="block mb-1.5 text-[13px] font-semibold text-[var(--theme-text)]">URL</label><input id="settings-showcase-u-1" type="url" inputmode="url" autocomplete="url" maxlength="300" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="https://tuenlace.com"></div>
+      </div>
+      <div class="rounded-2xl border border-[var(--theme-border)] p-4 space-y-3">
+        <p class="text-[15px] font-bold text-[var(--theme-text)]">Enlace 3</p>
+        <div><label class="block mb-1.5 text-[13px] font-semibold text-[var(--theme-text)]">Título <span class="font-normal text-[var(--theme-muted)]">(opcional)</span></label><input id="settings-showcase-t-2" type="text" maxlength="40" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="Mi comunidad"></div>
+        <div><label class="block mb-1.5 text-[13px] font-semibold text-[var(--theme-text)]">URL</label><input id="settings-showcase-u-2" type="url" inputmode="url" autocomplete="url" maxlength="300" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="https://tuenlace.com"></div>
+      </div>
       </div>
     </div>
   </div>
