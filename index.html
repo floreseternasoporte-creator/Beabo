@@ -24203,13 +24203,32 @@ function saveNote() {
     sheet.classList.remove('active');
   }
 
+  // C113: copyCommentText era la única ruta de "copiar" (10 call sites de
+  // clipboard.writeText) sin guarda de navigator.clipboard y sin fallback:
+  // con clipboard ausente (WebView vieja, contexto no seguro) el acceso
+  // lanzaba TypeError síncrono que rompía el onclick con la hoja abierta,
+  // y ante un rechazo (permiso denegado) solo hacía console.error sin
+  // feedback al usuario. Ahora sigue el patrón de copyPostTextFromOptions:
+  // guarda + fallback execCommand + cierre de hoja y toast en ambos paths.
   function copyCommentText(text) {
-    navigator.clipboard.writeText(text).then(() => {
+    const onSuccess = () => {
       closeCommentActionsSheet();
       showMiniToast(appT('Texto copiado al portapapeles'));
-    }).catch(err => {
-      console.error('Error al copiar:', err);
-    });
+    };
+    const fallbackCopy = () => {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      textarea.remove();
+      onSuccess();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onSuccess).catch(fallbackCopy);
+      return;
+    }
+    fallbackCopy();
   }
 
 
