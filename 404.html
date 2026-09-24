@@ -7405,20 +7405,26 @@ function fiestaGameHostTally(ref, g, votes) {
   // y par de palabras en una sola lectura (ya no viajan en el doc compartido).
   fiestaGameHostReadSecrets(sid, g.players || []).then(function (sec) {
     var info = sec.byUid[best] || { w: '', liar: false };
-    fiestaGameHostEliminate(ref, g, best, info.w, info.liar, now, sec.liars, sec.pair);
+    fiestaGameHostEliminate(ref, g, best, info.w, info.liar, sec.liars, sec.pair);
   }).catch(function () {
-    fiestaGameHostEliminate(ref, g, best, '', false, now, [], null);
+    fiestaGameHostEliminate(ref, g, best, '', false, [], null);
   });
 }
-function fiestaGameHostEliminate(ref, g, uid, word, isLiar, now, liars, pair) {
+// C62: el deadline del revelado se ancla al momento de PUBLICARLO, no al
+// inicio del tally. Antes se capturaba `now` antes de la lectura asíncrona
+// de secretos: con latencia de red el revelado quedaba acortado, y con
+// latencia >= 9 s `revealEndsAt` nacía vencido y el host loop saltaba la
+// fase de revelado (los jugadores no veían quién salió ni su palabra).
+function fiestaGameHostEliminate(ref, g, uid, word, isLiar, liars, pair) {
   var out = (g.out || []).concat([uid]);
   var liarsLeft = (liars || []).filter(function (l) { return out.indexOf(l) === -1; });
+  var t = Date.now();
   if (liarsLeft.length === 0) {
-    ref.update({ status: 'final', winner: 'civiles', out: out, pair: pair, liars: liars, endedAt: now });
+    ref.update({ status: 'final', winner: 'civiles', out: out, pair: pair, liars: liars, endedAt: t });
   } else {
     ref.update({ status: 'reveal', out: out,
       revealed: { uid: uid, liar: isLiar, word: word },
-      revealEndsAt: now + 9000, round: g.round || 1 });
+      revealEndsAt: t + 9000, round: g.round || 1 });
   }
 }
 function fiestaGameHostAfterReveal(ref, g) {
@@ -23217,8 +23223,11 @@ function saveNote() {
           } else {
             // H2-DING-3: c creció pero la más reciente no califica (silenciada
             // o ya leída): sonar al menos el aviso genérico por las demás.
+            // C62: si la más reciente es de un chat silenciado, NO sonar: el
+            // panel de silenciar promete "dejarás de recibir avisos de esa
+            // conversación" (misma política que announceNewestNotificationIfNew).
             if (newest && newest.notificationId) notifUnreadLastAnnouncedId = newest.notificationId;
-            try { drexPlayNotificationSound(); } catch (_) {}
+            if (!newest || !isChatNotificationMuted(newest)) { try { drexPlayNotificationSound(); } catch (_) {} }
           }
         }).catch(() => {});
     } catch (_) {}
