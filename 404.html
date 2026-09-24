@@ -11286,7 +11286,10 @@ function saveNote() {
       'Comentarios recibidos': 'Comments received',
       'Votos en votaciones': 'Poll votes',
       'Vistas': 'Views',
-      'Actualizar': 'Refresh'
+      'Actualizar': 'Refresh',
+      'Vistas por día': 'Views per day',
+      'Posts más vistos': 'Most viewed posts',
+      'vistas': 'views'
     };
     var ZH = {
       'Tu actividad de los últimos 7 días': '过去 7 天的动态',
@@ -11301,7 +11304,10 @@ function saveNote() {
       'Comentarios recibidos': '收到的评论',
       'Votos en votaciones': '投票活动得票',
       'Vistas': '浏览量',
-      'Actualizar': '刷新'
+      'Actualizar': '刷新',
+      'Vistas por día': '每日浏览量',
+      'Posts más vistos': '浏览量最高的帖子',
+      'vistas': '次浏览'
     };
     var PT = {
       'Tu actividad de los últimos 7 días': 'Sua atividade dos últimos 7 dias',
@@ -11316,7 +11322,10 @@ function saveNote() {
       'Comentarios recibidos': 'Comentários recebidos',
       'Votos en votaciones': 'Votos em votações',
       'Vistas': 'Visualizações',
-      'Actualizar': 'Atualizar'
+      'Actualizar': 'Atualizar',
+      'Vistas por día': 'Visualizações por dia',
+      'Posts más vistos': 'Posts mais vistos',
+      'vistas': 'visualizações'
     };
     try {
       if (typeof APP_ENGLISH_TEXT !== 'undefined') Object.assign(APP_ENGLISH_TEXT, EN);
@@ -11380,7 +11389,11 @@ function saveNote() {
     return DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(uid).once('value')
       .then(function (snap) {
         var posts = [];
-        snap.forEach(function (child) { posts.push(child.val()); });
+        snap.forEach(function (child) {
+          var v = child.val();
+          if (v && typeof v === 'object' && !v._pid && child.key) v._pid = child.key; // C90: id para el top de vistos
+          posts.push(v);
+        });
         drexPulso.cache = { uid: uid, at: Date.now(), posts: posts };
         return posts;
       });
@@ -11399,7 +11412,7 @@ function saveNote() {
       if (!el) return; // la vista se desmontó mientras se leía
       var agg = drexPulsoAggregate(posts, Date.now());
       if (agg.empty) drexPulsoRenderEmpty(el);
-      else drexPulsoRenderData(el, agg);
+      else drexPulsoRenderData(el, agg, posts); // C90: posts para el desglose diario
     }).catch(function () {
       var el = document.getElementById('drex-pulso-body');
       if (el) drexPulsoRenderError(el);
@@ -11444,7 +11457,7 @@ function saveNote() {
       '</div>';
   }
 
-  function drexPulsoRenderData(body, agg) {
+  function drexPulsoRenderData(body, agg, posts) {
     var max = 0;
     agg.days.forEach(function (d) { if (d.count > max) max = d.count; });
     var last = agg.days.length - 1;
@@ -11474,7 +11487,9 @@ function saveNote() {
         stat(appT('Comentarios recibidos'), t.comments) +
         stat(appT('Vistas'), t.views) +
         stat(appT('Votos en votaciones'), t.pollVotes) +
-      '</div>';
+      '</div>' +
+      // C90: desglose diario de vistas + top de posts (cero lecturas nuevas).
+      drexPulsoDailySectionHTML(posts || [], Date.now());
   }
   // ============ /PULSO ============
 
@@ -11614,9 +11629,160 @@ function saveNote() {
           } catch (_) {}
         }
       }).catch(function () {});
+      // C90: desglose diario de vistas; la implementación vive en el bloque
+      // "VISTAS DIARIAS DE PULSO" (fuera de los marcadores viejos).
+      try { drexViewRecordDay(db, uid, id); } catch (_) {}
     } catch (_) {}
   }
   // ============ /VISTAS DE PULSO ============
+
+  // ============ VISTAS DIARIAS DE PULSO (C90: fase 2b del hueco #2) ============
+  // Desglose por día de las vistas de Pulso. Diseño seguro contra inflación:
+  // NO se guardan timestamps por vista (eso sería 1 escritura por vista).
+  // En su lugar, por cada (usuario, post, día) hay como máximo UN marcador
+  // idempotente userViews/<uid>/<dayKey>/<noteId> (misma rama y reglas que el
+  // marcador "ever" de C89: el dayKey 'yyyy-mm-dd' nunca colisiona con un
+  // noteId push-ID de 20 chars) + UN contador diario transaccional
+  // communityNotes/<noteId>/viewDays/<dayKey>. Escrituras acotadas: 2 por
+  // (usuario, post, día) como máximo, idempotentes entre pestañas/sesiones.
+  // El panel de Pulso agrega viewDays sin lecturas nuevas (los posts del
+  // autor ya se leen en drexPulsoReadAuthorPosts).
+
+  // Núcleo puro: clave de día local 'yyyy-mm-dd' para un timestamp.
+  function drexViewCoreDayKey(tsMs) {
+    var n = Number(tsMs);
+    if (!isFinite(n) || n <= 0) return '';
+    var d = new Date(n);
+    var m = d.getMonth() + 1;
+    var day = d.getDate();
+    return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+  }
+
+  // Registro diario: marcador idempotente por día + contador diario del post.
+  // db/uid/id ya validados por drexViewRecord (id pasó por drexViewCoreSafeId).
+  function drexViewRecordDay(db, uid, id) {
+    if (!db || !uid || !id) return;
+    var dayKey = drexViewCoreDayKey(Date.now());
+    if (!dayKey) return;
+    try {
+      db.ref('userViews/' + uid + '/' + dayKey + '/' + id).transaction(function (cur) {
+        return drexViewCoreMarkerUpdate(cur, Date.now());
+      }).then(function (res) {
+        if (res && res.committed) {
+          try {
+            db.ref('communityNotes/' + id + '/viewDays/' + dayKey)
+              .transaction(drexViewCoreCountUpdate)
+              .catch(function () {});
+          } catch (_) {}
+        }
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
+  // Núcleo PURO y testeable: vistas por día de los últimos PULSO_DAYS días,
+  // sumando los mapas p.viewDays {'yyyy-mm-dd': n} de cada post en ventana.
+  // Posts viejos (sin viewDays) aportan 0. dayKey en hora local, igual que
+  // el agregado de posts de drexPulsoAggregate.
+  function drexPulsoViewsByDay(posts, nowMs) {
+    var now = Number(nowMs) || Date.now();
+    var dayMs = 86400000;
+    var startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    var days = [];
+    for (var i = PULSO_DAYS - 1; i >= 0; i--) {
+      days.push({ date: new Date(startOfToday.getTime() - i * dayMs), views: 0 });
+    }
+    var windowStart = days[0].date.getTime();
+    (posts || []).forEach(function (p) {
+      if (!p) return;
+      var ts = Number(p.timestamp || 0);
+      if (!(ts >= windowStart && ts <= now)) return; // fuera de ventana o sin fecha
+      var vd = p.viewDays;
+      if (!vd || typeof vd !== 'object') return;
+      for (var k = 0; k < days.length; k++) {
+        var key = drexViewCoreDayKey(days[k].date.getTime());
+        var v = Number(vd[key] || 0);
+        if (v > 0) days[k].views += v;
+      }
+    });
+    return days;
+  }
+
+  // Núcleo PURO y testeable: top N posts por viewCount (empate: más reciente
+  // primero). Devuelve [{pid, text, views}]; solo con views > 0.
+  function drexPulsoTopViewed(posts, n) {
+    var lim = Math.max(1, Math.min(10, Number(n) || 5));
+    var rows = [];
+    (posts || []).forEach(function (p) {
+      if (!p) return;
+      var v = Number(p.viewCount || 0);
+      if (v <= 0) return;
+      rows.push({
+        pid: typeof p._pid === 'string' ? p._pid : (typeof p.id === 'string' ? p.id : ''),
+        text: String(p.content || p.text || ''),
+        views: v,
+        ts: Number(p.timestamp || 0)
+      });
+    });
+    rows.sort(function (a, b) {
+      return (b.views - a.views) || (b.ts - a.ts);
+    });
+    return rows.slice(0, lim).map(function (r) {
+      return { pid: r.pid, text: r.text, views: r.views };
+    });
+  }
+
+  var DREX_PULSO_TOP_N = 5;
+
+  // Render (solo lectura): segunda gráfica de barras "Vistas por día".
+  function drexPulsoViewsChartHTML(viewDays) {
+    var max = 0;
+    (viewDays || []).forEach(function (d) { if (d.views > max) max = d.views; });
+    var last = (viewDays || []).length - 1;
+    var bars = (viewDays || []).map(function (d, i) {
+      var h = max > 0 ? Math.max(10, Math.round((d.views / max) * 72)) : 4;
+      var isToday = i === last;
+      return '' +
+        '<div class="flex-1 flex flex-col items-center justify-end gap-1.5">' +
+          '<div class="w-full rounded-t-[6px]" style="height:' + h + 'px;background:' + (isToday ? '#2F33B8' : 'rgba(47,51,184,0.45)') + ';" title="' + d.views + '"></div>' +
+          '<span class="text-[11px] font-bold ' + (isToday ? 'text-[#2F33B8]' : 'text-[#9aa3b2]') + '">' + escapeHTML(drexPulsoDayLabel(d.date)) + '</span>' +
+        '</div>';
+    }).join('');
+    return '' +
+      '<div class="mt-5 mb-1 flex items-end gap-1.5" style="height:104px;">' + bars + '</div>' +
+      '<p class="text-[11px] font-semibold text-[#9aa3b2] mb-1">' + escapeHTML(appT('Vistas por día')) + '</p>';
+  }
+
+  // Render (solo lectura): lista de los posts más vistos (top 5).
+  function drexPulsoTopViewedHTML(top) {
+    if (!top || !top.length) return '';
+    var rows = top.map(function (r) {
+      var excerpt = r.text.replace(/\s+/g, ' ').slice(0, 90);
+      var label = formatNumber(r.views) + ' ' + appT('vistas');
+      var open = r.pid
+        ? ' onclick="try{openPostPermalink(\'' + escapeInlineSingleQuote(r.pid) + '\')}catch(_){}"'
+        : '';
+      return '' +
+        '<div' + open + ' class="flex items-center gap-3 bg-[#f0f4f9] rounded-2xl px-3 py-2.5' + (r.pid ? ' active:opacity-80' : '') + '"' + (r.pid ? ' role="button" tabindex="0"' : '') + '>' +
+          '<div class="flex-1 min-w-0">' +
+            '<div class="text-[13px] font-semibold text-[#1c2b4a] truncate">' + escapeHTML(excerpt || '(…)') + '</div>' +
+            '<div class="text-[11px] font-semibold text-[#6b7280]">' + escapeHTML(label) + '</div>' +
+          '</div>' +
+          '<span class="text-[#2F33B8] text-[16px] leading-none">›</span>' +
+        '</div>';
+    }).join('');
+    return '' +
+      '<p class="text-[13px] font-extrabold text-[#1c2b4a] mt-5 mb-2">' + escapeHTML(appT('Posts más vistos')) + '</p>' +
+      '<div class="flex flex-col gap-2">' + rows + '</div>';
+  }
+
+  // Sección completa C90 para el panel (cero lecturas nuevas).
+  function drexPulsoDailySectionHTML(posts, nowMs) {
+    var viewDays = drexPulsoViewsByDay(posts, nowMs);
+    var top = drexPulsoTopViewed(posts, DREX_PULSO_TOP_N);
+    return drexPulsoViewsChartHTML(viewDays) + drexPulsoTopViewedHTML(top);
+  }
+  // ============ /VISTAS DIARIAS DE PULSO ============
 
 
   function openNoteCreation() {
