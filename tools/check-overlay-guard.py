@@ -35,6 +35,7 @@ EXEMPT = {
     'note-creation-fullscreen': 'vista',
     'comments-view': 'vista',
     'search-view': 'vista',
+    'ondas-view': 'vista',
     'profile-view': 'vista',
     'music-view': 'vista (sección principal; gestiona la barra ella misma)',
     'music-playlist-view': 'vista',
