@@ -5197,6 +5197,21 @@ document.addEventListener("DOMContentLoaded", function() {
       margin-top: 10px;
       flex-wrap: wrap;
     }
+    /* Vistas del autor (C91): stat solo-lectura del conteo de vistas,
+       solo visible para el autor del post, al final de la fila de acciones. */
+    .drex-views-stat {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-left: auto;
+      padding: 6px 4px;
+      color: var(--theme-muted, #9aa4ae);
+      font-size: 12.5px;
+      font-weight: 600;
+      user-select: none;
+      cursor: default;
+    }
+    .drex-views-stat svg { width: 17px; height: 17px; flex-shrink: 0; }
     /* Cluster de comentaristas (estilo Reddit): avatares apilados + conteo.
        Oculto hasta que la carga perezosa lo llena (.drex-commenters-ready). */
     .drex-commenters { display: none; margin-top: 8px; }
@@ -11784,6 +11799,40 @@ function saveNote() {
   }
   // ============ /VISTAS DIARIAS DE PULSO ============
 
+  // ============ VISTAS DEL AUTOR (C91: fase 2c del hueco #2 — Pulso) ============
+  // C89/C90 registran vistas; hasta ahora el autor solo las veía en el panel
+  // de Pulso (top 5 + gráfica diaria). Esta fase 2c las muestra en la propia
+  // tarjeta del post, SOLO para su autor (feed, perfil propio y permalink
+  // comparten buildDrexPostCardHTML). Solo lectura: cero escrituras nuevas.
+  // Núcleo puro: sin DOM ni BD.
+  function drexViewsOwnShouldShow(note, viewerUid) {
+    if (!note || typeof viewerUid !== 'string' || viewerUid === '') return false;
+    var authorId = note.authorId || note.userId || '';
+    return authorId !== '' && authorId === viewerUid;
+  }
+  function drexViewsOwnCount(note) {
+    var n = note ? Number(note.viewCount) : NaN;
+    if (!isFinite(n) || n < 0) return 0;
+    return Math.floor(n);
+  }
+  function drexViewsOwnBadgeHTML(count, viewsWord) {
+    var c = Math.max(0, Math.floor(Number(count) || 0));
+    var label = String(viewsWord == null ? '' : viewsWord);
+    var aria = String(c) + ' ' + label;
+    return '<span class="drex-views-stat" aria-label="' + escapeHtml(aria) + '" title="' + escapeHtml(aria) + '">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.1 12S5.5 5.7 12 5.7 21.9 12 21.9 12 18.5 18.3 12 18.3 2.1 12 2.1 12z"/><circle cx="12" cy="12" r="3"/></svg>' +
+      '<span>' + escapeHtml(formatNumber(c)) + '</span></span>';
+  }
+  function drexViewsOwnBadgeForNote(note, user) {
+    try {
+      var uid = (user && user.uid) || '';
+      if (!drexViewsOwnShouldShow(note, uid)) return '';
+      var word = (typeof appT === 'function') ? appT('vistas') : 'vistas';
+      return drexViewsOwnBadgeHTML(drexViewsOwnCount(note), word);
+    } catch (_) { return ''; }
+  }
+  // ============ /VISTAS DEL AUTOR ============
+
 
   function openNoteCreation() {
     closeCreatorHub();
@@ -17880,6 +17929,7 @@ function saveNote() {
                   <path d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6-3.8L6.5 21V4.5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
               </button>
+              ${drexViewsOwnBadgeForNote(note, user)}
             </div>
             ${commentsCount > 0 ? `<div class="drex-commenters" data-commenters-for="${safeId}"></div>` : ''}
           </div>
