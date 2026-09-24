@@ -7226,6 +7226,15 @@ function fiestaGameLang() {
 function fiestaGameEsc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+// C159: escape para interpolar un UID forjable vía RTDB en un literal '...'
+// dentro de un atributo HTML (onclick="..."). Orden: primero escape JS
+// (\ y ' -> \'), luego entidades HTML (& " < >). Las entidades HTML solas
+// NO bastan: el parser HTML las decodifica ANTES de compilar el handler
+// (misma semántica que escapeInlineSingleQuote).
+function fiestaGameEscJs(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 function fiestaGamePickPair() {
   var lang = fiestaGameLang();
   var bank = (window.FIESTA_GAME_WORDS && window.FIESTA_GAME_WORDS[lang]) || FIESTA_GAME_WORDS_FALLBACK;
@@ -7823,7 +7832,7 @@ function fiestaGameHTMLVote() {
       return u !== fiestaMyUid;
     }).map(function (uid) {
       var sel = myVote === uid;
-      return '<button onclick="fiestaGameVote(\'' + uid + '\')" class="relative flex flex-col items-center gap-2 p-3.5 rounded-3xl border active:scale-95 transition '
+      return '<button onclick="fiestaGameVote(\'' + fiestaGameEscJs(uid) + '\')" class="relative flex flex-col items-center gap-2 p-3.5 rounded-3xl border active:scale-95 transition '
         + (sel ? 'border-[var(--drex-brand)] bg-[color-mix(in_srgb,var(--drex-brand)_15%,transparent)]' : 'border-white/10 bg-[#141419]') + '"' + (sel ? ' style="box-shadow:0 0 0 3px color-mix(in srgb, var(--drex-brand) 35%, transparent);"' : '') + '>'
         + fiestaGameAvatarHTML(uid, 'w-14 h-14')
         + '<div class="text-xs font-bold max-w-[76px] truncate">' + fiestaGameEsc(fiestaGameName(uid)) + '</div>'
@@ -27624,6 +27633,13 @@ function saveNote() {
             }
           }
           break;
+        case 'exercise':
+          // C159: el tap en "X publicó un nuevo ejercicio" abre el ejercicio.
+          // Guarda typeof: harnesses viejos sin openExerciseDetail (patrón C153).
+          if (actionId && typeof openExerciseDetail === 'function') {
+            setTimeout(() => openExerciseDetail(actionId), 150);
+          }
+          break;
         case 'profile':
           if (actionId && typeof openAuthorProfile === 'function') {
             openAuthorProfile(actionId);
@@ -46612,6 +46628,42 @@ async function practicarCurrentProfile() {
   } catch(e) {}
   return { uid: user.uid, name: name, img: img };
 }
+// ============ C159: EJERCICIO NUEVO — AVISO A SEGUIDORES (fan-out) ==
+// Hueco real con ancla: publishExercise() CALCULA (push a languageExercises
+// con authorId/authorName) y PINTA (tarjeta en el feed de Practicar), pero es
+// el único contenido publicado sin fan-out a seguidores: posts, canciones y
+// fiestas sí avisan; el ejercicio, no. El ajuste "Publicaciones de seguidos"
+// promete "Cuando alguien que sigues publica".
+// Sin servidor que detecte la publicación, el publicador hace fan-out
+// best-effort tras confirmar el push (sin carrera: el publicador es el único
+// escritor del evento, así que no hay nodo paralelo ni updater que arbitrar).
+// Tipo 'post' EXISTENTE para heredar el toggle 'followingPosts' del
+// destinatario (notifTypeToPrefKey) — nunca inventar tipo. 'exercise' es solo
+// actionType de navegación (como 'chat' o 'profile'), con su case en el
+// switch (guarda typeof, patrón C153). El payload del push no cambia
+// (lección C149). notifyFollowersOfNewContent ya excluye al propio autor
+// (sin auto-aviso). Si las reglas RTDB deniegan el push, el ejercicio no
+// existe y no hay aviso; si el fan-out falla, el ejercicio sigue publicado
+// (el aviso nunca bloquea).
+// Núcleo PURO: texto del aviso (español fijo, como C147/C153/C157/C158).
+function exerciseNotifyText(authorName, langName) {
+  var a = (typeof authorName === 'string' && authorName.trim()) ? authorName.trim() : 'Alguien';
+  var l = (typeof langName === 'string' && langName.trim()) ? langName.trim().toLowerCase() : null;
+  return l ? a + ' publicó un nuevo ejercicio de ' + l + '.' : a + ' publicó un nuevo ejercicio.';
+}
+// Envoltorio PURO del fan-out (salvo la llamada al notificador existente).
+// Devuelve false sin authorId/exId o sin notificador: no dispara nada a medias.
+function exerciseAnnounceToFollowers(authorId, authorName, exId, langName) {
+  try {
+    if (!authorId || !exId) return false;
+    if (typeof notifyFollowersOfNewContent !== 'function') return false;
+    notifyFollowersOfNewContent(authorId, authorName || 'Alguien', 'post',
+      exerciseNotifyText(authorName, langName),
+      { actionType: 'exercise', actionId: exId, actorId: authorId });
+    return true;
+  } catch (_) { return false; }
+}
+// ============ /C159 ============
 async function publishExercise() {
   const user = DrexCloud.auth().currentUser;
   if (!user) { showMiniToast(appT('Debes iniciar sesión para practicar.')); return; }
@@ -46635,10 +46687,21 @@ async function publishExercise() {
     // C78-F2: pushAsync en vez de push()._writePromise (este nunca rechaza:
     // antes un fallo de red mostraba "Ejercicio publicado." y cerraba el
     // composer sin guardar nada). Ahora el catch muestra el error real.
-    await DrexCloud.database().ref('languageExercises').pushAsync(payload);
+    // pushAsync resuelve con el ref hijo (con .key real, ya re-sellado).
+    const _exPushRef = await DrexCloud.database().ref('languageExercises').pushAsync(payload);
+    const _exId = _exPushRef && _exPushRef.key;
     closePracticarComposer();
     if (typeof showMiniToast === 'function') showMiniToast(appT('Ejercicio publicado.'));
     loadPracticarFeed();
+    // C159: avisar a los seguidores del ejercicio nuevo (fan-out best-effort;
+    // no bloquea el flujo). Guarda typeof: los harnesses viejos ejecutan
+    // publishExercise en sandbox sin el anunciador (patrón C153).
+    try {
+      if (typeof exerciseAnnounceToFollowers === 'function') {
+        const _c159Lang = (typeof practicarLangByCode === 'function') ? practicarLangByCode(lang).name : '';
+        exerciseAnnounceToFollowers(profile.uid, profile.name, _exId, _c159Lang);
+      }
+    } catch (_) {}
   } catch(e) {
     console.error('Error publicando ejercicio:', e);
     if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo publicar. Intenta de nuevo.'));
