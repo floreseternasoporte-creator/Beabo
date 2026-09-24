@@ -11304,7 +11304,9 @@ function saveNote() {
       'Actualizar': 'Refresh',
       'Vistas por día': 'Views per day',
       'Posts más vistos': 'Most viewed posts',
-      'vistas': 'views'
+      'vistas': 'views',
+      'Retención': 'Retention',
+      'se quedaron 5+ segundos': 'stayed 5+ seconds'
     };
     var ZH = {
       'Tu actividad de los últimos 7 días': '过去 7 天的动态',
@@ -11322,7 +11324,9 @@ function saveNote() {
       'Actualizar': '刷新',
       'Vistas por día': '每日浏览量',
       'Posts más vistos': '浏览量最高的帖子',
-      'vistas': '次浏览'
+      'vistas': '次浏览',
+      'Retención': '留存',
+      'se quedaron 5+ segundos': '停留 5 秒以上'
     };
     var PT = {
       'Tu actividad de los últimos 7 días': 'Sua atividade dos últimos 7 dias',
@@ -11340,7 +11344,9 @@ function saveNote() {
       'Actualizar': 'Atualizar',
       'Vistas por día': 'Visualizações por dia',
       'Posts más vistos': 'Posts mais vistos',
-      'vistas': 'visualizações'
+      'vistas': 'visualizações',
+      'Retención': 'Retenção',
+      'se quedaron 5+ segundos': 'ficaram 5+ segundos'
     };
     try {
       if (typeof APP_ENGLISH_TEXT !== 'undefined') Object.assign(APP_ENGLISH_TEXT, EN);
@@ -11375,7 +11381,7 @@ function saveNote() {
       days.push({ date: new Date(startOfToday.getTime() - i * dayMs), count: 0 });
     }
     var windowStart = days[0].date.getTime();
-    var totals = { posts: 0, votes: 0, ecos: 0, comments: 0, pollVotes: 0, views: 0 };
+    var totals = { posts: 0, votes: 0, ecos: 0, comments: 0, pollVotes: 0, views: 0, retained: 0 };
     (posts || []).forEach(function (p) {
       if (!p) return;
       var ts = Number(p.timestamp || 0);
@@ -11385,6 +11391,7 @@ function saveNote() {
       totals.ecos += Number(p.ecosCount || 0);
       totals.comments += Number(p.commentsCount || 0);
       totals.views += Number(p.viewCount || 0); // C89: vistas registradas por el tracker
+      totals.retained += Number(p.viewRetained || 0); // C92: retenciones (5+ s) registradas por el tracker
       if (p.poll) totals.pollVotes += Number(p.poll.total || 0);
       var pd = new Date(ts);
       pd.setHours(0, 0, 0, 0);
@@ -11503,6 +11510,8 @@ function saveNote() {
         stat(appT('Vistas'), t.views) +
         stat(appT('Votos en votaciones'), t.pollVotes) +
       '</div>' +
+      // C92: tarjeta de retención, fase 3 del hueco #2 (cero lecturas nuevas).
+      drexPulsoRetentionCardHTML(t.retained, t.views) +
       // C90: desglose diario de vistas + top de posts (cero lecturas nuevas).
       drexPulsoDailySectionHTML(posts || [], Date.now());
   }
@@ -11590,15 +11599,18 @@ function saveNote() {
           if (!id) return;
           var visible = en.isIntersecting && en.intersectionRatio >= DREX_VIEW_THRESHOLD;
           if (visible) {
-            if (_drexViewTimers[id]) return; // dwell ya en curso
-            if (!drexViewCoreShouldRecord(_drexViewedSet, id, _drexViewUid())) return;
-            _drexViewTimers[id] = setTimeout(function () {
-              delete _drexViewTimers[id];
-              drexViewRecord(id);
-            }, DREX_VIEW_DWELL_MS);
-          } else if (_drexViewTimers[id]) {
-            clearTimeout(_drexViewTimers[id]);
-            delete _drexViewTimers[id];
+            if (_drexViewTimers[id] || _drexRetainTimers[id]) return; // dwell o retención ya en curso
+            if (drexViewCoreShouldRecord(_drexViewedSet, id, _drexViewUid())) {
+              _drexViewTimers[id] = setTimeout(function () {
+                delete _drexViewTimers[id];
+                drexViewRecord(id);
+                try { drexRetainArm(id); } catch (_) {} // C92: fase 3 — medir retención tras la vista
+              }, DREX_VIEW_DWELL_MS);
+            } else if (drexViewCoreShouldRecord(_drexRetainedSet, id, _drexViewUid())) {
+              try { drexRetainArm(id); } catch (_) {} // C92: re-entrada con la vista ya contada
+            }
+          } else if (_drexViewTimers[id] || _drexRetainTimers[id]) {
+            _drexViewClearTimers(id); // C92: cancela dwell y retención al salir de la vista
           }
         })(entries[i]);
       }
@@ -11798,6 +11810,95 @@ function saveNote() {
     return drexPulsoViewsChartHTML(viewDays) + drexPulsoTopViewedHTML(top);
   }
   // ============ /VISTAS DIARIAS DE PULSO ============
+
+  // ============ RETENCIÓN DE PULSO (C92: fase 3 del hueco #2 del roadmap) ============
+  // "Cuántas vistas se quedaron": la vista (C89) se cuenta tras 1 s visible;
+  // la RETENCIÓN se cuenta si la tarjeta sigue ≥50% visible hasta 5 s en total.
+  // Diseño anti-inflación (igual que C89/C90): 1 retención por usuario por
+  // post como máximo — marcador idempotente userViews/<uid>/retained/<noteId>
+  // (misma rama y reglas que los marcadores ever/diario; 'retained' no
+  // colisiona con noteIds de 20 chars ni con dayKeys 'yyyy-mm-dd') +
+  // incremento transaccional de communityNotes/<noteId>/viewRetained que
+  // solo ocurre si el marcador se comprometió (sin doble conteo entre
+  // pestañas). Escrituras acotadas: 2 por (usuario, post) como máximo, de por
+  // vida. El temporizador de retención se arma al completar el dwell de la
+  // vista (o al re-entrar a una tarjeta ya vista en la sesión) y se cancela
+  // si la tarjeta sale de la vista antes de los 5 s. Degrada en silencio.
+  var DREX_RETAIN_TOTAL_MS = 5000;
+  var DREX_RETAIN_EXTRA_MS = DREX_RETAIN_TOTAL_MS - DREX_VIEW_DWELL_MS;
+  var _drexRetainTimers = {}; // noteId -> timeout id (retención en curso)
+  var _drexRetainedSet = {}; // noteId -> 1 (dedupe de sesión)
+
+  // Arma el temporizador de retención para un post cuya vista ya se contó.
+  function drexRetainArm(noteId) {
+    try {
+      var id = drexViewCoreSafeId(noteId);
+      if (!id || _drexRetainTimers[id]) return;
+      var uid = _drexViewUid();
+      if (!drexViewCoreShouldRecord(_drexRetainedSet, id, uid)) return;
+      _drexRetainTimers[id] = setTimeout(function () {
+        delete _drexRetainTimers[id];
+        drexRetainRecord(id);
+      }, DREX_RETAIN_EXTRA_MS);
+    } catch (_) {}
+  }
+
+  // Cancela los temporizadores de vista y retención de un post.
+  function _drexViewClearTimers(id) {
+    try {
+      if (_drexViewTimers[id]) { clearTimeout(_drexViewTimers[id]); delete _drexViewTimers[id]; }
+      if (_drexRetainTimers[id]) { clearTimeout(_drexRetainTimers[id]); delete _drexRetainTimers[id]; }
+    } catch (_) {}
+  }
+
+  // Registro efectivo de la retención: marca sesión + marcador idempotente +
+  // contador transaccional (solo si el marcador se comprometió).
+  function drexRetainRecord(noteId) {
+    var id = drexViewCoreSafeId(noteId);
+    var uid = _drexViewUid();
+    if (!drexViewCoreShouldRecord(_drexRetainedSet, id, uid)) return;
+    drexViewCoreMark(_drexRetainedSet, id);
+    try {
+      var db = DrexCloud.database();
+      db.ref('userViews/' + uid + '/retained/' + id).transaction(function (cur) {
+        return drexViewCoreMarkerUpdate(cur, Date.now());
+      }).then(function (res) {
+        if (res && res.committed) {
+          try {
+            db.ref('communityNotes/' + id + '/viewRetained')
+              .transaction(drexViewCoreCountUpdate)
+              .catch(function () {});
+          } catch (_) {}
+        }
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
+  // Núcleo PURO y testeable: % de retención (0–100), saneado.
+  function drexPulsoRetentionPct(retained, views) {
+    var r = Number(retained), v = Number(views);
+    if (!isFinite(r) || r < 0) r = 0;
+    if (!isFinite(v) || v <= 0) return 0;
+    return Math.round((Math.min(r, v) / v) * 100);
+  }
+
+  // Render (solo lectura): tarjeta de retención del panel de Pulso.
+  function drexPulsoRetentionCardHTML(retained, views) {
+    var r = Math.max(0, Math.floor(Number(retained) || 0));
+    var v = Math.max(0, Math.floor(Number(views) || 0));
+    var pct = drexPulsoRetentionPct(r, v);
+    return '<div class="rounded-2xl px-3 py-3 mt-2 flex items-center gap-3" style="background:rgba(47,51,184,0.08);">' +
+      '<div class="text-[26px] font-extrabold leading-none" style="color:#2F33B8;">' + pct + '%</div>' +
+      '<div class="flex-1 min-w-0">' +
+        '<div class="text-[13px] font-extrabold text-[#1c2b4a]">' + escapeHTML(appT('Retención')) + '</div>' +
+        '<div class="text-[11px] font-semibold text-[#6b7280]">' +
+          escapeHTML(formatNumber(r) + '/' + formatNumber(v) + ' ' + appT('vistas')) +
+          ' · ' + escapeHTML(appT('se quedaron 5+ segundos')) +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+  // ============ /RETENCIÓN DE PULSO ============
 
   // ============ VISTAS DEL AUTOR (C91: fase 2c del hueco #2 — Pulso) ============
   // C89/C90 registran vistas; hasta ahora el autor solo las veía en el panel
