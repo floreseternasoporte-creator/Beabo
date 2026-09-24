@@ -46770,6 +46770,7 @@ window.musicSleepCancel = function () {
 var musicFadeEl = null;
 var musicXfading = false;
 var musicXfadeTimerId = null;
+var musicXfadeSeq = 0; // C72-F1: token anti-stale del crossfade (cada begin/cancel lo incrementa)
 var MUSIC_ICON_XFADE = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 8h10l-3-3m3 3l-3 3M17 16H7l3-3m-3 3l3 3"/></svg>';
 function musicCrossfadeSec() {
   try {
@@ -46852,6 +46853,8 @@ function musicBeginCrossfade(ni, fade) {
   const oldEl = musicEnsureAudio();
   const next = musicQueue[ni];
   if (!next || !next.id) return;
+  musicXfadeSeq++; // C72-F1: este begin invalida los catch en vuelo de begins anteriores
+  const mySeq = musicXfadeSeq; // C72-F1
   musicXfading = true;
   musicQueueIdx = ni;
   musicPaintTrackUI(next);
@@ -46861,7 +46864,7 @@ function musicBeginCrossfade(ni, fade) {
     if (!musicXfading) return;
     try { fadeEl.src = url; fadeEl.volume = 0; fadeEl.currentTime = 0; }
     catch (_) { musicCancelCrossfade(); return; }
-    fadeEl.play().catch(() => { musicCancelCrossfade(); });
+    fadeEl.play().catch(() => { musicXfadeSkipFailed(mySeq, ni); });
     const steps = Math.max(1, Math.round(fade * 10));
     let i = 0;
     try { clearInterval(musicXfadeTimerId); } catch (_) {}
@@ -46886,15 +46889,29 @@ function musicBeginCrossfade(ni, fade) {
         renderMusicQueueList();
       }
     }, 100);
-  }).catch(() => { musicXfading = false; });
+  }).catch(() => { musicXfadeSkipFailed(mySeq, ni); });
 }
 function musicCancelCrossfade() {
   if (!musicXfading && !musicXfadeTimerId) return;
+  musicXfadeSeq++; // C72-F1: invalida los catch en vuelo del crossfade abortado
   try { clearInterval(musicXfadeTimerId); } catch (_) {}
   musicXfadeTimerId = null;
   musicXfading = false;
   try { if (musicFadeEl) { musicFadeEl.pause(); musicFadeEl.removeAttribute('src'); } } catch (_) {}
   try { if (musicAudioEl) musicAudioEl.volume = 1; } catch (_) {}
+}
+// C72-F1: el destino del crossfade no pudo cargar (track eliminado o red
+// caída). El begin ya había movido musicQueueIdx y pintado la UI del destino,
+// pero el audio anterior sigue sonando: dejarlo así desincroniza UI/audio
+// (la UI muestra una pista que nunca suena). Se salta ya al siguiente con
+// musicNext(true) — el mismo camino que el fin de pista normal — en vez de
+// esperar al próximo timeupdate con el estado a medias. Solo actúa si este
+// crossfade sigue siendo el vigente: un next/startTrack manual posterior lo
+// invalida (musicCancelCrossfade incrementa el token) y manda él.
+function musicXfadeSkipFailed(mySeq, ni) {
+  if (!musicXfading || mySeq !== musicXfadeSeq || musicQueueIdx !== ni) return;
+  try { musicCancelCrossfade(); } catch (_) {}
+  try { musicNext(true); } catch (_) {}
 }
 /* ---------- Mix Drex: radio continua ---------- */
 var musicMixOn = true;
