@@ -39632,6 +39632,43 @@ function renderRecentSearches() {
 }
 let __recentSearchSaveT = null;
 
+// C152 — BÚSQUEDA POR CONTENIDO DE ENCUESTA.
+// performRealTimeSearch matcheaba content/autor/url/título pero era ciega al
+// contenido de la votación: buscar "pizza" nunca encontraba la encuesta
+// "¿Qué cenamos?" con opciones pizza/pasta, y un post de solo-encuesta
+// (C145) solo aparecía buscando por nombre de autor. Funciones puras para
+// test en sandbox (sin DOM ni BD).
+// drexPollSearchText(poll): texto buscable de la encuesta (pregunta +
+// títulos de opciones con texto, unidos por espacios); '' si no hay nada.
+function drexPollSearchText(poll) {
+  try {
+    if (!poll || !Array.isArray(poll.options)) return '';
+    const parts = [];
+    const q = String(poll.q || '').trim();
+    if (q) parts.push(q);
+    for (let i = 0; i < poll.options.length; i++) {
+      const t = String((poll.options[i] && poll.options[i].t) || '').trim();
+      if (t) parts.push(t);
+    }
+    return parts.join(' ');
+  } catch (_) { return ''; }
+}
+// drexPollMatchesQuery(poll, queryLower): ¿la encuesta matchea la consulta
+// (ya en minúsculas)? Mismo criterio de dos niveles que el contenido del
+// post: includes directo y luego palabra-por-palabra.
+function drexPollMatchesQuery(poll, queryLower) {
+  try {
+    const q = String(queryLower || '').trim();
+    if (!q) return false;
+    const text = drexPollSearchText(poll).toLowerCase();
+    if (!text) return false;
+    if (text.includes(q)) return true;
+    const queryWords = q.split(/\s+/).filter(w => w.length > 0);
+    const textWords = text.split(/\s+/);
+    return queryWords.some(qw => textWords.some(tw => tw.includes(qw)));
+  } catch (_) { return false; }
+}
+
 function performRealTimeSearch() {
   const input = document.getElementById('search-input');
   if (!input) return;
@@ -39700,6 +39737,13 @@ function performRealTimeSearch() {
         
         if (!matches && note.title) {
           matches = (note.title || '').toLowerCase().includes(query);
+        }
+
+        // C152: la búsqueda también matchea el contenido de la encuesta
+        // (pregunta + opciones). Antes era ciega a la votación: un post de
+        // solo-encuesta (C145) solo aparecía buscando por autor.
+        if (!matches && note.poll && typeof drexPollMatchesQuery === 'function') {
+          matches = drexPollMatchesQuery(note.poll, query);
         }
         
       }
