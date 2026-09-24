@@ -20254,6 +20254,24 @@ function saveNote() {
   // (el doble toque debe dejar el like puesto, no quitarlo).
   const _drexUpvoteActivatedAt = new Map();
   const DREX_UPVOTE_DOUBLE_TAP_MS = 600;
+  // C100: el Map solo sirve durante la ventana de doble toque; sin poda, cada
+  // post votado dejaba una entrada muerta para siempre. Tope con barrido de
+  // caducadas (100 % seguro: toda entrada más vieja que la ventana ya es inútil)
+  // y descarte de las más antiguas si aun así se excede.
+  const DREX_UPVOTE_ACTIVATED_CAP = 500;
+  function _drexUpvoteActivatedSet(noteId) {
+    _drexUpvoteActivatedAt.set(noteId, Date.now());
+    if (_drexUpvoteActivatedAt.size <= DREX_UPVOTE_ACTIVATED_CAP) return;
+    const cutoff = Date.now() - DREX_UPVOTE_DOUBLE_TAP_MS;
+    for (const entry of _drexUpvoteActivatedAt) {
+      if (entry[1] <= cutoff) _drexUpvoteActivatedAt.delete(entry[0]);
+    }
+    while (_drexUpvoteActivatedAt.size > DREX_UPVOTE_ACTIVATED_CAP) {
+      const oldest = _drexUpvoteActivatedAt.keys().next();
+      if (oldest.done) break;
+      _drexUpvoteActivatedAt.delete(oldest.value);
+    }
+  }
 
   // REINTENTO AUTOMÁTICO: si un voto o comentario falla por red, se reintenta
   // solo (hasta 2 veces, con espera creciente) en vez de mostrar el error y ya.
@@ -20324,6 +20342,12 @@ function saveNote() {
 
     // Doble toque sobre el botón de like: si el like se activó hace menos de
     // la ventana corta, el segundo toque se ignora y el like se queda puesto.
+    // C100: autolimpieza — la entrada caduca con la ventana; si ya pasó, se
+    // borra en la lectura en vez de acumularse muerta en el Map.
+    const _upvoteActivatedAt = _drexUpvoteActivatedAt.get(noteId) || 0;
+    if (_upvoteActivatedAt && Date.now() - _upvoteActivatedAt >= DREX_UPVOTE_DOUBLE_TAP_MS) {
+      _drexUpvoteActivatedAt.delete(noteId);
+    }
     if (voteType === 'up' && wasUpvoted &&
         (Date.now() - (_drexUpvoteActivatedAt.get(noteId) || 0)) < DREX_UPVOTE_DOUBLE_TAP_MS) {
       _postVoteLocks.delete(noteId);
@@ -20357,7 +20381,7 @@ function saveNote() {
       optimisticUpvoted = !wasUpvoted;
       optimisticDownvoted = false;
       optimisticScore = currentScore + (wasUpvoted ? -1 : 1) + (wasDownvoted ? 1 : 0);
-      if (!wasUpvoted) _drexUpvoteActivatedAt.set(noteId, Date.now());
+      if (!wasUpvoted) _drexUpvoteActivatedSet(noteId);
     } else {
       optimisticDownvoted = !wasDownvoted;
       optimisticUpvoted = false;
@@ -23207,6 +23231,22 @@ function saveNote() {
   // sola vez por post, con fotos del caché canónico de perfiles.
   const _commentersLoaded = new Set();
   const _commentersCache = new Map(); // noteId -> { html, ts }: sobrevive a reconstrucciones de tarjeta
+  // C100: el caché no tenía tope ni limpieza (una entrada de ~1 KB por post
+  // hidratado, sin clear en cambio de cuenta). Tope con desalojo de las más
+  // viejas por ts; desalojar solo fuerza re-hidratar desde la BD, nunca rompe.
+  const DREX_COMMENTERS_CACHE_CAP = 300;
+  function _commentersCacheSet(noteId, html) {
+    _commentersCache.set(noteId, { html: html, ts: Date.now() });
+    if (_commentersCache.size <= DREX_COMMENTERS_CACHE_CAP) return;
+    const entries = [];
+    _commentersCache.forEach(function (v, k) { entries.push([k, v.ts || 0]); });
+    entries.sort(function (a, b) { return a[1] - b[1]; });
+    const drop = _commentersCache.size - DREX_COMMENTERS_CACHE_CAP;
+    for (let i = 0; i < drop && i < entries.length; i++) {
+      _commentersCache.delete(entries[i][0]);
+      _commentersLoaded.delete(entries[i][0]);
+    }
+  }
   let _commentersIO = null;
   const _COMMENTERS_AVATAR_PLACEHOLDER = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
   function _ensureCommentersObserver() {
@@ -23278,7 +23318,7 @@ function saveNote() {
         : appT('{n} usuarios han comentado').replace('{n}', n);
       el.innerHTML = '<button type="button" class="drex-commenters-stack" onclick="openCommentsView(\'' + escapeInlineSingleQuote(noteId) + '\')" aria-label="' + escapeHtml(label) + '"><span class="drex-commenters-avatars">' + avatars + extra + '</span><span class="drex-commenters-label">' + escapeHtml(label) + '</span></button>';
       el.classList.add('drex-commenters-ready');
-      _commentersCache.set(noteId, { html: el.innerHTML, ts: Date.now() });
+      _commentersCacheSet(noteId, el.innerHTML);
     } catch (_) {}
   }
 
