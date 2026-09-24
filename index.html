@@ -20247,11 +20247,13 @@ function saveNote() {
       });
       await ensureConversationExists(me.uid, authorId);
       const conversationId = getDirectConversationId(me.uid, authorId);
-      const text = '¡Hola ' + authorName + '! 👋 Drex Creators quiere colaborar contigo en tu publicación. Puedes aceptar o rechazar la invitación desde aquí o desde tus notificaciones.';
-      const msgRef = DrexCloud.database().ref('conversationMessages/' + conversationId).push();
-      await msgRef.set({ senderId: me.uid, text, timestamp: ts, collabInvite: { noteId, inviterUid: me.uid, inviterName } });
-      if (typeof updateChatConversationPreview === 'function') {
-        await updateChatConversationPreview(text, { senderName: inviterName }, { conversationId, recipientId: authorId, isGroup: false, senderUid: me.uid }).catch(() => {});
+      if (conversationId) { // C191: sin DM de cortesía si el UID es forjado (PoC T5)
+        const text = '¡Hola ' + authorName + '! 👋 Drex Creators quiere colaborar contigo en tu publicación. Puedes aceptar o rechazar la invitación desde aquí o desde tus notificaciones.';
+        const msgRef = DrexCloud.database().ref('conversationMessages/' + conversationId).push();
+        await msgRef.set({ senderId: me.uid, text, timestamp: ts, collabInvite: { noteId, inviterUid: me.uid, inviterName } });
+        if (typeof updateChatConversationPreview === 'function') {
+          await updateChatConversationPreview(text, { senderName: inviterName }, { conversationId, recipientId: authorId, isGroup: false, senderUid: me.uid }).catch(() => {});
+        }
       }
       showMiniToast(appT('Invitación de colaboración enviada.'));
     } catch (e) {
@@ -20305,6 +20307,7 @@ function saveNote() {
       try {
         await ensureConversationExists(me.uid, inviterUid);
         const conversationId = getDirectConversationId(me.uid, inviterUid);
+        if (!conversationId) throw new Error('invalid-uid'); // C191: PoC T5
         const text = accept
           ? '¡Acepté la colaboración! 🎉 Nuestra publicación ahora aparece en ambos perfiles.'
           : 'Gracias por la invitación, pero esta vez prefiero no colaborar.';
@@ -21605,6 +21608,7 @@ function saveNote() {
 
         await ensureConversationExists(user.uid, otherUid);
         const conversationId = getDirectConversationId(user.uid, otherUid);
+        if (!conversationId) throw new Error('invalid-uid'); // C191: PoC T5
         const msgRef = DrexCloud.database().ref('conversationMessages/' + conversationId).push();
         const now = Date.now();
         await msgRef.set({
@@ -34661,7 +34665,18 @@ let chatTypingListener = null;
     }
   }
 
+  // C191: un UID forjado con '/' fragmentaría el ID de conversación en varias
+  // rutas RTDB (inyección estructural, PoC T5). Se rechaza antes de construir
+  // cualquier ruta; los llamadores tratan null como "no abrir / no escribir".
+  function isValidChatUid(uid) {
+    // Un solo segmento RTDB: sin '/', '.', '#', '$', '[', ']' ni controles/DEL.
+    // El '/' es el vector del PoC T5 (inyección estructural); el resto lo
+    // rechaza RTDB de todos modos, pero se filtra aquí por defensa en profundidad.
+    return typeof uid === 'string' && uid.length > 0 && uid.length <= 768 && !/[\/.#$\[\]\x00-\x1f\x7f]/.test(uid);
+  }
+
   function getDirectConversationId(uidA, uidB) {
+    if (!isValidChatUid(uidA) || !isValidChatUid(uidB)) return null;
     return [uidA, uidB].sort().join('__');
   }
 
@@ -35952,6 +35967,7 @@ let chatTypingListener = null;
     currentChatIsGroup = false;
     currentGroupMembers = [];
     currentChatRoomId = getDirectConversationId(user.uid, otherUid);
+    if (!currentChatRoomId) return; // C191: otherUid forjado con '/' (PoC T5)
     currentChatRecipient = otherUid;
     // ANTESALA (C85): detectar si esta conversación es una solicitud pendiente
     // para mostrar el banner y bloquear el composer hasta aceptarla.
@@ -36258,6 +36274,7 @@ let chatTypingListener = null;
 
   async function ensureConversationExists(uidA, uidB) {
     const conversationId = getDirectConversationId(uidA, uidB);
+    if (!conversationId) return null; // C191: UID forjado con '/' (PoC T5)
     const now = Date.now();
     const [convoSnap, userASnap, userBSnap] = await Promise.all([
       DrexCloud.database().ref('conversations/' + conversationId).once('value'),
