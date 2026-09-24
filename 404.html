@@ -49996,7 +49996,52 @@ function musicEnsureAudio() {
     const d = document.getElementById('music-time-dur');
     if (d && isFinite(musicAudioEl.duration)) d.textContent = musicFmtTime(musicAudioEl.duration);
   });
+  // C141: registrar una sola vez los handlers de Media Session (pantalla de
+  // bloqueo / controles del SO) con la semántica real del reproductor.
+  try { musicWireMediaSessionHandlers(); } catch (_) {}
   return musicAudioEl;
+}
+// C141: Media Session API — metadata + controles de la pantalla de bloqueo/SO.
+// Sin esto, Android/iOS mostraban controles genéricos vacíos mientras la
+// música de Drex sonaba. La metadata se refresca en cada musicPaintTrackUI
+// (incluye crossfade y saltos de cola).
+function musicMediaMetadataOf(t) {
+  var art = [];
+  try {
+    var src = t && t.coverImage;
+    if (typeof src === 'string' && /^https?:\/\//i.test(src)) {
+      art = [{ src: src, sizes: '512x512', type: 'image/jpeg' }];
+    }
+  } catch (_) {}
+  var title = (t && t.title) || 'Sin título';
+  var artist = (t && (t.artistName || t.authorName)) || 'Artista';
+  return { title: String(title), artist: String(artist), album: 'Drex', artwork: art };
+}
+function musicSyncMediaSession(t) {
+  try {
+    if (!('mediaSession' in navigator)) return;
+    if (typeof MediaMetadata === 'undefined') return;
+    navigator.mediaSession.metadata = new MediaMetadata(musicMediaMetadataOf(t));
+  } catch (_) {}
+}
+var musicMediaSessionHandlersWired = false;
+function musicWireMediaSessionHandlers() {
+  if (musicMediaSessionHandlersWired) return;
+  try {
+    if (!('mediaSession' in navigator)) return;
+    var ms = navigator.mediaSession;
+    if (!ms || typeof ms.setActionHandler !== 'function') return;
+    // Semántica con guardas: play solo si hay algo en pausa; pause solo si suena.
+    ms.setActionHandler('play', function () {
+      try { if (musicAudioEl && musicAudioEl.paused && musicAudioEl.src) musicTogglePlay(); } catch (_) {}
+    });
+    ms.setActionHandler('pause', function () {
+      try { if (musicAudioEl && !musicAudioEl.paused) musicTogglePlay(); } catch (_) {}
+    });
+    ms.setActionHandler('previoustrack', function () { try { musicPrev(); } catch (_) {} });
+    ms.setActionHandler('nexttrack', function () { try { musicNext(); } catch (_) {} });
+    musicMediaSessionHandlersWired = true;
+  } catch (_) {}
 }
 function musicGetAudioUrl(trackId) {
   if (musicUrlCache.has(trackId)) return Promise.resolve(musicUrlCache.get(trackId));
@@ -50034,6 +50079,8 @@ window.openMusicTrackFromFeed = function (trackId) {
 };
 function musicPaintTrackUI(t) {
   if (!t || !t.id) return;
+  // C141: metadata para la pantalla de bloqueo / controles del SO (Media Session).
+  try { musicSyncMediaSession(t); } catch (_) {}
   try { musicHistoryRecord(t); } catch (_) {}
   // UI del reproductor
   document.getElementById('music-player-title').textContent = t.title || 'Sin título';
