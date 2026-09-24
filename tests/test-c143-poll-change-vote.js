@@ -36,14 +36,9 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const cp = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-// Pin de base histórica del ciclo (commit previo al cambio): el updater no
-// existía ahí. Se usa el SHA explícito (no HEAD) para que el test sea
-// estable en CI (checkout fresco en el commit nuevo) y en ciclos futuros.
-const BASE_SHA = '90f2816eec885507a02f1146dbce2349654f325d';
 
 let failures = 0;
 function tcase(name, fn) {
@@ -164,11 +159,10 @@ tcase('A10 otros votantes intactos tras el cambio', () => {
   const r = runApply(sb, mkPoll({ voters: { u1: 0, u2: 1 } }), 'u1', 1, Date.now());
   return r.mutated.voters.u2 === 1 && r.mutated.options[1].v === 4 && r.mutated.total === 8;
 });
-tcase('A11 pin histórico: pollApplyVote no existía en la base del ciclo', () => {
-  const baseHtml = cp.execSync('git show ' + BASE_SHA + ':index.html', { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 }).toString('utf8');
-  return baseHtml.indexOf('function pollApplyVote(') === -1
-    && baseHtml.indexOf('pollApplyVote(poll, user.uid') === -1
-    && html.indexOf('function pollApplyVote(') !== -1;
+tcase('A11 sin retorno: la transacción ya no aborta si el usuario votó (voto irreversible eliminado)', () => {
+  const fn = extractFn(html, 'voteInPoll');
+  return fn.indexOf('if (poll.voters[user.uid] !== undefined) return;') === -1
+    && fn.indexOf('pollApplyVote(poll, user.uid, optIdx, Date.now())') !== -1;
 });
 
 // ---------- Parte B: renderPostPollHTML (con mocks) ----------
