@@ -8818,6 +8818,10 @@ function fiestaGameHTMLFinal() {
     <div class="px-3 pt-3">
       <div class="bg-[var(--theme-surface)] rounded-3xl p-5 shadow-sm">
         <p id="ondas-subtitle" class="text-[13px] text-[var(--theme-muted)] mb-4"></p>
+        <div class="flex gap-2 mb-4" role="tablist" aria-label="Ondas">
+          <button id="ondas-tab-list" type="button" role="tab" aria-selected="true" onclick="ondaSetTab('list')" class="tap44"></button>
+          <button id="ondas-tab-trend" type="button" role="tab" aria-selected="false" onclick="ondaSetTab('trend')" class="tap44"></button>
+        </div>
         <div id="ondas-list" class="flex flex-col gap-2"></div>
         <div id="ondas-empty" class="hidden text-center py-8">
           <div class="mx-auto mb-3 w-12 h-12 rounded-full bg-[var(--theme-surface-muted)] text-[var(--theme-muted)] flex items-center justify-center">
@@ -21391,20 +21395,34 @@ function saveNote() {
   }
 
   // ===== ONDAS (Descubrimiento) v1 — inicio =====
-  // Ondas = el nombre Drex para #tags. v1: índice 100 % en cliente,
+  // (el marcador "v1" queda congelado: los tests viejos lo usan como
+  // delimitador del bloque.)
+  // Ondas = el nombre Drex para #tags. v2: índice 100 % en cliente con
+  // cubetas diarias por onda (últimos 8 días) para "Tendencias por onda";
   // construido de los posts que el feed/buscador ya cargó; SIN escrituras
-  // nuevas a la BD (fase 2 = agregados en servidor). Persistido en
-  // localStorage con TTL de 30 min.
+  // nuevas a la BD. Persistido en localStorage con TTL de 30 min.
   const DREX_ONDA = {
-    VERSION: 1,
-    LS_KEY: 'drex_ondas_index_v1',
+    VERSION: 2,
+    LS_KEY: 'drex_ondas_index_v2',
+    V1_LS_KEY: 'drex_ondas_index_v1',
     TTL_MS: 30 * 60 * 1000,
     MIN_LEN: 2,
     MAX_LEN: 48,
     LIST_MAX: 100,
     SUGGEST_MAX: 8,
-    SEEN_IDS_CAP: 3000
+    SEEN_IDS_CAP: 3000,
+    TREND_TOP_N: 20,
+    TREND_MIN_48H: 2,
+    DAY_BUCKET_CAP: 8
   };
+
+  // Día calendario (UTC) como entero: cubeta para medir la velocidad
+  // de cada onda. Devuelve -1 si el timestamp no es válido.
+  function drexOndaDay(ts) {
+    const t = Number(ts);
+    if (!Number.isFinite(t) || t <= 0) return -1;
+    return Math.floor(t / 86400000);
+  }
 
   // Extractor de ondas: #tags normalizados a minúsculas (unicode-aware).
   // Sigue la misma clase de token que renderTextWithMentions
@@ -21446,6 +21464,20 @@ function saveNote() {
       }
     }
 
+    function _bumpDay(rec, t) {
+      const day = drexOndaDay(t);
+      if (day < 0) return;
+      if (!rec.d) rec.d = {};
+      rec.d[day] = (rec.d[day] || 0) + 1;
+      // Poda: conserva solo los últimos DAY_BUCKET_CAP días.
+      const keys = Object.keys(rec.d);
+      if (keys.length > DREX_ONDA.DAY_BUCKET_CAP) {
+        keys.sort((a, b) => Number(a) - Number(b));
+        const drop = keys.length - DREX_ONDA.DAY_BUCKET_CAP;
+        for (let i = 0; i < drop; i++) delete rec.d[keys[i]];
+      }
+    }
+
     function _ingest(text, postId, ts) {
       if (postId && seenPostIds.has(postId)) return 0;
       const tags = drexExtractOndas(text);
@@ -21454,8 +21486,8 @@ function saveNote() {
       const t = Number(ts) || 0;
       tags.forEach(tag => {
         const rec = waves.get(tag);
-        if (rec) { rec.count += 1; if (t > rec.lastTs) rec.lastTs = t; }
-        else waves.set(tag, { count: 1, lastTs: t });
+        if (rec) { rec.count += 1; if (t > rec.lastTs) rec.lastTs = t; _bumpDay(rec, t); }
+        else { const r = { count: 1, lastTs: t }; _bumpDay(r, t); waves.set(tag, r); }
       });
       return tags.length;
     }
@@ -21498,24 +21530,60 @@ function saveNote() {
       } catch (_) { return false; }
     }
 
+    function _sanitizeDayMap(d) {
+      const out = {};
+      if (d && typeof d === 'object') {
+        Object.keys(d).forEach(k => {
+          const day = Number(k);
+          const n = Number(d[k]);
+          if (Number.isInteger(day) && day >= 0 && Number.isFinite(n) && n > 0) out[day] = Math.floor(n);
+        });
+      }
+      return out;
+    }
+
     function restore() {
       if (_restored) return waves.size > 0;
       _restored = true;
       try {
         const raw = localStorage.getItem(DREX_ONDA.LS_KEY);
         const data = raw ? JSON.parse(raw) : null;
-        if (!data || data.v !== DREX_ONDA.VERSION) return false;
-        if ((Date.now() - Number(data.ts || 0)) > DREX_ONDA.TTL_MS) return false;
-        if (Array.isArray(data.waves)) {
+        if (data && data.v === DREX_ONDA.VERSION &&
+            (Date.now() - Number(data.ts || 0)) <= DREX_ONDA.TTL_MS &&
+            Array.isArray(data.waves)) {
           data.waves.forEach(entry => {
             const k = entry && entry[0];
             const r = entry && entry[1];
             if (typeof k === 'string' && r && Number.isFinite(Number(r.count))) {
-              waves.set(k, { count: Number(r.count), lastTs: Number(r.lastTs) || 0 });
+              const rec = { count: Number(r.count), lastTs: Number(r.lastTs) || 0 };
+              const dd = _sanitizeDayMap(r.d);
+              if (Object.keys(dd).length) rec.d = dd;
+              waves.set(k, rec);
             }
           });
+          return waves.size > 0;
         }
-        return waves.size > 0;
+        // Migración única desde v1: conserva la lista, sin cubetas
+        // (esas ondas no entran a Tendencias hasta recibir posts nuevos).
+        const raw1 = localStorage.getItem(DREX_ONDA.V1_LS_KEY);
+        const data1 = raw1 ? JSON.parse(raw1) : null;
+        if (data1 && data1.v === 1 &&
+            (Date.now() - Number(data1.ts || 0)) <= DREX_ONDA.TTL_MS &&
+            Array.isArray(data1.waves)) {
+          let n = 0;
+          data1.waves.forEach(entry => {
+            const k = entry && entry[0];
+            const r = entry && entry[1];
+            if (typeof k === 'string' && r && Number.isFinite(Number(r.count))) {
+              waves.set(k, { count: Number(r.count), lastTs: Number(r.lastTs) || 0 });
+              n++;
+            }
+          });
+          try { localStorage.removeItem(DREX_ONDA.V1_LS_KEY); } catch (_) {}
+          try { persist(true); } catch (_) {}
+          return n > 0;
+        }
+        return false;
       } catch (_) { return false; }
     }
 
@@ -21529,7 +21597,27 @@ function saveNote() {
       waves.clear(); seenPostIds.clear(); _restored = false; _lastPersist = 0;
     }
 
-    return { feed, feedOne, list, size, has, persist, restore, clear, _resetMemory };
+    // Tendencias por onda: velocidad de actividad en las últimas 48 h
+    // (cubetas de día calendario). score = 2*d0 + d1, donde d0 son los
+    // posts de hoy y d1 los de ayer. Pura y testeable: recibe nowMs.
+    function trending(nowMs) {
+      const now = Number(nowMs);
+      if (!Number.isFinite(now) || now <= 0) return [];
+      const day0 = Math.floor(now / 86400000);
+      const out = [];
+      waves.forEach((rec, onda) => {
+        const d = rec.d || {};
+        const d0 = Number(d[day0]) || 0;
+        const d1 = Number(d[day0 - 1]) || 0;
+        if ((d0 + d1) < DREX_ONDA.TREND_MIN_48H) return;
+        out.push({ onda, count: rec.count, lastTs: rec.lastTs, d0, d1, score: 2 * d0 + d1 });
+      });
+      out.sort((a, b) => (b.score - a.score) || (b.d0 - a.d0) || (b.count - a.count) ||
+        (a.onda < b.onda ? -1 : a.onda > b.onda ? 1 : 0));
+      return out.slice(0, DREX_ONDA.TREND_TOP_N);
+    }
+
+    return { feed, feedOne, list, size, has, persist, restore, clear, _resetMemory, trending };
   })();
 
   // i18n: las cadenas base están en español; se fusionan al diccionario de
@@ -21540,7 +21628,12 @@ function saveNote() {
     'Descubre temas por #tag.': { en: 'Discover topics by #tag.', zh: '按 #标签发现话题。', pt: 'Descubra temas por #tag.' },
     'Sin ondas todavía': { en: 'No waves yet', zh: '暂无浪潮', pt: 'Sem ondas ainda' },
     'Los #tags de los posts que veas aparecerán aquí.': { en: 'The #tags from posts you see will appear here.', zh: '你看到的帖子中的 #标签会显示在这里。', pt: 'As #tags dos posts que você vir aparecerão aqui.' },
-    '{n} posts': { en: '{n} posts', zh: '{n} 条帖子', pt: '{n} posts' }
+    '{n} posts': { en: '{n} posts', zh: '{n} 条帖子', pt: '{n} posts' },
+    'Tendencias': { en: 'Trending', zh: '趋势', pt: 'Tendências' },
+    'En alza': { en: 'Rising', zh: '上升中', pt: 'Em alta' },
+    'Sin tendencias todavía': { en: 'No trends yet', zh: '暂无趋势', pt: 'Sem tendências ainda' },
+    'Las ondas con más actividad reciente aparecerán aquí.': { en: 'Waves with the most recent activity will appear here.', zh: '近期最活跃的浪潮会出现在这里。', pt: 'As ondas com mais atividade recente aparecerão aqui.' },
+    '+{n} hoy': { en: '+{n} today', zh: '今日 +{n}', pt: '+{n} hoje' }
   };
   function ondaMergeI18n() {
     try {
@@ -21598,6 +21691,22 @@ function saveNote() {
     if (typeof window.setActiveNavTab === 'function') window.setActiveNavTab(0);
   }
 
+  // Pestaña activa de la vista Ondas: 'list' (todas) | 'trend' (tendencias).
+  let ondaActiveTab = 'list';
+  function ondaSetTab(tab) {
+    ondaActiveTab = (tab === 'trend') ? 'trend' : 'list';
+    try { renderOndasView(); } catch (_) {}
+  }
+
+  // Estilo determinista de las pestañas (inline: sin clases nuevas).
+  function ondaPaintTab(btn, active) {
+    if (!btn) return;
+    btn.style.cssText = 'flex:1;min-height:40px;border-radius:999px;font-size:13px;font-weight:800;border:none;cursor:pointer;' +
+      (active
+        ? 'background:var(--drex-brand);color:#ffffff;'
+        : 'background:var(--theme-surface-muted);color:var(--theme-muted);');
+  }
+
   function renderOndasView() {
     try { ondaMergeI18n(); } catch (_) {}
     const listEl = document.getElementById('ondas-list');
@@ -21605,11 +21714,27 @@ function saveNote() {
     if (!listEl) return;
     const sub = document.getElementById('ondas-subtitle');
     if (sub) sub.textContent = appT('Descubre temas por #tag.');
+    // Tabs Ondas | Tendencias.
+    const isTrend = ondaActiveTab === 'trend';
+    const tabList = document.getElementById('ondas-tab-list');
+    if (tabList) {
+      tabList.textContent = 'Ondas';
+      tabList.setAttribute('aria-selected', isTrend ? 'false' : 'true');
+      ondaPaintTab(tabList, !isTrend);
+    }
+    const tabTrend = document.getElementById('ondas-tab-trend');
+    if (tabTrend) {
+      tabTrend.textContent = appT('Tendencias');
+      tabTrend.setAttribute('aria-selected', isTrend ? 'true' : 'false');
+      ondaPaintTab(tabTrend, isTrend);
+    }
     const et = document.getElementById('ondas-empty-title');
-    if (et) et.textContent = appT('Sin ondas todavía');
+    if (et) et.textContent = appT(isTrend ? 'Sin tendencias todavía' : 'Sin ondas todavía');
     const ed = document.getElementById('ondas-empty-desc');
-    if (ed) ed.textContent = appT('Los #tags de los posts que veas aparecerán aquí.');
-    const waves = ondaIndex.list().slice(0, DREX_ONDA.LIST_MAX);
+    if (ed) ed.textContent = appT(isTrend ? 'Las ondas con más actividad reciente aparecerán aquí.' : 'Los #tags de los posts que veas aparecerán aquí.');
+    const waves = isTrend
+      ? ondaIndex.trending(Date.now())
+      : ondaIndex.list().slice(0, DREX_ONDA.LIST_MAX);
     listEl.innerHTML = '';
     if (!waves.length) {
       listEl.classList.add('hidden');
@@ -21640,6 +21765,14 @@ function saveNote() {
       c.textContent = appT('{n} posts').replace('{n}', String(w.count));
       mid.appendChild(c);
       b.appendChild(mid);
+      // TENDENCIAS: insignia "En alza" con los posts de hoy (solo tab trend).
+      if (isTrend) {
+        const badge = document.createElement('span');
+        badge.style.cssText = 'flex-shrink:0;font-size:11px;font-weight:800;color:#ffffff;background:#2F33B8;border-radius:999px;padding:4px 9px;white-space:nowrap;';
+        badge.textContent = appT('+{n} hoy').replace('{n}', String(w.d0 || 0));
+        badge.setAttribute('aria-label', appT('En alza'));
+        b.appendChild(badge);
+      }
       // MI MAREA: botón Seguir/Siguiendo por onda (local, sin BD).
       const fb = document.createElement('button');
       fb.type = 'button';

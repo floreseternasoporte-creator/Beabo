@@ -69,8 +69,9 @@ eq(drexExtractOndas('#mi-onda'), ['mi'], 'guion corta el token (igual que el ren
 eq(drexExtractOndas('#\u1100\u1161\u1100\u1161'), ['\uAC00\uAC00'], 'NFC compone jamo');
 // 12. Varios tags mezclados con texto.
 eq(drexExtractOndas('Hoy #Día soleado #día #SOL #playa2026!'), ['día', 'sol', 'playa2026'], 'mezcla realista');
-// 13. Constantes del módulo.
-eq([DREX_ONDA.MIN_LEN, DREX_ONDA.MAX_LEN, DREX_ONDA.VERSION], [2, 48, 1], 'constantes DREX_ONDA');
+// 13. Constantes del módulo (VERSION 2 desde C94: el formato persistido
+// incluye cubetas diarias `d` por onda para Tendencias).
+eq([DREX_ONDA.MIN_LEN, DREX_ONDA.MAX_LEN, DREX_ONDA.VERSION], [2, 48, 2], 'constantes DREX_ONDA');
 
 console.log(fails === 0 ? 'TODOS OK' : fails + ' FALLOS');
 process.exit(fails === 0 ? 0 : 1);
