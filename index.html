@@ -45835,14 +45835,20 @@ function _renderPostPermalinkCard(note) {
 
   const user = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
   if (!user) { renderCard(null, false); return; }
+  const _c176PermalinkNoteId = note.id;
   Promise.all([
     DrexCloud.database().ref('userVotes/' + user.uid + '/' + note.id).once('value').then(snap => snap.val()).catch(() => null),
     Promise.all([
       DrexCloud.database().ref('userEcos/' + user.uid + '/' + note.id).once('value').catch(() => null),
       DrexCloud.database().ref('userReposts/' + user.uid + '/' + note.id).once('value').catch(() => null)
     ]).then(([a, b]) => (a && a.val()) || (b && b.val()) || null).catch(() => null)
-  ]).then(([userVote, hasEchoed]) => renderCard(userVote, hasEchoed))
-    .catch(() => renderCard(null, false));
+  ]).then(([userVote, hasEchoed]) => {
+    // FIX C176 (carrera de re-render): si el usuario ya abrió otro post mientras
+    // las lecturas de voto/eco estaban en vuelo, este render es tardío y no debe
+    // sobrescribir la tarjeta vigente.
+    if (_currentPermalinkNoteId !== _c176PermalinkNoteId) return;
+    renderCard(userVote, hasEchoed);
+  }).catch(() => { if (_currentPermalinkNoteId === _c176PermalinkNoteId) renderCard(null, false); });
 }
 
 
