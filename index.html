@@ -24327,6 +24327,18 @@ function saveNote() {
         }
 
         try { _commentVoteCache.set(user.uid + '/' + safeVoteKey, newVote); } catch (_) {}
+        // C149: índice inverso best-effort para "Comentarios que votaste" en
+        // Mis votos. Nunca bloquea el voto ni cambia el valor 'up'/'down' que
+        // lee la transacción. Las reglas RTDB viven fuera del repo: si el nodo
+        // se deniega, la sección simplemente no muestra esos votos.
+        try {
+          const _c149IdxRef = DrexCloud.database().ref('userCommentVotePosts/' + user.uid + '/' + safeVoteKey);
+          const _c149Entry = (typeof drexCommentVotePostEntry === 'function')
+            ? drexCommentVotePostEntry(newVote, noteId, commentPath, Date.now()) : null;
+          if (_c149Entry) _c149IdxRef.set(_c149Entry).catch(function () {});
+          else _c149IdxRef.remove().catch(function () {});
+        } catch (_) {}
+        try { if (typeof refreshHistorialIfVisible === 'function') refreshHistorialIfVisible(); } catch (_) {}
         if (newVote) return userVoteRef.set(newVote);
         return userVoteRef.remove();
       });
@@ -33790,27 +33802,133 @@ let chatTypingListener = null;
     return rows.map(r => r.id);
   }
 
+  // C149: i18n de "Comentarios que votaste" en Mis votos (merge de Pulso:
+  // EN/ZH/PT se fusionan en los diccionarios globales ya cargados).
+  (function () {
+    var EN = {
+      'Comentarios que votaste': 'Comments you upvoted',
+      'Voto positivo': 'Upvote'
+    };
+    var ZH = {
+      'Comentarios que votaste': '你点赞过的评论',
+      'Voto positivo': '点赞'
+    };
+    var PT = {
+      'Comentarios que votaste': 'Comentários em que votou',
+      'Voto positivo': 'Voto positivo'
+    };
+    try {
+      if (typeof APP_ENGLISH_TEXT !== 'undefined') Object.assign(APP_ENGLISH_TEXT, EN);
+      if (typeof APP_CHINESE_TEXT !== 'undefined') Object.assign(APP_CHINESE_TEXT, ZH);
+      if (typeof APP_PORTUGUESE_TEXT !== 'undefined') Object.assign(APP_PORTUGUESE_TEXT, PT);
+    } catch (_) {}
+  })();
+
+  // C149: índice de comentarios votados para "Mis votos".
+  // voteComment ya escribe userCommentVotes/<uid>/<safeVoteKey> = 'up'|'down'
+  // (safeVoteKey = commentPath con '/' -> '__'); ese string lo lee la
+  // transacción del voto, así que NO se toca. El índice nuevo
+  // userCommentVotePosts/<uid>/<safeVoteKey> = {n: noteId, t: ts, p: path}
+  // es best-effort y solo sirve para enlazar cada voto con su publicación.
+  // Entrada del índice: objeto o null (null = borrar la entrada, p. ej. al
+  // retirar el voto). Función pura para test en sandbox.
+  function drexCommentVotePostEntry(newVote, noteId, commentPath, nowMs) {
+    if (!newVote || !noteId) return null;
+    const t = Number(nowMs) || 0;
+    if (t <= 0) return null;
+    const p = String(commentPath || '');
+    if (!p) return null;
+    return { n: String(noteId), t: t, p: p };
+  }
+  // Fusión pura para "Comentarios que votaste": commentVotes {key:'up'|'down'},
+  // commentPosts {key:{n,t,p}}. Solo 'up' con nota y ruta válidas; el orden es
+  // por t descendente (los más recientes primero).
+  function drexMergeHistorialCommentVotes(commentVotes, commentPosts) {
+    const rows = [];
+    const posts = commentPosts || {};
+    const votes = commentVotes || {};
+    Object.keys(posts).forEach(function (k) {
+      const e = posts[k];
+      if (!e || typeof e !== 'object') return;
+      if (votes[k] !== 'up') return;
+      const noteId = (typeof e.n === 'string' && e.n) ? e.n : '';
+      const path = (typeof e.p === 'string' && e.p) ? e.p : '';
+      if (!noteId || !path) return;
+      rows.push({ key: k, noteId: noteId, path: path, ts: Number(e.t) || 0 });
+    });
+    rows.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    return rows;
+  }
+
   function loadHistorialLikes() {
     const user = DrexCloud.auth().currentUser;
     const panel = document.getElementById('historial-panel-likes');
     if (!user || !panel) return;
     panel.innerHTML = '<div class="py-10 text-center text-sm text-[#6b7280]">Cargando tus votos...</div>';
     // C146: "Mis votos" incluye las encuestas votadas: se leen userVotes
-    // (votos a posts) y el índice inverso userPollVotes en paralelo, ambas
-    // lecturas best-effort (la caída de una no vacía la otra).
+    // (votos a posts) y el índice inverso userPollVotes en paralelo.
+    // C149: se agregan userCommentVotes + userCommentVotePosts (índice
+    // best-effort de comentarios votados, escrito por voteComment). Las
+    // cuatro lecturas son best-effort (la caída de una no vacía las otras).
     Promise.all([
       DrexCloud.database().ref('userVotes/' + user.uid).once('value').catch(() => null),
-      DrexCloud.database().ref('userPollVotes/' + user.uid).once('value').catch(() => null)
-    ]).then(([voteSnap, pollSnap]) => {
+      DrexCloud.database().ref('userPollVotes/' + user.uid).once('value').catch(() => null),
+      DrexCloud.database().ref('userCommentVotes/' + user.uid).once('value').catch(() => null),
+      DrexCloud.database().ref('userCommentVotePosts/' + user.uid).once('value').catch(() => null)
+    ]).then(([voteSnap, pollSnap, cVoteSnap, cPostSnap]) => {
       const ids = drexMergeHistorialVoteIds(
         (voteSnap && voteSnap.val()) || {},
         (pollSnap && pollSnap.val()) || {}
       );
-      if (!ids.length) {
+      // C149: comentarios con voto positivo, ordenados por fecha (los más
+      // recientes primero).
+      let cVotes = [];
+      try {
+        if (typeof drexMergeHistorialCommentVotes === 'function') {
+          cVotes = drexMergeHistorialCommentVotes(
+            (cVoteSnap && cVoteSnap.val()) || {},
+            (cPostSnap && cPostSnap.val()) || {}
+          );
+        }
+      } catch (_) { cVotes = []; }
+      if (!ids.length && !cVotes.length) {
         panel.innerHTML = '<div class="py-16 text-center"><div class="w-12 h-12 bg-[#eef2f7] rounded-full flex items-center justify-center mx-auto mb-3"><svg class="w-6 h-6 text-[#8fa2c7]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg></div><p class="text-sm text-[#6b7280]">Aún no has votado ninguna publicación</p></div>';
         return;
       }
       panel.innerHTML = '';
+      // C149: la sección de comentarios se pinta DESPUÉS de las tarjetas de
+      // posts (orden garantizado: las lecturas de posts resuelven primero y
+      // la sección se invoca al final de ese .then).
+      const _c149RenderCommentVotes = function () {
+        if (!cVotes.length) return;
+        const sec = document.createElement('div');
+        sec.setAttribute('style', 'padding:0 16px;margin:20px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8fa2c7;');
+        sec.textContent = appT('Comentarios que votaste');
+        panel.appendChild(sec);
+        Promise.all(cVotes.slice(0, 30).map(function (row) {
+          return DrexCloud.database().ref('postComments/' + row.noteId + '/' + row.path).once('value')
+            .then(function (s) { return { row: row, comment: s.val() || null }; })
+            .catch(function () { return { row: row, comment: null }; });
+        })).then(function (items) {
+          items.forEach(function (it) {
+            const c = it.comment;
+            if (!c) return;
+            const cText = (typeof c.content === 'string' && c.content.trim()) ? c.content
+              : (c.gifUrl ? 'GIF' : (c.photoUrl ? 'Foto' : 'Comentario'));
+            panel.appendChild(_createHistorialFeedCard({
+              title: (typeof c.authorName === 'string' && c.authorName) ? c.authorName : appT('Usuario'),
+              meta: appT('Voto positivo') + ' · ' + formatRelativeTime(it.row.ts || Date.now()),
+              text: cText,
+              noteId: it.row.noteId,
+              onClick: (function (nid) { return function () { closeHistorialView(); openCommentsView(nid); }; })(it.row.noteId)
+            }));
+          });
+        });
+      };
+      if (!ids.length) {
+        _c149RenderCommentVotes();
+        return;
+      }
       Promise.all(ids.slice(0, 50).map(id => DrexCloud.database().ref('communityNotes/' + id).once('value'))).then(snaps => {
         let count = 0;
         snaps.forEach(s => {
@@ -33819,7 +33937,11 @@ let chatTypingListener = null;
           count++;
           panel.appendChild(_buildHistorialCard(s.key, post, () => { closeHistorialView(); openPostPermalink(s.key); }));
         });
-        if (!count) panel.innerHTML = '<div class="py-16 text-center text-sm text-[#6b7280]">Aún no has votado ninguna publicación.</div>';
+        if (!count && !cVotes.length) {
+          panel.innerHTML = '<div class="py-16 text-center text-sm text-[#6b7280]">Aún no has votado ninguna publicación.</div>';
+          return;
+        }
+        _c149RenderCommentVotes();
       });
     }).catch(() => {
       panel.innerHTML = '<div class="py-10 text-center text-sm text-[#6b7280]">No se pudieron cargar tus votos.</div>';
