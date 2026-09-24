@@ -135,12 +135,14 @@ async function parteA() {
   ok(counters.sys === 2, 'guard de sesión: announce e IfNew no avisan con uid distinto');
   ME_UID = 'u1';
 
-  // 6. H2-DING-3 (comportamiento previo conservado): la más nueva silenciada
-  //    → aviso genérico + la id queda registrada (evita re-ding futuro).
+  // 6. C62 (corrige H2-DING-3 para silenciadas): la más nueva silenciada
+  //    → SIN sonido genérico (el panel de silenciar promete "dejarás de
+  //    recibir avisos de esa conversación"), pero la id queda registrada
+  //    (evita re-ding futuro).
   muted = true;
   notifData = { n5: { notificationId: 'n5', read: false, message: 'sil', timestamp: 500 } };
   await announce('u1');
-  ok(counters.sound === 1 && counters.sys === 2, 'DING-3: silenciada → solo sonido genérico');
+  ok(counters.sound === 0 && counters.sys === 2, 'DING-3: silenciada → sin sonido genérico ni system');
   ok(vm.runInContext('notifUnreadLastAnnouncedId', ctx) === 'n5', 'DING-3: la id silenciada queda registrada');
   muted = false;
 }

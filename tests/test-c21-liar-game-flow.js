@@ -20,7 +20,7 @@ function grab(startMarker, endMarker) {
 const code = [
   grab('function fiestaGameHostReadSecrets(sid, uids)', '\n}'),
   grab('function fiestaGameHostTally(ref, g, votes)', '\n}'),
-  grab('function fiestaGameHostEliminate(ref, g, uid, word, isLiar, now, liars, pair)', '\n}'),
+  grab('function fiestaGameHostEliminate(ref, g, uid, word, isLiar, liars, pair)', '\n}'),
   grab('function fiestaGameActivePlayers()', '\n}'),
   grab('function fiestaGameFirstActive(outList)', '\n}'),
 ].join('\n\n');

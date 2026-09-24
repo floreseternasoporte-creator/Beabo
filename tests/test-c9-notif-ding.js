@@ -224,7 +224,14 @@ async function t_ding2() {
 }
 
 async function t_ding3() {
-  // H2-DING-3: c crece pero la más nueva está silenciada/leída → al menos ding genérico.
+  // H2-DING-3: c crece pero la más nueva no califica.
+  // - leída (no silenciada): ding genérico por las demás (comportamiento H2).
+  // - C62: silenciada → SIN ding. El panel de silenciar promete "dejarás de
+  //   recibir avisos de esa conversación durante el tiempo que elijas"; la
+  //   rama de decrecimiento (announceNewestNotificationIfNew, C9-A) y
+  //   mergeNotificationsSnapshot ya aplicaban esta política. La expectativa
+  //   anterior ("al menos 1 ding genérico" también para silenciada)
+  //   codificaba el defecto.
   const muteEntry = { muteUntil: Date.now() + 3600e3 };
   for (const variant of ['muted', 'read']) {
     const t = freshCtx(variant === 'muted' ? { convX: muteEntry } : {});
@@ -240,7 +247,9 @@ async function t_ding3() {
     });
     t.run(`updateNotifUnreadBadge({ val: function(){ return {c:3, r: 2}; } })`);
     await t.flush();
-    check(`DING-3 (${variant}): al menos 1 ding genérico`, t.dings() === 1, `dings=${t.dings()}`);
+    const expectedDings = variant === 'muted' ? 0 : 1;
+    check(`DING-3 (${variant}): ${variant === 'muted' ? 'silenciada NO suena' : 'al menos 1 ding genérico'}`,
+      t.dings() === expectedDings, `dings=${t.dings()} (esperado ${expectedDings})`);
     check(`DING-3 (${variant}): sin mensaje del sistema`, t.sys() === 0, `sys=${t.sys()}`);
   }
 }
