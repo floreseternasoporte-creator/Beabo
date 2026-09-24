@@ -30936,6 +30936,48 @@ let chatTypingListener = null;
   let _chatTimerSecs = 0;
   const _msgCountdownIntervals = {};
 
+  // C58-C1: guarda anti-doble-barrido por sesión (convId/msgId ya barridos).
+  // No es dato de identidad (solo ids), igual que _msgCountdownIntervals.
+  const _expiredSweepDone = new Set();
+
+  // C58-C1: limpieza de un mensaje temporal expirado (idempotente). Dos rutas
+  // la invocan: (1) el countdown en vivo de _startMsgCountdown — el chat está
+  // abierto al expirar; (2) el render de un mensaje YA expirado (nadie tenía
+  // el chat abierto al expirar: el countdown nunca corrió y el borrado +
+  // limpieza de pin/reacciones/archivos quedaron pendientes). Sin (2), el pin
+  // seguiría revelando el texto "desaparecido" para siempre (misma familia
+  // que C49-C1) y los trozos de adjuntos sobrevivirían (C50-C1).
+  function _expireChatMessage(conversationId, msgId, msg) {
+    if (!conversationId || !msgId) return;
+    const runCleanup = (_msg) => {
+      // C50-C1: el mensaje temporal puede llevar archivos adjuntos
+      // (chatFiles/<fileId>); hay que liberar sus trozos: ambos participantes
+      // ya tienen el fileId en el payload, así que los trozos no deben
+      // sobrevivir a la expiración.
+      try { _releaseChatFileRefsOfMsg(_msg, msgId); } catch (_) {}
+      DrexCloud.database().ref('conversationMessages/' + conversationId + '/' + msgId).remove().catch(() => {});
+      // C49-C1: limpiar también el pin huérfano (el banner cachea el texto del
+      // mensaje; misma familia que C48-C1) y las reacciones huérfanas. El pin
+      // solo se borra si apunta a este mensaje.
+      DrexCloud.database().ref('msgReactions/' + conversationId + '/' + msgId).remove().catch(() => {});
+      DrexCloud.database().ref('conversationPinned/' + conversationId).once('value').then(pinSnap => {
+        const pin = pinSnap.val();
+        if (pin && pin.msgId === msgId) {
+          DrexCloud.database().ref('conversationPinned/' + conversationId).remove().catch(() => {});
+        }
+      }).catch(() => {});
+    };
+    if (msg) { runCleanup(msg); }
+    else {
+      // Ruta del countdown: el mensaje no está a mano; se lee para liberar
+      // sus archivos ANTES de borrarlo (el código original lanzaba el remove
+      // sin esperar la lectura: si el remove aterrizaba primero, la lectura
+      // devolvía null y los trozos se fugaban).
+      DrexCloud.database().ref('conversationMessages/' + conversationId + '/' + msgId).once('value')
+        .then(_expSnap => { runCleanup(_expSnap.val()); }).catch(() => {});
+    }
+  }
+
 
   function setChatTimer(secs) {
     // La UI del temporizador (label/botón/selector) ya no existe: solo se guarda el estado.
@@ -30950,27 +30992,9 @@ let chatTypingListener = null;
       if (secsLeft <= 0) {
         clearInterval(_msgCountdownIntervals[msgId]);
         delete _msgCountdownIntervals[msgId];
-        if (conversationId) {
-          const _expMsgRef = DrexCloud.database().ref('conversationMessages/' + conversationId + '/' + msgId);
-          // C50-C1: el mensaje temporal puede llevar archivos adjuntos
-          // (chatFiles/<fileId>); hay que leerlo para liberar sus trozos:
-          // ambos participantes ya tienen el fileId en el payload, así que
-          // los trozos no deben sobrevivir a la expiración.
-          _expMsgRef.once('value').then(_expSnap => {
-            _releaseChatFileRefsOfMsg(_expSnap.val(), msgId);
-          }).catch(() => {});
-          _expMsgRef.remove().catch(() => {});
-          // C49-C1: el mensaje temporal expiró — limpiar también el pin huérfano
-          // (el banner cachea el texto del mensaje; misma familia que C48-C1) y
-          // las reacciones huérfanas. El pin solo se borra si apunta a este mensaje.
-          DrexCloud.database().ref('msgReactions/' + conversationId + '/' + msgId).remove().catch(() => {});
-          DrexCloud.database().ref('conversationPinned/' + conversationId).once('value').then(pinSnap => {
-            const pin = pinSnap.val();
-            if (pin && pin.msgId === msgId) {
-              DrexCloud.database().ref('conversationPinned/' + conversationId).remove().catch(() => {});
-            }
-          }).catch(() => {});
-        }
+        // C58-C1: la limpieza vive ahora en _expireChatMessage (misma
+        // conducta que el bloque original, más la ruta del barrido).
+        if (conversationId) _expireChatMessage(conversationId, msgId);
         const bubble = el?.closest('[data-msg-id]');
         if (bubble) bubble.remove();
         return;
@@ -31955,6 +31979,16 @@ let chatTypingListener = null;
         setTimeout(() => _startMsgCountdown(resolvedId, msg.autoDestroyAt, conversationId), 100);
       } else if (msg.autoDestroyAt && msg.autoDestroyAt <= Date.now()) {
         content = `<p class="text-[13px] italic opacity-50">Mensaje eliminado</p>`;
+        // C58-C1: este mensaje expiró sin que ningún cliente tuviera el chat
+        // abierto (el countdown de _startMsgCountdown solo corre en la página
+        // que lo renderizó vivo) → el borrado + la limpieza de pin,
+        // reacciones y archivos quedaron pendientes. Barrer una vez por
+        // sesión (la limpieza es idempotente).
+        const _swKey58 = conversationId + '/' + resolvedId;
+        if (resolvedId && conversationId && !_expiredSweepDone.has(_swKey58)) {
+          _expiredSweepDone.add(_swKey58);
+          _expireChatMessage(conversationId, resolvedId, msg);
+        }
       } else if (msg.type === 'sticker' && msg.sticker) {
         content = `<div class="text-5xl select-none leading-none p-1">${escapeHtml(msg.sticker)}</div>`;
       } else if (msg.type === 'gif' && msg.gifUrl) {
