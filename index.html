@@ -12150,6 +12150,20 @@ function saveNote() {
     _noteDraftSaveTimer = setTimeout(() => saveCurrentNoteDraft(false), 450);
   }
 
+  // C128: flush del borrador pendiente al salir/ocultar la app. El autoguardado
+  // del composer corre con debounce de 450ms: si el usuario cierra la pestaña
+  // antes de que el timer dispare, lo último tecleado se perdía. En `pagehide`
+  // se cancela el timer y se guarda el borrador de inmediato (síncrono); con
+  // el composer cerrado el textarea no existe y no se hace nada.
+  function drexFlushNoteDraftOnPageHide() {
+    try {
+      if (_noteDraftSaveTimer) { clearTimeout(_noteDraftSaveTimer); _noteDraftSaveTimer = null; }
+      const _noteInput = document.getElementById('note-content-fullscreen');
+      if (_noteInput && _noteInput.value && _noteInput.value.trim()) saveCurrentNoteDraft(false);
+    } catch (_) {}
+  }
+  try { window.addEventListener('pagehide', drexFlushNoteDraftOnPageHide); } catch (_) {}
+
   function clearCurrentNoteDraft() {
     try {
       if (currentEditingDraftId) {
