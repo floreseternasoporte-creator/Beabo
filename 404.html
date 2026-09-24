@@ -11685,6 +11685,17 @@ function saveNote() {
           try {
             db.ref('communityNotes/' + id + '/viewCount')
               .transaction(drexViewCoreCountUpdate)
+              .then(function (vres) {
+                // C157: hito de vistas. La transacción ya confirmó el conteo
+                // nuevo en vres.snapshot.val(); el núcleo caliente
+                // drexViewCoreCountUpdate queda intacto (lección C149: no
+                // cambiar el shape de la transacción caliente).
+                try {
+                  if (vres && vres.committed && vres.snapshot && typeof maybeAnnounceViewMilestone === 'function') {
+                    maybeAnnounceViewMilestone(id, Number(vres.snapshot.val()) || 0, uid);
+                  }
+                } catch (_) {}
+              })
               .catch(function () {});
           } catch (_) {}
         }
@@ -11695,6 +11706,81 @@ function saveNote() {
     } catch (_) {}
   }
   // ============ /VISTAS DE PULSO ============
+
+  // ============ C157: HITO DE VISTAS — AVISO AL AUTOR (exactamente-una-vez) ==
+  // Hueco real con ancla: viewCount se contaba (drexViewCoreCountUpdate sobre
+  // communityNotes/<id>/viewCount, 1 vista por usuario por post) y se pintaba
+  // (drexViewsOwnBadgeForNote en la tarjeta del autor + panel Pulso), pero el
+  // autor nunca se enteraba cuando su post cruzaba un hito de vistas.
+  // Patrón C153/C154 (sin servidor que detecte el evento): el cliente que
+  // registra la vista ganadora (drexViewRecord, tras confirmar el conteo)
+  // intenta una transacción best-effort sobre el nodo paralelo
+  // viewMilestoneNotified/<noteId>/m<hito>; el ganador avisa al AUTOR
+  // (sin auto-aviso: las vistas del propio autor sí cuentan) con tipo
+  // 'vote' para heredar el toggle 'likes' del destinatario (mismo bucket que
+  // votos/ecos: interacción con tu contenido, vía notifTypeToPrefKey). Solo
+  // el autor: los lectores no necesitan saberlo. Hitos: 100, 1000, 10000,
+  // 100000. Guarda de sesión por noteId+hito. Si las reglas RTDB (fuera del
+  // repo) deniegan la escritura, las vistas y la UI siguen intactas
+  // (degradación documentada).
+  var DREX_VIEW_MILESTONES = [100, 1000, 10000, 100000];
+
+  // Núcleo PURO: ¿el conteo NUEVO cruzó exactamente un hito? Devuelve el
+  // hito o 0. Igualdad exacta: el contador sube de 1 en 1 por transacción
+  // serializada, así que el cruce siempre cae en el número exacto (sin
+  // falsos anuncios por saltos grandes de migraciones).
+  function drexViewMilestoneForCount(count) {
+    var c = Math.floor(Number(count) || 0);
+    for (var i = 0; i < DREX_VIEW_MILESTONES.length; i++) {
+      if (c === DREX_VIEW_MILESTONES[i]) return DREX_VIEW_MILESTONES[i];
+    }
+    return 0;
+  }
+
+  // Núcleo PURO: texto del aviso (español fijo, como C147/C153).
+  function viewMilestoneText(milestone) {
+    var m = Math.floor(Number(milestone) || 0);
+    return 'Tu publicación llegó a ' + m + ' vistas.';
+  }
+
+  // Updater PURO de la transacción exactamente-una-vez: si el hito ya se
+  // anunció (cur truthy), no-op; si no, marca el timestamp. Vive en nodo
+  // paralelo: no toca el shape del contador caliente (patrón C154).
+  function viewMilestoneNotifyFlag(cur, nowMs) {
+    if (cur !== null && cur !== undefined) return undefined; // ya anunciado
+    var n = Number(nowMs);
+    return n > 0 ? n : Date.now();
+  }
+
+  var _c157ViewMilestoneTried = {};
+  function maybeAnnounceViewMilestone(noteId, newCount, viewerUid) {
+    try {
+      if (!noteId || typeof DrexCloud === 'undefined') return;
+      var milestone = (typeof drexViewMilestoneForCount === 'function')
+        ? drexViewMilestoneForCount(newCount) : 0;
+      if (!milestone) return;
+      var gk = noteId + ':m' + milestone;
+      if (_c157ViewMilestoneTried[gk]) return;
+      _c157ViewMilestoneTried[gk] = true;
+      DrexCloud.database().ref('viewMilestoneNotified/' + noteId + '/m' + milestone).transaction(function (cur) {
+        return viewMilestoneNotifyFlag(cur, Date.now());
+      }, function (error, committed) {
+        if (error || !committed) return;
+        try {
+          DrexCloud.database().ref('communityNotes/' + noteId + '/authorId').once('value').then(function (aSnap) {
+            var authorId = aSnap && aSnap.val();
+            if (!authorId || authorId === viewerUid) return;
+            try {
+              if (typeof addNotification === 'function') {
+                addNotification(authorId, viewMilestoneText(milestone), 'vote', { actionType: 'post', actionId: noteId });
+              }
+            } catch (_) {}
+          }).catch(function () {});
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+  // ============ /C157 ============
 
   // ============ VISTAS DIARIAS DE PULSO (C90: fase 2b del hueco #2) ============
   // Desglose por día de las vistas de Pulso. Diseño seguro contra inflación:
