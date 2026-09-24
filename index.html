@@ -44744,6 +44744,39 @@ function securityEventTypeLabel(event) {
   } catch (_) { return 'Actividad de seguridad'; }
 }
 // [EVENTOS-SEGURIDAD-BLOCK-END]
+// [CENTRO-SEGURIDAD] C174: la función faltaba en el bundle — renderSecuritySessions,
+// renderSecurityEvents, renderLoginHistory y renderDrexKnownDevices la llaman con
+// datos reales y lanzaban ReferenceError, dejando al Centro de Seguridad sin
+// sesiones activas, actividad reciente ni historial de accesos. Tiempo relativo
+// ES/EN/ZH (mismo patrón que formatRelativeTime).
+function formatSecurityTime(ts) {
+  const t = Number(ts) || 0;
+  if (!t) return appT('Fecha desconocida');
+  const diff = Math.max(0, Date.now() - t);
+  const min = Math.floor(diff / 60000);
+  const hr = Math.floor(diff / 3600000);
+  const day = Math.floor(diff / 86400000);
+  const lang = (typeof getAppLanguage === 'function') ? getAppLanguage() : 'es';
+  if (lang === 'zh') {
+    if (min < 1) return '刚刚';
+    if (min < 60) return min + ' 分钟前';
+    if (hr < 24) return hr + ' 小时前';
+    if (day < 30) return day + ' 天前';
+    try { return new Date(t).toLocaleDateString('zh-CN'); } catch (_) { return ''; }
+  }
+  if (lang === 'en') {
+    if (min < 1) return 'just now';
+    if (min < 60) return min + ' min ago';
+    if (hr < 24) return hr + ' h ago';
+    if (day < 30) return day + ' day' + (day > 1 ? 's' : '') + ' ago';
+    try { return new Date(t).toLocaleDateString('en-US'); } catch (_) { return ''; }
+  }
+  if (min < 1) return 'hace un momento';
+  if (min < 60) return 'hace ' + min + ' min';
+  if (hr < 24) return 'hace ' + hr + ' h';
+  if (day < 30) return 'hace ' + day + ' día' + (day > 1 ? 's' : '');
+  try { return new Date(t).toLocaleDateString('es-ES'); } catch (_) { return ''; }
+}
 function renderSecuritySessions(sessions) {
   // [SESIONES] Ing. #5: la lista se alimenta con DrexCloud.listDrexSessions()
   // (registros users/<uid>/sessions/<id>, un item JSON por sesion).
