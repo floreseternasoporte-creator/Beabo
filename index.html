@@ -33724,12 +33724,44 @@ let chatTypingListener = null;
     }
   }
 
+  // C150: vista previa de encuesta para las tarjetas del Historial. Un post
+  // de solo-encuesta (C145) no trae texto: sin esto su tarjeta en Mis votos /
+  // Guardados / Ecos quedaba en blanco (o decía "Publicación sin texto") y el
+  // usuario no podía identificar qué encuesta votó o guardó — el mismo hueco
+  // que C145 cerró en la lista de borradores (renderDraftsList). Función pura
+  // para test en sandbox: devuelve los títulos de las opciones unidos con
+  // ' · ', o '' si la encuesta no es publicable (mismo estándar C145: >=2
+  // opciones válidas). Los títulos se escapan al pintar (escapeHtml).
+  function drexHistorialPollPreview(poll) {
+    try {
+      const opts = (poll && Array.isArray(poll.options)) ? poll.options : [];
+      const titles = [];
+      for (let i = 0; i < opts.length; i++) {
+        const t = String((opts[i] && opts[i].t) || '').trim();
+        if (t) titles.push(t);
+      }
+      if (titles.length < 2) return '';
+      return titles.join(' · ');
+    } catch (_) { return ''; }
+  }
+
   function _buildHistorialCard(noteId, post, onClickFn) {
     const div = document.createElement('div');
     div.className = 'bg-white border border-[#dce1e5] rounded-2xl p-4 mx-4 mt-4 cursor-pointer active:bg-[#f0f4f9] transition';
     const authorName = post.author || post.username || post.authorName || post.displayName || '';
-    const content = (post.content || '').substring(0, 180);
+    // C150: si el post no trae texto pero sí encuesta válida (post de
+    // solo-encuesta, C145), se muestran las opciones como avance + insignia
+    // 🗳️ en vez de dejar la tarjeta en blanco.
+    let content = (post.content || '').trim().substring(0, 180);
+    let _c150IsPollPreview = false;
+    if (!content && post && post.poll && typeof drexHistorialPollPreview === 'function') {
+      const _c150pv = drexHistorialPollPreview(post.poll);
+      if (_c150pv) { content = _c150pv.substring(0, 180); _c150IsPollPreview = true; }
+    }
     const typeLabel = post.postType ? `<span class="inline-block text-[10px] font-bold uppercase tracking-wider bg-[#eef2f7] text-[#6b7280] px-2 py-0.5 rounded-full mr-2">${post.postType}</span>` : '';
+    const _c150PollBadge = _c150IsPollPreview
+      ? `<p class="text-xs font-bold mt-1" style="color:#2F33B8">🗳️ ${escapeHtml(appT('Votación'))}</p>`
+      : '';
     div.innerHTML = `
       <div class="flex items-start gap-3">
         ${_historialThumbSlotHTML()}
@@ -33739,6 +33771,7 @@ let chatTypingListener = null;
             <span class="font-bold text-[#1c2b4a] text-sm">${escapeHtml(authorName)}</span>
           </div>
           <p class="text-[#5c6974] text-sm leading-relaxed line-clamp-3">${escapeHtml(content)}</p>
+          ${_c150PollBadge}
         </div>
       </div>`;
     div.onclick = onClickFn;
@@ -33972,10 +34005,19 @@ let chatTypingListener = null;
       Promise.all(ecos.map(item => DrexCloud.database().ref('communityNotes/' + item.noteId).once('value').then(s => ({ item, post: s.val() || null })))).then(items => {
         items.forEach(({ item, post }) => {
           if (!post) return;
+          // C150: eco de un post de solo-encuesta (C145): sin texto la
+          // tarjeta decía "Publicación sin texto". Se muestran las opciones
+          // como avance (mismo helper que _buildHistorialCard).
+          let _c150EcoText = post.content || '';
+          let _c150EcoIsPoll = false;
+          if (!_c150EcoText && typeof drexHistorialPollPreview === 'function') {
+            const _c150pv = drexHistorialPollPreview(post.poll);
+            if (_c150pv) { _c150EcoText = _c150pv; _c150EcoIsPoll = true; }
+          }
           panel.appendChild(_createHistorialFeedCard({
             title: post.authorName || post.author || 'Usuario',
-            meta: `Eco ${formatRelativeTime(item.timestamp || Date.now())}`,
-            text: post.content || 'Publicación sin texto',
+            meta: `Eco ${formatRelativeTime(item.timestamp || Date.now())}` + (_c150EcoIsPoll ? ' · 🗳️ ' + appT('Votación') : ''),
+            text: _c150EcoText || 'Publicación sin texto',
             post: post,
             noteId: item.noteId,
             onClick: () => { closeHistorialView(); openPostPermalink(item.noteId); }
