@@ -32621,17 +32621,30 @@ const _startChatListeners = () => {
   // (lento) ni ráfaga (tumba Safari). El progreso se reporta por trozo.
   function _writeChatFileChunksLimited(entry, chunks) {
     return new Promise((resolve, reject) => {
-      let idx = 0, done = 0, settled = false;
+      let idx = 0, done = 0, settled = false, inflight = 0, stopErr = null;
       const total = chunks.length;
       if (!total) { resolve(); return; }
       const workers = Math.min(CHAT_FILE_UPLOAD_CONCURRENCY, total);
       function pump() {
         if (settled) return;
-        if (entry.cancelled) { settled = true; reject(new Error('cancelled')); return; }
+        if (entry.cancelled && !stopErr) stopErr = new Error('cancelled');
+        // C66-F1: no asentar la promesa mientras haya escrituras en vuelo.
+        // El remove() de limpieza que hace el llamador al cancelar o al
+        // fallar un trozo perdería la carrera contra un set() aún en vuelo
+        // y dejaría trozos huérfanos en chatFiles/<fileId>: esa subida nunca
+        // llegó a referenciarse (sin refcount) y no hay TTL ni barrido que
+        // los limpie. Los set() del SDK siempre asientan (db-put-timeout),
+        // así que la espera está acotada.
+        if (stopErr) {
+          if (inflight === 0) { settled = true; reject(stopErr); }
+          return;
+        }
         if (idx >= total) { if (done >= total) { settled = true; resolve(); } return; }
         const i = idx++;
         const key = 'chunk_' + String(i).padStart(5, '0');
+        inflight++;
         DrexCloud.database().ref('chatFiles/' + entry.fileId + '/' + key).set(chunks[i]).then(() => {
+          inflight--;
           if (settled) return;
           done++;
           entry.uploaded = done;
@@ -32639,7 +32652,9 @@ const _startChatListeners = () => {
           _renderChatFileAttachments();
           pump();
         }).catch(err => {
-          if (!settled) { settled = true; reject(err); }
+          inflight--;
+          if (!stopErr) stopErr = err;
+          pump();
         });
       }
       for (let w = 0; w < workers; w++) pump();
