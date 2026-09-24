@@ -35313,7 +35313,11 @@ let chatTypingListener = null;
       const previewCls = `text-[14px] truncate mt-0.5 ${isUnread ? 'text-[var(--theme-text)] font-semibold' : 'text-[var(--theme-muted)]'}`;
       const safeUid = escapeInlineSingleQuote(item.otherUid);
       const safeName = escapeHtml(item.otherName || 'Usuario');
-      const safeImage = item.otherImage || _CHAT_DEFAULT_AVATAR;
+      // SEC C154: otherImage = users/<uid>/profileImage (auto-editable por el
+      // dueño: forjable con escritura directa). Sin sanitizar rompía el
+      // atributo src e inyectaba onerror (XSS almacenado, PoC en Chromium).
+      // getSafeMediaUrl valida esquema http(s)/data:image + escapa HTML.
+      const safeImage = getSafeMediaUrl(item.otherImage, _CHAT_DEFAULT_AVATAR);
       const reqTag = `<span class="drex-antesala-tag">${escapeHtml(appT('Solicitud'))}</span>`;
       const timeCol = timeStr ? `<span class="text-[13px] leading-none ${isUnread ? 'text-[var(--brand-indigo-text)] font-semibold' : 'text-[var(--theme-muted)]'} shrink-0">${timeStr}</span>` : '';
       return `
@@ -35431,7 +35435,9 @@ let chatTypingListener = null;
       const safeUidAttr = escapeHtml(item.otherUid);
       const safeName = escapeHtml(item.otherName || 'Usuario');
       const safeNameJs = escapeInlineSingleQuote(item.otherName || 'Usuario');
-      const safeImage = item.otherImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+      // SEC C154: igual que la fila de Antesala (ver arriba): profileImage
+      // forjable → getSafeMediaUrl valida esquema + escapa HTML.
+      const safeImage = getSafeMediaUrl(item.otherImage, 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==');
       return `
         <div>
           <button onclick="openChatRoomFromInbox('${safeUid}')"
