@@ -5008,6 +5008,12 @@ document.addEventListener("DOMContentLoaded", function() {
       background: #ffffff;
     }
     body.theme-dark .profile-eco-head { background: var(--theme-bg); }
+    /* Cabecera "Destacado" sobre la tarjeta destacada en perfiles (C87).
+       Va en el wrapper, fuera del .drex-post (que es flex en fila). */
+    .profile-featured-head {
+      background: #ffffff;
+    }
+    body.theme-dark .profile-featured-head { background: var(--theme-bg); }
     .drex-vote-rail {
       display: flex;
       flex-direction: column;
@@ -8299,6 +8305,14 @@ function fiestaGameHTMLFinal() {
         <i class="fas fa-chevron-right text-gray-400"></i>
       </button>
 
+      <button id="feature-post-btn" onclick="toggleFeaturedPost()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left transition hidden">
+        <div class="flex items-center gap-3">
+          <i class="fas fa-thumbtack text-lg text-[var(--brand-indigo-text)]"></i>
+          <p id="feature-post-btn-label" class="text-base font-semibold text-black">Destacar</p>
+        </div>
+        <i class="fas fa-chevron-right text-gray-400"></i>
+      </button>
+
       <button id="collab-post-btn" onclick="inviteCollabFromOptions()" class="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left transition hidden">
         <div class="flex items-center gap-3">
           <i class="fas fa-user-group text-lg text-[var(--brand-indigo-text)]"></i>
@@ -10890,7 +10904,7 @@ function saveNote() {
       }
       _paintProfilePostsCount();
       _paintProfileLoadMore();
-      loadUserPostsGrid(postsSnapshot, collabPosts);
+      loadUserPostsGrid(postsSnapshot, collabPosts, userId);
     });
   }
 
@@ -10944,7 +10958,7 @@ function saveNote() {
 
   }
 
-  async function loadUserPostsGrid(postsSnapshot, extraPosts) {
+  async function loadUserPostsGrid(postsSnapshot, extraPosts, authorUid) {
     const userPostsDesktop = document.getElementById('user-posts-desktop');
     const userPostsMobile = document.getElementById('user-posts');
 
@@ -10969,9 +10983,11 @@ function saveNote() {
     (Array.isArray(extraPosts) ? extraPosts : []).forEach(post => {
       if (post && post.id && !seen.has(post.id)) { items.push(post); seen.add(post.id); }
     });
-    items.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+    // DESTACADOS (C87): los destacados del autor van primero (pinnedAt desc).
+    const featuredMap = await drexFeaturedGet(authorUid);
+    const orderedItems = drexFeaturedSortPosts(items, featuredMap);
 
-    if (!items.length) {
+    if (!orderedItems.length) {
       const noStoriesMessage = `
         <div class="col-span-full text-center py-12">
           <div class="text-[var(--theme-muted)] mb-4">
@@ -10996,7 +11012,7 @@ function saveNote() {
       return;
     }
 
-    items.forEach(post => {
+    orderedItems.forEach(post => {
       const voteCtx = {
         user: voteMaps.user,
         userVote: voteMaps.votes[post.id] || null,
@@ -11056,6 +11072,19 @@ function saveNote() {
       _enhancePostCard(card);
     } catch (renderError) {
       console.error('Error renderizando post de perfil:', post && post.id, renderError);
+    }
+    // DESTACADOS (C87): cabecera "Destacado" sobre la tarjeta, en un wrapper
+    // fuera del .drex-post (flex en fila) — mismo patrón que la cabecera de eco.
+    if (post && post._featuredAt) {
+      const wrap = document.createElement('div');
+      wrap.className = 'profile-featured-wrap w-full';
+      wrap.innerHTML = `
+      <div class="profile-featured-head flex items-center gap-2 text-xs font-bold px-4 pt-3 pb-1 text-[var(--brand-indigo-text)]">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M9 3h6v6l3.2 4.1a1 1 0 0 1-.8 1.6H6.6a1 1 0 0 1-.8-1.6L9 9V3z"/><path d="M12 14.7V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>${escapeHtml(appT('Destacado'))}</span>
+      </div>`;
+      wrap.appendChild(card);
+      return wrap;
     }
     return card;
   }
@@ -18746,6 +18775,7 @@ function saveNote() {
     const sheet = document.getElementById('post-options-sheet');
     const deleteBtn = document.getElementById('delete-post-btn');
     const editBtn = document.getElementById('edit-post-btn');
+    const featureBtn = document.getElementById('feature-post-btn');
     const copyBtn = document.getElementById('copy-post-text-btn');
     const reportBtn = document.getElementById('report-post-btn');
     const collabBtn = document.getElementById('collab-post-btn');
@@ -18757,6 +18787,7 @@ function saveNote() {
     const user = DrexCloud.auth().currentUser;
     if (deleteBtn) deleteBtn.classList.add('hidden');
     if (editBtn) editBtn.classList.add('hidden');
+    if (featureBtn) featureBtn.classList.add('hidden');
     if (reportBtn) reportBtn.classList.remove('hidden');
     if (collabBtn) collabBtn.classList.add('hidden');
     if (uncollabBtn) uncollabBtn.classList.add('hidden');
@@ -18770,6 +18801,20 @@ function saveNote() {
         if (deleteBtn) deleteBtn.classList.toggle('hidden', !isOwner);
         const hasText = !!(note.content && String(note.content).trim());
         if (editBtn) editBtn.classList.toggle('hidden', !isOwner || !hasText);
+        // DESTACADOS (C87): solo el autor ve Destacar/Quitar destacado; la
+        // etiqueta refleja el estado actual del post.
+        if (featureBtn) {
+          featureBtn.classList.toggle('hidden', !isOwner);
+          if (isOwner) {
+            const labelEl = document.getElementById('feature-post-btn-label');
+            drexFeaturedGet(user.uid).then(map => {
+              // Anti-carrera: si ya se abrió la hoja de otro post, la respuesta
+              // tardía no pinta el estado del post anterior.
+              if (currentPostOptionsNoteId !== noteId) return;
+              if (labelEl) labelEl.textContent = appT(map[noteId] ? 'Quitar destacado' : 'Destacar');
+            }).catch(() => {});
+          }
+        }
         if (reportBtn) reportBtn.classList.toggle('hidden', isOwner);
         if (copyBtn) copyBtn.classList.toggle('hidden', !hasText);
 
@@ -18808,6 +18853,7 @@ function saveNote() {
         }
       }).catch(() => {
         if (deleteBtn) deleteBtn.classList.add('hidden');
+        if (featureBtn) featureBtn.classList.add('hidden');
         if (reportBtn) reportBtn.classList.remove('hidden');
       });
     }
@@ -18835,6 +18881,49 @@ function saveNote() {
     _restoreOverlayFocus();
     currentPostOptionsNoteId = null;
     currentPostOptionsNoteData = null;
+  }
+
+  // DESTACADOS (C87): destacar / quitar destacado (solo el autor del post).
+  // users/<uid>/featuredPosts/<noteId> = pinnedAt. Cap DREX_FEATURED_MAX.
+  async function toggleFeaturedPost(noteId) {
+    const user = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
+    const nid = noteId || currentPostOptionsNoteId;
+    if (!user || !nid) return;
+    const note = currentPostOptionsNoteData || {};
+    const ownerId = note.authorId || note.userId;
+    if (ownerId !== user.uid) return; // solo el autor puede destacar sus posts
+    try {
+      const snap = await DrexCloud.database().ref('users/' + user.uid + '/featuredPosts').once('value');
+      const map = drexFeaturedNormalize(snap.val());
+      if (map[nid]) {
+        await DrexCloud.database().ref('users/' + user.uid + '/featuredPosts/' + nid).remove();
+        showMiniToast(appT('Se quitó la publicación destacada.'));
+      } else {
+        if (Object.keys(map).length >= DREX_FEATURED_MAX) {
+          showMiniToast(appT('Solo puedes destacar 3 publicaciones.'));
+          return;
+        }
+        await DrexCloud.database().ref('users/' + user.uid + '/featuredPosts/' + nid).set(Date.now());
+        showMiniToast(appT('Publicación destacada.'));
+      }
+      drexFeaturedInvalidate(user.uid);
+      closePostOptionsSheet();
+      _refreshOwnProfileGridIfOpen(user.uid);
+    } catch (_) {
+      showMiniToast(appT('No se pudo actualizar. Intenta de nuevo.'));
+    }
+  }
+
+  // Tras destacar/quitar: si el perfil propio está abierto para ese uid,
+  // re-adjunta el listener para que el nuevo orden se vea al instante.
+  function _refreshOwnProfileGridIfOpen(uid) {
+    try {
+      if (typeof _userStatsUid === 'undefined' || _userStatsUid !== uid) return;
+      const pv = document.getElementById('profile-view');
+      if (!pv || pv.classList.contains('hidden')) return;
+      if (typeof _detachProfilePostsListener === 'function') _detachProfilePostsListener();
+      if (typeof _attachProfilePostsListener === 'function') _attachProfilePostsListener();
+    } catch (_) {}
   }
 
   // Eliminar publicación (solo el autor). Esta función faltaba: el botón
@@ -18868,6 +18957,7 @@ function saveNote() {
     }
     await DrexCloud.database().ref('communityNotes/' + noteId).remove();
     try { const _delAid = n.authorId || n.userId; if (_delAid) await DrexCloud.database().ref('notesByAuthor/' + _delAid + '/' + noteId).remove().catch(() => {}); } catch (_) {}
+    try { const _delAid2 = n.authorId || n.userId; if (_delAid2) await DrexCloud.database().ref('users/' + _delAid2 + '/featuredPosts/' + noteId).remove().catch(() => {}); } catch (_) {}
     // PERF H3: si el perfil del autor está abierto, su total de posts decrece
     // (el listener en vivo lo auto-corrige si la página deja de ir llena).
     try { const _delUid = n.authorId || n.userId; if (typeof _profilePostsTotal !== 'undefined' && _delUid && _userStatsUid === _delUid && _profilePostsTotal !== null && _profilePostsTotal > 0) { _profilePostsTotal--; _paintProfilePostsCount(); _paintProfileLoadMore(); } } catch (_) {}
@@ -30583,6 +30673,54 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     return out;
   }
 
+  // DESTACADOS (C87 — fase 2 del Escaparate): posts fijados arriba del perfil.
+  // users/<uid>/featuredPosts = { <noteId>: <pinnedAt epoch ms> }, máx 3.
+  // Núcleo puro: sin DOM ni BD.
+  const DREX_FEATURED_MAX = 3;
+  function drexFeaturedNormalize(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (const k of Object.keys(raw)) {
+      const id = String(k).trim();
+      const ts = Number(raw[k]);
+      if (!id || !isFinite(ts) || ts <= 0) continue;
+      out[id] = ts;
+    }
+    return out;
+  }
+  // Ordena posts para el grid del perfil: destacados primero (pinnedAt desc,
+  // desempate por timestamp desc) y el resto por timestamp desc. Marca
+  // _featuredAt en los destacados. Devuelve un array nuevo.
+  function drexFeaturedSortPosts(posts, featuredMap) {
+    const feat = drexFeaturedNormalize(featuredMap);
+    const featured = [];
+    const rest = [];
+    for (const p of (Array.isArray(posts) ? posts : [])) {
+      const at = (p && p.id) ? feat[p.id] : undefined;
+      if (at) { p._featuredAt = at; featured.push(p); }
+      else rest.push(p);
+    }
+    const byTs = (a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0);
+    featured.sort((a, b) => (b._featuredAt - a._featuredAt) || byTs(a, b));
+    rest.sort(byTs);
+    return featured.concat(rest);
+  }
+  // Caché mínima del mapa de destacados por uid (se invalida al destacar o
+  // quitar; la clave por uid evita fugas entre cuentas del mismo dispositivo).
+  let _drexFeaturedCache = { uid: null, map: null };
+  function drexFeaturedGet(uid) {
+    if (!uid) return Promise.resolve({});
+    if (_drexFeaturedCache.uid === uid && _drexFeaturedCache.map) return Promise.resolve(_drexFeaturedCache.map);
+    return DrexCloud.database().ref('users/' + uid + '/featuredPosts').once('value').then(s => {
+      const m = drexFeaturedNormalize(s.val());
+      _drexFeaturedCache = { uid: uid, map: m };
+      return m;
+    }).catch(() => ({}));
+  }
+  function drexFeaturedInvalidate(uid) {
+    if (!uid || _drexFeaturedCache.uid === uid) _drexFeaturedCache = { uid: null, map: null };
+  }
+
   // Pinta el escaparate en el perfil propio: una fila por enlace (título o
   // dominio). Si no hay escaparate, cae al enlace único legacy `website`.
   function renderOwnProfileShowcase(website, showcaseLinks) {
@@ -38907,7 +39045,9 @@ function renderAccountsList(accounts) {
       _authorPostsMemo = {
         authorId,
         postsPromise: DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(authorId).once('value'),
-        collabPromise: fetchCollabPosts(authorId)
+        collabPromise: fetchCollabPosts(authorId),
+        // DESTACADOS (C87): mapa de destacados del autor (una lectura por apertura).
+        featuredPromise: DrexCloud.database().ref('users/' + authorId + '/featuredPosts').once('value').catch(() => null)
       };
     }
     return _authorPostsMemo;
@@ -38917,8 +39057,9 @@ function renderAccountsList(accounts) {
     const memo = _getAuthorPostsMemo(authorId);
     Promise.all([
       memo.postsPromise,
-      memo.collabPromise
-    ]).then(async ([snapshot, collabPosts]) => {
+      memo.collabPromise,
+      memo.featuredPromise
+    ]).then(async ([snapshot, collabPosts, featuredSnap]) => {
       if (currentViewedAuthorId !== authorId) return;
       container.innerHTML = "";
       if (typeof renderAuthorMusicBlock === 'function') renderAuthorMusicBlock(authorId, container);
@@ -38945,10 +39086,11 @@ function renderAccountsList(accounts) {
         return;
       }
 
-      posts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      // DESTACADOS (C87): los destacados del autor van primero (pinnedAt desc).
+      const orderedAuthorPosts = drexFeaturedSortPosts(posts, featuredSnap ? featuredSnap.val() : null);
 
       const voteMaps = await _getProfileVoteMaps();
-      posts.forEach(post => {
+      orderedAuthorPosts.forEach(post => {
         const postCard = createProfilePostCard(post, {
           user: voteMaps.user,
           userVote: voteMaps.votes[post.id] || null,

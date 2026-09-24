@@ -2143,7 +2143,13 @@ var APP_ENGLISH_TEXT = {
 "Se envió como solicitud":"Sent as a request",
 "Solicitud eliminada":"Request deleted",
 "No se pudo aceptar la solicitud.":"Couldn't accept the request.",
-"No se pudo eliminar la solicitud.":"Couldn't delete the request."
+"No se pudo eliminar la solicitud.":"Couldn't delete the request.",
+"Destacar":"Feature",
+"Quitar destacado":"Remove feature",
+"Publicación destacada.":"Post featured.",
+"Se quitó la publicación destacada.":"Featured post removed.",
+"Solo puedes destacar 3 publicaciones.":"You can only feature 3 posts.",
+"No se pudo actualizar. Intenta de nuevo.":"Couldn't update. Try again."
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4285,7 +4291,13 @@ var APP_CHINESE_TEXT = {
 "Se envió como solicitud":"已作为请求发送",
 "Solicitud eliminada":"已删除请求",
 "No se pudo aceptar la solicitud.":"无法接受请求。",
-"No se pudo eliminar la solicitud.":"无法删除请求。"
+"No se pudo eliminar la solicitud.":"无法删除请求。",
+"Destacar":"置顶",
+"Quitar destacado":"取消置顶",
+"Publicación destacada.":"帖子已置顶。",
+"Se quitó la publicación destacada.":"已取消帖子置顶。",
+"Solo puedes destacar 3 publicaciones.":"最多只能置顶 3 个帖子。",
+"No se pudo actualizar. Intenta de nuevo.":"更新失败，请重试。"
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6418,7 +6430,13 @@ var APP_PORTUGUESE_TEXT = {
 "Se envió como solicitud":"Enviado como solicitação",
 "Solicitud eliminada":"Solicitação excluída",
 "No se pudo aceptar la solicitud.":"Não foi possível aceitar a solicitação.",
-"No se pudo eliminar la solicitud.":"Não foi possível excluir a solicitação."
+"No se pudo eliminar la solicitud.":"Não foi possível excluir a solicitação.",
+"Destacar":"Destacar",
+"Quitar destacado":"Remover destaque",
+"Publicación destacada.":"Publicação em destaque.",
+"Se quitó la publicación destacada.":"Destaque da publicação removido.",
+"Solo puedes destacar 3 publicaciones.":"Você só pode destacar 3 publicações.",
+"No se pudo actualizar. Intenta de nuevo.":"Não foi possível atualizar. Tente novamente."
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
