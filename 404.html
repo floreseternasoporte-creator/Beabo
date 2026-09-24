@@ -33484,15 +33484,20 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       // C47-F2b: lo mismo para publicaciones compartidas (type/sharedPost).
       if (fwdData.type === 'sharedPost' && fwdData.sharedPost) { payload.type = 'sharedPost'; payload.sharedPost = fwdData.sharedPost; }
       await msgRef.set(payload);
-      // C50-C1: el reenvío comparte los trozos por referencia (mismo fileId);
-      // sumar una referencia por archivo para que el borrado del original no
-      // rompa el adjunto del reenvío (ni viceversa). Best-effort: no bloquea
-      // ni interrumpe el reenvío aunque el ref no soporte transacciones.
+      // C57-C1: el incremento de refs debe COMPLETARSE antes de que el
+      // reenvío se considere listo. Antes era fire-and-forget: si el original
+      // se borraba para-todos (o la app se cerraba) antes de que el incremento
+      // aterrizara, el borrado veía refs=1 -> borraba los trozos y el
+      // incremento tardío recreaba refs=2 SIN trozos -> el adjunto del reenvío
+      // quedaba roto. Secuenciado (sigue sin fallar el reenvío si el
+      // incremento falla: best-effort).
       try {
         if (fwdData.files && fwdData.files.length) {
-          fwdData.files.forEach(f => {
-            if (f && f.fileId) DrexCloud.database().ref('chatFiles/' + f.fileId + '/refs').transactionBlind(c => (Number(c) || 1) + 1).catch(() => {});
-          });
+          await Promise.all(fwdData.files.map(f =>
+            (f && f.fileId)
+              ? DrexCloud.database().ref('chatFiles/' + f.fileId + '/refs').transactionBlind(c => (Number(c) || 1) + 1)
+              : Promise.resolve()
+          ));
         }
       } catch (_) {}
       const preview = (fwdData.type === 'sharedPost' && fwdData.sharedPost) ? '📌 Publicación' :
