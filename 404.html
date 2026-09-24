@@ -46907,8 +46907,14 @@ window.voteMusicTrack = function (voteType) {
       }
       return tr;
     }).then(res => {
-      _musicVoteLock = false;
-      if (!res || !res.committed) { _musicVoteRepaint(trackId, () => musicPaintVoteUI(wasUp, wasDown, curScore)); return; }
+      // C60-M1: no liberar el lock hasta que el registro del voto aterrice en
+      // el servidor. Antes se liberaba justo despues del commit de la
+      // transaccion del track, con el set()/remove() de musicVotes/<uid>/<id>
+      // aun en vuelo: un segundo voto inmediato leia serverVote stale (null)
+      // y la transaccion sumaba de nuevo sin restar el voto previo, inflando
+      // upvotes/downvotes de forma permanente (doble-tap rapido).
+      const _releaseVoteLock = () => { _musicVoteLock = false; };
+      if (!res || !res.committed) { _releaseVoteLock(); _musicVoteRepaint(trackId, () => musicPaintVoteUI(wasUp, wasDown, curScore)); return; }
       const newVote = (serverVote === voteType) ? null : voteType;
       // Votos semanales (Top Drex semanal real). Best-effort: los rechazos
       // async se tragan para no generar ruido en el canal de errores global.
@@ -46920,8 +46926,8 @@ window.voteMusicTrack = function (voteType) {
         if (newVote === 'up') _wCatch(wref.child('up').transactionBlind(c => ((c | 0) || 0) + 1));
         if (newVote === 'down') _wCatch(wref.child('down').transactionBlind(c => ((c | 0) || 0) + 1));
       } catch (_) {}
-      if (newVote === null) { try { userVoteRef.remove(); } catch (_) {} }
-      else { try { userVoteRef.set(newVote); } catch (_) {} }
+      let _voteWriteP = null;
+      try { _voteWriteP = (newVote === null) ? userVoteRef.remove() : userVoteRef.set(newVote); } catch (_) { _voteWriteP = null; }
       const un = res.snapshot ? res.snapshot.val() : null;
       if (un) {
         t.upvotes = (un.upvotes | 0) || 0; t.downvotes = (un.downvotes | 0) || 0;
@@ -46935,6 +46941,17 @@ window.voteMusicTrack = function (voteType) {
             }).catch(() => {});
           } catch (_) {}
         }
+      }
+      // El lock se libera cuando el registro del voto confirma en el servidor,
+      // asi el siguiente voto lee serverVote fresco. Timeout de seguridad para
+      // no bloquear los votos de musica para siempre si la escritura se cuelga.
+      if (_voteWriteP && typeof _voteWriteP.then === 'function') {
+        let _voteLockReleased = false;
+        const _relVoteLock = () => { if (!_voteLockReleased) { _voteLockReleased = true; _releaseVoteLock(); } };
+        _voteWriteP.then(_relVoteLock, _relVoteLock);
+        setTimeout(_relVoteLock, 10000);
+      } else {
+        _releaseVoteLock();
       }
     });
   }).catch(() => { _musicVoteLock = false; _musicVoteRepaint(trackId, () => musicPaintVoteUI(wasUp, wasDown, curScore)); });
