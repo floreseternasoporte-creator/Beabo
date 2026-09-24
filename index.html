@@ -12136,7 +12136,16 @@ function saveNote() {
 
   function saveCurrentNoteDraft(showToast = false) {
     const content = (document.getElementById('note-content-fullscreen')?.value || '').trim();
-    const hasMeaningfulContent = Boolean(content);
+    // C145: el borrador también se guarda cuando solo trae encuesta (sin
+    // texto). Guardas typeof porque el bloque DREX-SCHEDULED-POSTS puede no
+    // existir en extracciones de tests viejos.
+    let _c145PollOnly = false;
+    try {
+      if (typeof drexDraftPollFromEditor === 'function' && typeof notePostPoll !== 'undefined') {
+        _c145PollOnly = !!drexDraftPollFromEditor(notePostPoll);
+      }
+    } catch (_) {}
+    const hasMeaningfulContent = Boolean(content) || _c145PollOnly;
 
     if (!hasMeaningfulContent) {
       if (showToast) setNoteDraftStatus('Nada que guardar', 'warning');
@@ -12177,7 +12186,15 @@ function saveNote() {
     try {
       if (_noteDraftSaveTimer) { clearTimeout(_noteDraftSaveTimer); _noteDraftSaveTimer = null; }
       const _noteInput = document.getElementById('note-content-fullscreen');
-      if (_noteInput && _noteInput.value && _noteInput.value.trim()) saveCurrentNoteDraft(false);
+      // C145: también hay algo que guardar cuando el editor solo trae
+      // encuesta (sin texto).
+      let _c145PollOnly = false;
+      try {
+        if (typeof drexDraftPollFromEditor === 'function' && typeof notePostPoll !== 'undefined') {
+          _c145PollOnly = !!drexDraftPollFromEditor(notePostPoll);
+        }
+      } catch (_) {}
+      if ((_noteInput && _noteInput.value && _noteInput.value.trim()) || _c145PollOnly) saveCurrentNoteDraft(false);
     } catch (_) {}
   }
   try { window.addEventListener('pagehide', drexFlushNoteDraftOnPageHide); } catch (_) {}
@@ -12296,7 +12313,18 @@ function saveNote() {
     list.forEach(draft => {
       const row = document.createElement('div');
       row.className = 'bg-white rounded-2xl border border-[var(--theme-border)] p-3.5 flex items-start gap-3';
-      const preview = (draft.content || '').trim() || 'Borrador vacío';
+      // C145: un borrador de solo-encuesta muestra sus opciones como avance
+      // (antes decía "Borrador vacío" aunque trajera votación).
+      let preview = (draft.content || '').trim();
+      if (!preview) {
+        try {
+          if (typeof drexDraftPollFromEditor === 'function') {
+            const _pp = drexDraftPollFromEditor(draft.poll);
+            if (_pp) preview = _pp.options.map(t => String(t).trim()).filter(Boolean).join(' · ');
+          }
+        } catch (_) {}
+      }
+      if (!preview) preview = 'Borrador vacío';
       const dateLabel = draft.updatedAt ? new Date(draft.updatedAt).toLocaleString() : '';
       // POSTS PROGRAMADOS: insignia "Se publicará el {fecha}" en índigo Drex + botón reloj.
       const _isSched = typeof draft.publishAt === 'number' && draft.publishAt > 0;
@@ -12518,7 +12546,13 @@ function saveNote() {
     if (!draft) return { id: draftId, status: 'missing' }; // se borró antes de la hora: no se publica
     if (draft.scheduledPublishing) return { id: draftId, status: 'in-flight' }; // doble disparo
     if (!drexSchedIsDue(draft, nowMs)) return { id: draftId, status: 'not-due' };
-    if (!((draft.content || '').trim())) {
+    // C145: un borrador de solo-encuesta no está vacío (la encuesta viaja
+    // con el post programado desde C144). Se exige encuesta PUBLICABLE
+    // (>=2 opciones válidas): una encuesta a medio escribir no publica nada
+    // útil y el borrador se descarta como vacío, igual que antes.
+    let _c145PollOk = false;
+    try { _c145PollOk = !!drexDraftPollForPublish(draft.poll, nowMs); } catch (_) {}
+    if (!((draft.content || '').trim()) && !_c145PollOk) {
       ctx.saveDrafts(list.filter(d => d.id !== draftId)); // vacío: se descarta sin publicar
       return { id: draftId, status: 'empty' };
     }
@@ -12728,7 +12762,12 @@ function saveNote() {
 
   function openScheduleSheetFromComposer() {
     const content = ((document.getElementById('note-content-fullscreen') || {}).value || '').trim();
-    if (!content) { showMiniToast(appT('Escribe algo primero para programarlo.')); return; }
+    // C145: un post de solo-encuesta también se puede programar (la encuesta
+    // viaja con el borrador desde C144). Guarda typeof: getValidPollOptions
+    // vive en el bloque del composer, fuera de este bloque en extracciones.
+    let _c145PollOnly = false;
+    try { _c145PollOnly = (typeof getValidPollOptions === 'function') && !!getValidPollOptions(); } catch (_) {}
+    if (!content && !_c145PollOnly) { showMiniToast(appT('Escribe algo o crea una votación para programarlo.')); return; }
     // C144: la programación guarda el borrador (texto + audiencia + encuesta);
     // los adjuntos (fotos/video/GIF) aún no viajan en los borradores.
     const hasMedia = (typeof notePostImageFiles !== 'undefined' && notePostImageFiles.length) ||
@@ -14383,8 +14422,13 @@ function saveNote() {
     const imageFiles = notePostImageFiles.slice(0, 20);
     const gifUrl = selectedNotePostGif;
     const videoFile = notePostVideoFile; // VIDEO-POSTS
-    if (!content && !imageFiles.length && !gifUrl && !videoFile) {
-      showMiniToast(appT('Por favor escribe algo o agrega una foto, video o GIF'));
+    // C145: una encuesta válida también es contenido publicable (post de
+    // solo-encuesta). getValidPollOptions() ya exige >=2 opciones no vacías.
+    // (Variable propia: la región del payload más abajo declara su propio
+    // `pollOpts`, que extraen tests viejos por marcadores.)
+    const _c145GatePollOpts = getValidPollOptions();
+    if (!content && !imageFiles.length && !gifUrl && !videoFile && !_c145GatePollOpts) {
+      showMiniToast(appT('Por favor escribe algo, agrega una foto, video o GIF, o crea una votación'));
       return;
     }
 
@@ -17272,19 +17316,26 @@ function saveNote() {
     { h: 168, en: '1 week', es: '1 semana', zh: '1\u5468' }
   ];
   let notePostPoll = null;
+  // C145: editar la encuesta también dispara el autoguardado del borrador
+  // (debounce de 450ms), para que un post de solo-encuesta no se pierda.
+  // Guarda typeof: handleNoteDraftInput vive en el bloque de borradores.
+  function pollEditorAutosave() {
+    try { if (typeof handleNoteDraftInput === 'function') handleNoteDraftInput(); } catch (_) {}
+  }
   function toggleNotePoll() {
     notePostPoll = notePostPoll ? null : { options: ['', ''], hours: 24 };
     renderNoteFlairRow();
     renderNotePollEditor();
+    pollEditorAutosave();
   }
-  function setPollOption(i, v) { if (notePostPoll) notePostPoll.options[i] = v; }
+  function setPollOption(i, v) { if (notePostPoll) { notePostPoll.options[i] = v; pollEditorAutosave(); } }
   function addPollOption() {
-    if (notePostPoll && notePostPoll.options.length < 4) { notePostPoll.options.push(''); renderNotePollEditor(); }
+    if (notePostPoll && notePostPoll.options.length < 4) { notePostPoll.options.push(''); renderNotePollEditor(); pollEditorAutosave(); }
   }
   function removePollOption(i) {
-    if (notePostPoll && notePostPoll.options.length > 2) { notePostPoll.options.splice(i, 1); renderNotePollEditor(); }
+    if (notePostPoll && notePostPoll.options.length > 2) { notePostPoll.options.splice(i, 1); renderNotePollEditor(); pollEditorAutosave(); }
   }
-  function setPollDuration(h) { if (notePostPoll) { notePostPoll.hours = h; renderNotePollEditor(); } }
+  function setPollDuration(h) { if (notePostPoll) { notePostPoll.hours = h; renderNotePollEditor(); pollEditorAutosave(); } }
   function renderNotePollEditor() {
     const box = document.getElementById('note-poll-editor');
     if (!box) return;
@@ -18043,6 +18094,26 @@ function saveNote() {
     var PT = {
       'Toca otra opción para cambiar tu voto': 'Toque em outra opção para mudar seu voto',
       'Voto actualizado': 'Voto atualizado'
+    };
+    try {
+      if (typeof APP_ENGLISH_TEXT !== 'undefined') Object.assign(APP_ENGLISH_TEXT, EN);
+      if (typeof APP_CHINESE_TEXT !== 'undefined') Object.assign(APP_CHINESE_TEXT, ZH);
+      if (typeof APP_PORTUGUESE_TEXT !== 'undefined') Object.assign(APP_PORTUGUESE_TEXT, PT);
+    } catch (_) {}
+  })();
+  // C145: i18n de la encuesta sin texto (post de solo-encuesta).
+  (function () {
+    var EN = {
+      'Por favor escribe algo, agrega una foto, video o GIF, o crea una votación': 'Please write something, add a photo, video or GIF, or create a poll',
+      'Escribe algo o crea una votación para programarlo.': 'Write something or create a poll to schedule it.'
+    };
+    var ZH = {
+      'Por favor escribe algo, agrega una foto, video o GIF, o crea una votación': '请写点内容、添加照片、视频或 GIF，或创建一个投票',
+      'Escribe algo o crea una votación para programarlo.': '写点内容或创建一个投票以安排发布。'
+    };
+    var PT = {
+      'Por favor escribe algo, agrega una foto, video o GIF, o crea una votación': 'Escreva algo, adicione uma foto, vídeo ou GIF, ou crie uma votação',
+      'Escribe algo o crea una votación para programarlo.': 'Escreva algo ou crie uma votação para programá-lo.'
     };
     try {
       if (typeof APP_ENGLISH_TEXT !== 'undefined') Object.assign(APP_ENGLISH_TEXT, EN);
