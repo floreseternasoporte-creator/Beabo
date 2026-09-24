@@ -34518,6 +34518,26 @@ let chatTypingListener = null;
           lastMessage: 'Grupo creado'
         }, { noReseal: true })
       ));
+      // C164: avisar a los miembros agregados al crear el grupo. Sin
+      // auto-aviso (se excluye al creador). Tipo 'message' + isGroupChat:true
+      // → hereda el toggle 'groupMessages' del destinatario
+      // (notifTypeToPrefKey). Best-effort: no bloquea la creación (mismo
+      // patrón fire-and-forget del aviso de mensaje en grupo).
+      try {
+        if (typeof addNotification === 'function') {
+          (async () => {
+            try {
+              const _cs = await DrexCloud.database().ref('users/' + user.uid).once('value');
+              const _cd = (_cs && _cs.val()) || {};
+              const _cn = _cd.username || _cd.displayName || 'Alguien';
+              await Promise.all(allMemberUids
+                .filter(mid => mid && mid !== user.uid)
+                .map(mid => addNotification(mid, `${_cn} te agregó al grupo "${groupName}"`, 'message',
+                  { actionType: 'chat', actionId: finalGroupId, isGroupChat: true }).catch(() => {})));
+            } catch (_) {}
+          })();
+        }
+      } catch (_) {}
       await DrexCloud.database().ref('conversationMessages/' + finalGroupId).push({
         system: true,
         text: 'Grupo "' + groupName + '" creado',
@@ -39439,6 +39459,22 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         text: name + ' se unió al grupo',
         timestamp: now
       })._writePromise;
+      // C164: avisar al miembro agregado a un grupo existente. Best-effort,
+      // no bloquea. Mismo tipo/toggle que los mensajes de grupo ('message'
+      // + isGroupChat:true → 'groupMessages'); sin auto-aviso.
+      try {
+        if (typeof addNotification === 'function' && uid && uid !== user.uid) {
+          (async () => {
+            try {
+              const _as = await DrexCloud.database().ref('users/' + user.uid).once('value');
+              const _ad = (_as && _as.val()) || {};
+              const _an = _ad.username || _ad.displayName || 'Alguien';
+              await addNotification(uid, `${_an} te agregó al grupo "${groupName}"`, 'message',
+                { actionType: 'chat', actionId: currentChatRoomId, isGroupChat: true }).catch(() => {});
+            } catch (_) {}
+          })();
+        }
+      } catch (_) {}
       if (Array.isArray(currentGroupMembers)) {
         currentGroupMembers.push(uid);
       } else {
