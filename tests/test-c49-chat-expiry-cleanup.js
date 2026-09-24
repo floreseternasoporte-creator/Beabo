@@ -42,12 +42,17 @@ function extractFn(src, name) {
 
 // ---------- estático ----------
 const cd = extractFn(html, '_startMsgCountdown');
-check('C1: _startMsgCountdown borra las reacciones del mensaje al expirar',
-  /msgReactions\/' \+ conversationId \+ '\/' \+ msgId\)\.remove\(\)/.test(cd));
-check('C1: _startMsgCountdown limpia el pin solo si apunta al mensaje expirado',
-  /conversationPinned\/' \+ conversationId\)\.once\('value'\)/.test(cd) &&
-  /pin\.msgId === msgId/.test(cd) &&
-  /conversationPinned\/' \+ conversationId\)\.remove\(\)/.test(cd));
+// C58-C1: la limpieza de expiración vive en _expireChatMessage; el countdown delega.
+const xcm = extractFn(html, '_expireChatMessage');
+check('C1: _startMsgCountdown delega la expiración en _expireChatMessage',
+  /_expireChatMessage\(conversationId, msgId\)/.test(cd));
+check('C1: _expireChatMessage borra las reacciones del mensaje al expirar',
+  !!xcm && /msgReactions\/' \+ conversationId \+ '\/' \+ msgId\)\.remove\(\)/.test(xcm));
+check('C1: _expireChatMessage limpia el pin solo si apunta al mensaje expirado',
+  !!xcm &&
+  /conversationPinned\/' \+ conversationId\)\.once\('value'\)/.test(xcm) &&
+  /pin\.msgId === msgId/.test(xcm) &&
+  /conversationPinned\/' \+ conversationId\)\.remove\(\)/.test(xcm));
 
 const vo = extractFn(html, 'openViewOnceMessage');
 check('C1: openViewOnceMessage borra las reacciones del mensaje al consumirse',
@@ -97,7 +102,7 @@ function makeRef(p) {
   ctx1.Date = { now: () => NOW };
   vm.createContext(ctx1);
   // C50-C1: _startMsgCountdown libera los archivos del mensaje expirado.
-  vm.runInContext(extractFn(html, '_releaseChatFileRef') + '\n' + extractFn(html, '_releaseChatFileRefsOfMsg'), ctx1);
+  vm.runInContext(extractFn(html, '_releaseChatFileRef') + '\n' + extractFn(html, '_releaseChatFileRefsOfMsg') + '\n' + extractFn(html, '_expireChatMessage'), ctx1); // C58-C1
   vm.runInContext(extractFn(html, '_startMsgCountdown'), ctx1);
   vm.runInContext('_startMsgCountdown("m1",' + (NOW - 5000) + ',"room1")', ctx1);
   assert(ivCbs.length === 1, 'el intervalo del countdown arranca');

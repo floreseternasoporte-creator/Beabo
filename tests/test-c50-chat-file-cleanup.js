@@ -67,8 +67,11 @@ for (const [fn, label] of [['closeChatRoomView', 'cerrar'], ['openChatRoomFromIn
 }
 
 const cdl = extractFn(html, '_startMsgCountdown');
-check('C1: la expiración del temporal lee el mensaje y libera sus archivos',
-  /_releaseChatFileRefsOfMsg\(_expSnap\.val\(\), msgId\)/.test(cdl));
+// C58-C1: la limpieza de expiración vive en _expireChatMessage; el countdown delega.
+const xcm50 = extractFn(html, '_expireChatMessage');
+check('C1: la expiración del temporal libera sus archivos (vía _expireChatMessage)',
+  /_expireChatMessage\(conversationId, msgId\)/.test(cdl) &&
+  !!xcm50 && /_releaseChatFileRefsOfMsg\(_msg, msgId\)/.test(xcm50));
 const cvo = extractFn(html, 'openViewOnceMessage');
 check('C1: el consumo de ver-una-vez libera los archivos del mensaje',
   /_releaseChatFileRefsOfMsg\(msg, msgId\)/.test(cvo));
