@@ -5213,6 +5213,29 @@ document.addEventListener("DOMContentLoaded", function() {
     }
     .drex-spoiler-badge svg { width: 20px; height: 20px; flex-shrink: 0; }
     .drex-spoiler-hint { font-weight: 600; color: #6b7280; }
+    /* CONTENIDO FUERTE (v1): velo índigo sobre el cuerpo del post hasta tocar
+       "Mostrar". Espejo del patrón del spoiler; el overlay usa el índigo Drex
+       #2F33B8 con alfa para no ocultar del todo la forma del contenido. */
+    .drex-sensitive-veil { position: relative; }
+    .drex-sensitive-blur { filter: blur(14px) saturate(.8); pointer-events: none; user-select: none; }
+    .drex-sensitive-veil.revealed .drex-sensitive-blur { filter: none; pointer-events: auto; user-select: auto; }
+    .drex-sensitive-cover {
+      position: absolute; inset: 0; z-index: 2;
+      display: flex; align-items: center; justify-content: center;
+      border: 0; width: 100%; padding: 0; border-radius: 12px; overflow: hidden; cursor: pointer;
+      background: linear-gradient(135deg, rgba(47,51,184,.85), rgba(24,28,74,.9));
+      -webkit-tap-highlight-color: transparent;
+    }
+    .drex-sensitive-veil.revealed .drex-sensitive-cover { display: none; }
+    .drex-sensitive-badge {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,.95); border-radius: 9999px;
+      padding: 12px 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.25);
+      color: #2F33B8; font-size: 13px; font-weight: 800;
+    }
+    .drex-sensitive-badge svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .drex-sensitive-hint { font-weight: 600; color: #6b7280; }
     /* Composer: chips de etiqueta + toggle de spoiler */
     #note-flair-row { scrollbar-width: none; }
     #note-flair-row::-webkit-scrollbar { display: none; }
@@ -5233,6 +5256,16 @@ document.addEventListener("DOMContentLoaded", function() {
     }
     .note-spoiler-toggle svg { width: 16px; height: 16px; }
     .note-spoiler-toggle.active { background: #1c2b4a; color: #fff; }
+    /* Composer: interruptor "Contenido fuerte" (índigo Drex cuando está activo) */
+    .note-sensitive-toggle {
+      flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12.5px; font-weight: 700; min-height: 40px;
+      padding: 8px 14px; border-radius: 9999px;
+      background: #eef1f6; color: #5c6974; border: 2px solid transparent; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .note-sensitive-toggle svg { width: 16px; height: 16px; }
+    .note-sensitive-toggle.active { background: #2F33B8; color: #fff; }
     .drex-action-pill.eco-btn.active {
       background: color-mix(in srgb, var(--drex-brand) 12%, transparent);
       color: var(--brand-indigo-text);
@@ -11690,6 +11723,7 @@ function saveNote() {
     selectNoteAudience('public');
     selectedNoteFlair = null;
     notePostIsSpoiler = false;
+    notePostIsSensitive = false;
     notePostPoll = null;
     renderNoteFlairRow();
     renderNotePollEditor();
@@ -12873,6 +12907,9 @@ function saveNote() {
       note.format = currentNoteFormat;
       if (selectedNoteFlair) note.flair = selectedNoteFlair;
       if (notePostIsSpoiler) note.spoiler = true;
+      // CONTENIDO FUERTE (v1): flag del autor; viaja con el post y lo tapa
+      // con el velo índigo en feed, permalink y comentarios.
+      if (notePostIsSensitive) note.sensitive = true;
       const pollOpts = getValidPollOptions();
       if (pollOpts) {
         note.poll = {
@@ -15004,6 +15041,25 @@ function saveNote() {
     return adultPatterns.some(pattern => pattern.test(joined));
   }
 
+  // ===== CONTENIDO FUERTE: filtro parental "Ocultar contenido sensible" =====
+  // El toggle parental (users/<uid>/parentalControls.hideSensitive, activo por
+  // defecto en cuentas supervisadas) antes no filtraba nada porque ningún
+  // post se marcaba como sensible. Con note.sensitive real, el filtro sí
+  // oculta esos posts del feed. Caché de sesión: se carga una vez por sesión
+  // en loadNotes(); el filtro sincrónico la lee (null = aún no cargado).
+  let _drexSensitiveFilterSession = null;
+  function _drexLoadParentalSensitiveFilter(uid) {
+    if (_drexSensitiveFilterSession !== null) return Promise.resolve(_drexSensitiveFilterSession);
+    if (!uid) { _drexSensitiveFilterSession = false; return Promise.resolve(false); }
+    return DrexCloud.database().ref('users/' + uid + '/parentalControls').once('value').then(snap => {
+      const pc = (snap && snap.val()) || null;
+      // Solo cuentas supervisadas: sin objeto parentalControls no hay filtro.
+      // En supervisadas respeta el default del toggle (hideSensitive !== false).
+      _drexSensitiveFilterSession = !!pc && pc.hideSensitive !== false;
+      return _drexSensitiveFilterSession;
+    }).catch(() => { _drexSensitiveFilterSession = false; return false; });
+  }
+
   function shouldHideNoteForCurrentUser(noteId, note) {
     const hiddenPosts = getHiddenPosts();
     if (hiddenPosts.includes(noteId)) return true;
@@ -15020,6 +15076,15 @@ function saveNote() {
       if (!currentUserId) return true;
       if (currentUserId === authorId) return false;
       return !Boolean(allowedIds[currentUserId]);
+    }
+    // CONTENIDO FUERTE (filtro parental "Ocultar contenido sensible"): con el
+    // toggle activo, los posts marcados note.sensitive quedan fuera del feed.
+    // El autor siempre ve los suyos para poder gestionarlos.
+    // FASE 2 (no construida): velo temporal en posts reportados.
+    if (_drexSensitiveFilterSession === true && note && note.sensitive === true) {
+      const _viewerUid2 = (DrexCloud.auth().currentUser && DrexCloud.auth().currentUser.uid) || '';
+      const _noteAuthor2 = (note && (note.authorId || note.userId)) || '';
+      if (_noteAuthor2 !== _viewerUid2) return true;
     }
     return false;
   }
@@ -15565,8 +15630,13 @@ function saveNote() {
     const recProfilePromise = (typeof drexRecProfile === 'function')
       ? drexRecProfile().catch(() => null)
       : Promise.resolve(null);
+    // CONTENIDO FUERTE: el filtro parental sincrónico necesita la caché de
+    // sesión cargada antes de pintar el feed.
+    const parentalSensitivePromise = (user && user.uid)
+      ? _drexLoadParentalSensitiveFilter(user.uid).catch(() => false)
+      : Promise.resolve(false);
 
-    Promise.all([userVotesPromise, userEcosPromise, followingPromise, recProfilePromise]).then(([userVotes, userEcos, followingMap]) => {
+    Promise.all([userVotesPromise, userEcosPromise, followingPromise, recProfilePromise, parentalSensitivePromise]).then(([userVotes, userEcos, followingMap]) => {
       _subscribeNotesFeed(feedContainer, user, userVotes, userEcos, feedMode, followingMap);
       // DrexRecEngine V2: reordenar "Para ti" cuando el perfil V2 ya está cargado.
       if (feedMode === 'foryou' && typeof drexRecResortForYou === 'function') {
@@ -15598,9 +15668,10 @@ function saveNote() {
   function getFlairById(id) { return DREX_POST_FLAIRS.find(f => f.id === id) || null; }
 
 
-  // Estado del composer (etiqueta + spoiler).
+  // Estado del composer (etiqueta + spoiler + contenido fuerte).
   let selectedNoteFlair = null;
   let notePostIsSpoiler = false;
+  let notePostIsSensitive = false;
 
   function renderNoteFlairRow() {
     const row = document.getElementById('note-flair-row');
@@ -15609,6 +15680,10 @@ function saveNote() {
       '<button type="button" onclick="toggleNoteSpoiler()" aria-pressed="' + notePostIsSpoiler + '" class="note-spoiler-toggle ' + (notePostIsSpoiler ? 'active' : '') + '">' +
         DREX_EYE_OFF_SVG +
         '<span>' + appT('Spoiler') + '</span>' +
+      '</button>' +
+      '<button type="button" onclick="toggleNoteSensitive()" aria-pressed="' + notePostIsSensitive + '" class="note-sensitive-toggle ' + (notePostIsSensitive ? 'active' : '') + '" title="' + escapeHtml(appT('Se publica tapado: solo se ve al tocar Mostrar')) + '">' +
+        DREX_EYE_OFF_SVG +
+        '<span>' + appT('Contenido fuerte') + '</span>' +
       '</button>' +
       '<button type="button" onclick="toggleNotePoll()" aria-pressed="' + !!notePostPoll + '" class="note-poll-toggle ' + (notePostPoll ? 'active' : '') + '">' +
         DREX_POLL_SVG +
@@ -15624,6 +15699,11 @@ function saveNote() {
   }
   function toggleNoteSpoiler() {
     notePostIsSpoiler = !notePostIsSpoiler;
+    renderNoteFlairRow();
+  }
+  // CONTENIDO FUERTE (v1): el autor marca el post; viaja como note.sensitive.
+  function toggleNoteSensitive() {
+    notePostIsSensitive = !notePostIsSensitive;
     renderNoteFlairRow();
   }
 
@@ -15832,6 +15912,37 @@ function saveNote() {
     document.querySelectorAll('[data-spoiler-card="' + CSS.escape(noteId) + '"]').forEach(el => el.classList.add('revealed'));
   }
 
+  // ===== CONTENIDO FUERTE (v1: flag del autor, note.sensitive) =====
+  // Velo índigo sobre el cuerpo del post (texto + fotos + video). Se revela
+  // con un tap; el estado vive solo en la sesión (clase 'revealed'), no se
+  // persiste. Espejo de wrapPostSpoiler/revealPostSpoiler. La usan el feed,
+  // el permalink y la vista de comentarios porque las tres comparten
+  // buildDrexPostCardHTML.
+  function sensitiveVeilWrap(note, innerHTML) {
+    if (!note || !note.sensitive) return innerHTML;
+    // FIX AUDITORÍA POSTS 2026-09-22 (9): mismo escape que el spoiler para el
+    // id en el atributo data. En el handler inline se aplica ADEMÁS escapeHtml
+    // sobre el escape JS: un id forjado con comilla doble (") rompería el
+    // atributo onclick y sería XSS almacenado; el navegador decodifica &quot;
+    // antes de evaluar el JS, donde \' sigue protegiendo el literal.
+    const safeVeilId = escapeInlineSingleQuote(note.id || '');
+    const safeVeilIdHtml = escapeHtml(note.id || '');
+    const safeVeilIdJs = escapeHtml(safeVeilId);
+    return '<div class="drex-sensitive-veil" data-sensitive-card="' + safeVeilIdHtml + '">' +
+      '<div class="drex-sensitive-blur">' + innerHTML + '</div>' +
+      '<button type="button" class="drex-sensitive-cover" onclick="drexSensitiveReveal(\'' + safeVeilIdJs + '\')" aria-label="' + escapeHtml(appT('Contenido fuerte: toca para mostrar')) + '">' +
+        '<span class="drex-sensitive-badge">' +
+          DREX_EYE_OFF_SVG +
+          '<span>' + appT('Contenido fuerte') + '</span>' +
+          '<span class="drex-sensitive-hint">' + appT('Mostrar') + '</span>' +
+        '</span>' +
+      '</button>' +
+    '</div>';
+  }
+  function drexSensitiveReveal(noteId) {
+    document.querySelectorAll('[data-sensitive-card="' + CSS.escape(noteId) + '"]').forEach(el => el.classList.add('revealed'));
+  }
+
 
   // Tarjeta de publicación estilo comunidad Drex: la comparten el feed,
   // los perfiles y cualquier otra superficie.
@@ -15915,7 +16026,7 @@ function saveNote() {
                 <span class="inline-flex items-center gap-1">${renderAuthorLanguageBadges(note, true)}</span>
               </div>
               ${renderNoteAnchoredMeta(note)}
-              ${wrapPostSpoiler(note, `${note.content ? renderContentWithSticker(note.content, 'drex-post-title') : ''}${renderNoteImages(note, note.id)}${renderNoteVideo(note)}${urlHTML}${renderFiestaCardHTML(note)}${renderMusicCardHTML(note)}${renderPostPollHTML(note)}`)}
+              ${sensitiveVeilWrap(note, wrapPostSpoiler(note, `${note.content ? renderContentWithSticker(note.content, 'drex-post-title') : ''}${renderNoteImages(note, note.id)}${renderNoteVideo(note)}${urlHTML}${renderFiestaCardHTML(note)}${renderMusicCardHTML(note)}${renderPostPollHTML(note)}`))}
             ${note.taggedPeople && note.taggedPeople.length ? `<div class="mb-3 flex items-center gap-2 flex-wrap">
               <span class="text-xs text-[var(--theme-muted)] font-semibold">Con:</span>
               ${note.taggedPeople.map(p => `<span class="inline-flex items-center gap-1 text-xs bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-full px-2 py-0.5 font-semibold text-[var(--theme-text)] cursor-pointer" onclick="openAuthorProfile('${escapeInlineSingleQuote(p.uid||'')}')">

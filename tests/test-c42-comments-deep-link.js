@@ -115,6 +115,7 @@ async function runScenario(note, viewerUid, blockedAuthorIds) {
     loadCommentsInView: () => {},
     closeCommentsView: () => { calls.closed++; sandbox.currentPostId = null; },
     getHiddenPosts: () => [],
+    _drexSensitiveFilterSession: null, // global del filtro parental "Contenido fuerte" (C81)
     getAdultContentPreference: () => true,
     isAdultContentNote: () => false,
     isAccountBlockedForCurrentUser: (id) => (blockedAuthorIds || []).includes(id),
