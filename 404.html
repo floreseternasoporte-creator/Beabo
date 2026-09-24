@@ -27383,7 +27383,10 @@ function saveNote() {
     const nameEl = rowEl.querySelector('.notif-name');
     const msgEl = rowEl.querySelector('.notif-msg');
     if (!nameEl || !msgEl) return;
-    let msg = message || 'Notificaci\u00f3n';
+    let msg = (typeof message === 'string' && message) ? message : 'Notificaci\u00f3n';
+    // C160: message forjado no-string vía RTDB (p. ej. 12345) reventaba la
+    // lista (msg.indexOf no existe en Number). Mismo patrón que la
+    // normalización legacy de repost (typeof _notifMsg === 'string').
     let name = '';
     if (actorName && msg.indexOf(actorName) === 0) {
       msg = msg.slice(actorName.length).replace(/^\s+/, '');
@@ -27511,7 +27514,10 @@ function saveNote() {
         const escAttr = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
         if (notification.actorImage) {
           avatarHTML = `<img src="${escAttr(notification.actorImage)}" class="w-11 h-11 rounded-full object-cover bg-[var(--theme-surface-muted)]" alt="" onerror="this.style.display='none'">`;
-        } else if (notification.actorName) {
+        } else if (typeof notification.actorName === 'string' && notification.actorName) {
+          // C160: actorName forjado no-string vía RTDB (p. ej. 123) reventaba
+          // toda la lista (TypeError en .trim() abortaba el forEach antes del
+          // appendChild y el catch (_) {} de los llamadores lo silenciaba).
           const initial = notification.actorName.trim().charAt(0).toUpperCase() || '?';
           avatarHTML = `<span class="w-11 h-11 rounded-full bg-[#24324c] text-white flex items-center justify-center text-base font-bold">${initial}</span>`;
         } else {
