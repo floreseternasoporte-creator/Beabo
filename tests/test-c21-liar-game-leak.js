@@ -91,8 +91,9 @@ ok(!('votes' in (doc || {})), 'el doc compartido NO incluye el mapa de votos');
 T.voteAs('u1', 'u2');
 ok(T.writes['fiestas/sid1/game/votes/u1'] === undefined,
   'el voto NO se escribe en el doc compartido (visible para todos)');
-ok(T.writes['fiestaGameSecrets/sid1/votes/u1'] === 'u2',
-  'el voto se escribe en el subárbol de secretos');
+const _v1 = T.writes['fiestaGameSecrets/sid1/votes/u1'];
+ok(_v1 && typeof _v1 === 'object' && _v1.t === 'u2' && typeof _v1.e === 'number',
+  'el voto se escribe en el subárbol de secretos como {t, e} (C79-F2: con epoch de partida)');
 
 // 3) Los secretos individuales sí se reparten (sanidad: el juego sigue funcionando).
 const secKeys = Object.keys(T.writes).filter(k => /^fiestaGameSecrets\/sid1\/u\d$/.test(k));

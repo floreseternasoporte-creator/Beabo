@@ -58,6 +58,12 @@ function extractFn(src, name) {
 
 const FNS = ['fiestaGameHostTally', 'fiestaGameHostEliminate', 'fiestaGameHostReadSecrets']
   .map(n => extractFn(HTML, n)).join('\n');
+// C79-F2: el tally normaliza votos vía fiestaGameVoteTarget (tolerante si el
+// árbol bajo prueba aún no trae el helper: shim identidad = payload escalar).
+let VOTE_TARGET_FN = '';
+try { VOTE_TARGET_FN = extractFn(HTML, 'fiestaGameVoteTarget'); }
+catch (_) { VOTE_TARGET_FN = 'function fiestaGameVoteTarget(vt, epoch) { return vt || null; }'; }
+const FNS_ALL = VOTE_TARGET_FN + '\n' + FNS;
 
 const SECRET_LATENCY_MS = 12000; // latencia simulada de la lectura de secretos
 
@@ -89,7 +95,7 @@ function makeSandbox() {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext(FNS, sandbox, { filename: 'fiesta-tally-fns.js' });
+  vm.runInContext(FNS_ALL, sandbox, { filename: 'fiesta-tally-fns.js' });
   return sandbox;
 }
 

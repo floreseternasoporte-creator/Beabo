@@ -23,6 +23,10 @@ const code = [
   grab('function fiestaGameHostEliminate(ref, g, uid, word, isLiar, liars, pair)', '\n}'),
   grab('function fiestaGameActivePlayers()', '\n}'),
   grab('function fiestaGameFirstActive(outList)', '\n}'),
+  // C79-F2: el tally normaliza votos vía fiestaGameVoteTarget (tolerante si el
+  // árbol bajo prueba aún no trae el helper: shim identidad = payload escalar).
+  (() => { try { return grab('function fiestaGameVoteTarget(vt, epoch)', '\n}'); }
+    catch (_) { return 'function fiestaGameVoteTarget(vt, epoch) { return vt || null; }'; } })(),
 ].join('\n\n');
 
 const secrets = {

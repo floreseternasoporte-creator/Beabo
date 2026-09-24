@@ -7337,7 +7337,9 @@ function fiestaGameHostTick() {
     fiestaGameHostReadVotes(fiestaCur.id).then(function (votes) {
       if (!fiestaAmHost || !fiestaGame || fiestaGame.status !== 'vote' || fiestaGameHostBusy) return;
       var active = fiestaGameActivePlayers();
-      var voted = active.filter(function (u) { return votes[u]; }).length;
+      // C79-F2: el espejo usa la misma normalización que el tally (los votos
+      // stale de otra partida no deben inflar el "x/y votaron").
+      var voted = active.filter(function (u) { return fiestaGameVoteTarget(votes[u], (g && g.startedAt) || 0); }).length;
       try { if (voted !== (fiestaGame.voteCount || 0)) ref.update({ voteCount: voted }); } catch (_) {}
       if (voted >= active.length || Date.now() >= (fiestaGame.voteEndsAt || 0)) {
         fiestaGameHostBusy = true;
@@ -7386,11 +7388,24 @@ function fiestaGameHostReadVotes(sid) {
     return snap.val() || {};
   }).catch(function () { return {}; });
 }
+/* C79-F2: normaliza un voto de fiestaGameSecrets/<sid>/votes/<uid>. El voto
+   se escribe como {t: objetivo, e: epoch (startedAt) de la partida}: un voto
+   emitido durante la votación de la partida N que queda ENCOLADO OFFLINE
+   (Outbox de drex-cloud.js) puede vaciarse durante la votación de una
+   partida POSTERIOR, ya después de la limpieza de votes; sin etiqueta el
+   tally lo contaría como voto fantasma y podría eliminar a un jugador por
+   un voto de la partida anterior. Acepta el escalar legacy (clientes sin
+   refrescar); descarta votos de otra partida (e !== epoch). */
+function fiestaGameVoteTarget(vt, epoch) {
+  if (vt && typeof vt === 'object') return (vt.e === epoch) ? (vt.t || null) : null;
+  return vt || null;
+}
 function fiestaGameHostTally(ref, g, votes) {
   var active = fiestaGameActivePlayers();
   var counts = {};
+  var epoch = (g && g.startedAt) || 0;
   active.forEach(function (voter) {
-    var t = votes[voter];
+    var t = fiestaGameVoteTarget(votes[voter], epoch);
     if (t && t !== voter && active.indexOf(t) !== -1) counts[t] = (counts[t] || 0) + 1;
   });
   var best = null, bestN = 0, tie = false;
@@ -7468,7 +7483,11 @@ function fiestaGameVote(target) {
   // C21: el voto va al subárbol de secretos (invisible para los demás
   // jugadores); el dueño espeja solo el conteo (voteCount) al doc compartido.
   fiestaGameMyVote = target;
-  DrexCloud.database().ref('fiestaGameSecrets/' + fiestaCur.id + '/votes/' + fiestaMyUid).set(target).catch(function () {
+  // C79-F2: etiquetar el voto con el epoch de la partida (ver
+  // fiestaGameVoteTarget): un voto encolado offline puede vaciarse en una
+  // partida posterior y sin etiqueta contaminaría su tally.
+  var _voteEpoch = (fiestaGame && fiestaGame.startedAt) || 0;
+  DrexCloud.database().ref('fiestaGameSecrets/' + fiestaCur.id + '/votes/' + fiestaMyUid).set({ t: target, e: _voteEpoch }).catch(function () {
     // C78-F3: el .catch vacío dejaba fiestaGameMyVote apuntando a un voto que
     // el dueño nunca contó (la UI lo mostraba seleccionado). Revertir el
     // optimismo y avisar para que el jugador re-vote. Solo si seguimos en
@@ -46124,9 +46143,16 @@ window.publishMusic = async function () {
       authorId: uid, authorName, authorImage,
       timestamp: Date.now(), likes: 0, comments: 0, viewsCount: 0
     };
+    // C79-F1: el anuncio es AUXILIAR (precedente C75): si su escritura falla
+    // después de que el audio y el meta ya se guardaron, NO debe caer al
+    // catch general — eso mostraba "No se pudo publicar" (falso negativo) y
+    // el reintento duplicaba la canción con una key nueva. Best-effort: la
+    // canción ya quedó publicada aunque el anuncio no exista.
     let noteRef = null;
-    if (typeof musicDb().ref('communityNotes').pushAsync === 'function') noteRef = await musicDb().ref('communityNotes').pushAsync(note);
-    else { noteRef = musicDb().ref('communityNotes').push(note); if (noteRef && noteRef._writePromise) await noteRef._writePromise; }
+    try {
+      if (typeof musicDb().ref('communityNotes').pushAsync === 'function') noteRef = await musicDb().ref('communityNotes').pushAsync(note);
+      else { noteRef = musicDb().ref('communityNotes').push(note); if (noteRef && noteRef._writePromise) await noteRef._writePromise; }
+    } catch (_) { noteRef = null; }
     if (noteRef && noteRef.key) trackRef.update({ announceNoteId: noteRef.key }).catch(() => {});
     // Índice notesByAuthor: el anuncio también es un post del autor.
     try { if (noteRef && noteRef.key) musicDb().ref('notesByAuthor/' + uid + '/' + noteRef.key).set({ t: note.timestamp || Date.now() }).catch(() => {}); } catch (_) {}
