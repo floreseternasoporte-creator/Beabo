@@ -7418,12 +7418,19 @@ function fiestaGameHostTally(ref, g, votes) {
   if (!best || tie || bestN === 0) {
     if ((g.round || 1) >= 2) {
       fiestaGameHostReadSecrets(sid, g.players || []).then(function (sec) {
-        ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: sec.pair, liars: sec.liars, endedAt: now });
+        // C80-F2: si la escritura del tally falla (red a medias tras
+        // reconectar: lecturas OK, escrituras no), liberar el guarda para que
+        // el próximo tick reintente; sin esto el juego quedaba congelado en
+        // 'vote' (fiestaGameHostBusy nunca se rearmaba).
+        ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: sec.pair, liars: sec.liars, endedAt: now })
+          .catch(function () { fiestaGameHostBusy = false; });
       }).catch(function () {
-        ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], endedAt: now });
+        ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], endedAt: now })
+          .catch(function () { fiestaGameHostBusy = false; }); // C80-F2
       });
     } else {
-      ref.update({ status: 'describe', round: (g.round || 1) + 1, turnIndex: fiestaGameFirstActive(g.out), voteCount: 0, turnEndsAt: now + 30000 });
+      ref.update({ status: 'describe', round: (g.round || 1) + 1, turnIndex: fiestaGameFirstActive(g.out), voteCount: 0, turnEndsAt: now + 30000 })
+        .catch(function () { fiestaGameHostBusy = false; }); // C80-F2
       try { DrexCloud.database().ref('fiestaGameSecrets/' + sid + '/votes').remove(); } catch (_) {}
     }
     return;
@@ -7447,11 +7454,14 @@ function fiestaGameHostEliminate(ref, g, uid, word, isLiar, liars, pair) {
   var liarsLeft = (liars || []).filter(function (l) { return out.indexOf(l) === -1; });
   var t = Date.now();
   if (liarsLeft.length === 0) {
-    ref.update({ status: 'final', winner: 'civiles', out: out, pair: pair, liars: liars, endedAt: t });
+    // C80-F2: liberar el guarda si la escritura falla (ver arriba).
+    ref.update({ status: 'final', winner: 'civiles', out: out, pair: pair, liars: liars, endedAt: t })
+      .catch(function () { fiestaGameHostBusy = false; });
   } else {
     ref.update({ status: 'reveal', out: out,
       revealed: { uid: uid, liar: isLiar, word: word },
-      revealEndsAt: t + 9000, round: g.round || 1 });
+      revealEndsAt: t + 9000, round: g.round || 1 })
+      .catch(function () { fiestaGameHostBusy = false; }); // C80-F2
   }
 }
 function fiestaGameHostAfterReveal(ref, g) {
@@ -7548,6 +7558,8 @@ function fiestaGameCheckHostGone() {
   try {
     if (typeof DrexCloud !== 'undefined' && fiestaCur && fiestaCur.id)
       DrexCloud.database().ref('fiestas/' + fiestaCur.id + '/game').remove().catch(function () {});
+      // C80-F3: con el anfitrión caído también se abandonaban los secretos.
+      DrexCloud.database().ref('fiestaGameSecrets/' + fiestaCur.id).remove().catch(function () {});
   } catch (_) {}
   fiestaGameMySecret = null;
   fiestaGameSecretEpoch = null; // C69-F1
@@ -43662,6 +43674,9 @@ async function endFiesta() {
   await markFiestaNotesEnded(id);
   await DrexCloud.database().ref('fiestaReactions/' + id).remove().catch(() => {});
   await DrexCloud.database().ref('fiestaKicked/' + id).remove().catch(() => {});
+  // C80-F3: los secretos del juego (palabras, mentirosos, votos) quedaban
+  // huérfanos al terminar la fiesta sin "Terminar el juego para todos".
+  await DrexCloud.database().ref('fiestaGameSecrets/' + id).remove().catch(() => {});
   await _fiestaRemoveSignals(id);
 }
 </script>
@@ -46104,7 +46119,11 @@ window.publishMusic = async function () {
     trackId = trackRef.key;
     const chunkObj = {};
     chunks.forEach((c, i) => chunkObj['chunk_' + String(i).padStart(5, '0')] = c);
-    await musicDb().ref('musicAudio/' + trackId).set(chunkObj);
+    // C80-F1: la key ya es final (chunks+meta+índices+anuncio la referencian).
+    // Sin pin, un corte de red entre los awaits re-sella la op encolada a una
+    // key nueva: el meta/índices/anuncio siguen usando la vieja (pista rota o
+    // huérfana). Contrato de reseal, cláusula (c); patrón del fan-out de grupos.
+    await musicDb().ref('musicAudio/' + trackId).set(chunkObj, { noReseal: true });
     musicSetProgress(75, 'Guardando tu canción…');
 
     const meta = {
@@ -46118,17 +46137,17 @@ window.publishMusic = async function () {
       createdAt: Date.now(),
       plays: 0, likes: 0
     };
-    await trackRef.set(meta);
+    await trackRef.set(meta, { noReseal: true }); // C80-F1: ver arriba
     metaSaved = true; // C27-M1: el track es válido; el catch no debe borrar sus chunks
     // Índice por autor: las vistas "Tu música" leen musicByAuthor/<uid> en vez
     // de escanear musicTracks completo (era la causa del "Cargando..." eterno).
-    await musicDb().ref('musicByAuthor/' + uid + '/' + trackId).set({ t: meta.createdAt }).catch(() => {});
+    await musicDb().ref('musicByAuthor/' + uid + '/' + trackId).set({ t: meta.createdAt }, { noReseal: true }).catch(() => {}); // C80-F1
     // Índice de búsqueda: musicSearchTracks lee este índice ligero en vez de
     // musicTracks completo (con portadas) en cada tecla.
     await musicDb().ref('musicSearch/' + trackId).set({
       ti: title || '', ar: artistName || '', an: authorName || '',
       aid: uid, createdAt: meta.createdAt
-    }).catch(() => {});
+    }, { noReseal: true }).catch(() => {}); // C80-F1
     musicSetProgress(90, 'Anunciando en el feed…');
 
     // Anuncio en el feed (tarjeta de música con reproductor integrado)
@@ -46155,7 +46174,7 @@ window.publishMusic = async function () {
     } catch (_) { noteRef = null; }
     if (noteRef && noteRef.key) trackRef.update({ announceNoteId: noteRef.key }).catch(() => {});
     // Índice notesByAuthor: el anuncio también es un post del autor.
-    try { if (noteRef && noteRef.key) musicDb().ref('notesByAuthor/' + uid + '/' + noteRef.key).set({ t: note.timestamp || Date.now() }).catch(() => {}); } catch (_) {}
+    try { if (noteRef && noteRef.key) musicDb().ref('notesByAuthor/' + uid + '/' + noteRef.key).set({ t: note.timestamp || Date.now() }, { noReseal: true }).catch(() => {}); } catch (_) {} // C80-F1: la key del anuncio ya es final
     // Avisar a los seguidores del artista (no bloquea la publicación).
     try {
       const _annId = (noteRef && noteRef.key) || null;
