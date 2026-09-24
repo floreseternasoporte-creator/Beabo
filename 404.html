@@ -11324,7 +11324,8 @@ function saveNote() {
       'vistas': 'views',
       'Retención': 'Retention',
       'se quedaron 5+ segundos': 'stayed 5+ seconds',
-      'Alcance por onda': 'Reach by wave'
+      'Alcance por onda': 'Reach by wave',
+      'La programación aún no admite fotos ni videos. Publica normal o quita los adjuntos.': "Scheduled posts don't support photos or videos yet. Publish normally or remove the attachments."
     };
     var ZH = {
       'Tu actividad de los últimos 7 días': '过去 7 天的动态',
@@ -11345,7 +11346,8 @@ function saveNote() {
       'vistas': '次浏览',
       'Retención': '留存',
       'se quedaron 5+ segundos': '停留 5 秒以上',
-      'Alcance por onda': '各浪潮触达'
+      'Alcance por onda': '各浪潮触达',
+      'La programación aún no admite fotos ni videos. Publica normal o quita los adjuntos.': '定时发布暂不支持照片或视频。请正常发布或移除附件。'
     };
     var PT = {
       'Tu actividad de los últimos 7 días': 'Sua atividade dos últimos 7 dias',
@@ -11366,7 +11368,8 @@ function saveNote() {
       'vistas': 'visualizações',
       'Retención': 'Retenção',
       'se quedaron 5+ segundos': 'ficaram 5+ segundos',
-      'Alcance por onda': 'Alcance por onda'
+      'Alcance por onda': 'Alcance por onda',
+      'La programación aún no admite fotos ni videos. Publica normal o quita los adjuntos.': 'A programação ainda não admite fotos nem vídeos. Publique normalmente ou remova os anexos.'
     };
     try {
       if (typeof APP_ENGLISH_TEXT !== 'undefined') Object.assign(APP_ENGLISH_TEXT, EN);
@@ -12118,6 +12121,16 @@ function saveNote() {
       const _ss = (typeof drexSerieComposerSelection === 'function') ? drexSerieComposerSelection() : null;
       if (_ss && _ss.id) draft.seriesSel = { id: _ss.id, title: _ss.title, onda: _ss.onda };
     } catch (_) {}
+    // C144: la encuesta del composer sobrevive en el borrador (opciones a
+    // medio escribir incluidas). Si era la votación del guion de una serie,
+    // se marca para regenerar la pregunta al publicar.
+    try {
+      const _pp = (typeof drexDraftPollFromEditor === 'function') ? drexDraftPollFromEditor(notePostPoll) : null;
+      if (_pp) {
+        draft.poll = _pp;
+        if (notePostSerieScriptVote) draft.pollScriptVote = true;
+      }
+    } catch (_) {}
     return draft;
   }
 
@@ -12227,6 +12240,17 @@ function saveNote() {
       }
     } catch (_) {}
 
+    // C144: recuperar la encuesta del borrador (opciones tal como quedaron
+    // al guardar). Re-renderiza el editor y el botón Votación del composer.
+    try {
+      const _rp = (typeof drexDraftPollFromEditor === 'function') ? drexDraftPollFromEditor(draft.poll) : null;
+      if (_rp) {
+        notePostPoll = { options: _rp.options.slice(), hours: _rp.hours };
+        if (typeof renderNoteFlairRow === 'function') renderNoteFlairRow();
+        if (typeof renderNotePollEditor === 'function') renderNotePollEditor();
+      }
+    } catch (_) {}
+
 
     if (textarea) {
       updateCharRing(textarea.value.length, getCurrentNoteMaxLength());
@@ -12279,11 +12303,16 @@ function saveNote() {
       const _schedBadge = _isSched
         ? `<p class="text-xs font-bold mt-1" style="color:#2F33B8">⏰ ${escapeHtml(appT('Se publicará el {fecha}').replace('{fecha}', new Date(draft.publishAt).toLocaleString()))}</p>`
         : '';
+      // C144: insignia de encuesta en el borrador (la votación viaja con él).
+      const _pollBadge = (typeof drexDraftHasPoll === 'function' && drexDraftHasPoll(draft))
+        ? `<p class="text-xs font-bold mt-1" style="color:#2F33B8">🗳️ ${escapeHtml(appT('Votación'))}</p>`
+        : '';
       row.innerHTML = `
         <button class="flex-1 min-w-0 text-left" data-open-draft>
           <p class="text-sm font-semibold text-[var(--theme-text)] line-clamp-2">${escapeHtml(preview)}</p>
           <p class="text-xs text-[var(--theme-muted)] mt-1">${escapeHtml(dateLabel)} · Post</p>
           ${_schedBadge}
+          ${_pollBadge}
         </button>
         <button class="w-11 h-11 flex items-center justify-center rounded-full active:bg-[#e7ecf3] text-[#5c6974] flex-shrink-0" ${ _isSched ? 'style="color:#2F33B8;background:#eef0ff;"' : '' } data-schedule-draft aria-label="${escapeHtml(appT('Programar publicación'))}">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 2"/></svg>
@@ -12360,6 +12389,53 @@ function saveNote() {
     return list.find(a => a.id === audienceId) || list[0];
   }
 
+  // C144 — VOTACIONES EN BORRADORES Y POSTS PROGRAMADOS (función pura).
+  // La encuesta del composer sobrevive al borrador y a la programación:
+  //  - drexDraftPollFromEditor(raw): normaliza el estado crudo del editor
+  //    {options, hours} para guardarlo en el borrador. Conserva opciones a
+  //    medio escribir para que al retomar el borrador no se pierda lo
+  //    tecleado. Devuelve null si no hay nada útil que conservar.
+  //  - drexDraftPollForPublish(draftPoll, nowMs, q): construye el note.poll
+  //    publicable. Solo con >=2 opciones válidas. endsAt se calcula al
+  //    momento de PUBLICAR (no al programar): la ventana de voto empieza en
+  //    la publicación, igual que en el composer.
+  function drexDraftPollHours(hours) {
+    const h = Number(hours);
+    // Duraciones del editor de encuesta: 1h / 1 día / 3 días / 1 semana.
+    return (h >= 1 && h <= 168) ? h : 24;
+  }
+  function drexDraftPollFromEditor(raw) {
+    try {
+      if (!raw || !Array.isArray(raw.options)) return null;
+      const options = raw.options.slice(0, 4).map(t => String(t == null ? '' : t).slice(0, 60));
+      if (!options.some(t => t.trim())) return null;
+      return { options, hours: drexDraftPollHours(raw.hours) };
+    } catch (_) { return null; }
+  }
+  function drexDraftPollForPublish(draftPoll, nowMs, q) {
+    try {
+      if (!draftPoll || !Array.isArray(draftPoll.options)) return null;
+      const opts = draftPoll.options
+        .map(t => String(t == null ? '' : t).trim())
+        .filter(Boolean)
+        .slice(0, 4);
+      if (opts.length < 2) return null;
+      const poll = {
+        options: opts.map(t => ({ t: t, v: 0 })),
+        endsAt: (Number(nowMs) || Date.now()) + drexDraftPollHours(draftPoll.hours) * 3600000,
+        total: 0,
+        voters: {}
+      };
+      if (q) poll.q = String(q).slice(0, 140);
+      return poll;
+    } catch (_) { return null; }
+  }
+  // Insignia "Votación" en la lista de borradores.
+  function drexDraftHasPoll(draft) {
+    try { return !!drexDraftPollFromEditor(draft && draft.poll); }
+    catch (_) { return false; }
+  }
+
   // Construye la nota con el esquema canónico de publicación (mismo que el
   // composer). `drexScheduled: true` es la sonda de origen.
   function drexSchedBuildNote(draft, user, userData) {
@@ -12397,6 +12473,18 @@ function saveNote() {
       drexScheduled: true
     };
     if (_serie) _note.series = _serie;
+    // C144: si el borrador traía encuesta válida, viaja con el post
+    // programado. endsAt se calcula al publicar (ventana de voto desde la
+    // publicación). Si era la votación del guion de una serie, la pregunta
+    // se regenera aquí igual que en el composer.
+    try {
+      let _pq = null;
+      if (_serie && draft.pollScriptVote && typeof appT === 'function') {
+        _pq = appT('¿Qué pasa en el próximo capítulo?');
+      }
+      const _pp = drexDraftPollForPublish(draft.poll, Date.now(), _pq);
+      if (_pp) _note.poll = _pp;
+    } catch (_) {}
     return _note;
   }
 
@@ -12641,12 +12729,12 @@ function saveNote() {
   function openScheduleSheetFromComposer() {
     const content = ((document.getElementById('note-content-fullscreen') || {}).value || '').trim();
     if (!content) { showMiniToast(appT('Escribe algo primero para programarlo.')); return; }
-    // La programación guarda el borrador (texto + audiencia): los adjuntos
-    // (fotos/video/GIF) aún no viajan en los borradores.
+    // C144: la programación guarda el borrador (texto + audiencia + encuesta);
+    // los adjuntos (fotos/video/GIF) aún no viajan en los borradores.
     const hasMedia = (typeof notePostImageFiles !== 'undefined' && notePostImageFiles.length) ||
       (typeof selectedNotePostGif !== 'undefined' && selectedNotePostGif) ||
       (typeof notePostVideoFile !== 'undefined' && notePostVideoFile);
-    if (hasMedia) { showMiniToast(appT('La programación aún solo admite texto. Publica normal o quita los adjuntos.')); return; }
+    if (hasMedia) { showMiniToast(appT('La programación aún no admite fotos ni videos. Publica normal o quita los adjuntos.')); return; }
     const user = (typeof DrexCloud !== 'undefined' && DrexCloud.auth().currentUser) || null;
     if (!user) { showMiniToast(appT('Debes iniciar sesión para programar')); return; }
     saveCurrentNoteDraft(false);
