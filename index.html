@@ -10731,6 +10731,9 @@ function saveNote() {
     try {
       monetagInFeedObserver = new IntersectionObserver(function (entries) {
         entries.forEach(function (en) {
+          // C96: bloque desmontado antes de entrar en pantalla → liberar el
+          // slot para no retener nodos muertos (mismo patrón que C95).
+          if (!en.target.isConnected) { try { monetagInFeedObserver.unobserve(en.target); } catch (_) {} return; }
           if (!en.isIntersecting) return;
           try { monetagInFeedObserver.unobserve(en.target); } catch (_) {}
           loadMonetagInFeedSlot(en.target);
@@ -10771,6 +10774,9 @@ function saveNote() {
     try {
       adsterraInFeedObserver = new IntersectionObserver(function (entries) {
         entries.forEach(function (en) {
+          // C96: bloque desmontado antes de entrar en pantalla → liberar el
+          // slot para no retener nodos muertos (mismo patrón que C95).
+          if (!en.target.isConnected) { try { adsterraInFeedObserver.unobserve(en.target); } catch (_) {} return; }
           if (!en.isIntersecting) return;
           try { adsterraInFeedObserver.unobserve(en.target); } catch (_) {}
           loadAdsterraInFeedSlot(en.target);
@@ -16905,6 +16911,19 @@ function saveNote() {
       if (!_drexRecViewObserver) {
         _drexRecViewObserver = new IntersectionObserver((entries) => {
           entries.forEach(en => {
+            // C96: tarjeta desmontada → liberar el observer y los timers
+            // pendientes (mismo patrón que C95; antes solo se limpiaban los
+            // timers y el target quedaba observado para siempre).
+            if (!en.target.isConnected) {
+              try { _drexRecViewObserver.unobserve(en.target); } catch (_) {}
+              const _st96 = _drexRecViewTimers.get(en.target);
+              if (_st96) {
+                try { clearTimeout(_st96.t1); } catch (_) {}
+                try { if (_st96.t2) clearTimeout(_st96.t2); } catch (_) {}
+                _drexRecViewTimers.delete(en.target);
+              }
+              return;
+            }
             const target = en.target;
             const st = _drexRecViewTimers.get(target);
             if (en.isIntersecting) {
@@ -18239,8 +18258,12 @@ function saveNote() {
   function snfFeedWindowEnsureIO(ctx) {
     if (ctx._feedWindowIO) return ctx._feedWindowIO;
     ctx._feedWindowIO = new IntersectionObserver((entries) => {
-      if (!ctx.alive()) return;
       for (const entry of entries) {
+        // C96: marcador desmontado → liberar el target aunque el ctx ya haya
+        // muerto (antes el `!ctx.alive()` descartaba el entry final de
+        // desconexión y los marcadores quedaban retenidos para siempre).
+        if (!entry.target.isConnected) { try { ctx._feedWindowIO.unobserve(entry.target); } catch (_) {} continue; }
+        if (!ctx.alive()) return;
         if (entry.isIntersecting) {
           ctx._feedWindowIO.unobserve(entry.target);
           snfFeedWindowRemount(ctx, entry.target);
@@ -18781,6 +18804,10 @@ function saveNote() {
   function snfTeardownCardObservers(ctx) {
     try { if (ctx.cardVisibilityObserver) ctx.cardVisibilityObserver.disconnect(); } catch (_) {}
     ctx.cardVisibilityObserver = null;
+    // C96: el observer de la ventana virtual retenía los marcadores del ctx
+    // anterior (nunca se desconectaba) → desconectar aquí con el resto.
+    try { if (ctx._feedWindowIO) ctx._feedWindowIO.disconnect(); } catch (_) {}
+    ctx._feedWindowIO = null;
     ctx.postCounterSubs.forEach((subs) => {
       subs.forEach(({ ref, cb }) => { try { ref.off('value', cb); } catch (_) {} });
     });
@@ -23187,6 +23214,9 @@ function saveNote() {
     try {
       _commentersIO = new IntersectionObserver(entries => {
         entries.forEach(en => {
+          // C96: marcador desmontado antes de entrar en pantalla → liberar
+          // (mismo patrón que C95; antes solo se liberaba al intersectar).
+          if (!en.target.isConnected) { try { _commentersIO.unobserve(en.target); } catch (_) {} return; }
           if (en.isIntersecting) {
             try { _commentersIO.unobserve(en.target); } catch (_) {}
             _loadCommentersCluster(en.target);
