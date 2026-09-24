@@ -463,7 +463,7 @@
       '<div class="w-12 h-12 rounded-2xl bg-[#fef3c7] text-[#b45309] flex items-center justify-center mx-auto mb-3">' + KEY_ICON + '</div>' +
       '<p class="font-extrabold text-[#1c2b4a] mb-1 text-center">' + esc(T('Generar nuevos códigos')) + '</p>' +
       '<p class="text-sm text-[#6b7280] mb-4 text-center">' + esc(T('Esto invalida tus códigos de respaldo anteriores. Escribe un código actual de tu app de autenticación para confirmar.')) + '</p>' +
-      '<input id="recovery-regen-code" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="000000" class="w-full p-3 mb-2 rounded-xl border border-[#dce1e5] bg-[#f0f4f9] text-center text-xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-[#2F33B8]">' +
+      '<input id="recovery-regen-code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" enterkeyhint="go" onkeydown="if(event.key===\'Enter\'){event.preventDefault();DrexRecoveryCodes.confirmRegenerate();}" placeholder="000000" class="w-full p-3 mb-2 rounded-xl border border-[#dce1e5] bg-[#f0f4f9] text-center text-xl font-bold tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-[#2F33B8]">' +
       '<div id="recovery-regen-error" class="hidden text-red-500 text-xs mb-2 text-center"></div>' +
       '<button onclick="DrexRecoveryCodes.confirmRegenerate()" class="w-full py-3 rounded-full bg-[#2F33B8] text-white font-bold active:opacity-80 transition">' + esc(T('Generar códigos nuevos')) + '</button>' +
       '<button onclick="DrexRecoveryCodes.renderView()" class="w-full mt-2 py-2 text-sm font-bold text-[#6b7280] active:opacity-70">' + esc(T('Cancelar')) + '</button>' +
