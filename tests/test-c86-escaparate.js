@@ -172,7 +172,10 @@ ok(/escapeHtml\(l\.t\)/.test(html), 'S9a título del propio escapado');
 ok(/lLabel = l\.t \? escapeHtml\(l\.t\) : escapeHtml\(_shortLinkLabel\(l\.u\)\)/.test(html), 'S9b título del ajeno escapado');
 ok(/href="' \+ l\.u \+ '"/.test(html), 'S10a href propio desde l.u sanitizada');
 ok(/<a href="\$\{l\.u\}"/.test(html), 'S10b href ajeno desde l.u sanitizada');
-ok((html.match(/rel="noopener"/g) || []).length >= 3, 'S11 rel=noopener en los anchors nuevos');
+// C139: los anchors UGC llevan el token ugc; primera parte (Play/banner) queda con noopener puro.
+ok((html.match(/rel="noopener"/g) || []).length === 2, 'S11a rel=noopener puro solo en anchors de primera parte (banner Play + drp-btn)');
+ok((html.match(/rel="noopener ugc"/g) || []).length >= 4, 'S11b token ugc en los 4 anchors UGC (profile-link-anchor, escaparate propio, socialLinks, website)');
+ok((html.match(/rel="noopener noreferrer ugc"/g) || []).length === 1, 'S11c permalink UGC con noreferrer conserva ugc');
 ok(/<a href="' \+ l\.u \+ '" target="_blank"/.test(html), 'S12 target=_blank en filas del escaparate propio');
 ok(/body\.theme-dark #profile-links-list a/.test(html), 'S13 regla de contraste en tema oscuro');
 ok(/slice\(0,\s*300\)/.test(html), 'S14 URLs recortadas a 300 chars al leer el editor');
