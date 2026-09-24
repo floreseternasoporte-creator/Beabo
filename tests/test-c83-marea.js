@@ -1,5 +1,5 @@
 'use strict';
-// Tests de MI MAREA (v1) — Ciclo 83.
+// Tests de MI MAREA (v1) — Ciclo 83; aislamiento por cuenta — Ciclo 84.
 // Uso: node test-c83-marea.js [--target <html>]
 //   --target: HTML a probar (default: ../index.html, el parcheado).
 // Diseñados para FALLAR contra la base sin parche.
@@ -92,10 +92,12 @@ try {
   ok(false, 'T1a región MI MAREA presente en el HTML: ' + e.message);
 }
 if (mareaRegion) {
-  // Sin DrexCloud en el módulo = sin lecturas ni escrituras a BD: el
-  // filtro de Mi Marea es 100 % local (el `.push(` de array es falso
-  // positivo, por eso se busca la raíz del cliente de datos).
-  ok(!/DrexCloud/.test(mareaRegion), 'T1b el módulo MI MAREA no toca la BD (sin DrexCloud: filtro 100 % local)');
+  // C84: se permite DrexCloud.auth().currentUser SOLO para el UID
+  // (namespacing local, cero red). Nada de .ref/.once/.set: el filtro
+  // sigue siendo 100 % local y sin escrituras a BD.
+  const mareaSinUid = mareaRegion.replace(/DrexCloud(?:\.auth(?:\(\))?(?:\.currentUser)?)?/g, '');
+  ok(!/DrexCloud/.test(mareaSinUid), 'T1b el módulo MI MAREA no toca la BD (solo lee el UID de auth para namespacing local)');
+  ok(!/\.(ref|once|set|update|remove|transaction)\s*\(/.test(mareaRegion), 'T1b2 sin lecturas ni escrituras a BD en el módulo');
   ok(mareaRegion.includes("drex_ondas_followed_v1"), 'T1c ondas seguidas en localStorage (clave drex_ondas_followed_v1)');
   ok(mareaRegion.includes('normaliz'), 'T1d el módulo documenta la normalización por nicho');
 }
@@ -187,6 +189,44 @@ try {
   run(`var __live3 = {id:'G', timestamp:700, upvotes:0, _mareaWaves:['nicho']};`);
   eq(run('drexMareaLiveNorm(__ctx, __live3)'), 0, 'T2z live: raw 0 → norm 0');
 } catch (e) { ok(false, 'T2t-z ranking: ' + e.message); }
+
+// ============================================================
+// T6 — C84: aislamiento por cuenta (drex_ondas_followed_v1:<uid>)
+// ============================================================
+try {
+  const setUid = (uid) => {
+    if (uid) sandbox.DrexCloud = { auth: () => ({ currentUser: { uid: uid } }) };
+    else delete sandbox.DrexCloud;
+  };
+  setUid('u1');
+  run('drexMareaToggleFollow("cine")');
+  ok(run('drexMareaLsKey()') === 'drex_ondas_followed_v1:u1', 'T6a con sesión, la clave se namespacing por UID');
+  eq(run('drexMareaReadFollowed()'), ['cine'], 'T6b toggle con sesión persiste en el namespace');
+  ok(!sandbox.localStorage._store.has('drex_ondas_followed_v1'), 'T6c la clave global legacy no se toca con sesión');
+  setUid('u2');
+  eq(run('drexMareaReadFollowed()'), [], 'T6d la cuenta B no hereda las ondas de A');
+  run('drexMareaToggleFollow("jazz")');
+  eq(run('drexMareaReadFollowed()'), ['jazz'], 'T6e B tiene su propia lista aislada');
+  setUid('u1');
+  eq(run('drexMareaReadFollowed()'), ['cine'], 'T6f A conserva su lista intacta');
+  // Migración legacy: adopta una sola vez
+  setUid('u3');
+  sandbox.localStorage._store.set('drex_ondas_followed_v1', JSON.stringify(['salsa', 'salsa']));
+  eq(run('drexMareaReadFollowed()'), ['salsa'], 'T6g migración adopta la lista legacy (con dedup)');
+  ok(!sandbox.localStorage._store.has('drex_ondas_followed_v1'), 'T6h la clave legacy se elimina tras migrar');
+  ok(sandbox.localStorage._store.get('drex_ondas_followed_v1:u3') === JSON.stringify(['salsa', 'salsa']), 'T6i la lista migra verbatim al namespace de u3');
+  // Sin re-migración cuando el namespace ya existe
+  setUid('u4');
+  run('drexMareaToggleFollow("rock")');
+  sandbox.localStorage._store.set('drex_ondas_followed_v1', JSON.stringify(['intruso']));
+  eq(run('drexMareaReadFollowed()'), ['rock'], 'T6j con namespace existente no se adopta el legacy');
+  ok(sandbox.localStorage._store.get('drex_ondas_followed_v1') === JSON.stringify(['intruso']), 'T6k el legacy ajeno queda intacto');
+  // Sin sesión: comportamiento legacy intacto (invitados)
+  setUid(null);
+  sandbox.localStorage._store.set('drex_ondas_followed_v1', JSON.stringify(['invitado']));
+  eq(run('drexMareaReadFollowed()'), ['invitado'], 'T6l invitado sigue usando la clave global');
+  ok(run('drexMareaLsKey()') === 'drex_ondas_followed_v1', 'T6m sin UID la clave es la legacy');
+} catch (e) { ok(false, 'T6a-m aislamiento por cuenta: ' + e.message); }
 
 // ============================================================
 // T3 — Integración estática en el HTML

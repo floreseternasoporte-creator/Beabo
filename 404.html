@@ -21059,9 +21059,12 @@ function saveNote() {
   // views.
   //
   // DISEÑO DE PRIVACIDAD (decisión consciente, no accidente):
-  // - Las ondas seguidas viven SOLO en localStorage
-  //   ('drex_ondas_followed_v1'), por dispositivo. Cero escrituras a BD:
+  // - Las ondas seguidas viven SOLO en localStorage. Cero escrituras a BD:
   //   ningún otro usuario puede ver qué ondas sigue alguien.
+  // - C84: la clave se aísla POR CUENTA ('drex_ondas_followed_v1:<uid>');
+  //   sin sesión se conserva la clave global legacy (invitados). La lista
+  //   pre-C84 se adopta una sola vez al namespace del primer usuario que
+  //   inicie sesión (residual documentado en el código).
   // - Mi Marea NO lee nada que el feed no lea ya (communityNotes +
   //   userVotes + userEcos). Las ondas de un post son públicas (están en
   //   su texto); el filtro es 100 % local.
@@ -21078,9 +21081,41 @@ function saveNote() {
     W_POLL: 1
   };
 
+  // C84: aislamiento por cuenta. En un dispositivo compartido, dos cuentas
+  // NO deben heredar las ondas seguidas (riesgo documentado en C83). La
+  // clave se namespacing por UID de auth (solo se lee el UID, cero red);
+  // sin sesión se conserva la clave global legacy (invitados).
+  function drexMareaUid() {
+    try {
+      var u = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
+      return (u && u.uid) ? String(u.uid) : null;
+    } catch (_) { return null; }
+  }
+  function drexMareaLsKey() {
+    var uid = drexMareaUid();
+    return uid ? DREX_MAREA.LS_KEY + ':' + uid : DREX_MAREA.LS_KEY;
+  }
+  function drexMareaMigrateLegacy() {
+    // Adopta UNA sola vez la lista pre-C84 (clave global) al namespace del
+    // usuario actual. Residual documentado: en dispositivo compartido, si
+    // OTRA cuenta inicia sesión primero tras la actualización, adopta esos
+    // datos legacy (solo datos pre-C84); desde entonces todo es por UID.
+    try {
+      var uid = drexMareaUid();
+      if (!uid) return;
+      var namespaced = DREX_MAREA.LS_KEY + ':' + uid;
+      if (localStorage.getItem(namespaced) !== null) return;
+      var raw = localStorage.getItem(DREX_MAREA.LS_KEY);
+      if (raw === null) return;
+      localStorage.setItem(namespaced, raw);
+      localStorage.removeItem(DREX_MAREA.LS_KEY);
+    } catch (_) {}
+  }
+
   function drexMareaReadFollowed() {
     try {
-      const raw = localStorage.getItem(DREX_MAREA.LS_KEY);
+      drexMareaMigrateLegacy();
+      const raw = localStorage.getItem(drexMareaLsKey());
       const arr = raw ? JSON.parse(raw) : null;
       if (!Array.isArray(arr)) return [];
       // Dedup también al leer: el array pudo corromperse a mano.
@@ -21095,7 +21130,7 @@ function saveNote() {
   function drexMareaPersistFollowed(arr) {
     try {
       const clean = Array.from(new Set(arr.filter(x => typeof x === 'string' && x.length >= 2))).slice(0, DREX_MAREA.MAX_FOLLOWED);
-      localStorage.setItem(DREX_MAREA.LS_KEY, JSON.stringify(clean));
+      localStorage.setItem(drexMareaLsKey(), JSON.stringify(clean));
       return clean;
     } catch (_) { return arr; }
   }
@@ -46539,7 +46574,7 @@ body.theme-dark .music-queue-row.is-current{background:rgba(85,91,255,.14)}
     </div>
     <div class="mt-4">
       <div class="flex items-center justify-between mb-2">
-        <p class="text-[11px] font-extrabold uppercase tracking-widest text-[var(--theme-muted)]">A continuación <span id="music-queue-mix-label" class="hidden text-[var(--brand-indigo-text)]">· Mix Drex</span></p>
+        <p class="text-[11px] font-extrabold uppercase tracking-widest text-[var(--theme-muted)]">La fila <span id="music-queue-mix-label" class="hidden text-[var(--brand-indigo-text)]">· Mix Drex</span></p>
         <div class="flex items-center gap-2">
           <button id="music-xfade-btn" onclick="musicXfadeSheetOpen()" class="px-3 h-11 rounded-full text-[12px] font-extrabold active:opacity-80 bg-[var(--theme-surface-muted)] text-[var(--theme-text)] flex items-center gap-1" aria-label="Fundido entre canciones"></button>
           <button id="music-sleep-btn" onclick="musicSleepSheetOpen()" class="px-3 h-11 rounded-full text-[12px] font-extrabold active:opacity-80 bg-[var(--theme-surface-muted)] text-[var(--theme-text)] flex items-center gap-1" aria-label="Temporizador de descanso"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></button>
@@ -46647,6 +46682,13 @@ body.theme-dark .music-queue-row.is-current{background:rgba(85,91,255,.14)}
   <div class="absolute bottom-0 left-0 right-0 bg-[var(--theme-surface)] rounded-t-3xl p-5 pb-8 max-h-[78vh] overflow-y-auto">
     <div class="w-10 h-1 rounded-full bg-[var(--theme-border)] mx-auto mb-4"></div>
     <h3 id="music-sheet-title" class="text-[16px] font-extrabold text-[var(--theme-text)] mb-3">Agregar a playlist</h3>
+    <div id="music-sheet-queueblock" class="mb-4 hidden">
+      <p id="music-sheet-queuelabel" class="text-[11px] font-extrabold uppercase tracking-widest text-[var(--theme-muted)] mb-2">La fila</p>
+      <div class="flex gap-2">
+        <button id="music-sheet-queuenext" onclick="musicSheetQueueNext()" class="flex-1 h-11 px-3 rounded-full bg-[var(--drex-brand)] text-white font-extrabold text-[13px] active:opacity-80">Reproducir siguiente</button>
+        <button id="music-sheet-queueadd" onclick="musicSheetQueueAdd()" class="flex-1 h-11 px-3 rounded-full bg-[var(--theme-surface-muted)] text-[var(--theme-text)] font-extrabold text-[13px] active:opacity-80">Añadir a la fila</button>
+      </div>
+    </div>
     <div class="flex gap-2 mb-4">
       <input id="music-newplaylist-name" type="text" maxlength="60" placeholder="Nombre de la nueva playlist…" class="flex-1 h-11 px-4 rounded-full bg-[var(--theme-bg)] border border-[var(--theme-border)] text-[14px] font-semibold text-[var(--theme-text)] outline-none focus:border-[var(--drex-brand)]">
       <button onclick="musicSheetCreate()" class="h-11 px-5 rounded-full bg-[var(--drex-brand)] text-white font-extrabold text-[14px] active:opacity-80 shrink-0">Crear</button>
@@ -47723,6 +47765,13 @@ window.musicShowPlaylistSheet = function (trackId) {
   musicSheetTrackId = trackId || null;
   const title = document.getElementById('music-sheet-title');
   if (title) title.textContent = trackId ? 'Agregar a playlist' : 'Nueva playlist';
+  const qblock = document.getElementById('music-sheet-queueblock');
+  if (qblock) qblock.classList.toggle('hidden', !trackId);
+  try {
+    document.getElementById('music-sheet-queuelabel').textContent = appT('La fila');
+    document.getElementById('music-sheet-queuenext').textContent = appT('Reproducir siguiente');
+    document.getElementById('music-sheet-queueadd').textContent = appT('Añadir a la fila');
+  } catch (_) {}
   renderMusicSheetList();
   document.getElementById('music-playlist-sheet')?.classList.remove('hidden');
     if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
@@ -48442,6 +48491,120 @@ function musicStartTrack(t) {
     musicSyncPlayUI();
   });
 }
+/* ---------- La fila: la cola la cura el usuario (C84) ---------- */
+// Hasta C83 la cola (musicQueue) solo se llenaba al reproducir una lista.
+// "La fila" (vocabulario Drex) deja añadir ("Añadir a la fila"), adelantar
+// ("Reproducir siguiente") y quitar canciones. Es de la sesión: al
+// reproducir otra lista la fila se reemplaza (comportamiento existente).
+// El núcleo es puro (testeable en node); los wrappers window.* pintan UI.
+var MUSIC_QUEUE_MAX = 200;
+function musicQueueCoreAdd(queue, idx, track, max) {
+  // → {queue, idx, result: 'playing'|'added'|'moved'|'current'|'full'|'invalid'}
+  if (!track || !track.id) return { queue: queue, idx: idx, result: 'invalid' };
+  var q = Array.isArray(queue) ? queue.slice() : [];
+  var i = idx | 0;
+  if (q.length && (i < 0 || i >= q.length)) i = q.length - 1;
+  if (q[i] && q[i].id === track.id) return { queue: q, idx: i, result: 'current' };
+  var at = -1, k;
+  for (k = 0; k < q.length; k++) { if (q[k] && q[k].id === track.id) { at = k; break; } }
+  if (at >= 0) { q.splice(at, 1); if (at < i) i--; }
+  if (!q.length) return { queue: [track], idx: 0, result: 'playing' };
+  var cap = (max | 0) || 200;
+  if (q.length >= cap) return { queue: q, idx: Math.min(i, q.length - 1), result: 'full' };
+  q.push(track);
+  return { queue: q, idx: Math.min(i, q.length - 1), result: at >= 0 ? 'moved' : 'added' };
+}
+function musicQueueCorePlayNext(queue, idx, track, max) {
+  // → {queue, idx, result: 'playing'|'next'|'moved-next'|'current'|'full'|'invalid'}
+  if (!track || !track.id) return { queue: queue, idx: idx, result: 'invalid' };
+  var q = Array.isArray(queue) ? queue.slice() : [];
+  if (!q.length) return { queue: [track], idx: 0, result: 'playing' };
+  var i = idx | 0;
+  if (i < 0 || i >= q.length) i = q.length - 1;
+  if (q[i] && q[i].id === track.id) return { queue: q, idx: i, result: 'current' };
+  var at = -1, k;
+  for (k = 0; k < q.length; k++) { if (q[k] && q[k].id === track.id) { at = k; break; } }
+  if (at >= 0) { q.splice(at, 1); if (at < i) i--; }
+  var cap = (max | 0) || 200;
+  if (q.length >= cap) return { queue: q, idx: i, result: 'full' };
+  q.splice(i + 1, 0, track);
+  return { queue: q, idx: i, result: at >= 0 ? 'moved-next' : 'next' };
+}
+function musicQueueCoreRemove(queue, idx, i) {
+  // → {queue, idx, result: 'removed'|'noop'} (la actual nunca se quita)
+  var q = Array.isArray(queue) ? queue.slice() : [];
+  var c = idx | 0;
+  i = i | 0;
+  if (i < 0 || i >= q.length || i === c) return { queue: q, idx: c, result: 'noop' };
+  q.splice(i, 1);
+  if (i < c) c--;
+  if (c >= q.length) c = q.length - 1;
+  return { queue: q, idx: c, result: 'removed' };
+}
+function musicFindTrackById(trackId) {
+  if (!trackId) return null;
+  var pools = [];
+  try {
+    if (typeof musicExploreCache !== 'undefined' && musicExploreCache) pools.push(musicExploreCache);
+    if (typeof musicTopCache !== 'undefined' && musicTopCache) pools.push(musicTopCache);
+    if (typeof musicSearchCache !== 'undefined' && musicSearchCache) pools.push(musicSearchCache);
+    if (typeof musicHistoryCache !== 'undefined' && musicHistoryCache) pools.push(musicHistoryCache);
+    if (typeof musicArtistCache !== 'undefined' && musicArtistCache) pools.push(musicArtistCache);
+    if (typeof musicAuthorBlockCache !== 'undefined' && musicAuthorBlockCache) pools.push(musicAuthorBlockCache);
+    if (typeof drexSpotlightTracks !== 'undefined' && drexSpotlightTracks) pools.push(drexSpotlightTracks);
+    if (typeof musicPlaylistDetailCache !== 'undefined' && musicPlaylistDetailCache && musicPlaylistDetailCache.tracks) pools.push(musicPlaylistDetailCache.tracks);
+    if (typeof musicFavArrForCtx === 'function') { try { pools.push(musicFavArrForCtx('favorites')); } catch (_) {} }
+    if (typeof musicSortedMine === 'function') { try { pools.push(musicSortedMine()); } catch (_) {} }
+  } catch (_) {}
+  var p, k;
+  for (p = 0; p < pools.length; p++) {
+    var arr = pools[p];
+    if (!Array.isArray(arr)) continue;
+    for (k = 0; k < arr.length; k++) { if (arr[k] && arr[k].id === trackId) return arr[k]; }
+  }
+  if (Array.isArray(musicQueue)) {
+    for (k = 0; k < musicQueue.length; k++) { if (musicQueue[k] && musicQueue[k].id === trackId) return musicQueue[k]; }
+  }
+  return null;
+}
+window.musicAddToQueue = function (trackId) {
+  var t = musicFindTrackById(trackId);
+  if (!t) { if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo agregar')); return; }
+  var r = musicQueueCoreAdd(musicQueue, musicQueueIdx, t, MUSIC_QUEUE_MAX);
+  musicQueue = r.queue; musicQueueIdx = r.idx;
+  if (r.result === 'playing') { musicMixActive = false; musicStartTrack(musicQueue[0]); return; }
+  renderMusicQueueList();
+  if (typeof showMiniToast === 'function') {
+    showMiniToast(appT(r.result === 'full' ? 'La fila está llena' : (r.result === 'current' ? 'Ya está sonando' : 'Añadida a la fila')));
+  }
+};
+window.musicPlayNext = function (trackId) {
+  var t = musicFindTrackById(trackId);
+  if (!t) { if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo agregar')); return; }
+  var r = musicQueueCorePlayNext(musicQueue, musicQueueIdx, t, MUSIC_QUEUE_MAX);
+  musicQueue = r.queue; musicQueueIdx = r.idx;
+  if (r.result === 'playing') { musicMixActive = false; musicStartTrack(musicQueue[0]); return; }
+  renderMusicQueueList();
+  if (typeof showMiniToast === 'function') {
+    showMiniToast(appT(r.result === 'full' ? 'La fila está llena' : (r.result === 'current' ? 'Ya está sonando' : 'Sonará después de esta')));
+  }
+};
+window.musicRemoveFromQueue = function (i) {
+  var r = musicQueueCoreRemove(musicQueue, musicQueueIdx, i | 0);
+  if (r.result === 'noop') return;
+  musicQueue = r.queue; musicQueueIdx = r.idx;
+  renderMusicQueueList();
+};
+window.musicSheetQueueAdd = function () {
+  var id = musicSheetTrackId;
+  window.musicHidePlaylistSheet();
+  if (id) window.musicAddToQueue(id);
+};
+window.musicSheetQueueNext = function () {
+  var id = musicSheetTrackId;
+  window.musicHidePlaylistSheet();
+  if (id) window.musicPlayNext(id);
+};
 function renderMusicQueueList() {
   const box = document.getElementById('music-queue-list');
   if (!box) return;
@@ -48452,7 +48615,11 @@ function renderMusicQueueList() {
         <p class="text-[13px] font-bold truncate">${musicEsc(t.title || 'Sin título')}</p>
         <p class="text-[11px] text-[var(--theme-muted)] truncate">${musicEsc(t.artistName || t.authorName || '')}</p>
       </div>
-      ${i === musicQueueIdx ? '<span class="music-eq" aria-hidden="true"><span></span><span></span><span></span></span>' : ''}
+      ${i === musicQueueIdx
+        ? '<span class="music-eq" aria-hidden="true"><span></span><span></span><span></span></span>'
+        : `<button onclick="event.stopPropagation();musicRemoveFromQueue(${i})" class="tap44 w-9 h-9 flex items-center justify-center rounded-full text-[var(--theme-muted)] active:opacity-80 shrink-0" aria-label="${musicEsc(appT('Quitar de la fila'))}">
+             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+           </button>`}
     </div>`).join('');
 }
 window.musicPlayQueueIndex = function (i) {

@@ -2125,6 +2125,15 @@ var APP_ENGLISH_TEXT = {
 "Sigue ondas en Descubrir para llenarla con tus temas.":"Follow waves in Discover to fill it with your topics.",
 "Descubrir ondas":"Discover waves",
 "Sin posts en tus ondas todavía":"No posts in your waves yet"
+,
+"La fila":"The queue",
+"Reproducir siguiente":"Play next",
+"Añadir a la fila":"Add to queue",
+"Quitar de la fila":"Remove from queue",
+"Añadida a la fila":"Added to the queue",
+"Sonará después de esta":"Will play right after this one",
+"La fila está llena":"The queue is full",
+"Ya está sonando":"Already playing"
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4248,6 +4257,15 @@ var APP_CHINESE_TEXT = {
 "Sigue ondas en Descubrir para llenarla con tus temas.":"在“发现”中关注浪潮，用你的话题填满它。",
 "Descubrir ondas":"发现浪潮",
 "Sin posts en tus ondas todavía":"你的浪潮中还没有帖子"
+,
+"La fila":"播放队列",
+"Reproducir siguiente":"下一首播放",
+"Añadir a la fila":"添加到播放队列",
+"Quitar de la fila":"从播放队列中移除",
+"Añadida a la fila":"已添加到播放队列",
+"Sonará después de esta":"将在此首之后播放",
+"La fila está llena":"播放队列已满",
+"Ya está sonando":"正在播放"
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6362,6 +6380,15 @@ var APP_PORTUGUESE_TEXT = {
 "Sigue ondas en Descubrir para llenarla con tus temas.":"Siga ondas em Descobrir para enchê-la com seus temas.",
 "Descubrir ondas":"Descobrir ondas",
 "Sin posts en tus ondas todavía":"Ainda sem posts nas suas ondas"
+,
+"La fila":"A fila",
+"Reproducir siguiente":"Tocar em seguida",
+"Añadir a la fila":"Adicionar à fila",
+"Quitar de la fila":"Remover da fila",
+"Añadida a la fila":"Adicionada à fila",
+"Sonará después de esta":"Tocará logo após esta",
+"La fila está llena":"A fila está cheia",
+"Ya está sonando":"Já está tocando"
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
