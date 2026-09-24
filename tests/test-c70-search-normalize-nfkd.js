@@ -112,4 +112,4 @@ t('niño', 'nino', 'ñ (regresión NFD)');
 t('Fiesta', 'fiesta', 'case-insensitive (regresión)');
 t('hola mundo', 'HOLA MUNDO', 'frase normal (regresión)');
 
-console.log('\nC70-SEARCH: 8/8 casos OK');
+console.log('\nC70-SEARCH: 9/9 casos OK');
