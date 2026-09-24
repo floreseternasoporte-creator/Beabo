@@ -33941,6 +33941,26 @@ let chatTypingListener = null;
     } catch (_) {}
   })();
 
+  // C154: i18n de "Canciones que votaste" en Mis votos (merge de Pulso:
+  // EN/ZH/PT se fusionan en los diccionarios globales ya cargados).
+  // 'Voto positivo' se reutiliza de C149 (ya existe en los tres idiomas).
+  (function () {
+    var EN = {
+      'Canciones que votaste': 'Songs you upvoted'
+    };
+    var ZH = {
+      'Canciones que votaste': '你点赞过的歌曲'
+    };
+    var PT = {
+      'Canciones que votaste': 'Músicas em que votou'
+    };
+    try {
+      if (typeof APP_ENGLISH_TEXT !== 'undefined') Object.assign(APP_ENGLISH_TEXT, EN);
+      if (typeof APP_CHINESE_TEXT !== 'undefined') Object.assign(APP_CHINESE_TEXT, ZH);
+      if (typeof APP_PORTUGUESE_TEXT !== 'undefined') Object.assign(APP_PORTUGUESE_TEXT, PT);
+    } catch (_) {}
+  })();
+
   // C149: índice de comentarios votados para "Mis votos".
   // voteComment ya escribe userCommentVotes/<uid>/<safeVoteKey> = 'up'|'down'
   // (safeVoteKey = commentPath con '/' -> '__'); ese string lo lee la
@@ -33977,6 +33997,24 @@ let chatTypingListener = null;
     return rows;
   }
 
+  // C154: fusión pura para "Canciones que votaste" en Mis votos.
+  // voteMusicTrack ya escribe musicVotes/<uid>/<trackId> = 'up'|'down'
+  // (y .remove() al retirar el voto); la clave ES el trackId, así que no
+  // hace falta ningún índice inverso nuevo: basta filtrar los 'up'.
+  // Los votos no guardan timestamp; el orden final (más recientes primero)
+  // se resuelve al hidratar, por createdAt del track. Función pura para
+  // test en sandbox.
+  function drexMergeHistorialMusicVotes(musicVotes) {
+    const votes = musicVotes || {};
+    const ids = [];
+    Object.keys(votes).forEach(function (k) {
+      if (!k) return;
+      if (votes[k] !== 'up') return;
+      ids.push(k);
+    });
+    return ids;
+  }
+
   function loadHistorialLikes() {
     const user = DrexCloud.auth().currentUser;
     const panel = document.getElementById('historial-panel-likes');
@@ -33985,14 +34023,17 @@ let chatTypingListener = null;
     // C146: "Mis votos" incluye las encuestas votadas: se leen userVotes
     // (votos a posts) y el índice inverso userPollVotes en paralelo.
     // C149: se agregan userCommentVotes + userCommentVotePosts (índice
-    // best-effort de comentarios votados, escrito por voteComment). Las
-    // cuatro lecturas son best-effort (la caída de una no vacía las otras).
+    // best-effort de comentarios votados, escrito por voteComment).
+    // C154: se agrega musicVotes (votos a canciones, escrito por
+    // voteMusicTrack; la clave ya es el trackId, sin índice nuevo).
+    // Las cinco lecturas son best-effort (la caída de una no vacía las otras).
     Promise.all([
       DrexCloud.database().ref('userVotes/' + user.uid).once('value').catch(() => null),
       DrexCloud.database().ref('userPollVotes/' + user.uid).once('value').catch(() => null),
       DrexCloud.database().ref('userCommentVotes/' + user.uid).once('value').catch(() => null),
-      DrexCloud.database().ref('userCommentVotePosts/' + user.uid).once('value').catch(() => null)
-    ]).then(([voteSnap, pollSnap, cVoteSnap, cPostSnap]) => {
+      DrexCloud.database().ref('userCommentVotePosts/' + user.uid).once('value').catch(() => null),
+      DrexCloud.database().ref('musicVotes/' + user.uid).once('value').catch(() => null)
+    ]).then(([voteSnap, pollSnap, cVoteSnap, cPostSnap, mVoteSnap]) => {
       const ids = drexMergeHistorialVoteIds(
         (voteSnap && voteSnap.val()) || {},
         (pollSnap && pollSnap.val()) || {}
@@ -34008,7 +34049,14 @@ let chatTypingListener = null;
           );
         }
       } catch (_) { cVotes = []; }
-      if (!ids.length && !cVotes.length) {
+      // C154: canciones con voto positivo (trackIds con 'up').
+      let mVotes = [];
+      try {
+        if (typeof drexMergeHistorialMusicVotes === 'function') {
+          mVotes = drexMergeHistorialMusicVotes((mVoteSnap && mVoteSnap.val()) || {});
+        }
+      } catch (_) { mVotes = []; }
+      if (!ids.length && !cVotes.length && !mVotes.length) {
         panel.innerHTML = '<div class="py-16 text-center"><div class="w-12 h-12 bg-[#eef2f7] rounded-full flex items-center justify-center mx-auto mb-3"><svg class="w-6 h-6 text-[#8fa2c7]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg></div><p class="text-sm text-[#6b7280]">Aún no has votado ninguna publicación</p></div>';
         return;
       }
@@ -34042,8 +34090,43 @@ let chatTypingListener = null;
           });
         });
       };
+      // C154: la sección de canciones se pinta DESPUÉS de la de comentarios
+      // (orden garantizado: mismo patrón C149). Cada tarjeta abre la canción
+      // en el reproductor (openMusicTrackFromFeed la pone en cola y la inicia).
+      const _c154RenderMusicVotes = function () {
+        if (!mVotes.length) return;
+        const sec = document.createElement('div');
+        sec.setAttribute('style', 'padding:0 16px;margin:20px 0 2px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8fa2c7;');
+        sec.textContent = appT('Canciones que votaste');
+        panel.appendChild(sec);
+        Promise.all(mVotes.slice(0, 30).map(function (tid) {
+          return DrexCloud.database().ref('musicTracks/' + tid).once('value')
+            .then(function (s) { return { id: tid, track: s.val() || null }; })
+            .catch(function () { return { id: tid, track: null }; });
+        })).then(function (items) {
+          const tracks = [];
+          items.forEach(function (it) { if (it.track) tracks.push(Object.assign({}, it.track, { id: it.id })); });
+          // Los votos no guardan timestamp: se ordena por createdAt del track
+          // (los más nuevos primero); sort estable (ES2019+).
+          tracks.sort(function (a, b) { return ((b.createdAt || 0) - (a.createdAt || 0)); });
+          tracks.forEach(function (t) {
+            const artist = (typeof t.artistName === 'string' && t.artistName) ? t.artistName
+              : (typeof t.authorName === 'string' && t.authorName) ? t.authorName : 'Artista';
+            let voteLine = appT('Voto positivo');
+            try { if (t.duration && typeof musicFmtTime === 'function') voteLine += ' · ' + musicFmtTime(t.duration); } catch (_) {}
+            panel.appendChild(_createHistorialFeedCard({
+              title: (typeof t.title === 'string' && t.title) ? t.title : 'Sin título',
+              meta: artist,
+              text: voteLine,
+              image: (typeof t.coverImage === 'string') ? t.coverImage : '',
+              onClick: (function (trackId) { return function () { closeHistorialView(); if (typeof openMusicTrackFromFeed === 'function') openMusicTrackFromFeed(trackId); }; })(t.id)
+            }));
+          });
+        });
+      };
       if (!ids.length) {
         _c149RenderCommentVotes();
+        _c154RenderMusicVotes();
         return;
       }
       Promise.all(ids.slice(0, 50).map(id => DrexCloud.database().ref('communityNotes/' + id).once('value'))).then(snaps => {
@@ -34054,11 +34137,12 @@ let chatTypingListener = null;
           count++;
           panel.appendChild(_buildHistorialCard(s.key, post, () => { closeHistorialView(); openPostPermalink(s.key); }));
         });
-        if (!count && !cVotes.length) {
+        if (!count && !cVotes.length && !mVotes.length) {
           panel.innerHTML = '<div class="py-16 text-center text-sm text-[#6b7280]">Aún no has votado ninguna publicación.</div>';
           return;
         }
         _c149RenderCommentVotes();
+        _c154RenderMusicVotes();
       });
     }).catch(() => {
       panel.innerHTML = '<div class="py-10 text-center text-sm text-[#6b7280]">No se pudieron cargar tus votos.</div>';
@@ -51651,6 +51735,9 @@ window.voteMusicTrack = function (voteType) {
       } else {
         _releaseVoteLock();
       }
+      // C154: refresca "Mis votos" si está visible (la sección nueva
+      // "Canciones que votaste" lee musicVotes/<uid>).
+      try { if (typeof refreshHistorialIfVisible === 'function') refreshHistorialIfVisible(); } catch (_) {}
     });
   }).catch(() => { _musicVoteLock = false; _musicVoteRepaint(trackId, () => musicPaintVoteUI(wasUp, wasDown, curScore)); });
 };
