@@ -87,7 +87,9 @@ const sandbox = {
   document: { getElementById: () => null },
 };
 vm.createContext(sandbox);
-vm.runInContext(trig + '\n' + dof, sandbox);
+// C63-F1: doForwardMessage/triggerChatForward usan _fwdMsgId/_fwdSrcConvId
+// (declarados en producción junto a _fwdMsgData).
+vm.runInContext('var _fwdMsgId=null,_fwdSrcConvId=null;\n' + trig + '\n' + dof, sandbox);
 
 (async () => {
   // F1 funcional: trigger con mensaje viewOnce → toast + sin diálogo

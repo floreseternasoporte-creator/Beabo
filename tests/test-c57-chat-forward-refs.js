@@ -130,13 +130,15 @@ function openGate() {
 const sandbox = {
   console,
   _fwdMsgData: null,
+  _fwdMsgId: null, // C63-F1
+  _fwdSrcConvId: null, // C63-F1
   _chatFileMetaCache: {},
   _chatFileDataUrlCache: {},
   DrexCloud: {
     auth: () => ({ currentUser: { uid: 'uA' } }),
     database: () => ({ ref: (p) => makeRef(p) }),
   },
-  closeChatForwardDialog() { sandbox._fwdMsgData = null; },
+  closeChatForwardDialog() { sandbox._fwdMsgData = null; sandbox._fwdMsgId = null; sandbox._fwdSrcConvId = null; }, // C63-F1
   showMiniToast() {},
   appT: (s) => s,
 };

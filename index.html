@@ -33431,6 +33431,11 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   // Reenvío
   let _fwdMsgData = null;
   let _fwdAllConvs = [];
+  // C63-F1: el id y la sala del mensaje ORIGINAL (para re-verificar que siga
+  // vivo al enviar; el diálogo puede quedar obsoleto si se borra en otra
+  // pestaña/sesión entre la apertura y el envío).
+  let _fwdMsgId = null;
+  let _fwdSrcConvId = null;
 
   function triggerChatForward() {
     const msgId = activeReactionMsgId || window._lastReactionMsgId;
@@ -33455,6 +33460,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         _fwdMsgData = null;
         return;
       }
+      _fwdMsgId = msgId;               // C63-F1
+      _fwdSrcConvId = currentChatRoomId; // C63-F1
       openChatForwardDialog();
     }).catch(() => {});
   }
@@ -33472,6 +33479,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   function closeChatForwardDialog() {
     document.getElementById('chat-forward-dialog')?.classList.add('hidden');
     _fwdMsgData = null;
+    _fwdMsgId = null;      // C63-F1
+    _fwdSrcConvId = null;  // C63-F1
   }
 
   function filterForwardList(q) {
@@ -33508,12 +33517,30 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     if (fwdData.viewOnce || fwdData.autoDestroyAt) { _fwdMsgData = null; return; }
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
+    // C63-F1: capturar los ids del original ANTES de cerrar el diálogo
+    // (closeChatForwardDialog los limpia) y re-verificar que el mensaje
+    // original siga vivo. Si se eliminó para todos entre la apertura del
+    // diálogo y el envío (red lenta + borrado impaciente, o diálogo
+    // obsoleto en otra pestaña/sesión), el reenvío compartiría fileIds
+    // cuyos trozos ya fueron liberados -> adjunto roto en silencio.
+    // Fail-closed honesto: se aborta con aviso en vez de crear el reenvío.
+    const fwdMsgId = _fwdMsgId, fwdSrcConvId = _fwdSrcConvId;
     closeChatForwardDialog();
     let targetConvId = convId;
     if (!targetConvId) {
       const ids = [user.uid, otherUid].sort();
       targetConvId = ids[0] + '_' + ids[1];
     }
+    try {
+      if (fwdMsgId && fwdSrcConvId) {
+        const osnap = await DrexCloud.database().ref('conversationMessages/' + fwdSrcConvId + '/' + fwdMsgId).once('value');
+        const ov = osnap.val();
+        if (!ov || ov.deletedForAll || ov.type === 'deleted') {
+          showMiniToast(appT('El mensaje original fue eliminado.'));
+          return;
+        }
+      }
+    } catch (_) { /* lectura best-effort: si la red falla se intenta igual */ }
     try {
       const msgRef = DrexCloud.database().ref('conversationMessages/' + targetConvId).push();
       const payload = { senderId: user.uid, timestamp: Date.now(), forwarded: true };
