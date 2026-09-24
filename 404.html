@@ -39223,6 +39223,48 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     }
   }
 
+  // C165: texto del aviso de cambio de rol de administrador en un grupo.
+  // Núcleo puro (español fijo, convención C147/C153/C157/C158/C164/C165).
+  function groupRoleChangeText(actorName, groupName, kind) {
+    if (kind !== 'promoted' && kind !== 'demoted') return null;
+    const g = groupName || 'Grupo';
+    const a = actorName || 'Alguien';
+    return kind === 'promoted'
+      ? a + ' te hizo administrador del grupo "' + g + '"'
+      : a + ' te quitó el rol de administrador del grupo "' + g + '"';
+  }
+
+  // C165: avisa al miembro cuando el creador le otorga o retira el rol de
+  // administrador del grupo. Best-effort (no bloquea la mutación del rol),
+  // sin auto-aviso (el creador nunca se avisa a sí mismo). Devuelve false
+  // si no hay nada que avisar. No toca el payload del rol (lección C149).
+  async function notifyGroupRoleChange(targetUid, groupId, kind) {
+    try {
+      const me = DrexCloud.auth().currentUser;
+      if (!me || !targetUid || targetUid === me.uid || !groupId) return false;
+      if (typeof addNotification !== 'function') return false;
+      if (kind !== 'promoted' && kind !== 'demoted') return false;
+      let groupName = 'Grupo';
+      try {
+        const gs = await DrexCloud.database().ref('groupChats/' + groupId).once('value');
+        groupName = ((gs && gs.val()) || {}).name || 'Grupo';
+      } catch (_) {}
+      let actorName = 'Alguien';
+      try {
+        const us = await DrexCloud.database().ref('users/' + me.uid).once('value');
+        const ud = (us && us.val()) || {};
+        actorName = ud.username || ud.displayName || 'Alguien';
+      } catch (_) {}
+      const text = groupRoleChangeText(actorName, groupName, kind);
+      if (!text) return false;
+      // Tipo 'message' + isGroupChat:true → hereda el toggle 'groupMessages'
+      // del destinatario (notifTypeToPrefKey). Sin tipos nuevos.
+      await addNotification(targetUid, text, 'message',
+        { actionType: 'chat', actionId: groupId, isGroupChat: true }).catch(() => {});
+      return true;
+    } catch (_) { return false; }
+  }
+
   async function promoteGroupMember() {
     const target = _groupMemberActionsTarget;
     closeGroupMemberActions();
@@ -39235,6 +39277,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         text: target.name + ' ahora es administrador',
         timestamp: Date.now()
       })._writePromise;
+      // C165: avisar al promovido (fire-and-forget; no bloquea el flujo).
+      try { if (typeof notifyGroupRoleChange === 'function') notifyGroupRoleChange(target.uid, currentChatRoomId, 'promoted').catch(() => {}); } catch (_) {}
       showMiniToast(appT('{n} es administrador ahora').replace('{n}', target.name));
       openGroupInfoPanel();
     } catch (e) {
@@ -39255,6 +39299,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         text: target.name + ' ya no es administrador',
         timestamp: Date.now()
       })._writePromise;
+      // C165: avisar al degradado (fire-and-forget; no bloquea el flujo).
+      try { if (typeof notifyGroupRoleChange === 'function') notifyGroupRoleChange(target.uid, currentChatRoomId, 'demoted').catch(() => {}); } catch (_) {}
       showMiniToast(appT('{n} ya no es administrador').replace('{n}', target.name));
       openGroupInfoPanel();
     } catch (e) {
