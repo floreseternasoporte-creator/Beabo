@@ -22608,8 +22608,11 @@ function saveNote() {
     });
   }
 
-  function sendMentionNotifications(content, fromUserId, fromUserName, context = 'publicación', excludedUserIds = [], extraMeta = {}) {
-    const mentionUsernames = extractMentionUsernames(content);
+  // C168: parámetro opcional onlyUsernames — cuando se provee (edición de
+  // comentario), se avisa SOLO ese delta en vez de re-extraer del contenido.
+  // Llamadores existentes sin el 7º argumento: comportamiento intacto.
+  function sendMentionNotifications(content, fromUserId, fromUserName, context = 'publicación', excludedUserIds = [], extraMeta = {}, onlyUsernames = null) {
+    const mentionUsernames = Array.isArray(onlyUsernames) ? onlyUsernames : extractMentionUsernames(content);
     if (!mentionUsernames.length) return Promise.resolve([]);
 
     // Resolver cada mención con lectura puntual al índice usernames/<nombre>:
@@ -24343,6 +24346,14 @@ function saveNote() {
     }
   }
 
+  // C168: pura y testeable — menciones NUEVAS agregadas al editar un
+  // comentario (delta insensible a mayúsculas contra el contenido previo).
+  // Solo el delta avisa: reeditar sin agregar menciones no re-notifica.
+  function commentEditNewMentions(oldContent, newContent) {
+    const before = new Set((extractMentionUsernames(oldContent) || []).map(u => String(u).toLowerCase()));
+    return (extractMentionUsernames(newContent) || []).filter(u => !before.has(String(u).toLowerCase()));
+  }
+
   function updateExistingComment(noteId, commentPath, newContent) {
     const user = DrexCloud.auth().currentUser;
     if (!user) return Promise.reject(new Error('Debes iniciar sesión para editar comentarios'));
@@ -24354,7 +24365,14 @@ function saveNote() {
     const commentRef = DrexCloud.database().ref('postComments/' + noteId + '/' + commentPath);
     const editedAt = Date.now();
 
-    return commentRef.transactionBlind(comment => {
+    // C168: lectura previa del contenido para calcular el delta de menciones
+    // (menciones agregadas con la edición). Best-effort: si falla, la edición
+    // sigue igual; sin delta no hay aviso.
+    const _c168OldContentP = commentRef.child('content').once('value')
+      .then(snap => String((snap && snap.val()) || ''))
+      .catch(() => '');
+
+    return _c168OldContentP.then(oldContent => commentRef.transactionBlind(comment => {
       if (!comment) return undefined;
       if (comment.authorId !== user.uid) return;
       comment.content = cleanedContent;
@@ -24383,8 +24401,30 @@ function saveNote() {
       if (contentEl && typeof renderContentWithSticker === 'function') {
         contentEl.innerHTML = renderContentWithSticker(cleanedContent, 'text-sm text-[#1c2b4a] leading-relaxed');
       }
+      // C168: avisar menciones NUEVAS agregadas con la edición. Solo tras
+      // commit; fire-and-forget con guarda typeof: nunca bloquea la edición.
+      // Idempotencia natural: el delta se calcula contra el contenido previo;
+      // si la cadena se reintentara tras un commit exitoso, el contenido ya es
+      // el editado y el delta resulta vacío (cero duplicados). Sin auto-aviso
+      // (fromUserId queda excluido dentro de sendMentionNotifications) y con
+      // la misma navegación que las menciones en comentarios nuevos
+      // (actionType 'post' + actionId del post).
+      if (transactionResult && transactionResult.committed && typeof sendMentionNotifications === 'function') {
+        try {
+          const freshMentions = (typeof commentEditNewMentions === 'function')
+            ? commentEditNewMentions(oldContent, cleanedContent)
+            : [];
+          if (freshMentions.length) {
+            DrexCloud.database().ref('users/' + user.uid).once('value').then(userSnap => {
+              const userData = (userSnap && userSnap.val()) || {};
+              const actorName = userData.username || user.displayName || user.email || 'Alguien';
+              sendMentionNotifications(cleanedContent, user.uid, actorName, 'comentario', [user.uid], { postId: noteId }, freshMentions).catch(() => {});
+            }).catch(() => {});
+          }
+        } catch (_) {}
+      }
       return syncHistory.then(() => refreshHistorialIfVisible());
-    });
+    }));
   }
 
   const _commentVoteLocks = new Set();
