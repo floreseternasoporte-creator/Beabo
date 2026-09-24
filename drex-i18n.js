@@ -2119,6 +2119,12 @@ var APP_ENGLISH_TEXT = {
 ,
 "Artistas destacados":"Featured artists",
 "Giveaway":"Giveaway"
+,
+"Mostrando tu marea":"Showing your tide",
+"Tu marea está vacía":"Your tide is empty",
+"Sigue ondas en Descubrir para llenarla con tus temas.":"Follow waves in Discover to fill it with your topics.",
+"Descubrir ondas":"Discover waves",
+"Sin posts en tus ondas todavía":"No posts in your waves yet"
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4236,6 +4242,12 @@ var APP_CHINESE_TEXT = {
 ,
 "Artistas destacados":"精选艺术家",
 "Giveaway":"赠奖活动"
+,
+"Mostrando tu marea":"正在显示你的浪潮",
+"Tu marea está vacía":"你的浪潮是空的",
+"Sigue ondas en Descubrir para llenarla con tus temas.":"在“发现”中关注浪潮，用你的话题填满它。",
+"Descubrir ondas":"发现浪潮",
+"Sin posts en tus ondas todavía":"你的浪潮中还没有帖子"
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6344,6 +6356,12 @@ var APP_PORTUGUESE_TEXT = {
 ,
 "Artistas destacados":"Artistas em destaque",
 "Giveaway":"Giveaway"
+,
+"Mostrando tu marea":"Mostrando sua maré",
+"Tu marea está vacía":"Sua maré está vazia",
+"Sigue ondas en Descubrir para llenarla con tus temas.":"Siga ondas em Descobrir para enchê-la com seus temas.",
+"Descubrir ondas":"Descobrir ondas",
+"Sin posts en tus ondas todavía":"Ainda sem posts nas suas ondas"
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

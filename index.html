@@ -1550,6 +1550,14 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
     body.theme-dark .drex-serie-badge { background: color-mix(in srgb, var(--drex-brand) 25%, transparent); color: #a5b0ff; }
     body.theme-dark .drex-poll-q { color: var(--theme-text); }
 
+    /* ===== MI MAREA (v1): botón Seguir de ondas + CTA del vacío ===== */
+    .drex-marea-followbtn { flex-shrink: 0; padding: 7px 14px; border-radius: 999px; border: 1.5px solid #e2e5ee; background: #fff; font-size: 12.5px; font-weight: 800; color: #5b6478; cursor: pointer; }
+    .drex-marea-followbtn.active { border-color: #2F33B8; background: rgba(47,51,184,.08); color: #2F33B8; }
+    body.theme-dark .drex-marea-followbtn { background: var(--theme-surface-subtle); border-color: var(--theme-border); color: var(--theme-muted); }
+    body.theme-dark .drex-marea-followbtn.active { border-color: #a5b0ff; background: color-mix(in srgb, var(--drex-brand) 22%, transparent); color: #a5b0ff; }
+    .drex-marea-cta { display: inline-flex; align-items: center; justify-content: center; padding: 10px 22px; border-radius: 999px; border: 0; background: #2F33B8; color: #fff; font-size: 14px; font-weight: 800; cursor: pointer; }
+    .drex-marea-cta:active { background: #232A94; }
+
     /* ===== MODO OSCURO: votaciones, spoiler y flairs del compositor ===== */
     body.theme-dark .note-poll-toggle { background: var(--theme-surface-muted); border-color: var(--theme-border); color: var(--theme-muted); }
     body.theme-dark .note-poll-toggle.active { border-color: #a5b0ff; background: color-mix(in srgb, var(--drex-brand) 28%, transparent); color: #a5b0ff; }
@@ -4749,6 +4757,7 @@ document.addEventListener("DOMContentLoaded", function() {
             <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="foryou" onclick="switchFeedTab('foryou')" role="tab" aria-selected="true" aria-label="Descubrir publicaciones"><span>Descubre</span></button>
             <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="following" onclick="switchFeedTab('following')" role="tab" aria-selected="false" aria-label="Ver publicaciones de mi gente"><span>Mi gente</span></button>
             <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="popular" onclick="switchFeedTab('popular')" role="tab" aria-selected="false" aria-label="Ver destacados"><span>Destacados</span></button>
+            <button type="button" class="feed-tab-btn drex-sort-tab" data-tab="marea" onclick="switchFeedTab('marea')" role="tab" aria-selected="false" aria-label="Ver mi marea"><span>Mi Marea</span></button>
           </div>
           <div id="feed-tab-indicator"></div>
         </div>
@@ -13850,6 +13859,9 @@ function saveNote() {
     } else if (tab === 'following') {
       loadNotes(false, 'following');
       showToast(appT('Mostrando tu gente'));
+    } else if (tab === 'marea') {
+      loadNotes(false, 'marea');
+      showToast(appT('Mostrando tu marea'));
     }
   }
 
@@ -17540,6 +17552,19 @@ function saveNote() {
   }
 
   function snfFeedEmptyHTML(feedMode) {
+    if (feedMode === 'marea') {
+      // MI MAREA: dos vacíos distintos — sin ondas seguidas (con CTA a
+      // Descubrir) y con ondas pero sin posts.
+      const open = 'bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-3xl p-6 text-center shadow-sm';
+      let hasWaves = false;
+      try { hasWaves = (typeof drexMareaReadFollowed === 'function') && drexMareaReadFollowed().length > 0; } catch (_) {}
+      if (!hasWaves) {
+        return '<div class="feed-empty-state ' + open + '"><p class="text-[15px] font-extrabold text-[var(--theme-text)] mb-1">' + escapeHtml(appT('Tu marea está vacía')) + '</p>' +
+          '<p class="text-sm text-[var(--theme-muted)] mb-4">' + escapeHtml(appT('Sigue ondas en Descubrir para llenarla con tus temas.')) + '</p>' +
+          '<button type="button" onclick="openOndasView()" class="drex-marea-cta">' + escapeHtml(appT('Descubrir ondas')) + '</button></div>';
+      }
+      return '<div class="feed-empty-state ' + open + ' text-sm text-[var(--theme-muted)]">' + escapeHtml(appT('Sin posts en tus ondas todavía')) + '</div>';
+    }
     return feedMode === 'following'
       ? '<div class="feed-empty-state bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-3xl p-6 text-center text-sm text-[var(--theme-muted)] shadow-sm">Todavía no sigues a nadie que haya publicado. Explora perfiles y sigue a alguien para ver sus posts aquí.</div>'
       : '<div class="feed-empty-state bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-3xl p-6 text-center text-sm text-[var(--theme-muted)] shadow-sm">Aún no hay posts. Sé la primera persona en publicar.</div>';
@@ -17746,6 +17771,13 @@ function saveNote() {
     try {
       if (!rawNote || rawNote.groupId) return null;
       if (ctx.feedMode === 'following' && ctx.followingMap && !(rawNote.authorId && ctx.followingMap[rawNote.authorId])) return null;
+      // MI MAREA: solo posts de ondas seguidas (intersección local; el set
+      // se lee una vez por nota — barato — y se congela en ctx al suscribir).
+      let _mareaWaves = null;
+      if (ctx.feedMode === 'marea') {
+        _mareaWaves = drexMareaNoteWaves(rawNote, ctx._mareaFollowedSet || null);
+        if (!_mareaWaves.length) return null;
+      }
       if (currentFeedFlairFilter && rawNote.flair !== currentFeedFlairFilter) return null;
       const authorId = rawNote.authorId || rawNote.userId || '';
       if (authorId && authorId !== ctx.currentUserId) {
@@ -17757,6 +17789,7 @@ function saveNote() {
       }
       if (shouldHideNoteForCurrentUser(key, rawNote)) return null;
       const note = { ...rawNote, id: key };
+      if (_mareaWaves) note._mareaWaves = _mareaWaves;
       if (authorId) {
         const profile = await _fetchAuthorProfileCached(authorId).catch(() => ({})) || {};
         note.authorLearningLanguage = note.authorLearningLanguage || profile.learningLanguage || '';
@@ -17783,8 +17816,11 @@ function saveNote() {
       if (ecoSpan) ecoSpan.textContent = ecoCountOf(note);
     }
     setCommentsCountUI(note.id, note.commentsCount);
-    if (ctx.feedMode === 'popular') {
-      const newScore = Number(note.upvotes || 0) - Number(note.downvotes || 0);
+    if (ctx.feedMode === 'popular' || ctx.feedMode === 'marea') {
+      // MI MAREA: el puntaje se re-normaliza en vivo con los máximos del tab.
+      const newScore = ctx.feedMode === 'marea'
+        ? (note._mareaNorm = drexMareaLiveNorm(ctx, note))
+        : Number(note.upvotes || 0) - Number(note.downvotes || 0);
       existingPost.dataset.feedScore = String(newScore);
       // Recolocar la tarjeta para mantener el orden por puntaje (mayor primero).
       const kids = ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"]');
@@ -17826,6 +17862,11 @@ function saveNote() {
       noteElement.dataset.feedTs = String(noteTs);
       if (ctx.feedMode === 'popular') {
         noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0));
+      } else if (ctx.feedMode === 'marea') {
+        // MI MAREA: puntaje normalizado por nicho (del lote, o en vivo).
+        const mNorm = (note._mareaNorm != null) ? note._mareaNorm : drexMareaLiveNorm(ctx, note);
+        note._mareaNorm = mNorm;
+        noteElement.dataset.feedScore = String(mNorm);
       }
       // Drex Rec: metadatos para entrenar con interacciones futuras.
       try {
@@ -17845,9 +17886,10 @@ function saveNote() {
         hasEchoed: Boolean(ctx.userEcos[note.id]),
         avatarIdPrefix: 'feed-author-'
       });
-      if (ctx.feedMode === 'popular') {
-        // Insertar ordenado por puntaje (mayor primero).
-        const score = Number(note.upvotes || 0) - Number(note.downvotes || 0);
+      if (ctx.feedMode === 'popular' || ctx.feedMode === 'marea') {
+        // Insertar ordenado por puntaje (mayor primero). En 'marea' el
+        // puntaje es el normalizado por nicho (dataset.feedScore).
+        const score = parseFloat(noteElement.dataset.feedScore || '0');
         const kids = ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"]');
         let placed = false;
         for (const kid of kids) {
@@ -17901,7 +17943,14 @@ function saveNote() {
   function snfMountInitialBatch(ctx) {
     if (!ctx.alive() || ctx._initialBatchMounted) return;
     ctx._initialBatchMounted = true;
-    if (ctx._initialBatch.length > 1) {
+    if (ctx.feedMode === 'marea') {
+      // MI MAREA: ranking propio por nicho (normalizado por onda), en vez
+      // del motor V2 de "Para ti".
+      if (ctx._initialBatch.length > 1) {
+        try { ctx._initialBatch = drexMareaSortBatch(ctx, ctx._initialBatch); }
+        catch (_) { /* se conserva el orden de llegada */ }
+      }
+    } else if (ctx._initialBatch.length > 1) {
       try {
         if (window.DrexRecEngine && typeof window.DrexRecEngine.rankFeed === 'function') {
           var _rankCtx = {};
@@ -18098,6 +18147,7 @@ function saveNote() {
     const ctx = {
       feedContainer, user, userVotes, userEcos, feedMode, followingMap,
       notesRef: null, myGeneration: 0, alive: null, currentUserId: '',
+      _mareaFollowedSet: null, _mareaWaveMax: {},
       adCount: 0, pendingInitial: 0, initialValueSeen: false,
       _feedSnapshotRaw: new Map(),
       feedLoadedIds: new Set(), oldestLoadedTs: Infinity,
@@ -18112,6 +18162,12 @@ function saveNote() {
     ctx.myGeneration = ++_notesFeedGeneration;
     ctx.alive = () => ctx.myGeneration === _notesFeedGeneration;
     ctx.currentUserId = (ctx.user && ctx.user.uid) || '';
+    // MI MAREA: el set de ondas seguidas se congela al suscribir el tab
+    // (si el usuario sigue/deja ondas a mitad, re-entrar al tab refresca).
+    if (ctx.feedMode === 'marea') {
+      try { ctx._mareaFollowedSet = (typeof drexMareaFollowedSet === 'function') ? drexMareaFollowedSet() : new Set(); }
+      catch (_) { ctx._mareaFollowedSet = new Set(); }
+    }
     ctx.adCount = 0;
     ctx.pendingInitial = 0;
     ctx.initialValueSeen = false;
@@ -20867,9 +20923,12 @@ function saveNote() {
     listEl.classList.remove('hidden');
     if (emptyEl) emptyEl.classList.add('hidden');
     waves.forEach(w => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'tap44 w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-[var(--theme-surface-muted)] active:opacity-70 transition text-left';
+      const following = (typeof drexMareaIsFollowing === 'function') && drexMareaIsFollowing(w.onda);
+      const b = document.createElement('div');
+      b.className = 'tap44 w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-[var(--theme-surface-muted)] active:opacity-70 transition cursor-pointer';
+      b.setAttribute('role', 'button');
+      b.setAttribute('tabindex', '0');
+      b.setAttribute('aria-label', '#' + w.onda);
       const ic = document.createElement('span');
       ic.className = 'flex-shrink-0 w-9 h-9 rounded-full bg-[var(--drex-brand)]/10 text-[var(--drex-brand)] flex items-center justify-center';
       ic.innerHTML = DREX_ONDA_WAVE_SVG;
@@ -20885,11 +20944,23 @@ function saveNote() {
       c.textContent = appT('{n} posts').replace('{n}', String(w.count));
       mid.appendChild(c);
       b.appendChild(mid);
-      const ch = document.createElement('span');
-      ch.className = 'flex-shrink-0 text-[var(--theme-muted)]';
-      ch.innerHTML = DREX_ONDA_CHEV_SVG;
-      b.appendChild(ch);
+      // MI MAREA: botón Seguir/Siguiendo por onda (local, sin BD).
+      const fb = document.createElement('button');
+      fb.type = 'button';
+      fb.className = 'drex-marea-followbtn' + (following ? ' active' : '');
+      fb.textContent = appT(following ? 'Siguiendo' : 'Seguir');
+      fb.setAttribute('aria-pressed', following ? 'true' : 'false');
+      fb.setAttribute('aria-label', appT(following ? 'Siguiendo' : 'Seguir') + ' #' + w.onda);
+      fb.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        try { if (typeof drexMareaToggleFollow === 'function') drexMareaToggleFollow(w.onda); } catch (_) {}
+        renderOndasView();
+      });
+      b.appendChild(fb);
       b.addEventListener('click', () => openOndasHashtag(w.onda));
+      b.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openOndasHashtag(w.onda); }
+      });
       listEl.appendChild(b);
     });
   }
@@ -20979,6 +21050,119 @@ function saveNote() {
   }
   try { ondaInitBrowser(); } catch (_) {}
   // ===== ONDAS (Descubrimiento) v1 — fin =====
+
+  // ===== MI MAREA v1 — inicio =====
+  // "Mi Marea": cuarto orden del feed (junto a Para ti / Mi gente /
+  // Destacados): solo posts de las Ondas que el usuario SIGUE, ordenados
+  // por las señales propias de Drex (votos netos + ecos guardados + votos
+  // en encuestas), ponderados por nicho (normalización por onda), NO por
+  // views.
+  //
+  // DISEÑO DE PRIVACIDAD (decisión consciente, no accidente):
+  // - Las ondas seguidas viven SOLO en localStorage
+  //   ('drex_ondas_followed_v1'), por dispositivo. Cero escrituras a BD:
+  //   ningún otro usuario puede ver qué ondas sigue alguien.
+  // - Mi Marea NO lee nada que el feed no lea ya (communityNotes +
+  //   userVotes + userEcos). Las ondas de un post son públicas (están en
+  //   su texto); el filtro es 100 % local.
+  // - Sin tracking de vistas, coherente con Pulso (C81).
+  // Por eso se construye Mi Marea antes que Onda compartida: la compartida
+  // mezclaría preferencias de varios participantes del chat (sus ondas
+  // seguidas y votos quedarían expuestos entre ellos), y eso requiere una
+  // decisión humana explícita (opt-in / umbrales).
+  const DREX_MAREA = {
+    LS_KEY: 'drex_ondas_followed_v1',
+    MAX_FOLLOWED: 200,
+    W_UPDOWN: 1,
+    W_ECO: 2,
+    W_POLL: 1
+  };
+
+  function drexMareaReadFollowed() {
+    try {
+      const raw = localStorage.getItem(DREX_MAREA.LS_KEY);
+      const arr = raw ? JSON.parse(raw) : null;
+      if (!Array.isArray(arr)) return [];
+      // Dedup también al leer: el array pudo corromperse a mano.
+      return Array.from(new Set(arr.filter(x => typeof x === 'string' && x.length >= 2))).slice(0, DREX_MAREA.MAX_FOLLOWED);
+    } catch (_) { return []; }
+  }
+  function drexMareaFollowedSet() { return new Set(drexMareaReadFollowed()); }
+  function drexMareaIsFollowing(onda) {
+    if (typeof onda !== 'string' || !onda) return false;
+    return drexMareaFollowedSet().has(onda);
+  }
+  function drexMareaPersistFollowed(arr) {
+    try {
+      const clean = Array.from(new Set(arr.filter(x => typeof x === 'string' && x.length >= 2))).slice(0, DREX_MAREA.MAX_FOLLOWED);
+      localStorage.setItem(DREX_MAREA.LS_KEY, JSON.stringify(clean));
+      return clean;
+    } catch (_) { return arr; }
+  }
+  function drexMareaToggleFollow(onda) {
+    if (typeof onda !== 'string' || !onda) return false;
+    const cur = drexMareaReadFollowed();
+    const i = cur.indexOf(onda);
+    if (i >= 0) cur.splice(i, 1); else cur.push(onda);
+    drexMareaPersistFollowed(cur);
+    return i < 0;
+  }
+
+  // Ondas del post que el usuario sigue (intersección). `set` opcional
+  // para tests / evitar releer localStorage por nota.
+  function drexMareaNoteWaves(note, set) {
+    const text = (note && (note.content || note.title || note.text)) || '';
+    if (typeof text !== 'string' || !text) return [];
+    const s = (set instanceof Set) ? set : drexMareaFollowedSet();
+    if (!s.size) return [];
+    return drexExtractOndas(text).filter(t => s.has(t));
+  }
+
+  // Puntaje crudo de nicho: votos netos + ecos guardados (x2) + votos en
+  // encuesta. Sin views: la filosofía de votos de Drex llevada al feed.
+  function drexMareaRawScore(note) {
+    if (!note) return 0;
+    const net = Number(note.upvotes || 0) - Number(note.downvotes || 0);
+    const ecos = (typeof ecoCountOf === 'function') ? ecoCountOf(note) : Number(note.ecosCount || 0);
+    const poll = Number((note.poll && note.poll.total) || 0);
+    return net * DREX_MAREA.W_UPDOWN + ecos * DREX_MAREA.W_ECO + poll * DREX_MAREA.W_POLL;
+  }
+
+  // Normalización por onda ("guardados ponderados por nicho"): el puntaje
+  // de cada post se divide entre el máximo de su(s) onda(s) en el lote,
+  // para que el mejor post de un nicho pequeño pueda superar a uno mediano
+  // de un nicho gigante. Devuelve el lote ordenado (norm desc, ts desc) y
+  // deja note._mareaNorm / ctx._mareaWaveMax listos para el modo en vivo.
+  function drexMareaSortBatch(ctx, notes) {
+    const wm = {};
+    const withRaw = notes.map(n => ({ n, raw: drexMareaRawScore(n), waves: n._mareaWaves || [] }));
+    withRaw.forEach(({ raw, waves }) => {
+      waves.forEach(w => { if (raw > (wm[w] || 0)) wm[w] = raw; });
+    });
+    withRaw.forEach(({ n, raw, waves }) => {
+      let mx = 0;
+      waves.forEach(w => { const v = wm[w] || 0; if (v > mx) mx = v; });
+      n._mareaNorm = mx > 0 ? raw / mx : 0;
+    });
+    ctx._mareaWaveMax = wm;
+    return withRaw
+      .sort((a, b) => (b.n._mareaNorm - a.n._mareaNorm) || (Number(b.n.timestamp || 0) - Number(a.n.timestamp || 0)))
+      .map(x => x.n);
+  }
+
+  // Puntaje normalizado para notas que llegan en vivo (fuera del lote):
+  // usa los máximos del lote; si la nota los supera, el máximo crece
+  // (orden consistente dentro de la sesión del tab).
+  function drexMareaLiveNorm(ctx, note) {
+    const raw = drexMareaRawScore(note);
+    const wm = ctx._mareaWaveMax || (ctx._mareaWaveMax = {});
+    const waves = note._mareaWaves || [];
+    let mx = 0;
+    waves.forEach(w => { const v = Number(wm[w] || 0); if (v > mx) mx = v; });
+    if (raw > mx) { mx = raw; waves.forEach(w => { wm[w] = Math.max(Number(wm[w] || 0), raw); }); }
+    return mx > 0 ? raw / mx : 0;
+  }
+  // ===== MI MAREA v1 — fin =====
 
   // Anti-carrera de menciones: gana el ÚLTIMO tap, no la última respuesta.
   // (Antes, tocar @alice y luego @bob rápido podía abrir el perfil de alice
