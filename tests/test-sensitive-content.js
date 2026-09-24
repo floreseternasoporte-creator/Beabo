@@ -43,7 +43,10 @@ function extractFunction(src, name) {
 function extractNotePayload(src) {
   const fnIdx = src.indexOf('function publishNoteFromFullscreen()');
   if (fnIdx < 0) throw new Error('publishNoteFromFullscreen no encontrado');
-  const noteIdx = src.indexOf('const note = {', fnIdx);
+  // C82: el payload puede empezar con el prólogo de Series (`var _serieSel`),
+  // que declara la variable usada dentro de la región. Sin parche no existe.
+  let noteIdx = src.indexOf('var _serieSel =', fnIdx);
+  if (noteIdx < 0) noteIdx = src.indexOf('const note = {', fnIdx);
   if (noteIdx < 0) throw new Error('const note = { no encontrado en el composer');
   const endIdx = src.indexOf('const publishWithAudienceScope', noteIdx);
   if (endIdx < 0 || endIdx < noteIdx) throw new Error('fin del payload no encontrado');
@@ -114,13 +117,13 @@ try {
 
   // Flag activado -> note.sensitive === true
   const sbOn = makeSandbox({ ...composerStubs });
-  runIn(sbOn, 'let notePostIsSpoiler = false; let notePostIsSensitive = true;\n' + payload + '\nthis.__note = note;');
+  runIn(sbOn, 'let notePostIsSpoiler = false; let notePostIsSensitive = true; let notePostSerieScriptVote = false;\n' + payload + '\nthis.__note = note;');
   check('toggle ON escribe note.sensitive === true', sbOn.__note && sbOn.__note.sensitive === true,
     'obtenido: ' + JSON.stringify(sbOn.__note && sbOn.__note.sensitive));
 
   // Flag apagado -> el campo NO existe (no se ensucia la BD con false)
   const sbOff = makeSandbox({ ...composerStubs });
-  runIn(sbOff, 'let notePostIsSpoiler = false; let notePostIsSensitive = false;\n' + payload + '\nthis.__note = note;');
+  runIn(sbOff, 'let notePostIsSpoiler = false; let notePostIsSensitive = false; let notePostSerieScriptVote = false;\n' + payload + '\nthis.__note = note;');
   check('toggle OFF no escribe el campo (ausente)', sbOff.__note && !('sensitive' in sbOff.__note),
     'obtenido: ' + JSON.stringify(sbOff.__note && sbOff.__note.sensitive));
 
