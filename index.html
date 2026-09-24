@@ -32565,6 +32565,45 @@ const _startChatListeners = () => {
     _doomed.forEach(a => { if (a && a.fileId) _releaseChatFileRef(a.fileId, a.id); });
   }
 
+  // C76-F1: restaura los adjuntos del composer tras un fallo del set() para
+  // que el retry los reintente (antes solo se restauraba el texto y los
+  // adjuntos se perdían en silencio). `releasedIds` = fileIds cuyos trozos
+  // ya se liberaron (C50-C1): esas entradas se re-encolan para re-subida con
+  // fileId nuevo, porque el retry genera un messageId nuevo y no puede reusar
+  // fileIds stale. Las fotos conservan su cloudUrl (sigue válido). Si el
+  // usuario no reintenta, el descarte las libera (clearChatFileAttachment(true), C50-C2).
+  function _restoreChatAttachmentsAfterFailedSend(filesSnap, photosSnap, releasedIds) {
+    try {
+      if (typeof chatFileAttachments !== 'undefined' && filesSnap && filesSnap.length) {
+        let needPump = false;
+        filesSnap.forEach(a => {
+          if (!a) return;
+          a.cancelled = false;
+          // Trozo liberado o subida interrumpida por la limpieza: re-subir.
+          if ((a.fileId && releasedIds && releasedIds[a.fileId]) || a.uploading) {
+            a.fileId = null; a.chunks = 0; a.uploaded = 0; a.progress = 0;
+            a.uploading = true; a.started = false; a.failed = false;
+            needPump = true;
+          }
+          if (chatFileAttachments.indexOf(a) === -1) chatFileAttachments.push(a);
+        });
+        if (typeof _renderChatFileAttachments === 'function') _renderChatFileAttachments();
+        if (needPump && typeof _pumpChatFileUploadQueue === 'function') _pumpChatFileUploadQueue();
+      }
+      if (typeof chatPhotoAttachments !== 'undefined' && photosSnap && photosSnap.length) {
+        photosSnap.forEach(p => {
+          if (!p || !p.cloudUrl) return;
+          // clearChatPhotoAttachment() revocó el object URL local; la
+          // miniatura puede pintarse desde el cloudUrl (sigue válido).
+          if (!p.localUrl) p.localUrl = p.cloudUrl;
+          p.uploading = false;
+          if (chatPhotoAttachments.indexOf(p) === -1) chatPhotoAttachments.push(p);
+        });
+        if (typeof _renderChatPhotoThumbnails === 'function') _renderChatPhotoThumbnails();
+      }
+    } catch (_) {}
+  }
+
   function _renderChatFileAttachments() {
     const wrap = document.getElementById('chat-file-preview-wrap');
     const list = document.getElementById('chat-file-attachments');
@@ -33018,6 +33057,13 @@ ${getSpinnerMarkup('drex-spinner-inline')}
             conversationId, recipientId, isGroup, groupMembers,
             lastMessage, viewOnceOn, timerSecs } = painted;
 
+    // C76-F1: snapshot de los adjuntos ANTES de limpiar el composer. Si el
+    // set() falla, el catch los restaura para que el retry los reintente
+    // (antes solo se restauraba el texto y los adjuntos se perdían en
+    // silencio: el retry salía solo con texto).
+    const _c76FilesSnap = (typeof chatFileAttachments !== 'undefined' ? chatFileAttachments : []).slice();
+    const _c76PhotosSnap = (typeof chatPhotoAttachments !== 'undefined' ? chatPhotoAttachments : []).slice();
+
     clearChatReply();
     if (viewOnceOn && typeof chatViewOnceActive !== 'undefined' && chatViewOnceActive) toggleChatViewOnce();
     if (timerSecs > 0) setChatTimer(0);
@@ -33081,6 +33127,14 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       // se tocan.
       if (!_chatSetOk) {
         try { _releaseChatFileRefsOfMsg({ files: (painted && painted.fileMetas) || [] }, painted && painted.messageId); } catch (_) {}
+        // C76-F1: restaurar los adjuntos para el retry (ver
+        // _restoreChatAttachmentsAfterFailedSend): el catch solo restauraba
+        // el texto y el retry reenviaba el mensaje sin archivos.
+        try {
+          const _releasedIds = {};
+          ((painted && painted.fileMetas) || []).forEach(fm => { if (fm && fm.fileId) _releasedIds[fm.fileId] = true; });
+          _restoreChatAttachmentsAfterFailedSend(_c76FilesSnap, _c76PhotosSnap, _releasedIds);
+        } catch (_) {}
       }
 
       window._drexChatSending = false;
