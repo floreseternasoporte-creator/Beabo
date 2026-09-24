@@ -13767,11 +13767,22 @@ function saveNote() {
         let done = false;
         let audioCtx = null;
         let progressTimer = null; // intervalo del reporte de progreso (onProgress)
+        // C104: drawTimer/rec/stream al alcance de cleanup() para que los
+        // caminos de error (recorder error, timeout, play) detengan el
+        // intervalo de dibujo, la grabadora y las pistas (antes el drawTimer
+        // seguía disparando cada 33 ms y MediaRecorder seguía grabando por
+        // siempre tras un transcode fallido).
+        let drawTimer = null;
+        let rec = null;
+        let stream = null;
         const timer = setTimeout(() => { finish(() => { cleanup(); reject(new Error('timeout')); }); }, 120000);
         const finish = (fn) => { if (!done) { done = true; try { clearTimeout(timer); } catch (_) {} fn(); } };
         const cleanup = () => {
           try { video.pause(); } catch (_) {}
           try { if (progressTimer) { clearInterval(progressTimer); progressTimer = null; } } catch (_) {}
+          try { if (drawTimer) { clearInterval(drawTimer); drawTimer = null; } } catch (_) {}
+          try { if (rec && rec.state !== 'inactive') rec.stop(); } catch (_) {}
+          try { if (stream) { stream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} }); stream = null; } } catch (_) {}
           try { video.removeAttribute('src'); video.load(); } catch (_) {}
           try { URL.revokeObjectURL(url); } catch (_) {}
           // El contexto compartido (pre-calentado en el gesto) NO se cierra:
@@ -13786,7 +13797,7 @@ function saveNote() {
             canvas.width = Math.max(2, Math.round(vw * scale / 2) * 2);
             canvas.height = Math.max(2, Math.round(vh * scale / 2) * 2);
             const ctx = canvas.getContext('2d');
-            let stream;
+            stream = null;
             try {
               const canvasStream = canvas.captureStream(30);
               const AC = window.AudioContext || window.webkitAudioContext;
@@ -13804,7 +13815,7 @@ function saveNote() {
             } catch (_) {
               stream = canvas.captureStream(30);
             }
-            const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1000000 });
+            rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1000000 });
             const parts = [];
             rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
             rec.onerror = () => { finish(() => { cleanup(); reject(new Error('recorder')); }); };
@@ -13816,7 +13827,7 @@ function saveNote() {
                 else resolve({ blob, mime });
               });
             };
-            const drawTimer = setInterval(() => {
+            drawTimer = setInterval(() => {
               try { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); } catch (_) {}
             }, 1000 / 30);
             video.onended = () => {
