@@ -46845,6 +46845,84 @@ async function submitCorrection() {
     btn.disabled = false; btn.textContent = 'Enviar corrección';
   }
 }
+// ============ C158: PRIMER «ÚTIL» — AVISO AL CORRECTOR (exactamente-una-vez) ==
+// Hueco real con ancla: helpfulCount se CALCULABA (toggleCorrectionHelpful:
+// transacción sobre exerciseCorrections/<exId>/<corrId>/helpfulCount, +1/-1
+// por usuario) y se PINTABA (tarjeta de corrección: «Útil N»; ordenadas por
+// helpfulCount), pero el CORRECTOR nunca se enteraba de que su corrección le
+// sirvió a alguien. El único addNotification de correcciones avisa al AUTOR
+// DEL EJERCICIO de la corrección nueva; ningún call site cubre el «útil».
+// Patrón C153/C154/C157 (sin servidor que detecte el evento): el cliente que
+// confirma el voto «útil» intenta una transacción best-effort sobre el nodo
+// paralelo correctionHelpfulNotified/<exId>/<corrId>; el ganador avisa al
+// CORRECTOR (una sola vez por corrección: los siguientes «útil» solo suben
+// el conteo pintado, sin spam) con tipo 'info' para heredar el toggle
+// 'corrections' del destinatario (notifTypeToPrefKey), el mismo bucket que el
+// aviso de nueva corrección. Sin auto-aviso: si quien marca «útil» es el
+// propio corrector no se marca el flag (precedente C154), para que el «útil»
+// de un tercero lo anuncie después. Guarda de sesión por exId/corrId. El
+// nodo paralelo no cambia el shape caliente de
+// exerciseCorrections/<exId>/<corrId> (lección C149). Si las reglas RTDB
+// (fuera del repo) deniegan la escritura, el voto «útil» y la UI siguen
+// intactos (degradación documentada).
+// Núcleo PURO: ¿se anuncia este «útil»? Solo al AGREGAR, con corrector
+// conocido y distinto del votante. Puro: se testea en sandbox sin BD.
+function correctionHelpfulNotifyDecision(adding, correctorId, voterUid) {
+  if (adding !== true) return false;
+  if (!correctorId) return false;
+  if (correctorId === voterUid) return false;
+  return true;
+}
+// Núcleo PURO: texto del aviso (español fijo, como C147/C153/C157).
+function correctionHelpfulText(voterName) {
+  var n = (typeof voterName === 'string' && voterName.trim()) ? voterName.trim() : 'Alguien';
+  return 'A ' + n + ' le pareció útil tu corrección.';
+}
+// Updater PURO de la transacción exactamente-una-vez: si ya se anunció (cur
+// truthy), no-op; si no, marca el timestamp. Vive en nodo paralelo.
+function correctionHelpfulNotifyFlag(cur, nowMs) {
+  if (cur !== null && cur !== undefined) return undefined; // ya anunciado
+  var n = Number(nowMs);
+  return n > 0 ? n : Date.now();
+}
+var _c158HelpfulTried = {};
+function maybeAnnounceCorrectionHelpful(exId, corrId, correctorId, voterUid) {
+  try {
+    if (!exId || !corrId || !voterUid || typeof DrexCloud === 'undefined') return;
+    // Sin auto-aviso (C154): con corrector conocido e igual al votante, ni
+    // siquiera se marca el flag para que otro cliente lo anuncie después.
+    if (!correctorId || correctorId === voterUid) return;
+    var gk = exId + '/' + corrId;
+    if (_c158HelpfulTried[gk]) return;
+    _c158HelpfulTried[gk] = true;
+    DrexCloud.database().ref('correctionHelpfulNotified/' + exId + '/' + corrId).transaction(function (cur) {
+      return correctionHelpfulNotifyFlag(cur, Date.now());
+    }, function (error, committed) {
+      if (error || !committed) return;
+      try {
+        // Releer el corrector del servidor (como C157 relee authorId): el
+        // dato local puede estar stale; la decisión final usa el servidor.
+        DrexCloud.database().ref('exerciseCorrections/' + exId + '/' + corrId + '/correctorId').once('value').then(function (cSnap) {
+          var freshId = cSnap && cSnap.val();
+          if (!freshId || freshId === voterUid) return;
+          var done = function (voterName) {
+            try {
+              if (typeof addNotification === 'function') {
+                addNotification(freshId, correctionHelpfulText(voterName), 'info', { exerciseId: exId });
+              }
+            } catch (_) {}
+          };
+          try {
+            if (typeof practicarCurrentProfile === 'function') {
+              practicarCurrentProfile().then(function (p) { done((p && p.name) || 'Alguien'); }).catch(function () { done('Alguien'); });
+            } else { done('Alguien'); }
+          } catch (_) { done('Alguien'); }
+        }).catch(function () {});
+      } catch (_) {}
+    });
+  } catch (_) {}
+}
+// ============ /C158 ============
 async function toggleCorrectionHelpful(exId, corrId, btn) {
   const me = DrexCloud.auth().currentUser;
   if (!me) { showMiniToast(appT('Debes iniciar sesión para practicar.')); return; }
@@ -46859,6 +46937,17 @@ async function toggleCorrectionHelpful(exId, corrId, btn) {
     pxMyHelpful[corrId] = adding;
     const corr = pxDetailCorrections.find(function(c) { return c.id === corrId; });
     if (corr) corr.helpfulCount = r.snapshot.val();
+    // C158: el primer «Útil» avisa al corrector exactamente-una-vez. Guarda
+    // typeof: los harnesses viejos ejecutan esta función en sandbox sin el
+    // anunciador (patrón C153).
+    if (adding && typeof maybeAnnounceCorrectionHelpful === 'function') {
+      try {
+        if (typeof correctionHelpfulNotifyDecision === 'function' &&
+            correctionHelpfulNotifyDecision(true, corr && corr.correctorId, me.uid)) {
+          maybeAnnounceCorrectionHelpful(exId, corrId, corr.correctorId, me.uid);
+        }
+      } catch (_) {}
+    }
     const countEl = btn.querySelector('[data-helpful-count]');
     if (countEl) countEl.textContent = r.snapshot.val();
     btn.classList.toggle('text-[#1c2b4a]', adding);
