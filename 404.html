@@ -16440,7 +16440,9 @@ function saveNote() {
   }
 
   function setHiddenPosts(hiddenPostIds) {
-    localStorage.setItem('drex_hidden_posts', JSON.stringify(hiddenPostIds));
+    // C105: blindado — un throw abortaba el flujo de "ocultar" (la hoja
+    // quedaba abierta y el post no se ocultaba visualmente).
+    try { localStorage.setItem('drex_hidden_posts', JSON.stringify(hiddenPostIds)); } catch (_) {}
   }
 
   function getAdultContentPreference() {
@@ -25775,7 +25777,7 @@ function saveNote() {
   function translateAppSubtree(root = document.body, lang = getAppLanguage()) { if (!root) return; const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode); nodes.forEach(node => translateAppTextNode(node, lang)); translateAppAttributes(root, lang); }
   function syncAppLanguageUI(lang) { document.documentElement.lang = lang === 'zh' ? 'zh-CN' : (lang === 'pt' ? 'pt-BR' : lang); document.documentElement.setAttribute('data-app-language', lang); const preview = document.getElementById('app-language-preview'); if (preview) preview.textContent = lang === 'en' ? 'English' : (lang === 'zh' ? '中文' : (lang === 'pt' ? 'Português' : 'Español')); ['es','en','zh','pt'].forEach(code => { const option = document.getElementById('app-language-' + code); if (!option) return; const selected = code === lang; option.querySelector('.app-language-check')?.classList.toggle('hidden', !selected); option.setAttribute('aria-pressed', selected ? 'true' : 'false'); }); }
   function startAppLanguageObserver() { if (!document.body) return; if (currentLanguage === 'es') { if (appLanguageObserver) { try { appLanguageObserver.disconnect(); } catch (_) {} appLanguageObserver = null; } return; } if (appLanguageObserver) return; appLanguageObserver = new MutationObserver(mutations => { const obsLang = currentLanguage; if (obsLang === 'es') return; mutations.forEach(mutation => mutation.addedNodes.forEach(node => { if (node.nodeType === Node.TEXT_NODE) translateAppTextNode(node, obsLang); else if (node.nodeType === Node.ELEMENT_NODE) translateAppSubtree(node, obsLang); })); }); appLanguageObserver.observe(document.body, { childList:true, subtree:true }); }
-  function applyAppLanguage(lang = getAppLanguage()) { const prevAppLang = currentLanguage; currentLanguage = lang; localStorage.setItem('selectedLanguage', lang); localStorage.setItem(APP_LANGUAGE_STORAGE_KEY, lang); const t = translations[lang] || translations.es; document.getElementById('auth-title') && (document.getElementById('auth-title').innerText = t.authTitle); if (emailInput) emailInput.placeholder = t.emailPlaceholder; if (passwordInput) passwordInput.placeholder = t.passwordPlaceholder; if (submitButton) submitButton.innerText = t.btnIniciarSesion; if (toggleAuth) toggleAuth.innerText = t.btnToggleAuth; ['btn-volver-search','btn-volver-author'].forEach(id => { const el=document.getElementById(id); if (el) el.innerText=t.btnVolver; }); const search=document.getElementById('search-input'); if (search) search.placeholder=t.searchPlaceholder; const posts=document.getElementById('search-posts-title'); if (posts) posts.innerText=t.searchBooks; const accounts=document.getElementById('search-accounts-title'); if (accounts) accounts.innerText=t.searchAuthors; if (lang !== 'es' || prevAppLang !== 'es') translateAppSubtree(document.body, lang); syncAppLanguageUI(lang); startAppLanguageObserver(); }
+  function applyAppLanguage(lang = getAppLanguage()) { const prevAppLang = currentLanguage; currentLanguage = lang; try { localStorage.setItem('selectedLanguage', lang); localStorage.setItem(APP_LANGUAGE_STORAGE_KEY, lang); } catch (_) {} const t = translations[lang] || translations.es; document.getElementById('auth-title') && (document.getElementById('auth-title').innerText = t.authTitle); if (emailInput) emailInput.placeholder = t.emailPlaceholder; if (passwordInput) passwordInput.placeholder = t.passwordPlaceholder; if (submitButton) submitButton.innerText = t.btnIniciarSesion; if (toggleAuth) toggleAuth.innerText = t.btnToggleAuth; ['btn-volver-search','btn-volver-author'].forEach(id => { const el=document.getElementById(id); if (el) el.innerText=t.btnVolver; }); const search=document.getElementById('search-input'); if (search) search.placeholder=t.searchPlaceholder; const posts=document.getElementById('search-posts-title'); if (posts) posts.innerText=t.searchBooks; const accounts=document.getElementById('search-accounts-title'); if (accounts) accounts.innerText=t.searchAuthors; if (lang !== 'es' || prevAppLang !== 'es') translateAppSubtree(document.body, lang); syncAppLanguageUI(lang); startAppLanguageObserver(); }
   function updateTranslations() { applyAppLanguage((typeof getAppLanguage === 'function') ? getAppLanguage() : 'es'); }
   function refreshVisibleLocationPickerLanguage() { const view=document.getElementById('location-config-view'); if (!view || view.classList.contains('hidden') || view.style.display === 'none' || typeof renderLocationCountries !== 'function') return; const query=document.getElementById('settings-country-search')?.value || ''; renderLocationCountries(query); if (typeof updateSelectedCountryLabel === 'function') updateSelectedCountryLabel(); }
   function setAppLanguage(lang) { const next = (lang === 'en' || lang === 'zh' || lang === 'pt') ? lang : 'es'; applyAppLanguage(next); refreshVisibleLocationPickerLanguage(); const user=DrexCloud.auth().currentUser; if (user) DrexCloud.database().ref('userSettings/' + user.uid + '/appLanguage').set(next).catch(() => {}); }
@@ -27574,7 +27576,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     try { return JSON.parse(localStorage.getItem(LOGIN_ATTEMPTS_KEY) || '{}'); } catch (e) { return {}; }
   }
   function saveLoginAttempts(data) {
-    localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(data));
+    // C105: blindado ante QuotaExceededError / almacenamiento no disponible
+    // (modo privado, cuota llena): un throw aquí rompía las cadenas de
+    // promesas del login (botón atascado en spinner tras un fallo).
+    try { localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(data)); } catch (_) {}
   }
   function checkLoginLock(email) {
     const attempts = getLoginAttempts();
@@ -27665,7 +27670,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     signInPromise
       .then(() => {
         clearLoginAttempts(lockKey);
-        localStorage.setItem('drex_last_login_method', isUsername ? 'username' : 'email');
+        // C105: blindado — un throw rechazaba la cadena post-login.
+        try { localStorage.setItem('drex_last_login_method', isUsername ? 'username' : 'email'); } catch (_) {}
       })
       .catch(error => {
         // Telemetría: los fallos no atribuibles al usuario se reportan con
@@ -29157,7 +29163,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     DrexCloud.auth().signInWithPopup(provider)
       .then(result => {
         console.log("Facebook sign-in successful");
-        localStorage.setItem('drex_last_login_method', 'facebook');
+        // C105: blindado — un throw dejaba los botones sociales en "cargando".
+        try { localStorage.setItem('drex_last_login_method', 'facebook'); } catch (_) {}
         setSocialButtonsLoading(false);
         socialAuthInProgress = false;
       })
@@ -29176,7 +29183,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     DrexCloud.auth().signInWithPopup(provider)
       .then(result => {
         console.log("X (Twitter) sign-in successful");
-        localStorage.setItem('drex_last_login_method', 'twitter');
+        // C105: blindado — un throw dejaba los botones sociales en "cargando".
+        try { localStorage.setItem('drex_last_login_method', 'twitter'); } catch (_) {}
         setSocialButtonsLoading(false);
         socialAuthInProgress = false;
         // El observador onAuthStateChanged se encargará de redirigir a la app principal
@@ -30112,7 +30120,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
 
   function _stAddMinutes(dateKey, mins) {
     const current = _stGetMinutes(dateKey);
-    localStorage.setItem(ST_PREFIX + dateKey, String(Math.round((current + mins) * 100) / 100));
+    // C105: blindado — corre en un intervalo; un throw ensuciaba la consola.
+    try { localStorage.setItem(ST_PREFIX + dateKey, String(Math.round((current + mins) * 100) / 100)); } catch (_) {}
   }
 
   function _stGetSettings() {
@@ -30120,7 +30129,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
   }
 
   function _stSaveSettings(obj) {
-    localStorage.setItem(ST_SETTINGS_KEY, JSON.stringify(obj));
+    // C105: blindado ante almacenamiento no disponible.
+    try { localStorage.setItem(ST_SETTINGS_KEY, JSON.stringify(obj)); } catch (_) {}
   }
 
   function startScreenTimeTracking() {
@@ -30443,7 +30453,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
 
   function resetScreenTimeToday() {
     if (!confirm(appT('¿Reiniciar el tiempo registrado hoy?'))) return;
-    localStorage.setItem(ST_PREFIX + _stDateKey(), '0');
+    // C105: blindado ante almacenamiento no disponible.
+    try { localStorage.setItem(ST_PREFIX + _stDateKey(), '0'); } catch (_) {}
     _stSessionStart = Date.now();
     _stLimitWarnFired = false;
     _renderScreenTimeView();
@@ -30555,7 +30566,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     document.body.classList.toggle('theme-light', safeTheme !== 'dark');
     document.documentElement.style.colorScheme = safeTheme;
     if (persist) {
-      localStorage.setItem(THEME_STORAGE_KEY, safeTheme);
+      // C105: blindado ante almacenamiento no disponible.
+      try { localStorage.setItem(THEME_STORAGE_KEY, safeTheme); } catch (_) {}
     }
     updateThemeOptionButtons(safeTheme);
   }
