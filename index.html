@@ -37524,20 +37524,37 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     }
   }
 
-  function saveCarouselPhoto() {
+  async function saveCarouselPhoto() {
     const url = _carouselPhotos[_carouselIndex];
     if (!url) return;
     // SEC ciclo 9 A1 (defensa en profundidad): re-validar el esquema en el
     // sumidero; un href 'javascript:' + click() ejecutaría script en el origen.
     const safeUrl = getSafeMediaUrlRaw(url);
     if (!safeUrl) return;
-    const a = document.createElement('a');
-    a.href = safeUrl;
-    a.download = 'drex-photo-' + Date.now() + '.jpg';
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    // C140: `a.download` es INERTE en URLs cross-origin (el navegador lo ignora
+    // y abre la imagen en vez de descargarla): "Guardar foto" mentiría con las
+    // fotos remotas heredadas. Descargar vía blob (mismo origen) garantiza la
+    // descarga real; si el fetch falla (p. ej. CORS), abrir en pestaña nueva.
+    const fileName = 'drex-photo-' + Date.now() + '.jpg';
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 30000);
+    try {
+      const res = await fetch(safeUrl, { signal: ctrl.signal });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blobUrl = URL.createObjectURL(await res.blob());
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (_) {} }, 8000);
+    } catch (_) {
+      window.open(safeUrl,'_blank','noopener');
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // Chat themes / bubbles

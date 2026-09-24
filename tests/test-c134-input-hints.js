@@ -124,15 +124,18 @@ tcase('target="_blank": 7 anclas, TODAS con rel noopener', () => {
   const tags = html.match(/<a [^>]*target="_blank"[^>]*>/g) || [];
   return tags.length === 7 && tags.every(t => /rel="[^"]*noopener/.test(t));
 });
-tcase("window.open(...,'_blank',...): 6, TODOS con feature 'noopener'", () => {
+tcase("window.open(...,'_blank',...): 7, TODOS con feature 'noopener'", () => {
   const noopenerCalls = (html.match(/,'_blank','noopener'\)/g) || []).length;
-  return noopenerCalls === 6;
+  return noopenerCalls === 7;
 });
-tcase("a.target='_blank' programático: 1 (saveCarouselPhoto, download+getSafeMediaUrlRaw → sin navegación, sin opener)", () =>
+tcase("a.target='_blank' programático: 1 (saveCarouselPhoto, descarga vía blob + fallback con opener nulo)", () =>
   count(/\.target = '_blank'/g, html) === 1 &&
-  /function saveCarouselPhoto\(\)[\s\S]{0,600}\.target = '_blank'/.test(html) &&
-  /function saveCarouselPhoto\(\)[\s\S]{0,600}a\.download = /.test(html) &&
-  /function saveCarouselPhoto\(\)[\s\S]{0,600}getSafeMediaUrlRaw\(url\)/.test(html));
+  /function saveCarouselPhoto\(\)[\s\S]{0,1500}\.target = '_blank'/.test(html) &&
+  /function saveCarouselPhoto\(\)[\s\S]{0,1500}a\.download = /.test(html) &&
+  /function saveCarouselPhoto\(\)[\s\S]{0,1500}getSafeMediaUrlRaw\(url\)/.test(html) &&
+  /function saveCarouselPhoto\(\)[\s\S]{0,1500}URL\.createObjectURL\(await res\.blob\(\)\)/.test(html) &&
+  /function saveCarouselPhoto\(\)[\s\S]{0,1500}new AbortController\(\)/.test(html) &&
+  /function saveCarouselPhoto\(\)[\s\S]{0,1500}window\.open\(safeUrl,'_blank','noopener'\)/.test(html));
 
 // ---- 5. Ceros de familias de navegación nunca auditadas ----
 tcase('ping=: 0 (sin hyperlink auditing)', () => count(/ping=/g, html) === 0);
