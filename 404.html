@@ -11260,8 +11260,9 @@ function saveNote() {
   // ============ PULSO: analíticas de creador (V1, SOLO LECTURA) ============
   // Métricas del autor actual en los últimos PULSO_DAYS días, calculadas SOLO
   // de campos que ya existen en communityNotes (timestamp, upvotes,
-  // downvotes, commentsCount, ecosCount, poll.total). Sin view-tracking
-  // (eso es fase 2) y sin escrituras: una lectura puntual de los posts
+  // downvotes, commentsCount, ecosCount, poll.total, viewCount). Fase 2 de vistas
+  // (C89): el registro vive en "VISTAS DE PULSO" más abajo; sin escrituras en
+  // este bloque salvo las del tracker. Una lectura puntual de los posts
   // propios por apertura del panel, con caché en memoria de TTL corto.
   var PULSO_DAYS = 7;
   var PULSO_CACHE_TTL_MS = 60000;
@@ -11284,6 +11285,7 @@ function saveNote() {
       'Ecos recibidos': 'Echoes received',
       'Comentarios recibidos': 'Comments received',
       'Votos en votaciones': 'Poll votes',
+      'Vistas': 'Views',
       'Actualizar': 'Refresh'
     };
     var ZH = {
@@ -11298,6 +11300,7 @@ function saveNote() {
       'Ecos recibidos': '收到的回响',
       'Comentarios recibidos': '收到的评论',
       'Votos en votaciones': '投票活动得票',
+      'Vistas': '浏览量',
       'Actualizar': '刷新'
     };
     var PT = {
@@ -11312,6 +11315,7 @@ function saveNote() {
       'Ecos recibidos': 'Ecos recebidos',
       'Comentarios recibidos': 'Comentários recebidos',
       'Votos en votaciones': 'Votos em votações',
+      'Vistas': 'Visualizações',
       'Actualizar': 'Atualizar'
     };
     try {
@@ -11333,7 +11337,7 @@ function saveNote() {
   }
 
   // Núcleo PURO y testeable: convierte posts en métricas de PULSO_DAYS días.
-  // posts: [{timestamp, upvotes, downvotes, commentsCount, ecosCount, poll}].
+  // posts: [{timestamp, upvotes, downvotes, commentsCount, ecosCount, poll, viewCount}].
   // Solo entran posts con timestamp dentro de la ventana [inicio del día más
   // antiguo, now]. Los votos netos por post usan la misma convención que la
   // tarjeta del feed: Math.max(0, upvotes - downvotes).
@@ -11347,7 +11351,7 @@ function saveNote() {
       days.push({ date: new Date(startOfToday.getTime() - i * dayMs), count: 0 });
     }
     var windowStart = days[0].date.getTime();
-    var totals = { posts: 0, votes: 0, ecos: 0, comments: 0, pollVotes: 0 };
+    var totals = { posts: 0, votes: 0, ecos: 0, comments: 0, pollVotes: 0, views: 0 };
     (posts || []).forEach(function (p) {
       if (!p) return;
       var ts = Number(p.timestamp || 0);
@@ -11356,6 +11360,7 @@ function saveNote() {
       totals.votes += Math.max(0, Number(p.upvotes || 0) - Number(p.downvotes || 0));
       totals.ecos += Number(p.ecosCount || 0);
       totals.comments += Number(p.commentsCount || 0);
+      totals.views += Number(p.viewCount || 0); // C89: vistas registradas por el tracker
       if (p.poll) totals.pollVotes += Number(p.poll.total || 0);
       var pd = new Date(ts);
       pd.setHours(0, 0, 0, 0);
@@ -11467,10 +11472,152 @@ function saveNote() {
         stat(appT('Votos recibidos'), t.votes) +
         stat(appT('Ecos recibidos'), t.ecos) +
         stat(appT('Comentarios recibidos'), t.comments) +
-      '</div>' +
-      '<div class="mt-2">' + stat(appT('Votos en votaciones'), t.pollVotes) + '</div>';
+        stat(appT('Vistas'), t.views) +
+        stat(appT('Votos en votaciones'), t.pollVotes) +
+      '</div>';
   }
   // ============ /PULSO ============
+
+  // ============ VISTAS DE PULSO (C89: fase 2 del hueco #2 del roadmap) ============
+  // Registro de vistas de posts: cierra "los posts no registran vistas".
+  // Solo usuarios con sesión (los anónimos no cuentan: evita inflación sin
+  // identidad y escrituras no autenticadas). 1 vista por usuario por post:
+  // marcador idempotente userViews/<uid>/<noteId> (mismo patrón de reglas que
+  // userVotes/<uid>) + incremento transaccional de
+  // communityNotes/<noteId>/viewCount (mismo patrón que upvotes/downvotes).
+  // La vista se cuenta tras DREX_VIEW_DWELL_MS con ≥50% del card visible
+  // (dwell): el scroll rápido no cuenta como vista. Dedupe de sesión en
+  // memoria + transacción que aborta si el marcador ya existe (sin doble
+  // conteo entre pestañas). Degrada en silencio ante fallos de red/reglas.
+  // Nota: las vistas del propio autor SÍ cuentan (convención de la industria).
+  var DREX_VIEW_DWELL_MS = 1000;
+  var DREX_VIEW_THRESHOLD = 0.5;
+  var _drexViewedSet = {}; // noteId -> 1 (dedupe de sesión)
+  var _drexViewTimers = {}; // noteId -> timeout id (dwell en curso)
+  var _drexViewObserver = null;
+
+  // Núcleo puro: id seguro para rutas de Firebase (sin . # $ / [ ] ni vacíos).
+  function drexViewCoreSafeId(id) {
+    if (typeof id !== 'string') return '';
+    var s = id.replace(/^\s+|\s+$/g, '');
+    if (!s || s.length > 200) return '';
+    if (/[.#$/\[\]]/.test(s)) return '';
+    return s;
+  }
+
+  // Núcleo puro: ¿se debe registrar? (solo lectura; el registro marca después)
+  function drexViewCoreShouldRecord(viewed, noteId, uid) {
+    if (!uid || !noteId) return false;
+    if (viewed && viewed[noteId]) return false;
+    return true;
+  }
+
+  // Núcleo puro: marca la sesión como vista.
+  function drexViewCoreMark(viewed, noteId) {
+    if (viewed && noteId) viewed[noteId] = 1;
+  }
+
+  // Núcleo puro: fn de transacción del marcador (abort si ya existe).
+  function drexViewCoreMarkerUpdate(cur, nowMs) {
+    if (cur !== null && cur !== undefined) return undefined; // abort: ya contado
+    var n = Number(nowMs);
+    return n > 0 ? n : Date.now();
+  }
+
+  // Núcleo puro: fn de transacción del contador.
+  function drexViewCoreCountUpdate(cur) {
+    return (Number(cur) || 0) + 1;
+  }
+
+  function _drexViewUid() {
+    try {
+      var u = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
+      return (u && u.uid) || '';
+    } catch (_) { return ''; }
+  }
+
+  // Resuelve el noteId de un card: dataset.noteId, id "post-<id>", o
+  // [data-note-id] interno (ej. el host del post original en comentarios).
+  function drexViewNoteIdOf(el) {
+    try {
+      if (!el) return '';
+      var id = (el.dataset && el.dataset.noteId) || '';
+      if (!id && el.id && el.id.indexOf('post-') === 0) id = el.id.slice(5);
+      if (!id && el.querySelector) {
+        var inner = el.querySelector('[data-note-id]');
+        if (inner && inner.dataset) id = inner.dataset.noteId || '';
+      }
+      return drexViewCoreSafeId(id);
+    } catch (_) { return ''; }
+  }
+
+  function _drexViewEnsureObserver() {
+    if (_drexViewObserver || typeof IntersectionObserver === 'undefined') return _drexViewObserver;
+    _drexViewObserver = new IntersectionObserver(function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        (function (en) {
+          var id = drexViewNoteIdOf(en.target);
+          if (!id) return;
+          var visible = en.isIntersecting && en.intersectionRatio >= DREX_VIEW_THRESHOLD;
+          if (visible) {
+            if (_drexViewTimers[id]) return; // dwell ya en curso
+            if (!drexViewCoreShouldRecord(_drexViewedSet, id, _drexViewUid())) return;
+            _drexViewTimers[id] = setTimeout(function () {
+              delete _drexViewTimers[id];
+              drexViewRecord(id);
+            }, DREX_VIEW_DWELL_MS);
+          } else if (_drexViewTimers[id]) {
+            clearTimeout(_drexViewTimers[id]);
+            delete _drexViewTimers[id];
+          }
+        })(entries[i]);
+      }
+    }, { threshold: [DREX_VIEW_THRESHOLD] });
+    return _drexViewObserver;
+  }
+
+  // Observa un card (detecta el noteId solo).
+  function drexViewWatchCard(el) {
+    var id = drexViewNoteIdOf(el);
+    if (id) drexViewWatchEl(el, id);
+  }
+
+  // Observa un elemento con noteId explícito (ej. el permalink).
+  function drexViewWatchEl(el, noteId) {
+    try {
+      var id = drexViewCoreSafeId(noteId);
+      if (!el || !id) return;
+      if (el.dataset && el.dataset.drexViewWatched) return;
+      var obs = _drexViewEnsureObserver();
+      if (!obs) return;
+      if (el.dataset) el.dataset.drexViewWatched = '1';
+      obs.observe(el);
+    } catch (_) {}
+  }
+
+  // Registro efectivo: marca sesión + marcador idempotente + contador.
+  function drexViewRecord(noteId) {
+    var id = drexViewCoreSafeId(noteId);
+    var uid = _drexViewUid();
+    if (!drexViewCoreShouldRecord(_drexViewedSet, id, uid)) return;
+    drexViewCoreMark(_drexViewedSet, id);
+    try {
+      var db = DrexCloud.database();
+      db.ref('userViews/' + uid + '/' + id).transaction(function (cur) {
+        return drexViewCoreMarkerUpdate(cur, Date.now());
+      }).then(function (res) {
+        if (res && res.committed) {
+          try {
+            db.ref('communityNotes/' + id + '/viewCount')
+              .transaction(drexViewCoreCountUpdate)
+              .catch(function () {});
+          } catch (_) {}
+        }
+      }).catch(function () {});
+    } catch (_) {}
+  }
+  // ============ /VISTAS DE PULSO ============
+
 
   function openNoteCreation() {
     closeCreatorHub();
@@ -22566,6 +22713,7 @@ function saveNote() {
   function _enhancePostCard(el) {
     try { hydrateIdentitySlots(el); } catch (_) {}
     try { _observeCommenters(el); } catch (_) {}
+    try { if (typeof drexViewWatchCard === 'function') drexViewWatchCard(el); } catch (_) {} // C89: vistas
   }
 
   function igRowOpts(noteId, commentPath, comment, pinnedBadgeHtml) {
@@ -43918,6 +44066,7 @@ function _renderPostPermalinkCard(note) {
       </div>`;
     try { if (user && typeof hydrateSaveButtons === 'function') hydrateSaveButtons(body); } catch (_) {}
     try { if (typeof hydrateIdentitySlots === 'function') hydrateIdentitySlots(body); } catch (_) {}
+    try { if (typeof drexViewWatchEl === 'function') drexViewWatchEl(body, note.id); } catch (_) {} // C89: vistas
   };
 
   const user = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
