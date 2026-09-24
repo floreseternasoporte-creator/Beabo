@@ -11306,7 +11306,8 @@ function saveNote() {
       'Posts más vistos': 'Most viewed posts',
       'vistas': 'views',
       'Retención': 'Retention',
-      'se quedaron 5+ segundos': 'stayed 5+ seconds'
+      'se quedaron 5+ segundos': 'stayed 5+ seconds',
+      'Alcance por onda': 'Reach by wave'
     };
     var ZH = {
       'Tu actividad de los últimos 7 días': '过去 7 天的动态',
@@ -11326,7 +11327,8 @@ function saveNote() {
       'Posts más vistos': '浏览量最高的帖子',
       'vistas': '次浏览',
       'Retención': '留存',
-      'se quedaron 5+ segundos': '停留 5 秒以上'
+      'se quedaron 5+ segundos': '停留 5 秒以上',
+      'Alcance por onda': '各浪潮触达'
     };
     var PT = {
       'Tu actividad de los últimos 7 días': 'Sua atividade dos últimos 7 dias',
@@ -11346,7 +11348,8 @@ function saveNote() {
       'Posts más vistos': 'Posts mais vistos',
       'vistas': 'visualizações',
       'Retención': 'Retenção',
-      'se quedaron 5+ segundos': 'ficaram 5+ segundos'
+      'se quedaron 5+ segundos': 'ficaram 5+ segundos',
+      'Alcance por onda': 'Alcance por onda'
     };
     try {
       if (typeof APP_ENGLISH_TEXT !== 'undefined') Object.assign(APP_ENGLISH_TEXT, EN);
@@ -11513,7 +11516,9 @@ function saveNote() {
       // C92: tarjeta de retención, fase 3 del hueco #2 (cero lecturas nuevas).
       drexPulsoRetentionCardHTML(t.retained, t.views) +
       // C90: desglose diario de vistas + top de posts (cero lecturas nuevas).
-      drexPulsoDailySectionHTML(posts || [], Date.now());
+      drexPulsoDailySectionHTML(posts || [], Date.now()) +
+      // C93: alcance por onda, fase 4 del hueco #2 (cero lecturas/escrituras nuevas).
+      drexPulsoOndaReachHTML(drexPulsoOndaReach(posts || [], Date.now(), drexExtractOndas, DREX_PULSO_ONDA_TOP_N));
   }
   // ============ /PULSO ============
 
@@ -11899,6 +11904,88 @@ function saveNote() {
     '</div>';
   }
   // ============ /RETENCIÓN DE PULSO ============
+
+  // ============ ALCANCE POR ONDA DE PULSO (C93: fase 4 del hueco #2 del roadmap) ============
+  // "¿Qué ondas mías traen más vistas?": agrega el viewCount de los posts del
+  // autor (ventana PULSO_DAYS, la misma del panel) por onda (#tag extraído del
+  // texto con drexExtractOndas, disponible por hoisting en este mismo ámbito).
+  // 100 % lectura: cero escrituras, cero listeners, cero lecturas nuevas (los
+  // posts ya se leen en drexPulsoReadAuthorPosts). Un post aporta sus vistas a
+  // cada una de sus ondas (dedup por post); las ondas con 0 vistas no se
+  // muestran.
+  var DREX_PULSO_ONDA_TOP_N = 5;
+
+  // Núcleo PURO y testeable: [{onda, views, posts}] ordenado por vistas desc
+  // (empate: más posts, luego onda asc para determinismo). extract se inyecta
+  // para testear sin DOM (en producción: drexExtractOndas).
+  function drexPulsoOndaReach(posts, nowMs, extract, n) {
+    var now = Number(nowMs) || Date.now();
+    var dayMs = 86400000;
+    var startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    var windowStart = startOfToday.getTime() - (PULSO_DAYS - 1) * dayMs;
+    var lim = Math.max(1, Math.min(10, Number(n) || 5));
+    var map = {};
+    (posts || []).forEach(function (p) {
+      if (!p) return;
+      var ts = Number(p.timestamp || 0);
+      if (!(ts >= windowStart && ts <= now)) return; // fuera de ventana o sin fecha
+      var tags = [];
+      try {
+        if (typeof extract === 'function') {
+          var raw = extract(String(p.content || p.text || ''));
+          // Contrato: el extractor devuelve un array (el real siempre lo
+          // hace). Un string tiene .length numérico pero NO es válido.
+          if (Array.isArray(raw)) tags = raw;
+        }
+      } catch (_) { tags = []; }
+      var v = Number(p.viewCount || 0);
+      if (!isFinite(v) || v < 0) v = 0;
+      var seen = {};
+      for (var i = 0; i < tags.length; i++) {
+        var t = String(tags[i] || '');
+        if (!t || seen[t]) continue;
+        seen[t] = 1;
+        if (!map[t]) map[t] = { onda: t, views: 0, posts: 0 };
+        map[t].views += v;
+        map[t].posts += 1;
+      }
+    });
+    var rows = [];
+    for (var k in map) {
+      if (Object.prototype.hasOwnProperty.call(map, k) && map[k].views > 0) rows.push(map[k]);
+    }
+    rows.sort(function (a, b) {
+      return (b.views - a.views) || (b.posts - a.posts) || (a.onda < b.onda ? -1 : a.onda > b.onda ? 1 : 0);
+    });
+    return rows.slice(0, lim).map(function (r) {
+      return { onda: r.onda, views: r.views, posts: r.posts };
+    });
+  }
+
+  // Render (solo lectura): "Alcance por onda" — barras por onda con sus vistas.
+  function drexPulsoOndaReachHTML(waves) {
+    if (!waves || !waves.length) return '';
+    var max = 0;
+    waves.forEach(function (w) { if (w.views > max) max = w.views; });
+    var rows = waves.map(function (w) {
+      var pct = max > 0 ? Math.max(4, Math.round((w.views / max) * 100)) : 4;
+      return '' +
+        '<div class="flex items-center gap-3 bg-[#f0f4f9] rounded-2xl px-3 py-2.5">' +
+          '<div class="flex-1 min-w-0">' +
+            '<div class="text-[13px] font-extrabold text-[#1c2b4a] truncate">#' + escapeHTML(w.onda) + '</div>' +
+            '<div class="mt-1 rounded-full" style="height:6px;background:rgba(47,51,184,0.12);">' +
+              '<div class="h-full rounded-full" style="width:' + pct + '%;background:#2F33B8;"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="text-[12px] font-bold text-[#2F33B8] whitespace-nowrap">' + escapeHTML(formatNumber(w.views) + ' ' + appT('vistas')) + '</div>' +
+        '</div>';
+    }).join('');
+    return '' +
+      '<p class="text-[13px] font-extrabold text-[#1c2b4a] mt-5 mb-2">' + escapeHTML(appT('Alcance por onda')) + '</p>' +
+      '<div class="flex flex-col gap-2">' + rows + '</div>';
+  }
+  // ============ /ALCANCE POR ONDA DE PULSO ============
 
   // ============ VISTAS DEL AUTOR (C91: fase 2c del hueco #2 — Pulso) ============
   // C89/C90 registran vistas; hasta ahora el autor solo las veía en el panel
