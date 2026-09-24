@@ -49456,7 +49456,78 @@ function drexSpotlightNote(data) {
     return templates[wn % templates.length] || '';
   } catch (_) { return ''; }
 }
+// C154: updater PURO para el anuncio de Spotlight. Marca
+// spotlightNotified/<semana>/<uid> solo si no existía: el perdedor de la
+// carrera hace no-op (undefined). nowMs se pasa como parámetro para que el
+// updater sea determinista ante reintentos (patrón C153). No toca el record
+// de spotlight ni ningún otro shape.
+function spotlightNotifyFlag(cur, nowMs) {
+  if (cur) return;
+  return { at: nowMs };
+}
+// C154: texto del aviso al artista destacado. Sin claves i18n nuevas: los
+// mensajes de notificación viajan en ES crudo como en C147/C153 (el render
+// los escapa con escapeHTML) para no romper el bundle de idiomas.
+function spotlightNotifyText(artist) {
+  var t = (artist && typeof artist.title === 'string') ? artist.title.trim() : '';
+  return '¡Felicidades! Fuiste destacado en el Drex Spotlight de esta semana' +
+    (t ? ' con «' + t + '»' : '') + '.';
+}
+// C154: anuncio client-side exactamente-una-vez al artista destacado en el
+// Drex Spotlight (hueco: spotlight/<semana> se calculaba y pintaba, pero el
+// artista nunca se enteraba). Oportunista, patrón C153: cualquier cliente que
+// pinte el record intenta, POR ARTISTA, una transacción best-effort sobre
+// spotlightNotified/<semana>/<uid>; el ganador dispara addNotification con
+// tipo 'music' (hereda el toggle de música del destinatario vía
+// notifTypeToPrefKey, igual que el aviso de canción nueva). Sin auto-aviso:
+// si quien pinta es el propio artista no se marca el flag, para que otro
+// cliente lo avise después. Guarda de sesión por semana+artista. Sin índices
+// RTDB nuevos: spotlightNotified es un nodo plano best-effort; si las reglas
+// (fuera del repo) deniegan la escritura, el aviso no sale pero el Spotlight
+// sigue intacto (degradación documentada).
+var _c154SpotlightTried = {};
+function maybeAnnounceSpotlight(data) {
+  try {
+    var wid = data && data.week;
+    var arts = (data && data.artists) || [];
+    if (!wid || !arts.length) return;
+    var me = null;
+    try { me = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null; } catch (_) {}
+    if (!me) return;
+    for (var i = 0; i < arts.length; i++) {
+      (function (a) {
+        try {
+          var uid = a && a.uid;
+          if (!uid || uid === me.uid) return;
+          var gk = wid + '/' + uid;
+          if (_c154SpotlightTried[gk]) return;
+          _c154SpotlightTried[gk] = true;
+          DrexCloud.database().ref('spotlightNotified/' + wid + '/' + uid).transaction(function (cur) {
+            return spotlightNotifyFlag(cur, Date.now());
+          }, function (error, committed) {
+            if (error || !committed) return;
+            try {
+              if (typeof addNotification === 'function') {
+                addNotification(uid, spotlightNotifyText(a), 'music', {
+                  actionType: 'profile', actionId: uid,
+                  actorId: uid, actorName: (a && a.name) || 'Artista'
+                });
+              }
+            } catch (_) {}
+          });
+        } catch (_) {}
+      })(arts[i]);
+    }
+  } catch (_) {}
+}
 function drexSpotlightPaint(data) {
+  // C154: anuncio exactamente-una-vez al artista destacado (el record se
+  // calculaba y pintaba pero el artista nunca se enteraba). Hook único: todos
+  // los callers pintan el record final de la semana. Si el set() del record
+  // falló (offline), el anuncio igual es válido —el top3 se calculó con datos
+  // reales y el próximo cómputo exitoso escribe lo mismo— y la transacción
+  // best-effort del flag simplemente no confirma sin red.
+  if (typeof maybeAnnounceSpotlight === 'function') { try { maybeAnnounceSpotlight(data); } catch (_) {} }
   const box = document.getElementById('music-spotlight');
   if (!box || !data || !data.artists || !data.artists.length) { if (box) box.classList.add('hidden'); return; }
   drexSpotlightData = data;
