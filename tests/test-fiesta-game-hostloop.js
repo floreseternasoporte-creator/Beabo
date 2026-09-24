@@ -52,6 +52,7 @@ function makeSandbox() {
     fiestaGameMyVote: null,
     fiestaGameHostBusy: false,
     fiestaGameMySecret: null,
+    fiestaGameSecretEpoch: null, // C69-F1: preámbulo actualizado (lección C63)
     fiestaCur: { id: 'FIESTA1' },
     fiestaMyUid: 'HOST1',
     fiestaAmHost: true,

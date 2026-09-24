@@ -7045,6 +7045,7 @@ var FIESTA_GAME_WORDS_FALLBACK = [
 
 var fiestaGame = null;            // último doc fiestas/<id>/game
 var fiestaGameMySecret = null;    // {w, liar} de mi uid
+var fiestaGameSecretEpoch = null; // C69-F1: startedAt de la partida a la que pertenece fiestaGameMySecret
 var fiestaGameMyVote = null;      // C21: mi voto de la ronda (los votos viven en secretos)
 var fiestaGameHostBusy = false;   // C21: evita doble tally por ticks solapados
 var fiestaGameHiddenLocal = false;
@@ -7199,6 +7200,7 @@ function fiestaGameStartNow() {
     db.ref('fiestaGameSecrets/' + sid + '/' + u).set({ w: isLiar ? pair[1] : pair[0], liar: isLiar });
   });
   fiestaGameMySecret = null;
+  fiestaGameSecretEpoch = null; // C69-F1: la partida nueva invalida el secreto viejo
   // C21: liars/pair/votes YA NO se publican en el doc compartido (todos los
   // miembros lo reciben; era filtración total del juego). El dueño deriva
   // mentirosos y palabras leyendo fiestaGameSecrets/<sid>/<uid> (el tally ya
@@ -7227,6 +7229,15 @@ function fiestaGameEndForAll() {
 function fiestaGameRemoteUpdate(game) {
   fiestaGame = game || null;
   _fiestaGameStaleNotified = false; // C48-F1: rearmar la detección de anfitrión caído
+  // C69-F1: el secreto cacheado pertenece a la partida de su `startedAt`. Si
+  // el dueño pulsa "Jugar de nuevo" desde la pantalla final, el doc se
+  // SOBRESCRIBE (set) sin pasar por null: sin esta invalidación el invitado
+  // conservaría la palabra de la partida anterior y describiría la equivocada.
+  var _secretEpoch = (game && game.startedAt) || 0;
+  if (_secretEpoch !== fiestaGameSecretEpoch) {
+    fiestaGameSecretEpoch = _secretEpoch;
+    fiestaGameMySecret = null;
+  }
   // C21: al salir de la fase de votación se olvida mi voto local y se libera
   // el guarda anti-doble-tally del dueño.
   if (!game || game.status !== 'vote') { fiestaGameMyVote = null; fiestaGameHostBusy = false; }
@@ -7292,6 +7303,7 @@ function fiestaGameCleanup() {
   fiestaGameStopHostLoop();
   fiestaGame = null;
   fiestaGameMySecret = null;
+  fiestaGameSecretEpoch = null; // C69-F1
   fiestaGameHiddenLocal = false;
   _fiestaGameStaleNotified = false; // C48-F1
   var v = document.getElementById('fiesta-game-view');
@@ -7509,6 +7521,7 @@ function fiestaGameCheckHostGone() {
       DrexCloud.database().ref('fiestas/' + fiestaCur.id + '/game').remove().catch(function () {});
   } catch (_) {}
   fiestaGameMySecret = null;
+  fiestaGameSecretEpoch = null; // C69-F1
   fiestaGameHideAll();
   showMiniToast(appT('El juego se detuvo: el anfitrión se desconectó.'));
 }

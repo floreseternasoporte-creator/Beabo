@@ -54,6 +54,7 @@ vm.createContext(sandbox);
 
 const driver = `
 var fiestaGameMySecret = null, fiestaGameHiddenLocal = false, fiestaGameMyVote = null;
+var fiestaGameSecretEpoch = null; // C69-F1: preámbulo actualizado (lección C63)
 globalThis.__T = {
   startAsHost: function () { fiestaGameStartNow(); },
   gameDoc: function () { return writes['fiestas/sid1/game']; },

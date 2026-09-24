@@ -74,6 +74,7 @@ var fiestaGame = null, fiestaGameMySecret = null, fiestaGameTickInt = null;
 var fiestaGameHiddenLocal = false, fiestaAmHost = false, fiestaCur = null;
 var fiestaMembers = {}, fiestaGameMyVote = null, fiestaGameHostBusy = false;
 var _fiestaGameStaleNotified = false;
+var fiestaGameSecretEpoch = null; // C69-F1: preámbulo actualizado (lección C63)
 var document = { getElementById: function (id) { return els[id] || null; } };
 var window = {};
 var DrexCloud = { database: function () { return { ref: function (p) { return {
