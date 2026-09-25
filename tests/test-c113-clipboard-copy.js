@@ -5,6 +5,13 @@
 // (permiso denegado) solo hacía console.error sin feedback. El fix sigue el
 // patrón de copyPostTextFromOptions: guarda + fallback execCommand + cierre
 // de hoja y toast en ambos paths. Sin strings i18n nuevos.
+//
+// RE-AUDITORÍA (2026-09-25, MISIÓN BARO Bloque 1): la función "Series" fue
+// eliminada por orden del usuario, incluyendo su helper de portapapeles
+// (copiar enlace de serie: createElement('input') + execCommand('copy') +
+// navigator.clipboard.writeText). Por eso la familia baja de 8→7 guardas y
+// 10→9 call sites de writeText. Delta explicado 1:1 por el diff (la única
+// línea eliminada con clipboard.writeText). Resto de la familia intacta.
 // Test híbrido: asserts estáticos (fallan en base) + conductuales en sandbox
 // vm (sin clipboard / clipboard OK / clipboard rechaza / clipboard sin
 // writeText), con tcase para FAILs limpios en base.
@@ -77,13 +84,13 @@ tcasesync('sin console.error silencioso', () => {
 tcasesync('llamador onclick intacto', () => {
   if (html.indexOf('onclick="copyCommentText(') < 0) throw new Error('onclick perdido');
 });
-tcasesync('familia: 8 guardas clipboard en todo el archivo (7 previas + 1 nueva)', () => {
+tcasesync('familia: 7 guardas clipboard en todo el archivo (BARO-1: -1 por eliminar Series)', () => {
   const n = (html.match(/navigator\.clipboard && navigator\.clipboard\.writeText/g) || []).length;
-  if (n !== 8) throw new Error('guardas: ' + n + ' (esperado 8)');
+  if (n !== 7) throw new Error('guardas: ' + n + ' (esperado 7)');
 });
-tcasesync('familia: 10 call sites de writeText (sin nuevos ni perdidos)', () => {
+tcasesync('familia: 9 call sites de writeText (sin nuevos ni perdidos)', () => {
   const n = (html.match(/navigator\.clipboard\.writeText\(/g) || []).length;
-  if (n !== 10) throw new Error('call sites: ' + n + ' (esperado 10)');
+  if (n !== 9) throw new Error('call sites: ' + n + ' (esperado 9)');
 });
 
 // ---------- conductuales en vm ----------

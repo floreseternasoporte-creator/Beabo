@@ -182,13 +182,16 @@ tcase('D3 encuesta con <2 opciones válidas -> se publica sin poll', () => {
   )`);
   return r && !('poll' in r);
 });
-tcase('D4 votación de guion de serie -> q regenerada al publicar', () => {
+tcase('D4 (BARO-1) campos legacy de Series se ignoran: sin regenerar pregunta ni adjuntar series', () => {
+  // La función "Series" fue eliminada por orden del usuario (2026-09-25).
+  // Un borrador viejo que aún traiga pollScriptVote/seriesSel debe publicarse
+  // como votación NORMAL: sin pregunta de guion regenerada y sin campo series.
   const sb = schedBox();
   const r = call(sb, `drexSchedBuildNote(
     {content:'cap 3',audience:'public',poll:{options:['A','B'],hours:168},pollScriptVote:true,seriesSel:{id:'s1',title:'Saga',onda:'#onda'}},
     {uid:'u1'}, {}
   )`);
-  return r && r.poll && r.poll.q === '¿Qué pasa en el próximo capítulo?' && !!r.series;
+  return r && r.poll && !('series' in r) && !r.poll.q;
 });
 tcase('D5 endsAt se calcula al publicar, no al programar', () => {
   // draft.poll no trae endsAt: la ventana empieza cuando se publica.

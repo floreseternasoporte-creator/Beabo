@@ -8,6 +8,9 @@
 //   input invisible, select(), execCommand('copy'), removeChild() en el mismo
 //   tick. Nunca muestran teclado ni reciben foco de usuario → sin hints que
 //   auditar. LEAD: ninguno.
+// RE-AUDITORÍA (2026-09-25, MISIÓN BARO Bloque 1): la función "Series" fue
+// eliminada por orden del usuario, incluyendo copySerieLink. Quedan ×2
+// (copyAuthorUsername/copyAuthorProfileLink), mismo patrón verificado.
 // - document.createElement('textarea') ×1 (recovery-codes.js legacyCopy):
 //   mismo patrón de fallback invisible. Sin leads.
 // - Literales '<input' en .js: EXACTAMENTE 1 en todo el árbol
@@ -70,13 +73,13 @@ function attrOf(src, id, attr) {
 }
 
 // ---- 1. createElement('input')/('textarea'): inventario y contexto ----
-tcase('createElement input: 3 ocurrencias en index.html', () =>
-  count(/createElement\(['"]input['"]\)/g, html) === 3);
-tcase('createElement input: las 3 viven en fallbacks de portapapeles (execCommand copy + removeChild)', () => {
+tcase('createElement input: 2 ocurrencias en index.html (BARO-1: -1 por eliminar Series)', () =>
+  count(/createElement\(['"]input['"]\)/g, html) === 2);
+tcase('createElement input: las 2 viven en fallbacks de portapapeles (execCommand copy + removeChild)', () => {
   const lines = html.split('\n');
   const idxs = [];
   lines.forEach((l, i) => { if (/createElement\(['"]input['"]\)/.test(l)) idxs.push(i); });
-  if (idxs.length !== 3) return false;
+  if (idxs.length !== 2) return false;
   return idxs.every(i => {
     const win = lines.slice(Math.max(0, i - 14), i + 8).join('\n');
     return /execCommand\(['"]copy['"]\)/.test(win) && /removeChild/.test(win) && /\.select\(\)/.test(win);
