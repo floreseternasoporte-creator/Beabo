@@ -100,6 +100,8 @@ function makeCtx(fiestaDoc, membersMap) {
     ' fiestaRefs = {}, fiestaPCs = {}, fiestaLocalStream = null, _fiestaHostAbsentSince = 0;',
     ctx);
   vm.runInContext(join, ctx);
+  // C196: joinFiesta ahora depende de isValidChatUid (gate de forma del id).
+  vm.runInContext(extractFn(html, 'isValidChatUid'), ctx);
   if (/function _fiestaCheckHostAbsent\(/.test(html))
     vm.runInContext(extractFn(html, '_fiestaCheckHostAbsent'), ctx);
   return { ctx, writes, toasts, calls };

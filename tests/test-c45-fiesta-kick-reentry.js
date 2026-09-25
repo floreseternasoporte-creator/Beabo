@@ -46,6 +46,9 @@ function extractFn(name) {
 }
 
 const jfSrc = extractFn('joinFiesta');
+// C196: joinFiesta ahora depende de isValidChatUid (gate de forma del id);
+// se inyecta la función REAL en el sandbox.
+const vcuSrc = extractFn('isValidChatUid');
 
 // ---- 1. Estático ------------------------------------------------------------
 check('joinFiesta lee fiestaKicked/<id>/<uid>', /fiestaKicked\//.test(jfSrc));
@@ -89,6 +92,7 @@ function runCase(kicked) {
     fiestaMembers: {}, fiestaDisconnectHandle: null, fiestaReasserting: false, fiestaLocalStream: null,
   };
   vm.createContext(sb);
+  vm.runInContext(vcuSrc, sb, { timeout: 10000 });
   const expr = jfSrc.replace(/^(async\s+)?function joinFiesta/, '$1function __jf');
   vm.runInContext('var joinFiesta = (' + expr + ');', sb, { timeout: 10000 });
   return (async () => {

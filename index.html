@@ -47668,6 +47668,12 @@ function renderFiestaCardHTML(note) {
 
 async function joinFiestaFromFeed(fiestaId) {
   if (fiestaCur) { showMiniToast(appT('Ya estás en una fiesta.')); return; }
+  // C196: gate de forma del id (un solo segmento RTDB). El fiestaId viaja en
+  // el aviso del feed y lo forja su autor: sin gate, 'foo/bar' + sub-objeto
+  // plantado en fiestas/foo/bar hacía que este cliente ejecutara escrituras
+  // anidadas (fiestaMembers/foo/bar/…, fiestaSignals/foo/bar/…, push en
+  // fiestas/foo/bar/chat) corrompiendo la forma de la fiesta 'foo'.
+  if (!isValidChatUid(fiestaId)) { showMiniToast(appT('Esta fiesta ya terminó.')); return; }
   const user = DrexCloud.auth().currentUser;
   if (!user) { showMiniToast(appT('Inicia sesión para unirte.')); return; }
   const snap = await DrexCloud.database().ref('fiestas/' + fiestaId).once('value');
@@ -47678,6 +47684,9 @@ async function joinFiestaFromFeed(fiestaId) {
 
 async function joinFiesta(id, asSpeaker) {
   // Devuelve true si se entró a la sala, false si no (createFiesta lo usa para reintentar).
+  // C196: mismo gate que joinFiestaFromFeed (defensa en profundidad: joinFiesta
+  // es quien ejecuta las escrituras con el id).
+  if (!isValidChatUid(id)) return false;
   if (fiestaCur) { showMiniToast(appT('Ya estás en una fiesta.')); return false; }
   // FIX 2026-09-21: la comprobación de sesión va ANTES de activar el bloqueo.
   // Antes, salir por falta de sesión ocurría con fiestaJoining=true y fuera del
