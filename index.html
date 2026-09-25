@@ -45535,6 +45535,13 @@ function linkParentalSupervision() {
         DrexCloud.database().ref('parentalLinkCodes/' + code).remove();
         return recordParentalAttempt(prev, now).then(() => { throw new Error('expired'); });
       }
+      // C203: teenUid es un valor de payload (el dueño del código lo escribió).
+      // Sin gate, un 'a/b/c' forjado anidaba escrituras en users/ vía el update
+      // multi-path (inyección estructural; PoC C1/C2). Se trata como código
+      // inválido: se registra el intento y no se escribe nada.
+      if (!isValidChatUid(data.teenUid)) {
+        return recordParentalAttempt(prev, now).then(() => { throw new Error('invalid'); });
+      }
       if (data.teenUid === user.uid) throw new Error('self');
 
       const updates = {};
