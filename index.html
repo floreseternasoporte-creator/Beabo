@@ -19662,6 +19662,10 @@ function saveNote() {
   async function requestOrFollowUser(targetUserId, { onFollowed, onRequested, onAlready, onError } = {}) {
     const currentUser = DrexCloud.auth().currentUser;
     if (!currentUser || !targetUserId || currentUser.uid === targetUserId) return;
+    // C194: el uid llega crudo de la BD (authorId de posts/comentarios, forjable
+    // por el remitente — PoC D1). Sin el gate, un '/' anidaba escrituras en
+    // followers/, following/, users/ y notifications/.
+    if (!isValidChatUid(targetUserId)) return;
     if (_followBusyByTarget.has(targetUserId)) return;
     _followBusyByTarget.add(targetUserId);
     try {
@@ -40776,6 +40780,10 @@ function renderAccountsList(accounts) {
       showMiniToast(translations[currentLanguage].followSelfError);
       return;
     }
+    // C194: currentViewedAuthorId lo fija openAuthorProfile(authorId) con el uid
+    // crudo de la BD (PoC D2: el unfollow anidaba removes en followers/ y
+    // following/ + transaction en users/).
+    if (!isValidChatUid(currentViewedAuthorId)) return;
     // Anti-doble-tap: seguir/dejar de seguir es un toggle; dos taps rápidos
     // dejaban el estado final invertido.
     if (window._drexFollowBusy) return;
