@@ -48334,6 +48334,14 @@ async function fiestaOnSignal(key, msg) {
   const done = () => inboxRef.remove().catch(() => {});
   if (!msg || !msg.from || msg.from === fiestaMyUid || !fiestaCur) { done(); return; }
   const from = msg.from;
+  // C199: `msg.from` lo forja el autor de la señal (cualquiera con acceso a
+  // la fiesta escribe en la bandeja fiestaSignals/<sid>/<uid>). Sin gate de
+  // forma, from='a/b' hacía que fiestaSendSignal escribiera la respuesta
+  // WebRTC en fiestaSignals/<sid>/a/b/<push> (inyección estructural, PoC
+  // B1/B2: anidado dentro de la bandeja de OTRO miembro). Se valida como un
+  // solo segmento RTDB antes de usarlo en cualquier ruta; la señal
+  // malformada se descarta como las demás inválidas.
+  if (!isValidChatUid(from)) { done(); return; }
   try {
     if (msg.type === 'offer') {
       fiestaDbg('Oferta recibida de ' + fiestaPeerName(from));
