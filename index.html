@@ -6015,6 +6015,38 @@ if (scrollArea) {
   #chat-photo-carousel:not(.hidden) #carousel-img-wrap { animation: drexPhotoZoom .24s ease-out; }
   @keyframes drexPhotoZoom { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
 
+  /* Carrusel de fotos del chat (BLOQUE 4): pista deslizable propia con
+     scroll-snap nativo. La foto sigue al dedo con momentum del navegador;
+     el contador "N / M" y los puntos se actualizan en el evento scroll. */
+  #carousel-img-wrap {
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+  }
+  #carousel-img-wrap::-webkit-scrollbar { display: none; }
+  #carousel-img-wrap .chat-carousel-slide {
+    flex: 0 0 100%;
+    width: 100%;
+    height: 100%;
+    flex-shrink: 0;
+    scroll-snap-align: center;
+    scroll-snap-stop: always;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #carousel-img-wrap .chat-carousel-slide img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  /* El carrusel de herramientas del composer declara scroll-snap-type pero
+     sus botones no tenían scroll-snap-align: el snap era inerte. */
+  #note-tools-carousel > button { scroll-snap-align: center; }
+
   /* Misma entrada suave para el modal de editar mensaje. */
   #chat-edit-modal:not(.hidden) { animation: drexFadeIn .18s ease-out; }
   #chat-edit-modal:not(.hidden) > div { animation: drexSheetUp .24s ease-out; }
@@ -6224,7 +6256,7 @@ if (scrollArea) {
 </div>
 
 <!-- PHOTO CAROUSEL FULLSCREEN -->
-<div id="chat-photo-carousel" class="fixed inset-0 bg-black hidden z-[90] flex flex-col" style="touch-action:none">
+<div id="chat-photo-carousel" class="fixed inset-0 bg-black hidden z-[90] flex flex-col" style="touch-action:pan-x pan-y">
   <div class="flex items-center justify-between px-4 pt-12 pb-4 shrink-0">
     <button onclick="closePhotoCarousel()" class="tap44 w-10 h-10 flex items-center justify-center text-white" aria-label="Cerrar">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round"/></svg>
@@ -6234,8 +6266,9 @@ if (scrollArea) {
       <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke-linecap="round" stroke-linejoin="round"/><polyline points="7 10 12 15 17 10" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke-linecap="round"/></svg>
     </button>
   </div>
-  <div id="carousel-img-wrap" class="flex-1 flex items-center justify-center overflow-hidden">
-    <img id="carousel-main-img" src="" class="max-w-full max-h-full object-contain select-none" alt="Foto" draggable="false">
+  <!-- Pista deslizable propia (BLOQUE 4): scroller horizontal nativo con
+       scroll-snap; las diapositivas las genera openPhotoCarousel(). -->
+  <div id="carousel-img-wrap" class="flex-1 flex overflow-x-auto overflow-y-hidden">
   </div>
   <div id="carousel-dots" class="flex justify-center gap-1.5 py-4 shrink-0"></div>
 </div>
@@ -37639,28 +37672,71 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     });
   }
 
-  // Photo carousel
+  // Photo carousel (chat) — BLOQUE 4: carrusel deslizable propio.
+  // La pista (#carousel-img-wrap) es un scroller horizontal nativo con
+  // scroll-snap-type:x mandatory: la foto SIGUE al dedo con momentum del
+  // navegador (antes: salto discreto al soltar, sin arrastre). El contador
+  // "N / M" y los puntos se actualizan en el evento scroll.
   let _carouselPhotos = [];
   let _chatMediaGridPhotos = [];
   let _carouselIndex = 0;
-  let _carouselTouchStartX = 0;
+  let _carouselScrollBound = false;
+  let _carouselScrollRaf = 0;
+
+  function _carouselTrack() { return document.getElementById('carousel-img-wrap'); }
+
+  function _buildCarouselSlides() {
+    const track = _carouselTrack();
+    if (!track) return;
+    track.textContent = '';
+    _carouselPhotos.forEach((url, i) => {
+      const slide = document.createElement('div');
+      slide.className = 'chat-carousel-slide';
+      const img = document.createElement('img');
+      img.src = url || '';
+      img.alt = 'Foto ' + (i + 1);
+      img.draggable = false;
+      slide.appendChild(img);
+      track.appendChild(slide);
+    });
+  }
+
+  function _updateCarouselChrome() {
+    const counter = document.getElementById('carousel-counter');
+    const dots = document.getElementById('carousel-dots');
+    if (counter) counter.textContent = (_carouselIndex + 1) + ' / ' + _carouselPhotos.length;
+    if (dots) {
+      dots.innerHTML = _carouselPhotos.map((_, i) =>
+        '<div class="w-1.5 h-1.5 rounded-full transition-all ' + (i === _carouselIndex ? 'bg-white w-3' : 'bg-white/40') + '"></div>'
+      ).join('');
+    }
+  }
+
+  function _onCarouselScroll() {
+    if (_carouselScrollRaf) return;
+    _carouselScrollRaf = requestAnimationFrame(() => {
+      _carouselScrollRaf = 0;
+      const track = _carouselTrack();
+      if (!track || !track.clientWidth || !_carouselPhotos.length) return;
+      const idx = Math.min(_carouselPhotos.length - 1, Math.max(0, Math.round(track.scrollLeft / track.clientWidth)));
+      if (idx !== _carouselIndex) { _carouselIndex = idx; _updateCarouselChrome(); }
+    });
+  }
 
   function openPhotoCarousel(photos, startIndex) {
     if (!photos || !photos.length) return;
     _carouselPhotos = photos;
-    _carouselIndex = startIndex || 0;
-    _renderCarousel();
+    _carouselIndex = Math.min(Math.max(startIndex || 0, 0), photos.length - 1);
+    _buildCarouselSlides();
     const el = document.getElementById('chat-photo-carousel');
     if (el) el.classList.remove('hidden');
     lockBodyScroll();
-    const wrap = document.getElementById('carousel-img-wrap');
-    if (wrap) {
-      wrap.ontouchstart = e => { _carouselTouchStartX = e.touches[0].clientX; };
-      wrap.ontouchend = e => {
-        const dx = e.changedTouches[0].clientX - _carouselTouchStartX;
-        if (Math.abs(dx) > 40) { dx < 0 ? nextCarouselPhoto() : prevCarouselPhoto(); }
-      };
+    const track = _carouselTrack();
+    if (track) {
+      if (!_carouselScrollBound) { track.addEventListener('scroll', _onCarouselScroll, { passive: true }); _carouselScrollBound = true; }
+      track.scrollLeft = _carouselIndex * track.clientWidth;
     }
+    _updateCarouselChrome();
   }
 
   function closePhotoCarousel() {
@@ -37668,26 +37744,15 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     unlockBodyScroll();
   }
 
-  function prevCarouselPhoto() {
-    if (_carouselIndex > 0) { _carouselIndex--; _renderCarousel(); }
+  function _carouselGoTo(i) {
+    const track = _carouselTrack();
+    if (!track || !_carouselPhotos.length) return;
+    track.scrollTo({ left: Math.min(_carouselPhotos.length - 1, Math.max(0, i)) * track.clientWidth, behavior: 'smooth' });
   }
 
-  function nextCarouselPhoto() {
-    if (_carouselIndex < _carouselPhotos.length - 1) { _carouselIndex++; _renderCarousel(); }
-  }
+  function prevCarouselPhoto() { _carouselGoTo(_carouselIndex - 1); }
 
-  function _renderCarousel() {
-    const img = document.getElementById('carousel-main-img');
-    const counter = document.getElementById('carousel-counter');
-    const dots = document.getElementById('carousel-dots');
-    if (img) img.src = _carouselPhotos[_carouselIndex] || '';
-    if (counter) counter.textContent = `${_carouselIndex + 1} / ${_carouselPhotos.length}`;
-    if (dots) {
-      dots.innerHTML = _carouselPhotos.map((_, i) =>
-        `<div class="w-1.5 h-1.5 rounded-full transition-all ${i === _carouselIndex ? 'bg-white w-3' : 'bg-white/40'}"></div>`
-      ).join('');
-    }
-  }
+  function nextCarouselPhoto() { _carouselGoTo(_carouselIndex + 1); }
 
   async function saveCarouselPhoto() {
     const url = _carouselPhotos[_carouselIndex];
