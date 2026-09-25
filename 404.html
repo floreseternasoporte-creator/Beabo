@@ -20593,6 +20593,10 @@ function saveNote() {
   // direcciones (y las solicitudes pendientes) y se ajustan los contadores.
   async function breakFollowRelationsOnBlock(myUid, targetId) {
     if (!myUid || !targetId || myUid === targetId) return;
+    // C193: el target llegaba crudo a followers/<forjado>/…, following/… y a
+    // transactions users/<forjado>/…Count (PoC D2: inyección estructural en
+    // namespaces compartidos). Gate a nivel del sink: cubre los 5 call sites.
+    if (!isValidChatUid(myUid) || !isValidChatUid(targetId)) return;
     const db = DrexCloud.database();
     try {
       const [iFollowThem, theyFollowMe] = await Promise.all([
@@ -20630,6 +20634,11 @@ function saveNote() {
     const user = DrexCloud.auth().currentUser;
     const targetId = currentPostOptionsAuthorId;
     if (!user || !targetId) return;
+    // C193: targetId forjado (note.authorId manipulado por el autor del post)
+    // llegaba crudo a blocks/<me>/<forjado> (PoC D1: set anidado que corrompe
+    // la forma de la lista + tombstones y transactions en namespaces
+    // compartidos vía breakFollowRelationsOnBlock). Un solo segmento RTDB.
+    if (!isValidChatUid(targetId)) return;
     const uname = currentPostOptionsAuthorData?.username || 'este usuario';
     askBlockConfirmation(uname, () => {
       const blockPayload = { blockedAt: Date.now(), username: uname };
