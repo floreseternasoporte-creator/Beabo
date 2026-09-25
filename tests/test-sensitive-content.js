@@ -3,6 +3,14 @@
 // Uso: node test-sensitive-content.js [--target <html>]
 //   --target: HTML a probar (default: ../index.html, el parcheado).
 // Diseñados para FALLAR contra la base sin parche (ver PATCH_NOTES.md).
+//
+// RE-AUDITORÍA BLOQUE 2 (2026-09-25): la constante DREX_EYE_OFF_SVG fue
+// renombrada a DREX_SHIELD_SVG en el HTML (el icono de "contenido fuerte"
+// pasó de ojo tachado a escudo de aviso, por orden del usuario: el icono NO
+// debía parecer un ojo). Cambio legítimo y 1:1: el stub del sandbox sigue la
+// nueva constante; ninguna aserción depende del contenido del SVG, solo de
+// que el velo lo interpole. Ninguna funcionalidad cambia (flag, tapado,
+// "Mostrar", spoiler).
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -65,7 +73,9 @@ function makeSandbox(extra) {
     appT: (s) => s, // idioma base ES
     escapeHtml,
     escapeInlineSingleQuote,
-    DREX_EYE_OFF_SVG: '<svg class="eye-off"></svg>',
+    // RE-AUDITORÍA BLOQUE 2 (2026-09-25): DREX_SHIELD_SVG reemplaza a la
+    // antigua DREX_EYE_OFF_SVG (ojo tachado → escudo de aviso). Cambio 1:1.
+    DREX_SHIELD_SVG: '<svg class="drex-shield"></svg>',
     CSS: { escape: (s) => String(s).replace(/"/g, '\\"') },
     document: { querySelectorAll: () => [] },
     getHiddenPosts: () => [],
