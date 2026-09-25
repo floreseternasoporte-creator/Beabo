@@ -48,6 +48,8 @@ def main():
     for b in scripts:
         defined.update(re.findall(r'(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(', b))
         defined.update(re.findall(r'(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=', b))
+        # Baro expone globales vía baro6dExpose('nombre', fn) -> window[nombre] = fn
+        defined.update(re.findall(r"baro6dExpose\(\s*['\"]([A-Za-z_$][\w$]*)['\"]", b))
         defined.update(re.findall(r'window\.([A-Za-z_$][\w$]*)\s*=', b))
         defined.update(re.findall(r'class\s+([A-Za-z_$][\w$]*)', b))
     defined |= EXTERNAL_GLOBALS

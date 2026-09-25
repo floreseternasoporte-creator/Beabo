@@ -15,7 +15,8 @@
 // RE-AUDITORÍA (2026-09-25, MISIÓN BARO Bloque 1): la función "Series" fue
 // eliminada por orden del usuario; el módulo eliminado contenía 12 usos de
 // .innerHTML (render del picker, badges y vista de serie). Nuevo inventario:
-// .innerHTML 477, .outerHTML 3, insertAdjacentHTML 8 (sin cambios).
+// .innerHTML 481, .outerHTML 3, insertAdjacentHTML 8.
+// BARO-6: +4 por el agente Baro (burbuja, typing, pasos, preview de confirm).
 //  - drex-rec-engine.js / sw.js: 0 sinks cada uno (0 hits en los 4 patrones).
 //  - scrollIntoView({behavior:'smooth'}): 5 hits (9252, 23762, 23773, 33930,
 //    37151); scroll-behavior:smooth real: 1 (#empresa-view); la media query
@@ -57,14 +58,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 477 ocurrencias en index.html (BARO-1: -12 por eliminar Series)', () => count(/\.innerHTML/g, html) === 477);
+tcase('innerHTML: 481 ocurrencias en index.html (BARO-1: -12 Series; BARO-6: +4 Baro)', () => count(/\.innerHTML/g, html) === 481);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 477 &&
+  count(/\.innerHTML/g, copy) === 481 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);

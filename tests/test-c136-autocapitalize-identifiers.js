@@ -26,7 +26,7 @@
 //    inputmode="numeric" (C134/C115), asi que el teclado movil ya es
 //    consistente. Agregar pattern al resto seria cambio cosmetico sin
 //    efecto visible -> auditado, SIN CAMBIO (documentado aqui).
-// 6. <textarea> x14 (13 estaticos + 1 en string JS px-correction-text):
+// 6. <textarea> x15 (13 estaticos + 1 en string JS px-correction-text + 1 Baro edit):
 //    TODOS son texto libre (bio, comentarios, mensajes, letra, descripciones,
 //    reportes, apelacion). Ninguno pide entrada numerica/identificador.
 //    chat-edit-input ya tiene enterkeyhint=done + onkeydown honesto.
@@ -116,11 +116,11 @@ tcase('teclado movil consistente: todos los OTP conservan inputmode=numeric', ()
 });
 
 // ---- 4. textarea: inventario x14, ninguno con inputmode (sin leads) ----
-tcase('textarea: 14 ocurrencias y ninguna declara inputmode', () => {
+tcase('textarea: 15 ocurrencias y ninguna declara inputmode', () => {
   const n = count(/<textarea/g, html);
-  if (n !== 14) return false;
+  if (n !== 15) return false;
   const tags = html.match(/<textarea[\s\S]*?>/g) || [];
-  return tags.length === 14 && tags.every(t => t.indexOf('inputmode=') < 0);
+  return tags.length === 15 && tags.every(t => t.indexOf('inputmode=') < 0);
 });
 tcase('textarea: chat-edit-input conserva enterkeyhint=done + onkeydown honesto', () => {
   const t = tagOf(html, 'chat-edit-input');

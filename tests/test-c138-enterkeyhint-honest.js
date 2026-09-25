@@ -150,7 +150,8 @@ const EXPECTED_IDS = [
   'fiesta-chat-input', 'fiesta-games-search', 'gif-search-input',
   'sticker-search', 'search-input', 'settings-search-input',
   'twofactor-setup-code', 'twofactor-disable-code',
-  'settings-country-search', 'music-explore-input'
+  'settings-country-search', 'music-explore-input',
+  'baro-input'
 ];
 function inventory() {
   const out = [];
@@ -166,25 +167,25 @@ function inventory() {
   }
   return out;
 }
-tcase('inventario cerrado: 29 enterkeyhint en index.html, ids exactos', () => {
+tcase('inventario cerrado: 30 enterkeyhint en index.html, ids exactos', () => {
   if (isBase) return true; // en base el inventario es 27 (se evalua aparte)
   const inv = inventory();
-  if (inv.length !== 29) return false;
+  if (inv.length !== 30) return false;
   const ids = inv.map(x => x.id).sort();
   return JSON.stringify(ids) === JSON.stringify(EXPECTED_IDS.slice().sort());
 });
-tcase('honestidad hit por hit: los 29 hints tienen accion real de Enter', () => {
+tcase('honestidad hit por hit: los 30 hints tienen accion real de Enter', () => {
   if (isBase) return true; // en base hay 4 mentirosos (se demuestra en seccion 4)
   const bad = inventory().filter(x => !isHonest(x.id, x.hint, x.tag, x.pos));
   if (bad.length) console.error('   mentirosos: ' + bad.map(x => x.id).join(', '));
   return bad.length === 0;
 });
-tcase('distribucion de hints: next x5, go x4, search x17, send x2, done x1', () => {
+tcase('distribucion de hints: next x5, go x4, search x17, send x3, done x1', () => {
   if (isBase) return true;
   return count(/enterkeyhint="next"/g, html) === 5 &&
     count(/enterkeyhint="go"/g, html) === 4 &&
     count(/enterkeyhint="search"/g, html) === 17 &&
-    count(/enterkeyhint="send"/g, html) === 2 &&
+    count(/enterkeyhint="send"/g, html) === 3 &&
     count(/enterkeyhint="done"/g, html) === 1;
 });
 tcase('recovery-codes.js: recovery-regen-code go + onkeydown Enter->confirmRegenerate', () => {

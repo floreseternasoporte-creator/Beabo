@@ -29,7 +29,7 @@
 //      twofactor-challenge-input, twofactor-setup-code, twofactor-disable-code,
 //      cpw-code + recovery-regen-code en recovery-codes.js),
 //    url x3 (settings-showcase-u-0/1/2), address-level2 x1 (settings-city),
-//    email x2 (recoveryEmailInput + regEmail), off x7 (buscadores + chats:
+//    email x2 (recoveryEmailInput + regEmail), off x8 (buscadores + chats + baro:
 //      fiesta-chat-input, fiesta-games-search, gif-search-input,
 //      onb-country-search, settings-country-search, settings-search-input,
 //      sticker-search).
@@ -128,11 +128,12 @@ tcase('address-level2 x1: settings-city', () =>
 tcase('email x2: recoveryEmailInput (previo) + regEmail (lead C137)', () =>
   count(/autocomplete="email"/g, html) === 2 &&
   hasAttr(inputTag('recoveryEmailInput'), 'autocomplete', 'email'));
-tcase('off x7 en buscadores/chats (inventario cerrado)', () => {
+tcase('off x8 en buscadores/chats (inventario cerrado)', () => {
   const ids = ['fiesta-chat-input', 'fiesta-games-search', 'gif-search-input',
-    'onb-country-search', 'settings-country-search', 'settings-search-input', 'sticker-search'];
+    'onb-country-search', 'settings-country-search', 'settings-search-input', 'sticker-search',
+    'baro-input'];
   return ids.every(id => hasAttr(inputTag(id), 'autocomplete', 'off')) &&
-    count(/autocomplete="off"/g, html) === 7;
+    count(/autocomplete="off"/g, html) === 8;
 });
 
 // ---- 3. name attributes: solo los 4 campos de identidad ----
@@ -160,8 +161,8 @@ tcase('pickers de cumpleanos readonly x6: sin autocomplete', () => {
 });
 
 // ---- 5. enterkeyhint en <textarea>: inventario x14, solo chat-edit-input honesto ----
-tcase('textarea x14 (regex multiline, igual que C136)', () =>
-  count(/<textarea[\s\S]*?>/g, html) === 14);
+tcase('textarea x15 (regex multiline, igual que C136)', () =>
+  count(/<textarea[\s\S]*?>/g, html) === 15);
 tcase('textarea: solo chat-edit-input tiene enterkeyhint (done, honesto con onkeydown)', () => {
   const tags = html.match(/<textarea[\s\S]*?>/g) || [];
   const withHint = tags.filter(t => t.indexOf('enterkeyhint=') >= 0);

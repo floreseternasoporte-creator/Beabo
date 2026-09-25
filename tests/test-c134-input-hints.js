@@ -26,7 +26,7 @@
 //   <object>/<embed>=0, window.opener=0, document.domain=0, <base>=0,
 //   meta http-equiv=0, fetch credentials:=0 (default same-origin en todo el
 //   árbol), mode:'no-cors' ×1 (sonda anti-adblock a favicon de la red de
-//   anuncios, intencional), <form> ×1 (authForm: sin action + preventDefault
+//   anuncios, intencional), <form> ×2 (authForm + baro-form: sin action + preventDefault
 //   en el submit → sin envío externo).
 'use strict';
 const fs = require('fs');
@@ -100,12 +100,12 @@ tcase('LEAD 3: regUsername autocomplete=username (era off)', () =>
   attrOf('regUsername', 'autocomplete') === 'username');
 tcase('regPassword: autocomplete=new-password (pareja de regUsername)', () =>
   attrOf('regPassword', 'autocomplete') === 'new-password');
-tcase('autocomplete="off" residual: 7, todos en search/chat (nada de identidad)', () => {
+tcase('autocomplete="off" residual: 8, todos en search/chat (nada de identidad)', () => {
   const tags = html.match(/<[^>]*autocomplete="off"[^>]*>/g) || [];
-  if (tags.length !== 7) return false;
+  if (tags.length !== 8) return false;
   return tags.every(t =>
-    /enterkeyhint="search"|fiesta-chat-input/.test(t) &&
-    !/password|username|email|twofactor|code/i.test(t.replace('fiesta-chat-input', '')));
+    /enterkeyhint="search"|fiesta-chat-input|baro-input/.test(t) &&
+    !/password|username|email|twofactor|code/i.test(t.replace('fiesta-chat-input', '').replace('baro-input', '')));
 });
 tcase('new-password: 7 en flujos de creación/cambio (C112 intacto)', () =>
   count(/autocomplete="new-password"/g, html) === 7);
@@ -149,9 +149,10 @@ tcase("fetch credentials:: 0 (default same-origin en todo el árbol)", () =>
 tcase("mode:'no-cors': 1 (sonda anti-adblock intencional a favicon)", () =>
   count(/mode: 'no-cors'/g, html) === 1 &&
   /highrevenueformat\.com\/favicon\.ico/.test(html));
-tcase('<form: 1 (authForm sin action + preventDefault en submit)', () =>
-  count(/<form/g, html) === 1 &&
+tcase('<form: 2 (authForm + baro-form, ambas sin action + preventDefault)', () =>
+  count(/<form/g, html) === 2 &&
   /<form id="authForm"[^>]*>/.test(html) && !/id="authForm"[^>]*action=/.test(html) &&
-  /authForm\.addEventListener\('submit', e => \{\s*e\.preventDefault\(\)/.test(html));
+  /authForm\.addEventListener\('submit', e => \{\s*e\.preventDefault\(\)/.test(html) &&
+  /<form id="baro-form"[^>]*onsubmit="return baroSubmit\(event\)"/.test(html));
 
 process.exit(failures ? 1 : 0);

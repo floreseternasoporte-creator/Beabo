@@ -38,6 +38,7 @@ EXEMPT = {
     'ondas-view': 'vista',
     'profile-view': 'vista',
     'pulso-view': 'vista',
+    'baro-view': 'vista',
     'music-view': 'vista (sección principal; gestiona la barra ella misma)',
     'music-playlist-view': 'vista',
     'music-artist-view': 'vista',
