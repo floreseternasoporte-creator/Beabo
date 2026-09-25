@@ -20020,7 +20020,13 @@ function saveNote() {
     } catch (_) {}
     if (!n) return false;
     // Si es el anuncio de una fiesta activa del autor, terminarla también.
-    if (n.fiestaId) {
+    // C198: gate de forma del id (un solo segmento RTDB). El fiestaId viaja
+    // en el aviso y lo forja su autor: sin gate, 'foo/chat' + sub-objeto
+    // plantado en fiestas/foo/chat hacía que este cliente ejecutara
+    // escrituras anidadas (fiestas/foo/chat/status, fiestaReactions/…,
+    // fiestaKicked/…, fiestaSignals/…) corrompiendo la forma de la fiesta
+    // 'foo' de otro usuario al borrar el aviso (PoC B1, Chromium real).
+    if (n.fiestaId && isValidChatUid(n.fiestaId)) {
       try {
         const fSnap = await DrexCloud.database().ref('fiestas/' + n.fiestaId).once('value');
         const f = fSnap.val();
