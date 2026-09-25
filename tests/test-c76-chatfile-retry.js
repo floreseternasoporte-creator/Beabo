@@ -111,7 +111,7 @@ async function main() {
     _renderChatPhotoThumbnails: () => {},
   };
   vm.createContext(sandbox);
-  for (const fn of ['_releaseChatFileRef', '_releaseChatFileRefsOfMsg',
+  for (const fn of ['isValidChatUid', '_releaseChatFileRef', '_releaseChatFileRefsOfMsg', // C200: dependencia transitiva del parche
                     '_restoreChatAttachmentsAfterFailedSend', '_pumpChatFileUploadQueue',
                     '_uploadChatFileEntry', '_writeChatFileChunksLimited']) {
     vm.runInContext(extractFn(html, fn) + `\nglobalThis.${fn} = ${fn};`, sandbox);

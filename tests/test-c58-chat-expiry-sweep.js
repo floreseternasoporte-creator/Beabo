@@ -106,7 +106,7 @@ function makeDb(seed) {
 function makeCtx(db) {
   const ctx = { DrexCloud: db.DrexCloud, _chatFileMetaCache: {}, _chatFileDataUrlCache: {}, console };
   vm.createContext(ctx);
-  for (const fn of ['_releaseChatFileRef', '_releaseChatFileRefsOfMsg', '_expireChatMessage']) {
+  for (const fn of ['isValidChatUid', '_releaseChatFileRef', '_releaseChatFileRefsOfMsg', '_expireChatMessage']) { // C200: isValidChatUid = dependencia transitiva del parche
     const src = extractFn(html, fn);
     assert(src, 'funcion no encontrada en el HTML: ' + fn);
     vm.runInContext(src, ctx);

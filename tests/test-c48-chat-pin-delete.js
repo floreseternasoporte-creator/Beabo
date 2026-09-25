@@ -85,7 +85,7 @@ var DrexCloud = {
 };
 var _chatFileMetaCache = {};
 var _chatFileDataUrlCache = {};
-` + extractFn(html, '_releaseChatFileRef') + '\n' + extractFn(html, '_releaseChatFileRefsOfMsg') + '\n' + extractFn(html, '_removeChatMsgNodeInstant') + '\n' + extractFn(html, 'deleteChatMessageForAll');
+` + extractFn(html, 'isValidChatUid') + '\n' + extractFn(html, '_releaseChatFileRef') + '\n' + extractFn(html, '_releaseChatFileRefsOfMsg') + '\n' + extractFn(html, '_removeChatMsgNodeInstant') + '\n' + extractFn(html, 'deleteChatMessageForAll'); // C200: isValidChatUid = dependencia transitiva del parche
     const ctx = { console, JSON, Object, Array, Promise, Date, Math, String, Number, setTimeout, fakeEl, makeRef };
     vm.createContext(ctx);
     vm.runInContext(code, ctx);

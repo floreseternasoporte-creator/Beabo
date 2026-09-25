@@ -151,7 +151,7 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 
 const PRELUDE = 'let _fwdMsgData = null;\nlet _fwdMsgId = null;\nlet _fwdSrcConvId = null;\n';
-const CODE = PRELUDE + ['doForwardMessage', 'closeChatForwardDialog', '_releaseChatFileRefsOfMsg', '_releaseChatFileRef']
+const CODE = PRELUDE + ['isValidChatUid', 'doForwardMessage', 'closeChatForwardDialog', '_releaseChatFileRefsOfMsg', '_releaseChatFileRef'] // C200: isValidChatUid = dependencia transitiva del parche
   .map(n => extractFn(HTML, n)).join('\n');
 vm.runInContext(CODE, sandbox, { filename: 'fwd-under-test.js' });
 

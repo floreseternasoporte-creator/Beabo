@@ -159,7 +159,10 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
-vm.runInContext(extractFn(html, '_releaseChatFileRef') + '\n' + extractFn(html, '_releaseChatFileRefsOfMsg'), sandbox);
+// C200: el parche agregó la dependencia transitiva isValidChatUid al sink;
+// el fixture debe incluirla (lección C188/C199) o el caso benigno falla por
+// ReferenceError.
+vm.runInContext(extractFn(html, 'isValidChatUid') + '\n' + extractFn(html, '_releaseChatFileRef') + '\n' + extractFn(html, '_releaseChatFileRefsOfMsg'), sandbox);
 
 async function flush(ticks = 30) {
   for (let i = 0; i < ticks; i++) await new Promise(r => setImmediate(r));

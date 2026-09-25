@@ -145,6 +145,7 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(
+  extractFn(html, 'isValidChatUid') + '\n' + // C200: dependencia transitiva del parche
   extractFn(html, '_releaseChatFileRef') + '\n' +
   extractFn(html, '_releaseChatFileRefsOfMsg') + '\n' +
   extractFn(html, 'doForwardMessage'),

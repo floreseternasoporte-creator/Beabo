@@ -36983,6 +36983,15 @@ const _startChatListeners = () => {
   // corre en los dos clientes a la vez y no debe descontar dos veces).
   function _releaseChatFileRef(fileId, msgId) {
     if (!fileId) return;
+    // C200: `fileId` viaja en el payload del mensaje (lo forja el remitente;
+    // cualquiera que pueda escribir en la conversación). Sin gate de forma,
+    // fileId='a/b' anidaba escrituras (chatFiles/a/b/rel_<msgId>,
+    // chatFiles/a/b/refs) y el remove('chatFiles/a/b') borraba el subárbol
+    // de OTRO archivo al expirar el mensaje (PoC B1/B4: el cliente sin
+    // modificar de la víctima borraba trozos ajenos). Se valida como un solo
+    // segmento RTDB antes de usarlo en cualquier ruta; el id malformado se
+    // ignora como los demás inválidos.
+    if (!isValidChatUid(fileId)) return;
     try {
       delete _chatFileMetaCache[fileId];
       delete _chatFileDataUrlCache[fileId];
