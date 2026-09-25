@@ -120,11 +120,15 @@ const NOW = Date.now();
 const sod = new Date(NOW); sod.setHours(0, 0, 0, 0);
 const T0 = sod.getTime(); // inicio de hoy (hora local)
 const ts = (daysAgo, msIntoDay) => T0 - daysAgo * dayMs + (msIntoDay == null ? 3600000 : msIntoDay);
+// C192: los posts "de hoy" usaban T0+1h, que es FUTURO si el suite corre antes
+// de la 01:00 local (drexPulsoAggregate excluye ts > now) — flake que tumbó el
+// CI del push aa07b0b a las 00:09 UTC. tsToday: hoy, siempre en pasado.
+const tsToday = Math.max(T0, NOW - 60000);
 
 // (A) Agregación básica sobre 7 días
 const rA = agg([
-  { timestamp: ts(0), upvotes: 10, downvotes: 2, ecosCount: 3, commentsCount: 5, poll: { total: 7 } },
-  { timestamp: ts(0), upvotes: 5 },
+  { timestamp: tsToday, upvotes: 10, downvotes: 2, ecosCount: 3, commentsCount: 5, poll: { total: 7 } },
+  { timestamp: tsToday, upvotes: 5 },
   { timestamp: ts(2), upvotes: 4, downvotes: 1, ecosCount: 2, commentsCount: 1 },
   { timestamp: ts(6), upvotes: 1 },
 ], NOW);
