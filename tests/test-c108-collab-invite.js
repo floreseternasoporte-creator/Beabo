@@ -120,6 +120,13 @@ function makeCtx(scenario) {
   };
   sandbox.globalThis = sandbox;
   const ctx = vm.createContext(sandbox);
+  // C192: respondCollabInvite ahora llama al isValidChatUid real (gate contra
+  // inviterUid forjado). El sandbox debe exponer el validador verbatim; el
+  // stub de getDirectConversationId se mantiene porque el gate ya rechazó
+  // los uids inválidos antes de llegar al DM.
+  try {
+    vm.runInContext(extractFn(html, 'function isValidChatUid(uid)') + '\nthis.__isValid = isValidChatUid;', ctx);
+  } catch (e) { /* base pre-C192: sin validador, los escenarios benignos no lo necesitan */ }
   const fnSrc = extractFn(html, 'async function respondCollabInvite(noteId, inviterUid, accept)');
   // new vm.Script rechaza 'return' a nivel de script: la declaración de
   // función no tiene return suelto, es segura para evaluar directo.
