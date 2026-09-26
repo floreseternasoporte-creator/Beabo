@@ -56122,6 +56122,11 @@ async function baroResolveForTool(toolName, args, ctx, opts) {
       // 1. Detectar intención (paso v2 visible: spinner índigo -> check)
       var sDetect = ctx.step(baroV2FlowStepKey('detect'));
       var det = baroDetectIntent(text);
+      /* Blindaje: el wrapper 8M puede devolver null si la detecci\u00f3n lanza dos
+         veces; antes eso era TypeError -> error gen\u00e9rico en cada mensaje. */
+      if (!det || !det.intent) {
+        det = { intent: 'ayuda', args: { showFullHelp: true, lang: 'es' }, confidence: 0 };
+      }
       var detNameKey = 'baro.intent.name.' + det.intent;
       var detName = '';
       try {
@@ -56185,7 +56190,27 @@ async function baroResolveForTool(toolName, args, ctx, opts) {
          (p.ej. la tarjeta de confirmación de publicar/eliminar de 6d, que
          devuelve {html:''}), no se añade ninguna burbuja vacía. */
     } catch (err) {
-      try { baroAddBaroMessage(ctx.t('baro.intent.error_html')); } catch (e3) { /* noop */ }
+      /* Diagnóstico: este catch tragaba la causa real. Se captura err.message/stack
+         en un <details> colapsado para cazar el fallo en el dispositivo. */
+      var __baroErrDetail = '';
+      try { __baroErrDetail = (err && (err.stack || err.message)) ? String(err.stack || err.message) : String(err); } catch (_) { __baroErrDetail = ''; }
+      var __baroErrHtml = '';
+      try { __baroErrHtml = ctx.t('baro.intent.error_html'); } catch (e3) { __baroErrHtml = ''; }
+      var __baroDiag = '';
+      try {
+        if (__baroErrDetail) {
+          __baroDiag = '<details class="baro-error-detail"><summary>Detalle t\u00e9cnico</summary><pre>' +
+            __baroErrDetail.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').slice(0, 600) +
+            '</pre></details>';
+        }
+      } catch (_) { __baroDiag = ''; }
+      try { baroAddBaroMessage(__baroErrHtml + __baroDiag); } catch (e4) { /* noop */ }
+      /* Fallback: no dejar el hilo muerto; mostrar la ayuda general. */
+      try {
+        var __baroFb = '';
+        try { __baroFb = ctx.t('baro.intent.help_html'); } catch (_) { __baroFb = ''; }
+        if (__baroFb) baroAddBaroMessage(__baroFb);
+      } catch (_) { /* noop */ }
     }
     /* Sin finally de typing: el feed v2 no usa burbuja de "typing". */
   }
