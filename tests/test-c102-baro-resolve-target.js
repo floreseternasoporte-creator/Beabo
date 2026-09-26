@@ -14,12 +14,24 @@
 const fs = require('fs');
 const path = require('path');
 
-let target = '/tmp/lane3-index.html';
+let explicitTarget = null;
 for (let i = 2; i < process.argv.length; i++) {
-  if (process.argv[i] === '--target' && process.argv[i + 1]) target = process.argv[++i];
+  if (process.argv[i] === '--target' && process.argv[i + 1]) explicitTarget = process.argv[++i];
 }
-if (!fs.existsSync(target)) {
-  console.error('target no existe: ' + target + ' (usa --target archivo.html)');
+function hasC102(p) {
+  try {
+    const h = fs.readFileSync(p, 'utf8');
+    return h.indexOf('/* BARO-C102-RESOLVE-PURE-START */') !== -1;
+  } catch (_) { return false; }
+}
+let target = explicitTarget;
+if (!target) {
+  // CI-safe: primero el index.html del repo (cwd), luego la copia de desarrollo del carril.
+  const cands = ['index.html', '/tmp/lane3-index.html'];
+  target = cands.find(hasC102) || null;
+}
+if (!target) {
+  console.error('target no encontrado con el bloque BARO-C102 (usa --target archivo.html)');
   process.exit(2);
 }
 

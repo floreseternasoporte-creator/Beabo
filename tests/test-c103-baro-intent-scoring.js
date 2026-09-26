@@ -23,7 +23,9 @@ function hasC103(p) {
 }
 let target = explicitTarget;
 if (!target) {
+  // CI-safe: primero el index.html del repo (cwd), luego la copia de desarrollo del carril.
   const cands = [
+    'index.html',
     '/tmp/lane4-index.html',
     path.join(__dirname, '..', '..', '..', 'beabo', 'index.html')
   ];
@@ -65,8 +67,15 @@ function load6b() {
     'BARO_INTENT_CONF_THRESHOLD: BARO_INTENT_CONF_THRESHOLD, ' +
     'BARO_INTENT_KEYWORDS: BARO_INTENT_KEYWORDS, BARO_ALL_INTENTS: BARO_ALL_INTENTS };\n';
   code = code.slice(0, closeAt) + expose + code.slice(closeAt);
+  // En la app real, los extract de 6b usan el global baroResolveTargetDesc (bloque
+  // puro C102 de lane 3). Cargarlo en el sandbox para fidelidad con producción.
+  const C102_START = '/* BARO-C102-RESOLVE-PURE-START */';
+  const C102_END = '/* BARO-C102-RESOLVE-PURE-END */';
+  const c102si = html.indexOf(C102_START), c102ei = html.indexOf(C102_END);
+  let prelude = '';
+  if (c102si !== -1 && c102ei > c102si) prelude = html.slice(c102si, c102ei + C102_END.length) + '\n';
   const fakeGlobal = {};
-  new Function('global', 'window', code)(fakeGlobal, undefined);
+  new Function('global', 'window', prelude + code)(fakeGlobal, undefined);
   assert(fakeGlobal.baroDetectIntent, 'baroDetectIntent no exportado');
   B6 = fakeGlobal;
   return B6;
@@ -107,12 +116,18 @@ tcase('extracción 6b + ranking OK', () => {
 });
 
 // --- C103-F1: scoring multi-señal, gana el mejor (no el primero) ---
-tcase('scoring: "qué puedes hacer para eliminar mi post" → eliminar_post (antes ganaba ayuda por orden)', () => {
+// NOTA DE INTEGRACIÓN (lanes 3+4): el extract de eliminar_post ya no declina por
+// falta de ID: devuelve targetDesc y la herramienta `eliminar` resuelve el objetivo
+// sola con baroResolvePostTarget (candidatos con foto si hay ambigüedad). Por eso
+// este caso ahora resuelve eliminar_post en vez de pedir aclaración.
+tcase('scoring: "qué puedes hacer para eliminar mi post" → eliminar_post con targetDesc (C102 resuelve, no pide enlace)', () => {
   const b = load6b();
   const d = b.baroDetectIntent('¿qué puedes hacer para eliminar mi post?');
-  // ayuda pide aclaración con el candidato correcto (falta el id del post)
-  assert(d.intent === 'ayuda' && d.args.clarify === true, 'debe pedir aclaración, fue ' + d.intent);
-  eqJ(d.args.candidates, ['eliminar_post'], 'el candidato debe ser eliminar_post');
+  assert(d.intent === 'eliminar_post', 'fue ' + d.intent);
+  assert(d.args.postId == null, 'no debe inventar un postId');
+  assert(typeof d.args.targetDesc === 'string' && d.args.targetDesc.length > 0,
+    'debe traer targetDesc para que la herramienta resuelva sola');
+  assert(d.confidence >= 0.35, 'confianza bajo umbral: ' + d.confidence);
 });
 
 tcase('scoring: "delete my post #/post/abc123" → eliminar_post', () => {
