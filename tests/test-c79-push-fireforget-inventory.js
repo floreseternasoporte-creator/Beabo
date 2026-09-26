@@ -71,7 +71,7 @@ const sites = [];
     const arg = HTML.slice(pushOpen + 1, pushClose).trim();
     if (!arg) continue; // reserva de key (.push() sin valor): fuera de alcance
     const refArg = HTML.slice(refOpen + 1, refClose);
-    const lit = /^'([^']*)'/.exec(refArg);
+    const lit = /^'([^']*)'/.exec(refArg) || /^"([^"]*)"/.exec(refArg); // minificado usa comillas dobles
     const lineNo = HTML.slice(0, m.index).split('\n').length;
     sites.push({ lineNo, refPath: lit ? lit[1] : '(ref dinámico)', refArg, arg });
   }
@@ -113,7 +113,7 @@ for (const s of sites) {
 }
 
 const EXPECTED = {
-  'decorative-c75': 9,
+  'decorative-c75': 10, // 9 preexistentes + mensaje system de chat_grupo_crear (Baro v4 oleada 1)
   'cosmetic-broadcast': 2,
   'cosmetic-ephemeral': 1,
   'legacy-fallback': 2, // notesRef.push(note) + else del anuncio de música

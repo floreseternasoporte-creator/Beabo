@@ -22,8 +22,12 @@ HTML_PATH = 'index.html'
 # feed de actividad en vivo, 24 iconos SVG (registro único, sin duplicar),
 # 52 claves i18n × 4 idiomas. El gzip real (763 KB) sigue con margen bajo
 # los 800 KB; el exceso crudo era solo 0.6% sobre 3.2 MB.
-BUDGET_RAW = 3_300_000       # 3.3 MB
-BUDGET_GZIP = 800_000        # 800 KB
+# Revisado 2026-09-26 (BARO v4 oleada 1): +130 KB legítimos minificados —
+# 17 herramientas de chat (5 lectura, 6 escritura, 6 grupos/admin), i18n
+# ES/EN/ZH/PT. Bloques minificados con terser (mangle, nombres de test
+# reservados). El gzip real (812 KB) sigue con margen bajo los 850 KB.
+BUDGET_RAW = 3_600_000       # 3.6 MB
+BUDGET_GZIP = 850_000        # 850 KB
 
 
 def main():

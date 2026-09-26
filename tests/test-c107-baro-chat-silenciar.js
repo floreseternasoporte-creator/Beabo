@@ -448,8 +448,8 @@ async function runNoSession() {
   ok(!/serie/i.test(src), 'F2 sin Series');
   ok(!src.includes('fetch(') && !src.includes('XMLHttpRequest'), 'F3 sin APIs externas (fetch/XHR)');
   ok(!/https?:\/\//.test(src), 'F4 sin URLs externas');
-  ok(src.indexOf('(function () {') !== -1 && src.trim().endsWith('})();'), 'F5 IIFE cerrada');
-  ok(src.indexOf("'use strict'") !== -1, 'F6 use strict');
+  ok(/\(function\s*\(\s*\)\s*\{/.test(src) && src.trim().endsWith('})();'), 'F5 IIFE cerrada');
+  ok(src.indexOf("'use strict'") !== -1 || src.indexOf('"use strict"') !== -1, 'F6 use strict');
 })();
 
 /* ================= correr ================= */
