@@ -10,12 +10,7 @@ const path = require("path");
 const vm = require("vm");
 
 const SNIPPET_PATH = path.join(__dirname, "8J-snippet.js");
-/* C1781: CI-safe — el scratch del carril (/tmp) no existe en el runner de CI;
-   si falta, usar el index.html integrado del repo (patrón c120). */
-const LANE_SCRATCH = "/tmp/baro8J-test.html";
-const DEFAULT_TARGET = fs.existsSync(LANE_SCRATCH)
-  ? LANE_SCRATCH
-  : path.join(__dirname, "..", "index.html");
+const DEFAULT_TARGET = "/tmp/baro8J-test.html";
 const MARK = "/* ================= BARO · sub-bloque 8J";
 const HEADER = "/* ================= BARO · sub-bloque 8J — OLEADA 3 v4 (ajustes) ================= */";
 
@@ -52,6 +47,7 @@ if (argv.includes("--list")) { PLAN.forEach((p) => console.log(p)); process.exit
 let target = DEFAULT_TARGET;
 const ti = argv.indexOf("--target");
 if (ti !== -1 && argv[ti + 1]) target = argv[ti + 1];
+else if (!fs.existsSync(target)) target = path.join(__dirname, "..", "index.html"); // CI: el integrado
 const SHOW = argv.includes("--show");
 
 function readTarget(p) {
