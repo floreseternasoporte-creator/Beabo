@@ -18,7 +18,11 @@ HTML_PATH = 'index.html'
 # (i18n en 4 idiomas ~0.5 MB crudos, centro de seguridad, juegos de
 # fiestas, motor de recomendaciones). El peso es código real, no bloat:
 # no hay data URIs grandes ni blobs embebidos (auditoría 2026-09-23).
-BUDGET_RAW = 3_200_000       # 3.2 MB
+# Revisado 2026-09-25 (BARO v2): +140 KB legítimos — 11 tools nuevas,
+# feed de actividad en vivo, 24 iconos SVG (registro único, sin duplicar),
+# 52 claves i18n × 4 idiomas. El gzip real (763 KB) sigue con margen bajo
+# los 800 KB; el exceso crudo era solo 0.6% sobre 3.2 MB.
+BUDGET_RAW = 3_300_000       # 3.3 MB
 BUDGET_GZIP = 800_000        # 800 KB
 
 

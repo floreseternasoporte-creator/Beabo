@@ -17,9 +17,14 @@
 // .innerHTML (render del picker, badges y vista de serie). Nuevo inventario:
 // .innerHTML 481, .outerHTML 3, insertAdjacentHTML 8.
 // BARO-6: +4 por el agente Baro (burbuja, typing, pasos, preview de confirm).
+// BARO v2 (2026-09-25): +5 por el modo Perplexity — feed de actividad en vivo,
+// icono spinner, icono de tool, tira de fuentes, botones de acciones.
+// Todos pintan HTML propio del agente (registro BARO_ICONS / plantillas
+// internas); auditados sin interpolación cruda de datos de usuario.
+// Nuevo inventario: .innerHTML 486, .outerHTML 3, insertAdjacentHTML 8.
 //  - drex-rec-engine.js / sw.js: 0 sinks cada uno (0 hits en los 4 patrones).
-//  - scrollIntoView({behavior:'smooth'}): 5 hits (9252, 23762, 23773, 33930,
-//    37151); scroll-behavior:smooth real: 1 (#empresa-view); la media query
+//  - scrollIntoView({behavior:'smooth'}): 6 hits (9252, 23762, 23773, 33930,
+//    37151 + BARO v2: scroll del feed de actividad al pie); scroll-behavior:smooth real: 1 (#empresa-view); la media query
 //    prefers-reduced-motion EXISTE (2 hits) — verificar presencia, NO tocar
 //    (a11y fuera de alcance por orden del usuario 2026-09-15).
 //
@@ -58,14 +63,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 481 ocurrencias en index.html (BARO-1: -12 Series; BARO-6: +4 Baro)', () => count(/\.innerHTML/g, html) === 481);
+tcase('innerHTML: 486 ocurrencias en index.html (BARO-1: -12 Series; BARO-6: +4 Baro; BARO v2: +5 actividad/iconos/fuentes/acciones)', () => count(/\.innerHTML/g, html) === 486);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 481 &&
+  count(/\.innerHTML/g, copy) === 486 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);
@@ -87,8 +92,8 @@ tcase('index.html: 0 <slot shadow-DOM', () => count(/<slot[\s>]/g, html) === 0);
 // ---- 5. prefers-reduced-motion: verificar presencia (NO tocar) ----
 tcase('prefers-reduced-motion: la media query existe (>=1)', () =>
   count(/prefers-reduced-motion/g, html) >= 1);
-tcase('scrollIntoView smooth: 5 hits (inventario)', () =>
-  count(/scrollIntoView\(\{[^}]*behavior:\s*['"]smooth['"]/g, html) === 5);
+tcase('scrollIntoView smooth: 6 hits (inventario; BARO v2: +1 scroll del feed de actividad)', () =>
+  count(/scrollIntoView\(\{[^}]*behavior:\s*['"]smooth['"]/g, html) === 6);
 
 // ---- 6. Provenance del único sink nuevo post-C106: doneHTML (C108) ----
 // Extrae `const doneHTML = ok => `...`;` y lo evalúa en sandbox.

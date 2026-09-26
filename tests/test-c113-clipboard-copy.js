@@ -12,6 +12,12 @@
 // navigator.clipboard.writeText). Por eso la familia baja de 8→7 guardas y
 // 10→9 call sites de writeText. Delta explicado 1:1 por el diff (la única
 // línea eliminada con clipboard.writeText). Resto de la familia intacta.
+//
+// RE-AUDITORÍA (2026-09-25, BARO v2): el agente suma su botón "copiar
+// respuesta" (baro7dCopyText) con guarda navigator.clipboard &&
+// navigator.clipboard.writeText + fallback execCommand('copy') + toast,
+// el mismo patrón de la familia. Por eso la familia sube de 7→8 guardas y
+// 9→10 call sites de writeText. Delta explicado 1:1 por el diff de v2.
 // Test híbrido: asserts estáticos (fallan en base) + conductuales en sandbox
 // vm (sin clipboard / clipboard OK / clipboard rechaza / clipboard sin
 // writeText), con tcase para FAILs limpios en base.
@@ -84,13 +90,13 @@ tcasesync('sin console.error silencioso', () => {
 tcasesync('llamador onclick intacto', () => {
   if (html.indexOf('onclick="copyCommentText(') < 0) throw new Error('onclick perdido');
 });
-tcasesync('familia: 7 guardas clipboard en todo el archivo (BARO-1: -1 por eliminar Series)', () => {
+tcasesync('familia: 8 guardas clipboard en todo el archivo (BARO-1: -1 por eliminar Series; BARO v2: +1 baro7dCopyText con guarda)', () => {
   const n = (html.match(/navigator\.clipboard && navigator\.clipboard\.writeText/g) || []).length;
-  if (n !== 7) throw new Error('guardas: ' + n + ' (esperado 7)');
+  if (n !== 8) throw new Error('guardas: ' + n + ' (esperado 8)');
 });
-tcasesync('familia: 9 call sites de writeText (sin nuevos ni perdidos)', () => {
+tcasesync('familia: 10 call sites de writeText (sin nuevos ni perdidos; BARO v2: +1 copiar respuesta)', () => {
   const n = (html.match(/navigator\.clipboard\.writeText\(/g) || []).length;
-  if (n !== 9) throw new Error('call sites: ' + n + ' (esperado 9)');
+  if (n !== 10) throw new Error('call sites: ' + n + ' (esperado 10)');
 });
 
 // ---------- conductuales en vm ----------

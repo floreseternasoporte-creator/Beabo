@@ -23,8 +23,9 @@
 // - Chat file attachments: la descarga usa <a download> + blob URL (descarga
 //   forzada, nunca navegación del contenido).
 // - scrollRestoration = 0 en index.html (C120 sigue en cero).
-// - execCommand: 5 ocurrencias (4 en código como fallback de portapapeles +
-//   1 en comentario) — familia C101/C113, sin código nuevo.
+// - execCommand: 9 ocurrencias (8 en código como fallback de portapapeles +
+//   1 en comentario) — familia C101/C113. BARO v2 (2026-09-25): +1 en código
+//   por baro7dCopyText (botón copiar respuesta de Baro, fallback copy).
 // SIN LEADS → sin cambios en app. Este test fija el inventario y la propiedad.
 'use strict';
 const fs = require('fs');
@@ -57,11 +58,11 @@ function extractBetween(startMarker, endMarker) {
 // ---- 1. Re-verifies rápidos ----
 tcase('scrollRestoration: 0 en index.html (C120 sigue en cero)', () =>
   count(/scrollRestoration/g, html) === 0);
-tcase('execCommand: 8 ocurrencias (7 en código + 1 en comentario; BARO-1: -1 por eliminar Series)', () =>
-  count(/execCommand/g, html) === 8);
+tcase('execCommand: 9 ocurrencias (8 en código + 1 en comentario; BARO-1: -1 por eliminar Series; BARO v2: +1 fallback copy de Baro)', () =>
+  count(/execCommand/g, html) === 9);
 tcase('execCommand: todos los usos en código son copy (fallback portapapeles)', () => {
   const uses = html.match(/\.execCommand\([^)]*\)/g) || [];
-  return uses.length === 7 && uses.every(u => u === ".execCommand('copy')");
+  return uses.length === 8 && uses.every(u => u === ".execCommand('copy')");
 });
 
 // ---- 2. Estáticos: pipeline de render de imágenes ----
