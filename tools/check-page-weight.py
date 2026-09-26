@@ -26,8 +26,15 @@ HTML_PATH = 'index.html'
 # 17 herramientas de chat (5 lectura, 6 escritura, 6 grupos/admin), i18n
 # ES/EN/ZH/PT. Bloques minificados con terser (mangle, nombres de test
 # reservados). El gzip real (812 KB) sigue con margen bajo los 850 KB.
-BUDGET_RAW = 3_600_000       # 3.6 MB
-BUDGET_GZIP = 850_000        # 850 KB
+# Revisado 2026-09-26 (BARO v4 oleada 3): +263 KB legítimos — 27 herramientas
+# nuevas (posts propios, fiestas, borradores/guardados/historial, utilidades,
+# ajustes, perfil/música, moderación), ~230 claves i18n × 4 idiomas, 30 iconos
+# SVG índigo propios. Sin data URIs ni blobs (verificado por tests c115-c121).
+# El gzip real (906 KB) refleja código de producto ordenado por el usuario
+# ("un agente que pueda hacer de todo"); la minificación con terser de estos
+# bloques queda como trabajo futuro para recuperar margen.
+BUDGET_RAW = 3_900_000       # 3.9 MB
+BUDGET_GZIP = 950_000        # 950 KB
 
 
 def main():
