@@ -10,7 +10,12 @@ const path = require("path");
 const vm = require("vm");
 
 const SNIPPET_PATH = path.join(__dirname, "8J-snippet.js");
-const DEFAULT_TARGET = "/tmp/baro8J-test.html";
+/* C1781: CI-safe — el scratch del carril (/tmp) no existe en el runner de CI;
+   si falta, usar el index.html integrado del repo (patrón c120). */
+const LANE_SCRATCH = "/tmp/baro8J-test.html";
+const DEFAULT_TARGET = fs.existsSync(LANE_SCRATCH)
+  ? LANE_SCRATCH
+  : path.join(__dirname, "..", "index.html");
 const MARK = "/* ================= BARO · sub-bloque 8J";
 const HEADER = "/* ================= BARO · sub-bloque 8J — OLEADA 3 v4 (ajustes) ================= */";
 
