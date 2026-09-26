@@ -56190,7 +56190,901 @@ async function baroResolveForTool(toolName, args, ctx, opts) {
     /* Sin finally de typing: el feed v2 no usa burbuja de "typing". */
   }
 
-  /* ---------- exposición global ---------- */
+  /* ================= BARO · sub-bloque 8M — cerebro: router, memoria, multi-acción ================= */
+/* ================= BARO v4 · carril 8M-A — ROUTER + DESAMBIGUACIÓN =================
+ * Slice 8M-A (fase 3 "cerebro"): detección de EMPATES en el scoring v3 y
+ * desambiguación con OPCIONES TOCABLES.
+ *
+ * ANCLAJE: esta sección se INSERTA DENTRO del IIFE del sub-bloque 6b, justo
+ * antes de la línea `/* ---------- exposición global ---------- *\/` (ancla
+ * única). Por eso usa DIRECTO los locales del closure: baroNorm, baroWords,
+ * baroExtractEntities, baroGuessLangExt, baroGuessLang, baroIntentRules,
+ * baroScoreRule, BARO_SCORE_W, baroHandleUserMessage; y las globales
+ * baro6dExpose / window. Reasigna baroDetectIntent y baroClarifyHtml guardando
+ * el original en __brainDetectIntentOrig / __brainClarifyHtmlOrig. No redefine
+ * ni toca nada más. Lo propio lleva el prefijo baroBrain*.
+ *
+ * PROBLEMA QUE RESUELVE: con ~73 herramientas, dos intents pueden empatar en
+ * score y el v3 desempata por orden alfabético (arbitrario). Aquí el empate se
+ * detecta (baroBrainTie) y se repregunta con botones tocables (baroBrainTieHtml)
+ * que fuerzan la intención elegida (baroBrainPickTie -> __brainForced).
+ *
+ * SIN IIFE propio, SIN marcador: el integrador envuelve esta sección.
+ * Sin el literal de cierre de script, sin APIs externas.
+ */
+
+/* ---------- i18n ES/EN/ZH/PT (patrón de merge del sub-bloque 8L) ---------- */
+var baroBrainI18nDict = {
+  "baro.brain.tie_intro": {
+    es: "¿Cuál de estas quisiste decir? Toca una opción.",
+    en: "Which of these did you mean? Tap an option.",
+    zh: "你指的是哪一个？点一个选项。",
+    pt: "Qual destas você quis dizer? Toque em uma opção."
+  }
+};
+
+function baroBrainFuseI18n() {
+  try {
+    var keys = Object.keys(baroBrainI18nDict);
+    var g = (typeof window !== 'undefined') ? window
+      : ((typeof globalThis !== 'undefined') ? globalThis : null);
+    var u = null;
+    try { u = (typeof BARO_UI_I18N !== 'undefined') ? BARO_UI_I18N : null; } catch (_) { u = null; }
+    if (u && typeof u === 'object') {
+      keys.forEach(function (k) { if (!(k in u)) { try { u[k] = baroBrainI18nDict[k]; } catch (_) {} } });
+    }
+    var arr = [];
+    if (g) {
+      if (g.APP_ENGLISH_TEXT) arr.push(['en', g.APP_ENGLISH_TEXT]);
+      if (g.APP_CHINESE_TEXT) arr.push(['zh', g.APP_CHINESE_TEXT]);
+      if (g.APP_PORTUGUESE_TEXT) arr.push(['pt', g.APP_PORTUGUESE_TEXT]);
+    }
+    arr.forEach(function (pair) {
+      var lg = pair[0], dict = pair[1];
+      keys.forEach(function (k) {
+        var pack = baroBrainI18nDict[k], tv = pack ? pack[lg] : null;
+        if (tv && !(k in dict)) { try { dict[k] = tv; } catch (_) {} }
+        var esv = pack ? pack.es : null, lgv = pack ? pack[lg] : null;
+        if (esv && lgv && !(esv in dict)) { try { dict[esv] = lgv; } catch (_) {} }
+      });
+    });
+  } catch (_) { /* noop: i18n es mejora, nunca rompe */ }
+}
+baroBrainFuseI18n();
+
+/* ---------- TIE_EPS ----------
+ * TIE_EPS = el menor peso positivo de BARO_SCORE_W. Se relee en cada llamada
+ * (baroBrainTieEps) para que un cambio de pesos en caliente cambie el umbral.
+ * Con los pesos actuales {regexHit:4, keywordExact:3, entity:2, lang:1, typo:1},
+ * TIE_EPS = 1: dos intents empatan si su diferencia de score es ≤ 1 punto, es
+ * decir, ≤ la señal más débil (idioma o typo). Un empate así es real y no ruido. */
+function baroBrainTieEps() {
+  var eps = Infinity, k, v, W = null;
+  try { W = (typeof BARO_SCORE_W !== 'undefined') ? BARO_SCORE_W : null; } catch (_) { W = null; }
+  if (W && typeof W === 'object') {
+    for (k in W) {
+      if (!Object.prototype.hasOwnProperty.call(W, k)) continue;
+      v = W[k];
+      if (typeof v === 'number' && isFinite(v) && v > 0 && v < eps) eps = v;
+    }
+  }
+  return isFinite(eps) ? eps : 1;
+}
+
+/* ---------- 1. baroBrainScoreAll(text) ----------
+ * Replica EXACTA de la fase de scoring de baroDetectIntent (sin ejecutar
+ * extract): devuelve el array scored ordenado con el mismo comparador. */
+function baroBrainScoreAll(text) {
+  var scored = [];
+  try {
+    if (typeof baroIntentRules === 'undefined' || !baroIntentRules || !baroIntentRules.length) return scored;
+    var t = String(text || '');
+    var norm = baroNorm(t);
+    var words = baroWords(norm);
+    var entities = baroExtractEntities(t);
+    var lang = baroGuessLangExt(t);
+    var i, r, s;
+    for (i = 0; i < baroIntentRules.length; i++) {
+      r = baroIntentRules[i];
+      s = baroScoreRule(r, t, norm, words, entities, lang);
+      scored.push({ rule: r, score: s.score, sig: s.sig });
+    }
+    scored.sort(function (a, b) {
+      return (b.score - a.score) ||
+             (a.rule.intent < b.rule.intent ? -1 : (a.rule.intent > b.rule.intent ? 1 : 0));
+    });
+  } catch (e) { /* noop: el wrapper cae al original */ }
+  return scored;
+}
+
+/* ---------- 2. baroBrainTie(scored) — pura ----------
+ * Devuelve null, o {candidates:[intent,intent,intent]} cuando hay empate real:
+ * scored[0].score > 0, existe scored[1].score > 0, la diferencia ≤ TIE_EPS y los
+ * intents difieren (si el top-2 comparte intent no hay ambigüedad para el
+ * usuario). candidates = hasta 3 intents DISTINTOS con score > 0, en orden. */
+function baroBrainTie(scored) {
+  try {
+    if (!scored || !scored.length || scored.length < 2) return null;
+    var top = scored[0], second = scored[1];
+    if (!top || !second || !top.rule || !second.rule) return null;
+    var s0 = Number(top.score), s1 = Number(second.score);
+    if (!(s0 > 0) || !(s1 > 0)) return null;
+    var i0 = String(top.rule.intent || ''), i1 = String(second.rule.intent || '');
+    if (!i0 || !i1 || i0 === i1) return null;
+    if ((s0 - s1) > baroBrainTieEps()) return null;
+    var out = [], seen = {}, i, it, sc;
+    for (i = 0; i < scored.length && out.length < 3; i++) {
+      if (!scored[i] || !scored[i].rule) continue;
+      sc = Number(scored[i].score);
+      if (!(sc > 0)) break; /* ordenado desc: aquí termina la señal */
+      it = String(scored[i].rule.intent || '');
+      if (!it || seen[it]) continue;
+      seen[it] = 1;
+      out.push(it);
+    }
+    if (out.length < 2) return null;
+    return { candidates: out };
+  } catch (e) { return null; }
+}
+
+/* ---------- 3. forzado de intención (lo consume el wrapper de baroDetectIntent) ---------- */
+var __brainForced = null, __brainSkipPaint = false;
+
+function baroBrainConsumeForced() {
+  var f = __brainForced;
+  __brainForced = null;
+  return f;
+}
+
+function baroBrainPeekForced() {
+  return __brainForced;
+}
+
+/* La expone el integrador con baro6dExpose('baroBrainPickTie', baroBrainPickTie):
+ * el onclick de los botones de desambiguación llama a esta función. */
+function baroBrainPickTie(intent, encText) {
+  try {
+    intent = String(intent || '');
+    if (!/^[a-z_0-9]+$/.test(intent)) return; /* intents del router: [a-z_0-9] */
+    var txt = '';
+    try { txt = decodeURIComponent(String(encText || '')); }
+    catch (e0) { txt = String(encText || ''); }
+    __brainForced = { intent: intent, text: txt };
+    __brainSkipPaint = true;
+    if (typeof baroHandleUserMessage === 'function') {
+      try { baroHandleUserMessage(txt); } catch (e1) { /* noop */ }
+    }
+  } catch (e) { /* noop */ }
+}
+
+/* ---------- 4. baroBrainTieHtml(args, ctx) ----------
+ * Tarjeta de desambiguación: texto baro.brain.tie_intro + un botón tocable por
+ * cada candidato, con la etiqueta baro.intent.name.INTENT (fallback al intent).
+ * ENCTEXT = encodeURIComponent(args.rawText || ''). */
+function baroBrainTieHtml(args, ctx) {
+  var esc = function (s) {
+    try { if (ctx && typeof ctx.esc === 'function') return ctx.esc(s); } catch (e0) {}
+    return String(s == null ? '' : s);
+  };
+  var tr = function (key) {
+    try {
+      if (ctx && typeof ctx.t === 'function') {
+        var v = ctx.t(key);
+        if (v && v !== key) return v;
+      }
+    } catch (e1) {}
+    return key;
+  };
+  var cands = (args && args.candidates) ? args.candidates : [];
+  var encText = '';
+  try { encText = encodeURIComponent(String((args && args.rawText) || '')); } catch (e2) { encText = ''; }
+  var h = '<div class="baro-clarify baro-brain-tie"><p>' +
+    esc(tr('baro.brain.tie_intro')) + '</p><div class="baro-intent-btns">';
+  for (var i = 0; i < cands.length; i++) {
+    var it = String(cands[i] || '');
+    if (!/^[a-z_0-9]+$/.test(it)) continue; /* no pintable como intent del router */
+    var nameKey = 'baro.intent.name.' + it;
+    var label = tr(nameKey);
+    if (label === nameKey) label = it; /* fallback: el intent crudo */
+    h += '<button class="baro-intent-btn" data-brain-tie="' + esc(it) + '" ' +
+      'onclick="baroBrainPickTie(\'' + esc(it) + '\',\'' + encText + '\')">' +
+      esc(label) + '</button>';
+  }
+  h += '</div></div>';
+  return h;
+}
+
+/* ---------- 5. WIRING (código exacto; el integrador lo pega tal cual) ---------- */
+
+/* Envolver baroDetectIntent: (a) si hay intención forzada (botón de empate
+ * tocado), consumirla y ejecutar la regla de ese intent con extract() como el
+ * flujo normal, confianza 1; (b) si no, correr el original y, cuando gane un
+ * intent concreto (no 'ayuda'), recalcular el scoring y detectar empate:
+ * si hay empate -> devolver ayuda con {clarify, tie, candidates, rawText}
+ * para que baroClarifyHtml pinte los botones. Siempre con fallback al original. */
+var __brainDetectIntentOrig = (typeof baroDetectIntent === 'function') ? baroDetectIntent : null;
+baroDetectIntent = function (text) {
+  try {
+    var forced = baroBrainConsumeForced();
+    if (forced && forced.intent) {
+      var rule = null, i;
+      try {
+        if (typeof baroIntentRules !== 'undefined' && baroIntentRules && baroIntentRules.length) {
+          for (i = 0; i < baroIntentRules.length; i++) {
+            if (baroIntentRules[i] && baroIntentRules[i].intent === forced.intent) { rule = baroIntentRules[i]; break; }
+          }
+        }
+      } catch (e0) { rule = null; }
+      var fargs = {};
+      try {
+        var fnorm = (typeof baroNorm === 'function') ? baroNorm(forced.text) : String(forced.text || '');
+        fargs = (rule && typeof rule.extract === 'function') ? rule.extract(forced.text, fnorm) : {};
+        if (fargs === null) fargs = {};
+      } catch (e1) { fargs = {}; }
+      try { fargs.lang = (typeof baroGuessLang === 'function') ? baroGuessLang(forced.text) : 'es'; } catch (e2) {}
+      return { intent: forced.intent, args: fargs, confidence: 1 };
+    }
+    var det = __brainDetectIntentOrig ? __brainDetectIntentOrig(text) : null;
+    if (det && det.intent && det.intent !== 'ayuda') {
+      var tie = baroBrainTie(baroBrainScoreAll(text));
+      if (tie && tie.candidates && tie.candidates.length) {
+        var tlang = 'es';
+        try { tlang = (typeof baroGuessLang === 'function') ? baroGuessLang(text) : 'es'; } catch (e3) {}
+        return {
+          intent: 'ayuda',
+          args: { clarify: true, tie: true, candidates: tie.candidates, rawText: String(text), lang: tlang },
+          confidence: 0.5
+        };
+      }
+    }
+    return det;
+  } catch (e) {
+    try { return __brainDetectIntentOrig ? __brainDetectIntentOrig(text) : null; }
+    catch (e4) { return null; }
+  }
+};
+
+/* Envolver baroClarifyHtml: si args.tie -> tarjeta de desambiguación;
+ * si no -> comportamiento original intacto. */
+var __brainClarifyHtmlOrig = (typeof baroClarifyHtml === 'function') ? baroClarifyHtml : null;
+baroClarifyHtml = function (args, ctx) {
+  try {
+    if (args && args.tie) return baroBrainTieHtml(args, ctx);
+    if (__brainClarifyHtmlOrig) return __brainClarifyHtmlOrig(args, ctx);
+  } catch (e) {
+    if (__brainClarifyHtmlOrig) { try { return __brainClarifyHtmlOrig(args, ctx); } catch (e2) {} }
+  }
+  return '';
+};
+
+/* ================= BARO · 8M-B — memoria conversacional (fase 3 "cerebro") ========
+ * Carril 8M-B. Se inserta DENTRO del IIFE del sub-bloque 6b, justo antes de la
+ * exposicion global. Sin IIFE propio.
+ * - Memoria del hilo: posts y acciones recientes (tope 30, dedup por id).
+ * - baroBrainResolveRef(desc, mem): PURA, ES/EN/ZH/PT. Resuelve referencias
+ *   de conversacion ("ese post", "el segundo", "borralo", "el de ayer") con
+ *   PRIORIDAD sobre el resolutor v3.
+ * - Cableado: envuelve baroResolvePostTarget (la referencia gana; si no hay
+ *   referencia, delega al original) y envuelve baroRegisterTool + re-envuelve
+ *   las ya registradas para alimentar la memoria tras cada run.
+ * Prefijo baroBrain* en cada simbolo. Sin APIs externas, sin mensajes visibles nuevos
+ * (no se agregan claves i18n). Defensivo siempre: try/catch + typeof-guards.
+ */
+
+/* ---------- 1. memoria del hilo ---------- */
+var __brainMem = { posts: [], actions: [] };
+
+function baroBrainMemGet() { return __brainMem; }
+
+function baroBrainMemClear() {
+  __brainMem.posts = [];
+  __brainMem.actions = [];
+}
+
+/* Antepone el post; dedup por id (el mas reciente gana); tope 30. */
+function __brainMemPushPost(item) {
+  try {
+    var id = String(item && item.id != null ? item.id : '');
+    if (!id) return;
+    var i, list = __brainMem.posts;
+    for (i = list.length - 1; i >= 0; i--) {
+      if (String(list[i] && list[i].id) === id) list.splice(i, 1);
+    }
+    list.unshift({
+      id: id,
+      title: String((item && item.title) || '').slice(0, 140),
+      ts: (item && item.ts) ? Number(item.ts) : Date.now()
+    });
+    if (list.length > 30) list.length = 30;
+  } catch (_) {}
+}
+
+/* Registra la accion; dedup por targetId (el mas reciente gana); tope 30. */
+function __brainMemPushAction(tool, targetId) {
+  try {
+    var tid = String(targetId == null ? '' : targetId);
+    if (!tid) return;
+    var i, list = __brainMem.actions;
+    for (i = list.length - 1; i >= 0; i--) {
+      if (String(list[i] && list[i].targetId) === tid) list.splice(i, 1);
+    }
+    list.unshift({ tool: String(tool || ''), targetId: tid, ts: Date.now() });
+    if (list.length > 30) list.length = 30;
+  } catch (_) {}
+}
+
+/* ---------- 2. registro de resultados ---------- */
+/* Herramientas de escritura cuyo target alimenta mem.actions ("mi ultimo post"). */
+var __brainWriteTools = {
+  publicar: 1, programar: 1, eliminar: 1, comentar: 1,
+  eco_post: 1, eco: 1, guardar_post: 1, guardar: 1,
+  votar_post: 1, votar: 1, reportar: 1, resumir_hilo: 1
+};
+
+function baroBrainMemRecordResult(toolName, args, res) {
+  try {
+    if (!res || typeof res !== 'object') return;
+    var d = res.data;
+    if (!d || typeof d !== 'object') return;
+    /* Arrays con posts/comentarios/resultados: normaliza a {id,title,ts}. */
+    var keys = ['posts', 'comments', 'results', 'items'];
+    var k, j;
+    for (k = 0; k < keys.length; k++) {
+      var arr = d[keys[k]];
+      if (!arr || typeof arr.length !== 'number') continue;
+      for (j = 0; j < arr.length; j++) {
+        var p = arr[j];
+        if (!p || typeof p !== 'object') continue;
+        var pid = (p.id != null) ? p.id : ((p.postId != null) ? p.postId : p.noteId);
+        if (pid == null || pid === '') continue;
+        var ttl = (p.content != null) ? p.content
+          : ((p.title != null) ? p.title : ((p.text != null) ? p.text : ''));
+        __brainMemPushPost({
+          id: String(pid),
+          title: String(ttl == null ? '' : ttl),
+          ts: Date.now()
+        });
+      }
+    }
+    /* Herramienta de escritura con target suelto: registra la accion. */
+    var tn = String(toolName == null ? '' : toolName).toLowerCase();
+    var tid = (d.postId != null) ? d.postId : ((d.noteId != null) ? d.noteId : d.id);
+    if (__brainWriteTools[tn] && tid != null && tid !== '') {
+      __brainMemPushAction(tn, String(tid));
+      if (tn === 'eliminar') {
+        /* El post borrado deja de ser candidato para "ese post". */
+        var list = __brainMem.posts, out = [], m, nid = String(tid);
+        for (m = 0; m < list.length; m++) {
+          if (String(list[m] && list[m].id) !== nid) out.push(list[m]);
+        }
+        __brainMem.posts = out;
+      }
+    }
+  } catch (_) {}
+}
+
+/* ---------- 3. resolucion pura de referencias ---------- */
+/* Norm local propio (la pura no depende del closure). */
+function __brainNorm(s) {
+  var t = String(s == null ? '' : s).toLowerCase();
+  try { t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (_) {}
+  return t;
+}
+
+/* Solo-verbo de accion ("borralo", "delete", "删掉"): equivale a desc vacia. */
+var __brainBareVerb = /^(elimina(r|lo)?|borra(r|lo|la|me)?|quita(r|lo|la|me)?|suprim(e|ir)|delete|remove|reporta(r|lo)?|denuncia(r|lo)?|report|denunciar|resum(e|en|ir)?|summariz(e|ing)?|resumir|comenta(r|lo)?|comment|comentar|eco|repostea(r)?|echo|guarda(r|lo)?|save|guardar|vota(r)?|vote|votar|exclui(r)?|apaga(r)?)[\s:;,.!?-]*$/;
+var __brainBareVerbZh = /^(删除|删掉|移除|举报|总结|评论|投票|收藏)+$/;
+
+function __brainDay0(ts) {
+  var d = new Date(Number(ts) || 0);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/* PURA: desc + mem -> {postId} | {posts:[...]} | null. Sin DOM, sin red. */
+function baroBrainResolveRef(desc, mem) {
+  try {
+    var raw = String(desc == null ? '' : desc);
+    var n = __brainNorm(raw).trim();
+    mem = (mem && typeof mem === 'object') ? mem : { posts: [], actions: [] };
+    var posts = (mem.posts && typeof mem.posts.length === 'number') ? mem.posts : [];
+    var actions = (mem.actions && typeof mem.actions.length === 'number') ? mem.actions : [];
+    var first = (posts.length && posts[0] && posts[0].id) ? posts[0] : null;
+
+    /* 1. Vacio / solo verbo ("borralo" sin target) -> el mas reciente. */
+    if (n === '' || __brainBareVerb.test(n) || __brainBareVerbZh.test(raw.trim())) {
+      return first ? { postId: String(first.id) } : null;
+    }
+
+    /* 2. "mi ultimo post" -> ultima accion con targetId (si existe). */
+    var mineRe = /(^|[\s¿?¡!.,:;()«»"'])(mi(\s+ultimo)?\s+post|my(\s+last)?\s+post|meu(\s+ultimo)?\s+post)([\s¿?¡!.,:;()«»"']|$)/;
+    if (mineRe.test(n) || /(我的帖子|我上次的帖子)/.test(raw)) {
+      for (var a = 0; a < actions.length; a++) {
+        if (actions[a] && actions[a].targetId) return { postId: String(actions[a].targetId) };
+      }
+      /* Sin acciones: sigue a las demas reglas. */
+    }
+
+    /* 3. Demostrativos -> el mas reciente. */
+    var demRe = /(^|[\s¿?¡!.,:;()«»"'])((ese|este)\s+post|(esa|esta)\s+publicacion|(that|this)\s+post|esse\s+post|esta\s+publicacao)([\s¿?¡!.,:;()«»"']|$)/;
+    if (demRe.test(n) || /(这篇帖子|那篇帖子)/.test(raw)) {
+      return first ? { postId: String(first.id) } : null;
+    }
+
+    /* 4. Ordinales. "ultimo"/"last" = el mas antiguo de la memoria. */
+    var ords = [
+      [/\b(primero|first|primeiro)\b/, 0],
+      [/\b(segundo|second)\b/, 1],
+      [/\b(tercero|third|terceiro)\b/, 2],
+      [/\b(cuarto|fourth)\b/, 3],
+      [/\b(quinto|fifth)\b/, 4]
+    ];
+    var o, idx;
+    for (o = 0; o < ords.length; o++) {
+      if (ords[o][0].test(n) || (o === 0 && /(第一篇)/.test(raw)) ||
+          (o === 1 && /(第二篇)/.test(raw)) || (o === 2 && /(第三篇)/.test(raw))) {
+        idx = ords[o][1];
+        return (idx < posts.length && posts[idx] && posts[idx].id)
+          ? { postId: String(posts[idx].id) } : null;
+      }
+    }
+    if (/\b(ultimo|last)\b/.test(n) || /(最后|最後)/.test(raw)) {
+      idx = posts.length - 1;
+      return (idx >= 0 && posts[idx] && posts[idx].id)
+        ? { postId: String(posts[idx].id) } : null;
+    }
+
+    /* 5. Temporal: "de ayer" / "de hoy" (dia calendario, hora local). */
+    var isAyer = /\b(ayer|yesterday|ontem)\b/.test(n) || /昨天/.test(raw);
+    var isHoy = /\b(hoy|today|hoje)\b/.test(n) || /今天/.test(raw);
+    if (isAyer || isHoy) {
+      var now0 = __brainDay0(Date.now());
+      var want = isAyer ? now0 - 86400000 : now0;
+      var cands = [], c, cp;
+      for (c = 0; c < posts.length; c++) {
+        cp = posts[c];
+        if (cp && cp.id && __brainDay0(cp.ts) === want) cands.push(cp);
+      }
+      if (cands.length === 1) return { postId: String(cands[0].id) };
+      if (cands.length > 1) return { posts: cands };
+      return null;
+    }
+
+    /* 6. Cualquier otro texto: pasa al resolutor original. */
+    return null;
+  } catch (_) { return null; }
+}
+
+/* ---------- 4. cableado ---------- */
+/* 4a. La memoria tiene PRIORIDAD: si hay referencia, se resuelve sin BD. */
+var __brainOrigRPT = (typeof baroResolvePostTarget === 'function') ? baroResolvePostTarget : null;
+if (__brainOrigRPT) {
+  /* ENDURECIDO 8M-D: la reasignacion va con try/catch (modo estricto del IIFE). */
+  try {
+    baroResolvePostTarget = async function (desc, rctx, deps) {
+      try {
+        var ref = baroBrainResolveRef(String(desc == null ? '' : desc), baroBrainMemGet());
+        if (ref && ref.postId) return { status: 'resolved', postId: ref.postId };
+        if (ref && ref.posts && ref.posts.length) return { status: 'candidates', posts: ref.posts };
+      } catch (_) {}
+      return __brainOrigRPT(desc, rctx, deps);
+    };
+  } catch (_) {}
+}
+
+/* 4b. Envuelve el run de cada herramienta para alimentar la memoria. */
+function baroBrainWrapRunForMemory(name, def) {
+  if (!def || typeof def.run !== 'function' || def.run.__brainMemWrapped) return;
+  var orig = def.run;
+  var w = async function (args, ctx) {
+    var res = await orig(args, ctx);
+    try { baroBrainMemRecordResult(name, args, res); } catch (_) {}
+    return res;
+  };
+  w.__brainMemWrapped = true;
+  def.run = w;
+}
+
+/* 4c. Los registros futuros tambien pasan por el wrap (compone con el wrap
+   del feed v2: flags distintos, orden de anidado irrelevante).
+   ENDURECIDO 8M-D: guard explicito typeof (el integrador lo exige). */
+if (typeof baroRegisterTool === 'function') {
+  try {
+    var __brainRegOrig = baroRegisterTool;
+    if (!baroRegisterTool.__brainMemWrapped) {
+      var __brainRegWrap = function (name, def) {
+        try { baroBrainWrapRunForMemory(name, def); } catch (_) {}
+        return __brainRegOrig(name, def);
+      };
+      __brainRegWrap.__brainMemWrapped = true;
+      baroRegisterTool = __brainRegWrap;
+    }
+  } catch (_) {}
+}
+
+/* 4d. Re-envuelve las herramientas ya registradas (6d/6f/7c). */
+try {
+  var __brainBT = (typeof baroTools === 'object' && baroTools) ? baroTools : null;
+  if (__brainBT) {
+    for (var __brainK in __brainBT) {
+      if (Object.prototype.hasOwnProperty.call(__brainBT, __brainK)) {
+        try { baroBrainWrapRunForMemory(__brainK, __brainBT[__brainK]); } catch (_) {}
+      }
+    }
+  }
+} catch (_) {}
+
+/* BARO v4 - fase 3 "cerebro" - carril 8M-C: multi-accion.
+ * Se inserta DENTRO del IIFE del sub-bloque 6b, justo antes de
+ * "exposicion global". Sin IIFE propio. Acceso directo a los locales del
+ * IIFE 6b (baroHandleUserMessage, baroDetectIntent, baroIntentToTool,
+ * baroMakeV2Ctx, baroMakeCtx, BARO_ACTION_INTENTS, baroV2FlowStepKey,
+ * baroClarifyHtml, baroAddUserMessage, baroAddBaroMessage, baroStartLiveTurn,
+ * BARO_SCORE_W) y a los carriles A/B solo con typeof-guards
+ * (baroBrainScoreAll, baroBrainPeekForced, __brainSkipPaint, baroBrainMemGet).
+ * Sin APIs externas.
+ */
+
+/* ---------- umbral calibrado ----------
+ * UMBRAL = 2 x (menor peso de BARO_SCORE_W). Pesos: regexHit 4,
+ * keywordExact 3, entity 2, lang 1, typo 1. El menor es 1, asi que
+ * UMBRAL = 2: un segmento necesita al menos una entidad (2) o dos
+ * senales minimas para contar como accion independiente.
+ * EMPATE_BAJO = 4 (un regexHit): si TODOS los segmentos caen en el mismo
+ * intent con el mismo score por debajo de 4, es coincidencia generica
+ * ("pan y queso"), no dos acciones. */
+var __brain8mW = { regexHit: 4, keywordExact: 3, entity: 2, lang: 1, typo: 1 };
+try { if (typeof BARO_SCORE_W === 'object' && BARO_SCORE_W) __brain8mW = BARO_SCORE_W; } catch (_) {}
+var __brain8mMinW = 1;
+try {
+  __brain8mMinW = Math.min(__brain8mW.regexHit, __brain8mW.keywordExact, __brain8mW.entity, __brain8mW.lang, __brain8mW.typo);
+  if (!(isFinite(__brain8mMinW) && __brain8mMinW > 0)) __brain8mMinW = 1;
+} catch (_) { __brain8mMinW = 1; }
+var BARO_BRAIN_MULTI_UMBRAL = 2 * __brain8mMinW;
+var BARO_BRAIN_MULTI_EMPATE_BAJO = 4;
+
+/* ---------- i18n baro.brain.* (patron de fusion del sub-bloque 8L) ---------- */
+var __brain8mI18n = {
+  "baro.brain.multi_intro": { es: "Voy a hacer {n} cosas, una por una:", en: "I'll do {n} things, one by one:", zh: "我将逐个处理 {n} 件事：", pt: "Vou fazer {n} coisas, uma por uma:" },
+  "baro.brain.multi_summary": { es: "Resumen", en: "Summary", zh: "总结", pt: "Resumo" },
+  "baro.brain.multi_ok": { es: "lista", en: "done", zh: "完成", pt: "feita" },
+  "baro.brain.multi_fail": { es: "no se pudo hacer", en: "couldn't be done", zh: "未能完成", pt: "não foi possível" },
+  "baro.brain.multi_clarify": { es: "necesita aclaración", en: "needs clarification", zh: "需要澄清", pt: "precisa de esclarecimento" },
+  "baro.brain.chain_prefill": { es: "Comparto lo que encontré", en: "Sharing what I found", zh: "分享我找到的内容", pt: "Compartilhando o que encontrei" }
+};
+function __brain8mFuseI18n() {
+  try {
+    var g = (typeof globalThis !== 'undefined') ? globalThis : ((typeof window !== 'undefined') ? window : this);
+    var keys = Object.keys(__brain8mI18n);
+    var u = null;
+    try { u = (typeof BARO_UI_I18N !== 'undefined') ? BARO_UI_I18N : null; } catch (_) { u = null; }
+    if (u && typeof u === 'object') keys.forEach(function (k) { if (!(k in u)) u[k] = __brain8mI18n[k]; });
+    var arr = [];
+    if (g.APP_ENGLISH_TEXT) arr.push(['en', g.APP_ENGLISH_TEXT]);
+    if (g.APP_CHINESE_TEXT) arr.push(['zh', g.APP_CHINESE_TEXT]);
+    if (g.APP_PORTUGUESE_TEXT) arr.push(['pt', g.APP_PORTUGUESE_TEXT]);
+    arr.forEach(function (pair) {
+      var lg = pair[0], dict = pair[1];
+      keys.forEach(function (k) {
+        var en2 = __brain8mI18n[k], tv = en2[lg];
+        if (tv && !(k in dict)) { try { dict[k] = tv; } catch (_) {} }
+        var esv = en2.es, lgv = en2[lg];
+        if (esv && lgv && !(esv in dict)) { try { dict[esv] = lgv; } catch (_) {} }
+      });
+    });
+  } catch (_) {}
+}
+__brain8mFuseI18n();
+
+/* Traductor local con sustitucion {clave} y respaldo honesto en ES. */
+function __brain8mT(ctx, key, params, fallbackEs) {
+  var s = '';
+  try { s = ctx.t(key); } catch (_) { s = ''; }
+  if (!s || s === key) s = (fallbackEs == null ? '' : String(fallbackEs));
+  if (params && typeof params === 'object') {
+    try {
+      Object.keys(params).forEach(function (x) { s = s.split('{' + x + '}').join(String(params[x])); });
+    } catch (_) {}
+  }
+  return s;
+}
+
+/* ---------- 1. baroBrainSplit(text): pura ----------
+ * Divide por conjunciones con limite de palabra, sin partir dentro de
+ * URLs ni de comillas. Declara multi-accion SOLO si >=2 segmentos tienen
+ * CADA UNO senal fuerte e independiente (best.score >= UMBRAL) y no es un
+ * empate identico bajo en el mismo intent. Maximo 3 acciones: el resto se
+ * re-une al ultimo segmento. Devuelve null o [{text}]. */
+function baroBrainSplit(text) {
+  var t = String(text == null ? '' : text);
+  if (!t || !t.trim()) return null;
+  if (typeof baroBrainScoreAll !== 'function') return null;
+  /* Proteger URLs y citas con placeholders antes de partir. */
+  var spans = [];
+  var PH = function (i) { return '\u0001' + i + '\u0002'; };
+  var work = t.replace(/https?:\/\/[^\s<>"']+|www\.[^\s<>"']+/gi, function (m) {
+    spans.push(m); return PH(spans.length - 1);
+  });
+  work = work.replace(/"[^"\n]*"|'[^'\n]*'|«[^»\n]*»|“[^”\n]*”/g, function (m) {
+    spans.push(m); return PH(spans.length - 1);
+  });
+  /* Conjunciones ES/EN/PT con espacios (limite de palabra) y ZH sin ellos. */
+  var raw = work.split(/\s+(?:y|and|e)\s+|\s*(?:然后|然後)\s*/i);
+  var segs = [];
+  var i;
+  for (i = 0; i < raw.length; i++) {
+    var seg = raw[i].replace(/\u0001(\d+)\u0002/g, function (m, g) {
+      var k = parseInt(g, 10);
+      return (k >= 0 && k < spans.length) ? spans[k] : m;
+    }).trim();
+    if (seg) segs.push(seg);
+  }
+  if (segs.length < 2) return null;
+  if (segs.length > 3) segs = [segs[0], segs[1], segs.slice(2).join(' y ')];
+  /* Puntuar cada segmento con el carril A. */
+  var info = [];
+  for (i = 0; i < segs.length; i++) {
+    var list = null;
+    try { list = baroBrainScoreAll(segs[i]); } catch (_) { list = null; }
+    var best = (list && list.length) ? list[0] : null;
+    var bs = (best && typeof best.score === 'number') ? best.score : 0;
+    var bi = '';
+    try { bi = best ? String(best.intent || (best.rule && best.rule.intent) || '') : ''; } catch (_) { bi = ''; }
+    info.push({ text: segs[i], intent: bi, score: bs });
+  }
+  for (i = 0; i < info.length; i++) {
+    if (!info[i].intent || info[i].score < BARO_BRAIN_MULTI_UMBRAL) return null;
+  }
+  var sameIntent = true, sameScore = true;
+  for (i = 1; i < info.length; i++) {
+    if (info[i].intent !== info[0].intent) sameIntent = false;
+    if (info[i].score !== info[0].score) sameScore = false;
+  }
+  if (sameIntent && sameScore && info[0].score < BARO_BRAIN_MULTI_EMPATE_BAJO) return null;
+  return info.map(function (s) { return { text: s.text }; });
+}
+
+/* ---------- 3. baroBrainChainPrefill(args) ----------
+ * Si args ya trae contenido (clave real de publicar: `texto`), lo deja
+ * intacto. Si no, pre-rellena `texto` con un resumen honesto de hasta 3
+ * titulos tomados de baroBrainMemGet().posts (resultado de la accion
+ * anterior) + la clave i18n baro.brain.chain_prefill. Devuelve un objeto
+ * nuevo en todos los casos. */
+function baroBrainChainPrefill(args) {
+  var out = {};
+  try {
+    if (args && typeof args === 'object') {
+      for (var k in args) {
+        if (Object.prototype.hasOwnProperty.call(args, k)) out[k] = args[k];
+      }
+    }
+  } catch (_) {}
+  var hasText = false;
+  try {
+    var tv = out.texto != null ? String(out.texto).trim() : '';
+    var cv = out.contenido != null ? String(out.contenido).trim() : '';
+    hasText = !!(tv || cv);
+  } catch (_) {}
+  if (hasText) return out;
+  var titles = [];
+  try {
+    var mem = (typeof baroBrainMemGet === 'function') ? baroBrainMemGet() : null;
+    var posts = mem && mem.posts;
+    if (posts && typeof posts.length === 'number') {
+      for (var i = 0; i < posts.length && titles.length < 3; i++) {
+        var p = posts[i], pt = '';
+        if (p != null) {
+          if (typeof p === 'string') pt = p;
+          else if (typeof p === 'object') pt = p.titulo || p.title || p.t || p.nombre || p.name || '';
+        }
+        pt = String(pt == null ? '' : pt).trim();
+        if (pt) titles.push(pt);
+      }
+    }
+  } catch (_) {}
+  if (titles.length) {
+    var pre = '';
+    try { pre = (typeof baroResolveText === 'function') ? baroResolveText('baro.brain.chain_prefill') : ''; } catch (_) { pre = ''; }
+    if (!pre || pre === 'baro.brain.chain_prefill') pre = 'Comparto lo que encontré';
+    out.texto = pre + ': ' + titles.join(' · ');
+  }
+  return out;
+}
+
+/* ---------- 2. baroBrainRunMulti(segs, fullText): async ----------
+ * Ejecuta las acciones en orden, con un paso visible por accion.
+ * NOTA DE DISENO: el paso visible se crea TRAS detectar (no antes),
+ * porque baroV2FlowStepKey('tool', intent) exige el intent; la deteccion
+ * es local y sincrona, asi que no hay espera invisible.
+ * Las herramientas con confirmacion pintan su propia tarjeta y devuelven
+ * {html:''}: NUNCA se salta ni se auto-confirma (se respeta el patron del
+ * router 6b: con html==='' no se pinta burbuja vacia). */
+async function baroBrainRunMulti(segs, fullText) {
+  var full = String(fullText == null ? '' : fullText);
+  var list = [];
+  try {
+    if (Array.isArray(segs)) {
+      for (var li = 0; li < segs.length; li++) {
+        var st = (segs[li] && segs[li].text != null) ? String(segs[li].text) : '';
+        if (st) list.push({ text: st });
+      }
+    }
+  } catch (_) {}
+  if (!list.length) return null;
+  var ctx = null;
+  try {
+    ctx = (typeof baroMakeV2Ctx === 'function') ? baroMakeV2Ctx()
+      : ((typeof baroMakeCtx === 'function') ? baroMakeCtx() : null);
+  } catch (_) { ctx = null; }
+  if (!ctx) return null;
+  try { if (typeof baroStartLiveTurn === 'function') baroStartLiveTurn(); } catch (_) {}
+  /* Mensaje del usuario: UNA sola vez. El wiring neutraliza
+     baroAddUserMessage cuando el carril A ya lo pinto (skipPaint); en
+     llamada directa sin wrapper se pinta aqui. */
+  try { if (typeof baroAddUserMessage === 'function') baroAddUserMessage(full); } catch (_) {}
+  var paint = function (html) {
+    try { if (html && typeof baroAddBaroMessage === 'function') baroAddBaroMessage(html); } catch (_) {}
+  };
+  paint('<p>' + ctx.esc(__brain8mT(ctx, 'baro.brain.multi_intro', { n: list.length },
+    'Voy a hacer ' + list.length + ' cosas, una por una:')) + '</p>');
+
+  var registry = {};
+  try { if (typeof baroTools !== 'undefined' && baroTools) registry = baroTools; } catch (_) {}
+
+  var estados = [];
+  for (var i = 0; i < list.length; i++) {
+    var segText = list[i].text;
+    var det = null;
+    try { det = (typeof baroDetectIntent === 'function') ? baroDetectIntent(segText) : null; } catch (_) { det = null; }
+    var intent = (det && det.intent) ? String(det.intent) : '';
+    var args = (det && det.args && typeof det.args === 'object') ? det.args : {};
+    var iName = intent || segText;
+    try {
+      var cand = ctx.t('baro.intent.name.' + intent);
+      if (intent && cand && cand !== 'baro.intent.name.' + intent) iName = cand;
+    } catch (_) {}
+    var sTool = null;
+    try { sTool = ctx.step(intent ? baroV2FlowStepKey('tool', intent) : 'baro.v2.step.working'); } catch (_) { sTool = null; }
+    var status = 'fallo';
+    try {
+      if (!intent) {
+        paint('<p>' + ctx.esc(__brain8mT(ctx, 'baro.intent.empty_result', null, '')) + '</p>');
+      } else if (intent === 'ayuda') {
+        /* Aclaratoria: no hay herramienta, mensaje honesto (patron del router). */
+        var helpHtml = '';
+        try {
+          helpHtml = (args.clarify && !args.showFullHelp && typeof baroClarifyHtml === 'function')
+            ? baroClarifyHtml(args, ctx)
+            : ctx.t('baro.intent.help_html');
+        } catch (_) { helpHtml = ''; }
+        paint(helpHtml);
+        status = 'aclaracion';
+      } else if (BARO_ACTION_INTENTS[intent] && !ctx.user) {
+        var loginHtml = '';
+        try { loginHtml = ctx.t('baro.intent.login_required_html'); } catch (_) { loginHtml = ''; }
+        paint(loginHtml);
+        status = 'fallo';
+      } else {
+        var toolName = (typeof baroIntentToTool === 'object' && baroIntentToTool) ? baroIntentToTool[intent] : null;
+        var runner = (toolName && registry[toolName] && typeof registry[toolName].run === 'function')
+          ? registry[toolName].run : null;
+        if (!runner) {
+          var unHtml = '';
+          try { unHtml = ctx.t('baro.intent.tool_unavailable_html'); } catch (_) { unHtml = ''; }
+          paint(unHtml);
+          status = 'fallo';
+        } else {
+          var runArgs = args;
+          if (intent === 'publicar' || intent === 'programar') {
+            try { runArgs = baroBrainChainPrefill(args); } catch (_) { runArgs = args; }
+          }
+          /* La memoria la graba el carril B (envuelve los run): aqui solo se ejecuta. */
+          var result = await runner(runArgs, ctx);
+          var html = (result && typeof result.html === 'string') ? result.html : '';
+          if (html) { paint(html); }
+          else if (!result || typeof result.html !== 'string') {
+            var emptyHtml = '';
+            try { emptyHtml = ctx.t('baro.intent.empty_result'); } catch (_) { emptyHtml = ''; }
+            paint(emptyHtml);
+          }
+          /* html === '' => la herramienta ya pinto su propia UI en el hilo
+             (tarjeta de confirmacion): no se anade burbuja vacia y la tarjeta
+             espera el toque del usuario. */
+          status = 'ok';
+        }
+      }
+    } catch (err) {
+      var errHtml = '';
+      try { errHtml = ctx.t('baro.intent.error_html'); } catch (_) { errHtml = ''; }
+      paint(errHtml);
+      status = 'fallo';
+    }
+    try { ctx.stepDone(sTool, { summary: iName }); } catch (_) {}
+    estados.push({ name: iName, status: status });
+  }
+
+  var sumTitle = __brain8mT(ctx, 'baro.brain.multi_summary', null, 'Resumen');
+  var lines = estados.map(function (e) {
+    var sk = e.status === 'ok' ? 'baro.brain.multi_ok'
+      : (e.status === 'aclaracion' ? 'baro.brain.multi_clarify' : 'baro.brain.multi_fail');
+    var fb = e.status === 'ok' ? 'lista' : (e.status === 'aclaracion' ? 'necesita aclaración' : 'no se pudo hacer');
+    return '<li>' + ctx.esc(e.name) + ' — ' + ctx.esc(__brain8mT(ctx, sk, null, fb)) + '</li>';
+  }).join('');
+  paint('<div class="baro-multi-summary"><p><strong>' + ctx.esc(sumTitle) +
+    '</strong></p><ul>' + lines + '</ul></div>');
+  return { ok: true, n: list.length };
+}
+
+/* ---------- 4. WIRING para el integrador ----------
+ * Envuelve baroHandleUserMessage (local reasignable del IIFE 6b; la
+ * "exposicion global" posterior exporta esta version envuelta a window).
+ * DESVIACIONES DOCUMENTADAS vs. borrador del coordinador:
+ * (a) el borrador pintaba baroAddUserMessage(t) en el wrapper Y
+ * baroBrainRunMulti lo pintaba otra vez ("UNA vez" en su flujo) =>
+ * burbuja de usuario duplicada en el camino comun. Aqui el pintado unico
+ * vive en baroBrainRunMulti; el wrapper solo neutraliza baroAddUserMessage
+ * cuando el carril A ya pinto (skipPaint).
+ * (b) el flag __brainSkipPaint se consume (lee y limpia) siempre que no hay
+ * forzado, no solo en mensajes multi: baroBrainPickTie (carril A) lo pone
+ * junto con un forzado que este wrapper deriva al original, asi que si
+ * sigue en true aqui es remanente y le robaria el pintado a un multi futuro.
+ * baroAddUserMessage SI es reasignable en este closure: es una declaracion
+ * `function` a nivel de script clasico (binding global escribible) y el
+ * IIFE 6b no la sombrea (verificado por grep); la neutralizacion con
+ * try/finally es viable y restaura el original. */
+/* ENDURECIDO 8M-D: guard typeof + try/catch en todo el wiring (modo estricto). */
+var __brainOrigHandle = null;
+try {
+  if (typeof baroHandleUserMessage === 'function') {
+    __brainOrigHandle = baroHandleUserMessage;
+    baroHandleUserMessage = async function (text) {
+  var t = String(text == null ? '' : text);
+  var forced = false;
+  try { forced = !!baroBrainPeekForced(); } catch (_) {}
+  if (!forced) {
+    /* El carril A solo pone __brainSkipPaint junto con un forzado
+       (baroBrainPickTie), que este wrapper ya derivo al original; si el
+       flag sigue en true aqui es remanente y se consume igual: de otro
+       modo le robaria el pintado del usuario a un mensaje multi futuro. */
+    var skipPaint = false;
+    try { skipPaint = !!__brainSkipPaint; __brainSkipPaint = false; } catch (_) {}
+    var segs = null;
+    try { segs = baroBrainSplit(t); } catch (_) { segs = null; }
+    if (segs && segs.length > 1) {
+      /* El mensaje del usuario se pinta UNA sola vez dentro de
+         baroBrainRunMulti. Si el carril A ya lo pinto (skipPaint
+         legitimo), se neutraliza baroAddUserMessage durante la
+         ejecucion para que ese pintado sea no-op; el finally restaura
+         el original. */
+      var __tmpUM = null, __muted = false;
+      try {
+        if (skipPaint && typeof baroAddUserMessage === 'function') {
+          __tmpUM = baroAddUserMessage;
+          baroAddUserMessage = function () { return null; };
+          __muted = true;
+        }
+      } catch (_) {}
+      try {
+        return await baroBrainRunMulti(segs, t);
+      } finally {
+        try { if (__muted) baroAddUserMessage = __tmpUM; } catch (_) {}
+      }
+    }
+  }
+  return await __brainOrigHandle(text);
+};
+  }
+} catch (_) {}
+
+/* ---------- 8M-D: exposición para el checker de handlers inline ----------
+ * baro6dExpose aprende el nombre (checker check-onclick-handlers.py) y lo
+ * publica en window: el onclick de la tarjeta de desambiguación lo invoca. */
+try { if (typeof baro6dExpose === 'function') { baro6dExpose('baroBrainPickTie', baroBrainPickTie); } } catch (_) {}
+
+/* ---------- 8M-D: seam de test (test-c122) ---------- */
+try { if (typeof baro6dExpose === 'function') { baro6dExpose('baroBrain', { detect: function(t){ return baroDetectIntent(t); }, split: baroBrainSplit, tie: baroBrainTie, scoreAll: baroBrainScoreAll, memGet: baroBrainMemGet, memClear: baroBrainMemClear, resolveRef: baroBrainResolveRef, recordResult: baroBrainMemRecordResult, peekForced: baroBrainPeekForced, pickTie: baroBrainPickTie, runMulti: baroBrainRunMulti, chainPrefill: baroBrainChainPrefill }); } } catch (_) {}
+
+/* ---------- exposición global ---------- */
   // baroHandleUserMessage SOBREESCRIBE la versión inicial de 6a (mismo nombre,
   // este bloque va después). El resto son helpers del sub-bloque 6b.
   var __export = function (name, fn) {
