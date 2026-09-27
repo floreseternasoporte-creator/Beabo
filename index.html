@@ -71990,6 +71990,1874 @@ if (typeof module !== 'undefined' && module.exports) {
   registerIntents();
 })();
 
+/* ================= BARO · v9-MOUSE ================= */
+/* ================= BARO · v9-MOUSE =================
+ * Cursor de mouse LITERAL estilo computadora para el Modo Agente.
+ * El usuario ve el mouse viajar, apuntar, presionar y escribir en tiempo real.
+ * REGLA DURA: el clic visual y el clic real son el MISMO evento. Si el elemento
+ * no existe o desaparece, se aborta honesto: jamás se finge un clic al aire.
+ * Compone sobre v8 sin tocarlo: mientras el mouse está activo, el anillo
+ * #baro-v8-ghost se oculta vía CSS (body.baro-v9-mouse-on).
+ */
+(function () {
+  'use strict';
+  if (typeof window === 'undefined') return;
+  if (window.baroMouse) return; // idempotente
+
+  var TIP_OX = 6, TIP_OY = 3; // hotspot de la flecha SVG dentro de su caja 28x28
+
+  var state = {
+    cursor: null,
+    x: 0, y: 0,
+    visible: false,
+    aborted: false,
+    lastTrail: [],
+    lastClick: null
+  };
+
+  /* ---------- utilidades ---------- */
+  function now() {
+    try { if (window.performance && window.performance.now) return window.performance.now(); } catch (_) {}
+    return Date.now();
+  }
+  function raf(cb) {
+    try { if (window.requestAnimationFrame) return window.requestAnimationFrame(cb); } catch (_) {}
+    return setTimeout(function () { cb(now()); }, 16);
+  }
+  function rand(a, b) { return a + Math.random() * (b - a); }
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+  function wait(ms) {
+    return new Promise(function (resolve) {
+      var t0 = now();
+      (function loop() {
+        if (state.aborted) return resolve('stopped');
+        if (now() - t0 >= ms) return resolve('ok');
+        raf(loop);
+      })();
+    });
+  }
+
+  /* ---------- CSS ---------- */
+  function injectCss() {
+    try {
+      if (document.getElementById('baro-v9-mouse-css')) return;
+      var st = document.createElement('style');
+      st.id = 'baro-v9-mouse-css';
+      st.textContent =
+        '#baro-v9-cursor{position:fixed;left:0;top:0;width:28px;height:28px;' +
+        'z-index:2147483647;pointer-events:none;display:none;' +
+        'filter:drop-shadow(0 2px 3px rgba(0,0,0,.35));will-change:transform;}' +
+        '#baro-v9-cursor.baro-mouse-down{margin-top:2px;}' +
+        '.baro-v9-ripple{position:fixed;z-index:2147483646;pointer-events:none;' +
+        'width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;' +
+        'border:2px solid rgba(47,51,184,.9);animation:baroV9Ripple .6s ease-out forwards;}' +
+        '@keyframes baroV9Ripple{from{transform:scale(1);opacity:.9;}' +
+        'to{transform:scale(3.4);opacity:0;}}' +
+        'body.baro-v9-mouse-on #baro-v8-ghost{display:none !important;}';
+      var head = document.head || document.getElementsByTagName('head')[0];
+      if (head) head.appendChild(st);
+    } catch (_) {}
+  }
+
+  var CURSOR_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">' +
+    '<path d="M6 3 L6 20.4 L11 15.8 L13.4 21.6 L16.1 20.4 L13.7 14.8 L18.8 14.8 Z" ' +
+    'fill="#ffffff" stroke="#161616" stroke-width="1.6" stroke-linejoin="round"/>' +
+    '</svg>';
+
+  function ensureCursor() {
+    injectCss();
+    if (!state.cursor) {
+      try {
+        var d = document.createElement('div');
+        d.id = 'baro-v9-cursor';
+        d.setAttribute('aria-hidden', 'true');
+        d.innerHTML = CURSOR_SVG;
+        document.body.appendChild(d);
+        state.cursor = d;
+      } catch (_) { return null; }
+      try {
+        state.x = (window.innerWidth || 390) / 2;
+        state.y = (window.innerHeight || 844) / 2;
+      } catch (_) { state.x = 195; state.y = 422; }
+      place(state.x, state.y);
+    }
+    return state.cursor;
+  }
+  function place(x, y) {
+    state.x = x; state.y = y;
+    try {
+      if (state.cursor) {
+        state.cursor.style.transform =
+          'translate(' + (x - TIP_OX).toFixed(1) + 'px,' + (y - TIP_OY).toFixed(1) + 'px)';
+      }
+    } catch (_) {}
+  }
+
+  /* ---------- elementos ---------- */
+  function centerOf(el) {
+    try {
+      var r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    } catch (_) { return null; }
+  }
+  function isAlive(el) {
+    try {
+      if (!el || typeof el.getBoundingClientRect !== 'function') return false;
+      if (!el.isConnected) return false;
+      if (el.disabled) return false;
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      return true;
+    } catch (_) { return false; }
+  }
+  function inViewport(el, margin) {
+    var m = margin == null ? 10 : margin;
+    var c = centerOf(el);
+    if (!c) return false;
+    var w, h;
+    try { w = window.innerWidth || 390; h = window.innerHeight || 844; }
+    catch (_) { w = 390; h = 844; }
+    return c.x > m && c.x < w - m && c.y > m && c.y < h - m;
+  }
+
+  /* ---------- movimiento humano ---------- */
+  function moveTo(target, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      ensureCursor();
+      var isEl = !!(target && typeof target.getBoundingClientRect === 'function');
+      if (isEl && !isAlive(target)) return resolve('aborted');
+      function getPt() {
+        if (isEl) {
+          var c = centerOf(target);
+          return c ? { x: c.x, y: c.y } : null;
+        }
+        return { x: target.x, y: target.y };
+      }
+      var from = { x: state.x, y: state.y };
+      var d0 = getPt();
+      if (!d0) return resolve('aborted');
+      var dx = d0.x - from.x, dy = d0.y - from.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 2) { place(d0.x, d0.y); return resolve('ok'); }
+      var dur = opts.duration != null ? opts.duration
+        : clamp(400 + dist * 0.9, 400, 1400);
+      // Curva bezier cuadrática: punto de control desplazado en perpendicular.
+      // Garantiza trayectoria NO recta (mínimo 24px de desvío).
+      var nx = -dy / dist, ny = dx / dist;
+      var side = Math.random() < 0.5 ? -1 : 1;
+      var curveK = opts.curve == null ? 1 : opts.curve;
+      var off = Math.max(24, dist * 0.18) * side * curveK;
+      var cx = (from.x + d0.x) / 2 + nx * off;
+      var cy = (from.y + d0.y) / 2 + ny * off;
+      var t0 = now();
+      state.lastTrail = [];
+      function ease(t) { // easeInOutQuad: acelera y desacelera como una mano
+        return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      }
+      (function frame() {
+        if (state.aborted) return resolve('stopped');
+        var dest = getPt();
+        if (!dest) return resolve('aborted'); // el elemento murió a mitad del viaje
+        var t = clamp((now() - t0) / dur, 0, 1);
+        var e = ease(t), u = 1 - e;
+        var px = u * u * from.x + 2 * u * e * cx + e * e * dest.x;
+        var py = u * u * from.y + 2 * u * e * cy + e * e * dest.y;
+        place(px, py);
+        state.lastTrail.push({ x: px, y: py, t: t });
+        if (t >= 1) { place(dest.x, dest.y); return resolve('ok'); }
+        raf(frame);
+      })();
+    });
+  }
+
+  /* Micro-temblor de puntería durante la pausa previa al clic */
+  function tremor(x, y, ms) {
+    return new Promise(function (resolve) {
+      var t0 = now();
+      (function frame() {
+        if (state.aborted) return resolve('stopped');
+        if (now() - t0 >= ms) { place(x, y); return resolve('ok'); }
+        place(x + rand(-1.2, 1.2), y + rand(-1.2, 1.2));
+        raf(frame);
+      })();
+    });
+  }
+
+  function pressVisual(x, y) {
+    var pressT = now();
+    try {
+      var c = ensureCursor();
+      if (c) c.classList.add('baro-mouse-down');
+      var r = document.createElement('div');
+      r.className = 'baro-v9-ripple';
+      r.style.left = x + 'px';
+      r.style.top = y + 'px';
+      document.body.appendChild(r);
+      setTimeout(function () { try { r.remove(); } catch (_) {} }, 650);
+    } catch (_) {}
+    return pressT;
+  }
+  function releasePress() {
+    try { if (state.cursor) state.cursor.classList.remove('baro-mouse-down'); } catch (_) {}
+  }
+
+  /* ---------- clic: viajar → apuntar → presionar → click() REAL ---------- */
+  function click(el, opts) {
+    opts = opts || {};
+    if (!isAlive(el)) return Promise.resolve('aborted');
+    return moveTo(el, opts).then(function (m) {
+      if (m !== 'ok') return m;
+      var aimMs = opts.aim != null ? opts.aim : rand(250, 400);
+      var c = centerOf(el);
+      if (!c) return 'aborted';
+      return tremor(c.x, c.y, aimMs).then(function (t) {
+        if (t !== 'ok') return t;
+        if (!isAlive(el)) return 'aborted'; // re-chequeo: jamás clic al aire
+        var pt = centerOf(el);
+        var pressT = pressVisual(pt.x, pt.y); // el cursor se hunde + onda
+        var clickT = now();
+        try { el.click(); } // el MISMO instante: visual y real juntos
+        catch (e) { releasePress(); return 'fail:click'; }
+        state.lastClick = { pressT: pressT, clickT: clickT };
+        return wait(120).then(function () { releasePress(); return 'ok'; });
+      });
+    });
+  }
+
+  /* ---------- tipeo: mover → clic para enfocar → escribir visible ---------- */
+  function type(el, text, opts) {
+    opts = opts || {};
+    if (!isAlive(el)) return Promise.resolve('aborted');
+    text = String(text == null ? '' : text);
+    return moveTo(el, opts).then(function (m) {
+      if (m !== 'ok') return m;
+      return wait(opts.aim != null ? opts.aim : rand(200, 320)).then(function (w) {
+        if (w !== 'ok') return w;
+        if (!isAlive(el)) return 'aborted';
+        var pt = centerOf(el);
+        pressVisual(pt.x, pt.y);
+        try { el.focus(); } catch (_) {}
+        try { el.click(); } catch (_) {} // clic real para enfocar, como un humano
+        releasePress();
+        var chars = text.split('');
+        var i = 0;
+        return new Promise(function (resolve) {
+          (function tick() {
+            if (state.aborted) return resolve('stopped');
+            if (i >= chars.length) {
+              try {
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              } catch (_) {}
+              return resolve('ok');
+            }
+            try {
+              if ('value' in el) el.value = (el.value || '') + chars[i];
+              else el.textContent = (el.textContent || '') + chars[i];
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+            } catch (_) {}
+            i++;
+            var d = opts.charDelay != null ? opts.charDelay : rand(30, 90);
+            var t0 = now();
+            (function gap() {
+              if (state.aborted) return resolve('stopped');
+              if (now() - t0 >= d) return tick();
+              raf(gap);
+            })();
+          })();
+        });
+      });
+    });
+  }
+
+  /* ---------- scroll: el cursor sigue el movimiento hasta ver el objetivo ---------- */
+  function scrollTo(el, opts) {
+    opts = opts || {};
+    if (!isAlive(el)) return Promise.resolve('aborted');
+    if (inViewport(el)) return moveTo(el, opts);
+    try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    catch (_) { try { el.scrollIntoView(); } catch (_) {} }
+    var w, h;
+    try { w = window.innerWidth || 390; h = window.innerHeight || 844; }
+    catch (_) { w = 390; h = 844; }
+    var t0 = now();
+    var timeout = opts.timeout || 3000;
+    return new Promise(function (resolve) {
+      (function frame() {
+        if (state.aborted) return resolve('stopped');
+        if (!isAlive(el)) return resolve('aborted');
+        if (inViewport(el)) return moveTo(el, opts).then(resolve);
+        if (now() - t0 > timeout) return resolve('timeout');
+        place(state.x + (w / 2 - state.x) * 0.12, state.y + (h / 2 - state.y) * 0.12);
+        raf(frame);
+      })();
+    });
+  }
+
+  /* ---------- ciclo de vida ---------- */
+  function show() {
+    ensureCursor();
+    state.aborted = false;
+    state.visible = true;
+    try {
+      if (state.cursor) state.cursor.style.display = 'block';
+      document.body.classList.add('baro-v9-mouse-on'); // oculta el ghost v8
+    } catch (_) {}
+  }
+  function hide() {
+    state.visible = false;
+    try {
+      if (state.cursor) state.cursor.style.display = 'none';
+      document.body.classList.remove('baro-v9-mouse-on');
+    } catch (_) {}
+  }
+  function stop() { state.aborted = true; }
+
+  window.baroMouse = {
+    version: 'v9',
+    show: show,
+    hide: hide,
+    stop: stop,
+    moveTo: moveTo,
+    click: click,
+    type: type,
+    scrollTo: scrollTo,
+    isActive: function () { return state.visible; },
+    pos: function () { return { x: state.x, y: state.y }; },
+    // ganchos de test (no API pública documentada)
+    _trail: function () { return state.lastTrail; },
+    _lastClick: function () { return state.lastClick; }
+  };
+})();
+
+/* ================= BARO · v9-EJECUTOR ================= */
+/* ================= BARO v9 · EJECUTOR HUMANO =================
+ * Snippet AUTOCONTENIDO para el bloque BARO de index.html.
+ *
+ * PUNTO DE INSERCION: como IIFE propio DENTRO del bloque script final del
+ * BARO, DESPUES del bloque v9-MOUSE (y por tanto despues de
+ * v8-SEGURIDAD-AGENTE) y ANTES del cierre del script final.
+ * NO crea bloques script nuevos (el literal de cierre de etiqueta script
+ * esta prohibido en este archivo, incluso en comentarios). NO edita ninguna
+ * funcion existente: solo envuelve referencias globales.
+ * No toca baroHandleUserMessage, su catch de diagnostico tecnico, el
+ * blindaje de intents nulos ni los parches v5-v8 (los extiende).
+ *
+ * QUE HACE: convierte cada ejecucion del modo agente v8 en una coreografia
+ * visible como una persona controlando el telefono en tiempo real:
+ *   1) narracion ("Voy a tu perfil..."),
+ *   2) el mouse VIAJA hasta el objetivo en tiempo real (nunca salta),
+ *   3) pausa de apuntado,
+ *   4) clic real con onda expansiva,
+ *   5) espera a que la UI responda de verdad,
+ *   6) verificacion del efecto,
+ *   7) "check" en el log solo si se verifico.
+ *
+ * DECISION DE DISENO (documentada): wrapear solo window.baroV8.execute no
+ * es viable porque el mapa planId->plan (v8plans) es privado del closure
+ * v8. En su lugar se intercepta la CREACION del plan (envolviendo el run de
+ * la tool modo_agente, que recibe el objetivo y reconstruye el plan con el
+ * buildPlan puro y expuesto) y se re-enrutan baroV8PlanRun y
+ * baroV8.execute hacia el ejecutor v9 cuando el planId esta en el registro
+ * v9; si no, se delega al original v8 sin romper nada.
+ *
+ * CONTRATO window.baroMouse (carril hermano v9-MOUSE; este parche lo
+ * consume si existe y trae el fallback si no):
+ *   baroMouse.moveTo(x, y, {duration}) -> Promise (mueve el cursor)
+ *   baroMouse.click()                  -> Promise (clic donde esta el cursor)
+ *   baroMouse.pause(ms)                -> Promise (opcional)
+ *   baroMouse.pos()                    -> {x, y} (opcional)
+ * Si falta o falla, el ejecutor usa su propio cursor de respaldo
+ * (#baro-v9-cursor) con la misma coreografia. Cero red, cero fetch/XHR.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patron 8L/v5-v8) ---------------- */
+  var BARO_V9_I18N = {
+    'baro.v9.working':   { es: 'Baro está trabajando…', en: 'Baro is working…', zh: 'Baro 正在工作…', pt: 'Baro está trabalhando…' },
+    'baro.v9.n_go':      { es: 'Voy a {x}…', en: 'Going to {x}…', zh: '正在前往{x}…', pt: 'Indo para {x}…' },
+    'baro.v9.n_tap':     { es: 'Toco «{x}»…', en: 'Tapping "{x}"…', zh: '正在点击“{x}”…', pt: 'Tocando em "{x}"…' },
+    'baro.v9.n_type':    { es: 'Escribo el texto…', en: 'Typing the text…', zh: '正在输入文字…', pt: 'Digitando o texto…' },
+    'baro.v9.n_open':    { es: 'Abro {x}…', en: 'Opening {x}…', zh: '正在打开{x}…', pt: 'Abrindo {x}…' },
+    'baro.v9.n_search':  { es: 'Busco «{x}»…', en: 'Searching for "{x}"…', zh: '正在搜索“{x}”…', pt: 'Buscando "{x}"…' },
+    'baro.v9.n_publish': { es: 'Publico…', en: 'Publishing…', zh: '正在发布…', pt: 'Publicando…' },
+    'baro.v9.n_retry':   { es: 'No lo veo, desplazo y reintento…', en: 'Can\'t see it, scrolling and retrying…', zh: '没看到，滚动后重试…', pt: 'Não vejo, rolando e tentando de novo…' },
+    'baro.v9.fail_step': { es: 'No pude: {x}', en: 'I couldn\'t: {x}', zh: '没能做到：{x}', pt: 'Não consegui: {x}' },
+    'baro.v9.done':      { es: 'Listo', en: 'Done', zh: '完成', pt: 'Pronto' },
+    'baro.v9.stopped':   { es: 'Detenido por ti', en: 'Stopped by you', zh: '已由你停止', pt: 'Parado por você' },
+    'baro.v9.failed':    { es: 'Se detuvo en el paso {n}', en: 'Stopped at step {n}', zh: '在第 {n} 步停止', pt: 'Parou na etapa {n}' },
+    'baro.v9.stop':      { es: 'Detener', en: 'Stop', zh: '停止', pt: 'Parar' },
+    'baro.v9.close':     { es: 'Cerrar', en: 'Close', zh: '关闭', pt: 'Fechar' },
+    'baro.v9.pace':      { es: 'Ritmo', en: 'Pace', zh: '速度', pt: 'Ritmo' },
+    'baro.v9.pace_n':    { es: 'Normal', en: 'Normal', zh: '正常', pt: 'Normal' },
+    'baro.v9.pace_f':    { es: 'Rápido', en: 'Fast', zh: '快速', pt: 'Rápido' },
+    'baro.v9.no_target': { es: 'No encontré «{x}» en la pantalla', en: 'Could not find "{x}" on screen', zh: '在屏幕上找不到“{x}”', pt: 'Não encontrei "{x}" na tela' },
+    'baro.v9.no_verif':  { es: 'Toqué pero la pantalla no reaccionó como esperaba', en: 'Tapped but the screen didn\'t react as expected', zh: '已点击，但屏幕没有按预期反应', pt: 'Toquei, mas a tela não reagiu como esperado' },
+    'baro.v9.no_lib':    { es: 'Ejecuto con el modo clásico…', en: 'Running in classic mode…', zh: '以经典模式执行…', pt: 'Executando no modo clássico…' }
+  };
+  function v9mergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V9_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V9_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+  function v9lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v9t(key, params) {
+    var s = null;
+    try {
+      var e = BARO_V9_I18N[key];
+      s = (e && (e[v9lang()] || e.es)) || key;
+    } catch (_) { s = key; }
+    if (params) {
+      Object.keys(params).forEach(function (k) {
+        s = String(s).split('{' + k + '}').join(String(params[k]));
+      });
+    }
+    return s;
+  }
+  function v9esc(s) {
+    try { if (typeof escapeHtml === 'function') return escapeHtml(s); } catch (_) {}
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /* ---------------- 1. Ritmo humano (configurable) ---------------- */
+  var v9pace = 'normal'; /* 'normal' | 'fast' — "hazlo rápido" lo pone en fast */
+  function v9isFast() { return v9pace === 'fast'; }
+  function v9travelDuration(dist) {
+    var d = Math.max(0, Number(dist) || 0);
+    if (v9isFast()) return Math.max(200, Math.min(500, 180 + d * 0.35));
+    return Math.max(500, Math.min(1200, 420 + d * 0.9));
+  }
+  function v9aimMs() { return v9isFast() ? 160 : 380; }
+  function v9settleMs() { return 1400; } /* la verificacion nunca se acelera */
+  function v9typeSpeed() { return v9isFast() ? 12 : 35; }
+  function v9sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  /* ---------------- 2. CSS: panel, cursor de respaldo, onda ---------------- */
+  function v9injectCss() {
+    try {
+      if (document.getElementById('baro-v9-css')) return;
+      var st = document.createElement('style');
+      st.id = 'baro-v9-css';
+      st.textContent =
+        '#baro-v9-panel{position:fixed;left:12px;right:12px;bottom:12px;z-index:99990;' +
+        'background:var(--theme-card,#161a28);border:1px solid #2F33B8;border-radius:16px;' +
+        'padding:12px 14px;box-shadow:0 8px 40px rgba(0,0,0,.55);max-height:48vh;overflow:auto}' +
+        '#baro-v9-panel h4{margin:0;font-size:14px;display:flex;align-items:center;gap:8px}' +
+        '#baro-v9-narr{margin:6px 0 2px;font-size:15px;font-weight:600;color:#9AA3FF;min-height:22px}' +
+        '#baro-v9-panel ul{list-style:none;margin:8px 0;padding:0;font-size:13px}' +
+        '#baro-v9-panel li{margin:5px 0;display:flex;gap:8px;align-items:flex-start}' +
+        '.baro-v9-st{width:20px;text-align:center;flex:none}' +
+        '.baro-v9-stop{margin-top:8px;width:100%;border:1px solid #e5484d;background:transparent;' +
+        'color:#e5484d;border-radius:10px;padding:9px;font-weight:700;cursor:pointer}' +
+        '.baro-v9-pace{margin-left:auto;border:1px solid #2c3145;background:transparent;color:#9AA3FF;' +
+        'border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer}' +
+        '#baro-v9-cursor{position:fixed;z-index:99999;width:0;height:0;pointer-events:none;display:none;' +
+        'font-size:26px;line-height:1;color:#9AA3FF;text-shadow:0 0 3px #fff,0 2px 6px rgba(0,0,0,.6);' +
+        'transform:translate(-4px,-2px) rotate(-8deg);transition:transform .18s ease}' +
+        '#baro-v9-cursor.aim{transform:translate(-4px,-2px) rotate(-8deg) scale(1.18)}' +
+        '.baro-v9-ripple{position:fixed;z-index:99998;width:14px;height:14px;margin:-7px 0 0 -7px;' +
+        'border-radius:50%;background:rgba(154,163,255,.55);pointer-events:none;' +
+        'animation:baroV9Rip .65s ease-out forwards}' +
+        '@keyframes baroV9Rip{from{transform:scale(1);opacity:.8}to{transform:scale(6);opacity:0}}';
+      document.head.appendChild(st);
+    } catch (_) {}
+  }
+
+  /* ---------------- 3. Driver del mouse (baroMouse o respaldo) ---------------- */
+  var v9cursorPos = { x: -60, y: -60 };
+  function v9getMouse() {
+    try {
+      var m = (typeof window !== 'undefined') ? window.baroMouse : null;
+      if (m && typeof m.moveTo === 'function' && typeof m.click === 'function') return m;
+    } catch (_) {}
+    return null;
+  }
+  function v9ensureCursor() {
+    try {
+      var c = document.getElementById('baro-v9-cursor');
+      if (c) return c;
+      c = document.createElement('div');
+      c.id = 'baro-v9-cursor';
+      c.textContent = '➤';
+      c.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(c);
+      return c;
+    } catch (_) { return null; }
+  }
+  function v9showFallbackCursor(show) {
+    try {
+      var c = document.getElementById('baro-v9-cursor');
+      if (c) c.style.display = show ? 'block' : 'none';
+    } catch (_) {}
+  }
+  function v9raf(cb) {
+    try {
+      if (typeof requestAnimationFrame === 'function') return requestAnimationFrame(cb);
+    } catch (_) {}
+    return setTimeout(function () { cb(Date.now()); }, 16);
+  }
+  /* Viaje del cursor de respaldo con easing humano (acelera y frena). */
+  function v9fallbackTravel(x, y, dur) {
+    return new Promise(function (resolve) {
+      try {
+        var cur = v9ensureCursor();
+        if (!cur) return resolve();
+        cur.style.display = 'block';
+        var x0 = v9cursorPos.x, y0 = v9cursorPos.y, t0 = null;
+        (function frame(ts) {
+          if (t0 === null) t0 = ts;
+          var p = Math.min(1, (ts - t0) / Math.max(1, dur));
+          var e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+          var cx = x0 + (x - x0) * e, cy = y0 + (y - y0) * e;
+          try {
+            cur.style.left = cx + 'px';
+            cur.style.top = cy + 'px';
+          } catch (_) {}
+          if (p < 1) v9raf(frame);
+          else { v9cursorPos = { x: x, y: y }; resolve(); }
+        })(Date.now());
+      } catch (_) { resolve(); }
+    });
+  }
+  function v9travelTo(x, y) {
+    var dur = v9travelDuration(Math.hypot(x - v9cursorPos.x, y - v9cursorPos.y));
+    var m = v9getMouse();
+    if (m) {
+      v9showFallbackCursor(false);
+      return Promise.resolve()
+        .then(function () { return m.moveTo(x, y, { duration: dur }); })
+        .then(function () {
+          try {
+            if (typeof m.pos === 'function') {
+              var p = m.pos();
+              if (p && typeof p.x === 'number') v9cursorPos = { x: p.x, y: p.y };
+              else v9cursorPos = { x: x, y: y };
+            } else v9cursorPos = { x: x, y: y };
+          } catch (_) { v9cursorPos = { x: x, y: y }; }
+        })
+        .catch(function () { return v9fallbackTravel(x, y, dur); });
+    }
+    return v9fallbackTravel(x, y, dur);
+  }
+  function v9pause() {
+    var ms = v9aimMs();
+    var m = v9getMouse();
+    if (m && typeof m.pause === 'function') {
+      try { return Promise.resolve(m.pause(ms)).catch(function () { return v9sleep(ms); }); }
+      catch (_) {}
+    }
+    /* gesto de "apuntado": el cursor de respaldo se agranda un instante */
+    try {
+      var c = document.getElementById('baro-v9-cursor');
+      if (c) c.classList.add('aim');
+      setTimeout(function () { try { c.classList.remove('aim'); } catch (_) {} }, Math.max(60, ms - 40));
+    } catch (_) {}
+    return v9sleep(ms);
+  }
+  function v9ripple(x, y) {
+    try {
+      var r = document.createElement('div');
+      r.className = 'baro-v9-ripple';
+      r.style.left = x + 'px';
+      r.style.top = y + 'px';
+      document.body.appendChild(r);
+      setTimeout(function () { try { r.remove(); } catch (_) {} }, 700);
+    } catch (_) {}
+  }
+  function v9rippleAtCursor() { v9ripple(v9cursorPos.x, v9cursorPos.y); }
+
+  /* ---------------- 4. Localizacion con recuperacion ---------------- */
+  function v9visible(el) {
+    if (!el) return false;
+    try {
+      var r = el.getBoundingClientRect();
+      if (!r || r.width <= 0 || r.height <= 0) return false;
+      var cs = null;
+      try { cs = window.getComputedStyle ? window.getComputedStyle(el) : null; } catch (_) {}
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+      return true;
+    } catch (_) { return false; }
+  }
+  function v9firstVisible(selector) {
+    try {
+      var els = document.querySelectorAll(selector);
+      for (var i = 0; i < els.length; i++) if (v9visible(els[i])) return els[i];
+    } catch (_) {}
+    return null;
+  }
+  function v9findByText(text) {
+    try {
+      var needle = String(text || '').trim().toLowerCase();
+      if (!needle) return null;
+      var cands = document.querySelectorAll('button, a, [role="button"], [role="tab"]');
+      var best = null;
+      for (var i = 0; i < cands.length; i++) {
+        var el = cands[i];
+        if (!v9visible(el)) continue;
+        var t = String(el.textContent || '').trim().toLowerCase();
+        if (!t) continue;
+        if (t === needle) return el;
+        if (!best && t.indexOf(needle) !== -1 && t.length < needle.length + 40) best = el;
+      }
+      return best;
+    } catch (_) { return null; }
+  }
+  function v9center(el) {
+    try {
+      var r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    } catch (_) { return null; }
+  }
+  /* Mejor esfuerzo: encuentra el elemento que el paso va a tocar. */
+  function v9locateTarget(step) {
+    try {
+      var a = step.action, args = step.args || {};
+      if ((a === 'click' || a === 'type') && args.selector) {
+        var el = v9firstVisible(args.selector);
+        if (el) return el;
+      }
+      if (a === 'click' && args.label) {
+        var byLabel = v9findByText(args.label);
+        if (byLabel) return byLabel;
+      }
+      if (a === 'search') {
+        var box = v9firstVisible('#search-input');
+        if (box) return box;
+      }
+      if (a === 'open_composer') {
+        var fab = v9findByText('crear') || v9findByText('publicar');
+        if (fab) return fab;
+      }
+      if (a === 'navigate') {
+        var tab = v9findByText(args.label || '') || v9findByText(args.route || '');
+        if (tab) return tab;
+      }
+    } catch (_) {}
+    return null;
+  }
+  function v9scrollRecovery() {
+    return v9sleep(120).then(function () {
+      try { window.scrollBy(0, 480); } catch (_) {}
+      try {
+        var main = document.querySelector('main');
+        if (main && typeof main.scrollBy === 'function') main.scrollBy(0, 480);
+      } catch (_) {}
+      return v9sleep(600);
+    });
+  }
+  function v9locateWithRecovery(step, onRetryNote) {
+    var el = v9locateTarget(step);
+    if (el) return Promise.resolve(el);
+    return v9scrollRecovery().then(function () {
+      if (typeof onRetryNote === 'function') { try { onRetryNote(); } catch (_) {} }
+      el = v9locateTarget(step);
+      if (el) return el;
+      return v9scrollRecovery().then(function () {
+        return v9locateTarget(step);
+      });
+    });
+  }
+
+  /* ---------------- 5. Panel v9 con narracion ---------------- */
+  function v9panel() { try { return document.getElementById('baro-v9-panel'); } catch (_) { return null; } }
+  function v9stepDesc(step) {
+    var a = step.action, args = step.args || {};
+    if (a === 'navigate') return v9t('baro.v9.n_go', { x: args.label || args.route || '?' });
+    if (a === 'open_composer') return v9t('baro.v9.n_open', { x: 'el editor' });
+    if (a === 'type') return v9t('baro.v9.n_type');
+    if (a === 'click' && args.selector === '#publish-btn-fullscreen') return v9t('baro.v9.n_publish');
+    if (a === 'click') return v9t('baro.v9.n_tap', { x: args.label || args.selector || '?' });
+    if (a === 'search') return v9t('baro.v9.n_search', { x: args.text || '?' });
+    return String(a);
+  }
+  function v9panelShow(steps) {
+    try {
+      v9injectCss();
+      var old = v9panel(); if (old) old.remove();
+      var p = document.createElement('div');
+      p.id = 'baro-v9-panel';
+      var lis = steps.map(function (s, i) {
+        return '<li data-i="' + i + '"><span class="baro-v9-st">·</span><span>' +
+          v9esc(v9stepDesc(s)) + '</span></li>';
+      }).join('');
+      p.innerHTML =
+        '<h4>🤖 ' + v9esc(v9t('baro.v9.working')) +
+        '<button type="button" class="baro-v9-pace" id="baro-v9-pacebtn" title="' + v9esc(v9t('baro.v9.pace')) + '">' +
+        (v9isFast() ? '🐇' : '🐢') + '</button></h4>' +
+        '<div id="baro-v9-narr"></div>' +
+        '<ul>' + lis + '</ul>' +
+        '<button type="button" class="baro-v9-stop" id="baro-v9-stopbtn">' +
+        v9esc(v9t('baro.v9.stop')) + '</button>';
+      document.body.appendChild(p);
+      var pb = document.getElementById('baro-v9-pacebtn');
+      if (pb) pb.addEventListener('click', function () {
+        v9pace = v9isFast() ? 'normal' : 'fast';
+        try { pb.textContent = v9isFast() ? '🐇' : '🐢'; } catch (_) {}
+      });
+      var sb = document.getElementById('baro-v9-stopbtn');
+      if (sb) sb.addEventListener('click', function () {
+        try {
+          if (typeof window !== 'undefined' && window.baroV8 && typeof window.baroV8.stop === 'function') window.baroV8.stop();
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+  function v9narrate(text) {
+    try {
+      var n = document.getElementById('baro-v9-narr');
+      if (n) n.textContent = String(text || '');
+    } catch (_) {}
+  }
+  function v9panelStep(i, status) {
+    try {
+      var p = v9panel(); if (!p) return;
+      var li = p.querySelector('li[data-i="' + i + '"]');
+      if (!li) return;
+      var dot = li.querySelector('.baro-v9-st');
+      if (dot) dot.textContent = { run: '→', ok: '✓', fail: '✗', skip: '⊘' }[status] || '·';
+    } catch (_) {}
+  }
+  function v9panelNote(text) {
+    try {
+      var p = v9panel(); if (!p) return;
+      v9narrate(text);
+      var b = document.getElementById('baro-v9-stopbtn');
+      if (b) {
+        b.textContent = v9t('baro.v9.close');
+        b.onclick = function () { v9panelHide(); };
+      }
+      var pb = document.getElementById('baro-v9-pacebtn');
+      if (pb) pb.style.display = 'none';
+    } catch (_) {}
+  }
+  function v9panelHide() {
+    try { var p = v9panel(); if (p) p.remove(); } catch (_) {}
+    v9showFallbackCursor(false);
+  }
+
+  /* ---------------- 6. Acceso a v8 / acciones ---------------- */
+  function v9origState() {
+    try {
+      if (typeof window !== 'undefined' && window.baroV8 && window.baroV8.state) return window.baroV8.state;
+    } catch (_) {}
+    return { running: false, stopped: false };
+  }
+  function v9stopped() {
+    try { return !!v9origState().stopped; } catch (_) { return false; }
+  }
+  function v9actions() {
+    try {
+      var a = (typeof window !== 'undefined') ? window.baroAgentActions : null;
+      return (a && typeof a === 'object') ? a : null;
+    } catch (_) { return null; }
+  }
+  function v9ui() {
+    return {
+      say: function (t) { v9narrate(t); },
+      onType: function () {}
+    };
+  }
+  function v9fail(code) { return { fail: true, why: 'fail:' + code }; }
+
+  /* ---------------- 7. Efectos reales por paso ---------------- */
+  function v9directRoute(route) {
+    /* Ruta alterna honesta cuando ir_a no la acepta: drexOpenRoutePath o hash. */
+    return new Promise(function (resolve) {
+      var open = null, where = null;
+      try {
+        open = (typeof window !== 'undefined' && typeof window.drexOpenRoutePath === 'function') ? window.drexOpenRoutePath :
+               ((typeof drexOpenRoutePath === 'function') ? drexOpenRoutePath : null);
+        where = (typeof window !== 'undefined' && typeof window.drexRouteFromLocation === 'function') ? window.drexRouteFromLocation :
+                ((typeof drexRouteFromLocation === 'function') ? drexRouteFromLocation : null);
+      } catch (_) {}
+      function verify() {
+        try {
+          if (where) {
+            var w = String(where() || '');
+            if (w === route || w.indexOf(route) === 0) return true;
+          }
+        } catch (_) {}
+        try {
+          if (String(window.location.hash || '').replace(/^#\/?/, '') === route) return true;
+        } catch (_) {}
+        return false;
+      }
+      try {
+        if (open) open(route);
+        else { window.location.hash = '#' + route; }
+      } catch (e) { resolve(v9fail('nav')); return; }
+      var t0 = Date.now();
+      (function poll() {
+        if (verify()) return resolve('ok');
+        if (Date.now() - t0 > 6000) return resolve(v9fail('no_verif'));
+        setTimeout(poll, 250);
+      })();
+    });
+  }
+  function v9doNavigate(args) {
+    var route = String((args && args.route) || '').replace(/^#\/?/, '');
+    v9rippleAtCursor();
+    var A = v9actions();
+    if (A && A.ir_a && typeof A.ir_a.run === 'function') {
+      return Promise.resolve(A.ir_a.run({ ruta: route }, v9ui())).then(function (r) {
+        if (r && r.ok) return 'ok';
+        if (r && r.code === 'ruta') return v9directRoute(route); /* ruta alterna real */
+        return v9fail((r && r.code) || 'nav');
+      }).catch(function () { return v9fail('nav'); });
+    }
+    return v9directRoute(route);
+  }
+  function v9doOpenComposer() {
+    v9rippleAtCursor();
+    var A = v9actions();
+    if (A && A.abrir_composer && typeof A.abrir_composer.run === 'function') {
+      return Promise.resolve(A.abrir_composer.run({}, v9ui())).then(function (r) {
+        return (r && r.ok) ? 'ok' : v9fail((r && r.code) || 'composer');
+      }).catch(function () { return v9fail('composer'); });
+    }
+    return Promise.resolve(v9fail('no_lib'));
+  }
+  function v9doType(args) {
+    var sel = String((args && args.selector) || '');
+    var dest = sel.charAt(0) === '#' ? sel.slice(1) : sel;
+    v9rippleAtCursor();
+    var A = v9actions();
+    if (A && A.escribir_texto && typeof A.escribir_texto.run === 'function') {
+      return Promise.resolve(
+        A.escribir_texto.run({ destino: dest, texto: String(args.text || ''), velocidad: v9typeSpeed() }, v9ui())
+      ).then(function (r) {
+        return (r && r.ok) ? 'ok' : v9fail((r && r.code) || 'type');
+      }).catch(function () { return v9fail('type'); });
+    }
+    return Promise.resolve(v9fail('no_lib'));
+  }
+  function v9doPublish() {
+    v9rippleAtCursor();
+    var A = v9actions();
+    if (A && A.publicar && typeof A.publicar.run === 'function') {
+      return Promise.resolve(A.publicar.run({}, v9ui())).then(function (r) {
+        return (r && r.ok) ? 'ok' : v9fail((r && r.code) || 'publish');
+      }).catch(function () { return v9fail('publish'); });
+    }
+    return Promise.resolve(v9fail('no_lib'));
+  }
+  function v9doSearch(args) {
+    v9rippleAtCursor();
+    var A = v9actions();
+    if (A && A.buscar && typeof A.buscar.run === 'function') {
+      return Promise.resolve(A.buscar.run({ q: String((args && args.text) || '') }, v9ui())).then(function (r) {
+        return (r && r.ok) ? 'ok' : v9fail((r && r.code) || 'search');
+      }).catch(function () { return v9fail('search'); });
+    }
+    return Promise.resolve(v9fail('no_lib'));
+  }
+  /* Verificacion honesta de un clic generico: la pantalla debe reaccionar
+     (mutacion DOM, cambio de hash o cambio de foco) en la ventana de settle.
+     Sin reaccion -> no_verif, NUNCA check. */
+  function v9settleVerify(timeoutMs) {
+    return new Promise(function (resolve) {
+      var changed = false, hash0 = '', ae0 = null, mo = null, done = false;
+      try { hash0 = String(window.location.hash || ''); } catch (_) {}
+      try { ae0 = document.activeElement; } catch (_) {}
+      function finish(v) {
+        if (done) return; done = true;
+        try { if (mo) mo.disconnect(); } catch (_) {}
+        resolve(v);
+      }
+      try {
+        if (typeof MutationObserver === 'function') {
+          mo = new MutationObserver(function () { changed = true; });
+          mo.observe(document.body, { childList: true, subtree: true, attributes: true });
+        }
+      } catch (_) {}
+      setTimeout(function () {
+        var reacted = changed;
+        try { if (String(window.location.hash || '') !== hash0) reacted = true; } catch (_) {}
+        try { if (document.activeElement !== ae0) reacted = true; } catch (_) {}
+        finish(reacted);
+      }, Math.max(200, timeoutMs || v9settleMs()));
+    });
+  }
+  function v9doGenericClick(step, target) {
+    var el = target;
+    function attempt(n) {
+      if (!el) return Promise.resolve(v9fail('element'));
+      if (el.disabled) return Promise.resolve(v9fail('disabled'));
+      v9rippleAtCursor();
+      try { el.click(); } catch (e) { return Promise.resolve(v9fail('click')); }
+      return v9settleVerify(v9settleMs()).then(function (reacted) {
+        if (reacted) return 'ok';
+        if (n < 1) {
+          return v9locateWithRecovery(step, function () { v9narrate(v9t('baro.v9.n_retry')); })
+            .then(function (el2) { el = el2; return attempt(n + 1); });
+        }
+        return v9fail('no_verif');
+      });
+    }
+    return attempt(0);
+  }
+
+  /* ---------------- 8. Un paso = coreografia completa ---------------- */
+  function v9sweepPoint() {
+    var w = 360, h = 120;
+    try { w = window.innerWidth || 360; } catch (_) {}
+    return { x: Math.round(w / 2), y: h };
+  }
+  function v9runStep(step) {
+    var a = step.action, args = step.args || {};
+    v9narrate(v9stepDesc(step));                       /* 1) narracion */
+    return v9locateWithRecovery(step, function () {    /* 2a) localizar (+recuperacion) */
+      v9narrate(v9t('baro.v9.n_retry'));
+    }).then(function (target) {
+      var pt = target ? v9center(target) : v9sweepPoint();
+      if (!pt) pt = v9sweepPoint();
+      return v9travelTo(pt.x, pt.y).then(function () {  /* 2b) el mouse VIAJA */
+        if (v9stopped()) return 'stopped';
+        return v9pause().then(function () {              /* 3) pausa de apuntado */
+          if (v9stopped()) return 'stopped';
+          var isPublish = (a === 'click' && args.selector === '#publish-btn-fullscreen');
+          if (a === 'navigate') return v9doNavigate(args);       /* 4-6) efecto+verif */
+          if (a === 'open_composer') return v9doOpenComposer();
+          if (a === 'type') return v9doType(args);
+          if (a === 'search') return v9doSearch(args);
+          if (isPublish) return v9doPublish();
+          if (a === 'click') return v9doGenericClick(step, target);
+          return v9fail('unknown');
+        });
+      });
+    }).catch(function () { return v9fail('ex'); });
+  }
+
+  /* ---------------- 9. Orquestador v9 ---------------- */
+  var v9plans = {}; /* planId -> {plan, ctx} (registro propio; v8plans es privado) */
+  function v9execute(planId) {
+    var rec = v9plans[planId];
+    if (!rec) {
+      /* Plan anterior a v9: delega al ejecutor v8 original sin romper. */
+      try {
+        var b8 = (typeof window !== 'undefined') ? window.baroV8 : null;
+        if (b8 && typeof b8.__v9origExecute === 'function') return b8.__v9origExecute(planId);
+      } catch (_) {}
+      return;
+    }
+    var st = v9origState();
+    if (st.running) return;
+    if (!v9actions()) {
+      /* Sin la libreria de acciones no hay verificacion real: modo clasico. */
+      try {
+        if (typeof baroAddBaroMessage === 'function') baroAddBaroMessage(v9t('baro.v9.no_lib'));
+      } catch (_) {}
+      try {
+        var b82 = (typeof window !== 'undefined') ? window.baroV8 : null;
+        if (b82 && typeof b82.__v9origExecute === 'function') return b82.__v9origExecute(planId);
+      } catch (_) {}
+      return;
+    }
+    var plan = rec.plan;
+    st.running = true; st.stopped = false;
+    v9panelShow(plan.steps);
+    var idx = 0;
+    (function next() {
+      if (idx >= plan.steps.length) return finish('ok');
+      if (v9stopped()) return finish('stopped');
+      v9panelStep(idx, 'run');
+      v9runStep(plan.steps[idx]).then(function (r) {
+        if (r === 'ok') { v9panelStep(idx, 'ok'); idx++; next(); }
+        else if (r === 'stopped') { v9panelStep(idx, 'skip'); finish('stopped'); }
+        else { v9panelStep(idx, 'fail'); finish('fail', r.why, idx); }
+      }).catch(function () { v9panelStep(idx, 'fail'); finish('fail', 'fail:ex', idx); });
+    })();
+    function finish(final, why, failIdx) {
+      st.running = false;
+      var msg;
+      if (final === 'ok') {
+        msg = '✓ ' + v9t('baro.v9.done');
+        v9panelNote(msg);
+      } else if (final === 'stopped') {
+        msg = '⊘ ' + v9t('baro.v9.stopped');
+        v9panelNote(msg);
+      } else {
+        var step = plan.steps[failIdx] || {};
+        var label = (step.args && (step.args.label || step.args.selector || step.args.route || step.args.text)) || step.action;
+        msg = '✗ ' + v9t('baro.v9.failed', { n: String(failIdx + 1) }) + ': ' +
+          v9t('baro.v9.fail_step', { x: label + ' (' + String(why || '').replace(/^fail:/, '') + ')' });
+        v9panelNote(msg);
+      }
+      try {
+        if (typeof baroAddBaroMessage === 'function') baroAddBaroMessage(msg);
+      } catch (_) {}
+      setTimeout(function () { try { if (!v9origState().running) v9panelHide(); } catch (_) {} }, 6000);
+      try { delete v9plans[planId]; } catch (_) {}
+    }
+  }
+
+  /* ---------------- 10. Enganches aditivos ---------------- */
+  function v9registerPlan(res, args) {
+    try {
+      if (!res || typeof res.html !== 'string') return;
+      var m = /baroV8PlanRun\('([^']+)'\)/.exec(res.html);
+      if (!m) return;
+      var obj = String((args && (args.objective || args.q || args.text)) || '');
+      if (/r[aá]pido|deprisa|fast|quick|迅速|快速/i.test(obj)) v9pace = 'fast';
+      var b8 = (typeof window !== 'undefined') ? window.baroV8 : null;
+      if (!b8 || typeof b8.buildPlan !== 'function') return;
+      var plan = b8.buildPlan(obj);
+      if (plan && !plan.error && plan.steps && plan.steps.length) {
+        v9plans[m[1]] = { plan: plan };
+      }
+    } catch (_) {}
+  }
+  function v9hook() {
+    if (typeof window === 'undefined') return;
+    if (window.__baroV9ExecWrapped) return;
+    window.__baroV9ExecWrapped = true;
+    /* 10a. Envolver el run de la tool modo_agente (reintentos por si v8 aun no cargo). */
+    var tries = 0;
+    (function tryTool() {
+      try {
+        var T = (window.baroTools && window.baroTools.modo_agente) || null;
+        if (T && typeof T.run === 'function' && !T.__v9wrapped) {
+          var origRun = T.run;
+          T.__v9wrapped = true;
+          T.run = function (args, ctx) {
+            var res = origRun.call(this, args, ctx);
+            try { v9registerPlan(res, args); } catch (_) {}
+            return res;
+          };
+        } else if (!T && tries < 10) {
+          tries++;
+          setTimeout(tryTool, 500);
+        }
+      } catch (_) {}
+    })();
+    /* 10b. Re-enrutar baroV8PlanRun hacia v9 cuando el plan es nuestro. */
+    try {
+      if (typeof window.baroV8PlanRun === 'function' && !window.baroV8PlanRun.__v9) {
+        var origPR = window.baroV8PlanRun;
+        var f = function (planId) {
+          if (v9plans[planId]) { v9execute(planId); return; }
+          return origPR(planId);
+        };
+        f.__v9 = true;
+        window.baroV8PlanRun = f;
+      }
+    } catch (_) {}
+    /* 10c. Envolver baroV8.execute (misma regla; se guarda el original). */
+    try {
+      var b8 = window.baroV8;
+      if (b8 && typeof b8.execute === 'function' && !b8.execute.__v9) {
+        b8.__v9origExecute = b8.execute;
+        var g = function (planId) {
+          if (v9plans[planId]) { v9execute(planId); return; }
+          return b8.__v9origExecute.call(b8, planId);
+        };
+        g.__v9 = true;
+        b8.execute = g;
+      }
+    } catch (_) {}
+    /* 10d. Globales propios. */
+    try {
+      window.baroV9PlanRun = function (planId) {
+        if (v9plans[planId]) { v9execute(planId); return; }
+        try {
+          var b8 = window.baroV8;
+          if (b8 && typeof b8.__v9origExecute === 'function') return b8.__v9origExecute(planId);
+        } catch (_) {}
+      };
+      window.baroV9PlanCancel = function (planId) {
+        try { delete v9plans[planId]; } catch (_) {}
+        try { if (typeof window.baroV8PlanCancel === 'function') window.baroV8PlanCancel(planId); } catch (_) {}
+      };
+    } catch (_) {}
+  }
+
+  /* ---------------- 11. Arranque + API ---------------- */
+  try { v9mergeI18n(); } catch (_) {}
+  try { v9hook(); } catch (_) {}
+  try {
+    if (typeof window !== 'undefined') {
+      window.baroV9 = {
+        execute: v9execute,
+        setPace: function (p) { v9pace = (p === 'fast') ? 'fast' : 'normal'; },
+        getPace: function () { return v9pace; },
+        version: 9,
+        _t: {
+          travelDuration: v9travelDuration,
+          aimMs: v9aimMs,
+          settleMs: v9settleMs,
+          typeSpeed: v9typeSpeed
+        },
+        _plans: v9plans
+      };
+    }
+  } catch (_) {}
+})();
+
+/* ================= BARO · v9-CEREBRO ================= */
+/* ================= BARO v9 · CEREBRO (CONTROL TOTAL VISIBLE) =================
+ * Snippet AUTOCONTENIDO para el bloque BARO de index.html.
+ *
+ * PUNTO DE INSERCION: como IIFE propio DENTRO del bloque script final,
+ * DESPUES del bloque v8-SEGURIDAD-AGENTE y ANTES del cierre del script final.
+ * NO crea bloques script nuevos (el literal de cierre esta prohibido en este
+ * archivo, incluso en comentarios). NO toca baroHandleUserMessage, su catch
+ * de diagnostico tecnico, el blindaje null-det ni los parches v5-v8: solo
+ * LEE y REUTILIZA sus APIs publicas (baroV8Agent.classify/audit,
+ * baroAgentActions, baroTools, baroRegisterTool).
+ *
+ * QUE APORTA:
+ *  - window.baroBrainV9: planificador con objetivos COMPUESTOS
+ *    ("ve a ajustes, pon modo oscuro y vuelve al inicio"), CONCIENCIA DE
+ *    CONTEXTO (ruta actual, sesion, composer abierto, tema: no repite lo que
+ *    ya esta hecho), DESCOMPOSICION inteligente (publicar foto = abrir
+ *    editor + adjuntar + escribir + publicar) y LIMITES HONESTOS (el picker
+ *    del sistema lo abro yo, la foto la eliges tu: ningun paso inventado).
+ *  - Extensiones ADITIVAS a window.baroAgentActions (sin tocar el parche
+ *    v8): adjuntar_foto (flujo REAL #note-media-fullscreen +
+ *    handleNoteMediaSelected) e ir_inicio (openHome real).
+ *  - Ejecutor visible propio (panel baro-v9-*, sin cursor fantasma falso:
+ *    las acciones ya son visibles por si mismas) con DOBLE PUERTA intacta:
+ *    tap en el plan + confirmacion por paso en publica/destructiva.
+ *  - Clasificacion: primero la matriz v8 (baroV8Agent.classify) VERBATIM,
+ *    sin relajar nada; solo las acciones UI de lectura ausentes en la
+ *    matriz se marcan lectura (no cambian datos); lo demas desconocido
+ *    sigue fail-closed como destructiva.
+ *
+ * REGLA DE ORO (orden directa del usuario): PROHIBIDO inventar
+ * capacidades. Todo paso del plan mapea a tool/accion/ruta REAL; lo demas
+ * es "requiere tu toque" o el plan se niega con honestidad.
+ * Cero red, cero APIs externas, cero fetch/XHR/WebSocket.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patron 8L/v5-v8) ---------------- */
+  var BARO_V9_I18N = {
+    'baro.v9.title':       { es: 'Cerebro v9', en: 'Brain v9', zh: '大脑 v9', pt: 'Cérebro v9' },
+    'baro.v9.plan_title':  { es: 'Plan del agente', en: 'Agent plan', zh: '代理计划', pt: 'Plano do agente' },
+    'baro.v9.execute':     { es: 'Ejecutar', en: 'Run', zh: '执行', pt: 'Executar' },
+    'baro.v9.cancel':      { es: 'Cancelar', en: 'Cancel', zh: '取消', pt: 'Cancelar' },
+    'baro.v9.stop':        { es: 'Detener', en: 'Stop', zh: '停止', pt: 'Parar' },
+    'baro.v9.close':       { es: 'Cerrar', en: 'Close', zh: '关闭', pt: 'Fechar' },
+    'baro.v9.working':     { es: 'Baro está trabajando…', en: 'Baro is working…', zh: 'Baro 正在工作…', pt: 'Baro está trabalhando…' },
+    'baro.v9.done':        { es: 'Listo', en: 'Done', zh: '完成', pt: 'Pronto' },
+    'baro.v9.stopped':     { es: 'Detenido por ti', en: 'Stopped by you', zh: '已由你停止', pt: 'Parado por você' },
+    'baro.v9.failed':      { es: 'Se detuvo en el paso {n}: {x}', en: 'Stopped at step {n}: {x}', zh: '在第 {n} 步停止：{x}', pt: 'Parou na etapa {n}: {x}' },
+    'baro.v9.need_login':  { es: 'Necesitas iniciar sesión para que el agente haga eso por ti.', en: 'You need to sign in for the agent to do that for you.', zh: '你需要先登录，代理才能替你操作。', pt: 'Você precisa entrar para o agente fazer isso por você.' },
+    'baro.v9.no_plan':     { es: 'Eso aún no lo puedo hacer por ti. Puedo: ir a secciones, poner modo oscuro/claro, publicar texto o foto, buscar, votar, comentar y hacer eco. Dime algo como "ve a ajustes, pon modo oscuro y vuelve al inicio".', en: 'I can\'t do that for you yet. I can: go to sections, set dark/light mode, publish text or photo, search, vote, comment and echo. Try "go to settings, set dark mode and go back home".', zh: '我还不能替你做这个。我可以：前往各个版块、切换深色/浅色模式、发布文字或照片、搜索、投票、评论和回响。试试“去设置、打开深色模式再回首页”。', pt: 'Ainda não posso fazer isso por você. Posso: ir a seções, ativar modo escuro/claro, publicar texto ou foto, buscar, votar, comentar e ecoar. Tente "vá aos ajustes, ative o modo escuro e volte ao início".' },
+    'baro.v9.phase':       { es: 'Fase {n}', en: 'Phase {n}', zh: '阶段 {n}', pt: 'Fase {n}' },
+    'baro.v9.limits_t':    { es: 'Necesitaré tu toque en:', en: 'I\'ll need your tap on:', zh: '需要你亲手操作的：', pt: 'Vou precisar do seu toque em:' },
+    'baro.v9.limit_picker':{ es: 'Elegir la foto: yo abro el selector del sistema, tú eliges la imagen (ningún agente puede elegirla por ti).', en: 'Picking the photo: I open the system picker, you choose the image (no agent can pick it for you).', zh: '选择照片：我打开系统选择器，由你选择图片（任何代理都不能替你选）。', pt: 'Escolher a foto: eu abro o seletor do sistema, você escolhe a imagem (nenhum agente pode escolher por você).' },
+    'baro.v9.limit_perm':  { es: 'Permisos del sistema (cámara, notificaciones): los apruebas tú.', en: 'System permissions (camera, notifications): you approve them.', zh: '系统权限（相机、通知）：由你批准。', pt: 'Permissões do sistema (câmera, notificações): você aprova.' },
+    'baro.v9.limit_out':   { es: 'Fuera de Drex no puedo hacer nada.', en: 'Outside Drex I can\'t do anything.', zh: '在 Drex 之外我什么都做不了。', pt: 'Fora do Drex não posso fazer nada.' },
+    'baro.v9.skip_there':  { es: 'Ya estás ahí, me lo salto', en: 'Already there, skipping', zh: '已在此处，跳过', pt: 'Já está aí, pulando' },
+    'baro.v9.skip_theme':  { es: 'Ya está en ese modo, me lo salto', en: 'Already in that mode, skipping', zh: '已是该模式，跳过', pt: 'Já está nesse modo, pulando' },
+    'baro.v9.skip_open':   { es: 'El editor ya está abierto, me lo salto', en: 'Editor already open, skipping', zh: '编辑器已打开，跳过', pt: 'Editor já aberto, pulando' },
+    'baro.v9.need_touch':  { es: 'Requiere tu toque', en: 'Needs your tap', zh: '需要你操作', pt: 'Precisa do seu toque' },
+    'baro.v9.your_turn':   { es: 'Te toca a ti: {x}', en: 'Your turn: {x}', zh: '轮到你了：{x}', pt: 'Sua vez: {x}' },
+    'baro.v9.continue':    { es: 'Continuar', en: 'Continue', zh: '继续', pt: 'Continuar' },
+    'baro.v9.confirm_p':   { es: '¿Confirmas este paso?', en: 'Confirm this step?', zh: '确认这一步吗？', pt: 'Confirma esta etapa?' },
+    'baro.v9.confirm_d':   { es: 'Esto es difícil de deshacer. ¿Seguro?', en: 'This is hard to undo. Sure?', zh: '这很难撤销。确定吗？', pt: 'Isso é difícil de desfazer. Certeza?' },
+    'baro.v9.plan_hint':   { es: 'Revisa el plan y toca Ejecutar. Nada público se hará sin tu confirmación por paso.', en: 'Review the plan and tap Run. Nothing public happens without your per-step confirmation.', zh: '检查计划并点击执行。任何公开操作都需要你逐步确认。', pt: 'Revise o plano e toque Executar. Nada público será feito sem sua confirmação por etapa.' },
+    'baro.v9.plan_empty':  { es: 'No pude armar un plan con eso.', en: 'Could not build a plan from that.', zh: '无法据此制定计划。', pt: 'Não consegui montar um plano com isso.' },
+    'baro.v9.unknown':     { es: 'No entendí esta parte:', en: 'I didn\'t understand this part:', zh: '没理解这一部分：', pt: 'Não entendi esta parte:' },
+    'baro.v9.ok_step':     { es: 'Hecho', en: 'Done', zh: '完成', pt: 'Feito' },
+    'baro.v9.no_foto':     { es: 'No elegiste ninguna foto, me detengo aquí.', en: 'You didn\'t pick any photo, stopping here.', zh: '你没有选择照片，就停在这里。', pt: 'Você não escolheu nenhuma foto, paro aqui.' },
+    'baro.v9.open_picker':  { es: 'Abro el selector de fotos… elige la imagen', en: 'Opening the photo picker… choose the image', zh: '正在打开照片选择器…请选择图片', pt: 'Abrindo o seletor de fotos… escolha a imagem' },
+    'baro.v9.already_done':{ es: 'Ya está hecho, no hay nada que ejecutar.', en: 'Already done, nothing to run.', zh: '已完成，无需执行。', pt: 'Já está feito, nada a executar.' }
+  };
+  function v9mergeI18n() {
+    try {
+      var UI = (typeof window !== 'undefined' && window.BARO_UI_I18N) ||
+               (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) || null;
+      if (UI) Object.keys(BARO_V9_I18N).forEach(function (k) { if (!(k in UI)) UI[k] = BARO_V9_I18N[k]; });
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+  function v9lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v9t(ctx, key, params) {
+    var s = null;
+    try { s = (ctx && typeof ctx.t === 'function') ? ctx.t(key) : null; } catch (_) { s = null; }
+    if (!s || s === key) {
+      var e = BARO_V9_I18N[key];
+      var lg = (ctx && ctx.lang) || v9lang();
+      s = (e && (e[lg] || e.es)) || key;
+    }
+    if (params) Object.keys(params).forEach(function (k) { s = String(s).split('{' + k + '}').join(String(params[k])); });
+    return s;
+  }
+  function v9esc(ctx, x) {
+    try { if (ctx && typeof ctx.esc === 'function') return ctx.esc(x); } catch (_) {}
+    try { if (typeof escapeHtml === 'function') return escapeHtml(x); } catch (_) {}
+    return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function v9norm(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  }
+
+  /* ---------------- 1. Conciencia de contexto ---------------- */
+  /* Lee el estado REAL de la app. Todo con guardas: si algo no se puede
+     leer, el campo queda null y el planificador no lo usa (no inventa). */
+  function v9readContext() {
+    var c = { route: null, loggedIn: null, composerOpen: null, darkMode: null };
+    try {
+      if (typeof drexRouteFromLocation === 'function') c.route = String(drexRouteFromLocation() || '');
+      else if (typeof location !== 'undefined') c.route = String((location.hash || '').replace(/^#\/?/, ''));
+    } catch (_) {}
+    try {
+      var u = DrexCloud.auth().currentUser;
+      c.loggedIn = !!(u && (u.uid || u.id));
+    } catch (_) {}
+    try {
+      var el = document.getElementById('note-creation-fullscreen');
+      c.composerOpen = !!(el && el.classList.contains('active'));
+    } catch (_) {}
+    try { c.darkMode = document.body.classList.contains('theme-dark'); } catch (_) {}
+    return c;
+  }
+
+  /* ---------------- 2. Limites honestos ---------------- */
+  /* Lo que el agente NO puede hacer solo. Se muestran ANTES de ejecutar. */
+  var V9_LIMITS = [
+    { id: 'picker', key: 'baro.v9.limit_picker' },
+    { id: 'permisos', key: 'baro.v9.limit_perm' },
+    { id: 'fuera', key: 'baro.v9.limit_out' }
+  ];
+
+  /* ---------------- 3. Clasificacion (matriz v8 primero, sin relajar) ---------------- */
+  /* Acciones UI de SOLO LECTURA ausentes en la matriz: no cambian datos, la
+     matriz simplemente no las conoce. Todo lo demas desconocido -> fail-closed
+     como destructiva, igual que la matriz. Ningun veredicto de la matriz se
+     degrada jamas. */
+  var V9_UI_READ = {
+    ir_a: 1, ir_inicio: 1, abrir_composer: 1, escribir_texto: 1, buscar: 1,
+    abrir_post: 1, abrir_perfil: 1, abrir_notificaciones: 1, abrir_chat: 1,
+    abrir_seguridad: 1, esperar: 1, scroll_a: 1, adjuntar_foto: 1
+  };
+  function v9classify(action) {
+    var lvl = null;
+    try {
+      if (typeof window !== 'undefined' && window.baroV8Agent &&
+          typeof window.baroV8Agent.classify === 'function') {
+        lvl = window.baroV8Agent.classify(action);
+      }
+    } catch (_) {}
+    /* Si la matriz dio veredicto (incluido fail-closed), se respeta... salvo
+       que sea una accion UI de lectura que la matriz no conoce: en ese caso
+       su fail-closed seria una sobre-clasificacion, no seguridad. */
+    if (lvl && V9_UI_READ[action] && (lvl === 'destructiva')) return 'lectura';
+    return lvl || 'destructiva';
+  }
+
+  /* ---------------- 4. Planificador ---------------- */
+  /* plan(text, context) -> {phases:[{text, steps:[step]}], unknown:[], limitsUsed:[], error?}
+     step = {kind:'ui'|'tool', action, args, q, label, level, needsUser, note, skip} */
+  var V9_ROUTE_WORDS = [
+    [/^(mi\s+)?perfil$/, 'perfil'], [/^ajustes$/, 'ajustes'], [/^configuraci[oó]n$/, 'ajustes'],
+    [/^buscar$/, 'buscar'], [/^b[uú]squeda$/, 'buscar'],
+    [/^m[uú]sica$/, 'musica'], [/^fiestas$/, 'fiestas'], [/^ondas$/, 'ondas'],
+    [/^guardados$/, 'guardados'], [/^borradores$/, 'borradores'], [/^historial$/, 'historial'],
+    [/^hub$/, 'hub'], [/^pulso$/, 'pulso'],
+    [/^notificaciones$/, '@notif'], [/^seguridad$/, '@seg'], [/^chats?$/, 'chat'],
+    [/^(inicio|home|el\s+inicio)$/, '@inicio'],
+    [/^settings$/, 'ajustes'], [/^search$/, 'buscar'], [/^music$/, 'musica']
+  ];
+  function v9routeWord(dest) {
+    var d = v9norm(dest);
+    for (var i = 0; i < V9_ROUTE_WORDS.length; i++) {
+      if (V9_ROUTE_WORDS[i][0].test(d)) return V9_ROUTE_WORDS[i][1];
+    }
+    return null;
+  }
+  function v9mkStep(kind, action, args, q, label) {
+    return { kind: kind, action: action, args: args || {}, q: q || '',
+             label: label || action, level: v9classify(action),
+             needsUser: false, note: null, skip: false };
+  }
+  /* Divide el objetivo en fases: "a, b y c" / "a luego b" / "a; b". */
+  function v9splitPhases(text) {
+    return String(text || '')
+      .split(/\s+(?:y|luego|despu[eé]s|entonces|then|and then|e depois|depois|然后)\s+|[,;]\s+|\s*[|]\s*/)
+      .map(function (x) { return x.trim(); })
+      .filter(function (x) { return x.length > 0; });
+  }
+  function v9extractQuoted(t) {
+    var m = String(t || '').match(/["'“”](.+?)["'“”]/);
+    return m ? m[1].trim() : null;
+  }
+
+  function v9planPhase(phase, ctx) {
+    var t = v9norm(phase), steps = [], m;
+    /* --- tema: "pon modo oscuro / claro" --- */
+    m = t.match(/pon\w*\s+(el\s+)?modo\s+(oscuro|claro)|modo\s+(oscuro|claro)|(dark|light)\s*mode|modo\s+(escuro|claro)/);
+    if (m) {
+      var want = /oscuro|dark|escuro/.test(m[0]) ? 'oscuro' : 'claro';
+      var s = v9mkStep('tool', 'ajuste_tema', { tema: want }, phase, 'Modo ' + want);
+      if (ctx.darkMode === true && want === 'oscuro') { s.skip = true; s.note = 'baro.v9.skip_theme'; }
+      if (ctx.darkMode === false && want === 'claro') { s.skip = true; s.note = 'baro.v9.skip_theme'; }
+      steps.push(s);
+      return steps;
+    }
+    /* --- publicar foto: "publica una foto (de mi galeria) (con el texto "x")" --- */
+    if (/publica/.test(t) && /foto|imagen|picture|photo|照片/.test(t)) {
+      var txt = v9extractQuoted(phase);
+      if (!ctx.composerOpen) steps.push(v9mkStep('ui', 'abrir_composer', {}, phase, 'Abrir editor'));
+      else { var s0 = v9mkStep('ui', 'abrir_composer', {}, phase, 'Abrir editor'); s0.skip = true; s0.note = 'baro.v9.skip_open'; steps.push(s0); }
+      var sa = v9mkStep('ui', 'adjuntar_foto', {}, phase, 'Adjuntar foto');
+      sa.needsUser = true; sa.note = 'baro.v9.limit_picker';
+      steps.push(sa);
+      if (txt) steps.push(v9mkStep('ui', 'escribir_texto', { texto: txt }, phase, 'Escribir texto'));
+      steps.push(v9mkStep('ui', 'publicar', {}, phase, 'Publicar'));
+      return steps;
+    }
+    /* --- publicar texto: publica "x" (solo con cita exacta: nada inventado) --- */
+    m = t.match(/publica?\s*["'“”](.+?)["'“”]/);
+    if (/publica/.test(t) && m && m[1]) {
+      var txt2 = m[1].trim();
+      if (!ctx.composerOpen) steps.push(v9mkStep('ui', 'abrir_composer', {}, phase, 'Abrir editor'));
+      else { var s1 = v9mkStep('ui', 'abrir_composer', {}, phase, 'Abrir editor'); s1.skip = true; s1.note = 'baro.v9.skip_open'; steps.push(s1); }
+      steps.push(v9mkStep('ui', 'escribir_texto', { texto: txt2 }, phase, 'Escribir texto'));
+      steps.push(v9mkStep('ui', 'publicar', {}, phase, 'Publicar'));
+      return steps;
+    }
+    /* --- navegar: "ve a X / abre X / vuelve al inicio" --- */
+    m = t.match(/(?:ve|ir|abre|lleva\s*me|ll[eé]vame|vuelve|regresa|go\s*to|open|vá|abra)\s+(?:a\s+)?(?:la\s+secci[oó]n\s+(?:de\s+)?)?(.+?)\s*$/) ||
+        t.match(/(?:visita|muestra(?:me)?|show\s*me)\s+(.+?)\s*$/);
+    if (m && m[1]) {
+      var dest = m[1].trim().replace(/^(al|el|la)\s+/, ''), rw = v9routeWord(dest);
+      if (rw) {
+        if (rw === '@inicio') {
+          var si = v9mkStep('ui', 'ir_inicio', {}, phase, 'Ir al inicio');
+          if (ctx.route === '') { si.skip = true; si.note = 'baro.v9.skip_there'; }
+          steps.push(si);
+        } else if (rw === '@notif') {
+          steps.push(v9mkStep('ui', 'abrir_notificaciones', {}, phase, 'Abrir notificaciones'));
+        } else if (rw === '@seg') {
+          steps.push(v9mkStep('ui', 'abrir_seguridad', {}, phase, 'Abrir seguridad'));
+        } else {
+          var sn = v9mkStep('ui', 'ir_a', { ruta: rw }, phase, 'Ir a ' + dest);
+          if (ctx.route === rw) { sn.skip = true; sn.note = 'baro.v9.skip_there'; }
+          steps.push(sn);
+        }
+        return steps;
+      }
+    }
+    /* --- buscar: "busca X" --- */
+    m = t.match(/busca?\s+(.+?)\s*$/) || t.match(/search\s+(?:for\s+)?(.+?)\s*$/);
+    if (m && m[1] && m[1].trim().length >= 2 && !/foto/.test(t)) {
+      steps.push(v9mkStep('ui', 'buscar', { q: m[1].trim() }, phase, 'Buscar'));
+      return steps;
+    }
+    /* --- herramientas de lectura conocidas --- */
+    var READMAP = [
+      [/mi\s+panel|dashboard/, 'mi_panel'], [/qu[eé]\s+pas[oó]\s+hoy/, 'que_paso_hoy'],
+      [/resumen\s+semanal/, 'resumen_semanal'], [/mis\s+borradores/, 'ver_borradores'],
+      [/mis\s+notificaciones/, 'notificaciones'], [/mis\s+votos/, 'ver_mis_votos']
+    ];
+    for (var ri = 0; ri < READMAP.length; ri++) {
+      if (READMAP[ri][0].test(t)) { steps.push(v9mkStep('tool', READMAP[ri][1], {}, phase, READMAP[ri][1])); return steps; }
+    }
+    /* --- acciones publicas por tool (el tool resuelve el objetivo) --- */
+    var PUBMAP = [
+      [/\bvota/, 'votar_post'], [/\beco\b/, 'eco_post'], [/comenta/, 'comentar'],
+      [/guarda/, 'guardar_post'], [/elimina|borra/, 'eliminar'], [/bloquea/, 'bloquear_usuario']
+    ];
+    for (var pi = 0; pi < PUBMAP.length; pi++) {
+      if (PUBMAP[pi][0].test(t)) { steps.push(v9mkStep('tool', PUBMAP[pi][1], {}, phase, PUBMAP[pi][1])); return steps; }
+    }
+    return null; /* fase no reconocida */
+  }
+
+  function v9plan(text, context) {
+    context = context || v9readContext();
+    var phases = v9splitPhases(text), out = [], unknown = [], limitsUsed = {};
+    phases.forEach(function (ph) {
+      var steps = v9planPhase(ph, context);
+      if (!steps) { unknown.push(ph); return; }
+      steps.forEach(function (s) { if (s.needsUser && s.note) limitsUsed[s.note] = 1; });
+      out.push({ text: ph, steps: steps });
+    });
+    var flat = [];
+    out.forEach(function (p) { p.steps.forEach(function (s) { if (!s.skip) flat.push(s); }); });
+    if (!flat.length && !unknown.length) {
+      /* Todo entendido pero todo ya hecho: honestidad, no "no pude". */
+      return { error: 'all_skipped', phases: out, steps: [], unknown: [], limitsUsed: [] };
+    }
+    if (!flat.length) return { error: 'no_plan', phases: out, steps: [], unknown: unknown, limitsUsed: Object.keys(limitsUsed) };
+    return { error: null, phases: out, steps: flat, unknown: unknown,
+             limitsUsed: Object.keys(limitsUsed), context: context };
+  }
+
+  /* ---------------- 5. Extensiones ADITIVAS a baroAgentActions ---------------- */
+  /* No se toca el parche v8: solo se agregan acciones nuevas si no existen. */
+  function v9say(ui, key) {
+    try { if (ui && typeof ui.say === 'function') ui.say(v9t(null, key)); } catch (_) {}
+  }
+  function v9waitFor(fn, ms, stepMs) {
+    ms = ms || 8000; stepMs = stepMs || 400;
+    return new Promise(function (resolve) {
+      var t0 = Date.now();
+      (function poll() {
+        var r = null;
+        try { r = fn(); } catch (_) { r = null; }
+        if (r) { resolve(r); return; }
+        if (Date.now() - t0 > ms) { resolve(null); return; }
+        setTimeout(poll, stepMs);
+      })();
+    });
+  }
+  function v9extendActions() {
+    var A = null;
+    try { A = window.baroAgentActions; } catch (_) {}
+    if (!A || typeof A !== 'object') return;
+    /* adjuntar_foto: abre el input REAL de galeria del composer y espera a
+       que EL USUARIO elija (el picker es del sistema: ningun agente puede
+       elegir por ti). Timeout honesto de 120s -> cancelado. */
+    if (!A.adjuntar_foto) A.adjuntar_foto = {
+      describe: function () { return v9t(null, 'baro.v9.open_picker'); },
+      run: function (args, ui) {
+        return new Promise(function (resolve) {
+          var input = null;
+          try { input = document.getElementById('note-media-fullscreen'); } catch (_) {}
+          if (!input) return resolve({ ok: false, error: 'no_fn: note-media-fullscreen', code: 'no_fn' });
+          v9say(ui, 'baro.v9.open_picker');
+          var done = false;
+          function finish(r) { if (!done) { done = true; resolve(r); } }
+          function onChange() { setTimeout(function () { finish({ ok: true }); }, 1500); }
+          try { input.addEventListener('change', onChange, { once: true }); }
+          catch (_) { try { input.addEventListener('change', onChange); } catch (_2) {} }
+          try { input.click(); }
+          catch (e) { finish({ ok: false, error: String((e && e.message) || e), code: 'ex' }); return; }
+          var t0 = Date.now();
+          (function poll() {
+            if (done) return;
+            if (Date.now() - t0 > 120000) { finish({ ok: false, error: v9t(null, 'baro.v9.no_foto'), code: 'cancelado' }); return; }
+            setTimeout(poll, 1000);
+          })();
+        });
+      }
+    };
+    /* ir_inicio: vuelve al inicio real (openHome) con verificacion. */
+    if (!A.ir_inicio) A.ir_inicio = {
+      describe: function () { return v9t(null, 'baro.v9.title') + ': inicio'; },
+      run: function (args, ui) {
+        var f = null;
+        try { f = (typeof openHome === 'function') ? openHome : null; } catch (_) {}
+        if (!f) return Promise.resolve({ ok: false, error: 'no_fn: openHome', code: 'no_fn' });
+        try { f(); } catch (e) { return Promise.resolve({ ok: false, error: String((e && e.message) || e), code: 'ex' }); }
+        return v9waitFor(function () {
+          try { return (typeof drexRouteFromLocation === 'function' && drexRouteFromLocation() === '') ? { ok: true } : null; }
+          catch (_) { return null; }
+        }, 6000, 400).then(function (r) { return r || { ok: false, error: 'no_verif', code: 'no_verif' }; });
+      }
+    };
+  }
+
+  /* ---------------- 6. Tarjeta del plan (hilo del chat) ---------------- */
+  var V9_PLANS = {};
+  var V9_LVL_ICON = { lectura: '🔍', publica: '📣', destructiva: '⚠️' };
+  function v9stepLine(s, ctx, n) {
+    var ic = s.skip ? '⏭️' : (s.needsUser ? '👆' : (V9_LVL_ICON[s.level] || '❔'));
+    var tx = '<div class="baro-v9-step">' + ic + ' <b>' + n + '.</b> ' + v9esc(ctx, s.label);
+    if (s.note) tx += ' <span class="baro-v9-note">(' + v9esc(ctx, v9t(ctx, s.note)) + ')</span>';
+    else if (s.needsUser) tx += ' <span class="baro-v9-note">(' + v9esc(ctx, v9t(ctx, 'baro.v9.need_touch')) + ')</span>';
+    return tx + '</div>';
+  }
+  function v9planCardHtml(id, plan, ctx) {
+    var h = '<div class="baro-v9-plan" id="' + id + '">';
+    h += '<div class="baro-v9-plan-h">🧠 ' + v9esc(ctx, v9t(ctx, 'baro.v9.plan_title')) + ' · ' + v9esc(ctx, v9t(ctx, 'baro.v9.title')) + '</div>';
+    var n = 0;
+    plan.phases.forEach(function (p, pi) {
+      h += '<div class="baro-v9-phase"><div class="baro-v9-phase-t">' +
+           v9esc(ctx, v9t(ctx, 'baro.v9.phase', { n: pi + 1 })) + ' · <i>' + v9esc(ctx, p.text) + '</i></div>';
+      p.steps.forEach(function (s) { n++; h += v9stepLine(s, ctx, n); });
+      h += '</div>';
+    });
+    if (plan.unknown.length) {
+      h += '<div class="baro-v9-unknown">' + v9esc(ctx, v9t(ctx, 'baro.v9.unknown')) +
+           ' <i>' + plan.unknown.map(function (u) { return v9esc(ctx, u); }).join('; ') + '</i></div>';
+    }
+    if (plan.limitsUsed.length) {
+      h += '<div class="baro-v9-limits"><div class="baro-v9-limits-t">⚠️ ' +
+           v9esc(ctx, v9t(ctx, 'baro.v9.limits_t')) + '</div>';
+      plan.limitsUsed.forEach(function (k) { h += '<div class="baro-v9-limit">· ' + v9esc(ctx, v9t(ctx, k)) + '</div>'; });
+      h += '</div>';
+    }
+    h += '<div class="baro-v9-hint">' + v9esc(ctx, v9t(ctx, 'baro.v9.plan_hint')) + '</div>';
+    h += '<div class="baro-v9-actions"><button type="button" class="baro-v9-run" data-b9run="' + id + '">▶ ' +
+         v9esc(ctx, v9t(ctx, 'baro.v9.execute')) + '</button>' +
+         '<button type="button" class="baro-v9-cancel" data-b9cancel="' + id + '">✕ ' +
+         v9esc(ctx, v9t(ctx, 'baro.v9.cancel')) + '</button></div></div>';
+    return h;
+  }
+  function v9allSkippedHtml(plan, ctx) {
+    var h = '<div class="baro-v9-plan"><div class="baro-v9-plan-h">🧠 ' +
+            v9esc(ctx, v9t(ctx, 'baro.v9.title')) + '</div>';
+    h += '<div>' + v9esc(ctx, v9t(ctx, 'baro.v9.already_done')) + '</div>';
+    plan.phases.forEach(function (p) {
+      p.steps.forEach(function (s) {
+        if (s.skip && s.note)
+          h += '<div class="baro-v9-step">⏭️ ' + v9esc(ctx, s.label) + ' <span class="baro-v9-note">(' +
+               v9esc(ctx, v9t(ctx, s.note)) + ')</span></div>';
+      });
+    });
+    return h + '</div>';
+  }
+  function v9noPlanHtml(plan, ctx) {
+    var h = '<div class="baro-v9-plan"><div class="baro-v9-plan-h">🧠 ' +
+            v9esc(ctx, v9t(ctx, 'baro.v9.title')) + '</div>';
+    h += '<div class="baro-v9-unknown">' + v9esc(ctx, v9t(ctx, 'baro.v9.no_plan')) + '</div></div>';
+    return h;
+  }
+  function v9wrap(ctx, html) { return { html: html }; }
+
+  /* ---------------- 7. Panel visible + ejecutor ---------------- */
+  var V9_RUN = { active: false, stop: false };
+  function v9ensureCss() {
+    try {
+      if (document.getElementById('baro-v9-css')) return;
+      var st = document.createElement('style');
+      st.id = 'baro-v9-css';
+      st.textContent =
+        '.baro-v9-plan{border:1px solid #4f46e5;border-radius:14px;padding:12px;margin:10px 0;background:rgba(79,70,229,.07)}' +
+        '.baro-v9-plan-h{font-weight:700;margin-bottom:8px}' +
+        '.baro-v9-phase{margin:8px 0;padding:8px;border-radius:10px;background:rgba(0,0,0,.04)}' +
+        '.baro-v9-phase-t{font-size:13px;margin-bottom:4px}' +
+        '.baro-v9-step{font-size:13px;padding:2px 0}' +
+        '.baro-v9-note{opacity:.7;font-size:12px}' +
+        '.baro-v9-unknown{font-size:13px;color:#b45309;margin:6px 0}' +
+        '.baro-v9-limits{margin:8px 0;padding:8px;border-radius:10px;background:rgba(180,83,9,.1)}' +
+        '.baro-v9-limits-t{font-weight:700;font-size:13px}' +
+        '.baro-v9-limit{font-size:13px}' +
+        '.baro-v9-hint{font-size:12px;opacity:.75;margin:6px 0}' +
+        '.baro-v9-actions{display:flex;gap:8px;margin-top:8px}' +
+        '.baro-v9-run,.baro-v9-cancel{border:0;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer}' +
+        '.baro-v9-run{background:#4f46e5;color:#fff}' +
+        '.baro-v9-cancel{background:rgba(0,0,0,.08)}' +
+        '#baro-v9-panel{position:fixed;left:12px;right:12px;bottom:12px;z-index:99990;background:#14142b;color:#fff;border-radius:16px;padding:14px;box-shadow:0 8px 40px rgba(0,0,0,.5);max-height:46vh;overflow:auto;font-size:14px}' +
+        '#baro-v9-panel .baro-v9-p-h{font-weight:800;margin-bottom:8px}' +
+        '#baro-v9-panel .baro-v9-p-row{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px solid rgba(255,255,255,.08)}' +
+        '#baro-v9-panel .baro-v9-p-st{width:22px;flex:none;text-align:center}' +
+        '#baro-v9-panel .baro-v9-p-log{font-size:12.5px;opacity:.85;margin-top:6px;white-space:pre-wrap}' +
+        '#baro-v9-panel .baro-v9-p-btns{display:flex;gap:8px;margin-top:10px}' +
+        '#baro-v9-panel button{border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}' +
+        '#baro-v9-panel .baro-v9-p-stop{background:#dc2626;color:#fff}' +
+        '#baro-v9-panel .baro-v9-p-ok{background:#4f46e5;color:#fff}' +
+        '#baro-v9-panel .baro-v9-p-go{background:#16a34a;color:#fff}';
+      document.head.appendChild(st);
+    } catch (_) {}
+  }
+  function v9panelEl() {
+    try { return document.getElementById('baro-v9-panel'); } catch (_) { return null; }
+  }
+  function v9showPanel(plan, ctx) {
+    v9ensureCss();
+    var old = v9panelEl(); if (old) { try { old.remove(); } catch (_) {} }
+    var p = document.createElement('div');
+    p.id = 'baro-v9-panel';
+    var h = '<div class="baro-v9-p-h">🧠 ' + v9esc(ctx, v9t(ctx, 'baro.v9.working')) + '</div><div class="baro-v9-p-rows">';
+    plan.steps.forEach(function (s, i) {
+      var ic = s.needsUser ? '👆' : (V9_LVL_ICON[s.level] || '❔');
+      h += '<div class="baro-v9-p-row" data-b9row="' + i + '"><div class="baro-v9-p-st">⏳</div><div><div>' +
+           ic + ' <b>' + (i + 1) + '.</b> ' + v9esc(ctx, s.label) + '</div>' +
+           (s.needsUser ? '<div class="baro-v9-note">👆 ' + v9esc(ctx, v9t(ctx, 'baro.v9.need_touch')) + '</div>' : '') +
+           '</div></div>';
+    });
+    h += '</div><div class="baro-v9-p-log" data-b9log=""></div>';
+    h += '<div class="baro-v9-p-btns"><button type="button" class="baro-v9-p-stop" data-b9stop="1">⏹ ' +
+         v9esc(ctx, v9t(ctx, 'baro.v9.stop')) + '</button></div>';
+    p.innerHTML = h;
+    document.body.appendChild(p);
+    var stopBtn = p.querySelector('[data-b9stop]');
+    if (stopBtn) stopBtn.addEventListener('click', function () { V9_RUN.stop = true; });
+  }
+  function v9setRow(i, st, msg) {
+    var p = v9panelEl(); if (!p) return;
+    var row = p.querySelector('[data-b9row="' + i + '"] .baro-v9-p-st');
+    if (!row) return;
+    row.textContent = st === 'run' ? '▶' : st === 'ok' ? '✅' : st === 'fail' ? '❌' : '⏳';
+    if (msg) v9panelSay(msg);
+  }
+  function v9panelSay(t) {
+    var p = v9panelEl(); if (!p) return;
+    var log = p.querySelector('[data-b9log]');
+    if (!log) return;
+    log.textContent = String((log.textContent ? log.textContent + '\n' : '') + t).slice(-600);
+  }
+  function v9yourTurn(s, ctx) {
+    v9panelSay('👆 ' + v9t(ctx, 'baro.v9.your_turn', { x: v9t(ctx, s.note || 'baro.v9.limit_picker') }));
+  }
+  function v9panelConfirm(q, s, ctx, resolve) {
+    var p = v9panelEl();
+    if (!p) { resolve(false); return; }
+    var box = document.createElement('div');
+    box.className = 'baro-v9-p-btns';
+    var bOk = document.createElement('button'); bOk.className = 'baro-v9-p-go'; bOk.textContent = '✓';
+    var bNo = document.createElement('button'); bNo.className = 'baro-v9-p-stop'; bNo.textContent = '✕';
+    v9panelSay(q);
+    box.appendChild(bOk); box.appendChild(bNo); p.appendChild(box);
+    bOk.addEventListener('click', function () { try { box.remove(); } catch (_) {} resolve(true); });
+    bNo.addEventListener('click', function () { try { box.remove(); } catch (_) {} resolve(false); });
+  }
+  function v9panelEnd(ctx, what, n, x) {
+    var p = v9panelEl(); if (!p) return;
+    var h = p.querySelector('.baro-v9-p-h');
+    if (h) {
+      h.textContent = what === 'done' ? '🧠 ' + v9t(ctx, 'baro.v9.done')
+        : what === 'stopped' ? '🧠 ' + v9t(ctx, 'baro.v9.stopped')
+        : '🧠 ' + v9t(ctx, 'baro.v9.failed', { n: (n == null ? '?' : n + 1), x: x || '' });
+    }
+    var btns = p.querySelector('.baro-v9-p-btns');
+    if (btns) {
+      btns.innerHTML = '<button type="button" class="baro-v9-p-ok" data-b9close="1">' +
+        v9esc(ctx, v9t(ctx, 'baro.v9.close')) + '</button>';
+      var c = btns.querySelector('[data-b9close]');
+      if (c) c.addEventListener('click', function () { try { p.remove(); } catch (_) {} });
+    }
+  }
+
+  /* Puerta por paso: publica/destructiva piden confirmacion SIEMPRE,
+     aunque el plan ya fue aprobado (doble puerta intacta). */
+  function v9gate(s, ctx) {
+    return new Promise(function (resolve) {
+      if (s.level !== 'publica' && s.level !== 'destructiva') { resolve(true); return; }
+      var q = (s.level === 'destructiva' ? v9t(ctx, 'baro.v9.confirm_d') : v9t(ctx, 'baro.v9.confirm_p'));
+      try {
+        if (typeof window !== 'undefined' && typeof window.baroAskConfirm === 'function') {
+          window.baroAskConfirm({
+            danger: s.level === 'destructiva',
+            previewHtml: '<p>' + v9esc(ctx, q) + '</p><p><b>' +
+              v9esc(ctx, (V9_LVL_ICON[s.level] || '') + ' ' + s.label) + '</b></p>',
+            onConfirm: function () { resolve(true); },
+            onCancel: function () { resolve(false); }
+          });
+          return;
+        }
+      } catch (_) {}
+      v9panelConfirm(q + ' — ' + s.label, s, ctx, resolve);
+    });
+  }
+  function v9audit(action, level, detail, ok) {
+    try {
+      if (window.baroV8Agent && typeof window.baroV8Agent.audit === 'function')
+        window.baroV8Agent.audit(action, level, String(detail == null ? '' : detail).slice(0, 200), !!ok);
+    } catch (_) {}
+  }
+  function v9runStep(s, ctx) {
+    return new Promise(function (resolve) {
+      function doneRes(v, threw) {
+        if (threw) { resolve({ ok: false, error: String((v && v.message) || v), code: 'ex' }); return; }
+        if (v && v.ok === false) { resolve(v); return; }
+        resolve({ ok: true, raw: v });
+      }
+      try {
+        if (s.kind === 'ui') {
+          var A = null; try { A = window.baroAgentActions; } catch (_) {}
+          var entry = A && (A[s.action] || (typeof A.get === 'function' ? A.get(s.action) : null));
+          if (!entry || typeof entry.run !== 'function') { resolve({ ok: false, error: 'no_action: ' + s.action, code: 'no_action' }); return; }
+          var ui = { say: function (t) { v9panelSay(t); }, step: s.label };
+          var r = entry.run(s.args || {}, ui);
+          if (r && typeof r.then === 'function') r.then(function (v) { doneRes(v, false); }, function (e) { doneRes(e, true); });
+          else doneRes(r, false);
+          return;
+        }
+        var T = null; try { T = window.baroTools && window.baroTools[s.action]; } catch (_) {}
+        if (!T || typeof T.run !== 'function') { resolve({ ok: false, error: 'tool_no_disponible: ' + s.action, code: 'no_tool' }); return; }
+        var a2 = { q: s.q };
+        Object.keys(s.args || {}).forEach(function (k) { a2[k] = s.args[k]; });
+        var r2 = T.run(a2, ctx);
+        if (r2 && typeof r2.then === 'function') r2.then(function (v) { doneRes(v, false); }, function (e) { doneRes(e, true); });
+        else doneRes(r2, false);
+      } catch (e) { doneRes(e, true); }
+    });
+  }
+  function v9execute(id) {
+    var rec = V9_PLANS[id];
+    if (!rec) return;
+    var plan = rec.plan, ctx = rec.ctx;
+    if (V9_RUN.active) return;
+    V9_RUN.active = true; V9_RUN.stop = false;
+    try {
+      var card = document.getElementById(id);
+      if (card) { try { card.style.opacity = '.55'; } catch (_) {} }
+    } catch (_) {}
+    v9showPanel(plan, ctx);
+    v9audit('cerebro_v9', 'lectura', 'inicio plan: ' + plan.steps.length + ' pasos', true);
+    var i = 0;
+    function next() {
+      if (V9_RUN.stop) {
+        V9_RUN.active = false;
+        v9panelEnd(ctx, 'stopped');
+        v9audit('cerebro_v9', 'lectura', 'detenido por el usuario', false);
+        return;
+      }
+      if (i >= plan.steps.length) {
+        V9_RUN.active = false;
+        v9panelEnd(ctx, 'done');
+        v9audit('cerebro_v9', 'lectura', 'plan completado', true);
+        return;
+      }
+      var s = plan.steps[i];
+      v9setRow(i, 'run');
+      v9gate(s, ctx).then(function (gateOk) {
+        if (V9_RUN.stop) { V9_RUN.active = false; v9panelEnd(ctx, 'stopped'); return; }
+        if (!gateOk) {
+          V9_RUN.active = false;
+          v9setRow(i, 'fail', v9t(ctx, 'baro.v9.stopped'));
+          v9panelEnd(ctx, 'stopped');
+          v9audit(s.action, s.level, 'denegado por el usuario', false);
+          return;
+        }
+        if (s.needsUser) v9yourTurn(s, ctx);
+        v9runStep(s, ctx).then(function (r) {
+          v9audit(s.action, s.level, s.label, r && r.ok);
+          if (r && r.ok) { v9setRow(i, 'ok'); i++; setTimeout(next, 350); }
+          else {
+            V9_RUN.active = false;
+            var msg = (r && (r.error || r.code)) || 'error';
+            v9setRow(i, 'fail', msg);
+            v9panelEnd(ctx, 'failed', i, msg);
+          }
+        });
+      });
+    }
+    next();
+  }
+
+  /* ---------------- 8. Botones del plan (delegado, sin tocar handlers) ---------------- */
+  try {
+    if (typeof document !== 'undefined' && document.addEventListener && !document.__b9deleg) {
+      document.__b9deleg = true;
+      document.addEventListener('click', function (ev) {
+        var el = (ev && ev.target && ev.target.closest)
+          ? ev.target.closest('[data-b9run],[data-b9cancel]') : null;
+        if (!el) return;
+        if (el.hasAttribute('data-b9run')) {
+          var id = el.getAttribute('data-b9run');
+          try { v9execute(id); } catch (_) {}
+        } else {
+          var id2 = el.getAttribute('data-b9cancel');
+          try { var c = document.getElementById(id2); if (c) c.remove(); } catch (_) {}
+          try { delete V9_PLANS[id2]; } catch (_) {}
+        }
+      });
+    }
+  } catch (_) {}
+
+  /* ---------------- 9. Tool cerebro_v9 ---------------- */
+  function v9toolRun(args, ctx) {
+    try { v9extendActions(); } catch (_) {}
+    try {
+      var objective = String((args && (args.objective || args.q || args.text)) || '').trim();
+      var c = v9readContext();
+      if (c.loggedIn === false)
+        return v9wrap(ctx, '<div class="baro-v9-plan"><p>' + v9esc(ctx, v9t(ctx, 'baro.v9.need_login')) + '</p></div>');
+      var plan = v9plan(objective, c);
+      if (plan.error === 'all_skipped')
+        return v9wrap(ctx, v9allSkippedHtml(plan, ctx));
+      if (plan.error)
+        return v9wrap(ctx, v9noPlanHtml(plan, ctx));
+      var id = 'b9p' + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
+      V9_PLANS[id] = { plan: plan, ctx: ctx, objective: objective };
+      v9audit('cerebro_v9', 'lectura', 'plan creado: ' + plan.steps.length + ' pasos', true);
+      return v9wrap(ctx, v9planCardHtml(id, plan, ctx));
+    } catch (e) {
+      return v9wrap(ctx, '<div class="baro-v9-plan"><p>' + v9esc(ctx, String((e && e.message) || e)) + '</p></div>');
+    }
+  }
+  try {
+    if (typeof baroRegisterTool === 'function') {
+      baroRegisterTool('cerebro_v9', {
+        label: 'Cerebro v9',
+        icon: '🧠',
+        run: v9toolRun
+      });
+    }
+  } catch (_) {}
+  try {
+    if (typeof baroIntentRules !== 'undefined' && Array.isArray(baroIntentRules)) {
+      var v9Pats = [
+
+          /pon\s+(el\s+)?modo\s+(oscuro|claro)/i,
+          /publica\s+(una\s+)?foto/i,
+          /enc[aá]rgate\s+de/i,
+          /oc[uú]pate\s+de/i,
+          /take\s+care\s+of/i,
+          /cuide\s+disso/i,
+          /负责/,
+          /^(ve|vuelve|ir|ll[eé]vame)\s+a\b/i,
+          /\babre\s+la\s+secci[oó]n\b/i,
+          /\b(ve|vuelve|ir|pon|publica|busca)\b[^.!?。]{1,40}[,;]/i,
+          /\b(ve|vuelve|ir)\b[^.!?。]{0,60}\b(y|luego|despu[eé]s|entonces)\b[^.!?。]{0,60}\b(pon|haz|abre|publica|busca)\b/i,
+          /dark\s+mode/i,
+          /modo\s+escuro/i,
+          /modo\s+oscuro/i,
+          /modo\s+claro/i,
+          /深色模式/,
+          /淺色模式/
+      ];
+      for (var v9pi = 0; v9pi < v9Pats.length; v9pi++) {
+        (function (v9re) {
+          baroIntentRules.push({
+            lang: 'es', pattern: v9re, intent: 'cerebro_v9',
+            extract: function (text) { return { q: String(text || '') }; }
+          });
+        })(v9Pats[v9pi]);
+      }
+    }
+  } catch (_) {}
+  try {
+    if (typeof baroIntentToTool !== 'undefined' && baroIntentToTool && typeof baroIntentToTool === 'object') baroIntentToTool['cerebro_v9'] = 'cerebro_v9';
+  } catch (_) {}
+
+  /* ---------------- 10. API publica ---------------- */
+  var api = {
+    version: 9,
+    plan: function (text, context) { return v9plan(text, context || v9readContext()); },
+    readContext: v9readContext,
+    classify: v9classify,
+    execute: v9execute,
+    stop: function () { V9_RUN.stop = true; },
+    limits: function () { return V9_LIMITS.map(function (l) { return { id: l.id }; }); },
+    get running() { return V9_RUN.active; }
+  };
+  try {
+    v9mergeI18n();
+    v9extendActions();
+    window.baroBrainV9 = api;
+  } catch (_) {
+    try { window.baroBrainV9 = api; } catch (_2) {}
+  }
+})();
+
 </script>
 
 </body>
