@@ -67896,6 +67896,2254 @@ if (typeof module !== 'undefined' && module.exports) {
 
 })();
 
+/* ================= BARO · v7-DEEPRESEARCH ================= */
+/* ================= BARO v7 · deep research =================
+ * SNIPPET autocontenido. Punto de inserción: DESPUÉS del bloque
+ * v6-SEGURIDAD y ANTES del cierre del script final del index.html
+ * (ver README.md para el marcador exacto de inserción).
+ * NO crea bloques <script> nuevos. NO toca baroHandleUserMessage, su catch
+ * "Detalle técnico", el blindaje null-det ni los parches v5/v6.
+ * Reutiliza las clases CSS .baro-v5-* (inyectadas por el bloque v5).
+ *
+ * QUÉ APORTA (1 herramienta, 100% client-side, datos REALES de DrexCloud):
+ *  investigacion_profunda — motor de INVESTIGACIÓN PROFUNDA multi-pasos:
+ *   1. Planifica: expande el tema en 2-4 sub-consultas (paso en vivo).
+ *   2. Busca: ejecuta buscar_profundo por cada sub-consulta sobre la
+ *      ventana real de posts (pasos en vivo por sub-consulta).
+ *   3. Lee: top posts por votos+recencia + sus comentarios reales
+ *      (postComments/<id>) + perfiles de autores (paso en vivo).
+ *   4. Cruza: hashtags/ondas relacionadas en el corpus (paso en vivo).
+ *   5. Sintetiza: INFORME ESTRUCTURADO — resumen ejecutivo, hallazgos con
+ *      citas inline [1][2][3] (cada una enlaza a un post/perfil REAL),
+ *      contrapuntos si hay opiniones divididas (por votos), veredicto
+ *      calculado con los datos, y lista de fuentes.
+ *  Sin resultados reales: informe honesto y vacío ("no encontré posts
+ *  sobre X en Drex"). JAMÁS inventa fuentes: cada [n] corresponde a un
+ *  post/comentario/perfil leído de la BD en esta misma ejecución.
+ *
+ * CONTRATOS: baroRegisterTool(name,{label,icon,run}); reglas 6b
+ * (baroIntentRules.push + baroIntentToTool); i18n ES/EN/ZH/PT vía
+ * BARO_UI_I18N + baroMergeI18n() (patrón 8L/v5/v6); enlaces #/post/,
+ * #/u/ (rutas reales del router v2). Cero red externa.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patrón 8L/v5/v6) ---------------- */
+  var BARO_V7_I18N = {
+    'baro.v7.dr.label':      { es: 'Investigación profunda', en: 'Deep research', zh: '深度研究', pt: 'Pesquisa profunda' },
+    'baro.v7.dr.sin_tema':   { es: 'Dime qué tema investigo a fondo, por ejemplo: «investiga a fondo la nueva actualización».', en: 'Tell me what to research in depth, e.g.: "deep-research the new update".', zh: '告诉我要深度研究什么，例如：“深度研究新更新”。', pt: 'Diga o tema para pesquisar a fundo, por exemplo: «pesquisa a fundo a nova atualização».' },
+    'baro.v7.dr.error':       { es: 'No pude completar la investigación ahora mismo.', en: 'Could not complete the research right now.', zh: '暂时无法完成这项研究。', pt: 'Não consegui concluir a pesquisa agora.' },
+    'baro.v7.dr.no_db':       { es: 'No pude leer los datos de Drex ahora mismo.', en: 'Could not read Drex data right now.', zh: '暂时无法读取 Drex 数据。', pt: 'Não consegui ler os dados do Drex agora.' },
+    'baro.v7.dr.vacio':       { es: 'No encontré posts sobre «{t}» en Drex. Prueba con otras palabras o revisa las ondas en Explorar.', en: 'Found no posts about "{t}" on Drex. Try different words or check the waves in Explore.', zh: '在 Drex 上没有找到关于“{t}”的帖子。换个词试试，或去“发现”看看波浪。', pt: 'Não encontrei publicações sobre "{t}" no Drex. Tente outras palavras ou veja as ondas em Explorar.' },
+    'baro.v7.dr.step_plan':   { es: 'Planificando la investigación…', en: 'Planning the research…', zh: '正在规划研究…', pt: 'Planejando a pesquisa…' },
+    'baro.v7.dr.step_busca':  { es: 'Buscando «{q}»…', en: 'Searching "{q}"…', zh: '正在搜索“{q}”…', pt: 'Buscando "{q}"…' },
+    'baro.v7.dr.step_lee':    { es: 'Leyendo {n} posts y sus comentarios…', en: 'Reading {n} posts and their comments…', zh: '正在阅读 {n} 篇帖子及其评论…', pt: 'Lendo {n} publicações e seus comentários…' },
+    'baro.v7.dr.step_cruza':  { es: 'Cruzando con ondas relacionadas…', en: 'Cross-checking related waves…', zh: '正在交叉核对相关波浪…', pt: 'Cruzando com ondas relacionadas…' },
+    'baro.v7.dr.step_sint':   { es: 'Sintetizando el informe…', en: 'Synthesizing the report…', zh: '正在生成报告…', pt: 'Sintetizando o relatório…' },
+    'baro.v7.dr.done_busca':  { es: '{n} fuentes candidatas', en: '{n} candidate sources', zh: '{n} 个候选来源', pt: '{n} fontes candidatas' },
+    'baro.v7.dr.done_lee':    { es: '{p} posts · {c} comentarios', en: '{p} posts · {c} comments', zh: '{p} 篇帖子 · {c} 条评论', pt: '{p} publicações · {c} comentários' },
+    'baro.v7.dr.t_resumen':   { es: 'Resumen ejecutivo', en: 'Executive summary', zh: '执行摘要', pt: 'Resumo executivo' },
+    'baro.v7.dr.t_hallazgos': { es: 'Hallazgos', en: 'Findings', zh: '发现', pt: 'Achados' },
+    'baro.v7.dr.t_contra':    { es: 'Contrapuntos', en: 'Counterpoints', zh: '对立观点', pt: 'Contrapontos' },
+    'baro.v7.dr.t_veredicto': { es: 'Veredicto de los datos', en: 'Data verdict', zh: '数据结论', pt: 'Veredito dos dados' },
+    'baro.v7.dr.t_fuentes':   { es: 'Fuentes', en: 'Sources', zh: '来源', pt: 'Fontes' },
+    'baro.v7.dr.contra_txt':  { es: 'Las opiniones están divididas: hay voces a favor y voces críticas con apoyo real en votos.', en: 'Opinions are split: there are supportive and critical voices with real vote backing.', zh: '观点存在分歧：支持和批评的声音都有真实的投票支持。', pt: 'As opiniões estão divididas: há vozes a favor e críticas com apoio real em votos.' },
+    'baro.v7.dr.veredicto_txt': { es: 'Con {p} posts y {c} comentarios analizados: balance de votos {v} y {pc}% de comentarios positivos.', en: 'Across {p} posts and {c} comments analyzed: vote balance {v} and {pc}% positive comments.', zh: '共分析 {p} 篇帖子和 {c} 条评论：投票净值 {v}，正面评论占比 {pc}%。', pt: 'Em {p} publicações e {c} comentários analisados: saldo de votos {v} e {pc}% de comentários positivos.' },
+    'baro.v7.dr.ver_post':    { es: 'Ver post', en: 'View post', zh: '查看帖子', pt: 'Ver publicação' },
+    'baro.v7.dr.ver_perfil':  { es: 'Ver perfil', en: 'View profile', zh: '查看主页', pt: 'Ver perfil' },
+    'baro.v7.dr.por':         { es: 'por', en: 'by', zh: '作者', pt: 'por' },
+    'baro.v7.dr.onda_rel':    { es: 'Ondas relacionadas', en: 'Related waves', zh: '相关波浪', pt: 'Ondas relacionadas' }
+  };
+
+  function v7MergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V7_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V7_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+
+  /* ---------------- 1. helpers ---------------- */
+  function v7lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v7esc(ctx, s) {
+    try {
+      if (ctx && typeof ctx.esc === 'function') return ctx.esc(s);
+      if (typeof escapeHtml === 'function') return escapeHtml(s);
+    } catch (_) {}
+    return String(s == null ? '' : s);
+  }
+  function v7t(ctx, key, vars) {
+    var s = null;
+    try { s = (ctx && typeof ctx.t === 'function') ? ctx.t(key) : null; } catch (_) { s = null; }
+    if (!s || s === key) {
+      var e = BARO_V7_I18N[key];
+      s = (e && (e[v7lang()] || e.es)) || key;
+    }
+    if (vars) {
+      Object.keys(vars).forEach(function (k) {
+        s = String(s).split('{' + k + '}').join(v7esc(ctx, vars[k]));
+      });
+    }
+    return s;
+  }
+  function v7db() {
+    try {
+      if (typeof DrexCloud !== 'undefined' && DrexCloud && typeof DrexCloud.database === 'function') {
+        return DrexCloud.database();
+      }
+    } catch (_) {}
+    return null;
+  }
+  function v7uid(ctx) {
+    try { return (ctx && ctx.user && ctx.user.uid) || ''; } catch (_) { return ''; }
+  }
+  function v7norm(s) {
+    try {
+      return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    } catch (_) {
+      return String(s || '').toLowerCase();
+    }
+  }
+  function v7clip(s, n) {
+    s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+  function v7textOf(p) {
+    if (!p) return '';
+    var t = (p.content != null ? p.content : (p.title != null ? p.title : (p.text != null ? p.text : '')));
+    return String(t || '');
+  }
+  function v7postVotes(p) {
+    try { return Number(p.upvotes || p.likes || 0) - Number(p.downvotes || 0); }
+    catch (_) { return 0; }
+  }
+  function v7authorName(p) {
+    return String((p && (p.authorName || p.username || p.displayName)) || '');
+  }
+  function v7postLink(id) { return '#/post/' + encodeURIComponent(String(id)); }
+  function v7userLink(nick) { return '#/u/' + encodeURIComponent(String(nick)); }
+  function v7timeAgo(ts) {
+    var d = Date.now() - Number(ts || 0);
+    if (!(d > 0)) return '';
+    var m = Math.floor(d / 60000);
+    if (m < 1) return '';
+    if (m < 60) return m + 'm';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h';
+    return Math.floor(h / 24) + 'd';
+  }
+  /* Lee una ruta RTDB; null si falla (nunca lanza). */
+  function v7read(db, path) {
+    try {
+      return db.ref(path).once('value').then(
+        function (snap) { try { return snap ? snap.val() : null; } catch (_) { return null; } },
+        function () { return null; }
+      );
+    } catch (_) { return Promise.resolve(null); }
+  }
+  /* Comentarios reales de un post (shape verificado en el base). */
+  async function v7readComments(db, noteId, limit) {
+    var out = [];
+    if (!db || !noteId) return out;
+    try {
+      var snap = await db.ref('postComments/' + noteId).orderByKey().limitToLast(limit || 40).once('value');
+      if (snap) snap.forEach(function (ch) {
+        var c = ch.val() || {};
+        var txt = String(c.content || c.text || '').trim();
+        if (!txt) return;
+        out.push({
+          id: ch.key, postId: noteId, text: txt,
+          authorName: String(c.authorName || ''), authorId: String(c.authorId || ''),
+          up: Number(c.upvotes || 0), down: Number(c.downvotes || 0),
+          timestamp: Number(c.timestamp || 0)
+        });
+      });
+    } catch (_) {}
+    return out;
+  }
+  var V7_STOP = { de: 1, la: 1, el: 1, en: 1, y: 1, a: 1, los: 1, del: 1, se: 1, las: 1, por: 1, un: 1, para: 1, con: 1, no: 1, una: 1, su: 1, al: 1, lo: 1, como: 1, mas: 1, pero: 1, sus: 1, le: 1, ya: 1, o: 1, este: 1, esta: 1, ese: 1, esa: 1, eso: 1, esto: 1, hay: 1, son: 1, estan: 1, fue: 1, ser: 1, tiene: 1, tienen: 1, hace: 1, muy: 1, tambien: 1, tan: 1, entre: 1, cuando: 1, donde: 1, porque: 1, pues: 1, sin: 1, sobre: 1, hasta: 1, desde: 1, todo: 1, todos: 1, nada: 1, algo: 1, alguien: 1, cada: 1, cual: 1, aqui: 1, mi: 1, mis: 1, tu: 1, tus: 1, que: 1, cual: 1, cuales: 1, the: 1, and: 1, for: 1, are: 1, was: 1, with: 1, that: 1, this: 1, have: 1, has: 1, from: 1, they: 1, you: 1, your: 1, of: 1, to: 1, is: 1, it: 1, in: 1, on: 1 };
+  function v7keywords(text) {
+    var out = [], seen = {};
+    try {
+      var words = v7norm(text).split(/[^a-z0-9]+/);
+      for (var i = 0; i < words.length; i++) {
+        var w = words[i];
+        if (w.length >= 4 && !V7_STOP[w] && !seen[w]) { seen[w] = 1; out.push(w); }
+      }
+    } catch (_) {}
+    return out;
+  }
+  function v7tagsOf(text) {
+    var out = [], seen = {};
+    try {
+      var re = /#([\p{L}\p{N}_]+)/gu, m;
+      var t = String(text || '');
+      while ((m = re.exec(t)) !== null) {
+        var tag = m[1];
+        try { tag = tag.normalize('NFC').toLowerCase(); }
+        catch (_) { tag = String(tag).toLowerCase(); }
+        if (tag.length < 2 || tag.length > 40) continue;
+        if (!seen[tag]) { seen[tag] = 1; out.push(tag); }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  /* ---------------- 2. pasos en vivo (feed v2, con guards) ---------------- */
+  function v7step(ctx, key, vars) {
+    try {
+      if (ctx && typeof ctx.step === 'function') {
+        var label = null;
+        try { label = v7t(ctx, key, vars); } catch (_) { label = null; }
+        return ctx.step(label || key);
+      }
+    } catch (_) {}
+    return null;
+  }
+  function v7stepDone(ctx, id, key, vars) {
+    try {
+      if (ctx && typeof ctx.stepDone === 'function' && id != null) {
+        var summary = null;
+        try { summary = v7t(ctx, key, vars); } catch (_) { summary = null; }
+        ctx.stepDone(id, summary ? { summary: summary } : undefined);
+      }
+    } catch (_) {}
+  }
+  function v7stepUpd(ctx, id, key, vars) {
+    try {
+      if (ctx && typeof ctx.stepUpdate === 'function' && id != null) {
+        var label = null;
+        try { label = v7t(ctx, key, vars); } catch (_) { label = null; }
+        if (label) ctx.stepUpdate(id, { label: label });
+      }
+    } catch (_) {}
+  }
+
+  /* ---------------- 3. planificación: expande el tema en sub-consultas ----------------
+     Determinista y honesta: el tema completo + hasta 2 keywords fuertes como
+     consultas propias + el tema sin stopwords. Máx. 4, mín. 1. */
+  function v7planQueries(tema) {
+    var out = [], seen = {};
+    function push(q) {
+      q = String(q || '').trim();
+      if (q.length < 3 || seen[q]) return;
+      seen[q] = 1; out.push(q);
+    }
+    push(tema);
+    var kws = v7keywords(tema);
+    for (var i = 0; i < Math.min(2, kws.length); i++) push(kws[i]);
+    var sin = v7norm(tema).split(/[^a-z0-9]+/).filter(function (w) { return w && !V7_STOP[w]; }).join(' ');
+    push(sin);
+    return out.slice(0, 4);
+  }
+
+  /* ---------------- 4. búsqueda: reusa buscar_profundo (contrato 6c) ---------------- */
+  async function v7searchOne(q, ctx) {
+    try {
+      if (typeof baroTools !== 'undefined' && baroTools && baroTools.buscar_profundo &&
+          typeof baroTools.buscar_profundo.run === 'function') {
+        var r = await baroTools.buscar_profundo.run({ q: q }, ctx);
+        return (r && r.data) || null;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /* ---------------- 5. herramienta: investigacion_profunda ---------------- */
+  async function v7RunDeepResearch(args, ctx) {
+    var esc = function (s) { return v7esc(ctx, s); };
+    var tema = (args && args.tema != null) ? String(args.tema).trim() : '';
+    if (!tema) {
+      return { html: '<p>' + esc(v7t(ctx, 'baro.v7.dr.sin_tema')) + '</p>' };
+    }
+    var db = v7db();
+    if (!db) {
+      return { html: '<p>' + esc(v7t(ctx, 'baro.v7.dr.no_db')) + '</p>' };
+    }
+    try {
+      /* Paso 1: planificar */
+      var sPlan = v7step(ctx, 'baro.v7.dr.step_plan');
+      var queries = v7planQueries(tema);
+      v7stepDone(ctx, sPlan, 'baro.v7.dr.done_busca', { n: queries.length });
+
+      /* Paso 2: buscar cada sub-consulta (pasos en vivo) */
+      var seenPosts = {}, posts = [], polls = [], profiles = [], ondasSeen = {};
+      var ondas = [];
+      for (var qi = 0; qi < queries.length; qi++) {
+        var sq = v7step(ctx, 'baro.v7.dr.step_busca', { q: v7clip(queries[qi], 40) });
+        var data = await v7searchOne(queries[qi], ctx);
+        if (data) {
+          (data.posts || []).forEach(function (p) {
+            var id = String(p.id || '');
+            if (id && !seenPosts[id]) { seenPosts[id] = 1; posts.push(p); }
+          });
+          (data.polls || []).forEach(function (p) {
+            var id = String(p.id || '');
+            if (id && !seenPosts[id]) { seenPosts[id] = 1; polls.push(p); }
+          });
+          (data.profiles || []).forEach(function (a) {
+            if (a && a.username) profiles.push(a);
+          });
+          (data.ondas || []).forEach(function (w) {
+            var t = String((w && (w.tag || w.name)) || '').toLowerCase();
+            if (t && !ondasSeen[t]) { ondasSeen[t] = 1; ondas.push(w); }
+          });
+        }
+        v7stepDone(ctx, sq, 'baro.v7.dr.done_busca', { n: posts.length + polls.length });
+      }
+      var all = posts.concat(polls);
+      if (!all.length) {
+        return { html: '<p>' + esc(v7t(ctx, 'baro.v7.dr.vacio', { t: tema })) + '</p>' };
+      }
+
+      /* Paso 3: leer top posts + comentarios + autores */
+      all.sort(function (a, b) {
+        var va = v7postVotes(a), vb = v7postVotes(b);
+        if (vb !== va) return vb - va;
+        return Number(b.timestamp || 0) - Number(a.timestamp || 0);
+      });
+      var top = all.slice(0, 6);
+      var sLee = v7step(ctx, 'baro.v7.dr.step_lee', { n: top.length });
+      var commentsByPost = {}, allComments = [];
+      for (var ti = 0; ti < top.length; ti++) {
+        var cs = await v7readComments(db, top[ti].id, 40);
+        commentsByPost[top[ti].id] = cs;
+        for (var ci = 0; ci < cs.length; ci++) allComments.push(cs[ci]);
+        v7stepUpd(ctx, sLee, 'baro.v7.dr.step_lee', { n: (ti + 1) });
+      }
+      /* Nombres de autores (máx. 10 lecturas) */
+      var authorIds = {}, authorList = [];
+      top.forEach(function (p) {
+        var aid = String(p.authorId || p.userId || p.uid || '');
+        if (aid && !authorIds[aid]) { authorIds[aid] = 1; authorList.push(aid); }
+      });
+      var authorNames = {};
+      try {
+        var recs = await Promise.all(authorList.slice(0, 10).map(function (id) { return v7read(db, 'users/' + id + '/username'); }));
+        authorList.slice(0, 10).forEach(function (id, i) {
+          if (recs[i]) authorNames[id] = String(recs[i]);
+        });
+      } catch (_) {}
+      v7stepDone(ctx, sLee, 'baro.v7.dr.done_lee', { p: top.length, c: allComments.length });
+
+      /* Paso 4: cruzar con ondas relacionadas */
+      var sCruza = v7step(ctx, 'baro.v7.dr.step_cruza');
+      var tagCount = {};
+      function countTags(text) {
+        v7tagsOf(text).forEach(function (t) { tagCount[t] = (tagCount[t] || 0) + 1; });
+      }
+      all.forEach(function (p) { countTags(v7textOf(p)); });
+      allComments.forEach(function (c) { countTags(c.text); });
+      var relTags = Object.keys(tagCount).sort(function (a, b) { return tagCount[b] - tagCount[a]; }).slice(0, 5);
+      v7stepDone(ctx, sCruza, null);
+
+      /* Paso 5: sintetizar */
+      var sSint = v7step(ctx, 'baro.v7.dr.step_sint');
+
+      /* Registro de fuentes: cada [n] -> post/comentario/perfil REAL leído */
+      var sources = [];
+      function citeSource(kind, ref) {
+        sources.push({ kind: kind, ref: ref });
+        return sources.length;
+      }
+      function postCite(p) {
+        var aid = String(p.authorId || p.userId || p.uid || '');
+        var nick = authorNames[aid] || v7authorName(p);
+        return citeSource('post', { id: p.id, text: v7clip(v7textOf(p), 140), author: nick, votes: v7postVotes(p), ts: p.timestamp });
+      }
+      function commentCite(c) {
+        return citeSource('comment', { id: c.id, postId: c.postId, text: v7clip(c.text, 140), author: c.authorName, up: c.up, down: c.down });
+      }
+
+      /* Resumen ejecutivo: extractivo, de los 2 posts con más votos */
+      var execParts = [];
+      for (var ei = 0; ei < Math.min(2, top.length); ei++) {
+        var n = citeSource('post', { id: top[ei].id, text: v7clip(v7textOf(top[ei]), 140), author: authorNames[String(top[ei].authorId || '')] || v7authorName(top[ei]), votes: v7postVotes(top[ei]), ts: top[ei].timestamp });
+        execParts.push(v7clip(v7textOf(top[ei]), 160) + ' [' + n + ']');
+      }
+
+      /* Hallazgos: top comentarios por (up-down), cada uno con cita */
+      allComments.sort(function (a, b) { return (b.up - b.down) - (a.up - a.down); });
+      var findings = [];
+      var usedPosts = {};
+      for (var fi = 0; fi < Math.min(5, allComments.length); fi++) {
+        var fc = allComments[fi];
+        var cn = commentCite(fc);
+        findings.push({ text: v7clip(fc.text, 180), cite: cn, author: fc.authorName });
+        usedPosts[fc.postId] = 1;
+      }
+      /* Si hay pocos comentarios, completar hallazgos con posts no citados aún */
+      for (var pi = 0; pi < top.length && findings.length < 5; pi++) {
+        if (!usedPosts[top[pi].id] && v7textOf(top[pi])) {
+          var pn = postCite(top[pi]);
+          findings.push({ text: v7clip(v7textOf(top[pi]), 180), cite: pn, author: v7authorName(top[pi]) });
+          usedPosts[top[pi].id] = 1;
+        }
+      }
+
+      /* Contrapuntos: ¿opiniones divididas? (señal por votos, no inventada) */
+      var pos = top.filter(function (p) { return v7postVotes(p) >= 3; });
+      var neg = top.filter(function (p) { return v7postVotes(p) <= -3; });
+      var hasSplit = pos.length > 0 && neg.length > 0;
+      var contraHtml = '';
+      if (hasSplit) {
+        var cp = postCite(pos[0]), cn2 = postCite(neg[0]);
+        contraHtml = '<p>' + esc(v7t(ctx, 'baro.v7.dr.contra_txt')) + '</p>' +
+          '<ul>' +
+          '<li>👍 ' + esc(v7clip(v7textOf(pos[0]), 140)) + ' [' + cp + ']</li>' +
+          '<li>👎 ' + esc(v7clip(v7textOf(neg[0]), 140)) + ' [' + cn2 + ']</li>' +
+          '</ul>';
+      }
+
+      /* Veredicto: calculado, no editorializado */
+      var totalVotes = 0;
+      top.forEach(function (p) { totalVotes += v7postVotes(p); });
+      var posComments = allComments.filter(function (c) { return c.up > c.down; }).length;
+      var pcPct = allComments.length ? Math.round(100 * posComments / allComments.length) : 0;
+
+      /* Render del informe */
+      function secTitle(key) {
+        return '<p style="font-weight:700;margin:12px 0 6px;">' + esc(v7t(ctx, key)) + '</p>';
+      }
+      var html = '<div class="baro-v7-report">';
+      html += '<p style="font-weight:700;font-size:1.05em;margin:0 0 8px;">🔬 ' + esc(v7clip(tema, 80)) + '</p>';
+      html += secTitle('baro.v7.dr.t_resumen');
+      html += '<p>' + execParts.map(esc).join(' ') + '</p>';
+      html += secTitle('baro.v7.dr.t_hallazgos');
+      html += '<ol style="margin:6px 0;padding-left:20px;">';
+      findings.forEach(function (f) {
+        html += '<li style="margin-bottom:6px;">' + esc(f.text) +
+          ' <span style="opacity:.75;">[' + f.cite + ']' +
+          (f.author ? ' — ' + esc(f.author) : '') + '</span></li>';
+      });
+      html += '</ol>';
+      if (contraHtml) {
+        html += secTitle('baro.v7.dr.t_contra') + contraHtml;
+      }
+      html += secTitle('baro.v7.dr.t_veredicto');
+      html += '<p>' + esc(v7t(ctx, 'baro.v7.dr.veredicto_txt', { p: top.length, c: allComments.length, v: (totalVotes >= 0 ? '+' : '') + totalVotes, pc: pcPct })) + '</p>';
+      if (relTags.length) {
+        html += secTitle('baro.v7.dr.onda_rel');
+        html += '<p>' + relTags.map(function (t) {
+          return '<a href="#/ondas">#'+esc(t)+'</a>';
+        }).join(' · ') + '</p>';
+      }
+      html += secTitle('baro.v7.dr.t_fuentes');
+      html += '<ol style="margin:6px 0;padding-left:20px;font-size:.92em;">';
+      sources.forEach(function (s2, idx) {
+        var num = idx + 1, r = s2.ref;
+        if (s2.kind === 'post') {
+          html += '<li>[' + num + '] ' + esc(r.text) +
+            ' <span style="opacity:.75;">— ' + esc(v7t(ctx, 'baro.v7.dr.por')) + ' ' + esc(r.author || '?') + '</span>' +
+            ' · <a href="' + esc(v7postLink(r.id)) + '">' + esc(v7t(ctx, 'baro.v7.dr.ver_post')) + '</a></li>';
+        } else {
+          html += '<li>[' + num + '] ' + esc(r.text) +
+            ' <span style="opacity:.75;">— ' + esc(r.author || '?') + '</span>' +
+            ' · <a href="' + esc(v7postLink(r.postId)) + '">' + esc(v7t(ctx, 'baro.v7.dr.ver_post')) + '</a></li>';
+        }
+      });
+      html += '</ol></div>';
+      v7stepDone(ctx, sSint, null);
+
+      return {
+        html: html,
+        stats: { count: sources.length, results: sources.length },
+        data: { topic: tema, queries: queries, sources: sources.length, posts: top.length, comments: allComments.length }
+      };
+    } catch (_) {
+      return { html: '<p>' + esc(v7t(ctx, 'baro.v7.dr.error')) + '</p>' };
+    }
+  }
+
+  /* ---------------- 6. registro de herramienta ---------------- */
+  function v7register() {
+    if (typeof baroRegisterTool !== 'function') return;
+    try {
+      baroRegisterTool('investigacion_profunda', { label: 'baro.v7.dr.label', icon: 'search', run: v7RunDeepResearch });
+    } catch (_) {}
+  }
+
+  /* ---------------- 7. intenciones ES/EN/ZH/PT (contrato 6b) ----------------
+     extract: autocontenido (corre en el contexto del router; NO usa helpers
+     del IIFE v7). El parseo pesado vive en run(). */
+  function v7registerIntents() {
+    var R = (typeof window !== 'undefined' && window.baroIntentRules) ||
+            (typeof baroIntentRules === 'object' && baroIntentRules) || null;
+    var T = (typeof window !== 'undefined' && window.baroIntentToTool) ||
+            (typeof baroIntentToTool === 'object' && baroIntentToTool) || null;
+    if (!R || typeof R.push !== 'function' || !T) return;
+    try {
+      R.push(
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /investiga(r)? a fondo/, /hazme un informe (de|sobre|completo)/, /informe (completo|detallado|a fondo) (de|sobre)/,
+            /quiero un informe (de|sobre)/, /analiza a fondo/, /investigaci[óo]n profunda (de|sobre)/,
+            /deep[- ]research/, /in-?depth (report|research|investigation)( on| about)?/, /make me a report (on|about)/,
+            /pesquisa profunda/, /relat[óo]rio (completo|detalhado) (de|sobre)/, /me faz um relat[óo]rio (de|sobre)/,
+            /深度研究/, /深入调查/, /详细报告/
+          ],
+          intent: 'investigacion_profunda',
+          extract: function (text) {
+            var t = String(text || '');
+            var tema = t.replace(/^(por favor[, ]*)?(investiga(r)? a fondo|hazme un informe( completo| detallado)?|informe( completo| detallado| a fondo)?|quiero un informe|analiza a fondo|investigaci[óo]n profunda|deep[- ]research|in-?depth (report|research|investigation)|make me a report|pesquisa profunda|relat[óo]rio( completo| detalhado)?|me faz um relat[óo]rio)[\s:：]*/i, '').trim();
+            tema = tema.replace(/^(de la|del|sobre|de|on|about|do|da)\s+/i, '').trim();
+            tema = tema.replace(/^["'«»“”]+|["'«»“”]+$/g, '').trim();
+            return { tema: tema };
+          }
+        }
+      );
+      T['investigacion_profunda'] = 'investigacion_profunda';
+    } catch (_) {}
+  }
+
+  /* ---------------- 8. arranque ---------------- */
+  try { v7MergeI18n(); } catch (_) {}
+  try { v7register(); } catch (_) {}
+  try { v7registerIntents(); } catch (_) {}
+
+})();
+
+/* ================= BARO · v7-FORMATOS ================= */
+/* ================= BARO v7 · formatos estructurados =================
+ * SNIPPET autocontenido. Punto de inserción: DESPUÉS del bloque v6-SEGURIDAD
+ * y ANTES del cierre del script final del index.html.
+ * NO crea bloques <script> nuevos. NO toca baroHandleUserMessage, su catch
+ * "Detalle técnico", el blindaje null-det ni los parches v5/v6.
+ * Reutiliza las clases CSS .baro-v5-* (inyectadas por el bloque v5).
+ *
+ * QUÉ APORTA (3 herramientas, 100% client-side, datos REALES citados):
+ *  1. comparar      — "compara X vs Y" (personas, ondas o temas) → tabla
+ *                     lado a lado con métricas reales + veredicto honesto.
+ *  2. linea_tiempo  — "línea de tiempo de X" → cronología real por
+ *                     períodos (hoy/ayer/semana/mes) con posts enlazados.
+ *  3. explicame     — "explícame los ecos/las votaciones/las ondas" →
+ *                     artículos REALES de HELP_CENTER + ejemplos en vivo.
+ *                     Jamás inventa el funcionamiento de la app.
+ *
+ * CONTRATOS: baroRegisterTool(name,{label,icon,run}); reglas 6b
+ * (baroIntentRules.push + baroIntentToTool); i18n ES/EN/ZH/PT vía
+ * BARO_UI_I18N + baroMergeI18n() (patrón 8L/v5/v6). Enlaces #/post/, #/u/
+ * (rutas reales del router v2; baroPostHref usa '#/post/').
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patrón 8L/v5/v6) ---------------- */
+  var BARO_V7_I18N = {
+    'baro.v7.login_needed': { es: 'Inicia sesión para usar esto.', en: 'Sign in to use this.', zh: '请先登录。', pt: 'Entre para usar isto.' },
+    'baro.v7.no_db':        { es: 'No pude leer los datos ahora mismo.', en: 'Could not read the data right now.', zh: '暂时无法读取数据。', pt: 'Não consegui ler os dados agora.' },
+    'baro.v7.error':        { es: 'Algo falló leyendo los datos.', en: 'Something failed while reading the data.', zh: '读取数据时出错。', pt: 'Algo falhou ao ler os dados.' },
+    'baro.v7.ver_post':     { es: 'Ver post', en: 'View post', zh: '查看帖子', pt: 'Ver publicação' },
+    'baro.v7.ventana':      { es: 'Ventana de datos: últimos 500 posts de la comunidad.', en: 'Data window: last 500 community posts.', zh: '数据范围：社区最近 500 篇帖子。', pt: 'Janela de dados: últimas 500 publicações da comunidade.' },
+
+    'baro.v7.comp.label':   { es: 'Comparar', en: 'Compare', zh: '对比', pt: 'Comparar' },
+    'baro.v7.comp.title':   { es: 'Comparativa', en: 'Comparison', zh: '对比', pt: 'Comparativa' },
+    'baro.v7.comp.falta':   { es: 'Dime qué comparar, por ejemplo: «compara @ana vs @juan» o «compara #musica vs #cine».', en: 'Tell me what to compare, e.g.: "compare @ana vs @juan" or "compare #musica vs #cine".', zh: '告诉我要对比什么，例如：“对比 @ana 和 @juan”或“对比 #musica 和 #cine”。', pt: 'Diga o que comparar, por exemplo: "compara @ana vs @juan" ou "compara #musica vs #cine".' },
+    'baro.v7.comp.nf':      { es: 'No encontré «{x}» en Drex.', en: 'Could not find "{x}" on Drex.', zh: '在 Drex 上找不到“{x}”。', pt: 'Não encontrei "{x}" no Drex.' },
+    'baro.v7.comp.posts':   { es: 'posts', en: 'posts', zh: '帖子', pt: 'publicações' },
+    'baro.v7.comp.votos':   { es: 'votos netos', en: 'net votes', zh: '净得票', pt: 'votos líquidos' },
+    'baro.v7.comp.ecos':    { es: 'ecos', en: 'ecos', zh: '回响', pt: 'ecos' },
+    'baro.v7.comp.seg':     { es: 'seguidores', en: 'followers', zh: '粉丝', pt: 'seguidores' },
+    'baro.v7.comp.sig':     { es: 'seguidos', en: 'following', zh: '关注中', pt: 'seguindo' },
+    'baro.v7.comp.autores': { es: 'autores', en: 'authors', zh: '作者', pt: 'autores' },
+    'baro.v7.comp.veredicto': { es: 'Qué dicen los datos', en: 'What the data says', zh: '数据说明', pt: 'O que os dados dizem' },
+    'baro.v7.comp.gana_votos': { es: '{w} va arriba en votos netos ({a} vs {b}).', en: '{w} leads in net votes ({a} vs {b}).', zh: '{w} 在净得票上领先（{a} 对 {b}）。', pt: '{w} lidera em votos líquidos ({a} vs {b}).' },
+    'baro.v7.comp.gana_posts': { es: '{w} tiene más posts en la ventana ({a} vs {b}).', en: '{w} has more posts in the window ({a} vs {b}).', zh: '{w} 在范围内帖子更多（{a} 对 {b}）。', pt: '{w} tem mais publicações na janela ({a} vs {b}).' },
+    'baro.v7.comp.empate':  { es: 'Van parejos en la ventana actual.', en: 'They are even in the current window.', zh: '在当前范围内不相上下。', pt: 'Estão empatados na janela atual.' },
+
+    'baro.v7.tl.label':     { es: 'Línea de tiempo', en: 'Timeline', zh: '时间线', pt: 'Linha do tempo' },
+    'baro.v7.tl.title':     { es: 'Línea de tiempo: {x}', en: 'Timeline: {x}', zh: '时间线：{x}', pt: 'Linha do tempo: {x}' },
+    'baro.v7.tl.falta':     { es: 'Dime de qué quieres la línea de tiempo, por ejemplo: «línea de tiempo de #musica».', en: 'Tell me what you want the timeline of, e.g.: "timeline of #musica".', zh: '告诉我你想要谁的时间线，例如：“#musica 的时间线”。', pt: 'Diga de que quer a linha do tempo, por exemplo: "linha do tempo de #musica".' },
+    'baro.v7.tl.vacio':     { es: 'Sin posts de {x} en este período.', en: 'No posts about {x} in this period.', zh: '此期间没有关于 {x} 的帖子。', pt: 'Sem publicações de {x} neste período.' },
+    'baro.v7.tl.hoy':       { es: 'Hoy', en: 'Today', zh: '今天', pt: 'Hoje' },
+    'baro.v7.tl.ayer':      { es: 'Ayer', en: 'Yesterday', zh: '昨天', pt: 'Ontem' },
+    'baro.v7.tl.semana':    { es: 'Esta semana', en: 'This week', zh: '本周', pt: 'Esta semana' },
+    'baro.v7.tl.mes':       { es: 'Este mes', en: 'This month', zh: '本月', pt: 'Este mês' },
+    'baro.v7.tl.nf':        { es: 'No encontré «{x}» en Drex.', en: 'Could not find "{x}" on Drex.', zh: '在 Drex 上找不到“{x}”。', pt: 'Não encontrei "{x}" no Drex.' },
+
+    'baro.v7.exp.label':    { es: 'Explícame', en: 'Explain', zh: '讲解', pt: 'Explica-me' },
+    'baro.v7.exp.title':    { es: 'Te explico', en: 'Let me explain', zh: '为你讲解', pt: 'Deixa-me explicar' },
+    'baro.v7.exp.falta':    { es: 'Dime qué quieres que te explique, por ejemplo: «explícame los ecos».', en: 'Tell me what to explain, e.g.: "explain ecos to me".', zh: '告诉我你想了解什么，例如：“给我讲讲回响”。', pt: 'Diga o que quer que explique, por exemplo: "explica-me os ecos".' },
+    'baro.v7.exp.nada':     { es: 'No encontré ayuda sobre «{x}». Prueba con: ecos, votaciones, ondas, publicar o notificaciones.', en: 'No help found for "{x}". Try: ecos, voting, waves, posting or notifications.', zh: '没有找到关于“{x}”的帮助。试试：回响、投票、波浪、发布或通知。', pt: 'Não encontrei ajuda sobre "{x}". Tente: ecos, votações, ondas, publicar ou notificações.' },
+    'baro.v7.exp.fuente':   { es: 'Fuente: Centro de ayuda de Drex', en: 'Source: Drex Help Center', zh: '来源：Drex 帮助中心', pt: 'Fonte: Central de ajuda do Drex' },
+    'baro.v7.exp.ejemplos': { es: 'Ejemplos reales en la app', en: 'Real examples in the app', zh: '应用中的真实例子', pt: 'Exemplos reais no app' },
+    'baro.v7.exp.votos_txt': { es: 'En Drex se vota, no se da "like": cada publicación muestra su riel de votos y el puntaje es votos a favor menos votos en contra.', en: 'On Drex you vote, not "like": each post shows its vote rail and the score is upvotes minus downvotes.', zh: '在 Drex 是投票而不是点赞：每篇帖子都显示投票栏，得分是赞成票减去反对票。', pt: 'No Drex vota-se, não se dá "like": cada publicação mostra sua barra de votos e a pontuação é votos a favor menos votos contra.' },
+    'baro.v7.exp.ondas_txt': { es: 'Las ondas son el nombre Drex de los #tags: escríbelos con # en tus posts y explóralos en la sección Ondas.', en: 'Waves are Drex’s name for #tags: write them with # in your posts and explore them in the Waves section.', zh: '波浪是 Drex 对 #标签 的叫法：在帖子中用 # 书写，并在波浪版块探索它们。', pt: 'Ondas é o nome Drex para #tags: escreva-as com # nas suas publicações e explore-as na seção Ondas.' }
+  };
+
+  function baroV7MergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V7_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V7_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+
+  /* ---------------- 1. helpers ---------------- */
+  function v7lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v7esc(ctx, s) {
+    try {
+      if (ctx && typeof ctx.esc === 'function') return ctx.esc(s);
+      if (typeof escapeHtml === 'function') return escapeHtml(s);
+    } catch (_) {}
+    return String(s == null ? '' : s);
+  }
+  function v7t(ctx, key, vars) {
+    var s = null;
+    try { s = (ctx && typeof ctx.t === 'function') ? ctx.t(key) : null; } catch (_) { s = null; }
+    if (!s || s === key) {
+      var e = BARO_V7_I18N[key];
+      s = (e && (e[v7lang()] || e.es)) || key;
+    }
+    if (vars) {
+      var esc = function (v) { return v7esc(ctx, v); };
+      Object.keys(vars).forEach(function (k) {
+        s = String(s).split('{' + k + '}').join(esc(vars[k]));
+      });
+    }
+    return s;
+  }
+  function v7db() {
+    try {
+      if (typeof DrexCloud !== 'undefined' && DrexCloud && typeof DrexCloud.database === 'function') {
+        return DrexCloud.database();
+      }
+    } catch (_) {}
+    return null;
+  }
+  function v7uid(ctx) {
+    try { return (ctx && ctx.user && ctx.user.uid) || ''; } catch (_) { return ''; }
+  }
+  function v7needLogin(ctx) {
+    if (v7uid(ctx)) return null;
+    return { html: '<p>' + v7esc(ctx, v7t(ctx, 'baro.v7.login_needed')) + '</p>' };
+  }
+  function v7noDb(ctx) {
+    return { html: '<p>' + v7esc(ctx, v7t(ctx, 'baro.v7.no_db')) + '</p>' };
+  }
+  function v7err(ctx) {
+    return { html: '<p>' + v7esc(ctx, v7t(ctx, 'baro.v7.error')) + '</p>' };
+  }
+  function v7norm(s) {
+    try {
+      return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    } catch (_) {
+      return String(s || '').toLowerCase();
+    }
+  }
+  function v7clip(s, n) {
+    s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+  function v7textOf(note) {
+    if (!note) return '';
+    var t = (note.content != null ? note.content : (note.text != null ? note.text : ''));
+    return String(t || '');
+  }
+  function v7authorUid(note) {
+    return String((note && (note.authorId || note.userId || note.uid)) || '');
+  }
+  function v7net(p) {
+    var up = Number((p && (p.upvotes != null ? p.upvotes : 0)) || 0);
+    var dn = Number((p && (p.downvotes != null ? p.downvotes : 0)) || 0);
+    return up - dn;
+  }
+  function v7ecos(p) {
+    return Number((p && (p.ecosCount != null ? p.ecosCount : 0)) || 0);
+  }
+  function v7count(obj) {
+    if (!obj || typeof obj !== 'object') return 0;
+    return Object.keys(obj).length;
+  }
+  /* Lee una ruta RTDB; null si falla (nunca lanza). */
+  function v7read(db, path) {
+    try {
+      return db.ref(path).once('value').then(
+        function (snap) { try { return snap ? snap.val() : null; } catch (_) { return null; } },
+        function () { return null; }
+      );
+    } catch (_) { return Promise.resolve(null); }
+  }
+  /* Ventana de posts recientes (misma que el buscador v5/v6: últimos 500). */
+  async function v7readPosts(db) {
+    var out = [];
+    try {
+      var snap = await db.ref('communityNotes').orderByChild('timestamp').limitToLast(500).once('value');
+      if (snap) snap.forEach(function (ch) {
+        var n = ch.val() || {};
+        n.id = ch.key;
+        out.push(n);
+      });
+    } catch (_) { return []; }
+    return out;
+  }
+  /* Hashtags como la app: /#([\p{L}\p{N}_]+)/gu, NFC + minúsculas. */
+  function v7tagsOf(text) {
+    var out = [], seen = {};
+    try {
+      var re = /#([\p{L}\p{N}_]+)/gu, m;
+      var t = String(text || '');
+      while ((m = re.exec(t)) !== null) {
+        var tag = m[1];
+        try { tag = tag.normalize('NFC').toLowerCase(); }
+        catch (_) { tag = String(tag).toLowerCase(); }
+        if (tag.length < 2 || tag.length > 40) continue;
+        if (!seen[tag]) { seen[tag] = 1; out.push(tag); }
+      }
+    } catch (_) {}
+    return out;
+  }
+  function v7postLink(id) {
+    return '#/post/' + encodeURIComponent(String(id));
+  }
+  function v7userLink(nick) {
+    return '#/u/' + encodeURIComponent(String(nick));
+  }
+  function v7timeAgo(ctx, ts) {
+    var d = Date.now() - Number(ts || 0);
+    if (!(d > 0)) return '·';
+    var m = Math.floor(d / 60000);
+    if (m < 1) return '·';
+    if (m < 60) return m + 'm';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h';
+    return Math.floor(h / 24) + 'd';
+  }
+  function v7postItemHtml(ctx, p) {
+    var esc = function (s) { return v7esc(ctx, s); };
+    return '<div class="baro-v5-item"><p>' + esc(v7clip(v7textOf(p), 110)) + '</p>' +
+      '<p class="baro-v5-sub">' + esc(v7timeAgo(ctx, p.timestamp)) +
+      ' · ▲' + v7net(p) + ' · ((•)) ' + v7ecos(p) +
+      ' · <a href="' + esc(v7postLink(p.id)) + '">' + esc(v7t(ctx, 'baro.v7.ver_post')) + '</a></p></div>';
+  }
+  function v7helpCenter() {
+    try {
+      if (typeof HELP_CENTER !== 'undefined' && HELP_CENTER && HELP_CENTER.length) return HELP_CENTER;
+    } catch (_) {}
+    return [];
+  }
+
+  /* ---------------- 2. comparar ----------------
+     "compara X vs Y": X/Y = @persona | #onda | tema. Métricas reales. */
+  function v7splitVs(text) {
+    var parts = String(text || '').split(/\s+vs\.?\s+/i);
+    if (parts.length < 2) return null;
+    var a = parts[0].replace(/^(compara|comparar|compare|comparação)\s+/i, '').trim();
+    var b = parts.slice(1).join(' vs ').trim();
+    if (!a || !b) return null;
+    return [a, b];
+  }
+  function v7sideKind(raw) {
+    var t = String(raw || '').trim();
+    if (/^@/.test(t)) return 'user';
+    if (/^#/.test(t)) return 'wave';
+    return 'topic';
+  }
+  async function v7resolveSide(db, raw, posts) {
+    var kind = v7sideKind(raw);
+    var clean = String(raw).replace(/^[@#]/, '').trim().toLowerCase();
+    if (kind === 'user') {
+      var urec = await v7read(db, 'usernames/' + clean);
+      if (!urec) return { kind: kind, label: raw, found: false };
+      var uid = String((urec && urec.uid) || urec);
+      var r = await Promise.all([
+        v7read(db, 'users/' + uid),
+        v7read(db, 'followers/' + uid),
+        v7read(db, 'following/' + uid)
+      ]);
+      var prof = r[0] || {};
+      var nick = String(prof.username || prof.displayName || clean);
+      var mine = posts.filter(function (p) { return v7authorUid(p) === uid; });
+      var net = 0, ec = 0;
+      mine.forEach(function (p) { net += v7net(p); ec += v7ecos(p); });
+      return {
+        kind: kind, label: '@' + nick, found: true, uid: uid,
+        metrics: [
+          ['baro.v7.comp.posts', mine.length],
+          ['baro.v7.comp.votos', net],
+          ['baro.v7.comp.ecos', ec],
+          ['baro.v7.comp.seg', v7count(r[1])],
+          ['baro.v7.comp.sig', v7count(r[2])]
+        ],
+        samplePosts: mine.sort(function (a, b) { return v7net(b) - v7net(a); }).slice(0, 2)
+      };
+    }
+    var hits;
+    if (kind === 'wave') {
+      hits = posts.filter(function (p) { return v7tagsOf(v7textOf(p)).indexOf(clean) !== -1; });
+    } else {
+      var q = v7norm(clean);
+      hits = posts.filter(function (p) { return v7norm(v7textOf(p)).indexOf(q) !== -1; });
+    }
+    if (!hits.length) return { kind: kind, label: raw, found: false };
+    var net2 = 0, ec2 = 0, authors = {};
+    hits.forEach(function (p) { net2 += v7net(p); ec2 += v7ecos(p); authors[v7authorUid(p) || '?'] = 1; });
+    return {
+      kind: kind, label: raw, found: true,
+      metrics: [
+        ['baro.v7.comp.posts', hits.length],
+        ['baro.v7.comp.votos', net2],
+        ['baro.v7.comp.ecos', ec2],
+        ['baro.v7.comp.autores', Object.keys(authors).length]
+      ],
+      samplePosts: hits.sort(function (a, b) { return v7net(b) - v7net(a); }).slice(0, 2)
+    };
+  }
+  function v7metricVal(side, key) {
+    for (var i = 0; i < side.metrics.length; i++) {
+      if (side.metrics[i][0] === key) return side.metrics[i][1];
+    }
+    return 0;
+  }
+  async function v7RunComparar(args, ctx) {
+    var db = v7db();
+    if (!db) return v7noDb(ctx);
+    var vs = v7splitVs((args && args.rawText) || '');
+    if (!vs) {
+      return { html: '<p>' + v7esc(ctx, v7t(ctx, 'baro.v7.comp.falta')) + '</p>' };
+    }
+    try {
+      var posts = await v7readPosts(db);
+      var sides = await Promise.all([
+        v7resolveSide(db, vs[0], posts),
+        v7resolveSide(db, vs[1], posts)
+      ]);
+      for (var i = 0; i < 2; i++) {
+        if (!sides[i].found) {
+          return { html: '<p>' + v7esc(ctx, v7t(ctx, 'baro.v7.comp.nf', { x: vs[i] })) + '</p>', stats: { count: posts.length, results: 0 } };
+        }
+      }
+      var A = sides[0], B = sides[1];
+      var esc = function (s) { return v7esc(ctx, s); };
+      var h = '<div class="baro-v5-panel"><p><strong>' + esc(v7t(ctx, 'baro.v7.comp.title')) +
+        ': ' + esc(A.label) + ' vs ' + esc(B.label) + '</strong></p>';
+      var rows = A.metrics.length;
+      for (var r = 0; r < rows; r++) {
+        var key = A.metrics[r][0];
+        var bKey = null;
+        for (var q = 0; q < B.metrics.length; q++) { if (B.metrics[q][0] === key) { bKey = q; break; } }
+        if (bKey === null) continue;
+        var av = A.metrics[r][1], bv = B.metrics[bKey][1];
+        h += '<div class="baro-v5-row"><span>' + esc(v7t(ctx, key)) + '</span><strong>' +
+          av + ' · ' + bv + '</strong></div>';
+      }
+      h += '</div>';
+      /* Veredicto honesto, solo con los números de la ventana. */
+      var an = v7metricVal(A, 'baro.v7.comp.votos'), bn = v7metricVal(B, 'baro.v7.comp.votos');
+      var ap = v7metricVal(A, 'baro.v7.comp.posts'), bp = v7metricVal(B, 'baro.v7.comp.posts');
+      h += '<div class="baro-v5-item"><p><strong>' + esc(v7t(ctx, 'baro.v7.comp.veredicto')) + ':</strong></p><p>';
+      if (an !== bn) {
+        h += esc(v7t(ctx, 'baro.v7.comp.gana_votos', { w: an > bn ? A.label : B.label, a: an, b: bn }));
+      } else if (ap !== bp) {
+        h += esc(v7t(ctx, 'baro.v7.comp.gana_posts', { w: ap > bp ? A.label : B.label, a: ap, b: bp }));
+      } else {
+        h += esc(v7t(ctx, 'baro.v7.comp.empate'));
+      }
+      h += '</p><p class="baro-v5-sub">' + esc(v7t(ctx, 'baro.v7.ventana')) + '</p></div>';
+      [A, B].forEach(function (S) {
+        (S.samplePosts || []).forEach(function (p) { h += v7postItemHtml(ctx, p); });
+      });
+      return { html: h, stats: { count: posts.length, results: 2 } };
+    } catch (_) { return v7err(ctx); }
+  }
+
+  /* ---------------- 3. linea_tiempo ----------------
+     "línea de tiempo de X": buckets hoy/ayer/semana/mes, top por votos. */
+  function v7tlSubject(text) {
+    var t = String(text || '');
+    t = t.replace(/(l[ií]nea\s+de\s+tiempo|timeline|linha\s+do\s+tempo|cronolog[íi]a)/gi, ' ');
+    t = t.replace(/^\s*(de|del|sobre|do|da|about|of)\b/i, '').replace(/\s+/g, ' ').trim();
+    if (!t) return null;
+    return t;
+  }
+  function v7matchSubject(p, subj) {
+    var kind = v7sideKind(subj);
+    var clean = String(subj).replace(/^[@#]/, '').trim().toLowerCase();
+    if (kind === 'wave') return v7tagsOf(v7textOf(p)).indexOf(clean) !== -1;
+    if (kind === 'user') {
+      var nick = String(subj).replace(/^@/, '').trim().toLowerCase();
+      var an = v7norm(String((p.authorName || p.username || p.displayName) || ''));
+      return an === nick || an.indexOf(nick) !== -1;
+    }
+    return v7norm(v7textOf(p)).indexOf(v7norm(clean)) !== -1;
+  }
+  async function v7RunLineaTiempo(args, ctx) {
+    var db = v7db();
+    if (!db) return v7noDb(ctx);
+    var subj = v7tlSubject((args && args.rawText) || '');
+    if (!subj) {
+      return { html: '<p>' + v7esc(ctx, v7t(ctx, 'baro.v7.tl.falta')) + '</p>' };
+    }
+    try {
+      /* Si es @usuario, verificar que existe (honestidad). */
+      if (v7sideKind(subj) === 'user') {
+        var urec = await v7read(db, 'usernames/' + String(subj).replace(/^@/, '').trim().toLowerCase());
+        if (!urec) {
+          return { html: '<p>' + v7esc(ctx, v7t(ctx, 'baro.v7.tl.nf', { x: subj })) + '</p>', stats: { count: 0, results: 0 } };
+        }
+      }
+      var posts = await v7readPosts(db);
+      var hits = posts.filter(function (p) { return v7matchSubject(p, subj); });
+      var now = Date.now(), H = 3600000, D = 24 * H;
+      var buckets = [
+        ['baro.v7.tl.hoy', 0, D],
+        ['baro.v7.tl.ayer', D, 2 * D],
+        ['baro.v7.tl.semana', 2 * D, 7 * D],
+        ['baro.v7.tl.mes', 7 * D, 30 * D]
+      ];
+      var esc = function (s) { return v7esc(ctx, s); };
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        esc(v7t(ctx, 'baro.v7.tl.title', { x: subj })) + '</strong></p>' +
+        '<p class="baro-v5-sub">' + esc(v7t(ctx, 'baro.v7.ventana')) + '</p></div>';
+      var total = 0;
+      buckets.forEach(function (bk) {
+        var list = hits.filter(function (p) {
+          var age = now - Number(p.timestamp || 0);
+          return age >= bk[1] && age < bk[2];
+        }).sort(function (a, b) { return v7net(b) - v7net(a); }).slice(0, 3);
+        h += '<div class="baro-v5-item"><p><strong>📅 ' + esc(v7t(ctx, bk[0])) + '</strong></p>';
+        if (!list.length) {
+          h += '<p class="baro-v5-sub">' + esc(v7t(ctx, 'baro.v7.tl.vacio', { x: subj })) + '</p>';
+        } else {
+          total += list.length;
+          list.forEach(function (p) { h += v7postItemHtml(ctx, p); });
+        }
+        h += '</div>';
+      });
+      return { html: h, stats: { count: posts.length, results: total } };
+    } catch (_) { return v7err(ctx); }
+  }
+
+  /* ---------------- 4. explicame ----------------
+     Busca en HELP_CENTER (artículos REALES) + ejemplos en vivo. */
+  function v7helpArticles() {
+    var hc = v7helpCenter();
+    var out = [];
+    try {
+      hc.forEach(function (topic) {
+        (topic.articles || []).forEach(function (a) {
+          out.push({ topic: topic, art: a });
+        });
+      });
+    } catch (_) {}
+    return out;
+  }
+  function v7words(s) {
+    return v7norm(s).split(/[^a-z0-9]+/).filter(function (w) { return w.length >= 3; });
+  }
+  function v7scoreArticle(qwords, item) {
+    var score = 0;
+    try {
+      var titles = [];
+      ['es', 'en', 'zh'].forEach(function (l) {
+        if (item.art.t && item.art.t[l]) titles.push(String(item.art.t[l]));
+        if (item.topic.title && item.topic.title[l]) titles.push(String(item.topic.title[l]));
+      });
+      var tw = {};
+      titles.forEach(function (t) {
+        v7words(t).forEach(function (w) { tw[w] = 1; });
+      });
+      qwords.forEach(function (qw) {
+        if (tw[qw]) score += 3;
+        else {
+          for (var k in tw) {
+            if (k.indexOf(qw) === 0 || qw.indexOf(k) === 0) { score += 1; break; }
+          }
+        }
+      });
+    } catch (_) {}
+    return score;
+  }
+  function v7helpBody(item, lang) {
+    try {
+      var b = item.art.b || {};
+      return b[lang] || b.es || b.en || b.zh || '';
+    } catch (_) { return ''; }
+  }
+  function v7helpTitle(item, lang) {
+    try {
+      var t = item.art.t || {};
+      return t[lang] || t.es || t.en || t.zh || '';
+    } catch (_) { return ''; }
+  }
+  /* Ejemplos en vivo según el concepto: eco→más ecos, votos→más votos, onda→con #tag. */
+  async function v7liveExamples(db, posts, concept) {
+    var list = [];
+    try {
+      if (concept === 'eco') {
+        list = posts.slice().sort(function (a, b) { return v7ecos(b) - v7ecos(a); }).slice(0, 2);
+      } else if (concept === 'voto') {
+        list = posts.slice().sort(function (a, b) { return v7net(b) - v7net(a); }).slice(0, 2);
+      } else if (concept === 'onda') {
+        list = posts.filter(function (p) { return v7tagsOf(v7textOf(p)).length > 0; })
+          .sort(function (a, b) { return v7net(b) - v7net(a); }).slice(0, 2);
+      }
+    } catch (_) {}
+    return list;
+  }
+  function v7detectConcept(q) {
+    var n = v7norm(q);
+    if (/(^|[^a-z])ecos?([^a-z]|$)/.test(n)) return 'eco';
+    if (/vota/.test(n)) return 'voto';
+    if (/onda|hashtag/.test(n)) return 'onda';
+    return null;
+  }
+  async function v7RunExplicame(args, ctx) {
+    var db = v7db();
+    if (!db) return v7noDb(ctx);
+    var raw = String((args && args.rawText) || '').trim();
+    if (!raw) {
+      return { html: '<p>' + v7esc(ctx, v7t(ctx, 'baro.v7.exp.falta')) + '</p>' };
+    }
+    try {
+      var lang = v7lang();
+      var articles = v7helpArticles();
+      var qwords = v7words(raw);
+      var scored = articles.map(function (it) {
+        return { it: it, s: v7scoreArticle(qwords, it) };
+      }).filter(function (x) { return x.s > 0; })
+        .sort(function (a, b) { return b.s - a.s; });
+      /* El concepto (eco/voto/onda) se responde aunque no haya artículo. */
+      var concept = v7detectConcept(raw);
+      var esc = function (s) { return v7esc(ctx, s); };
+      if (!scored.length && !concept) {
+        return { html: '<p>' + v7esc(ctx, v7t(ctx, 'baro.v7.exp.nada', { x: v7clip(raw, 60) })) + '</p>', stats: { count: 0, results: 0 } };
+      }
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        esc(v7t(ctx, 'baro.v7.exp.title')) + '</strong></p></div>';
+      var top = scored.slice(0, 2);
+      top.forEach(function (x) {
+        /* Cuerpo REAL del Centro de ayuda, sin modificar. */
+        h += '<div class="baro-v5-item"><p><strong>' + esc(v7helpTitle(x.it, lang)) + '</strong></p>' +
+          '<div>' + v7helpBody(x.it, lang) + '</div>' +
+          '<p class="baro-v5-sub">' + esc(v7t(ctx, 'baro.v7.exp.fuente')) + '</p></div>';
+      });
+      /* Conceptos verificados de la app (mecánica real, no inventada). */
+      if (concept === 'voto') {
+        h += '<div class="baro-v5-item"><p>' + esc(v7t(ctx, 'baro.v7.exp.votos_txt')) + '</p></div>';
+      } else if (concept === 'onda') {
+        h += '<div class="baro-v5-item"><p>' + esc(v7t(ctx, 'baro.v7.exp.ondas_txt')) + '</p></div>';
+      }
+      /* Ejemplos reales en vivo. */
+      if (concept) {
+        var posts = await v7readPosts(db);
+        var ex = await v7liveExamples(db, posts, concept);
+        if (ex.length) {
+          h += '<div class="baro-v5-item"><p><strong>' + esc(v7t(ctx, 'baro.v7.exp.ejemplos')) + ':</strong></p>';
+          ex.forEach(function (p) { h += v7postItemHtml(ctx, p); });
+          h += '</div>';
+        }
+      }
+      return { html: h, stats: { count: articles.length, results: top.length } };
+    } catch (_) { return v7err(ctx); }
+  }
+
+  /* ---------------- 5. registro de herramientas ---------------- */
+  function v7register() {
+    if (typeof baroRegisterTool !== 'function') return;
+    baroRegisterTool('comparar',      { label: 'baro.v7.comp.label', icon: 'scale',  run: v7RunComparar });
+    baroRegisterTool('linea_tiempo',  { label: 'baro.v7.tl.label',   icon: 'clock',  run: v7RunLineaTiempo });
+    baroRegisterTool('explicame',     { label: 'baro.v7.exp.label',   icon: 'book',   run: v7RunExplicame });
+  }
+
+  /* ---------------- 6. intenciones ES/EN/ZH/PT (contrato 6b) ----------------
+     extract: autocontenido (corre en el contexto del router; NO usa helpers
+     del IIFE v7). El parseo pesado vive en run(). */
+  function v7registerIntents() {
+    var R = (typeof window !== 'undefined' && window.baroIntentRules) ||
+            (typeof baroIntentRules === 'object' && baroIntentRules) || null;
+    var T = (typeof window !== 'undefined' && window.baroIntentToTool) ||
+            (typeof baroIntentToTool === 'object' && baroIntentToTool) || null;
+    if (!R || typeof R.push !== 'function' || !T) return;
+    try {
+      R.push(
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /compara\b.{0,60}\bvs\b/i, /comparar\b/i, /diferencias?\s+entre/i,
+            /cara\sa\scara/i, /qu[ée]\s+es\s+mejor/i,
+            /\bcompare\b/i, /comparison\sof/i, /differences?\s+between/i, /versus/i, /\bvs\b.+\bvs\b/i,
+            /comparar\b/i, /diferen[çc]as?\s+entre/i,
+            /对比/, /比较/, /(.+)\s+[和与]\s*(.+)\s*(哪个|谁).*(好|强|厉害)/
+          ],
+          intent: 'comparar',
+          extract: function (text) { return { rawText: String(text || '') }; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /l[ií]nea\s+(de\s+)?tiempo/i, /cronolog[íi]a/i, /historia\s+de/i,
+            /\btimeline\b/i, /chronology/i,
+            /linha\s+do\s+tempo/i, /cronologia/i,
+            /时间线/, /大事记/
+          ],
+          intent: 'linea_tiempo',
+          extract: function (text) { return { rawText: String(text || '') }; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /expl[íi]came/i, /explica\s+me/i, /qu[ée]\s+es\s+(un|una|el|la|los|las)\b/i,
+            /c[óo]mo\s+funciona/i, /para\s+qu[ée]\s+sirve/i,
+            /\bexplain\b/i, /\bwhat\s+is\b/i, /how\s+does\s+.+\s+work/i, /tell\s+me\s+about/i,
+            /explica/i, /como\s+funciona/i, /o\s+que\s+[ée]/i,
+            /解释/, /什么是/, /怎么用/
+          ],
+          intent: 'explicame',
+          extract: function (text) { return { rawText: String(text || '') }; }
+        }
+      );
+      T['comparar'] = 'comparar';
+      T['linea_tiempo'] = 'linea_tiempo';
+      T['explicame'] = 'explicame';
+    } catch (_) {}
+  }
+
+  /* ---------------- 7. arranque ---------------- */
+  try { baroV7MergeI18n(); } catch (_) {}
+  try { v7register(); } catch (_) {}
+  try { v7registerIntents(); } catch (_) {}
+
+})();
+
+/* ================= BARO · v7-FOLLOWUPS ================= */
+/* ================= BARO v7 · follow-ups estilo Perplexity + hilos guardables =================
+ * Snippet AUTOCONTENIDO para el bloque BARO de index.html.
+ *
+ * PUNTO DE INSERCION: como IIFE propio DENTRO del bloque script del bloque BARO,
+ * DESPUES del bloque v6-SEGURIDAD y ANTES del cierre del script final.
+ * NO crea bloques <script> nuevos. NO edita ninguna funcion existente.
+ *
+ * Contenido:
+ *  1. FOLLOW-UPS: envuelve baroRegisterTool (aditivo, guard __v7Wrapped). Cada
+ *     def.run se post-procesa: si el html es sustancial (no saludo/error/
+ *     tarjeta de confirmacion/aclaratoria), se le agregan 3 preguntas tocables
+ *     estilo Perplexity, derivadas de entidades REALES de la respuesta
+ *     (@menciones, #ondas) + plantillas por herramienta. Al tocar una, se envia
+ *     como mensaje nuevo via window.baroHandleUserMessage. Tambien re-envuelve
+ *     las tools ya registradas (retro-wrap) para que v5/v6/base las reciban.
+ *  2. HILOS: buffer de sesion (usuario+baro) con wrap aditivo de
+ *     window.baroHandleUserMessage (guard __v7Wrapped). Tools: guardar_hilo,
+ *     ver_hilos, abrir_hilo, borrar_hilo (destructivo -> confirmacion 6d o
+ *     tarjeta danger propia). Persistencia en localStorage (max 20 hilos).
+ *  3. i18n ES/EN/ZH/PT (patron 8L/v5/v6): merge defensivo a BARO_UI_I18N.
+ *  4. CSS propio inyectado una vez (baro-v7-css). Cero red, cero fetch/XHR.
+ *
+ * Si algo falla: las follow-ups se omiten en silencio y los hilos responden
+ * con mensaje honesto. Nunca se inventan entidades ni preguntas.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. utilidades ---------------- */
+  function __v7g() {
+    try {
+      if (typeof window !== 'undefined' && window) return window;
+      if (typeof globalThis !== 'undefined' && globalThis) return globalThis;
+      if (typeof self !== 'undefined' && self) return self;
+    } catch (_) {}
+    return null;
+  }
+  function __v7esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function __v7lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function __v7fmt(tpl, p) {
+    var t = String(tpl == null ? '' : tpl);
+    try {
+      return t.replace(/\{(\w+)\}/g, function (_, k) {
+        return (p && p[k] != null) ? String(p[k]) : '{' + k + '}';
+      });
+    } catch (_) { return t; }
+  }
+
+  /* ---------------- 1. i18n ES/EN/ZH/PT ---------------- */
+  var BARO_V7_I18N = {
+    'baro.v7.fu.titulo':      { es: 'Seguir explorando', en: 'Keep exploring', zh: '继续探索', pt: 'Continuar explorando' },
+    'baro.v7.q.mas_mencion':  { es: 'Cuéntame más sobre @{m}', en: 'Tell me more about @{m}', zh: '多讲讲 @{m}', pt: 'Me fale mais sobre @{m}' },
+    'baro.v7.q.nuevo_onda':   { es: '¿Qué hay de nuevo en #{o}?', en: "What's new in #{o}?", zh: '#{o} 有什么新鲜事？', pt: 'O que há de novo em #{o}?' },
+    'baro.v7.q.ver_perfil':    { es: 'Ver el perfil de @{m}', en: "View @{m}'s profile", zh: '查看 @{m} 的主页', pt: 'Ver o perfil de @{m}' },
+    'baro.v7.q.profundiza':    { es: 'Profundiza en «{t}»', en: 'Go deeper on "{t}"', zh: '深入了解“{t}”', pt: 'Aprofunde em "{t}"' },
+    'baro.v7.q.resumen_semanal': { es: 'Dame mi resumen semanal', en: 'Give me my weekly recap', zh: '给我本周总结', pt: 'Me dê meu resumo semanal' },
+    'baro.v7.q.eco_ese':       { es: 'Haz eco de ese post', en: 'Echo that post', zh: '转发那篇帖子', pt: 'Ecoar aquele post' },
+    'baro.v7.q.recomienda_mas':{ es: 'Recomiéndame algo más', en: 'Recommend something else', zh: '再推荐点别的', pt: 'Recomende outra coisa' },
+    'baro.v7.q.busca_recientes': { es: 'Busca lo más reciente de #{o}', en: 'Search the latest in #{o}', zh: '搜索 #{o} 的最新内容', pt: 'Buscar o mais recente em #{o}' },
+    'baro.v7.q.guardar_hilo':  { es: 'Guarda este hilo', en: 'Save this thread', zh: '保存这个对话', pt: 'Salvar esta conversa' },
+    'baro.v7.q.que_mas':       { es: '¿Qué más puedes hacer?', en: 'What else can you do?', zh: '你还能做什么？', pt: 'O que mais você pode fazer?' },
+    'baro.v7.hilo.guardado':   { es: 'Hilo guardado: «{t}»', en: 'Thread saved: "{t}"', zh: '已保存对话：“{t}”', pt: 'Conversa salva: "{t}"' },
+    'baro.v7.hilo.vacio':      { es: 'Aún no hay nada que guardar: conversa primero con Baro.', en: 'Nothing to save yet: chat with Baro first.', zh: '还没有可保存的内容：先和 Baro 聊聊。', pt: 'Nada para salvar ainda: converse com o Baro primeiro.' },
+    'baro.v7.hilo.titulo_def': { es: 'Hilo', en: 'Thread', zh: '对话', pt: 'Conversa' },
+    'baro.v7.hilos.titulo':    { es: 'Tus hilos guardados', en: 'Your saved threads', zh: '你保存的对话', pt: 'Suas conversas salvas' },
+    'baro.v7.hilos.vacio':     { es: 'No tienes hilos guardados. Di «guarda este hilo» cuando quieras conservar una investigación.', en: 'No saved threads. Say "save this thread" whenever you want to keep an investigation.', zh: '没有保存的对话。想保留某个调查时说“保存这个对话”。', pt: 'Nenhuma conversa salva. Diga "salvar esta conversa" quando quiser guardar uma investigação.' },
+    'baro.v7.hilo.abrir':      { es: 'Abrir', en: 'Open', zh: '打开', pt: 'Abrir' },
+    'baro.v7.hilo.borrar':     { es: 'Borrar', en: 'Delete', zh: '删除', pt: 'Excluir' },
+    'baro.v7.hilo.borrado':    { es: 'Hilo borrado.', en: 'Thread deleted.', zh: '对话已删除。', pt: 'Conversa excluída.' },
+    'baro.v7.hilo.no_existe':  { es: 'Ese hilo ya no existe.', en: 'That thread no longer exists.', zh: '该对话已不存在。', pt: 'Essa conversa não existe mais.' },
+    'baro.v7.hilo.confirm_borrar': { es: '¿Borrar este hilo? Se perderá la conversación guardada.', en: 'Delete this thread? The saved conversation will be lost.', zh: '删除这个对话吗？保存的内容将丢失。', pt: 'Excluir esta conversa? O conteúdo salvo será perdido.' },
+    'baro.v7.hilo.confirmar':  { es: 'Sí, borrar', en: 'Yes, delete', zh: '是，删除', pt: 'Sim, excluir' },
+    'baro.v7.hilo.cancelar':   { es: 'Cancelar', en: 'Cancel', zh: '取消', pt: 'Cancelar' },
+    'baro.v7.hilo.reabierto':  { es: 'Hilo reabierto: «{t}». Puedes seguir desde aquí.', en: 'Thread reopened: "{t}". Continue from here.', zh: '已重新打开对话：“{t}”。可以继续。', pt: 'Conversa reaberta: "{t}". Continue daqui.' },
+    'baro.v7.hilo.dime_cual':  { es: '¿Cuál hilo? Toca uno de la lista:', en: 'Which thread? Tap one from the list:', zh: '哪个对话？点一个：', pt: 'Qual conversa? Toque uma da lista:' }
+  };
+  function baroV7MergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V7_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V7_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+  function __v7T(key, lang) {
+    try {
+      var e = BARO_V7_I18N[key];
+      if (e) return e[lang] || e.es || key;
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N && BARO_UI_I18N[key]) {
+        var u = BARO_UI_I18N[key];
+        return u[lang] || u.es || key;
+      }
+    } catch (_) {}
+    return key;
+  }
+
+  /* ---------------- 2. CSS ---------------- */
+  function v7injectCss() {
+    try {
+      if (typeof document === 'undefined') return;
+      if (document.getElementById('baro-v7-css')) return;
+      var st = document.createElement('style');
+      st.id = 'baro-v7-css';
+      st.textContent =
+        '.baro-v7-followups{margin-top:10px;padding-top:8px;border-top:1px solid rgba(127,127,127,.18)}' +
+        '.baro-v7-followups-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;opacity:.55;margin-bottom:6px}' +
+        '.baro-v7-chips{display:flex;flex-direction:column;gap:6px}' +
+        '.baro-v7-chip{text-align:left;font-size:13px;font-weight:600;color:#2F33B8;background:rgba(47,51,184,.08);' +
+        'border:1px solid rgba(47,51,184,.25);border-radius:12px;padding:9px 12px;cursor:pointer}' +
+        'body.theme-dark .baro-v7-chip{color:#9AA3FF;background:rgba(154,163,255,.08);border-color:rgba(154,163,255,.3)}' +
+        '.baro-v7-chip:active{opacity:.75}' +
+        '.baro-v7-hilo{padding:9px 2px;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}' +
+        '.baro-v7-hilo-row{display:flex;justify-content:space-between;align-items:center;gap:10px}' +
+        '.baro-v7-hilo-meta{font-size:12px;opacity:.6}' +
+        '.baro-v7-actions{display:flex;gap:8px;flex-shrink:0}' +
+        '.baro-v7-btn{font-size:12px;font-weight:700;color:#fff;background:#2F33B8;border:0;border-radius:10px;padding:7px 12px;cursor:pointer}' +
+        '.baro-v7-btn-danger{background:#dc2626}' +
+        '.baro-v7-btn-ghost{background:transparent;color:#2F33B8;border:1px solid rgba(47,51,184,.4)}';
+      document.head.appendChild(st);
+    } catch (_) {}
+  }
+
+  /* ---------------- 3. entidades (puro, testeable) ---------------- */
+  var __v7Stop = { de:1, la:1, el:1, los:1, las:1, que:1, una:1, este:1, esta:1, estos:1, para:1, con:1, por:1, como:1, pero:1, sus:1, son:1, fue:1, hay:1, más:1, mas:1, muy:1, también:1, tambien:1, entre:1, cuando:1, donde:1, porque:1, sobre:1, tiene:1, tienen:1, puedes:1, puedo:1, esto:1, eso:1, aquí:1, aqui:1, the:1, and:1, for:1, with:1, you:1, your:1, this:1, that:1, from:1, have:1, what:1, about:1, more:1, show:1, with:1 };
+  function baroV7ExtractEntities(html) {
+    var out = { mentions: [], ondas: [], topic: '' };
+    try {
+      var text = String(html == null ? '' : html).replace(/<[^>]*>/g, ' ');
+      text = text.replace(/&[a-z]+;/gi, ' ');
+      var seen = {}, m, re;
+      re = /@([A-Za-z0-9_][A-Za-z0-9_.]{1,30})/g;
+      while ((m = re.exec(text)) && out.mentions.length < 5) {
+        var u = String(m[1]).replace(/[.]+$/, '');
+        if (u && !seen['@' + u.toLowerCase()]) { seen['@' + u.toLowerCase()] = 1; out.mentions.push(u); }
+      }
+      try {
+        re = /#([\p{L}\p{N}_]{2,40})/gu;
+      } catch (_) {
+        re = /#([A-Za-z0-9_\u00C0-\u024F\u4e00-\u9fff]{2,40})/g;
+      }
+      var o;
+      while ((o = re.exec(text)) && out.ondas.length < 5) {
+        var w = String(o[1]);
+        if (w && !seen['#' + w.toLowerCase()]) { seen['#' + w.toLowerCase()] = 1; out.ondas.push(w); }
+      }
+      /* tema: palabra no-stopword más frecuente (len>=5) */
+      var freq = {}, best = '', bestN = 0;
+      var words = text.toLowerCase().replace(/[^a-záéíóúñü\s]/gi, ' ').split(/\s+/);
+      for (var i = 0; i < words.length; i++) {
+        var wd = words[i];
+        if (wd.length < 5 || __v7Stop[wd]) continue;
+        freq[wd] = (freq[wd] || 0) + 1;
+        if (freq[wd] > bestN) { bestN = freq[wd]; best = wd; }
+      }
+      if (bestN >= 2) out.topic = best;
+    } catch (_) {}
+    return out;
+  }
+
+  /* ---------------- 4. constructor de preguntas (puro, testeable) ---------------- */
+  var __v7ToolQ = {
+    mi_panel: ['baro.v7.q.resumen_semanal'],
+    analizar_post: ['baro.v7.q.eco_ese'],
+    recomiendame: ['baro.v7.q.recomienda_mas'],
+    estadisticas_onda: ['baro.v7.q.busca_recientes'],
+    que_paso_hoy: ['baro.v7.q.resumen_semanal'],
+    investigar: ['baro.v7.q.profundiza'],
+    buscar_personas: ['baro.v7.q.ver_perfil'],
+    ver_conexiones: ['baro.v7.q.ver_perfil'],
+    buscar_con_filtros: ['baro.v7.q.busca_recientes'],
+    buscar_profundo: ['baro.v7.q.busca_recientes']
+  };
+  function baroV7BuildQuestions(tool, ent, lang, threadLen) {
+    var qs = [];
+    function push(q) {
+      if (q && qs.length < 3 && qs.indexOf(q) === -1) qs.push(q);
+    }
+    try {
+      ent = ent || { mentions: [], ondas: [], topic: '' };
+      lang = lang || 'es';
+      var m = ent.mentions[0] || '', o = ent.ondas[0] || '', t = ent.topic || '';
+      if (m) push(__v7fmt(__v7T('baro.v7.q.mas_mencion', lang), { m: m }));
+      if (o) push(__v7fmt(__v7T('baro.v7.q.nuevo_onda', lang), { o: o }));
+      var spec = __v7ToolQ[tool] || [];
+      for (var i = 0; i < spec.length && qs.length < 3; i++) {
+        var q = __v7fmt(__v7T(spec[i], lang), { m: m, o: o, t: t });
+        if (q.indexOf('{') === -1) push(q); /* sin placeholders sin rellenar */
+      }
+      if (qs.length < 3 && m) push(__v7fmt(__v7T('baro.v7.q.ver_perfil', lang), { m: m }));
+      if (qs.length < 3 && (threadLen || 0) >= 3) push(__v7T('baro.v7.q.guardar_hilo', lang));
+      if (qs.length < 3) push(__v7T('baro.v7.q.que_mas', lang));
+    } catch (_) {}
+    return qs;
+  }
+
+  /* ---------------- 5. registro de preguntas + chips HTML ---------------- */
+  var __v7Q = {}, __v7QSeq = 0;
+  function baroV7FollowupsHtml(qs, lang) {
+    var h = '';
+    try {
+      lang = lang || __v7lang();
+      var ids = [];
+      for (var i = 0; i < qs.length; i++) {
+        var id = 'q' + (++__v7QSeq) + '_' + Date.now().toString(36);
+        __v7Q[id] = qs[i];
+        ids.push(id);
+      }
+      /* poda del registro */
+      try {
+        var ks = Object.keys(__v7Q);
+        if (ks.length > 30) {
+          ks.slice(0, ks.length - 30).forEach(function (k) { delete __v7Q[k]; });
+        }
+      } catch (_) {}
+      h = '<div class="baro-v7-followups"><div class="baro-v7-followups-label">' +
+        __v7esc(__v7T('baro.v7.fu.titulo', lang)) + '</div><div class="baro-v7-chips">';
+      for (var j = 0; j < qs.length; j++) {
+        h += '<button type="button" class="baro-v7-chip" onclick="baroV7Followup(\'' +
+          ids[j] + '\')">' + __v7esc(qs[j]) + '</button>';
+      }
+      h += '</div></div>';
+    } catch (_) { h = ''; }
+    return h;
+  }
+  function baroV7Followup(id) {
+    try {
+      if (!id || !/^[a-z0-9_]+$/i.test(String(id))) return;
+      var q = __v7Q[String(id)];
+      if (!q) return;
+      try { delete __v7Q[String(id)]; } catch (_) {}
+      var g = __v7g(), h = null;
+      if (g && typeof g.baroHandleUserMessage === 'function') h = g.baroHandleUserMessage;
+      else if (typeof baroHandleUserMessage === 'function') h = baroHandleUserMessage;
+      if (h) h(q);
+    } catch (_) {}
+  }
+  function baroV7MaybeQuestions(tool, html, threadLen) {
+    try {
+      var h = String(html == null ? '' : html);
+      if (h.length < 200) return null;                       /* saludos / errores cortos */
+      if (h.indexOf('baro-error-detail') !== -1) return null; /* diagnóstico de error */
+      if (h.indexOf('Algo sali') !== -1) return null;         /* error genérico ES */
+      if (h.indexOf('Something went wrong') !== -1) return null;
+      if (h.indexOf('baro-confirm') !== -1) return null;     /* tarjeta de confirmación */
+      if (h.indexOf('baro-clarify') !== -1) return null;     /* aclaratoria con botones */
+      if (h.indexOf('baro-v7-followups') !== -1) return null; /* ya tiene */
+      var lang = __v7lang();
+      var ent = baroV7ExtractEntities(h);
+      var qs = baroV7BuildQuestions(tool, ent, lang, threadLen);
+      return qs.length ? { qs: qs, lang: lang } : null;
+    } catch (_) { return null; }
+  }
+
+  /* ---------------- 6. hilo de sesión (buffer) ---------------- */
+  var __v7Thread = []; /* [{r:'u'|'b', t|h, ts}] solo sesión */
+  function baroV7TrackUser(text) {
+    try {
+      var t = String(text == null ? '' : text).trim();
+      if (!t) return;
+      __v7Thread.push({ r: 'u', t: t.slice(0, 500), ts: Date.now() });
+      if (__v7Thread.length > 60) __v7Thread.splice(0, __v7Thread.length - 60);
+    } catch (_) {}
+  }
+  function baroV7TrackBaro(html) {
+    try {
+      var h = String(html == null ? '' : html);
+      if (h.length < 40) return;
+      __v7Thread.push({ r: 'b', h: h.slice(0, 8000), ts: Date.now() });
+      if (__v7Thread.length > 60) __v7Thread.splice(0, __v7Thread.length - 60);
+    } catch (_) {}
+  }
+  function baroV7ThreadLen() { return __v7Thread.length; }
+
+  /* ---------------- 7. persistencia de hilos ---------------- */
+  var __v7LS = 'baro_v7_hilos';
+  var __v7IDOK = /^[h][0-9a-z]+$/;
+  function baroV7LSGet() {
+    try {
+      if (typeof localStorage === 'undefined') return null;
+      return localStorage;
+    } catch (_) { return null; }
+  }
+  function baroV7LoadHilos() {
+    try {
+      var ls = baroV7LSGet(); if (!ls) return [];
+      var a = JSON.parse(ls.getItem(__v7LS) || '[]');
+      return Array.isArray(a) ? a : [];
+    } catch (_) { return []; }
+  }
+  function baroV7SaveHilos(a) {
+    try {
+      var ls = baroV7LSGet(); if (!ls) return false;
+      ls.setItem(__v7LS, JSON.stringify((a || []).slice(0, 20)));
+      return true;
+    } catch (_) { return false; }
+  }
+  function baroV7NewId() {
+    try {
+      return 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    } catch (_) { return 'h' + String(Date.now()); }
+  }
+  function baroV7FindHilo(id) {
+    if (!id || !__v7IDOK.test(String(id))) return null;
+    var hs = baroV7LoadHilos();
+    for (var i = 0; i < hs.length; i++) {
+      if (hs[i] && hs[i].id === id) return hs[i];
+    }
+    return null;
+  }
+  function __v7p(ctx, s) { return '<p>' + s + '</p>'; }
+  function __v7t(ctx, key, p) {
+    var lang = 'es';
+    try { lang = (ctx && ctx.lang) || __v7lang(); } catch (_) {}
+    return __v7fmt(__v7T(key, lang), p);
+  }
+  function __v7say(ctx, html) {
+    try {
+      if (ctx && typeof ctx.say === 'function') { ctx.say(html); return; }
+      var g = __v7g();
+      if (g && typeof g.baroAddBaroMessage === 'function') { g.baroAddBaroMessage(html); return; }
+      if (typeof baroAddBaroMessage === 'function') baroAddBaroMessage(html);
+    } catch (_) {}
+  }
+
+  /* ---------------- 8. tools de hilos ---------------- */
+  async function v7RunGuardarHilo(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    var buf = __v7Thread.slice();
+    /* quitar el propio "guarda este hilo" del final */
+    while (buf.length && buf[buf.length - 1].r === 'u' &&
+           /guarda|save this thread|salvar/i.test(buf[buf.length - 1].t)) {
+      buf.pop();
+    }
+    if (!buf.length) return { html: __v7p(ctx, __v7esc(__v7t(ctx, 'baro.v7.hilo.vacio'))) };
+    var first = '';
+    for (var i = 0; i < buf.length; i++) {
+      if (buf[i].r === 'u') { first = buf[i].t; break; }
+    }
+    var titulo = (first || __v7t(ctx, 'baro.v7.hilo.titulo_def')).replace(/\s+/g, ' ').trim().slice(0, 42);
+    var hs = baroV7LoadHilos();
+    hs.unshift({ id: baroV7NewId(), titulo: titulo, ts: Date.now(), msgs: buf.slice(-50) });
+    if (!baroV7SaveHilos(hs)) {
+      return { html: __v7p(ctx, __v7esc(__v7t(ctx, 'baro.v7.hilo.vacio'))) };
+    }
+    return { html: __v7p(ctx, '✅ ' + __v7esc(__v7t(ctx, 'baro.v7.hilo.guardado', { t: titulo }))) };
+  }
+  function v7HilosListHtml(ctx) {
+    var hs = baroV7LoadHilos();
+    var out = '<div class="baro-v7-hilos"><p><strong>' +
+      __v7esc(__v7t(ctx, 'baro.v7.hilos.titulo')) + '</strong></p>';
+    if (!hs.length) {
+      out += __v7p(ctx, __v7esc(__v7t(ctx, 'baro.v7.hilos.vacio')));
+    } else {
+      for (var i = 0; i < Math.min(hs.length, 20); i++) {
+        var h = hs[i] || {};
+        var id = String(h.id || '');
+        if (!__v7IDOK.test(id)) continue;
+        var n = 0;
+        try { n = (h.msgs || []).length; } catch (_) {}
+        out += '<div class="baro-v7-hilo"><div class="baro-v7-hilo-row"><div><div>' +
+          __v7esc(String(h.titulo || '')) + '</div><div class="baro-v7-hilo-meta">' +
+          n + ' msgs</div></div><div class="baro-v7-actions">' +
+          '<button type="button" class="baro-v7-btn" onclick="baroV7OpenHilo(\'' + id + '\')">' +
+          __v7esc(__v7t(ctx, 'baro.v7.hilo.abrir')) + '</button>' +
+          '<button type="button" class="baro-v7-btn baro-v7-btn-danger" onclick="baroV7AskDeleteHilo(\'' + id + '\')">' +
+          __v7esc(__v7t(ctx, 'baro.v7.hilo.borrar')) + '</button>' +
+          '</div></div></div>';
+      }
+    }
+    out += '</div>';
+    return out;
+  }
+  async function v7RunVerHilos(args, ctx) {
+    return { html: v7HilosListHtml(ctx || {}) };
+  }
+  function baroV7Replay(hilo, ctx) {
+    var g = __v7g(), okU = 0, okB = 0;
+    var addU = (g && typeof g.baroAddUserMessage === 'function') ? g.baroAddUserMessage
+      : ((typeof baroAddUserMessage === 'function') ? baroAddUserMessage : null);
+    var addB = (g && typeof g.baroAddBaroMessage === 'function') ? g.baroAddBaroMessage
+      : ((typeof baroAddBaroMessage === 'function') ? baroAddBaroMessage : null);
+    if (!addU || !addB) return false;
+    try {
+      var msgs = (hilo && hilo.msgs) || [];
+      for (var i = 0; i < msgs.length; i++) {
+        var m = msgs[i] || {};
+        if (m.r === 'u' && m.t) { try { addU(m.t); okU++; } catch (_) {} }
+        else if (m.r === 'b' && m.h) { try { addB(m.h); okB++; } catch (_) {} }
+      }
+      __v7Thread = msgs.slice(-60);
+      return (okU + okB) > 0;
+    } catch (_) { return false; }
+  }
+  async function v7RunAbrirHilo(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    var ref = String((args && args.ref) || '').trim();
+    var hs = baroV7LoadHilos();
+    var target = null;
+    if (ref) {
+      var num = parseInt(ref, 10);
+      if (!isNaN(num) && num >= 1 && num <= hs.length) target = hs[num - 1];
+      if (!target) {
+        var rl = ref.toLowerCase();
+        for (var i = 0; i < hs.length; i++) {
+          if (hs[i] && String(hs[i].titulo || '').toLowerCase().indexOf(rl) !== -1) { target = hs[i]; break; }
+        }
+      }
+      if (!target && __v7IDOK.test(ref)) target = baroV7FindHilo(ref);
+    }
+    if (!target) {
+      return { html: __v7p(ctx, __v7esc(__v7t(ctx, 'baro.v7.hilo.dime_cual'))) + v7HilosListHtml(ctx) };
+    }
+    if (baroV7Replay(target, ctx)) {
+      __v7say(ctx, __v7p(ctx, '📂 ' + __v7esc(__v7t(ctx, 'baro.v7.hilo.reabierto', { t: target.titulo }))));
+      return { html: '' };
+    }
+    return { html: __v7p(ctx, __v7esc(__v7t(ctx, 'baro.v7.hilo.no_existe'))) };
+  }
+  function v7Ask() {
+    try { if (typeof baroHAsk === 'function') { var a = baroHAsk(); if (a) return a; } } catch (_) {}
+    try { if (typeof baroAskConfirm === 'function') return baroAskConfirm; } catch (_) {}
+    return null;
+  }
+  function v7DeleteCardHtml(id, ctx) {
+    return '<div class="baro-confirm danger"><p><strong>' +
+      __v7esc(__v7t(ctx, 'baro.v7.hilo.confirm_borrar')) + '</strong></p>' +
+      '<div class="baro-v7-actions" style="margin-top:10px">' +
+      '<button type="button" class="baro-v7-btn baro-v7-btn-danger" onclick="baroV7DeleteHilo(\'' + id + '\')">' +
+      __v7esc(__v7t(ctx, 'baro.v7.hilo.confirmar')) + '</button>' +
+      '<button type="button" class="baro-v7-btn baro-v7-btn-ghost" onclick="baroV7ListHilos()">' +
+      __v7esc(__v7t(ctx, 'baro.v7.hilo.cancelar')) + '</button>' +
+      '</div></div>';
+  }
+  function baroV7AskDeleteHilo(id) {
+    try {
+      if (!__v7IDOK.test(String(id))) return;
+      var hilo = baroV7FindHilo(id);
+      if (!hilo) { __v7say({}, __v7p({}, __v7esc(__v7T('baro.v7.hilo.no_existe', __v7lang())))); return; }
+      var ask = v7Ask();
+      if (ask) {
+        try {
+          var card = ask({
+            titleKey: 'baro.v7.hilo.confirm_borrar',
+            previewHtml: '<p>' + __v7esc(hilo.titulo || '') + '</p>',
+            confirmKey: 'baro.v7.hilo.confirmar',
+            cancelKey: 'baro.v7.hilo.cancelar',
+            danger: true,
+            onConfirm: function () { baroV7DeleteHilo(id); },
+            onCancel: function () {}
+          });
+          if (card) { __v7say({}, card); return; }
+        } catch (_) {}
+      }
+      __v7say({}, v7DeleteCardHtml(id, {}));
+    } catch (_) {}
+  }
+  function baroV7DeleteHilo(id) {
+    try {
+      if (!__v7IDOK.test(String(id))) return;
+      var hs = baroV7LoadHilos().filter(function (h) { return !h || h.id !== id; });
+      baroV7SaveHilos(hs);
+      __v7say({}, __v7p({}, '🗑️ ' + __v7esc(__v7T('baro.v7.hilo.borrado', __v7lang()))));
+    } catch (_) {}
+  }
+  function baroV7ListHilos() {
+    try { __v7say({}, v7HilosListHtml({})); } catch (_) {}
+  }
+  async function v7RunBorrarHilo(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    var ref = String((args && args.ref) || '').trim();
+    var hs = baroV7LoadHilos();
+    var target = null;
+    if (ref) {
+      var num = parseInt(ref, 10);
+      if (!isNaN(num) && num >= 1 && num <= hs.length) target = hs[num - 1];
+      if (!target) {
+        var rl = ref.toLowerCase();
+        for (var i = 0; i < hs.length; i++) {
+          if (hs[i] && String(hs[i].titulo || '').toLowerCase().indexOf(rl) !== -1) { target = hs[i]; break; }
+        }
+      }
+      if (!target && __v7IDOK.test(ref)) target = baroV7FindHilo(ref);
+    }
+    if (!target) {
+      return { html: __v7p(ctx, __v7esc(__v7t(ctx, 'baro.v7.hilo.dime_cual'))) + v7HilosListHtml(ctx) };
+    }
+    var ask = v7Ask();
+    if (ask) {
+      try {
+        var card = ask({
+          titleKey: 'baro.v7.hilo.confirm_borrar',
+          previewHtml: '<p>' + __v7esc(target.titulo || '') + '</p>',
+          confirmKey: 'baro.v7.hilo.confirmar',
+          cancelKey: 'baro.v7.hilo.cancelar',
+          danger: true,
+          onConfirm: (function (tid) { return function () { baroV7DeleteHilo(tid); }; })(target.id),
+          onCancel: function () {}
+        });
+        if (card) return { html: card };
+      } catch (_) {}
+    }
+    return { html: v7DeleteCardHtml(target.id, ctx) };
+  }
+  function baroV7OpenHilo(id) {
+    try {
+      if (!__v7IDOK.test(String(id))) return;
+      var hilo = baroV7FindHilo(id);
+      if (!hilo) { __v7say({}, __v7p({}, __v7esc(__v7T('baro.v7.hilo.no_existe', __v7lang())))); return; }
+      if (baroV7Replay(hilo, {})) {
+        __v7say({}, __v7p({}, '📂 ' + __v7esc(__v7T('baro.v7.hilo.reabierto', __v7lang(), { t: hilo.titulo }))));
+      }
+    } catch (_) {}
+  }
+
+  /* ---------------- 9. wrap de run (follow-ups + tracking) ---------------- */
+  function v7wrapRun(toolName, runFn) {
+    async function w(args, ctx) {
+      var res;
+      try {
+        res = await runFn.call(this, args, ctx);
+      } catch (e) { throw e; }
+      try {
+        if (res && typeof res.html === 'string') {
+          baroV7TrackBaro(res.html);
+          var mq = baroV7MaybeQuestions(toolName, res.html, baroV7ThreadLen());
+          if (mq && mq.qs && mq.qs.length) {
+            res.html = res.html + baroV7FollowupsHtml(mq.qs, mq.lang);
+          }
+        }
+      } catch (_) {}
+      return res;
+    }
+    w.__v7Wrapped = true;
+    return w;
+  }
+  function v7retroWrap() {
+    try {
+      var g = __v7g(), bt = null;
+      if (g && g.baroTools && typeof g.baroTools === 'object') bt = g.baroTools;
+      else if (typeof baroTools === 'object' && baroTools) bt = baroTools;
+      if (!bt) return;
+      Object.keys(bt).forEach(function (name) {
+        try {
+          var def = bt[name];
+          if (def && typeof def.run === 'function' && !def.run.__v7Wrapped) {
+            def.run = v7wrapRun(name, def.run);
+          }
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+  function v7wrapRegister() {
+    try {
+      var g = __v7g();
+      var cur = (g && typeof g.baroRegisterTool === 'function') ? g.baroRegisterTool
+        : ((typeof baroRegisterTool === 'function') ? baroRegisterTool : null);
+      if (typeof cur !== 'function' || cur.__v7Wrapped) return;
+      function wrapped(name, def) {
+        try {
+          if (def && typeof def.run === 'function' && !def.run.__v7Wrapped) {
+            def.run = v7wrapRun(name, def.run);
+          }
+        } catch (_) {}
+        return cur.call(this, name, def);
+      }
+      wrapped.__v7Wrapped = true;
+      try { baroRegisterTool = wrapped; } catch (_) {}
+      try { if (g) g.baroRegisterTool = wrapped; } catch (_) {}
+    } catch (_) {}
+  }
+  function v7wrapHandle() {
+    try {
+      var g = __v7g();
+      if (!g) return;
+      var cur = g.baroHandleUserMessage;
+      if (typeof cur !== 'function' || cur.__v7Wrapped) return;
+      function w(text) {
+        try { baroV7TrackUser(text); } catch (_) {}
+        return cur.apply(this, arguments);
+      }
+      w.__v7Wrapped = true;
+      try { g.baroHandleUserMessage = w; } catch (_) {}
+    } catch (_) {}
+  }
+
+  /* ---------------- 10. registro de tools + intents ---------------- */
+  function v7register() {
+    if (typeof baroRegisterTool !== 'function') return;
+    baroRegisterTool('guardar_hilo', { label: 'baro.v7.hilo.guardado', icon: 'save', run: v7RunGuardarHilo });
+    baroRegisterTool('ver_hilos',    { label: 'baro.v7.hilos.titulo',  icon: 'list', run: v7RunVerHilos });
+    baroRegisterTool('abrir_hilo',   { label: 'baro.v7.hilo.abrir',    icon: 'open', run: v7RunAbrirHilo });
+    baroRegisterTool('borrar_hilo',  { label: 'baro.v7.hilo.borrar',   icon: 'trash', run: v7RunBorrarHilo });
+  }
+  function v7registerIntents() {
+    try {
+      var R = null, T = null;
+      var g = __v7g();
+      R = (g && g.baroIntentRules) || ((typeof baroIntentRules !== 'undefined') ? baroIntentRules : null);
+      T = (g && g.baroIntentToTool) || ((typeof baroIntentToTool !== 'undefined') ? baroIntentToTool : null);
+      if (!R || typeof R.push !== 'function' || !T) return;
+      R.push(
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /guarda(r)? (este|esta) hilo/, /guarda(r)? (la )?conversaci[óo]n/, /conserva(r)? (este|esta) hilo/,
+            /save (this )?thread/, /save (this )?conversation/, /keep this thread/,
+            /salvar (esta )?conversa/, /guardar (essa )?conversa/,
+            /保存(这个|这条)?对话/, /保留(这个)?对话/
+          ],
+          intent: 'guardar_hilo',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /(ver|mu[ée]strame|lista(r)?) (mis )?hilos/, /hilos guardados/, /mis conversaciones guardadas/,
+            /(show|view|list) (my )?threads/, /saved threads/, /my saved conversations/,
+            /(ver|mostrar) (minhas )?conversas/, /conversas salvas/, /meus t[óo]picos salvos/,
+            /(查看|显示)(我)?(保存的)?对话/, /保存的对话列表/
+          ],
+          intent: 'ver_hilos',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /abr(e|ir) (el )?hilo/, /reabr(e|ir) (el )?hilo/, /contin[úu]a (con )?el hilo/,
+            /open (the )?thread/, /reopen (the )?thread/, /continue (the )?thread/,
+            /abr(ir|e) (a )?conversa/, /reabrir (a )?conversa/,
+            /打开(那个|这个)?对话/, /继续(那个)?对话/
+          ],
+          intent: 'abrir_hilo',
+          extract: function (t) {
+            var s = String(t || '');
+            var m = s.match(/(\d+)/);
+            return { ref: m ? m[1] : s };
+          }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /borra(r)? (el )?hilo/, /elimina(r)? (el )?hilo/,
+            /delete (the )?thread/, /remove (the )?thread/,
+            /exclui(r)? (a )?conversa/, /apaga(r)? (a )?conversa/,
+            /删除(那个|这个)?对话/
+          ],
+          intent: 'borrar_hilo',
+          extract: function (t) {
+            var s = String(t || '');
+            var m = s.match(/(\d+)/);
+            return { ref: m ? m[1] : s };
+          }
+        }
+      );
+      T['guardar_hilo'] = 'guardar_hilo';
+      T['ver_hilos'] = 'ver_hilos';
+      T['abrir_hilo'] = 'abrir_hilo';
+      T['borrar_hilo'] = 'borrar_hilo';
+    } catch (_) {}
+  }
+
+  /* ---------------- 11. exponer handlers de botones ---------------- */
+  function v7expose() {
+    try {
+      var g = __v7g();
+      var ex = (typeof baro6dExpose === 'function') ? baro6dExpose
+        : ((g && typeof g.baro6dExpose === 'function') ? g.baro6dExpose : null);
+      var names = {
+        baroV7Followup: baroV7Followup,
+        baroV7OpenHilo: baroV7OpenHilo,
+        baroV7AskDeleteHilo: baroV7AskDeleteHilo,
+        baroV7DeleteHilo: baroV7DeleteHilo,
+        baroV7ListHilos: baroV7ListHilos
+      };
+      Object.keys(names).forEach(function (k) {
+        try { if (ex) ex(k, names[k]); } catch (_) {}
+        try { if (g) g[k] = names[k]; } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  /* ---------------- 12. arranque ---------------- */
+  try { baroV7MergeI18n(); } catch (_) {}
+  try { v7injectCss(); } catch (_) {}
+  try { v7wrapRegister(); } catch (_) {}
+  try { v7retroWrap(); } catch (_) {}
+  try { v7register(); } catch (_) {}
+  try { v7registerIntents(); } catch (_) {}
+  try { v7wrapHandle(); } catch (_) {}
+  try { v7expose(); } catch (_) {}
+
+  /* seam de test: expone puros sin contaminar window */
+  try {
+    var __v7test = {
+      extractEntities: baroV7ExtractEntities,
+      buildQuestions: baroV7BuildQuestions,
+      maybeQuestions: baroV7MaybeQuestions,
+      followupsHtml: baroV7FollowupsHtml,
+      wrapRun: v7wrapRun,
+      trackUser: baroV7TrackUser,
+      trackBaro: baroV7TrackBaro,
+      threadLen: baroV7ThreadLen,
+      loadHilos: baroV7LoadHilos,
+      saveHilos: baroV7SaveHilos,
+      findHilo: baroV7FindHilo,
+      followup: baroV7Followup,
+      t: __v7T
+    };
+    var g2 = __v7g();
+    if (g2) { try { g2.__baroV7Test = __v7test; } catch (_) {} }
+  } catch (_) {}
+
+})();
+
+/* ================= BARO · v7-CITAS ================= */
+/* ================= BARO v7 · sistema de citas inline [1][2][3] + footnotes =================
+ * Snippet AUTOCONTENIDO para el bloque BARO de index.html. Nivel Perplexity.
+ *
+ * PUNTO DE INSERCION: como IIFE propio DENTRO del bloque script final del BARO,
+ * DESPUES del bloque v6-SEGURIDAD y ANTES del cierre del script final.
+ * NO crea bloques script nuevos (el literal de cierre esta prohibido en este
+ * archivo, incluso en comentarios). NO edita ninguna funcion existente: solo
+ * ENVUELVE baroRegisterTool de forma aditiva (mismo patron v5-memoria).
+ * No toca el handler de mensajes de Baro, su catch de diagnostico tecnico
+ * ni el blindaje de intents nulos.
+ *
+ * API publica: window.baroV7Cite = { cite, footnotes, list, reset, link, version }
+ *
+ *   cite(post|perfil) -> '[n]'   Registra una fuente REAL y devuelve su marcador.
+ *                                 Dedup por type:id. Sin type/id valido -> ''.
+ *   footnotes(ctx?)   -> html    Lista numerada de fuentes con enlaces reales,
+ *                                 mini-descripcion (autor, fecha, votos) e
+ *                                 insignia de confianza (oficial/comunidad).
+ *   list()            -> [src]   Fuentes en el shape v2 (baroRenderSources).
+ *   reset()           -> void    Limpia el registro (nueva respuesta).
+ *   link(html, ctx?)  -> html    Convierte [N] en <a class="baro-cite">.
+ *
+ * ADOPCION POR TOOLS (sin romperse): el run puede devolver
+ *   { html, meta: { sources: [ {...}, ... ], footnotes: true } }
+ * El wrapper alimenta automaticamente window.baro7dProvideSources (tira v2 +
+ * citas [N] enlazadas) y, si meta.footnotes, anexa footnotes() al html.
+ * Sin meta.sources: no hace NADA (tools v5/v6 intactas).
+ *
+ * REGLA DE ORO: ninguna cita a algo que no se leyo de verdad. cite() solo
+ * registra lo que la tool le pasa; la tool es responsable de usar datos reales.
+ * Cero red, cero APIs externas, cero fetch/XHR/WebSocket.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patron 8L/v5/v6) ---------------- */
+  var BARO_V7_I18N = {
+    'baro.v7.fuentes':   { es: 'Fuentes', en: 'Sources', zh: '来源', pt: 'Fontes' },
+    'baro.v7.oficial':   { es: 'oficial', en: 'official', zh: '官方', pt: 'oficial' },
+    'baro.v7.comunidad': { es: 'comunidad', en: 'community', zh: '社区', pt: 'comunidade' },
+    'baro.v7.abrir':     { es: 'Abrir fuente', en: 'Open source', zh: '打开来源', pt: 'Abrir fonte' },
+    'baro.v7.votos':     { es: 'votos', en: 'votes', zh: '票数', pt: 'votos' }
+  };
+  function baroV7MergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V7_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V7_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+
+  /* ---------------- 1. helpers ---------------- */
+  function v7lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v7esc(ctx, s) {
+    try {
+      if (ctx && typeof ctx.esc === 'function') return ctx.esc(s);
+      if (typeof escapeHtml === 'function') return escapeHtml(s);
+    } catch (_) {}
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function v7t(ctx, key) {
+    var s = null;
+    try { s = (ctx && typeof ctx.t === 'function') ? ctx.t(key) : null; } catch (_) { s = null; }
+    if (!s || s === key) {
+      var e = BARO_V7_I18N[key];
+      s = (e && (e[v7lang()] || e.es)) || key;
+    }
+    return s;
+  }
+  function v7clip(s, n) {
+    s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    if (s.length > n) s = s.slice(0, n - 1).trim() + '…';
+    return s;
+  }
+  function v7timeAgo(ts) {
+    var t = Number(ts || 0);
+    if (t > 0 && t < 1e12) t *= 1000; /* segundos -> ms */
+    var d = Date.now() - t;
+    if (!(d > 0)) return '';
+    var m = Math.floor(d / 60000);
+    if (m < 1) return '';
+    if (m < 60) return m + 'm';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h';
+    return Math.floor(h / 24) + 'd';
+  }
+  var V7_SAFE_ID_RE = /^[A-Za-z0-9_\-]{1,80}$/;
+  function v7safeId(v) {
+    var s = String(v == null ? '' : v).trim();
+    return V7_SAFE_ID_RE.test(s) ? s : '';
+  }
+  function v7normType(t) {
+    t = String(t == null ? '' : t).toLowerCase().trim();
+    if (t === 'post' || t === 'posts' || t === 'nota') return 'post';
+    if (t === 'perfil' || t === 'profile' || t === 'user' || t === 'usuario') return 'perfil';
+    if (t === 'comment' || t === 'comentario') return 'comment';
+    if (t === 'musica' || t === 'music' || t === 'song' || t === 'cancion') return 'musica';
+    if (t === 'onda' || t === 'wave' || t === 'hashtag') return 'onda';
+    return '';
+  }
+  /* URL interna real. Solo enlaces internos Drex (#...); nada externo. */
+  function v7sourceUrl(s) {
+    try {
+      if (s && typeof s.url === 'string' && s.url.charAt(0) === '#') return s.url;
+      var id = v7safeId(s && s.id);
+      if (!id) return '';
+      var e = encodeURIComponent(id);
+      var t = s.type;
+      if (t === 'perfil') return '#/u/' + e;
+      if (t === 'comment') return '#/post/' + e + '/comentarios';
+      if (t === 'onda') return '#/ondas';
+      if (t === 'musica') return '#/musica';
+      return '#/post/' + e;
+    } catch (_) { return ''; }
+  }
+
+  /* ---------------- 2. normalizacion de fuentes ----------------
+   * Acepta shape v2 ({type,id,title,subtitle}) o crudo:
+   *   post:   {id, content|title, authorNick|author, createdAt|timestamp|ts, votes|netVotes|score, verified}
+   *   perfil: {nick|username|id, name|displayName, verified, bio}
+   * Devuelve shape v2 normalizado o null (sin type/id valido -> se ignora).
+   */
+  function v7normSource(input) {
+    try {
+      if (!input || typeof input !== 'object') return null;
+      var type = v7normType(input.type || input.kind);
+      var rawId = input.id;
+      if (rawId == null && (input.nick || input.username)) rawId = input.nick || input.username;
+      if (!type) {
+        /* inferencia conservadora */
+        if (input.nick || input.username) type = 'perfil';
+        else if (rawId != null) type = 'post';
+      }
+      var id = v7safeId(rawId);
+      if (!type || !id) return null;
+      var title = input.title;
+      if (title == null) title = input.content || input.text || input.name || input.displayName;
+      if (title == null && type === 'perfil') title = '@' + id;
+      title = v7clip(title, 90) || id;
+      /* mini-descripcion: autor, fecha, votos (solo con datos reales) */
+      var sub = input.subtitle;
+      if (sub == null) {
+        var parts = [];
+        var nick = input.authorNick || input.author || input.nick || input.username;
+        if (nick && type === 'post') parts.push('@' + String(nick).replace(/^@/, ''));
+        var ago = v7timeAgo(input.createdAt || input.timestamp || input.ts);
+        if (ago) parts.push(ago);
+        var v = input.votes;
+        if (v == null) v = input.netVotes;
+        if (v == null) v = input.score;
+        v = Number(v);
+        if (isFinite(v)) parts.push((v > 0 ? '+' : '') + v);
+        sub = parts.join(' · ');
+      }
+      return {
+        type: type,
+        id: id,
+        title: String(title),
+        subtitle: String(sub == null ? '' : sub),
+        verified: input.verified === true,
+        thumb: (typeof input.thumb === 'string' && input.thumb) ? input.thumb : undefined,
+        url: (typeof input.url === 'string' && input.url.charAt(0) === '#') ? input.url : undefined
+      };
+    } catch (_) { return null; }
+  }
+
+  /* ---------------- 3. registro por respuesta ---------------- */
+  var _reg = [];       /* [{key, src}] en orden de primera cita */
+  var _byKey = {};     /* key -> indice (1-based) */
+  function v7key(src) { return src.type + ':' + src.id; }
+
+  var v7api = {
+    version: '7.0',
+    /* Registra una fuente real; devuelve '[n]'. Dedup por type:id. */
+    cite: function (input) {
+      try {
+        var src = v7normSource(input);
+        if (!src) return '';
+        var key = v7key(src);
+        if (_byKey[key]) return '[' + _byKey[key] + ']';
+        _reg.push({ key: key, src: src });
+        _byKey[key] = _reg.length;
+        return '[' + _reg.length + ']';
+      } catch (_) { return ''; }
+    },
+    /* Fuentes en shape v2 (para baroRenderSources / baro7dProvideSources). */
+    list: function () {
+      try { return _reg.map(function (r) { return r.src; }); }
+      catch (_) { return []; }
+    },
+    count: function () { try { return _reg.length; } catch (_) { return 0; } },
+    reset: function () { try { _reg = []; _byKey = {}; } catch (_) {} },
+    /* Convierte [N]/[^N] en <a class="baro-cite"> con el registro actual. */
+    link: function (html, ctx) {
+      try {
+        var out = String(html == null ? '' : html);
+        var list = v7api.list();
+        if (!list.length) return out;
+        try {
+          var w = (typeof window !== 'undefined') ? window : null;
+          if (w && typeof w.baroLinkCitations === 'function') return w.baroLinkCitations(out, list);
+        } catch (_) {}
+        /* fallback propio (mismo regex v2: /\[\^?(\d{1,2})\]/g) */
+        var parts = out.split(/(<a\b[^>]*>[\s\S]*?<\/a>)/gi);
+        for (var i = 0; i < parts.length; i += 2) {
+          parts[i] = parts[i].replace(/\[\^?(\d{1,2})\]/g, function (m, num) {
+            var idx = parseInt(num, 10) - 1;
+            var s = list[idx];
+            if (!s) return m;
+            var url = v7sourceUrl(s);
+            if (!url) return m;
+            return '<a class="baro-cite" href="' + v7esc(ctx, url) + '" data-baro-cite="' + (idx + 1) + '"' +
+              ' title="' + v7esc(ctx, s.title) + '">[' + (idx + 1) + ']</a>';
+          });
+        }
+        return parts.join('');
+      } catch (_) { return String(html == null ? '' : html); }
+    },
+    /* Lista numerada de footnotes con enlaces reales + insignia de confianza. */
+    footnotes: function (ctx) {
+      try {
+        var list = v7api.list();
+        if (!list.length) return '';
+        var items = [];
+        for (var i = 0; i < list.length; i++) {
+          (function (s, n) {
+            var url = v7sourceUrl(s);
+            if (!url) return;
+            var badge = s.verified
+              ? '<span class="baro-v7-badge baro-v7-official">✓ ' + v7esc(ctx, v7t(ctx, 'baro.v7.oficial')) + '</span>'
+              : '<span class="baro-v7-badge baro-v7-community">' + v7esc(ctx, v7t(ctx, 'baro.v7.comunidad')) + '</span>';
+            items.push(
+              '<li><a href="' + v7esc(ctx, url) + '" aria-label="' + v7esc(ctx, v7t(ctx, 'baro.v7.abrir') + ': ' + s.title) + '">' +
+              '<span class="baro-v7-fnnum">[' + n + ']</span> ' + v7esc(ctx, s.title) + '</a>' + badge +
+              (s.subtitle ? '<div class="baro-v7-fnsub">' + v7esc(ctx, s.subtitle) + '</div>' : '') +
+              '</li>'
+            );
+          })(list[i], i + 1);
+        }
+        if (!items.length) return '';
+        return '<div class="baro-v7-fnwrap"><div class="baro-v7-fnhead">' +
+          v7esc(ctx, v7t(ctx, 'baro.v7.fuentes')) + '</div>' +
+          '<ol class="baro-v7-footnotes">' + items.join('') + '</ol></div>';
+      } catch (_) { return ''; }
+    }
+  };
+
+  /* ---------------- 4. CSS (inyectado una vez) ---------------- */
+  function v7injectCss() {
+    try {
+      if (typeof document === 'undefined' || !document.createElement) return;
+      if (document.getElementById('baro-v7-css')) return;
+      var css =
+        '.baro-v7-fnwrap{margin-top:10px;border-top:1px solid var(--theme-border-subtle,rgba(127,127,127,.25));padding-top:8px}' +
+        '.baro-v7-fnhead{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--theme-text-muted);margin-bottom:6px}' +
+        '.baro-v7-footnotes{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}' +
+        '.baro-v7-footnotes li{font-size:13px;line-height:1.45}' +
+        '.baro-v7-footnotes a{color:var(--brand-indigo-text);font-weight:700;text-decoration:none}' +
+        '.baro-v7-footnotes a:active{opacity:.7}' +
+        '.baro-v7-fnnum{font-weight:800}' +
+        '.baro-v7-fnsub{font-size:12px;color:var(--theme-text-muted);margin-top:1px}' +
+        '.baro-v7-badge{display:inline-block;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:1px;white-space:nowrap}' +
+        '.baro-v7-official{background:rgba(47,51,184,.14);color:var(--brand-indigo-text)}' +
+        '.baro-v7-community{background:var(--theme-surface-subtle,rgba(127,127,127,.14));color:var(--theme-text-muted)}';
+      var st = document.createElement('style');
+      st.id = 'baro-v7-css';
+      st.textContent = css;
+      var head = document.head || (document.getElementsByTagName ? document.getElementsByTagName('head')[0] : null);
+      if (head && head.appendChild) head.appendChild(st);
+      else if (document.body && document.body.appendChild) document.body.appendChild(st);
+    } catch (_) {}
+  }
+
+  /* ---------------- 5. integracion aditiva ----------------
+   * Envuelve baroRegisterTool: cada tool puede devolver
+   *   { html, meta: { sources: [...], footnotes: true } }
+   * y la tuberia de citas se activa sola (tira v2 + [N] enlazados).
+   * Sin meta.sources: no hace nada (tools existentes intactas).
+   */
+  function v7autoSources(result) {
+    try {
+      if (!result || typeof result !== 'object') return;
+      var meta = result.meta;
+      if (!meta || typeof meta !== 'object') return;
+      var srcs = meta.sources;
+      if (!Array.isArray(srcs) || !srcs.length) return;
+      var i;
+      for (i = 0; i < srcs.length; i++) { try { v7api.cite(srcs[i]); } catch (_) {} }
+      var list = v7api.list();
+      if (!list.length) return;
+      try {
+        var w = (typeof window !== 'undefined') ? window : null;
+        if (w && typeof w.baro7dProvideSources === 'function') w.baro7dProvideSources(list);
+        else if (typeof baro7dProvideSources === 'function') baro7dProvideSources(list);
+      } catch (_) {}
+      if (meta.footnotes) {
+        try {
+          var fn = v7api.footnotes();
+          if (fn) result.html = String(result.html == null ? '' : result.html) + fn;
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+  function v7wrapRegister() {
+    try {
+      var w = (typeof window !== 'undefined') ? window : null;
+      if (w && w.__baroV7CiteWrapped) return;
+      var orig = (typeof baroRegisterTool === 'function') ? baroRegisterTool : null;
+      if (!orig) return;
+      var wrapped = function (name, def) {
+        try {
+          if (def && typeof def.run === 'function' && !def.run.__v7Wrapped) {
+            (function (origRun) {
+              var v7run = async function (args, ctx) {
+                var result;
+                try { v7api.reset(); } catch (_) {}
+                try { result = await origRun.call(this, args, ctx); }
+                catch (e) { try { v7api.reset(); } catch (_) {} throw e; }
+                try { v7autoSources(result); } catch (_) {}
+                return result;
+              };
+              v7run.__v7Wrapped = true;
+              def.run = v7run;
+            })(def.run);
+          }
+        } catch (_) {}
+        return orig.call(this, name, def);
+      };
+      /* Reasignacion del global (function declarada en otro script: escribible). */
+      try { baroRegisterTool = wrapped; } catch (_) { return; }
+      try { if (w) w.__baroV7CiteWrapped = true; } catch (_) {}
+    } catch (_) {}
+  }
+
+  /* Envuelve tambien las tools YA registradas (el wrapper de registro solo
+   * cubre futuras). Idempotente por __v7Wrapped. */
+  function v7wrapExisting() {
+    try {
+      var reg = (typeof baroTools === 'object' && baroTools) ? baroTools : null;
+      if (!reg) return;
+      Object.keys(reg).forEach(function (name) {
+        try {
+          var def = reg[name];
+          if (!def || typeof def.run !== 'function' || def.run.__v7Wrapped) return;
+          (function (origRun) {
+            var v7run = async function (args, ctx) {
+              var result;
+              try { v7api.reset(); } catch (_) {}
+              try { result = await origRun.call(this, args, ctx); }
+              catch (e) { try { v7api.reset(); } catch (_) {} throw e; }
+              try { v7autoSources(result); } catch (_) {}
+              return result;
+            };
+            v7run.__v7Wrapped = true;
+            def.run = v7run;
+          })(def.run);
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  /* ---------------- 6. arranque ---------------- */
+  try { baroV7MergeI18n(); } catch (_) {}
+  try { v7injectCss(); } catch (_) {}
+  try { v7wrapRegister(); } catch (_) {}
+  try { v7wrapExisting(); } catch (_) {}
+  try {
+    if (typeof window !== 'undefined') window.baroV7Cite = v7api;
+  } catch (_) {}
+})();
+
 </script>
 
 </body>
