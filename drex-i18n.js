@@ -2225,6 +2225,19 @@ var APP_ENGLISH_TEXT = {
 "Publica tu efecto y compártelo con toda la comunidad Drex.":"Publish your effect and share it with the entire Drex community.",
 "Descargar para Windows":"Download for Windows",
 "Requiere Windows 10 o superior.":"Requires Windows 10 or later."
+,"quedan {h} h {m} min":'{h}h {m}m left'
+,"{n} vistas":'{n} views'
+,"1 vista":'1 view'
+,"Silenciar destellos de {u}":'Mute {u}\'s Destellos'
+,"Dejar de silenciar a {u}":'Unmute {u}'
+,"Destellos de {u} silenciados":'{u}\'s Destellos muted'
+,"Volverás a ver sus destellos":'You will see their Destellos again'
+,"Ya no verás sus destellos":'You won\'t see their Destellos anymore'
+,"Destellos silenciados":'Muted Destellos'
+,"Sin destellos silenciados":'No muted Destellos'
+,"Sin destellos":'No Destellos yet'
+,"No se pudo abrir el chat. Inténtalo de nuevo.":'Couldn\'t open the chat. Try again.'
+,"Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.":'Destellos disappear after 5 hours. Tap the button below to be the first to share one.'
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4448,6 +4461,19 @@ var APP_CHINESE_TEXT = {
 "Publica tu efecto y compártelo con toda la comunidad Drex.":"发布你的特效，与整个 Drex 社区分享。",
 "Descargar para Windows":"下载 Windows 版",
 "Requiere Windows 10 o superior.":"需要 Windows 10 或更高版本。"
+,"quedan {h} h {m} min":'还剩 {h} 小时 {m} 分钟'
+,"{n} vistas":'{n} 次浏览'
+,"1 vista":'1 次浏览'
+,"Silenciar destellos de {u}":'静音 {u} 的 Destellos'
+,"Dejar de silenciar a {u}":'取消静音 {u}'
+,"Destellos de {u} silenciados":'已静音 {u} 的 Destellos'
+,"Volverás a ver sus destellos":'你将再次看到他们的 Destellos'
+,"Ya no verás sus destellos":'你将不再看到他们的 Destellos'
+,"Destellos silenciados":'已静音的 Destellos'
+,"Sin destellos silenciados":'没有已静音的 Destellos'
+,"Sin destellos":'暂无 Destellos'
+,"No se pudo abrir el chat. Inténtalo de nuevo.":'无法打开聊天，请重试。'
+,"Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.":'Destellos 会在 5 小时后消失。点击下方按钮，成为第一个分享的人。'
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6662,6 +6688,19 @@ var APP_PORTUGUESE_TEXT = {
 "Publica tu efecto y compártelo con toda la comunidad Drex.":"Publique seu efeito e compartilhe com toda a comunidade Drex.",
 "Descargar para Windows":"Baixar para Windows",
 "Requiere Windows 10 o superior.":"Requer Windows 10 ou superior."
+,"quedan {h} h {m} min":'faltam {h} h {m} min'
+,"{n} vistas":'{n} visualizações'
+,"1 vista":'1 visualização'
+,"Silenciar destellos de {u}":'Silenciar Destellos de {u}'
+,"Dejar de silenciar a {u}":'Reativar {u}'
+,"Destellos de {u} silenciados":'Destellos de {u} silenciados'
+,"Volverás a ver sus destellos":'Você voltará a ver os Destellos deles'
+,"Ya no verás sus destellos":'Você não verá mais os Destellos deles'
+,"Destellos silenciados":'Destellos silenciados'
+,"Sin destellos silenciados":'Nenhum Destello silenciado'
+,"Sin destellos":'Sem Destellos'
+,"No se pudo abrir el chat. Inténtalo de nuevo.":'Não foi possível abrir o chat. Tente novamente.'
+,"Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.":'Os Destellos desaparecem após 5 horas. Toque no botão abaixo para ser a primeira pessoa a compartilhar um.'
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

@@ -167,7 +167,8 @@ test('hook one-shot de la cámara C209 presente', function () {
 });
 test('todos los onclick de instantáneas apuntan a funciones definidas', function () {
   var fns = ['drexSnapNew', 'drexSnapFilterChange', 'drexSnapFileChosen', 'drexSnapOpenAuthor',
-             'drexSnapCloseViewer', 'drexSnapNav', 'drexSnapToggleReaction', 'drexSnapAskDelete'];
+             'drexSnapCloseViewer', 'drexSnapNav', 'drexSnapToggleReaction', 'drexSnapAskDelete',
+             'drexSnapOpenOptions', 'drexSnapOpenMutedSheet']; // C215
   fns.forEach(function (fn) {
     assert(src.indexOf('function ' + fn + '(') !== -1, 'no definida: ' + fn);
   });

@@ -92,7 +92,7 @@ atest('el autor elimina: se borran snapshots/, snapImages/ y userSnapshots/', fu
   currentUserVar = { uid: 'alice' };
   return C214.drexSnapDelete(snapAlice()).then(function (ok) {
     assert.strictEqual(ok, true, 'debe resolver true');
-    assert.deepStrictEqual(removedPaths, ['snapshots/s1', 'snapImages/s1', 'userSnapshots/alice/s1']);
+    assert.deepStrictEqual(removedPaths, ['snapshots/s1', 'snapImages/s1', 'snapViews/s1', 'userSnapshots/alice/s1']);
   });
 });
 
@@ -127,7 +127,7 @@ atest('drexSnapAskDelete con el autor confirma y borra', function () {
   try { C214.drexSnapAskDelete(); } finally { delete globalThis.confirm; }
   assert.strictEqual(confirmCalls, 1, 'debe pedir confirmación una vez');
   return new Promise(function (res) { setTimeout(res, 100); }).then(function () {
-    assert.deepStrictEqual(removedPaths, ['snapshots/s1', 'snapImages/s1', 'userSnapshots/alice/s1']);
+    assert.deepStrictEqual(removedPaths, ['snapshots/s1', 'snapImages/s1', 'snapViews/s1', 'userSnapshots/alice/s1']);
   });
 });
 
