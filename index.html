@@ -70144,6 +70144,1852 @@ if (typeof module !== 'undefined' && module.exports) {
   } catch (_) {}
 })();
 
+/* ================= BARO · v8-ACCIONES ================= */
+/* ================= BARO v8 · librería de acciones del agente =================
+ * SNIPPET autocontenido. Punto de inserción: DESPUÉS del bloque v7-CITAS
+ * y ANTES del cierre del script final del index.html.
+ * ORDEN DE CARGA: este bloque debe cargarse ANTES que el bloque del
+ * agentcore (v8-AGENTCORE), porque el agentcore referencia
+ * window.baroAgentActions. El coordinador debe insertar v8-ACCIONES primero.
+ * NO crea bloques <script> nuevos. NO toca baroHandleUserMessage, su catch
+ * "Detalle técnico", el blindaje null-det ni los parches v5/v6/v7.
+ *
+ * QUÉ APORTA: window.baroAgentActions = mapa de acciones reales que el
+ * agente ejecuta de forma VISIBLE (el usuario ve cómo la app se mueve):
+ * cada acción es { describe(args)->texto, run(args, ui)->Promise<{ok,...}> }.
+ *
+ * ACCIÓN → FUNCIÓN REAL DE LA APP (nombres verificados en index.html):
+ *  ir_a                 → drexOpenRoutePath(path)            [línea 46567]
+ *  abrir_composer       → openNoteCreation()                 [línea 12828]
+ *  escribir_texto       → #note-content-fullscreen + eventos input (tipeo visible)
+ *  publicar             → clic en #publish-btn-fullscreen = publishNoteFromFullscreen() [15151]
+ *  votar_post           → votePost(noteId, 'up'|'down')      [línea 20797]
+ *  hacer_eco            → toggleEco(noteId)                  [línea 21668]
+ *                         (pre-chequeo userEcos/<uid>/<noteId> para no deshacer un eco)
+ *  comentar_post        → ruta post/<id> + submitComment()   [línea 23936]
+ *  buscar               → ruta buscar + performRealTimeSearch() [línea 40206]
+ *  abrir_post           → drexOpenRoutePath('post/'+id)
+ *  abrir_perfil         → drexOpenRoutePath('u/'+username)
+ *  abrir_notificaciones → openNotifications()                [línea 27388]
+ *  abrir_chat           → openChatInboxView()                [línea 34683]
+ *  abrir_seguridad      → openSecurityCenter()               [línea 44985]
+ *  tap / esperar / scroll_a → DOM real (querySelector, click, scrollIntoView)
+ *
+ * Cada acción VERIFICA su efecto y devuelve {ok:true,...} o {ok:false, error}
+ * honesto. Nada se inventa: si la función real no existe, la acción falla
+ * con mensaje claro en vez de simular.
+ *
+ * CONTRATO ui (opcional, lo provee el agentcore):
+ *   ui.say(texto)    → anuncia el paso en el feed visible del agente
+ *   ui.onType(chunk) → callback por cada fragmento tipeado (efecto visible)
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patrón 8L/v5/v6/v7) ---------------- */
+  var BARO_V8_I18N = {
+    'baro.v8.login':      { es: 'Necesitas iniciar sesión para hacer eso.', en: 'You need to sign in to do that.', zh: '你需要先登录才能执行此操作。', pt: 'Você precisa entrar para fazer isso.' },
+    'baro.v8.no_db':      { es: 'No pude leer los datos ahora mismo.', en: 'Could not read the data right now.', zh: '暂时无法读取数据。', pt: 'Não consegui ler os dados agora.' },
+    'baro.v8.no_fn':      { es: 'La función «{f}» no está disponible en esta versión de Drex.', en: 'The function "{f}" is not available in this Drex version.', zh: '此 Drex 版本中没有“{f}”功能。', pt: 'A função "{f}" não está disponível nesta versão do Drex.' },
+    'baro.v8.timeout':    { es: 'Se agotó el tiempo esperando «{x}».', en: 'Timed out waiting for "{x}".', zh: '等待“{x}”超时。', pt: 'Tempo esgotado esperando "{x}".' },
+    'baro.v8.no_verif':   { es: 'La acción se ejecutó pero no pude verificar el resultado.', en: 'The action ran but I could not verify the result.', zh: '操作已执行，但无法验证结果。', pt: 'A ação foi executada, mas não pude verificar o resultado.' },
+    'baro.v8.ruta_no':    { es: 'No existe la ruta «{p}» en Drex.', en: 'The route "{p}" does not exist in Drex.', zh: 'Drex 中没有“{p}”这个路由。', pt: 'A rota "{p}" não existe no Drex.' },
+    'baro.v8.ya_eco':     { es: 'Ya habías hecho eco de ese post.', en: 'You had already echoed that post.', zh: '你已经回响过这篇帖子了。', pt: 'Você já tinha ecoado essa publicação.' },
+    'baro.v8.sin_texto':  { es: 'Dime qué texto escribir.', en: 'Tell me what text to write.', zh: '告诉我要写什么内容。', pt: 'Diga qual texto escrever.' },
+    'baro.v8.sin_post':   { es: 'Dime de qué post hablas (id o enlace).', en: 'Tell me which post you mean (id or link).', zh: '告诉我是哪篇帖子（id 或链接）。', pt: 'Diga de qual publicação você fala (id ou link).' },
+    'baro.v8.sin_q':      { es: 'Dime qué buscar.', en: 'Tell me what to search for.', zh: '告诉我要搜索什么。', pt: 'Diga o que buscar.' },
+    'baro.v8.sin_user':   { es: 'Dime el @usuario del perfil.', en: 'Tell me the @username of the profile.', zh: '告诉我个人资料的 @用户名。', pt: 'Diga o @usuário do perfil.' },
+    'baro.v8.sin_elem':   { es: 'No encontré en pantalla «{x}».', en: 'Could not find "{x}" on screen.', zh: '在屏幕上找不到“{x}”。', pt: 'Não encontrei "{x}" na tela.' },
+
+    'baro.v8.d.ir_a':       { es: 'Voy a {p}', en: 'Going to {p}', zh: '前往 {p}', pt: 'Indo para {p}' },
+    'baro.v8.d.composer':   { es: 'Abro el editor para publicar', en: 'Opening the composer', zh: '打开编辑器', pt: 'Abrindo o editor' },
+    'baro.v8.d.escribir':   { es: 'Escribo el texto', en: 'Typing the text', zh: '正在输入', pt: 'Digitando o texto' },
+    'baro.v8.d.publicar':   { es: 'Publico el post', en: 'Publishing the post', zh: '发布帖子', pt: 'Publicando' },
+    'baro.v8.d.votar':      { es: 'Voto {v} el post', en: 'Voting {v} on the post', zh: '给帖子投{v}', pt: 'Votando {v} na publicação' },
+    'baro.v8.d.eco':        { es: 'Hago eco del post', en: 'Echoing the post', zh: '回响这篇帖子', pt: 'Ecoando a publicação' },
+    'baro.v8.d.comentar':   { es: 'Comento el post', en: 'Commenting on the post', zh: '评论这篇帖子', pt: 'Comentando a publicação' },
+    'baro.v8.d.buscar':     { es: 'Busco «{q}»', en: 'Searching for "{q}"', zh: '搜索“{q}”', pt: 'Buscando "{q}"' },
+    'baro.v8.d.abrir_post': { es: 'Abro el post', en: 'Opening the post', zh: '打开帖子', pt: 'Abrindo a publicação' },
+    'baro.v8.d.perfil':     { es: 'Abro el perfil de {u}', en: 'Opening {u}\u2019s profile', zh: '打开 {u} 的个人资料', pt: 'Abrindo o perfil de {u}' },
+    'baro.v8.d.notif':      { es: 'Abro tus notificaciones', en: 'Opening your notifications', zh: '打开你的通知', pt: 'Abrindo suas notificações' },
+    'baro.v8.d.chat':       { es: 'Abro tus chats', en: 'Opening your chats', zh: '打开你的聊天', pt: 'Abrindo seus chats' },
+    'baro.v8.d.seg':        { es: 'Abro el Centro de seguridad', en: 'Opening the Security Center', zh: '打开安全中心', pt: 'Abrindo a Central de segurança' },
+    'baro.v8.d.tap':        { es: 'Toco «{x}»', en: 'Tapping "{x}"', zh: '点击“{x}”', pt: 'Tocando em "{x}"' },
+    'baro.v8.d.esperar':    { es: 'Espero «{x}»', en: 'Waiting for "{x}"', zh: '等待“{x}”', pt: 'Esperando "{x}"' },
+    'baro.v8.d.scroll':     { es: 'Desplazo hasta «{x}»', en: 'Scrolling to "{x}"', zh: '滚动到“{x}”', pt: 'Rolando até "{x}"' }
+  };
+
+  function baroV8MergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V8_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V8_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+
+  /* ---------------- 1. helpers ---------------- */
+  function v8lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v8t(key, vars) {
+    var lang = v8lang(), s = null;
+    try {
+      var e = BARO_V8_I18N[key];
+      if (e) s = e[lang] || e.es;
+    } catch (_) { s = null; }
+    if (!s) s = key;
+    if (vars) Object.keys(vars).forEach(function (k) { s = String(s).split('{' + k + '}').join(String(vars[k])); });
+    return s;
+  }
+  function v8say(ui, text) {
+    try { if (ui && typeof ui.say === 'function') ui.say(text); } catch (_) {}
+  }
+  function v8sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function v8user() {
+    try {
+      var u = DrexCloud.auth().currentUser;
+      return u || null;
+    } catch (_) { return null; }
+  }
+  function v8fn(name) {
+    try {
+      /* Las funciones de la app son globales (scripts clásicos). Se resuelven
+         por nombre real; si alguna no existe, la acción falla honesto. */
+      var f = (typeof window !== 'undefined' ? window[name] : null) ||
+              (typeof globalThis !== 'undefined' ? globalThis[name] : null);
+      if (typeof f !== 'function') {
+        try { f = eval('(typeof ' + name + " === 'function' ? " + name + ' : null)'); } catch (_) { f = null; }
+      }
+      return (typeof f === 'function') ? f : null;
+    } catch (_) { return null; }
+  }
+  function v8needLogin() {
+    var u = v8user();
+    if (!u) return { ok: false, error: v8t('baro.v8.login'), code: 'login' };
+    return { ok: true, user: u };
+  }
+  function v8waitFor(check, timeoutMs, intervalMs) {
+    var t0 = Date.now();
+    timeoutMs = timeoutMs || 8000; intervalMs = intervalMs || 250;
+    return new Promise(function (resolve) {
+      (function poll() {
+        var v = null;
+        try { v = check(); } catch (_) { v = null; }
+        if (v) { resolve(v); return; }
+        if (Date.now() - t0 >= timeoutMs) { resolve(null); return; }
+        setTimeout(poll, intervalMs);
+      })();
+    });
+  }
+  function v8elVisible(el) {
+    if (!el || !el.getBoundingClientRect) return false;
+    try {
+      var r = el.getBoundingClientRect();
+      var st = window.getComputedStyle ? window.getComputedStyle(el) : null;
+      if (st && (st.display === 'none' || st.visibility === 'hidden')) return false;
+      return r.width > 0 && r.height > 0;
+    } catch (_) { return false; }
+  }
+  function v8findByText(text) {
+    /* Busca un elemento visible cuyo texto coincida (botón/enlace). */
+    try {
+      var needle = String(text || '').trim().toLowerCase();
+      if (!needle) return null;
+      var cands = document.querySelectorAll('button, a, [role="button"]');
+      var best = null;
+      for (var i = 0; i < cands.length; i++) {
+        var el = cands[i];
+        if (!v8elVisible(el)) continue;
+        var t = String(el.textContent || '').trim().toLowerCase();
+        if (!t) continue;
+        if (t === needle) return el;
+        if (!best && t.indexOf(needle) !== -1 && t.length < needle.length + 40) best = el;
+      }
+      return best;
+    } catch (_) { return null; }
+  }
+  function v8db() {
+    try { return DrexCloud.database(); } catch (_) { return null; }
+  }
+
+  /* ---------------- 2. acciones ---------------- */
+  var ACTIONS = {};
+
+  function def(name, describe, run) {
+    ACTIONS[name] = { describe: describe, run: run };
+  }
+
+  /* ir_a: navega a una ruta real del router v2. */
+  var RUTAS_VALIDAS = ['musica', 'musica/reproductor', 'musica/subir', 'dormir', 'cache',
+    'chat', 'perfil', 'fiestas', 'ajustes', 'buscar', 'ondas', 'baro', 'practicar',
+    'hub', 'pulso', 'guardados', 'borradores', 'historial', 'solicitudes',
+    'empresa', 'privacidad', 'terminos', 'borrar-cuenta'];
+  def('ir_a',
+    function (a) { return v8t('baro.v8.d.ir_a', { p: (a && a.ruta) || '?' }); },
+    async function (args, ui) {
+      var ruta = String((args && args.ruta) || '').replace(/^#\/?/, '').replace(/^\//, '');
+      var open = v8fn('drexOpenRoutePath'), where = v8fn('drexRouteFromLocation');
+      if (!open || !where) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'drexOpenRoutePath' }), code: 'no_fn' };
+      var esDinamica = /^(post|u|grupo|musica\/(lista|artista))\//.test(ruta);
+      if (!esDinamica && RUTAS_VALIDAS.indexOf(ruta) === -1)
+        return { ok: false, error: v8t('baro.v8.ruta_no', { p: ruta }), code: 'ruta' };
+      v8say(ui, v8t('baro.v8.d.ir_a', { p: ruta }));
+      try { open(ruta); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var llegada = await v8waitFor(function () {
+        try {
+          var w = String(where() || '');
+          return (w === ruta || w.indexOf(ruta) === 0) ? w : null;
+        } catch (_) { return null; }
+      }, 6000);
+      if (!llegada) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif', ruta: ruta };
+      return { ok: true, ruta: llegada };
+    });
+
+  /* abrir_composer: abre el editor real de publicación. */
+  def('abrir_composer',
+    function () { return v8t('baro.v8.d.composer'); },
+    async function (args, ui) {
+      var open = v8fn('openNoteCreation');
+      if (!open) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'openNoteCreation' }), code: 'no_fn' };
+      v8say(ui, v8t('baro.v8.d.composer'));
+      try { open(); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var listo = await v8waitFor(function () {
+        var el = document.getElementById('note-creation-fullscreen');
+        return (el && el.classList.contains('active')) ? true : null;
+      }, 6000);
+      if (!listo) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true };
+    });
+
+  /* escribir_texto: tipeo visible en el composer (o destino dado). */
+  def('escribir_texto',
+    function () { return v8t('baro.v8.d.escribir'); },
+    async function (args, ui) {
+      var texto = String((args && args.texto) || '');
+      if (!texto) return { ok: false, error: v8t('baro.v8.sin_texto'), code: 'args' };
+      var destId = (args && args.destino) || 'note-content-fullscreen';
+      var el = await v8waitFor(function () {
+        var n = document.getElementById(destId);
+        return (n && v8elVisible(n)) ? n : null;
+      }, 8000);
+      if (!el) return { ok: false, error: v8t('baro.v8.timeout', { x: destId }), code: 'timeout' };
+      v8say(ui, v8t('baro.v8.d.escribir'));
+      try { el.focus(); } catch (_) {}
+      el.value = '';
+      var velocidad = Math.max(10, Math.min(120, (args && args.velocidad) || 35));
+      for (var i = 0; i < texto.length; i += 2) {
+        var chunk = texto.slice(i, i + 2);
+        el.value += chunk;
+        try {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('keyup', { bubbles: true }));
+        } catch (_) {}
+        try { if (ui && typeof ui.onType === 'function') ui.onType(chunk); } catch (_) {}
+        await v8sleep(velocidad);
+      }
+      try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+      if (el.value !== texto) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true, chars: texto.length };
+    });
+
+  /* publicar: pulsa el botón real Publicar y verifica que el post exista. */
+  def('publicar',
+    function () { return v8t('baro.v8.d.publicar'); },
+    async function (args, ui) {
+      var ses = v8needLogin();
+      if (!ses.ok) return ses;
+      var btn = document.getElementById('publish-btn-fullscreen');
+      var pubFn = v8fn('publishNoteFromFullscreen');
+      if (!btn && !pubFn) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'publishNoteFromFullscreen' }), code: 'no_fn' };
+      var db = v8db();
+      if (!db) return { ok: false, error: v8t('baro.v8.no_db'), code: 'no_db' };
+      var t0 = Date.now();
+      v8say(ui, v8t('baro.v8.d.publicar'));
+      try {
+        if (btn && v8elVisible(btn)) btn.click();
+        else pubFn();
+      } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      /* Verifica: un post nuevo del usuario con timestamp >= t0. */
+      var hallado = await v8waitFor(function () {
+        return db.ref('communityNotes').orderByChild('authorId').equalTo(ses.user.uid)
+          .limitToLast(5).once('value').then(function (snap) {
+            var v = snap.val() || {}, ok = null;
+            Object.keys(v).forEach(function (k) {
+              var n = v[k] || {};
+              if (n.timestamp >= t0 - 2000) ok = { id: k, ts: n.timestamp };
+            });
+            return ok;
+          }).catch(function () { return null; });
+      }, 25000, 1000);
+      if (!hallado) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true, postId: hallado.id };
+    });
+
+  /* votar_post: vota real con votePost y verifica en userVotes. */
+  def('votar_post',
+    function (a) {
+      var v = (a && a.voto === 'down') ? 'en contra' : 'a favor';
+      return v8t('baro.v8.d.votar', { v: v });
+    },
+    async function (args, ui) {
+      var postId = String((args && (args.postId || args.id)) || '').trim();
+      if (!postId) return { ok: false, error: v8t('baro.v8.sin_post'), code: 'args' };
+      var ses = v8needLogin();
+      if (!ses.ok) return ses;
+      var voto = (args && args.voto === 'down') ? 'down' : 'up';
+      var fn = v8fn('votePost');
+      if (!fn) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'votePost' }), code: 'no_fn' };
+      var db = v8db();
+      if (!db) return { ok: false, error: v8t('baro.v8.no_db'), code: 'no_db' };
+      v8say(ui, v8t('baro.v8.d.votar', { v: voto === 'down' ? 'en contra' : 'a favor' }));
+      try { fn(postId, voto); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var verif = await v8waitFor(function () {
+        return db.ref('userVotes/' + ses.user.uid + '/' + postId).once('value')
+          .then(function (s) { return s.val() ? true : null; })
+          .catch(function () { return null; });
+      }, 8000);
+      if (!verif) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true, voto: voto };
+    });
+
+  /* hacer_eco: eco real con toggleEco; no deshace un eco existente. */
+  def('hacer_eco',
+    function () { return v8t('baro.v8.d.eco'); },
+    async function (args, ui) {
+      var postId = String((args && (args.postId || args.id)) || '').trim();
+      if (!postId) return { ok: false, error: v8t('baro.v8.sin_post'), code: 'args' };
+      var ses = v8needLogin();
+      if (!ses.ok) return ses;
+      var fn = v8fn('toggleEco');
+      if (!fn) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'toggleEco' }), code: 'no_fn' };
+      var db = v8db();
+      if (!db) return { ok: false, error: v8t('baro.v8.no_db'), code: 'no_db' };
+      var ya = await db.ref('userEcos/' + ses.user.uid + '/' + postId).once('value')
+        .then(function (s) { return !!s.val(); }).catch(function () { return false; });
+      if (ya) return { ok: true, yaHecho: true, nota: v8t('baro.v8.ya_eco') };
+      v8say(ui, v8t('baro.v8.d.eco'));
+      try { await fn(postId); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var verif = await v8waitFor(function () {
+        return db.ref('userEcos/' + ses.user.uid + '/' + postId).once('value')
+          .then(function (s) { return s.val() ? true : null; })
+          .catch(function () { return null; });
+      }, 8000);
+      if (!verif) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true };
+    });
+
+  /* comentar_post: abre el post, escribe visible y envía con submitComment. */
+  def('comentar_post',
+    function () { return v8t('baro.v8.d.comentar'); },
+    async function (args, ui) {
+      var postId = String((args && (args.postId || args.id)) || '').trim();
+      var texto = String((args && args.texto) || '');
+      if (!postId) return { ok: false, error: v8t('baro.v8.sin_post'), code: 'args' };
+      if (!texto) return { ok: false, error: v8t('baro.v8.sin_texto'), code: 'args' };
+      var ses = v8needLogin();
+      if (!ses.ok) return ses;
+      var open = v8fn('drexOpenRoutePath'), submit = v8fn('submitComment');
+      if (!open || !submit) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'submitComment' }), code: 'no_fn' };
+      var db = v8db();
+      if (!db) return { ok: false, error: v8t('baro.v8.no_db'), code: 'no_db' };
+      v8say(ui, v8t('baro.v8.d.abrir_post'));
+      try { open('post/' + postId); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var input = await v8waitFor(function () {
+        var n = document.getElementById('comment-input-main');
+        return (n && v8elVisible(n)) ? n : null;
+      }, 10000);
+      if (!input) return { ok: false, error: v8t('baro.v8.timeout', { x: 'comment-input-main' }), code: 'timeout' };
+      var t0 = Date.now();
+      v8say(ui, v8t('baro.v8.d.comentar'));
+      try { input.focus(); } catch (_) {}
+      input.value = texto;
+      try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+      await v8sleep(400);
+      try { await submit(); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var prefijo = texto.slice(0, 24);
+      var hallado = await v8waitFor(function () {
+        return db.ref('postComments/' + postId).once('value').then(function (snap) {
+          var v = snap.val() || {}, ok = null;
+          Object.keys(v).forEach(function (k) {
+            var c = v[k] || {};
+            if (c.authorId === ses.user.uid && c.timestamp >= t0 - 2000 &&
+                String(c.content || '').indexOf(prefijo) !== -1) ok = { id: k };
+          });
+          return ok;
+        }).catch(function () { return null; });
+      }, 15000, 1000);
+      if (!hallado) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true, commentId: hallado.id };
+    });
+
+  /* buscar: ejecuta la búsqueda real y espera resultados. */
+  def('buscar',
+    function (a) { return v8t('baro.v8.d.buscar', { q: (a && a.q) || '?' }); },
+    async function (args, ui) {
+      var q = String((args && (args.q || args.texto)) || '').trim();
+      if (!q) return { ok: false, error: v8t('baro.v8.sin_q'), code: 'args' };
+      var open = v8fn('drexOpenRoutePath'), search = v8fn('performRealTimeSearch');
+      if (!open || !search) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'performRealTimeSearch' }), code: 'no_fn' };
+      v8say(ui, v8t('baro.v8.d.buscar', { q: q }));
+      try { open('buscar'); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var input = await v8waitFor(function () {
+        var n = document.getElementById('search-input');
+        return (n && v8elVisible(n)) ? n : null;
+      }, 8000);
+      if (!input) return { ok: false, error: v8t('baro.v8.timeout', { x: 'search-input' }), code: 'timeout' };
+      input.value = q;
+      try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+      await v8sleep(300);
+      try { search(); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var res = await v8waitFor(function () {
+        var box = document.getElementById('search-results-container');
+        if (!box || box.classList.contains('hidden')) return null;
+        var n = box.querySelectorAll('*').length;
+        return n > 3 ? { items: n } : null;
+      }, 12000, 500);
+      if (!res) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true, q: q };
+    });
+
+  /* abrir_post / abrir_perfil: navegación directa con verificación. */
+  def('abrir_post',
+    function () { return v8t('baro.v8.d.abrir_post'); },
+    async function (args, ui) {
+      var id = String((args && (args.postId || args.id)) || '').trim();
+      if (!id) return { ok: false, error: v8t('baro.v8.sin_post'), code: 'args' };
+      return ACTIONS.ir_a.run({ ruta: 'post/' + id }, ui);
+    });
+  def('abrir_perfil',
+    function (a) { return v8t('baro.v8.d.perfil', { u: (a && (a.username || a.usuario)) || '?' }); },
+    async function (args, ui) {
+      var u = String((args && (args.username || args.usuario)) || '').trim().replace(/^@/, '');
+      if (!u) return { ok: false, error: v8t('baro.v8.sin_user'), code: 'args' };
+      return ACTIONS.ir_a.run({ ruta: 'u/' + u }, ui);
+    });
+
+  /* abrir_notificaciones: modal real de notificaciones. */
+  def('abrir_notificaciones',
+    function () { return v8t('baro.v8.d.notif'); },
+    async function (args, ui) {
+      var ses = v8needLogin();
+      if (!ses.ok) return ses;
+      var fn = v8fn('openNotifications');
+      if (!fn) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'openNotifications' }), code: 'no_fn' };
+      v8say(ui, v8t('baro.v8.d.notif'));
+      try { fn(); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var okv = await v8waitFor(function () {
+        var m = document.getElementById('notifications-modal');
+        return (m && !m.classList.contains('hidden')) ? true : null;
+      }, 6000);
+      if (!okv) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true };
+    });
+
+  /* abrir_chat: bandeja real de chats. */
+  def('abrir_chat',
+    function () { return v8t('baro.v8.d.chat'); },
+    async function (args, ui) {
+      var ses = v8needLogin();
+      if (!ses.ok) return ses;
+      var fn = v8fn('openChatInboxView');
+      if (!fn) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'openChatInboxView' }), code: 'no_fn' };
+      v8say(ui, v8t('baro.v8.d.chat'));
+      try { fn(); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var okv = await v8waitFor(function () {
+        var m = document.getElementById('chat-inbox-view');
+        return (m && !m.classList.contains('hidden')) ? true : null;
+      }, 6000);
+      if (!okv) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true };
+    });
+
+  /* abrir_seguridad: Centro de seguridad real. */
+  def('abrir_seguridad',
+    function () { return v8t('baro.v8.d.seg'); },
+    async function (args, ui) {
+      var ses = v8needLogin();
+      if (!ses.ok) return ses;
+      var fn = v8fn('openSecurityCenter');
+      if (!fn) return { ok: false, error: v8t('baro.v8.no_fn', { f: 'openSecurityCenter' }), code: 'no_fn' };
+      v8say(ui, v8t('baro.v8.d.seg'));
+      try { await fn(); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      var okv = await v8waitFor(function () {
+        var m = document.getElementById('security-center-view');
+        return (m && !m.classList.contains('hidden')) ? true : null;
+      }, 6000);
+      if (!okv) return { ok: false, error: v8t('baro.v8.no_verif'), code: 'no_verif' };
+      return { ok: true };
+    });
+
+  /* tap: toca un elemento visible por texto o selector. */
+  def('tap',
+    function (a) { return v8t('baro.v8.d.tap', { x: (a && (a.texto || a.selector)) || '?' }); },
+    async function (args, ui) {
+      var etiqueta = String((args && (args.texto || args.selector)) || '').trim();
+      if (!etiqueta) return { ok: false, error: v8t('baro.v8.sin_elem', { x: '?' }), code: 'args' };
+      v8say(ui, v8t('baro.v8.d.tap', { x: etiqueta }));
+      var el = await v8waitFor(function () {
+        var n = null;
+        if (args && args.selector) {
+          try { n = document.querySelector(args.selector); } catch (_) { n = null; }
+        }
+        if (!n) n = document.getElementById(etiqueta);
+        if (!n) n = v8findByText(etiqueta);
+        return (n && v8elVisible(n)) ? n : null;
+      }, (args && args.timeout) || 8000);
+      if (!el) return { ok: false, error: v8t('baro.v8.sin_elem', { x: etiqueta }), code: 'timeout' };
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (_) {}
+      await v8sleep(350);
+      try { el.click(); } catch (e) { return { ok: false, error: String((e && e.message) || e), code: 'ex' }; }
+      return { ok: true, tocado: etiqueta };
+    });
+
+  /* esperar: espera un selector visible o una condición global. */
+  def('esperar',
+    function (a) { return v8t('baro.v8.d.esperar', { x: (a && (a.selector || a.texto)) || '?' }); },
+    async function (args, ui) {
+      var etiqueta = String((args && (args.selector || args.texto)) || '').trim();
+      if (!etiqueta) return { ok: false, error: v8t('baro.v8.sin_elem', { x: '?' }), code: 'args' };
+      v8say(ui, v8t('baro.v8.d.esperar', { x: etiqueta }));
+      var got = await v8waitFor(function () {
+        var n = null;
+        try { n = document.querySelector(etiqueta); } catch (_) { n = null; }
+        if (n && v8elVisible(n)) return true;
+        if (v8findByText(etiqueta)) return true;
+        return null;
+      }, (args && args.timeout) || 10000);
+      if (!got) return { ok: false, error: v8t('baro.v8.timeout', { x: etiqueta }), code: 'timeout' };
+      return { ok: true };
+    });
+
+  /* scroll_a: desplaza hasta un elemento visible. */
+  def('scroll_a',
+    function (a) { return v8t('baro.v8.d.scroll', { x: (a && (a.selector || a.texto)) || '?' }); },
+    async function (args, ui) {
+      var etiqueta = String((args && (args.selector || args.texto)) || '').trim();
+      if (!etiqueta) return { ok: false, error: v8t('baro.v8.sin_elem', { x: '?' }), code: 'args' };
+      var n = null;
+      try { n = document.querySelector(etiqueta); } catch (_) { n = null; }
+      if (!n) n = document.getElementById(etiqueta);
+      if (!n) n = v8findByText(etiqueta);
+      if (!n) return { ok: false, error: v8t('baro.v8.sin_elem', { x: etiqueta }), code: 'timeout' };
+      v8say(ui, v8t('baro.v8.d.scroll', { x: etiqueta }));
+      try { n.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {
+        return { ok: false, error: String((e && e.message) || e), code: 'ex' };
+      }
+      return { ok: true };
+    });
+
+  /* ---------------- 3. exposición ---------------- */
+  baroV8MergeI18n();
+  try {
+    var g = (typeof window !== 'undefined') ? window :
+            ((typeof globalThis !== 'undefined') ? globalThis : null);
+    if (g) {
+      g.baroAgentActions = ACTIONS;
+      g.baroAgentActionNames = Object.keys(ACTIONS);
+      if (typeof baro6dExpose === 'function') {
+        baro6dExpose('baroAgentActions', ACTIONS);
+        baro6dExpose('baroAgentActionNames', Object.keys(ACTIONS));
+      }
+    }
+  } catch (_) {}
+})();
+
+/* ================= BARO · v8-AGENTCORE ================= */
+/* ================= BARO v8 · MODO AGENTE VISIBLE =================
+ * Snippet AUTOCONTENIDO para el bloque BARO de index.html.
+ *
+ * PUNTO DE INSERCION: como IIFE propio DENTRO del bloque script final del BARO,
+ * DESPUES del bloque v7-CITAS y ANTES del cierre del script final.
+ * NO crea bloques script nuevos (el literal de cierre esta prohibido en este
+ * archivo, incluso en comentarios). NO edita ninguna funcion existente: solo
+ * REGISTRA la tool modo_agente y expone window.baroV8.
+ * No toca baroHandleUserMessage, su catch de diagnostico tecnico, el blindaje
+ * de intents nulos ni los parches v5/v6/v7.
+ *
+ * QUE HACE:
+ *  - tool `modo_agente`: convierte un objetivo en lenguaje natural en un PLAN
+ *    de pasos (cada paso maneja la UI REAL de Drex) y muestra tarjeta de plan
+ *    con [Ejecutar] [Cancelar]. NADA se ejecuta sin el toque del usuario.
+ *  - Ejecutor visible en tiempo real: panel flotante "Baro esta trabajando"
+ *    con log de pasos en vivo, boton DETENER siempre visible, cursor fantasma
+ *    (anillo pulsante sobre el elemento real que va a tocar) y efecto de
+ *    escritura caracter por caracter en los campos de texto.
+ *  - Cada paso espera a que la UI responda (timeout + 1 reintento). Si un paso
+ *    falla, se detiene todo y se reporta QUE paso fallo y POR QUE, sin dejar
+ *    la app a medias en silencio.
+ *
+ * REGLA DE ORO: el agente SOLO maneja la UI real (openNoteCreation, clicks
+ * reales, drexPushRoute real). Jamas simula exito sin haberlo hecho.
+ * Cero red, cero APIs externas, cero fetch/XHR/WebSocket.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patron 8L/v5/v6/v7) ---------------- */
+  var BARO_V8_I18N = {
+    'baro.v8.title':        { es: 'Modo agente', en: 'Agent mode', zh: '代理模式', pt: 'Modo agente' },
+    'baro.v8.plan_title':   { es: 'Plan del agente', en: 'Agent plan', zh: '代理计划', pt: 'Plano do agente' },
+    'baro.v8.execute':      { es: 'Ejecutar', en: 'Run', zh: '执行', pt: 'Executar' },
+    'baro.v8.cancel':       { es: 'Cancelar', en: 'Cancel', zh: '取消', pt: 'Cancelar' },
+    'baro.v8.stop':         { es: 'Detener', en: 'Stop', zh: '停止', pt: 'Parar' },
+    'baro.v8.working':      { es: 'Baro está trabajando…', en: 'Baro is working…', zh: 'Baro 正在工作…', pt: 'Baro está trabalhando…' },
+    'baro.v8.done':         { es: 'Listo', en: 'Done', zh: '完成', pt: 'Pronto' },
+    'baro.v8.stopped':      { es: 'Detenido por ti', en: 'Stopped by you', zh: '已由你停止', pt: 'Parado por você' },
+    'baro.v8.failed':       { es: 'Se detuvo en el paso {n}', en: 'Stopped at step {n}', zh: '在第 {n} 步停止', pt: 'Parou na etapa {n}' },
+    'baro.v8.step_navigate':{ es: 'Ir a {x}', en: 'Go to {x}', zh: '前往{x}', pt: 'Ir para {x}' },
+    'baro.v8.step_composer':{ es: 'Abrir el editor', en: 'Open the editor', zh: '打开编辑器', pt: 'Abrir o editor' },
+    'baro.v8.step_type':    { es: 'Escribir el texto', en: 'Type the text', zh: '输入文字', pt: 'Digitar o texto' },
+    'baro.v8.step_click':   { es: 'Tocar «{x}»', en: 'Tap "{x}"', zh: '点击“{x}”', pt: 'Tocar em "{x}"' },
+    'baro.v8.step_search':  { es: 'Buscar «{x}»', en: 'Search "{x}"', zh: '搜索“{x}”', pt: 'Buscar "{x}"' },
+    'baro.v8.no_plan':      { es: 'Todavía no sé hacer eso por ti. Prueba con: "publica \'hola\' por mí", "ve a mi perfil" o "abre el editor".',
+                              en: 'I don\'t know how to do that yet. Try: "publish \'hi\' for me", "go to my profile" or "open the editor".',
+                              zh: '我还不会做这个。试试：“替我发布‘你好’”、“去我的主页”或“打开编辑器”。',
+                              pt: 'Ainda não sei fazer isso. Tente: "publique \'oi\' por mim", "vá ao meu perfil" ou "abra o editor".' },
+    'baro.v8.need_text':    { es: 'Dime qué texto publico. Ejemplo: publica "hola mundo" por mí.',
+                              en: 'Tell me what text to publish. Example: publish "hello world" for me.',
+                              zh: '告诉我发布什么文字。例如：替我发布“你好世界”。',
+                              pt: 'Diga qual texto publico. Exemplo: publique "olá mundo" por mim.' },
+    'baro.v8.err_element':  { es: 'No encontré el elemento «{x}» en la pantalla', en: 'Could not find "{x}" on screen', zh: '在屏幕上找不到“{x}”', pt: 'Não encontrei "{x}" na tela' },
+    'baro.v8.err_nav':      { es: 'No pude ir a «{x}»', en: 'Could not go to "{x}"', zh: '无法前往“{x}”', pt: 'Não consegui ir para "{x}"' },
+    'baro.v8.err_generic':  { es: 'Algo falló: {x}', en: 'Something failed: {x}', zh: '出错了：{x}', pt: 'Algo falhou: {x}' },
+    'baro.v8.close':        { es: 'Cerrar', en: 'Close', zh: '关闭', pt: 'Fechar' },
+    'baro.v8.plan_hint':    { es: 'Revisa el plan y toca Ejecutar. Nada se hará sin tu toque.',
+                              en: 'Review the plan and tap Run. Nothing happens without your tap.',
+                              zh: '检查计划并点击执行。未经你点击不会做任何事。',
+                              pt: 'Revise o plano e toque Executar. Nada será feito sem seu toque.' },
+    'baro.v8.published':    { es: 'Publicado por ti (vía agente)', en: 'Published for you (via agent)', zh: '已替你发布（经由代理）', pt: 'Publicado por você (via agente)' }
+  };
+  function v8mergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V8_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_V8_I18N[k] = BARO_V8_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+  function v8lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v8t(ctx, key, params) {
+    var s = null;
+    try { s = (ctx && typeof ctx.t === 'function') ? ctx.t(key) : null; } catch (_) { s = null; }
+    if (!s || s === key) {
+      var e = BARO_V8_I18N[key];
+      s = (e && (e[v8lang()] || e.es)) || key;
+    }
+    if (params) {
+      Object.keys(params).forEach(function (k) {
+        s = String(s).split('{' + k + '}').join(String(params[k]));
+      });
+    }
+    return s;
+  }
+  function v8esc(ctx, s) {
+    try {
+      if (ctx && typeof ctx.esc === 'function') return ctx.esc(s);
+      if (typeof escapeHtml === 'function') return escapeHtml(s);
+    } catch (_) {}
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /* ---------------- 1. CSS (inyectado una vez) ---------------- */
+  function v8injectCss() {
+    try {
+      if (document.getElementById('baro-v8-css')) return;
+      var st = document.createElement('style');
+      st.id = 'baro-v8-css';
+      st.textContent =
+        '.baro-v8-plan{background:var(--theme-card,#1c1f2b);border:1px solid var(--theme-border,#2c3145);' +
+        'border-radius:14px;padding:12px;margin:8px 0}' +
+        '.baro-v8-plan ol{margin:8px 0 8px 20px;padding:0}' +
+        '.baro-v8-plan li{margin:4px 0;font-size:14px}' +
+        '.baro-v8-row{display:flex;gap:8px;margin-top:10px}' +
+        '.baro-v8-btn{flex:1;border:none;border-radius:10px;padding:10px;font-size:15px;font-weight:700;cursor:pointer}' +
+        '.baro-v8-run{background:#2F33B8;color:#fff}' +
+        '.baro-v8-cancel{background:transparent;color:#9AA3FF;border:1px solid #2c3145}' +
+        '#baro-v8-panel{position:fixed;left:12px;right:12px;bottom:12px;z-index:99990;' +
+        'background:var(--theme-card,#161a28);border:1px solid #2F33B8;border-radius:16px;' +
+        'padding:12px 14px;box-shadow:0 8px 40px rgba(0,0,0,.55);max-height:46vh;overflow:auto}' +
+        '#baro-v8-panel h4{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:8px}' +
+        '#baro-v8-panel ul{list-style:none;margin:8px 0;padding:0;font-size:13px}' +
+        '#baro-v8-panel li{margin:5px 0;display:flex;gap:8px;align-items:flex-start}' +
+        '.baro-v8-st{width:20px;text-align:center;flex:none}' +
+        '.baro-v8-stop{margin-top:8px;width:100%;border:1px solid #e5484d;background:transparent;' +
+        'color:#e5484d;border-radius:10px;padding:9px;font-weight:700;cursor:pointer}' +
+        '#baro-v8-ghost{position:fixed;z-index:99999;width:44px;height:44px;margin:-22px 0 0 -22px;' +
+        'border:3px solid #9AA3FF;border-radius:50%;pointer-events:none;display:none;' +
+        'box-shadow:0 0 0 6px rgba(47,51,184,.35);animation:baroV8Pulse 1s ease-in-out infinite}' +
+        '@keyframes baroV8Pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.25);opacity:.55}}';
+      document.head.appendChild(st);
+      var gh = document.createElement('div');
+      gh.id = 'baro-v8-ghost';
+      document.body.appendChild(gh);
+    } catch (_) {}
+  }
+
+  /* ---------------- 2. Planificador (puro, sin DOM) ---------------- */
+  var V8_ROUTE_WORDS = [
+    [/^(mi\s+)?perfil$/, 'perfil'], [/^ajustes$/, 'ajustes'], [/^configuraci[oó]n$/, 'ajustes'],
+    [/^buscar$/, 'buscar'], [/^m[uú]sica$/, 'musica'], [/^fiestas$/, 'fiestas'],
+    [/^ondas$/, 'ondas'], [/^guardados$/, 'guardados'], [/^borradores$/, 'borradores'],
+    [/^historial$/, 'historial'], [/^chat(s)?$/, 'chat'], [/^hub$/, 'hub'], [/^pulso$/, 'pulso'],
+    [/^inicio$/, '/'],
+    [/^profile$/, 'perfil'], [/^settings$/, 'ajustes'], [/^search$/, 'buscar'], [/^music$/, 'musica']
+  ];
+  function v8norm(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  }
+  /* buildPlan(text) -> {steps:[{action,args,descKey,descParams}], label} | {error:'no_plan'|'need_text'} */
+  function v8buildPlan(text) {
+    var t = v8norm(text);
+    var m;
+    /* 1) publicar "texto" por mí */
+    m = t.match(/publica?\s*["'“”](.+?)["'“”]\s*(por\s*mi)?/) ||
+        t.match(/publica?\s+(.+?)\s+por\s*mi\s*$/) ||
+        t.match(/publish\s*["'](.+?)["']\s*(for\s*me)?/) ||
+        t.match(/publish\s+(.+?)\s+for\s*me\s*$/);
+    if (m && m[1]) {
+      var txt = m[1].trim();
+      if (!txt) return { error: 'need_text' };
+      return { label: txt.slice(0, 60), steps: [
+        { action: 'open_composer', args: {}, descKey: 'baro.v8.step_composer', descParams: {} },
+        { action: 'type', args: { selector: '#note-content-fullscreen', text: txt },
+          descKey: 'baro.v8.step_type', descParams: {} },
+        { action: 'click', args: { selector: '#publish-btn-fullscreen', label: 'Publicar' },
+          descKey: 'baro.v8.step_click', descParams: { x: 'Publicar' } }
+      ]};
+    }
+    if (/publica?\b/.test(t) && /por\s*mi/.test(t)) return { error: 'need_text' };
+    /* 2) ve / llévame / abre <sección> */
+    m = t.match(/(?:ve|ir|abre|lleva\s*me|ll[eé]vame|go\s*to|open)\s+(?:a\s+)?(?:la\s+secci[oó]n\s+de\s+)?(.+?)\s*$/) ||
+        t.match(/(?:visita|muestra(?:me)?)\s+(.+?)\s*$/);
+    if (m && m[1]) {
+      var dest = m[1].trim();
+      for (var i = 0; i < V8_ROUTE_WORDS.length; i++) {
+        if (V8_ROUTE_WORDS[i][0].test(dest)) {
+          return { label: dest, steps: [
+            { action: 'navigate', args: { route: V8_ROUTE_WORDS[i][1], label: dest },
+              descKey: 'baro.v8.step_navigate', descParams: { x: dest } }
+          ]};
+        }
+      }
+    }
+    /* 3) abre el editor / quiero publicar */
+    if (/(abre|abrir)\s+el\s+editor/.test(t) || /quiero\s+publicar/.test(t) || /open\s+the\s+editor/.test(t)) {
+      return { label: 'editor', steps: [
+        { action: 'open_composer', args: {}, descKey: 'baro.v8.step_composer', descParams: {} }
+      ]};
+    }
+    /* 4) busca <tema> */
+    m = t.match(/busca\s+(.+?)\s*$/) || t.match(/search\s+(?:for\s+)?(.+?)\s*$/);
+    if (m && m[1] && m[1].trim().length >= 2) {
+      return { label: m[1].trim().slice(0, 60), steps: [
+        { action: 'navigate', args: { route: 'buscar', label: 'buscar' },
+          descKey: 'baro.v8.step_navigate', descParams: { x: 'buscar' } },
+        { action: 'search', args: { text: m[1].trim() },
+          descKey: 'baro.v8.step_search', descParams: { x: m[1].trim().slice(0, 40) } }
+      ]};
+    }
+    return { error: 'no_plan' };
+  }
+
+  /* ---------------- 3. Estado del ejecutor ---------------- */
+  var v8state = { running: false, stopped: false, planId: null, steps: [], current: -1, dry: false };
+  var v8plans = {}; /* planId -> {plan, ctx} */
+  var v8seq = 0;
+
+  function v8sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function v8waitFor(fn, timeoutMs) {
+    var t0 = Date.now(), to = timeoutMs || 8000;
+    return new Promise(function (resolve) {
+      (function poll() {
+        var v = null;
+        try { v = fn(); } catch (_) { v = null; }
+        if (v) return resolve(v);
+        if (Date.now() - t0 > to) return resolve(null);
+        setTimeout(poll, 150);
+      })();
+    });
+  }
+  function v8visible(el) {
+    if (!el) return false;
+    try {
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      var cs = window.getComputedStyle ? window.getComputedStyle(el) : null;
+      if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return false;
+      return true;
+    } catch (_) { return false; }
+  }
+  function v8firstVisible(selectors) {
+    var list = Array.isArray(selectors) ? selectors : [selectors];
+    for (var i = 0; i < list.length; i++) {
+      try {
+        var els = document.querySelectorAll(list[i]);
+        for (var j = 0; j < els.length; j++) if (v8visible(els[j])) return els[j];
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /* ---------------- 4. Cursor fantasma ---------------- */
+  function v8ghostShow(el) {
+    try {
+      var g = document.getElementById('baro-v8-ghost');
+      if (!g || !el) return;
+      var r = el.getBoundingClientRect();
+      g.style.left = (r.left + r.width / 2) + 'px';
+      g.style.top = (r.top + r.height / 2) + 'px';
+      g.style.display = 'block';
+    } catch (_) {}
+  }
+  function v8ghostHide() {
+    try { var g = document.getElementById('baro-v8-ghost'); if (g) g.style.display = 'none'; } catch (_) {}
+  }
+  function v8scrollToEl(el) {
+    try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {
+      try { el.scrollIntoView(); } catch (_) {}
+    }
+  }
+
+  /* ---------------- 5. Efecto escritura ---------------- */
+  function v8typeInto(el, text) {
+    return new Promise(function (resolve) {
+      var chars = String(text == null ? '' : text).split('');
+      var i = 0;
+      try { el.focus(); } catch (_) {}
+      (function tick() {
+        if (v8state.stopped) return resolve('stopped');
+        if (i >= chars.length) {
+          try {
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch (_) {}
+          return resolve('ok');
+        }
+        try {
+          var cur = el.value || '';
+          el.value = cur + chars[i];
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch (_) {}
+        i++;
+        setTimeout(tick, i % 8 === 0 ? 60 : 22);
+      })();
+    });
+  }
+
+  /* ---------------- 6. Panel flotante ---------------- */
+  function v8panel() { return document.getElementById('baro-v8-panel'); }
+  function v8panelShow(steps, ctx) {
+    try {
+      v8injectCss();
+      var old = v8panel(); if (old) old.remove();
+      var p = document.createElement('div');
+      p.id = 'baro-v8-panel';
+      var lis = steps.map(function (s, i) {
+        return '<li data-i="' + i + '"><span class="baro-v8-st">·</span><span>' +
+          v8esc(ctx, v8t(ctx, s.descKey, s.descParams)) + '</span></li>';
+      }).join('');
+      p.innerHTML =
+        '<h4>🤖 ' + v8esc(ctx, v8t(ctx, 'baro.v8.working')) + '</h4>' +
+        '<ul>' + lis + '</ul>' +
+        '<button type="button" class="baro-v8-stop" id="baro-v8-stopbtn">' +
+        v8esc(ctx, v8t(ctx, 'baro.v8.stop')) + '</button>';
+      document.body.appendChild(p);
+      var b = document.getElementById('baro-v8-stopbtn');
+      if (b) b.addEventListener('click', function () { v8stop(); });
+    } catch (_) {}
+  }
+  function v8panelUpdate(i, status, ctx, msg) {
+    try {
+      var p = v8panel(); if (!p) return;
+      var li = p.querySelector('li[data-i="' + i + '"]');
+      if (!li) return;
+      var dot = li.querySelector('.baro-v8-st');
+      var icon = { run: '→', ok: '✓', fail: '✗', skip: '⊘' }[status] || '·';
+      if (dot) dot.textContent = icon;
+      if (msg) {
+        var sp = li.querySelector('span:last-child');
+        if (sp) sp.textContent = sp.textContent + ' — ' + msg;
+      }
+    } catch (_) {}
+  }
+  function v8panelNote(text, ctx) {
+    try {
+      var p = v8panel(); if (!p) return;
+      var h = p.querySelector('h4');
+      if (h) h.textContent = text;
+      var b = document.getElementById('baro-v8-stopbtn');
+      if (b) {
+        b.textContent = v8t(ctx, 'baro.v8.close');
+        b.onclick = function () { v8panelHide(); };
+      }
+    } catch (_) {}
+  }
+  function v8panelHide() {
+    try { var p = v8panel(); if (p) p.remove(); } catch (_) {}
+    v8ghostHide();
+  }
+
+  /* ---------------- 7. Acciones reales ---------------- */
+  function v8doNavigate(route) {
+    return new Promise(function (resolve) {
+      try {
+        if (typeof drexPushRoute === 'function') {
+          drexPushRoute(route);
+          resolve('ok');
+        } else {
+          try { window.location.hash = '#' + route; resolve('ok'); }
+          catch (e) { resolve('fail:nav'); }
+        }
+      } catch (e) { resolve('fail:nav'); }
+    });
+  }
+  function v8doOpenComposer() {
+    return v8waitFor(function () {
+      try {
+        if (typeof openNoteCreation === 'function') openNoteCreation();
+        else return null;
+        var ta = document.querySelector('#note-content-fullscreen');
+        return (ta && v8visible(ta)) ? ta : null;
+      } catch (_) { return null; }
+    }, 8000).then(function (ta) { return ta ? 'ok' : 'fail:composer'; });
+  }
+  var V8_SEARCH_SELECTORS = [
+    '#baro-search-input', '#search-input', 'input[type="search"]',
+    'input[placeholder*="Buscar" i]', 'input[placeholder*="Search" i]'
+  ];
+  function v8doSearch(text) {
+    return v8waitFor(function () { return v8firstVisible(V8_SEARCH_SELECTORS); }, 8000)
+      .then(function (el) {
+        if (!el) return 'fail:searchbox';
+        v8scrollToEl(el); v8ghostShow(el);
+        return v8sleep(500).then(function () {
+          return v8typeInto(el, text).then(function (r) {
+            if (r === 'stopped') return 'stopped';
+            v8ghostHide();
+            try {
+              var form = el.form;
+              if (form && typeof form.requestSubmit === 'function') form.requestSubmit();
+              else el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+            } catch (_) {}
+            return 'ok';
+          });
+        });
+      });
+  }
+  function v8doType(selector, text) {
+    return v8waitFor(function () { return v8firstVisible(selector); }, 8000)
+      .then(function (el) {
+        if (!el) return 'fail:element';
+        v8scrollToEl(el); v8ghostShow(el);
+        return v8sleep(500).then(function () {
+          return v8typeInto(el, text).then(function (r) {
+            v8ghostHide();
+            return r === 'stopped' ? 'stopped' : 'ok';
+          });
+        });
+      });
+  }
+  function v8doClick(selector, label) {
+    return v8waitFor(function () { return v8firstVisible(selector); }, 8000)
+      .then(function (el) {
+        if (!el) return 'fail:element';
+        if (el.disabled) return 'fail:disabled';
+        v8scrollToEl(el); v8ghostShow(el);
+        return v8sleep(650).then(function () {
+          if (v8state.stopped) { v8ghostHide(); return 'stopped'; }
+          try { el.click(); } catch (e) { v8ghostHide(); return 'fail:click'; }
+          v8ghostHide();
+          return 'ok';
+        });
+      });
+  }
+
+  /* Ejecuta UN paso con 1 reintento. Devuelve 'ok' | 'stopped' | {fail, why} */
+  function v8runStep(step, attempt) {
+    attempt = attempt || 1;
+    var p;
+    if (step.action === 'navigate') p = v8doNavigate(step.args.route);
+    else if (step.action === 'open_composer') p = v8doOpenComposer();
+    else if (step.action === 'type') p = v8doType(step.args.selector, step.args.text);
+    else if (step.action === 'click') p = v8doClick(step.args.selector, step.args.label);
+    else if (step.action === 'search') p = v8doSearch(step.args.text);
+    else p = Promise.resolve('fail:unknown');
+    return p.then(function (r) {
+      if (r === 'ok' || r === 'stopped') return r;
+      if (attempt < 2 && r !== 'fail:disabled') return v8sleep(900).then(function () { return v8runStep(step, attempt + 1); });
+      return { fail: true, why: r };
+    });
+  }
+
+  /* ---------------- 8. Orquestador ---------------- */
+  function v8stop() {
+    v8state.stopped = true;
+  }
+  function v8describeFail(why, step, ctx) {
+    var key = 'baro.v8.err_generic';
+    var x = String(why || '').replace(/^fail:/, '');
+    if (why === 'fail:element') key = 'baro.v8.err_element';
+    else if (why === 'fail:nav') key = 'baro.v8.err_nav';
+    var label = (step.args && (step.args.label || step.args.selector || step.args.route)) || step.action;
+    return v8t(ctx, key, { x: label + ' (' + x + ')' });
+  }
+  function v8execute(planId) {
+    var rec = v8plans[planId];
+    if (!rec || v8state.running) return;
+    var plan = rec.plan, ctx = rec.ctx || null;
+    v8state.running = true; v8state.stopped = false;
+    v8state.planId = planId; v8state.steps = plan.steps; v8state.current = -1;
+    v8panelShow(plan.steps, ctx);
+    var chain = Promise.resolve('ok');
+    plan.steps.forEach(function (step, i) {
+      chain = chain.then(function (prev) {
+        if (prev !== 'ok') return prev;
+        if (v8state.stopped) return 'stopped';
+        v8state.current = i;
+        v8panelUpdate(i, 'run', ctx);
+        return v8runStep(step).then(function (r) {
+          if (r === 'ok') v8panelUpdate(i, 'ok', ctx);
+          else if (r === 'stopped') v8panelUpdate(i, 'skip', ctx);
+          else v8panelUpdate(i, 'fail', ctx);
+          return r;
+        });
+      });
+    });
+    chain.then(function (final) {
+      v8state.running = false;
+      var msg;
+      if (final === 'ok') {
+        msg = '✓ ' + v8t(ctx, 'baro.v8.done');
+        v8panelNote(msg, ctx);
+      } else if (final === 'stopped') {
+        msg = v8t(ctx, 'baro.v8.stopped');
+        v8panelNote('⊘ ' + msg, ctx);
+      } else {
+        var idx = v8state.current;
+        msg = v8t(ctx, 'baro.v8.failed', { n: String(idx + 1) }) + ': ' +
+          v8describeFail(final.why, plan.steps[idx] || {}, ctx);
+        v8panelNote('✗ ' + msg, ctx);
+      }
+      try {
+        if (typeof baroAddBaroMessage === 'function') baroAddBaroMessage(msg);
+      } catch (_) {}
+      setTimeout(function () { if (!v8state.running) v8panelHide(); }, 6000);
+      try { delete v8plans[planId]; } catch (_) {}
+    });
+  }
+
+  /* ---------------- 9. Dry-run (para tests, sin DOM real) ---------------- */
+  function v8dryRun(steps, hooks) {
+    hooks = hooks || {};
+    var log = [];
+    var chain = Promise.resolve('ok');
+    steps.forEach(function (step, i) {
+      chain = chain.then(function (prev) {
+        if (prev !== 'ok') return prev;
+        if (hooks.stopped && hooks.stopped()) { log.push({ i: i, status: 'skip' }); return 'stopped'; }
+        log.push({ i: i, status: 'run', action: step.action });
+        if (step.action === '__fail_test') return { fail: true, why: 'fail:element' };
+        if (hooks.onStep) hooks.onStep(step, i);
+        log.push({ i: i, status: 'ok', action: step.action });
+        return 'ok';
+      });
+    });
+    return chain.then(function (final) { return { final: final, log: log }; });
+  }
+
+  /* ---------------- 10. Tool modo_agente ---------------- */
+  function v8planCardHtml(plan, planId, ctx) {
+    var lis = plan.steps.map(function (s) {
+      return '<li>' + v8esc(ctx, v8t(ctx, s.descKey, s.descParams)) + '</li>';
+    }).join('');
+    return '<div class="baro-v8-plan">' +
+      '<p><b>🤖 ' + v8esc(ctx, v8t(ctx, 'baro.v8.plan_title')) + '</b></p>' +
+      '<ol>' + lis + '</ol>' +
+      '<p style="font-size:13px;opacity:.75">' + v8esc(ctx, v8t(ctx, 'baro.v8.plan_hint')) + '</p>' +
+      '<div class="baro-v8-row">' +
+      '<button type="button" class="baro-v8-btn baro-v8-run" onclick="baroV8PlanRun(\'' + planId + '\')">' +
+      v8esc(ctx, v8t(ctx, 'baro.v8.execute')) + '</button>' +
+      '<button type="button" class="baro-v8-btn baro-v8-cancel" onclick="baroV8PlanCancel(\'' + planId + '\')">' +
+      v8esc(ctx, v8t(ctx, 'baro.v8.cancel')) + '</button>' +
+      '</div></div>';
+  }
+  function v8register() {
+    if (typeof baroRegisterTool !== 'function') return;
+    baroRegisterTool('modo_agente', {
+      label: 'Modo agente',
+      icon: '🤖',
+      run: function (args, ctx) {
+        try { v8injectCss(); v8mergeI18n(); } catch (_) {}
+        var objective = (args && (args.objective || args.q || args.text)) || '';
+        if (!objective) objective = '';
+        var plan = v8buildPlan(objective);
+        if (plan.error === 'need_text') return { html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.need_text')) + '</p>' };
+        if (plan.error || !plan.steps || !plan.steps.length) {
+          return { html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.no_plan')) + '</p>' };
+        }
+        var planId = 'v8p' + (++v8seq) + Date.now().toString(36);
+        v8plans[planId] = { plan: plan, ctx: ctx };
+        return { html: v8planCardHtml(plan, planId, ctx) };
+      }
+    });
+    try {
+      if (Array.isArray(baroIntentRules)) {
+        var P = [
+          /modo\s+agente/i, /hazlo\s+por\s*m[ií]/i, /ejecuta(?:lo|r)?\s+por\s*m[ií]/i,
+          /act[uú]a\s+como\s+mi\s+asistente/i, /opera\s+la\s+app\s+por\s*m[ií]/i,
+          /do\s+it\s+for\s*me/i, /agent\s+mode/i, /act\s+as\s+my\s+assistant/i,
+          /modo\s+agente/i, /fa[çc]a\s+por\s*mim/i, /代理模式/i, /替我(做|执行|操作)/,
+          /publica\s+["'“”]/i
+        ];
+        for (var li = 0; li < P.length; li++) {
+          baroIntentRules.push({
+            lang: 'es', pattern: P[li], intent: 'modo_agente',
+            extract: function (text) { return { objective: String(text || '') }; }
+          });
+        }
+      }
+    } catch (_) {}
+    try {
+      if (baroIntentToTool && typeof baroIntentToTool === 'object') baroIntentToTool['modo_agente'] = 'modo_agente';
+    } catch (_) {}
+  }
+
+  /* ---------------- 11. API pública + arranque ---------------- */
+  function v8expose() {
+    try {
+      var g = (typeof window !== 'undefined') ? window : ((typeof globalThis !== 'undefined') ? globalThis : null);
+      if (!g) return;
+      g.baroV8 = {
+        buildPlan: v8buildPlan, execute: v8execute, stop: v8stop,
+        dryRun: v8dryRun, state: v8state, version: 8
+      };
+      g.baroV8PlanRun = function (planId) { try { v8execute(planId); } catch (_) {} };
+      g.baroV8PlanCancel = function (planId) {
+        try { delete v8plans[planId]; } catch (_) {}
+        try {
+          if (typeof baroAddBaroMessage === 'function') baroAddBaroMessage('✕');
+        } catch (_) {}
+      };
+      g.baroV8Stop = function () { try { v8stop(); } catch (_) {} };
+    } catch (_) {}
+  }
+  try { v8mergeI18n(); } catch (_) {}
+  try { v8register(); } catch (_) {}
+  try { v8expose(); } catch (_) {}
+})();
+
+/* ================= BARO · v8-SEGURIDAD-AGENTE ================= */
+/* ================= BARO · v8-SEGURIDAD-AGENTE ================= */
+/* ============================================================================
+ * BARO v8 · Seguridad del agente ("modo agente visible")
+ * ----------------------------------------------------------------------------
+ * El agente puede ejecutar planes multi-paso, pero NUNCA una acción pública o
+ * destructiva sin el toque del usuario. Cero excepciones.
+ *
+ * Matriz de clasificación (fail-closed: lo desconocido = destructiva):
+ *   lectura     🔍  navegar, buscar, leer            → sin confirmación
+ *   publica     📣  publicar, votar, comentar, eco,
+ *                   guardar, seguir→(si existe)      → tarjeta de plan +
+ *                   confirmación inline por paso
+ *   destructiva ⚠️  borrar, bloquear, descartar      → tarjeta de plan +
+ *                   confirmación inline + advertencia
+ *
+ * Contrato que consume (defensivo, puede no existir):
+ *   window.baroAgentActions = { get(id) -> {run} | list() }
+ * Si no existe, usa el registro global baroTools.
+ *
+ * API expuesta: window.baroV8Agent = {
+ *   LEVELS, classify(actionId), buildPlan(text), executePlan(steps, ctx, opts),
+ *   stop(), get stopRequested(), audit(entry), readAudit(), clearAudit()
+ * }
+ *
+ * Punto de inserción: después del bloque v7-CITAS, antes del cierre del
+ * script final.
+ * No toca: el manejador de mensajes de Baro, su catch "Detalle técnico", el
+ * blindaje null-det, ni los parches v5/v6/v7. Sin red externa.
+ * ========================================================================== */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patrón 8L/v5) ---------------- */
+  var BARO_V8_I18N = {
+    'baro.v8.login_needed':   { es: 'Inicia sesión para usar el modo agente.', en: 'Sign in to use agent mode.', zh: '请先登录以使用代理模式。', pt: 'Entre para usar o modo agente.' },
+    'baro.v8.error':          { es: 'Algo falló en el plan. Nada más se ejecutó.', en: 'Something failed in the plan. Nothing else ran.', zh: '计划执行出错，其余步骤未运行。', pt: 'Algo falhou no plano. Nada mais foi executado.' },
+    'baro.v8.plan.title':     { es: 'Plan del agente', en: 'Agent plan', zh: '代理计划', pt: 'Plano do agente' },
+    'baro.v8.plan.read':      { es: 'lectura', en: 'read', zh: '读取', pt: 'leitura' },
+    'baro.v8.plan.public':    { es: 'pública', en: 'public', zh: '公开', pt: 'pública' },
+    'baro.v8.plan.destr':     { es: 'destructiva', en: 'destructive', zh: '破坏性', pt: 'destrutiva' },
+    'baro.v8.plan.run_all':   { es: '▶ Ejecutar todo', en: '▶ Run all', zh: '▶ 全部执行', pt: '▶ Executar tudo' },
+    'baro.v8.plan.cancel':    { es: '✕ Cancelar', en: '✕ Cancel', zh: '✕ 取消', pt: '✕ Cancelar' },
+    'baro.v8.plan.demo_walk': { es: '▶ Recorrido demo', en: '▶ Demo walkthrough', zh: '▶ 演示', pt: '▶ Demonstração' },
+    'baro.v8.plan.empty':     { es: 'No pude armar un plan con eso. Dime qué quieres lograr con otras palabras.', en: 'Could not build a plan from that. Tell me what you want in other words.', zh: '无法据此制定计划，请换种说法。', pt: 'Não consegui montar um plano. Diga de outra forma.' },
+    'baro.v8.plan.unknown':   { es: 'Esto aún no sé hacerlo', en: "I can't do this yet", zh: '我还不会做这个', pt: 'Ainda não sei fazer isto' },
+    'baro.v8.plan.cancelled': { es: 'Plan cancelado. Nada se ejecutó.', en: 'Plan cancelled. Nothing ran.', zh: '计划已取消，未执行任何操作。', pt: 'Plano cancelado. Nada foi executado.' },
+    'baro.v8.plan.stopped':   { es: 'Plan detenido por ti. Los pasos pendientes no se ejecutaron.', en: 'Plan stopped by you. Pending steps did not run.', zh: '你已停止计划，待执行步骤未运行。', pt: 'Plano interrompido por você. Etapas pendentes não foram executadas.' },
+    'baro.v8.plan.done':      { es: 'Plan terminado: {ok} de {n} pasos.', en: 'Plan finished: {ok} of {n} steps.', zh: '计划完成：{n} 步中完成了 {ok} 步。', pt: 'Plano concluído: {ok} de {n} etapas.' },
+    'baro.v8.step.confirm_p': { es: '¿Confirmas esta acción?', en: 'Confirm this action?', zh: '确认此操作？', pt: 'Confirma esta ação?' },
+    'baro.v8.step.confirm_d': { es: '¿Confirmas esta acción destructiva?', en: 'Confirm this destructive action?', zh: '确认此破坏性操作？', pt: 'Confirma esta ação destrutiva?' },
+    'baro.v8.step.warn_d':    { es: '⚠️ Esta acción es difícil de deshacer.', en: '⚠️ This action is hard to undo.', zh: '⚠️ 此操作难以撤销。', pt: '⚠️ Esta ação é difícil de desfazer.' },
+    'baro.v8.step.demo_here': { es: '👆 Aquí tocarías «{label}» — en demo no se ejecuta.', en: '👆 You would tap "{label}" here — not executed in demo.', zh: '👆 这里你会点「{label}」——演示中不执行。', pt: '👆 Aqui você tocaria "{label}" — não executado na demo.' },
+    'baro.v8.step.done':      { es: 'hecho', en: 'done', zh: '完成', pt: 'feito' },
+    'baro.v8.step.skipped':   { es: 'omitido', en: 'skipped', zh: '已跳过', pt: 'ignorado' },
+    'baro.v8.step.failed':    { es: 'falló', en: 'failed', zh: '失败', pt: 'falhou' },
+    'baro.v8.step.waiting':   { es: 'esperando tu toque', en: 'waiting for your tap', zh: '等待你的确认', pt: 'aguardando seu toque' },
+    'baro.v8.stop.btn':       { es: '⏹ Detener agente', en: '⏹ Stop agent', zh: '⏹ 停止代理', pt: '⏹ Parar agente' },
+    'baro.v8.undo.btn':       { es: '↩ Deshacer', en: '↩ Undo', zh: '↩ 撤销', pt: '↩ Desfazer' },
+    'baro.v8.undo.done':      { es: 'Deshecho.', en: 'Undone.', zh: '已撤销。', pt: 'Desfeito.' },
+    'baro.v8.audit.title':    { es: 'Auditoría del agente (esta sesión)', en: 'Agent audit (this session)', zh: '代理审计（本次会话）', pt: 'Auditoria do agente (esta sessão)' },
+    'baro.v8.audit.empty':    { es: 'El agente aún no ha hecho nada en esta sesión.', en: 'The agent has not done anything this session yet.', zh: '本会话中代理尚未执行任何操作。', pt: 'O agente ainda não fez nada nesta sessão.' },
+    'baro.v8.demo.title':     { es: 'Modo demostración: te muestro cómo lo haría, sin tocar nada público.', en: 'Demo mode: I show you how I would do it, without touching anything public.', zh: '演示模式：展示我会怎么做，不触碰任何公开操作。', pt: 'Modo demonstração: mostro como faria, sem tocar em nada público.' },
+    'baro.v8.tool.plan.label':  { es: 'Modo agente', en: 'Agent mode', zh: '代理模式', pt: 'Modo agente' },
+    'baro.v8.tool.demo.label':  { es: 'Demostración', en: 'Demo', zh: '演示', pt: 'Demonstração' },
+    'baro.v8.tool.audit.label': { es: 'Auditoría', en: 'Audit', zh: '审计', pt: 'Auditoria' }
+  };
+  try {
+    var UI = (typeof window !== 'undefined' && window.BARO_UI_I18N) ||
+             (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) || null;
+    if (UI) Object.keys(BARO_V8_I18N).forEach(function (k) { if (!(k in UI)) UI[k] = BARO_V8_I18N[k]; });
+  } catch (_) {}
+
+  function v8t(ctx, key, vars) {
+    var s = null;
+    try { if (ctx && typeof ctx.t === 'function') s = ctx.t(key); } catch (_) {}
+    if (!s || s === key) {
+      var e = BARO_V8_I18N[key];
+      if (e) s = (ctx && ctx.lang && e[ctx.lang]) || e.es;
+    }
+    if (typeof s !== 'string') s = key;
+    if (vars) Object.keys(vars).forEach(function (k) { s = s.split('{' + k + '}').join(String(vars[k])); });
+    return s;
+  }
+  function v8esc(ctx, x) {
+    try { if (ctx && typeof ctx.esc === 'function') return ctx.esc(x); } catch (_) {}
+    return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* ---------------- 1. Matriz de clasificación ---------------- */
+  var LEVELS = { READ: 'lectura', PUBLIC: 'publica', DESTRUCTIVE: 'destructiva' };
+  var LEVEL_ICON = { lectura: '🔍', publica: '📣', destructiva: '⚠️' };
+
+  var READ_ACTIONS = [
+    'buscar_profundo', 'investigar', 'investigacion_profunda', 'buscar_con_filtros',
+    'ver_perfil', 'buscar_personas', 'ver_borradores', 'mi_panel', 'que_paso_hoy',
+    'resumen_semanal', 'analizar_post', 'comparar', 'linea_tiempo', 'explicame',
+    'recomiendame', 'estadisticas_onda', 'ondas_tendencias', 'notificaciones',
+    'ver_mis_votos', 'ver_hilos', 'chat_listar', 'chat_leer', 'chat_buscar',
+    'resumir_hilo', 'ver_conexiones', 'ver_bloqueados', 'ver_sesiones',
+    'guia_seguridad', 'jugar', 'buscar_musica', 'buscar_fiestas', 'chat_antesala'
+  ];
+  var PUBLIC_ACTIONS = [
+    'publicar', 'publicar_borrador', 'votar_post', 'votar_comentario',
+    'votar_encuesta', 'votar_cancion', 'comentar', 'eco_post', 'guardar_post',
+    'crear_encuesta', 'crear_fiesta', 'programar_recuerdo', 'chat_grupo_crear',
+    'chat_grupo_miembros', 'chat_marcar_leida', 'chat_permiso_dm', 'chat_silenciar',
+    'desbloquear_usuario', 'ajuste_idioma', 'ajuste_tema', 'ajuste_notificaciones',
+    'ajuste_privacidad', 'editar_perfil', 'reportar', 'compartir_post', 'guardar_hilo'
+  ];
+  var DESTRUCTIVE_ACTIONS = [
+    'eliminar', 'bloquear_usuario', 'descartar_borrador', 'borrar_hilo',
+    'abrir_hilo', 'chat' // 'chat' genérico no existe como tool; queda como ejemplo de fail-closed
+  ];
+  // Nota: 'abrir_hilo' es lectura en realidad; se deja fuera de destructiva abajo.
+
+  function classify(actionId) {
+    var id = String(actionId || '');
+    if (READ_ACTIONS.indexOf(id) !== -1) return LEVELS.READ;
+    if (PUBLIC_ACTIONS.indexOf(id) !== -1) return LEVELS.PUBLIC;
+    if (DESTRUCTIVE_ACTIONS.indexOf(id) !== -1 && id !== 'abrir_hilo' && id !== 'chat') return LEVELS.DESTRUCTIVE;
+    if (id === 'abrir_hilo') return LEVELS.READ;
+    return LEVELS.DESTRUCTIVE; // fail-closed: lo desconocido se trata como destructivo
+  }
+
+  /* ---------------- 2. Registro de acciones ---------------- */
+  function getToolRegistry() {
+    try {
+      if (typeof window !== 'undefined' && window.baroAgentActions && typeof window.baroAgentActions.get === 'function')
+        return { kind: 'agent', reg: window.baroAgentActions };
+    } catch (_) {}
+    var bt = null;
+    try {
+      bt = (typeof window !== 'undefined' && window.baroTools) ||
+           (typeof baroTools === 'object' && baroTools) || null;
+    } catch (_) {}
+    return { kind: 'tools', reg: bt };
+  }
+  function findAction(actionId) {
+    var g = getToolRegistry();
+    if (!g.reg) return null;
+    try {
+      if (g.kind === 'agent') return g.reg.get(actionId) || null;
+      var d = g.reg[actionId];
+      return d && typeof d.run === 'function' ? d : null;
+    } catch (_) { return null; }
+  }
+
+  /* ---------------- 3. Mini-planificador determinista ---------------- */
+  // chunk -> {action, q} | null. Solo mapea verbos conocidos a tools reales.
+  var VERB_MAP = [
+    { re: /publica|postea|sube este|escribe un post|haz un post|publish|post (this|it)|publicar|发布/, action: 'publicar' },
+    { re: /publica.*borrador|sube.*borrador/, action: 'publicar_borrador' },
+    { re: /vota|vótale|dale (un )?voto|vote/, action: 'votar_post' },
+    { re: /comenta|escribe un comentario|comment|评论/, action: 'comentar' },
+    { re: /\beco\b|haz eco|echo/, action: 'eco_post' },
+    { re: /guarda|save/, action: 'guardar_post' },
+    { re: /elimina|borra (este|el|mi) post|delete/, action: 'eliminar' },
+    { re: /bloquea|block/, action: 'bloquear_usuario' },
+    { re: /desbloquea|unblock/, action: 'desbloquear_usuario' },
+    { re: /descarta.*borrador|tira.*borrador/, action: 'descartar_borrador' },
+    { re: /busca|search|搜索/, action: 'buscar_profundo' },
+    { re: /investiga a fondo|informe de|deep/, action: 'investigacion_profunda' },
+    { re: /recomienda|recommend/, action: 'recomiendame' },
+    { re: /compara|compare/, action: 'comparar' },
+    { re: /línea de tiempo|linea de tiempo|timeline/, action: 'linea_tiempo' },
+    { re: /explícame|explicame|explain/, action: 'explicame' },
+    { re: /resumen.*seman|weekly/, action: 'resumen_semanal' },
+    { re: /qué pasó hoy|que paso hoy|what happened today/, action: 'que_paso_hoy' },
+    { re: /mi panel|dashboard|mi resumen/, action: 'mi_panel' },
+    { re: /ver perfil|abre.*perfil|open.*profile/, action: 'ver_perfil' }
+  ];
+  function buildPlan(text) {
+    var t = String(text || '');
+    var chunks = t.split(/\s+(?:y|luego|despu[eé]s|then|and then|然后)\s+|,\s*|\s*;\s*/).map(function (c) {
+      return c.trim();
+    }).filter(Boolean);
+    var steps = [], unknown = [];
+    chunks.forEach(function (chunk) {
+      var low = chunk.toLowerCase();
+      var hit = null;
+      for (var i = 0; i < VERB_MAP.length; i++) {
+        if (VERB_MAP[i].re.test(low)) { hit = VERB_MAP[i]; break; }
+      }
+      if (!hit) { unknown.push(chunk); return; }
+      var def = findAction(hit.action);
+      steps.push({
+        action: hit.action,
+        q: chunk,
+        level: classify(hit.action),
+        label: (def && def.label) || hit.action,
+        available: !!def
+      });
+    });
+    return { steps: steps, unknown: unknown };
+  }
+
+  /* ---------------- 4. Auditoría (sessionStorage) ---------------- */
+  var AUDIT_KEY = 'baro_v8_audit';
+  function readAudit() {
+    try {
+      var raw = sessionStorage.getItem(AUDIT_KEY);
+      var arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) { return []; }
+  }
+  function audit(entry) {
+    try {
+      var arr = readAudit();
+      arr.push({ t: Date.now(), action: entry.action || '', level: entry.level || '',
+                 detail: String(entry.detail || '').slice(0, 200), ok: !!entry.ok });
+      while (arr.length > 100) arr.shift();
+      sessionStorage.setItem(AUDIT_KEY, JSON.stringify(arr));
+    } catch (_) {}
+  }
+  function clearAudit() { try { sessionStorage.removeItem(AUDIT_KEY); } catch (_) {} }
+
+  /* ---------------- 5. Ejecutor con puertas de confirmación ---------------- */
+  var agentState = { stopRequested: false, running: false };
+
+  // deps inyectables (en producción usan DOM real + baroAskConfirm; en tests, mocks)
+  function defaultDeps(ctx) {
+    return {
+      isStopped: function () { return agentState.stopRequested; },
+      onAudit: audit,
+      // confirm(level, label, warnHtml) -> Promise<boolean>; SOLO true con tap.
+      confirm: function (level, label, warnHtml) {
+        return new Promise(function (resolve) {
+          try {
+            if (typeof baroAskConfirm === 'function') {
+              var r = baroAskConfirm({
+                titleKey: level === LEVELS.DESTRUCTIVE ? 'baro.v8.step.confirm_d' : 'baro.v8.step.confirm_p',
+                previewHtml: warnHtml || null,
+                danger: level === LEVELS.DESTRUCTIVE,
+                onConfirm: function () { resolve(true); },
+                onCancel: function () { resolve(false); }
+              });
+              if (!r) resolve(false);
+              return;
+            }
+          } catch (_) {}
+          // Fallback: chip inline propio si baroAskConfirm no existe.
+          try { resolve(v8fallbackChip(ctx, level, label, warnHtml)); }
+          catch (_) { resolve(false); }
+        });
+      },
+      renderStep: null, // lo pone executePlan en producción
+      findAction: findAction
+    };
+  }
+
+  function v8fallbackChip(ctx, level, label, warnHtml) {
+    return new Promise(function (resolve) {
+      try {
+        var th = null;
+        try { th = (typeof baroThreadEl === 'function') ? baroThreadEl() : null; } catch (_) {}
+        if (!th || !document || !document.createElement) { resolve(false); return; }
+        var card = document.createElement('div');
+        card.className = 'baro-confirm' + (level === LEVELS.DESTRUCTIVE ? ' danger' : '');
+        var p = document.createElement('p');
+        p.className = 'baro-confirm-title';
+        p.textContent = v8t(ctx, level === LEVELS.DESTRUCTIVE ? 'baro.v8.step.confirm_d' : 'baro.v8.step.confirm_p');
+        card.appendChild(p);
+        if (warnHtml) {
+          var w = document.createElement('div');
+          w.className = 'baro-confirm-preview';
+          w.innerHTML = String(warnHtml);
+          card.appendChild(w);
+        }
+        var row = document.createElement('div');
+        row.className = 'baro-confirm-actions';
+        var no = document.createElement('button');
+        no.type = 'button'; no.className = 'baro-btn-secondary'; no.textContent = '✕';
+        var yes = document.createElement('button');
+        yes.type = 'button';
+        yes.className = level === LEVELS.DESTRUCTIVE ? 'baro-btn-danger' : 'baro-btn-primary';
+        yes.textContent = '✓';
+        var done = false;
+        function fin(v) { if (done) return; done = true; try { card.remove(); } catch (_) {} resolve(v); }
+        no.addEventListener('click', function () { fin(false); });
+        yes.addEventListener('click', function () { fin(true); });
+        row.appendChild(no); row.appendChild(yes);
+        card.appendChild(row);
+        th.appendChild(card);
+        if (typeof baroScrollToBottom === 'function') try { baroScrollToBottom(); } catch (_) {}
+      } catch (_) { resolve(false); }
+    });
+  }
+
+  // Núcleo del ejecutor. steps: [{action,q,level,label,available}].
+  // opts: {demo:boolean, ctx, deps}
+  // Devuelve Promise<{ok, total, stopped}>.
+  function executePlan(steps, ctx, opts) {
+    opts = opts || {};
+    var deps = opts.deps || defaultDeps(ctx);
+    var demo = !!opts.demo;
+    agentState.stopRequested = false;
+    agentState.running = true;
+    var results = { ok: 0, total: steps.length, stopped: false, demo: demo };
+    var chain = Promise.resolve();
+    steps.forEach(function (step, idx) {
+      chain = chain.then(function () {
+        if (deps.isStopped()) { results.stopped = true; return; }
+        return runOneStep(step, idx, ctx, deps, demo, results);
+      });
+    });
+    return chain.then(function () {
+      agentState.running = false;
+      return results;
+    });
+  }
+
+  function runOneStep(step, idx, ctx, deps, demo, results) {
+    var setStatus = function (s) { try { if (typeof deps.renderStep === 'function') deps.renderStep(idx, s, step); } catch (_) {} };
+    if (!step.available) {
+      setStatus('blocked');
+      deps.onAudit({ action: step.action, level: step.level, detail: 'no disponible', ok: false });
+      return Promise.resolve();
+    }
+    if (demo && (step.level === LEVELS.PUBLIC || step.level === LEVELS.DESTRUCTIVE)) {
+      // DEMO: nunca ejecuta públicas/destructivas. Marca dónde tocaría el usuario.
+      setStatus('demo');
+      deps.onAudit({ action: step.action, level: step.level, detail: 'demo: no ejecutado', ok: true });
+      return Promise.resolve();
+    }
+    var needConfirm = (step.level === LEVELS.PUBLIC || step.level === LEVELS.DESTRUCTIVE);
+    var gate = Promise.resolve(true);
+    if (needConfirm) {
+      setStatus('waiting');
+      var warn = step.level === LEVELS.DESTRUCTIVE
+        ? '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.step.warn_d')) + '</p><p><b>' + v8esc(ctx, step.label) + '</b></p>'
+        : '<p><b>' + v8esc(ctx, step.label) + '</b></p>';
+      gate = deps.confirm(step.level, step.label, warn);
+    } else {
+      setStatus('running');
+    }
+    return gate.then(function (okTap) {
+      if (deps.isStopped()) { results.stopped = true; setStatus('skipped'); return; }
+      if (!okTap) {
+        setStatus('skipped');
+        deps.onAudit({ action: step.action, level: step.level, detail: 'cancelado por el usuario', ok: false });
+        return;
+      }
+      setStatus('running');
+      var def = deps.findAction(step.action);
+      if (!def) { setStatus('blocked'); return; }
+      var runFn = def.run || def;
+      return Promise.resolve()
+        .then(function () { return runFn({ q: step.q }, ctx); })
+        .then(function (res) {
+          results.ok++;
+          setStatus('done');
+          deps.onAudit({ action: step.action, level: step.level, detail: 'ok', ok: true });
+          try { if (typeof deps.onStepDone === 'function') deps.onStepDone(idx, step, res || {}); } catch (_) {}
+        })
+        .catch(function (e) {
+          setStatus('failed');
+          var msg = (e && e.message) || 'error';
+          deps.onAudit({ action: step.action, level: step.level, detail: msg, ok: false });
+        });
+    });
+  }
+
+  /* ---------------- 6. Tarjeta de plan (DOM real) ---------------- */
+  var CSS_ID = 'baro-v8-css';
+  function ensureCss() {
+    try {
+      if (!document || document.getElementById(CSS_ID)) return;
+      var st = document.createElement('style');
+      st.id = CSS_ID;
+      st.textContent =
+        '.baro-v8-plan{border:1px solid var(--theme-border,#e5e7eb);border-radius:14px;padding:12px;margin:10px 0;background:var(--theme-card,#fff)}' +
+        'body.theme-dark .baro-v8-plan{background:#1c1f2b;border-color:#333}' +
+        '.baro-v8-plan h4{margin:0 0 8px;font-size:15px;font-weight:800}' +
+        '.baro-v8-step{display:flex;gap:8px;align-items:flex-start;padding:7px 8px;border-radius:10px;margin:4px 0;background:rgba(127,127,127,.07);font-size:13px}' +
+        '.baro-v8-step .st{margin-left:auto;font-size:11px;opacity:.75;white-space:nowrap}' +
+        '.baro-v8-step.waiting{outline:2px solid #f59e0b}' +
+        '.baro-v8-step.running{outline:2px solid #6366f1}' +
+        '.baro-v8-step.done{opacity:.8}' +
+        '.baro-v8-step.demo{outline:2px dashed #6366f1}' +
+        '.baro-v8-actions{display:flex;gap:10px;margin-top:10px}' +
+        '.baro-v8-unknown{font-size:12px;opacity:.8;margin-top:6px}' +
+        '#baro-v8-stop{position:fixed;bottom:86px;right:14px;z-index:99999;border:0;border-radius:999px;padding:10px 16px;background:#dc2626;color:#fff;font-weight:800;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.3)}';
+      document.head.appendChild(st);
+    } catch (_) {}
+  }
+  function showStopButton(ctx) {
+    try {
+      if (!document || document.getElementById('baro-v8-stop')) return;
+      var b = document.createElement('button');
+      b.id = 'baro-v8-stop';
+      b.type = 'button';
+      b.textContent = v8t(ctx, 'baro.v8.stop.btn');
+      b.addEventListener('click', function () {
+        try { window.baroV8Agent.stop(); } catch (_) {}
+        b.disabled = true;
+      });
+      document.body.appendChild(b);
+    } catch (_) {}
+  }
+  function hideStopButton() {
+    try { var b = document.getElementById('baro-v8-stop'); if (b) b.remove(); } catch (_) {}
+  }
+
+  // Renderiza la tarjeta de plan y devuelve {el, setStep(i,status), onRun(cb), onCancel(cb), finish(summaryHtml)}
+  function renderPlanCard(plan, ctx, opts) {
+    opts = opts || {};
+    ensureCss();
+    var host = null;
+    try {
+      host = (typeof baroThreadEl === 'function') ? baroThreadEl() : null;
+      if (!host && document) host = document.body;
+    } catch (_) { try { host = document.body; } catch (_) {} }
+    if (!host) return null;
+    var card = document.createElement('div');
+    card.className = 'baro-v8-plan';
+    var h = document.createElement('h4');
+    h.textContent = (opts.demo ? v8t(ctx, 'baro.v8.demo.title') : v8t(ctx, 'baro.v8.plan.title')) +
+      ' (' + plan.steps.length + ')';
+    card.appendChild(h);
+    var rows = [];
+    plan.steps.forEach(function (s, i) {
+      var r = document.createElement('div');
+      r.className = 'baro-v8-step';
+      var icon = document.createElement('span');
+      icon.textContent = LEVEL_ICON[s.level] || '❔';
+      var tx = document.createElement('span');
+      tx.innerHTML = '<b>' + v8esc(ctx, s.label) + '</b> <span style="opacity:.7">· ' +
+        v8esc(ctx, v8t(ctx, 'baro.v8.plan.' + (s.level === 'lectura' ? 'read' : s.level === 'publica' ? 'public' : 'destr'))) +
+        '</span><br><span style="opacity:.75">' + v8esc(ctx, s.q) + '</span>' +
+        (s.available ? '' : ' <span style="color:#dc2626">(' + v8esc(ctx, v8t(ctx, 'baro.v8.plan.unknown')) + ')</span>');
+      var st = document.createElement('span');
+      st.className = 'st';
+      st.textContent = '•';
+      r.appendChild(icon); r.appendChild(tx); r.appendChild(st);
+      card.appendChild(r);
+      rows.push({ row: r, st: st });
+    });
+    if (plan.unknown.length) {
+      var u = document.createElement('div');
+      u.className = 'baro-v8-unknown';
+      u.textContent = v8t(ctx, 'baro.v8.plan.unknown') + ': ' + plan.unknown.join(' · ');
+      card.appendChild(u);
+    }
+    var acts = document.createElement('div');
+    acts.className = 'baro-v8-actions';
+    var btnRun = document.createElement('button');
+    btnRun.type = 'button';
+    btnRun.className = 'baro-btn-primary';
+    btnRun.textContent = v8t(ctx, opts.demo ? 'baro.v8.plan.demo_walk' : 'baro.v8.plan.run_all');
+    var btnCancel = document.createElement('button');
+    btnCancel.type = 'button';
+    btnCancel.className = 'baro-btn-secondary';
+    btnCancel.textContent = v8t(ctx, 'baro.v8.plan.cancel');
+    acts.appendChild(btnRun); acts.appendChild(btnCancel);
+    card.appendChild(acts);
+    host.appendChild(card);
+    if (typeof baroScrollToBottom === 'function') try { baroScrollToBottom(); } catch (_) {}
+    var settled = false;
+    function settle() {
+      if (settled) return; settled = true;
+      btnRun.disabled = true; btnCancel.disabled = true;
+    }
+    return {
+      el: card,
+      setStep: function (i, status, step) {
+        try {
+          var r = rows[i]; if (!r) return;
+          r.row.classList.remove('waiting', 'running', 'done', 'demo');
+          var label = '•';
+          if (status === 'waiting') { r.row.classList.add('waiting'); label = v8t(ctx, 'baro.v8.step.waiting'); }
+          else if (status === 'running') { r.row.classList.add('running'); label = '…'; }
+          else if (status === 'done') { r.row.classList.add('done'); label = '✓ ' + v8t(ctx, 'baro.v8.step.done'); }
+          else if (status === 'demo') { r.row.classList.add('demo'); label = v8t(ctx, 'baro.v8.step.demo_here', { label: step.label }); r.st.style.whiteSpace = 'normal'; }
+          else if (status === 'skipped') { label = '– ' + v8t(ctx, 'baro.v8.step.skipped'); }
+          else if (status === 'failed') { label = '✕ ' + v8t(ctx, 'baro.v8.step.failed'); }
+          else if (status === 'blocked') { label = '⛔'; }
+          r.st.textContent = label;
+          if (typeof baroScrollToBottom === 'function') try { baroScrollToBottom(); } catch (_) {}
+        } catch (_) {}
+      },
+      onRun: function (cb) { btnRun.addEventListener('click', function () { settle(); cb(); }); },
+      onCancel: function (cb) { btnCancel.addEventListener('click', function () { settle(); cb(); }); },
+      // Botón deshacer en un paso completado (solo si la tool devolvió undo).
+      addUndo: function (i, step, undoDef) {
+        try {
+          var r = rows[i]; if (!r || !undoDef || typeof undoDef.run !== 'function') return;
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'baro-btn-secondary';
+          b.style.cssText = 'font-size:11px;padding:2px 8px;margin-left:6px';
+          b.textContent = v8t(ctx, 'baro.v8.undo.btn');
+          b.addEventListener('click', function () {
+            b.disabled = true;
+            var p = Promise.resolve(true);
+            try {
+              if (typeof baroAskConfirm === 'function') {
+                p = new Promise(function (res) {
+                  baroAskConfirm({
+                    titleKey: 'baro.v8.step.confirm_d',
+                    previewHtml: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.step.warn_d')) + '</p>',
+                    danger: true,
+                    onConfirm: function () { res(true); },
+                    onCancel: function () { res(false); }
+                  });
+                });
+              }
+            } catch (_) {}
+            p.then(function (okTap) {
+              if (!okTap) { b.disabled = false; return; }
+              return Promise.resolve().then(function () { return undoDef.run(); }).then(function () {
+                audit({ action: step.action + ':undo', level: 'destructiva', detail: v8t(ctx, 'baro.v8.undo.done'), ok: true });
+                r.st.textContent = '↩ ' + v8t(ctx, 'baro.v8.undo.done');
+              }).catch(function () { b.disabled = false; });
+            });
+          });
+          r.row.appendChild(b);
+        } catch (_) {}
+      },
+      finish: function () { settle(); }
+    };
+  }
+
+  /* ---------------- 7. Tools ---------------- */
+  function needLogin(ctx) {
+    try { if (ctx && ctx.user && (ctx.user.uid || ctx.user.id)) return false; } catch (_) {}
+    return true;
+  }
+
+  function runAgentFlow(args, ctx, demo) {
+    return new Promise(function (resolve) {
+      try {
+        if (needLogin(ctx)) { resolve({ html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.login_needed')) + '</p>' }); return; }
+        var pedido = String((args && (args.pedido || args.q)) || '').trim();
+        var plan = buildPlan(pedido);
+        if (!plan.steps.length) { resolve({ html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.plan.empty')) + '</p>' }); return; }
+        var card = renderPlanCard(plan, ctx, { demo: demo });
+        if (!card) { resolve({ html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.error')) + '</p>' }); return; }
+        var deps = defaultDeps(ctx);
+        deps.renderStep = function (i, status, step) { card.setStep(i, status, step); };
+        deps.onStepDone = function (i, step, res) {
+          try { if (res && res.undo) card.addUndo(i, step, res.undo); } catch (_) {}
+        };
+        card.onCancel(function () {
+          hideStopButton();
+          audit({ action: demo ? 'modo_demo' : 'plan_agente', level: 'lectura', detail: 'cancelado', ok: false });
+          resolve({ html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.plan.cancelled')) + '</p>' });
+        });
+        card.onRun(function () {
+          showStopButton(ctx);
+          executePlan(plan.steps, ctx, { demo: demo, deps: deps }).then(function (r) {
+            hideStopButton();
+            card.finish();
+            var msg = r.stopped ? v8t(ctx, 'baro.v8.plan.stopped')
+                                : v8t(ctx, 'baro.v8.plan.done', { ok: r.ok, n: r.total });
+            audit({ action: demo ? 'modo_demo' : 'plan_agente', level: 'lectura',
+                    detail: r.ok + '/' + r.total + (r.stopped ? ' detenido' : ''), ok: !r.stopped });
+            resolve({ html: '<p>' + v8esc(ctx, msg) + '</p>' });
+          }).catch(function () {
+            hideStopButton();
+            resolve({ html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.error')) + '</p>' });
+          });
+        });
+        // La tarjeta queda visible esperando el toque; el html devuelto es solo ancla.
+        resolve({ html: '<p>⏳</p>' });
+      } catch (e) {
+        resolve({ html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.error')) + '</p>' });
+      }
+    });
+  }
+
+  function registerTools() {
+    var R = null;
+    try {
+      R = (typeof window !== 'undefined' && typeof window.baroRegisterTool === 'function') ? window.baroRegisterTool
+        : (typeof baroRegisterTool === 'function' ? baroRegisterTool : null);
+    } catch (_) {}
+    if (!R) return;
+    try {
+      R('plan_agente', {
+        label: 'baro.v8.tool.plan.label',
+        icon: 'agent',
+        run: function (args, ctx) { return runAgentFlow(args, ctx, false); }
+      });
+      R('modo_demo', {
+        label: 'baro.v8.tool.demo.label',
+        icon: 'demo',
+        run: function (args, ctx) { return runAgentFlow(args, ctx, true); }
+      });
+      R('auditoria_agente', {
+        label: 'baro.v8.tool.audit.label',
+        icon: 'audit',
+        run: function (args, ctx) {
+          return new Promise(function (resolve) {
+            try {
+              var arr = readAudit();
+              if (!arr.length) { resolve({ html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.audit.empty')) + '</p>' }); return; }
+              var h = '<div class="baro-v8-plan"><h4>' + v8esc(ctx, v8t(ctx, 'baro.v8.audit.title')) + '</h4>';
+              arr.slice(-20).reverse().forEach(function (e) {
+                var d = new Date(e.t);
+                var hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+                h += '<div class="baro-v8-step"><span>' + (LEVEL_ICON[e.level] || '•') + '</span><span><b>' +
+                  v8esc(ctx, e.action) + '</b> <span style="opacity:.7">' + v8esc(ctx, hh) + ' · ' +
+                  v8esc(ctx, e.detail) + '</span></span><span class="st">' + (e.ok ? '✓' : '✕') + '</span></div>';
+              });
+              resolve({ html: h + '</div>' });
+            } catch (_) { resolve({ html: '<p>' + v8esc(ctx, v8t(ctx, 'baro.v8.error')) + '</p>' }); }
+          });
+        }
+      });
+    } catch (_) {}
+  }
+
+  function registerIntents() {
+    var R = null, T = null;
+    try {
+      R = (typeof window !== 'undefined' && window.baroIntentRules) ||
+          (typeof baroIntentRules === 'object' && baroIntentRules) || null;
+      T = (typeof window !== 'undefined' && window.baroIntentToTool) ||
+          (typeof baroIntentToTool === 'object' && baroIntentToTool) || null;
+    } catch (_) {}
+    if (!R || typeof R.push !== 'function' || !T) return;
+    try {
+      R.push({
+        langs: ['es', 'en', 'zh', 'pt'],
+        patterns: [
+          /haz (esto|lo siguiente) por m[ií]/, /ejecuta (este|el) plan/, /modo agente/,
+          /hazlo t[uú]/, /enc[aá]rgate t[uú]/,
+          /do this for me/, /run this plan/, /agent mode/,
+          /fa[çc]a isso por mim/, /execute (este|o) plano/, /modo agente/,
+          /帮我做/, /代理模式/
+        ],
+        intent: 'plan_agente',
+        extract: function (text) { return { pedido: String(text || '') }; }
+      });
+      R.push({
+        langs: ['es', 'en', 'zh', 'pt'],
+        patterns: [
+          /mu[ée]strame c[óo]mo lo har[íi]as/, /modo demo/, /demostraci[óo]n/,
+          /show me how you (would|will) do it/, /demo mode/,
+          /mostra como (você )?faria/, /modo demonstra[çc][ãa]o/,
+          /演示一下/, /演示模式/
+        ],
+        intent: 'modo_demo',
+        extract: function (text) { return { pedido: String(text || '') }; }
+      });
+      R.push({
+        langs: ['es', 'en', 'zh', 'pt'],
+        patterns: [
+          /auditor[íi]a del agente/, /qu[ée] ha hecho el agente/, /registro del agente/,
+          /agent audit/, /what has the agent done/,
+          /auditoria do agente/, /代理审计/
+        ],
+        intent: 'auditoria_agente',
+        extract: function () { return {}; }
+      });
+      T['plan_agente'] = 'plan_agente';
+      T['modo_demo'] = 'modo_demo';
+      T['auditoria_agente'] = 'auditoria_agente';
+    } catch (_) {}
+  }
+
+  /* ---------------- 8. API pública ---------------- */
+  var api = {
+    LEVELS: LEVELS,
+    LEVEL_ICON: LEVEL_ICON,
+    classify: classify,
+    buildPlan: buildPlan,
+    executePlan: executePlan,
+    audit: audit,
+    readAudit: readAudit,
+    clearAudit: clearAudit,
+    get stopRequested() { return agentState.stopRequested; },
+    get running() { return agentState.running; },
+    stop: function () { agentState.stopRequested = true; hideStopButton(); }
+  };
+  try {
+    if (typeof window !== 'undefined') window.baroV8Agent = api;
+    else if (typeof globalThis !== 'undefined') globalThis.baroV8Agent = api;
+  } catch (_) {}
+
+  registerTools();
+  registerIntents();
+})();
+
 </script>
 
 </body>
