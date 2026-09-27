@@ -1,0 +1,120 @@
+/* ================================================================
+ * Tests de regresión: C217 auditoría y redibujo de íconos (2026-09-27)
+ * - La cámara propia (C209) tenía el path del cuerpo de la cámara
+ *   MALFORMADO (arco duplicado) en 2 lugares: se veía horrible.
+ * - Íconos de voltear cámara y efectos redibujados (trazos limpios).
+ * - Nuevo botón de flash con soporte torch (se muestra solo si el
+ *   dispositivo lo soporta).
+ * - Drex Studio: tarjeta "Plantillas de juego" tenía un remolino sin
+ *   sentido -> gamepad; "Detección facial" -> marco de escaneo facial.
+ * Verifica sin navegador. Ejecutar con: node tests/test-c217-icons.js
+ * Sin dependencias externas — solo Node.js.
+ * ================================================================ */
+var assert = require('assert');
+var fs = require('fs');
+var path = require('path');
+
+var target = path.join(__dirname, '..', 'index.html');
+var src = fs.readFileSync(target, 'utf8');
+
+var passed = 0, failed = 0;
+function test(name, fn) {
+  try { fn(); passed++; console.log('ok - ' + name); }
+  catch (e) { failed++; console.log('FALLO - ' + name + ': ' + e.message); }
+}
+
+// (1) El path malformado de la cámara NO debe existir en ningún lado
+test('sin path de cámara malformado (arco duplicado)', function () {
+  assert(src.indexOf('a2 2 0 012 2v9a2 2 0 012 2v9') === -1,
+    'persiste el path malformado con el arco duplicado');
+});
+
+// (2) El path correcto de la cámara existe (modal + composer)
+test('path de cámara correcto presente', function () {
+  var good = 'H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z';
+  var n = src.split(good).length - 1;
+  assert(n >= 3, 'se esperaban >=3 cámaras correctas (modal error, captura, composer), hay ' + n);
+});
+
+// (3) Íconos clave de la cámara existen con viewBox válido
+['drex-cam-close', 'drex-cam-flip', 'drex-cam-flash', 'drex-cam-effects-btn',
+ 'drex-cam-capture', 'drex-cam-effects-close'].forEach(function (id) {
+  test('botón de cámara con SVG válido: ' + id, function () {
+    var re = new RegExp('<button[^>]*id="' + id + '"[\\s\\S]{0,900}?<svg[^>]*viewBox="0 0 24 24"');
+    assert(re.test(src), 'falta SVG con viewBox 0 0 24 24 en #' + id);
+  });
+});
+
+// (4) Ícono de voltear redibujado (arcos simétricos, sin el refresh genérico viejo)
+test('ícono voltear-cámara redibujado', function () {
+  assert(src.indexOf('M4.8 9a7.5 7.5 0 0114.4 0') !== -1, 'falta el arco superior del nuevo ícono');
+  assert(src.indexOf('M4 4v6h6M20 20v-6h-6') === -1, 'persiste el ícono viejo de voltear');
+});
+
+// (5) Ícono de efectos redibujado (triple destello)
+test('ícono de efectos redibujado', function () {
+  assert(src.indexOf('M11 4l1.6 4.4L17 10l-4.4 1.6L11 16l-1.6-4.4L5 10l4.4-1.6L11 4z') !== -1,
+    'falta el destello principal del nuevo ícono de efectos');
+});
+
+// (6) Flash: botón + función + cableado
+test('botón de flash con estados on/off', function () {
+  assert(src.indexOf('id="drex-cam-flash"') !== -1, 'falta #drex-cam-flash');
+  assert(src.indexOf('drex-cam-flash-on') !== -1 && src.indexOf('drex-cam-flash-off') !== -1,
+    'faltan los estados on/off del flash');
+  assert(src.indexOf('onclick="drexCameraToggleFlash()"') !== -1, 'falta el handler del flash');
+});
+test('JS de flash: toggle + detección torch + hooks', function () {
+  assert(/function drexCameraToggleFlash\(\)/.test(src), 'falta drexCameraToggleFlash');
+  assert(/function drexCamUpdateFlashBtn\(\)/.test(src), 'falta drexCamUpdateFlashBtn');
+  assert(/getCapabilities\(\)\.torch/.test(src), 'falta la detección de torch');
+  assert(/applyConstraints\(\{ advanced: \[\{ torch:/.test(src), 'falta applyConstraints torch');
+});
+
+// (7) Drex Studio: gamepad en "Plantillas de juego"
+test('tarjeta Plantillas de juego usa gamepad', function () {
+  var i = src.indexOf('Plantillas de juego');
+  assert(i !== -1, 'no se encontró la tarjeta');
+  var card = src.slice(Math.max(0, i - 700), i);
+  assert(card.indexOf('M6.5 8h11a4.5 4.5 0 014.4 5.4') !== -1, 'falta el gamepad');
+  assert(card.indexOf('M14.25 6.087') === -1, 'persiste el remolino sin sentido');
+});
+
+// (8) Drex Studio: face-scan en "Detección facial"
+test('tarjeta Detección facial usa marco de escaneo', function () {
+  var i = src.indexOf('Detección facial');
+  assert(i !== -1, 'no se encontró la tarjeta');
+  var card = src.slice(Math.max(0, i - 800), i);
+  assert(card.indexOf('M4 8V6a2 2 0 012-2h2') !== -1, 'faltan las esquinas del marco de escaneo');
+  assert(card.indexOf('M15 9h.01M9 9h.01M3 12a9 9 0 109-9') === -1, 'persiste el ícono viejo');
+});
+
+// (9) Todos los SVG del modal de cámara tienen viewBox
+test('todos los SVG del modal de cámara tienen viewBox', function () {
+  var start = src.indexOf('id="drex-cam-modal"');
+  var end = src.indexOf('FIN DREX-CAM v1');
+  assert(start !== -1 && end > start, 'no se encontró el modal de cámara');
+  var block = src.slice(start, end);
+  var svgs = block.match(/<svg\b[^>]*>/g) || [];
+  assert(svgs.length >= 6, 'se esperaban >=6 SVG en el modal, hay ' + svgs.length);
+  svgs.forEach(function (tag, k) {
+    assert(tag.indexOf('viewBox') !== -1, 'SVG #' + k + ' del modal sin viewBox: ' + tag.slice(0, 60));
+  });
+});
+
+// (10) stroke-widths dentro del rango del sistema de diseño (1.5–2.5) en cámara
+test('trazos de la cámara dentro del sistema (1.5-2.5)', function () {
+  var start = src.indexOf('id="drex-cam-modal"');
+  var end = src.indexOf('FIN DREX-CAM v1');
+  var block = src.slice(start, end);
+  var bad = [];
+  block.replace(/<svg\b[^>]*stroke-width="([\d.]+)"/g, function (_, w) {
+    var f = parseFloat(w);
+    if (f < 1.5 || f > 2.5) bad.push(w);
+    return '';
+  });
+  assert(bad.length === 0, 'stroke-width fuera de rango: ' + bad.join(','));
+});
+
+console.log('\n' + passed + ' ok, ' + failed + ' fallos');
+process.exit(failed ? 1 : 0);
