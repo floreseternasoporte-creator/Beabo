@@ -1867,19 +1867,6 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
     }
 
 
-        /* ---------- NUEVA SECCIÓN: Estilos para Computadora ---------- */
-    @media (min-width: 1024px) {
-      body.desktop {
-        background-color: #ffffff;
-        font-family: 'Nunito', sans-serif;
-      }
-
-      #bottom-nav {
-        background-color: rgba(255, 255, 255, 0.9);
-      }
-
-    }
-
     /* ----------------- NUEVA SECCIÓN: Banner ApkPure ----------------- */
     #apk-banner {
       position: relative;
@@ -2938,11 +2925,6 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
 window.addEventListener('online', function() {
   location.reload();
 });
-window.addEventListener('load', function() {
-  if (window.innerWidth >= 1024) {
-    document.body.classList.add('desktop');
-  }
-});
 
 document.addEventListener("DOMContentLoaded", function() {
   const savedLang = localStorage.getItem("selectedLanguage");
@@ -3979,10 +3961,18 @@ document.addEventListener("DOMContentLoaded", function() {
 <style id="drex-responsive-layer">
 /* ============================================================
    DREX RESPONSIVE — tablets y computadora (pantallas >= 768px)
-   La app se presenta como una columna centrada (estilo app móvil
-   en web, como Threads/Instagram), con todos los elementos fijos
-   (barra inferior, vistas full-screen, FABs, drawer, anuncios)
-   alineados a esa columna. En teléfonos (<768px) no cambia NADA.
+   En teléfonos (<768px) no cambia NADA: todo vive en @media (min-width:…).
+
+   - Tablet (768-1023px): columna centrada de 680px con todos los
+     elementos fijos (barra inferior, vistas full-screen, FABs, drawer,
+     anuncios) alineados a esa columna.
+   - Escritorio (1024-1359px): layout de app web real: sidebar de
+     navegación a la izquierda (252px, 76px solo-iconos en 1024-1279px),
+     columna central de 640px, sin barra inferior móvil.
+   - Escritorio amplio (>=1360px): la columna se ensancha de forma
+     fluida (700px -> 760px) y aparece el panel informativo derecho.
+   - Vistas fullscreen y modales se confinan a la columna con sombra;
+     solo los visores de foto/video quedan a pantalla completa.
    ============================================================ */
 @media (min-width: 768px) {
   :root { --drex-col: 680px; }
@@ -4007,14 +3997,29 @@ document.addEventListener("DOMContentLoaded", function() {
     box-shadow: 0 0 60px rgba(0, 0, 0, .45);
   }
 
-  /* Vistas de pantalla completa -> columna centrada.
-     Se excluyen fondos negros: visor de fotos/video y backdrops
-     con contenido ya centrado, que se quedan a pantalla completa. */
-  body div.fixed.inset-0:not([class*="bg-black"]),
-  body div.fixed.left-0.right-0:not([class*="bg-black"]) {
+  /* Vistas de pantalla completa y modales -> columna centrada con sombra.
+     EXCEPCIONES (pantalla completa deliberada): solo los visores de
+     foto/video, que deben cubrir todo el viewport. */
+  body div.fixed.inset-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view),
+  body div.fixed.left-0.right-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view) {
     max-width: var(--drex-col);
     margin-left: auto;
     margin-right: auto;
+    box-shadow: 0 0 60px rgba(15, 35, 70, .10);
+  }
+  body.theme-dark div.fixed.inset-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view),
+  body.theme-dark div.fixed.left-0.right-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view) {
+    box-shadow: 0 0 60px rgba(0, 0, 0, .45);
+  }
+
+  /* Configuración del perfil: mismo ancho que la columna (ancla explícita;
+     pisa el sm:max-w-[430px] del markup). */
+  #profile-config-view { max-width: var(--drex-col); }
+
+  /* Toasts: acotados al ancho de la columna. Ya nacen centrados a left:50%
+     (= centro del viewport = centro de la columna), solo se limita su ancho. */
+  #mini-toast {
+    max-width: calc(var(--drex-col) - 48px) !important; /* pisa el max-width:92vw en línea */
   }
 
   /* Pantalla de login/registro (hija directa de body) */
@@ -4045,9 +4050,10 @@ document.addEventListener("DOMContentLoaded", function() {
     right: calc(50vw - (var(--drex-col) / 2) + 16px);
   }
 
-  /* Drawer lateral: se mantiene anclado al borde izquierdo del viewport.
-     (No anclarlo a la columna: con left desplazado, el -translate-x-full ya no lo
-     ocultaba del todo y quedaba una franja visible en tablet/escritorio.) */
+  /* Drawer lateral en tablet: se mantiene anclado al borde izquierdo del viewport.
+     (En escritorio >=1024px se ancla al borde de la columna; ver bloque de escritorio.)
+     No desplazar el `left` aquí: con left desplazado, el -translate-x-full ya no lo
+     ocultaba del todo y quedaba una franja visible. */
 
 }
 
@@ -4062,6 +4068,35 @@ document.addEventListener("DOMContentLoaded", function() {
 
   /* El botón hamburguesa del top-nav se oculta: el drawer queda reemplazado por el sidebar */
   #top-nav button[onclick="openSidePanel()"] { display: none !important; }
+
+  /* Drawer lateral: anclado al borde izquierdo de la columna (no al viewport).
+     El estado oculto (-translate-x-full) solo lo desplaza su propio ancho, así que
+     se compensa el desplazamiento del anclaje para que salga del viewport por completo. */
+  #side-panel-drawer {
+    left: calc(50vw - (var(--drex-col) / 2));
+  }
+  #side-panel-drawer.-translate-x-full {
+    --tw-translate-x: calc(-100% - (50vw - (var(--drex-col) / 2)) - 4px);
+  }
+
+  /* Login/registro como tarjeta centrada elegante (no franja de 680px).
+     El height:100dvh en línea se pisa; las sub-vistas absolute inset-0
+     (login-options, email-step) siguen cubriendo la tarjeta. */
+  #auth-form {
+    max-width: 460px;
+    height: auto !important;
+    min-height: min(720px, calc(100dvh - 64px));
+    margin-top: 32px;
+    margin-bottom: 32px;
+    border: 1px solid #e7ecf3;
+    border-radius: 28px;
+    box-shadow: 0 24px 80px rgba(15, 35, 70, .18);
+  }
+  #auth-form > #auth-options { flex: 1 1 auto; }
+  body.theme-dark #auth-form {
+    border-color: #1c2534;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
+  }
 
   /* ---------- Sidebar izquierdo ---------- */
   #desktop-sidebar {
@@ -4213,9 +4248,17 @@ document.addEventListener("DOMContentLoaded", function() {
   #desktop-sidebar { display: flex; }
 }
 
-/* Escritorio amplio (>=1360px): se muestra el panel derecho */
+/* Escritorio amplio (>=1360px): columna central más ancha y fluida + panel derecho.
+   La columna crece de 700px a 760px según el viewport; el panel se ajusta a
+   300px para que el conjunto (sidebar 252 + columna + panel) quepa sin desbordar. */
 @media (min-width: 1360px) {
-  #desktop-rightpanel { display: block; }
+  :root { --drex-col: clamp(700px, calc(100vw - 660px), 760px); }
+  #desktop-rightpanel {
+    display: block;
+    width: 300px;
+    right: calc(50vw - (var(--drex-col) / 2) - 324px);
+    padding-right: 4px;
+  }
 }
 </style>
 <style>
