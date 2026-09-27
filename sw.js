@@ -6,7 +6,7 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v15'; // v15: timeout en network-first (drex-i18n.js colgado ya no retrasa DOMContentLoaded, 2026-09-23)
+const DREX_SW_VERSION = 'drex-v16'; // v16: version.json nunca se cachea (mecanismo de actualización C220, 2026-09-27)
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',
@@ -157,6 +157,17 @@ self.addEventListener('notificationclick', event => {
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
+
+  // C220: version.json SIEMPRE va a la red y nunca a la caché (ni se sirve
+  // de ella). Es el chequeo de versión del mecanismo de actualización; si
+  // se cacheara, el cliente compararía contra un build viejo y nunca vería
+  // la versión nueva.
+  try {
+    if (new URL(req.url).pathname.endsWith('/version.json')) {
+      event.respondWith(fetch(req));
+      return;
+    }
+  } catch (e) { /* sigue al flujo normal */ }
 
   // Navegación / HTML: red primero, fallback a caché. Así una versión nueva
   // de index.html siempre llega sin que la caché la bloquee.

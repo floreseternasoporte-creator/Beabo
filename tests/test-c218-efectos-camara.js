@@ -1,5 +1,8 @@
 /* ================================================================
- * Tests de regresión: C218 panel de efectos de la cámara (2026-09-27)
+ * Tests de regresión: C218 efectos de la cámara (2026-09-27;
+ * C220: el panel inferior se eliminó por orden del usuario — la tira
+ * ahora es superior, circular y estilo TikTok; estos tests cubren el
+ * contrato nuevo (los checks del panel viejo viven en git, no aquí)
  * - El normalizador leía `e.name` pero el contrato real de Studio
  *   guarda `nombre` (además de `portada`, `autorUid`, `definicion`):
  *   `nombre` normalizado es contract-compatible (e.nombre || e.name || id)
@@ -193,91 +196,88 @@ test('etiqueta: sin nombre ni usuario => "Efecto sin título", jamás el ID', fu
   assert(label.indexOf('fx-9f3') === -1, 'el ID no debe filtrarse');
 });
 
-/* ---------- overlap: controles vs panel ---------- */
-test('toggle: al abrir el panel se ocultan los controles', function () {
-  reg('drex-cam-effects-panel'); reg('drex-cam-effects-panel-inner');
-  reg('drex-cam-effects-list'); reg('drex-cam-effects-empty');
-  var ctrls = reg('drex-cam-controls');
-  run('drexCamEffectsOpen = false');
-  run('drexCameraToggleEffects()');
-  assert(ctrls.classList.contains('hidden'), 'controles ocultos con el panel abierto');
-  assert.strictEqual(run('drexCamEffectsOpen'), true);
+/* ---------- C220: tira superior (reemplaza el panel inferior) ---------- */
+test('tira: drexCamSetFxTopVisible muestra/oculta la tira superior', function () {
+  var top = reg('drex-cam-fx-topbar');
+  top.classList.add('hidden');
+  run('drexCamSetFxTopVisible(true)');
+  assert(!top.classList.contains('hidden'), 'tira visible');
+  run('drexCamSetFxTopVisible(false)');
+  assert(top.classList.contains('hidden'), 'tira oculta');
 });
-test('cerrar panel: se restauran los controles', function () {
-  var ctrls = registry['drex-cam-controls'];
-  run('drexCameraCloseEffects()');
-  assert(!ctrls.classList.contains('hidden'), 'controles visibles al cerrar el panel');
-  assert.strictEqual(run('drexCamEffectsOpen'), false);
+test('tira: con error de cámara la tira se oculta', function () {
+  reg('drex-cam-error'); reg('drex-cam-controls'); reg('drex-cam-topbar');
+  var top = reg('drex-cam-fx-topbar');
+  run('drexCamShowError()');
+  assert(top.classList.contains('hidden'), 'tira oculta en error');
 });
-test('cerrar panel con error visible: NO pisa el estado de error', function () {
-  var ctrls = registry['drex-cam-controls'];
-  var err = reg('drex-cam-error');
-  err.classList.remove('hidden'); // error visible
-  ctrls.classList.add('hidden');
-  run('drexCameraToggleEffects()'); // abre -> oculta controles
-  assert.strictEqual(run('drexCamEffectsOpen'), true, 'el panel se abrió');
-  run('drexCameraCloseEffects()');  // cierra -> debe respetar el error
-  assert(ctrls.classList.contains('hidden'), 'con error visible los controles siguen ocultos');
-  err.classList.add('hidden');
+test('guard: grabando no se puede cambiar de efecto (como TikTok)', function () {
+  var list = reg('drex-cam-fx-list');
+  run('drexCamRecording = true');
+  run('drexCamSelectedEffect = null');
+  run('drexCamEffects = drexCamNormalizeEffects({fx1:{nombre:"Neon"}})');
+  run('drexCamRenderEffects()');
+  var card = list.children[1];
+  card._handlers.click();
+  assert.strictEqual(run('drexCamSelectedEffect'), null, 'no cambia grabando');
+  run('drexCamRecording = false');
 });
-test('abrir/cerrar cámara deja los controles visibles', function () {
-  var ctrls = registry['drex-cam-controls'];
+test('abrir/cerrar cámara deja la tira visible solo con la cámara abierta', function () {
   var modal = reg('drex-cam-modal');
   var preview = reg('drex-cam-preview');
   preview.play = function () { return Promise.resolve(); };
   sandbox.navigator = { mediaDevices: { getUserMedia: function () {
     return Promise.resolve({ getTracks: function () { return []; } });
   } } };
-  ctrls.classList.add('hidden');
+  var top = reg('drex-cam-fx-topbar');
   run('drexCameraOpen({})');
-  assert(!ctrls.classList.contains('hidden'), 'open restaura controles');
-  assert(!modal.classList.contains('hidden'), 'open muestra el modal');
-  ctrls.classList.add('hidden');
-  run('drexCameraClose()');
-  assert(!ctrls.classList.contains('hidden'), 'close restaura controles');
-  assert(modal.classList.contains('hidden'), 'close oculta el modal');
+  return new Promise(function (res) { setTimeout(res, 30); }).then(function () {
+    assert(!top.classList.contains('hidden'), 'tira visible al abrir');
+    assert(!modal.classList.contains('hidden'), 'open muestra el modal');
+    run('drexCameraClose()');
+    assert(modal.classList.contains('hidden'), 'close oculta el modal (y con él la tira)');
+    assert(top.classList.contains('hidden') || modal.classList.contains('hidden'), 'tira fuera de vista al cerrar');
+  });
 });
 
-/* ---------- render: diamantes + carrusel ---------- */
-test('render: tarjetas en diamante con anillo y foto; la elegida con anillo índigo', function () {
+/* ---------- render: círculos estilo TikTok ---------- */
+test('render: tarjetas circulares con foto; la elegida con anillo índigo', function () {
   /* fx2 pasa por el normalizador real: nombre='fx2' (contrato) + tieneNombre=false */
   run('drexCamEffects = drexCamNormalizeEffects({fx1:{nombre:"Neon", portada:"https://x/p.png", autorUid:""}, fx2:{portada:"", autorUid:"u9"}})');
   run('drexCamSelectedEffect = null');
   run('drexCamRenderEffects()');
-  var list = registry['drex-cam-effects-list'];
+  var list = registry['drex-cam-fx-list'];
   assert.strictEqual(list.children.length, 3, 'Sin efecto + 2 efectos');
   var none = list.children[0];
-  assert(none.className.indexOf('drex-cam-fx-sel') !== -1, '"Sin efecto" seleccionada por defecto');
-  assert(none.className.indexOf('drex-cam-chip-sel') === -1, 'sin chip legacy');
+  assert(none.className.indexOf('drex-cam-fx-tsel') !== -1, '"Sin efecto" seleccionada por defecto');
   var card = list.children[1];
-  assert(card.className.indexOf('drex-cam-fx-card') !== -1, 'clase de tarjeta');
-  var dia = card.children[0];
-  assert.strictEqual(dia.className, 'drex-cam-fx-dia');
-  assert.strictEqual(dia.children[0].className, 'drex-cam-fx-ring', 'anillo del diamante');
-  assert.strictEqual(dia.children[1].className, 'drex-cam-fx-photo', 'foto enderezada dentro');
-  var img = dia.children[1].children[0];
+  assert(card.className.indexOf('drex-cam-fx-tcard') !== -1, 'clase de tarjeta circular');
+  assert(card.children[0].className === 'drex-cam-fx-tcircle', 'círculo primero');
+  var img = card.children[0].children[0];
   assert.strictEqual(img.tagName, 'img', 'la portada va en <img>');
-  assert.strictEqual(card.children[1].className, 'drex-cam-fx-name');
+  assert.strictEqual(card.children[1].className, 'drex-cam-fx-tname');
   assert.strictEqual(card.children[1].textContent, 'Neon');
 });
 
-test('render: sin nombre muestra fallback (nunca ID) y línea de autor vacía', function () {
-  var list = registry['drex-cam-effects-list'];
+test('render: sin nombre muestra fallback (nunca ID)', function () {
+  var list = registry['drex-cam-fx-list'];
   var card = list.children[2];
   var nameEl = card.children[1];
   assert.strictEqual(nameEl.textContent, 'Efecto sin título');
   assert(nameEl.textContent.indexOf('fx2') === -1, 'el ID crudo no aparece');
-  assert.strictEqual(card.children[2].className, 'drex-cam-fx-author', 'línea de autor');
 });
 
 test('render: click selecciona el efecto y mueve el anillo', function () {
-  var list = registry['drex-cam-effects-list'];
+  var list = registry['drex-cam-fx-list'];
   var card = list.children[1]; // fx1
   card._handlers.click();
   var sel = run('drexCamSelectedEffect && drexCamSelectedEffect.id');
   assert.strictEqual(sel, 'fx1');
-  var card2 = list.children[2];
-  assert(card2.className.indexOf('drex-cam-fx-sel') === -1, 'la no elegida no tiene anillo');
+  run('drexCamRenderEffects()');
+  var card2 = registry['drex-cam-fx-list'].children[2];
+  assert(card2.className.indexOf('drex-cam-fx-tsel') === -1, 'la no elegida no tiene anillo');
+  var card1 = registry['drex-cam-fx-list'].children[1];
+  assert(card1.className.indexOf('drex-cam-fx-tsel') !== -1, 'la elegida tiene anillo índigo');
 });
 
 test('resolveUsername: resuelve y cachea (una sola lectura)', function () {
@@ -317,44 +317,42 @@ test('render: tras resolver, la etiqueta pasa a "Efecto de @usuario"', function 
   run('drexCamSelectedEffect = null');
   run('drexCamRenderEffects()');
   return new Promise(function (res) { setTimeout(res, 40); }).then(function () {
-    var list = registry['drex-cam-effects-list'];
+    var list = registry['drex-cam-fx-list'];
     var nodes = list.querySelectorAll('[data-drexfx-eflabel="fx2"]');
     assert(nodes.length > 0, 'nodo de etiqueta encontrado');
     assert.strictEqual(nodes[0].textContent, 'Efecto de @juan9');
-    var anodes = list.querySelectorAll('[data-drexfx-efauthor="fx2"]');
-    assert(anodes.length > 0 && anodes[0].textContent === '@juan9', 'línea de autor con @usuario');
     delete sandbox.DrexCloud;
   });
 });
 
-/* ---------- markup + CSS ---------- */
-test('markup: el panel va por encima de los controles (z-index)', function () {
-  assert(src.indexOf('id="drex-cam-effects-panel" class="absolute bottom-0 left-0 right-0 hidden" style="z-index:30"') !== -1,
-    'panel con z-index:30');
+/* ---------- markup + CSS (C220: tira superior) ---------- */
+test('markup: la tira de efectos va arriba (topbar), nada abajo', function () {
+  assert(src.indexOf('id="drex-cam-fx-topbar"') !== -1, 'topbar presente');
+  assert(src.indexOf('id="drex-cam-fx-list"') !== -1, 'lista presente');
+  assert(src.indexOf('id="drex-cam-effects-panel"') === -1, 'sin panel inferior');
+  assert(src.indexOf('id="drex-cam-effects-btn"') === -1, 'sin botón inferior');
 });
-test('markup: la lista es tira horizontal, ya no grid de 4', function () {
-  assert(src.indexOf('id="drex-cam-effects-list" class="drex-cam-fx-row pb-2"') !== -1, 'clase drex-cam-fx-row');
-  assert(src.indexOf('id="drex-cam-effects-list" class="grid grid-cols-4') === -1, 'sin grid viejo');
+test('markup: la lista es tira horizontal con scroll-snap', function () {
+  assert(src.indexOf('#drex-cam-fx-list') !== -1, 'selector de lista');
+  assert(src.indexOf('overflow-x: auto') !== -1 || src.indexOf('overflow-x:auto') !== -1, 'scroll horizontal');
 });
-test('CSS: snap horizontal obligatorio + scrollbar oculto', function () {
+test('CSS: snap horizontal obligatorio + inercia WebKit', function () {
   assert(src.indexOf('scroll-snap-type: x mandatory') !== -1, 'snap mandatory');
-  assert(src.indexOf('scroll-snap-align: center') !== -1, 'snap-align center');
-  assert(src.indexOf('#drex-cam-effects-list.drex-cam-fx-row::-webkit-scrollbar') !== -1, 'scrollbar oculto');
+  assert(src.indexOf('-webkit-overflow-scrolling: touch') !== -1, 'inercia iOS');
 });
-test('CSS: diamante con clip-path + anillo índigo #2F33B8 en la elegida', function () {
-  assert(src.indexOf('clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)') !== -1, 'clip-path diamante');
-  assert(src.indexOf('.drex-cam-fx-sel .drex-cam-fx-ring') !== -1, 'regla de seleccionada');
-  var i = src.indexOf('.drex-cam-fx-sel .drex-cam-fx-ring');
+test('CSS: círculo + anillo índigo #2F33B8 en la elegida', function () {
+  var i = src.indexOf('.drex-cam-fx-tcard.drex-cam-fx-tsel .drex-cam-fx-tcircle');
+  assert(i !== -1, 'regla de seleccionada');
   var rule = src.slice(i, i + 160);
   assert(rule.indexOf('#2F33B8') !== -1, 'anillo índigo #2F33B8');
 });
-test('CSS: en pantallas bajas el panel no tapa el visor', function () {
+test('CSS: en pantallas bajas la tira se compacta', function () {
   var i = src.indexOf('@media (max-height: 640px)');
   assert(i !== -1, 'media query de altura');
-  var rule = src.slice(i, i + 220);
-  assert(rule.indexOf('#drex-cam-effects-panel-inner') !== -1 && rule.indexOf('44%') !== -1,
-    'max-height reducida en pantallas bajas');
+  var rule = src.slice(i, i + 400);
+  assert(rule.indexOf('#drex-cam-fx-topbar') !== -1, 'topbar en el media');
 });
+
 test('cámara: el catálogo filtra por status published', function () {
   var i = src.indexOf('function drexCameraLoadEffects()');
   var body = src.slice(i, i + 700);
