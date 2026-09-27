@@ -2160,7 +2160,21 @@ var APP_ENGLISH_TEXT = {
 "Publica fotos, videos y votaciones":"Post photos, videos and polls",
 "Vota y haz eco de lo que te gusta":"Vote and echo what you love",
 "Conecta con personas de todo el mundo":"Connect with people around the world",
-"Salas de voz en vivo para practicar idiomas y conocer gente.":"Live voice rooms to practice languages and meet people."
+"Salas de voz en vivo para practicar idiomas y conocer gente.":"Live voice rooms to practice languages and meet people.",
+/* DREX-CAM v1 */
+"Efectos": "Effects",
+"Aún no hay efectos": "No effects yet",
+"Sin efecto": "No effect",
+"Subir archivo": "Upload file",
+"No pudimos acceder a la cámara": "We couldn't access the camera",
+"Revisa el permiso de cámara en tu dispositivo e inténtalo de nuevo.": "Check the camera permission on your device and try again.",
+"Voltear cámara": "Flip camera",
+"Tomar foto": "Take photo",
+"Grabar video": "Record video",
+"Detener": "Stop",
+"La cámara aún no está lista.": "The camera isn't ready yet.",
+"Tu navegador no soporta la grabación de video.": "Your browser doesn't support video recording.",
+
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4319,7 +4333,21 @@ var APP_CHINESE_TEXT = {
 "Publica fotos, videos y votaciones":"发布照片、视频和投票",
 "Vota y haz eco de lo que te gusta":"为你喜欢的内容投票并转发",
 "Conecta con personas de todo el mundo":"与世界各地的人建立连接",
-"Salas de voz en vivo para practicar idiomas y conocer gente.":"实时语音房，练习语言、结识朋友。"
+"Salas de voz en vivo para practicar idiomas y conocer gente.":"实时语音房，练习语言、结识朋友。",
+/* DREX-CAM v1 */
+"Efectos": "特效",
+"Aún no hay efectos": "还没有特效",
+"Sin efecto": "无特效",
+"Subir archivo": "上传文件",
+"No pudimos acceder a la cámara": "无法访问相机",
+"Revisa el permiso de cámara en tu dispositivo e inténtalo de nuevo.": "请检查设备上的相机权限，然后重试。",
+"Voltear cámara": "切换摄像头",
+"Tomar foto": "拍照",
+"Grabar video": "录制视频",
+"Detener": "停止",
+"La cámara aún no está lista.": "相机尚未就绪。",
+"Tu navegador no soporta la grabación de video.": "你的浏览器不支持录制视频。",
+
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6469,7 +6497,21 @@ var APP_PORTUGUESE_TEXT = {
 "Publica fotos, videos y votaciones":"Publique fotos, vídeos e votações",
 "Vota y haz eco de lo que te gusta":"Vote e ecoe o que você gosta",
 "Conecta con personas de todo el mundo":"Conecte-se com pessoas do mundo todo",
-"Salas de voz en vivo para practicar idiomas y conocer gente.":"Salas de voz ao vivo para praticar idiomas e conhecer pessoas."
+"Salas de voz en vivo para practicar idiomas y conocer gente.":"Salas de voz ao vivo para praticar idiomas e conhecer pessoas.",
+/* DREX-CAM v1 */
+"Efectos": "Efeitos",
+"Aún no hay efectos": "Ainda não há efeitos",
+"Sin efecto": "Sem efeito",
+"Subir archivo": "Enviar arquivo",
+"No pudimos acceder a la cámara": "Não foi possível acessar a câmera",
+"Revisa el permiso de cámara en tu dispositivo e inténtalo de nuevo.": "Verifica a permissão da câmera no teu dispositivo e tenta de novo.",
+"Voltear cámara": "Virar câmera",
+"Tomar foto": "Tirar foto",
+"Grabar video": "Gravar vídeo",
+"Detener": "Parar",
+"La cámara aún no está lista.": "A câmera ainda não está pronta.",
+"Tu navegador no soporta la grabación de video.": "Teu navegador não suporta gravação de vídeo.",
+
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

@@ -8758,7 +8758,7 @@ function fiestaGameHTMLFinal() {
         <button id="tool-media" onclick="pickNoteMedia()" class="tap44 w-11 h-11 flex-shrink-0 rounded-full bg-white shadow-sm flex items-center justify-center active:bg-[#e7ecf3] transition" aria-label="Foto o video"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#5c6974]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg></button>
 
         <!-- Cámara (directa, sin salir a otra app) -->
-        <button id="tool-camera" onclick="pickNoteImageFromCamera()" class="tap44 w-11 h-11 flex-shrink-0 rounded-full bg-white shadow-sm flex items-center justify-center active:bg-[#e7ecf3] transition" aria-label="Cámara"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#5c6974]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg></button>
+        <button id="tool-camera" onclick="drexCameraOpen()" class="tap44 w-11 h-11 flex-shrink-0 rounded-full bg-white shadow-sm flex items-center justify-center active:bg-[#e7ecf3] transition" aria-label="Cámara"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#5c6974]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg></button>
 
         <!-- GIF -->
         <button id="tool-gif" onclick="openNoteGifPicker()" class="tap44 w-11 h-11 flex-shrink-0 rounded-full bg-white shadow-sm flex items-center justify-center active:bg-[#e7ecf3] transition" aria-label="GIF"><span class="text-[11px] font-black tracking-tight text-[#5c6974] select-none">GIF</span></button>
@@ -15348,6 +15348,13 @@ function saveNote() {
       };
 
       note.format = currentNoteFormat;
+      // DREX-CAM v1: el effectId viaja en los metadatos del File capturado
+      // con la cámara propia y se conserva en la nota al publicar.
+      try {
+        var _drexCamFx = (typeof notePostVideoFile !== 'undefined' && notePostVideoFile && notePostVideoFile.drexEffectId) ||
+          (typeof imageFiles !== 'undefined' && imageFiles[0] && imageFiles[0].drexEffectId) || null;
+        if (_drexCamFx) note.effectId = _drexCamFx;
+      } catch (_) {}
       if (selectedNoteFlair) note.flair = selectedNoteFlair;
       if (notePostIsSpoiler) note.spoiler = true;
       // CONTENIDO FUERTE (v1): flag del autor; viaja con el post y lo tapa
@@ -77283,6 +77290,522 @@ if (typeof module !== 'undefined' && module.exports) {
 })();
 
 /* =============== FIN BARO v11 =============== */
+</script>
+
+<!-- DREX-CAM v1: cámara propia de Drex (getUserMedia + MediaRecorder, estilo TikTok) -->
+<style>
+/* DREX-CAM v1 */
+@keyframes drexCamSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes drexCamRecBlink { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+.drex-cam-panel-anim { animation: drexCamSlideUp .28s ease-out; }
+.drex-cam-rec-dot { animation: drexCamRecBlink 1s infinite; }
+.drex-cam-chip-sel > span:first-child { outline: 2px solid #2F33B8; outline-offset: 2px; }
+</style>
+<div id="drex-cam-modal" class="fixed inset-0 z-[200] hidden bg-black" role="dialog" aria-modal="true" aria-label="Cámara">
+  <video id="drex-cam-preview" class="absolute inset-0 w-full h-full object-cover" style="background:#000" playsinline muted autoplay></video>
+  <div id="drex-cam-effect-layer" class="absolute inset-0 hidden pointer-events-none"></div>
+
+  <!-- Estado de error / permiso denegado -->
+  <div id="drex-cam-error" class="absolute inset-0 hidden flex-col items-center justify-center text-center" style="background:#0b0f1a;padding-left:2.5rem;padding-right:2.5rem">
+    <div class="w-16 h-16 rounded-full flex items-center justify-center mb-2" style="background:rgba(255,255,255,.08)">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" d="M4 4l16 16"/></svg>
+    </div>
+    <p id="drex-cam-error-title" class="text-white font-bold text-base">No pudimos acceder a la cámara</p>
+    <p id="drex-cam-error-sub" class="text-sm mt-1" style="color:rgba(255,255,255,.7)">Revisa el permiso de cámara en tu dispositivo e inténtalo de nuevo.</p>
+    <button id="drex-cam-retry" onclick="drexCameraRetry()" class="mt-4 px-6 h-11 rounded-full text-white text-sm font-bold active:opacity-80" style="background:#2F33B8">Reintentar</button>
+    <button id="drex-cam-upload" onclick="drexCameraUploadFallback()" class="mt-2 px-6 h-11 rounded-full text-white text-sm font-semibold active:opacity-80" style="background:rgba(255,255,255,.1)">Subir archivo</button>
+  </div>
+
+  <!-- Barra superior -->
+  <div id="drex-cam-topbar" class="absolute top-0 left-0 right-0 flex items-center justify-between px-4" style="padding-top:max(1rem,env(safe-area-inset-top))">
+    <button id="drex-cam-close" onclick="drexCameraClose()" aria-label="Cerrar" class="w-11 h-11 rounded-full text-white flex items-center justify-center active:opacity-80" style="background:rgba(0,0,0,.5)">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+    <div class="flex rounded-full p-1" style="background:rgba(0,0,0,.5)" role="tablist" aria-label="Modo">
+      <button id="drex-cam-mode-photo" onclick="drexCameraSwitchMode('photo')" class="px-5 h-9 rounded-full text-sm font-bold bg-white text-black">Foto</button>
+      <button id="drex-cam-mode-video" onclick="drexCameraSwitchMode('video')" class="px-5 h-9 rounded-full text-sm font-bold text-white/80">Video</button>
+    </div>
+    <button id="drex-cam-flip" onclick="drexCameraFlip()" aria-label="Voltear cámara" class="w-11 h-11 rounded-full text-white flex items-center justify-center active:opacity-80" style="background:rgba(0,0,0,.5)">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v6h6M20 20v-6h-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 9A8 8 0 005.6 5.6L4 7m0 8a8 8 0 0014.4 3.4L20 17"/></svg>
+    </button>
+  </div>
+
+  <!-- Progreso de grabación -->
+  <div id="drex-cam-progress-wrap" class="absolute top-0 left-0 right-0 hidden" style="padding-top:max(1rem,env(safe-area-inset-top))">
+    <div class="mx-4 h-1 rounded-full overflow-hidden" style="background:rgba(255,255,255,.25)">
+      <div id="drex-cam-progress-fill" class="h-full rounded-full" style="width:0%;background:#2F33B8"></div>
+    </div>
+  </div>
+  <div id="drex-cam-countdown" class="absolute hidden" style="top:4.5rem;left:50%;transform:translateX(-50%)">
+    <div class="flex items-center gap-2 px-3 h-8 rounded-full" style="background:rgba(0,0,0,.55)">
+      <span class="drex-cam-rec-dot w-2.5 h-2.5 rounded-full" style="background:#ff3b30"></span>
+      <span id="drex-cam-countdown-num" class="text-white text-sm font-bold tabular-nums">60</span>
+    </div>
+  </div>
+
+  <!-- Panel de efectos (media pantalla, desde abajo) -->
+  <div id="drex-cam-effects-panel" class="absolute bottom-0 left-0 right-0 hidden">
+    <div id="drex-cam-effects-panel-inner" class="rounded-t-3xl px-4 pt-3 flex flex-col" style="background:#141824;max-height:52%;padding-bottom:max(1.5rem,env(safe-area-inset-bottom))">
+      <div class="flex items-center justify-between mb-3">
+        <p id="drex-cam-effects-title" class="text-white font-bold text-base">Efectos</p>
+        <button id="drex-cam-effects-close" onclick="drexCameraCloseEffects()" aria-label="Cerrar" class="w-9 h-9 rounded-full text-white flex items-center justify-center active:opacity-80" style="background:rgba(255,255,255,.1)">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="drex-cam-effects-list" class="grid grid-cols-4 gap-3 overflow-y-auto pb-2"></div>
+      <p id="drex-cam-effects-empty" class="hidden text-sm text-center py-8" style="color:rgba(255,255,255,.6)">Aún no hay efectos</p>
+    </div>
+  </div>
+
+  <!-- Controles inferiores -->
+  <div id="drex-cam-controls" class="absolute bottom-0 left-0 right-0 flex items-center justify-between px-8" style="padding-bottom:max(1.75rem,env(safe-area-inset-bottom))">
+    <button id="drex-cam-effects-btn" onclick="drexCameraToggleEffects()" aria-label="Efectos" class="w-12 h-12 rounded-full text-white flex items-center justify-center active:opacity-80" style="background:rgba(0,0,0,.5)">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></svg>
+    </button>
+    <button id="drex-cam-capture" onclick="drexCameraCapture()" aria-label="Tomar foto" class="relative w-20 h-20 rounded-full flex items-center justify-center active:scale-95 transition shadow-lg" style="background:#2F33B8">
+      <svg id="drex-cam-ring-svg" class="hidden" viewBox="0 0 84 84" style="position:absolute;top:-7px;left:-7px;width:94px;height:94px;transform:rotate(-90deg)">
+        <circle cx="42" cy="42" r="38" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="4"/>
+        <circle id="drex-cam-ring-fg" cx="42" cy="42" r="38" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-dasharray="238.76" stroke-dashoffset="238.76"/>
+      </svg>
+      <span id="drex-cam-capture-icon" class="text-white">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </span>
+      <span id="drex-cam-capture-rec" class="hidden w-7 h-7 rounded-md bg-white"></span>
+    </button>
+    <div class="w-12" aria-hidden="true"></div>
+  </div>
+</div>
+<!-- FIN DREX-CAM v1 -->
+
+<script>
+/* === DREX-CAM v1: cámara propia de Drex (getUserMedia + MediaRecorder) ===
+ * El icono de cámara del composer abre este modal (ya no el input file
+ * nativo). Estilo TikTok con identidad Drex: botón redondo índigo abajo,
+ * selector Foto|Video arriba, voltear cámara, panel de efectos de media
+ * pantalla (lee el nodo `effects/` del backend; vacío = estado diseñado).
+ * API global: window.drexCameraOpen({effect}) / window.drexApplyEffect(def).
+ * La captura (foto a canvas / video MediaRecorder, máx. 60 s) se entrega al
+ * composer por las rutas existentes (handleNoteImagePreviewFullscreen /
+ * handleNoteVideoSelected); el effectId viaja en file.drexEffectId y se
+ * conserva en note.effectId al publicar.
+ * Con el catálogo de efectos vacío, drexApplyEffect es un no-op
+ * documentado: limpia filtro y overlay del preview y devuelve ''.
+ */
+const DREX_CAM_MAX_VIDEO_SEC = 60;
+let drexCamMode = 'photo';            // 'photo' | 'video'
+let drexCamFacing = 'user';           // 'user' (frontal) | 'environment' (trasera)
+let drexCamStream = null;
+let drexCamRecorder = null;
+let drexCamRecChunks = [];
+let drexCamRecTimer = null;
+let drexCamRecStartTs = 0;
+let drexCamRecording = false;
+let drexCamPendingDeliver = false;
+let drexCamEffects = [];              // [{id,name,filter,overlay,icon}]
+let drexCamSelectedEffect = null;     // effectDef o null
+let drexCamEffectsOpen = false;
+const DREX_CAM_RING_C = 238.76;       // 2πr, r=38 del anillo de progreso
+
+/* ---------- helpers puros (testeables sin DOM) ---------- */
+function drexCamTick(elapsedSec) {
+  const max = DREX_CAM_MAX_VIDEO_SEC;
+  const clamped = Math.max(0, Math.min(max, Number(elapsedSec) || 0));
+  return {
+    elapsed: clamped,
+    remaining: Math.max(0, Math.ceil(max - clamped)),
+    frac: max > 0 ? clamped / max : 0,
+    done: clamped >= max
+  };
+}
+function drexCamRingOffset(frac, circumference) {
+  const f = Math.max(0, Math.min(1, Number(frac) || 0));
+  return circumference * (1 - f);
+}
+function drexCamNormalizeEffects(raw) {
+  if (!raw || typeof raw !== 'object') return [];
+  return Object.keys(raw).map(function (k) {
+    const e = raw[k] || {};
+    return {
+      id: String(e.id || k),
+      name: String(e.name || e.id || k),
+      filter: typeof e.filter === 'string' ? e.filter : '',
+      overlay: typeof e.overlay === 'string' ? e.overlay : '',
+      icon: typeof e.icon === 'string' ? e.icon : ''
+    };
+  });
+}
+function drexCamEffectToFilter(def) {
+  if (!def || typeof def.filter !== 'string') return '';
+  return def.filter.trim();
+}
+function drexCamPickRecorderMime() {
+  const cands = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+  try {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+      for (let i = 0; i < cands.length; i++) {
+        if (MediaRecorder.isTypeSupported(cands[i])) return cands[i];
+      }
+    }
+  } catch (_) {}
+  return '';
+}
+function drexCamExtFor(mime) {
+  return /mp4/i.test(String(mime || '')) ? '.mp4' : '.webm';
+}
+
+/* ---------- DOM ---------- */
+function drexCamEl(id) {
+  try { return document.getElementById(id); } catch (_) { return null; }
+}
+function drexCamT(id, esText) {
+  const el = drexCamEl(id);
+  if (el && typeof appT === 'function') { try { el.textContent = appT(esText); } catch (_) {} }
+}
+function drexCamAria(id, esText) {
+  const el = drexCamEl(id);
+  if (el && typeof appT === 'function') { try { el.setAttribute('aria-label', appT(esText)); } catch (_) {} }
+}
+function drexCamRenderStaticTexts() {
+  drexCamT('drex-cam-mode-photo', 'Foto');
+  drexCamT('drex-cam-mode-video', 'Video');
+  drexCamT('drex-cam-effects-title', 'Efectos');
+  drexCamT('drex-cam-effects-empty', 'Aún no hay efectos');
+  drexCamT('drex-cam-error-title', 'No pudimos acceder a la cámara');
+  drexCamT('drex-cam-error-sub', 'Revisa el permiso de cámara en tu dispositivo e inténtalo de nuevo.');
+  drexCamT('drex-cam-retry', 'Reintentar');
+  drexCamT('drex-cam-upload', 'Subir archivo');
+  drexCamAria('drex-cam-close', 'Cerrar');
+  drexCamAria('drex-cam-flip', 'Voltear cámara');
+  drexCamAria('drex-cam-effects-btn', 'Efectos');
+  drexCamAria('drex-cam-effects-close', 'Cerrar');
+  drexCamUpdateCaptureUI();
+}
+function drexCamStopStream() {
+  try {
+    if (drexCamStream) { drexCamStream.getTracks().forEach(function (t) { try { t.stop(); } catch (_) {} }); }
+  } catch (_) {}
+  drexCamStream = null;
+  const preview = drexCamEl('drex-cam-preview');
+  if (preview) { try { preview.srcObject = null; } catch (_) {} }
+}
+function drexCamHasUserMedia() {
+  try { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia); } catch (_) { return false; }
+}
+function drexCamShowError() {
+  const err = drexCamEl('drex-cam-error');
+  const ctrls = drexCamEl('drex-cam-controls');
+  const top = drexCamEl('drex-cam-topbar');
+  if (err) { err.classList.remove('hidden'); err.classList.add('flex'); }
+  if (ctrls) ctrls.classList.add('hidden');
+  if (top) top.classList.add('hidden');
+}
+function drexCamHideError() {
+  const err = drexCamEl('drex-cam-error');
+  const ctrls = drexCamEl('drex-cam-controls');
+  const top = drexCamEl('drex-cam-topbar');
+  if (err) { err.classList.add('hidden'); err.classList.remove('flex'); }
+  if (ctrls) ctrls.classList.remove('hidden');
+  if (top) top.classList.remove('hidden');
+}
+function drexCamStartStream() {
+  drexCamStopStream();
+  if (!drexCamHasUserMedia()) { drexCamShowError(); return Promise.resolve(false); }
+  const constraints = {
+    audio: drexCamMode === 'video',
+    video: { facingMode: drexCamFacing, width: { ideal: 1280 }, height: { ideal: 720 } }
+  };
+  return navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
+    drexCamStream = stream;
+    const preview = drexCamEl('drex-cam-preview');
+    if (preview) {
+      try {
+        preview.srcObject = stream;
+        preview.style.transform = drexCamFacing === 'user' ? 'scaleX(-1)' : '';
+        const p = preview.play();
+        if (p && p.catch) p.catch(function () {});
+      } catch (_) {}
+    }
+    drexCamHideError();
+    return true;
+  }).catch(function () {
+    drexCamShowError();
+    return false;
+  });
+}
+function drexCameraOpen(opts) {
+  opts = (opts && typeof opts === 'object') ? opts : {};
+  try { if (typeof notePostPublishing !== 'undefined' && notePostPublishing) return; } catch (_) {}
+  const modal = drexCamEl('drex-cam-modal');
+  if (!modal) return;
+  if (opts.effect) drexCamSelectedEffect = opts.effect;
+  drexCamRecording = false;
+  drexCamPendingDeliver = false;
+  drexCamEffectsOpen = false;
+  const panel = drexCamEl('drex-cam-effects-panel');
+  if (panel) panel.classList.add('hidden');
+  modal.classList.remove('hidden');
+  drexCamRenderStaticTexts();
+  drexCamApplyModeTabs();
+  drexCamPaintProgress(drexCamTick(0));
+  drexCamStartStream();
+  drexCameraLoadEffects();
+  drexApplyEffect(drexCamSelectedEffect);
+}
+function drexCameraClose() {
+  // Cerrar a mitad de grabación descarta el clip: no se entrega al composer.
+  if (drexCamRecording) drexCamStopRecording(false);
+  drexCamStopStream();
+  const panel = drexCamEl('drex-cam-effects-panel');
+  if (panel) panel.classList.add('hidden');
+  drexCamEffectsOpen = false;
+  const modal = drexCamEl('drex-cam-modal');
+  if (modal) modal.classList.add('hidden');
+}
+function drexCameraRetry() {
+  drexCamHideError();
+  drexCamStartStream();
+}
+function drexCameraUploadFallback() {
+  drexCameraClose();
+  try { if (typeof pickNoteMedia === 'function') pickNoteMedia(); } catch (_) {}
+}
+function drexCamApplyModeTabs() {
+  const tp = drexCamEl('drex-cam-mode-photo');
+  const tv = drexCamEl('drex-cam-mode-video');
+  const on = ['bg-white', 'text-black'];
+  const off = ['text-white/80'];
+  [[tp, drexCamMode === 'photo'], [tv, drexCamMode === 'video']].forEach(function (pair) {
+    const el = pair[0], active = pair[1];
+    if (!el) return;
+    on.forEach(function (c) { try { el.classList.toggle(c, active); } catch (_) {} });
+    off.forEach(function (c) { try { el.classList.toggle(c, !active); } catch (_) {} });
+  });
+}
+function drexCameraSwitchMode(mode) {
+  if (drexCamRecording) return; // como TikTok: no se cambia de modo grabando
+  if (mode !== 'photo' && mode !== 'video') return;
+  if (mode === drexCamMode) return;
+  drexCamMode = mode;
+  drexCamApplyModeTabs();
+  drexCamUpdateCaptureUI();
+  drexCamPaintProgress(drexCamTick(0));
+  drexCamStartStream();
+}
+function drexCameraFlip() {
+  if (drexCamRecording) return;
+  drexCamFacing = drexCamFacing === 'user' ? 'environment' : 'user';
+  drexCamStartStream();
+}
+function drexCamUpdateCaptureUI() {
+  const isVideo = drexCamMode === 'video';
+  const icon = drexCamEl('drex-cam-capture-icon');
+  const rec = drexCamEl('drex-cam-capture-rec');
+  const ring = drexCamEl('drex-cam-ring-svg');
+  const btn = drexCamEl('drex-cam-capture');
+  const cd = drexCamEl('drex-cam-countdown');
+  const bar = drexCamEl('drex-cam-progress-wrap');
+  if (icon) icon.classList.toggle('hidden', drexCamRecording);
+  if (rec) rec.classList.toggle('hidden', !drexCamRecording);
+  if (ring) ring.classList.toggle('hidden', !isVideo);
+  if (btn && typeof appT === 'function') {
+    try { btn.setAttribute('aria-label', appT(drexCamRecording ? 'Detener' : (isVideo ? 'Grabar video' : 'Tomar foto'))); } catch (_) {}
+  }
+  if (!drexCamRecording) {
+    if (cd) cd.classList.add('hidden');
+    if (bar) bar.classList.add('hidden');
+  }
+}
+function drexCamPaintProgress(t) {
+  const fg = drexCamEl('drex-cam-ring-fg');
+  if (fg) { try { fg.style.strokeDashoffset = String(drexCamRingOffset(t.frac, DREX_CAM_RING_C)); } catch (_) {} }
+  const fill = drexCamEl('drex-cam-progress-fill');
+  if (fill) { try { fill.style.width = (t.frac * 100).toFixed(1) + '%'; } catch (_) {} }
+  const num = drexCamEl('drex-cam-countdown-num');
+  if (num) num.textContent = String(t.remaining);
+}
+function drexCameraCapture() {
+  if (drexCamMode === 'video') {
+    if (drexCamRecording) drexCamStopRecording(true);
+    else drexCamStartRecording();
+    return;
+  }
+  drexCamCapturePhoto();
+}
+function drexCamCapturePhoto() {
+  const preview = drexCamEl('drex-cam-preview');
+  if (!preview || !preview.videoWidth) {
+    try { if (typeof showMiniToast === 'function' && typeof appT === 'function') showMiniToast(appT('La cámara aún no está lista.')); } catch (_) {}
+    return;
+  }
+  const vw = preview.videoWidth, vh = preview.videoHeight;
+  const cv = document.createElement('canvas');
+  cv.width = vw; cv.height = vh;
+  try {
+    const ctx = cv.getContext('2d');
+    if (drexCamFacing === 'user') { ctx.translate(vw, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(preview, 0, 0, vw, vh);
+  } catch (_) { return; }
+  const effectId = (drexCamSelectedEffect && drexCamSelectedEffect.id) || null;
+  try {
+    cv.toBlob(function (blob) {
+      if (!blob) return;
+      let file = null;
+      try { file = new File([blob], 'drex-cam-' + Date.now() + '.jpg', { type: 'image/jpeg' }); }
+      catch (_) { return; }
+      if (effectId) { try { file.drexEffectId = effectId; } catch (_) {} }
+      drexCameraClose();
+      try { handleNoteImagePreviewFullscreen({ target: { files: [file], value: '' } }, 'camera'); } catch (_) {}
+    }, 'image/jpeg', 0.92);
+  } catch (_) {}
+}
+function drexCamStartRecording() {
+  if (drexCamRecording || !drexCamStream) return;
+  if (typeof MediaRecorder === 'undefined') {
+    try { if (typeof showMiniToast === 'function' && typeof appT === 'function') showMiniToast(appT('Tu navegador no soporta la grabación de video.')); } catch (_) {}
+    return;
+  }
+  const mime = drexCamPickRecorderMime();
+  let rec = null;
+  try { rec = mime ? new MediaRecorder(drexCamStream, { mimeType: mime }) : new MediaRecorder(drexCamStream); }
+  catch (_) { return; }
+  drexCamRecChunks = [];
+  drexCamPendingDeliver = false;
+  rec.ondataavailable = function (ev) { if (ev && ev.data && ev.data.size) drexCamRecChunks.push(ev.data); };
+  rec.onstop = function () { drexCamFinishRecording(); };
+  drexCamRecorder = rec;
+  drexCamRecording = true;
+  drexCamRecStartTs = Date.now();
+  try { rec.start(250); } catch (_) { drexCamRecording = false; drexCamRecorder = null; return; }
+  const cd = drexCamEl('drex-cam-countdown');
+  const bar = drexCamEl('drex-cam-progress-wrap');
+  if (cd) cd.classList.remove('hidden');
+  if (bar) bar.classList.remove('hidden');
+  drexCamUpdateCaptureUI();
+  drexCamPaintProgress(drexCamTick(0));
+  if (drexCamRecTimer) { try { clearInterval(drexCamRecTimer); } catch (_) {} }
+  drexCamRecTimer = setInterval(function () {
+    const t = drexCamTick((Date.now() - drexCamRecStartTs) / 1000);
+    drexCamPaintProgress(t);
+    if (t.done) drexCamStopRecording(true);
+  }, 200);
+  // Corte duro de seguridad al límite.
+  setTimeout(function () { if (drexCamRecording) drexCamStopRecording(true); }, DREX_CAM_MAX_VIDEO_SEC * 1000 + 400);
+}
+function drexCamStopRecording(deliver) {
+  if (!drexCamRecording) return;
+  drexCamRecording = false;
+  drexCamPendingDeliver = !!deliver;
+  if (drexCamRecTimer) { try { clearInterval(drexCamRecTimer); } catch (_) {} drexCamRecTimer = null; }
+  try { if (drexCamRecorder && drexCamRecorder.state !== 'inactive') drexCamRecorder.stop(); }
+  catch (_) { drexCamRecorder = null; }
+  drexCamUpdateCaptureUI();
+}
+function drexCamFinishRecording() {
+  const chunks = drexCamRecChunks.slice();
+  const deliver = drexCamPendingDeliver;
+  drexCamRecChunks = [];
+  drexCamRecorder = null;
+  drexCamPendingDeliver = false;
+  if (!deliver || !chunks.length) return;
+  const mime = (chunks[0] && chunks[0].type) || 'video/webm';
+  let file = null;
+  try { file = new File([new Blob(chunks, { type: mime })], 'drex-cam-' + Date.now() + drexCamExtFor(mime), { type: mime }); }
+  catch (_) { return; }
+  const effectId = (drexCamSelectedEffect && drexCamSelectedEffect.id) || null;
+  if (effectId) { try { file.drexEffectId = effectId; } catch (_) {} }
+  drexCameraClose();
+  try { handleNoteVideoSelected({ target: { files: [file], value: '' } }); } catch (_) {}
+}
+
+/* ---------- efectos ---------- */
+function drexCameraToggleEffects() {
+  const panel = drexCamEl('drex-cam-effects-panel');
+  if (!panel) return;
+  drexCamEffectsOpen = !drexCamEffectsOpen;
+  panel.classList.toggle('hidden', !drexCamEffectsOpen);
+  const inner = drexCamEl('drex-cam-effects-panel-inner');
+  if (inner) {
+    try {
+      inner.classList.remove('drex-cam-panel-anim');
+      void inner.offsetWidth;
+      if (drexCamEffectsOpen) inner.classList.add('drex-cam-panel-anim');
+    } catch (_) {}
+  }
+  if (drexCamEffectsOpen) drexCameraLoadEffects();
+}
+function drexCameraCloseEffects() {
+  const panel = drexCamEl('drex-cam-effects-panel');
+  if (panel) panel.classList.add('hidden');
+  drexCamEffectsOpen = false;
+}
+function drexCameraLoadEffects() {
+  const done = function (list) { drexCamEffects = list; drexCamRenderEffects(); };
+  try {
+    if (typeof DrexCloud === 'undefined' || !DrexCloud.database) { done([]); return; }
+    DrexCloud.database().ref('effects').once('value').then(function (snap) {
+      let val = null;
+      try { val = snap && snap.val ? snap.val() : null; } catch (_) {}
+      done(drexCamNormalizeEffects(val));
+    }).catch(function () { done([]); });
+  } catch (_) { done([]); }
+}
+function drexCamRenderEffects() {
+  const list = drexCamEl('drex-cam-effects-list');
+  const empty = drexCamEl('drex-cam-effects-empty');
+  if (!list) return;
+  while (list.firstChild) list.removeChild(list.firstChild);
+  const noFxLabel = (typeof appT === 'function') ? appT('Sin efecto') : 'Sin efecto';
+  const mkChip = function (id, label, selected) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'flex flex-col items-center gap-1.5 active:opacity-80' + (selected ? ' drex-cam-chip-sel' : '');
+    const sw = document.createElement('span');
+    sw.className = 'w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center text-white text-xl font-bold overflow-hidden';
+    const initial = String(label || '').trim().charAt(0).toUpperCase();
+    sw.textContent = initial || '✦';
+    const lb = document.createElement('span');
+    lb.className = 'text-white/80 text-xs';
+    lb.style.maxWidth = '4.5rem';
+    lb.textContent = label;
+    b.appendChild(sw);
+    b.appendChild(lb);
+    b.addEventListener('click', function () { drexCameraSelectEffect(id); });
+    return b;
+  };
+  list.appendChild(mkChip(null, noFxLabel, !drexCamSelectedEffect));
+  drexCamEffects.forEach(function (ef) {
+    list.appendChild(mkChip(ef.id, ef.name, !!(drexCamSelectedEffect && drexCamSelectedEffect.id === ef.id)));
+  });
+  if (empty) empty.classList.toggle('hidden', drexCamEffects.length > 0);
+}
+function drexCameraSelectEffect(id) {
+  if (id === null || id === undefined) { drexApplyEffect(null); return; }
+  const found = drexCamEffects.filter(function (e) { return e.id === String(id); })[0] || null;
+  drexApplyEffect(found);
+}
+/* Pipeline real de aplicación sobre el preview. Con el catálogo vacío
+ * (estado actual del nodo `effects/`) es un no-op documentado: limpia
+ * filtro y overlay y devuelve ''. */
+function drexApplyEffect(effectDef) {
+  drexCamSelectedEffect = effectDef || null;
+  const filter = drexCamEffectToFilter(effectDef);
+  try {
+    const preview = drexCamEl('drex-cam-preview');
+    if (preview) preview.style.filter = filter;
+    const layer = drexCamEl('drex-cam-effect-layer');
+    if (layer) {
+      const ov = (effectDef && typeof effectDef.overlay === 'string') ? effectDef.overlay.trim() : '';
+      if (ov) { layer.style.background = ov; layer.classList.remove('hidden'); }
+      else { layer.classList.add('hidden'); layer.style.background = ''; }
+    }
+  } catch (_) {}
+  drexCamRenderEffects();
+  return filter;
+}
+window.drexCameraOpen = drexCameraOpen;
+window.drexApplyEffect = drexApplyEffect;
+/* === FIN DREX-CAM v1 === */
+
 </script>
 
 </body>
