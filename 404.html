@@ -73966,6 +73966,19 @@ if (typeof module !== 'undefined' && module.exports) {
     return u10norm(s).split(' ').filter(function (w) { return w.length > 0; });
   }
 
+  /* F2 (v11): alias de vocabulario ES para nombres de campo/accion.
+     El usuario dice campo:"buscador"; el placeholder real dice "Buscar en
+     Drex". Sin alias, "buscador" puntua 0 y BARO reporta que no lo
+     encuentra. Lista cerrada y conservadora: solo formas nominales obvias
+     del verbo buscar, para no robar controles ajenos. */
+  var U10_ES_ALIAS = {
+    'buscador': 'buscar', 'buscadora': 'buscar',
+    'buscadores': 'buscar', 'busqueda': 'buscar'
+  };
+  function u10alias(s) {
+    return String(s || '').split(' ').map(function (w) { return U10_ES_ALIAS[w] || w; }).join(' ');
+  }
+
   /* ---------------- 2. Visibilidad ---------------- */
   function u10rect(el) {
     try {
@@ -74057,13 +74070,23 @@ if (typeof module !== 'undefined' && module.exports) {
   /* 100 exacto | 80 empieza | 60 palabra completa dentro | 50 todos los
      tokens presentes | 40 parcial. Penaliza textos desproporcionados
      (un parrafo que contiene la palabra no es el boton). */
+  /* Stopwords ES: solo se filtran en queries multi-token ("el buscador"
+     -> "buscador"); las queries de un token no cambian. Sin esto el
+     articulo "el" impide el match por tokens. */
+  var U10_ES_STOP = { el: 1, la: 1, los: 1, las: 1, un: 1, una: 1, unos: 1,
+    unas: 1, de: 1, del: 1, en: 1, al: 1, a: 1, y: 1, con: 1, para: 1,
+    por: 1, mi: 1, tu: 1, su: 1 };
   function u10score(query, signals) {
-    var q = u10norm(query);
+    var q = u10alias(u10norm(query));
     if (!q) return 0;
     var qt = u10tokens(q);
+    if (qt.length > 1) {
+      var qf = qt.filter(function (w) { return !U10_ES_STOP[w]; });
+      if (qf.length > 0) { q = qf.join(' '); qt = qf; }
+    }
     var best = 0;
     for (var i = 0; i < signals.length; i++) {
-      var s = signals[i];
+      var s = u10alias(signals[i]);
       if (!s) continue;
       var sc = 0;
       if (s === q) sc = 100;
@@ -75932,6 +75955,993 @@ if (typeof module !== 'undefined' && module.exports) {
   }
 })();
 
+
+/* ================= BARO v11 - INTEGRACION =================
+ * Tres IIFEs autocontenidos insertados al final del script final.
+ * Orden: planner -> ojos-loop (verificador) -> nlu-votar (F5). F2 vive
+ * dentro del scorer v10 (u10alias + stopwords ES). Ninguno crea bloques
+ * script nuevos ni toca baroHandleUserMessage ni los parches v5-v10.
+ */
+/* ================= BARO v11 · PLANIFICADOR → CONTROL UNIVERSAL =================
+ * Snippet AUTOCONTENIDO para el bloque BARO de index.html (carril A).
+ *
+ * PUNTO DE INSERCION: como IIFE propio DENTRO del bloque script final,
+ * DESPUES del bloque v10-VIGILANTES y ANTES del cierre del script final.
+ * NO crea bloques script nuevos (el literal de cierre de etiqueta esta
+ * prohibido en este archivo, incluso en comentarios). NO toca
+ * baroHandleUserMessage, su catch de diagnostico tecnico, el blindaje
+ * null-det ni los parches v5-v10: solo LEE y REUTILIZA sus APIs publicas.
+ *
+ * BRECHA QUE CIERRA: el planificador v9 (window.baroBrainV9) solo emite
+ * pasos de acciones pre-programadas. "Tocale a X" / "escribe Y en el
+ * buscador" no tenian ruta. Este parche hace que el planificador EMITA
+ * pasos genericos {kind:'universal', action:'tocar'|'escribir'|'leer'}
+ * que se ejecutan via window.baroUniversal.runStep (v10), con el mouse
+ * visible y verificacion honesta.
+ *
+ * HOOKS PUBLICOS QUE USA (contrato para el integrador):
+ *  - window.baroBrainV9.plan(text, ctx) -> se ENVUELVE (idempotente): el plan
+ *    original se respeta; las fases que v9 deja en `unknown` se intentan
+ *    planificar con el parser universal. Emite steps con forma v9:
+ *    {kind:'universal', action:'tocar'|'escribir'|'leer', args, q, label,
+ *     level, needsUser:false, note:null, skip:false}.
+ *  - window.baroTools['cerebro_v9'].run -> se ENVUELVE con try/catch: solo
+ *    toma el control cuando el plan aumentado aporta pasos que el original
+ *    no tenia (objetivos mixtos o puramente universales); si no, delega
+ *    al original intacto. Ante cualquier error interno, delega al original.
+ *  - window.baroUniversal.runStep(step) -> ejecuta los pasos universales.
+ *  - window.baroUniversal.classify(texto).level -> nivel de seguridad por
+ *    texto ('lectura'|'publica'|'destructiva'); sin clasificador: fail-closed.
+ *  - window.baroAgentActions / window.baroTools -> despacho publico para
+ *    pasos kind 'ui' / 'tool' en planes mixtos (mismo despacho que v9runStep).
+ *  - window.baroAskConfirm -> doble puerta para publica/destructiva; si
+ *    falta: fail-closed (el paso no se ejecuta).
+ *  - window.baroV8Agent.audit -> auditoria (si existe).
+ *  - baroRegisterTool('plan_universal', {label, icon, run}) -> tool nueva.
+ *  - baroIntentRules.push({lang, patterns:[...], intent:'plan_universal',
+ *    extract}) + baroIntentToTool['plan_universal']='plan_universal'.
+ *    NUNCA se usa `pattern:` singular (rompio produccion en v10).
+ *
+ * SEGURIDAD: texto que implique publicar/borrar/bloquear/votar/comentar/eco/
+ * compartir exige confirmacion por paso (v9gate-equivalente propio). Sin
+ * maquinaria de confirmacion: fail-closed. Todo se audita.
+ *
+ * HONESTIDAD: si el elemento no se encuentra o el efecto no se verifica,
+ * runStep devuelve el fallo real y el paso se marca FALLIDO con ese motivo;
+ * jamas exito falso. Sin baroUniversal: error honesto 'no_universal'.
+ *
+ * Cero red, cero fetch/XHR/WebSocket.
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (typeof window === 'undefined') return;
+  if (window.baroPlannerV11) return; // idempotente
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patron v5-v10, aditivo) ---------------- */
+  var P11_I18N = {
+    'baro.p11.step_tap':   { es: 'Tocar «{x}»', en: 'Tap "{x}"', zh: '点击“{x}”', pt: 'Tocar em "{x}"' },
+    'baro.p11.step_type':  { es: 'Escribir en «{x}»', en: 'Type into "{x}"', zh: '在“{x}”输入', pt: 'Digitar em "{x}"' },
+    'baro.p11.step_read':  { es: 'Leer pantalla', en: 'Read screen', zh: '读取屏幕', pt: 'Ler a tela' },
+    'baro.p11.confirm_t':  { es: '¿Confirmas este paso del plan?', en: 'Confirm this plan step?', zh: '确认执行此计划步骤吗？', pt: 'Confirma esta etapa do plano?' },
+    'baro.p11.confirm_d':  { es: 'Esto es difícil de deshacer. ¿Seguro?', en: 'This is hard to undo. Sure?', zh: '这很难撤销。确定吗？', pt: 'Isso é difícil de desfazer. Certeza?' },
+    'baro.p11.no_plan':    { es: 'No supe convertir eso en pasos. Dime qué botón toco o qué campo lleno.', en: 'Could not turn that into steps. Tell me which button to tap or which field to fill.', zh: '无法将其转换为步骤。请告诉我要点哪个按钮或填哪个输入框。', pt: 'Não consegui transformar isso em etapas. Diga qual botão toco ou qual campo preencho.' },
+    'baro.p11.no_univ':    { es: 'El control universal no está disponible ahora.', en: 'Universal control is not available right now.', zh: '通用控制当前不可用。', pt: 'O controle universal não está disponível agora.' },
+    'baro.p11.run':        { es: 'Ejecutar plan', en: 'Run plan', zh: '执行计划', pt: 'Executar plano' },
+    'baro.p11.cancel':     { es: 'Cancelar', en: 'Cancel', zh: '取消', pt: 'Cancelar' },
+    'baro.p11.done':       { es: 'Plan completado', en: 'Plan completed', zh: '计划完成', pt: 'Plano concluído' },
+    'baro.p11.stopped':    { es: 'Plan detenido', en: 'Plan stopped', zh: '计划已停止', pt: 'Plano interrompido' },
+    'baro.p11.failed':     { es: 'El plan se detuvo en el paso {n}: {r}', en: 'Plan stopped at step {n}: {r}', zh: '计划在第{n}步停止：{r}', pt: 'O plano parou na etapa {n}: {r}' }
+  };
+  function p11lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function p11t(key, params) {
+    var s = null;
+    try { var e = P11_I18N[key]; s = (e && (e[p11lang()] || e.es)) || key; }
+    catch (_) { s = key; }
+    if (params) Object.keys(params).forEach(function (k) {
+      s = String(s).split('{' + k + '}').join(String(params[k]));
+    });
+    return s;
+  }
+  function p11mergeI18n() {
+    try {
+      var UI = (typeof window !== 'undefined' && window.BARO_UI_I18N) ||
+               (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) || null;
+      if (UI) Object.keys(P11_I18N).forEach(function (k) { if (!(k in UI)) UI[k] = P11_I18N[k]; });
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+  function p11esc(s) {
+    try { if (typeof escapeHtml === 'function') return escapeHtml(s); } catch (_) {}
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function p11norm(s) {
+    return String(s == null ? '' : s).toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  function p11stripQuotes(s) {
+    return String(s == null ? '' : s).replace(/^["'“”'«»]+|["'“”'«»]+$/g, '').trim();
+  }
+  function p11audit(action, level, detail, ok) {
+    try {
+      if (window.baroV8Agent && typeof window.baroV8Agent.audit === 'function')
+        window.baroV8Agent.audit(action, level, String(detail == null ? '' : detail).slice(0, 200), !!ok);
+    } catch (_) {}
+  }
+
+  /* ---------------- 1. Parser universal: fase -> steps ---------------- */
+  /* Devuelve array de steps (forma v9) o null si la fase no es universal. */
+  function p11mkStep(action, args, q, label, level) {
+    return { kind: 'universal', action: action, args: args || {}, q: q || '',
+             label: label || action, level: level || 'lectura',
+             needsUser: false, note: null, skip: false };
+  }
+  function p11levelFor(action, text) {
+    if (action === 'leer' || action === 'escribir') return 'lectura';
+    /* tocar: clasificacion por texto via v10; sin clasificador: fail-closed */
+    try {
+      var U = window.baroUniversal;
+      if (U && typeof U.classify === 'function') {
+        var c = U.classify(text);
+        if (c && (c.level === 'publica' || c.level === 'destructiva' || c.level === 'lectura')) return c.level;
+      }
+    } catch (_) {}
+    return 'destructiva';
+  }
+  function p11parseUniversal(phase, ctx) {
+    var t = String(phase || '').trim();
+    if (!t) return null;
+    var m;
+    /* --- leer: "lee la pantalla" / "lee lo que hay en pantalla" / "read the screen" --- */
+    m = t.match(/^(?:lee|lean|read|leia|lea|mu[eé]strame|dime)\s+(?:(?:lo\s+que|qu[eé])\s+hay\s+en\s+(?:la\s+)?)?(.+?)\s*$/i) ||
+        t.match(/^(?:\u8bfb\u4e00\u4e0b|\u770b\u770b)(.+?)\s*$/) ||
+        t.match(/^(?:leia)\s+(?:a\s+)?(.+?)\s*$/i);
+    if (m) {
+      var zonaRaw = p11stripQuotes(m[1] || '');
+      var zn = p11norm(zonaRaw);
+      var esPantalla = /^(?:la\s+|the\s+|a\s+)?pantalla$|^(?:the\s+)?screen$|^(?:a\s+)?tela$|^\u5c4f\u5e55$/.test(zn) || zn === '';
+      /* evita colision con "lee las notificaciones" mal escrita: solo zona real */
+      if (/pantalla|screen|tela|\u5c4f\u5e55/.test(zn) || zn === '' || /notificaciones|notifications|avisos/.test(zn)) {
+        var zona = esPantalla ? null : zonaRaw;
+        return [p11mkStep('leer', { zona: zona }, t, p11t('baro.p11.step_read'), 'lectura')];
+      }
+    }
+    /* --- escribir: "escribe Y en Z" / "llena el campo Z con Y" / "type Y into Z" --- */
+    m = t.match(/^(?:escribe|escribeme|type|escreva|digite|digita|escreve)\s+["'“”]?(.*?)["'“”]?\s+(?:en\s+(?:el\s+|la\s+)?|into\s+(?:the\s+)?|em\s+(?:o\s+|a\s+)?)\s*(.+?)\s*$/i) ||
+        t.match(/^\u8f93\u5165\s*(.+?)\s*\u5230\s*(.+?)\s*$/) ||
+        t.match(/^(?:\u5728)?(.+?)(?:\u91cc|\u4e2d)?\s*\u8f93\u5165\s*(.+?)\s*$/) ||
+        t.match(/^(?:digite|escreva)\s+(.+?)\s+em\s+(.+?)\s*$/i);
+    if (m) {
+      var campo, texto;
+      /* alt "在Z输入Y": campo=m[1], texto=m[2]; resto: texto=m[1], campo=m[2] */
+      if (/\u8f93\u5165/.test(t) && !/^\u8f93\u5165/.test(t)) { campo = p11stripQuotes(m[1]); texto = p11stripQuotes(m[2]); }
+      else { texto = p11stripQuotes(m[1]); campo = p11stripQuotes(m[2]); }
+      if (texto) return [p11mkStep('escribir', { campo: campo, texto: texto }, t, p11t('baro.p11.step_type', { x: campo || '?' }), 'lectura')];
+    }
+    m = t.match(/^(?:llena|rellena|completa)\s+el\s+campo\s+(.+?)\s+con\s+(.+?)\s*$/i);
+    if (m) {
+      var c2 = p11stripQuotes(m[1]), x2 = p11stripQuotes(m[2]);
+      if (x2) return [p11mkStep('escribir', { campo: c2, texto: x2 }, t, p11t('baro.p11.step_type', { x: c2 }), 'lectura')];
+    }
+    m = t.match(/^(?:escribe|type)\s+(.+?)\s*$/i);
+    if (m && m[1] && p11norm(m[1]).length >= 1 && !/^(?:la\s+)?pantalla$/i.test(m[1])) {
+      /* "escribe hola" sin campo: se emite igual; el localizador fallara honesto */
+      return [p11mkStep('escribir', { campo: '', texto: p11stripQuotes(m[1]) }, t, p11t('baro.p11.step_type', { x: '?' }), 'lectura')];
+    }
+    /* --- tocar: "tócale a X" / "haz clic en X" / "tap X" / "点击X" --- */
+    m = t.match(/^(?:t[oó]cale|toca|toquen|pulsa|presiona|dale\s+clic\s+a|haz\s+clic\s+en|hazle\s+clic\s+a)\s+(?:a\s+|al\s+|el\s+|la\s+|en\s+)?(.+?)\s*$/i) ||
+        t.match(/^(?:tap|click)(?:\s+on)?\s+(.+?)\s*$/i) ||
+        t.match(/^(?:toque|clique)\s+em\s+(.+?)\s*$/i) ||
+        t.match(/^\u70b9\u51fb\s*(.+?)\s*$/);
+    if (m && m[1]) {
+      var target = p11stripQuotes(m[1]);
+      if (target) return [p11mkStep('tocar', { texto: target }, t, p11t('baro.p11.step_tap', { x: target }), p11levelFor('tocar', target))];
+    }
+    return null;
+  }
+
+  /* ---------------- 2. Aumento del plan: unknown -> pasos universales ---------------- */
+  function p11augmentPlan(p, objective, context) {
+    if (!p || p.error === 'all_skipped') return p;
+    if (!p.unknown || !p.unknown.length) return p;
+    var newSteps = [], stillUnknown = [];
+    var phases = (p.phases || []).map(function (ph) {
+      return { text: ph.text, steps: (ph.steps || []).slice() };
+    });
+    p.unknown.forEach(function (ph) {
+      var us = null;
+      try { us = p11parseUniversal(ph, context); } catch (_) { us = null; }
+      if (us && us.length) {
+        newSteps = newSteps.concat(us);
+        for (var i = 0; i < phases.length; i++) {
+          if (phases[i].text === ph) phases[i].steps = phases[i].steps.concat(us);
+        }
+      } else { stillUnknown.push(ph); }
+    });
+    if (!newSteps.length) return p;
+    var steps = (p.steps || []).concat(newSteps);
+    var err = p.error;
+    if (err === 'no_plan' && steps.length) err = null;
+    if (!stillUnknown.length && err && steps.length) err = null;
+    return { error: err, phases: phases, steps: steps, unknown: stillUnknown,
+             limitsUsed: p.limitsUsed || [], context: p.context || context || null };
+  }
+
+  /* ---------------- 3. Puerta de seguridad por paso (equivale a v9gate) ---------------- */
+  function p11gate(step) {
+    return new Promise(function (resolve) {
+      if (step.level !== 'publica' && step.level !== 'destructiva') { resolve(true); return; }
+      try {
+        if (typeof window !== 'undefined' && typeof window.baroAskConfirm === 'function') {
+          window.baroAskConfirm({
+            danger: step.level === 'destructiva',
+            previewHtml: '<p>' + p11esc(p11t(step.level === 'destructiva' ? 'baro.p11.confirm_d' : 'baro.p11.confirm_t')) +
+                         '</p><p><b>' + p11esc(step.label) + '</b></p>',
+            onConfirm: function () { resolve(true); },
+            onCancel: function () { resolve(false); }
+          });
+          return;
+        }
+      } catch (_) {}
+      /* sin maquinaria de confirmacion: fail-closed */
+      resolve(false);
+    });
+  }
+
+  /* ---------------- 4. Ejecutor de pasos ---------------- */
+  /* kind 'universal' -> window.baroUniversal.runStep (contrato del carril).
+     kind 'ui' -> window.baroAgentActions[action].run (despacho publico v9).
+     kind 'tool' -> window.baroTools[action].run (despacho publico v9). */
+  function p11dispatch(step, ctx, ui) {
+    if (step.kind === 'universal') {
+      var U = null;
+      try { U = window.baroUniversal; } catch (_) {}
+      if (!U || typeof U.runStep !== 'function')
+        return Promise.resolve({ ok: false, code: 'no_universal', error: p11t('baro.p11.no_univ') });
+      try {
+        /* el rechazo async se mapea a fallo honesto, nunca explota el executor */
+        return Promise.resolve().then(function () { return U.runStep({ action: step.action, args: step.args || {} }); })
+          .then(null, function (e) { return { ok: false, code: 'ex', error: String((e && e.message) || e) }; });
+      } catch (e) { return Promise.resolve({ ok: false, code: 'ex', error: String((e && e.message) || e) }); }
+    }
+    if (step.kind === 'ui') {
+      var A = null;
+      try { A = window.baroAgentActions; } catch (_) {}
+      var entry = A && (A[step.action] || (typeof A.get === 'function' ? A.get(step.action) : null));
+      if (!entry || typeof entry.run !== 'function')
+        return Promise.resolve({ ok: false, code: 'no_action', error: 'no_action: ' + step.action });
+      try {
+        var r = entry.run(step.args || {}, ui);
+        var pr = (r && typeof r.then === 'function') ? r : Promise.resolve(r);
+        return pr.then(null, function (e) { return { ok: false, code: 'ex', error: String((e && e.message) || e) }; });
+      } catch (e) { return Promise.resolve({ ok: false, code: 'ex', error: String((e && e.message) || e) }); }
+    }
+    var T = null;
+    try { T = window.baroTools && window.baroTools[step.action]; } catch (_) {}
+    if (!T || typeof T.run !== 'function')
+      return Promise.resolve({ ok: false, code: 'no_tool', error: 'tool_no_disponible: ' + step.action });
+    try {
+      var a2 = { q: step.q };
+      Object.keys(step.args || {}).forEach(function (k) { a2[k] = step.args[k]; });
+      var r2 = T.run(a2, ctx);
+      var pr2 = (r2 && typeof r2.then === 'function') ? r2 : Promise.resolve(r2);
+      return pr2.then(null, function (e) { return { ok: false, code: 'ex', error: String((e && e.message) || e) }; });
+    } catch (e) { return Promise.resolve({ ok: false, code: 'ex', error: String((e && e.message) || e) }); }
+  }
+  function p11execSteps(steps, ctx, ui, onRow) {
+    /* Ejecuta en serie; ante el primer fallo se detiene con el motivo real. */
+    var i = 0;
+    function next() {
+      if (i >= steps.length) return Promise.resolve({ ok: true, done: steps.length });
+      var s = steps[i];
+      if (s.skip) { try { onRow(i, 'skip'); } catch (_) {} i++; return next(); }
+      return p11gate(s).then(function (gateOk) {
+        p11audit(s.action, s.level, s.label, gateOk);
+        if (!gateOk) {
+          try { onRow(i, 'fail', 'cancelado'); } catch (_) {}
+          p11audit(s.action, s.level, s.label + ' (denegado)', false);
+          return { ok: false, failedIndex: i, reason: 'cancelado' };
+        }
+        return p11dispatch(s, ctx, ui).then(function (r) {
+          var ok = !!(r && r.ok);
+          p11audit(s.action, s.level, s.label, ok);
+          try { onRow(i, ok ? 'ok' : 'fail', ok ? '' : String((r && (r.error || r.code)) || 'error')); } catch (_) {}
+          if (!ok) return { ok: false, failedIndex: i, reason: String((r && (r.error || r.code)) || 'error') };
+          i++;
+          return next();
+        });
+      });
+    }
+    return next();
+  }
+
+  /* ---------------- 5. Tarjeta de plan visible ---------------- */
+  var P11_PLANS = {};
+  var P11_SEQ = 0;
+  function p11cardHtml(id, plan) {
+    var rows = '';
+    (plan.steps || []).forEach(function (s, i) {
+      rows += '<div class="p11-row" data-p11row="' + i + '">' +
+        '<span class="p11-dot"></span><span class="p11-label">' + p11esc(s.label) + '</span>' +
+        '<span class="p11-st"></span></div>';
+    });
+    return '<div class="baro-v9-plan p11-plan" id="' + p11esc(id) + '">' +
+      '<div class="p11-steps">' + rows + '</div>' +
+      '<div class="p11-actions">' +
+      '<button data-p11run="' + p11esc(id) + '">' + p11esc(p11t('baro.p11.run')) + '</button>' +
+      '<button data-p11cancel="' + p11esc(id) + '">' + p11esc(p11t('baro.p11.cancel')) + '</button>' +
+      '</div><div class="p11-foot"></div></div>';
+  }
+  function p11setRow(card, i, st, msg) {
+    try {
+      var row = card.querySelector('[data-p11row="' + i + '"]');
+      if (!row) return;
+      row.setAttribute('data-st', st);
+      var el = row.querySelector('.p11-st');
+      if (el) el.textContent = st === 'ok' ? '✓' : (st === 'fail' ? ('✗ ' + String(msg || '')) : (st === 'run' ? '…' : ''));
+    } catch (_) {}
+  }
+  function p11installDeleg() {
+    try {
+      if (typeof document === 'undefined' || !document.addEventListener || document.__p11deleg) return;
+      document.__p11deleg = true;
+      document.addEventListener('click', function (ev) {
+        var el = (ev && ev.target && ev.target.closest) ? ev.target.closest('[data-p11run],[data-p11cancel]') : null;
+        if (!el) return;
+        if (el.hasAttribute('data-p11run')) { try { p11executeCard(el.getAttribute('data-p11run')); } catch (_) {} }
+        else { var id2 = el.getAttribute('data-p11cancel'); try { var c = document.getElementById(id2); if (c) c.remove(); } catch (_) {} try { delete P11_PLANS[id2]; } catch (_) {} }
+      });
+    } catch (_) {}
+  }
+  function p11executeCard(id) {
+    var rec = P11_PLANS[id];
+    if (!rec || rec.running) return;
+    rec.running = true;
+    var card = null;
+    try { card = document.getElementById(id); } catch (_) {}
+    var ui = { say: function (t) { try { if (card) { var f = card.querySelector('.p11-foot'); if (f) f.textContent = String(t); } } catch (_) {} }, step: '' };
+    p11execSteps(rec.plan.steps, rec.ctx, ui, function (i, st, msg) { if (card) p11setRow(card, i, st, msg); })
+      .then(function (res) {
+        rec.running = false;
+        var foot = null;
+        try { foot = card && card.querySelector('.p11-foot'); } catch (_) {}
+        if (res.ok) { if (foot) foot.textContent = p11t('baro.p11.done'); }
+        else if (foot) foot.textContent = p11t('baro.p11.failed', { n: res.failedIndex + 1, r: res.reason });
+      });
+  }
+
+  /* ---------------- 6. Tool plan_universal ---------------- */
+  function p11toolRun(args, ctx) {
+    var objective = '';
+    try { objective = String((args && (args.objective || args.q || args.text)) || '').trim(); } catch (_) {}
+    var brain = null;
+    try { brain = window.baroBrainV9; } catch (_) {}
+    if (!brain || typeof brain.plan !== 'function')
+      return '<div class="baro-v9-plan"><p>' + p11esc(p11t('baro.p11.no_univ')) + '</p></div>';
+    var plan = null;
+    try { plan = brain.plan(objective); } catch (e) {
+      return '<div class="baro-v9-plan"><p>' + p11esc(String((e && e.message) || e)) + '</p></div>';
+    }
+    if (!plan || plan.error || !(plan.steps && plan.steps.length))
+      return '<div class="baro-v9-plan"><p>' + p11esc(p11t('baro.p11.no_plan')) + '</p></div>';
+    var id = 'p11p' + (++P11_SEQ).toString(36) + Date.now().toString(36);
+    P11_PLANS[id] = { plan: plan, ctx: ctx, objective: objective, running: false };
+    p11audit('plan_universal', 'lectura', 'plan creado: ' + plan.steps.length + ' pasos', true);
+    return p11cardHtml(id, plan);
+  }
+
+  /* ---------------- 7. Enganches (aditivos, con red de seguridad) ---------------- */
+  function p11hookBrain() {
+    var brain = null;
+    try { brain = window.baroBrainV9; } catch (_) {}
+    if (!brain || typeof brain.plan !== 'function' || brain.__p11wrapped) return;
+    var origPlan = brain.plan;
+    brain.plan = function (text, context) {
+      var p = origPlan.call(brain, text, context);
+      try { return p11augmentPlan(p, text, context); } catch (_) { return p; }
+    };
+    brain.__p11wrapped = true;
+    brain.__p11origPlan = origPlan;
+  }
+  function p11hookCerebroTool() {
+    var T = null;
+    try { T = window.baroTools && window.baroTools['cerebro_v9']; } catch (_) {}
+    if (!T || typeof T.run !== 'function' || T.__p11wrapped) return;
+    var origRun = T.run;
+    var brain = null;
+    try { brain = window.baroBrainV9; } catch (_) {}
+    var origPlan = (brain && brain.__p11origPlan) || null;
+    T.run = function (args, ctx) {
+      try {
+        if (origPlan && brain) {
+          var objective = String((args && (args.objective || args.q || args.text)) || '').trim();
+          var op = origPlan.call(brain, objective);
+          var ap = brain.plan(objective);
+          var on = (op && op.steps) ? op.steps.length : 0;
+          var an = (ap && ap.steps) ? ap.steps.length : 0;
+          if (ap && !ap.error && an > on) {
+            /* El aumento aporta pasos: tarjeta propia con ejecutor universal. */
+            return p11toolRun({ objective: objective }, ctx);
+          }
+        }
+      } catch (_) { /* ante cualquier duda: el original manda */ }
+      return origRun.call(this, args, ctx);
+    };
+    T.__p11wrapped = true;
+  }
+
+  /* ---------------- 8. Reglas NLU (formato OBLIGATORIO con patterns[]) ---------------- */
+  var P11_RULES = [
+    /* ES tocar */
+    { pats: [/\bt[oó]cale\s+(?:a\s+|al\s+)?(.+)/i, /\bhaz\s+clic\s+en\s+(.+)/i, /\btoca\s+(?:el\s+|la\s+|al\s+)?(.+)/i, /\bpulsa\s+(?:el\s+|la\s+)?(.+)/i, /\bpresiona\s+(?:el\s+|la\s+)?(.+)/i], ex: 'tocar' },
+    /* ES escribir */
+    { pats: [/\bescribe\s+["'“”]?(.*?)["'“”]?\s+en\s+(?:el\s+|la\s+)?(.+)/i, /\bllena\s+el\s+campo\s+(.+?)\s+con\s+(.+)/i, /\bescribe\s+(.+)/i], ex: 'escribir' },
+    /* ES leer */
+    { pats: [/\blee\s+(?:lo\s+que\s+hay\s+en\s+)?(?:la\s+)?pantalla/i, /\bdime\s+qu[eé]\s+hay\s+en\s+pantalla/i], ex: 'leer' },
+    /* EN */
+    { pats: [/\btap\s+(?:on\s+)?(.+)/i, /\bclick\s+(?:on\s+)?(.+)/i], ex: 'tocar' },
+    { pats: [/\btype\s+["']?(.*?)["']?\s+into\s+(.+)/i, /\btype\s+(.+)/i], ex: 'escribir' },
+    { pats: [/\bread\s+(?:what'?s\s+on\s+)?(?:the\s+)?screen/i], ex: 'leer' },
+    /* ZH */
+    { pats: [/\u70b9\u51fb\s*(.+)/], ex: 'tocar' },
+    { pats: [/\u5728(.+?)\u8f93\u5165(.+)/, /\u8f93\u5165(.+?)\u5230(.+)/], ex: 'escribir' },
+    { pats: [/\u8bfb\u4e00\u4e0b\u5c4f\u5e55/, /\u770b\u770b\u5c4f\u5e55\u4e0a\u6709\u4ec0\u4e48/], ex: 'leer' },
+    /* PT */
+    { pats: [/\btoque\s+em\s+(.+)/i, /\bclique\s+em\s+(.+)/i], ex: 'tocar' },
+    { pats: [/\bdigite\s+(.+?)\s+em\s+(.+)/i, /\bescreva\s+(.+?)\s+em\s+(.+)/i], ex: 'escribir' },
+    { pats: [/\bleia\s+(?:a\s+)?tela/i], ex: 'leer' }
+  ];
+  function p11registerRules() {
+    try {
+      if (typeof baroIntentRules === 'undefined' || !Array.isArray(baroIntentRules)) return;
+      if (baroIntentRules.__p11done) return;
+      P11_RULES.forEach(function (r) {
+        baroIntentRules.push({
+          lang: 'es',
+          patterns: r.pats.slice(), /* NUNCA `pattern:` singular */
+          intent: 'plan_universal',
+          extract: function (text) {
+            var t = String(text || '');
+            /* "escribe un comentario / un post" es de otro tool: declinar para
+               que el scorer pase a la siguiente regla (contrato baroDetectIntent).
+               Solo aplica al verbo escribir (no a "toca el comentario"). */
+            if (/^(?:escribe|escribeme|type|escreva|digite|digita|escreve)\b/i.test(t) &&
+                /(comentario|comment|publicaci[oó]n|\bpost\b)/i.test(t) &&
+                !/\sen\s+(el\s+|la\s+)?\S/i.test(t)) return null;
+            return { objective: t, q: t };
+          }
+        });
+      });
+      baroIntentRules.__p11done = true;
+    } catch (_) {}
+    try {
+      if (typeof baroIntentToTool !== 'undefined' && baroIntentToTool && typeof baroIntentToTool === 'object')
+        baroIntentToTool['plan_universal'] = 'plan_universal';
+    } catch (_) {}
+  }
+  function p11registerKeywords() {
+    /* Bonus de scorer para el intent (aditivo; frases estrechas, no verbos sueltos). */
+    try {
+      if (typeof BARO_INTENT_KEYWORDS === 'object' && BARO_INTENT_KEYWORDS && !BARO_INTENT_KEYWORDS.plan_universal) {
+        BARO_INTENT_KEYWORDS.plan_universal = [
+          'tócale', 'tócala', 'haz clic', 'hazle clic', 'lee la pantalla',
+          'read the screen', 'llena el campo', 'type into',
+          'toque em', 'clique em', 'leia a tela', 'digite',
+          '点击', '读一下屏幕', '看看屏幕上有什么', '输入'
+        ];
+      }
+    } catch (_) {}
+  }
+  function p11registerTool() {
+    try {
+      if (typeof baroRegisterTool === 'function' && !p11registerTool.done) {
+        baroRegisterTool('plan_universal', { label: 'Plan universal', icon: '👆', run: p11toolRun });
+        p11registerTool.done = true;
+      }
+    } catch (_) {}
+  }
+
+  /* ---------------- 9. API publica + arranque ---------------- */
+  var api = {
+    version: 11,
+    parse: p11parseUniversal,
+    augment: p11augmentPlan,
+    execSteps: p11execSteps,
+    dispatch: p11dispatch,
+    gate: p11gate,
+    toolRun: p11toolRun
+  };
+  try {
+    p11mergeI18n();
+    p11registerTool();
+    p11registerRules();
+    p11registerKeywords();
+    p11hookBrain();
+    p11hookCerebroTool();
+    p11installDeleg();
+    window.baroPlannerV11 = api;
+  } catch (_) {
+    try { window.baroPlannerV11 = api; } catch (_2) {}
+  }
+})();
+
+/* ================= BARO · v11-OJOS-LOOP (carril B) =================
+ * RUTEO DE VIGILANTES + OJOS EN EL VERIFICADOR.
+ *
+ * Snippet AUTOCONTENIDO para el bloque BARO de index.html.
+ *
+ * PUNTO DE INSERCION: como IIFE propio DENTRO del bloque script final,
+ * DESPUES del bloque v10-VIGILANTES y ANTES del cierre del script final.
+ * NO crea bloques script nuevos (el literal de cierre de etiqueta esta
+ * prohibido en este archivo, incluso en comentarios). NO toca
+ * baroHandleUserMessage, su catch de diagnostico tecnico, el blindaje
+ * null-det ni los parches v5-v10: solo LEE y REUTILIZA sus APIs publicas
+ * (baroIntentRules, window.baroVision, window.baroAgentActions).
+ *
+ * DOS BRECHAS QUE CIERRA:
+ *  1. RUTEO: "avisame cuando tenga un seguidor nuevo" caia en
+ *     util_recordatorio (empate 5-5 que el desempate alfabetico regalaba a
+ *     'util_recordatorio'). Se agregan 6 reglas NLU con patrones
+ *     multi-acierto (2-3 hits de +4 c/u) para que 'vigilar' y 'mi_rutina'
+ *     ganen por goleada, sin robarle frases genericas de recordatorio.
+ *  2. VERIFICACION CIEGA: el ejecutor marcaba pasos completos confiando en
+ *     el return de la accion. Ahora cada accion de window.baroAgentActions
+ *     se envuelve: fingerprint barato antes/después; si la pantalla no
+ *     cambio de forma visible tras dos ventanas de settle -> paso FALLIDO
+ *     honesto ({ok:false, code:'sin_cambio_visual'}), nunca exito falso.
+ *     Las mutaciones propias de Baro (cursor #baro-v9-cursor,
+ *     .baro-v9-ripple, #baro-thread, #baro-view) se ignoran.
+ *
+ * SEGURIDAD (endurecido v11.1):
+ *  - NUNCA se re-ejecuta una accion para verificarla. Re-ejecutar a ciegas
+ *    duplicaria efectos publicos/destructivos (doble post, doble voto,
+ *    doble borrado) si el primer intento si tuvo efecto pero el DOM tardo
+ *    en pintarlo. Ante la duda se espera un segundo settle y se falla
+ *    honesto; no se repite el side-effect.
+ *  - Acciones de solo-lectura o espera (leer_pantalla, esperar,
+ *    adjuntar_foto) se declaran `verifyNoCheck` y pasan directo: su
+ *    ok:true YA es la verificacion (el dato leido, la condicion cumplida,
+ *    el change real del picker). Verificarlas por cambio DOM daria falsos
+ *    fallos y, en el picker, re-abriria el dialogo nativo.
+ */
+(function () {
+  'use strict';
+  if (typeof window === 'undefined') return;
+  if (window.__baroV11OjosLoop) return; // guard anti-doble
+  window.__baroV11OjosLoop = true;
+  var W = window;
+  var D = (typeof document !== 'undefined') ? document : null;
+
+  /* ================= 1. NLU: reglas que ganan =================
+   * Formato OBLIGATORIO del contrato: {langs, patterns:[RegExp...], intent,
+   * extract}. PROHIBIDO `pattern:` singular (el blindaje del scorer lo
+   * neutralizaria a score 0 y, peor, antes rompia todo el scoring).
+   * Reusan los intents 'vigilar' y 'mi_rutina' (ya mapeados a sus tools por
+   * v10 en baroIntentToTool): no se agregan intents nuevos ni tools nuevas.
+   */
+  function q11(t) { return { q: String(t == null ? '' : t) }; }
+  function tagOf(t) {
+    var tag = null;
+    try {
+      var m = /#([A-Za-z0-9_\-ÁÉÍÓÚáéíóúñÑüÜ]+)/.exec(String(t || ''));
+      if (m) tag = m[1];
+    } catch (_) {}
+    return tag;
+  }
+
+  var V11_RULES = [
+    /* R1: vigilar -> crear vigilante de seguidor nuevo */
+    {
+      langs: ['es', 'en', 'zh', 'pt'],
+      intent: 'vigilar',
+      patterns: [
+        /av[íi]same\s+cuando/i, /seguidor(es)?\s+nuevos?/i, /cuando\s+tenga\s+un\s+seguidor/i,
+        /notify\s+me\s+when/i, /new\s+follower/i, /when\s+i\s+get\s+a\s+new\s+follower/i,
+        /me\s+avis[ae]\s+quando/i, /seguidor(es)?\s+novos?/i,
+        /提醒我/i, /新粉丝/i
+      ],
+      extract: function (t) { var r = q11(t); r.kind = 'crear'; r.type = 'seguidor_nuevo'; return r; }
+    },
+    /* R2: vigilar -> crear vigilante de posts nuevos en #onda */
+    {
+      langs: ['es', 'en', 'zh', 'pt'],
+      intent: 'vigilar',
+      patterns: [
+        /av[íi]same\s+cuando/i, /posts?\s+nuevos?\s+en\s+#/i, /hay[a]?\s+posts?\s+nuevos?/i,
+        /notify\s+me\s+when/i, /new\s+posts?\s+(in|on)\s+#/i, /there\s+are\s+new\s+posts?/i,
+        /me\s+avis[ae]\s+quando/i, /posts?\s+novos?\s+(em|n[ao])\s+#/i, /houver\s+posts?\s+novos?/i,
+        /提醒我/i, /新帖子/i, /#.{1,12}新帖子/i
+      ],
+      extract: function (t) { var r = q11(t); r.kind = 'crear'; r.type = 'posts_onda'; r.tag = tagOf(t); return r; }
+    },
+    /* R3: vigilar -> dejar de vigilar */
+    {
+      langs: ['es', 'en', 'zh', 'pt'],
+      intent: 'vigilar',
+      patterns: [
+        /deja\s+de\s+vigilar/i, /dejar\s+de\s+vigilar/i, /dejen\s+de\s+vigilar/i,
+        /stop\s+watching/i, /unwatch/i,
+        /para\s+de\s+vigiar/i, /deixa\s+de\s+vigiar/i, /parar\s+de\s+vigiar/i,
+        /停止监视/i, /别再监视/i, /不再监视/i
+      ],
+      extract: function (t) {
+        var r = q11(t); r.kind = 'eliminar'; r.target = '';
+        try {
+          var m = /(?:deja|dejar|dejen)\s+de\s+vigilar\s+(.+)/i.exec(String(t || ''));
+          if (m) r.target = m[1].replace(/^a\s+/i, '').trim();
+        } catch (_) {}
+        return r;
+      }
+    },
+    /* R4: vigilar -> listar / que estoy vigilando */
+    {
+      langs: ['es', 'en', 'zh', 'pt'],
+      intent: 'vigilar',
+      patterns: [
+        /qu[eé]\s+est[aá]s\s+vigilando/i, /qu[eé]\s+vigilas/i, /mis\s+vigilantes/i, /qu[eé]\s+estoy\s+vigilando/i,
+        /what\s+are\s+you\s+watching/i, /what\s+am\s+i\s+watching/i, /my\s+watchers?/i,
+        /o\s+que\s+(você|voce)\s+est[aá]\s+vigiando/i, /meus\s+vigilantes/i,
+        /我在监视什么/i, /我的监视/i
+      ],
+      extract: function (t) { var r = q11(t); r.kind = 'listar'; return r; }
+    },
+    /* R5: mi_rutina -> correr / ejecutar */
+    {
+      langs: ['es', 'en', 'zh', 'pt'],
+      intent: 'mi_rutina',
+      patterns: [
+        /corre\s+mi\s+rutina/i, /ejecuta\s+mi\s+rutina/i, /ejecutar\s+mi\s+rutina/i,
+        /haz\s+mi\s+rutina/i, /pon\s+en\s+marcha\s+mi\s+rutina/i,
+        /run\s+my\s+routine/i, /execute\s+my\s+routine/i,
+        /executa\s+minha\s+rotina/i, /rodar\s+minha\s+rotina/i, /roda\s+minha\s+rotina/i,
+        /执行我的.{0,6}例行程序/i, /运行我的.{0,4}例行程序/i
+      ],
+      extract: function (t) {
+        var r = q11(t); r.kind = 'correr'; r.name = '';
+        try { var m = /rutina\s+(?:de\s+)?(.+)/i.exec(String(t || '')); if (m) r.name = m[1].trim(); } catch (_) {}
+        return r;
+      }
+    },
+    /* R6: mi_rutina -> guardar como */
+    {
+      langs: ['es', 'en', 'zh', 'pt'],
+      intent: 'mi_rutina',
+      patterns: [
+        /guarda\s+esta\s+rutina\s+como/i, /guardar\s+esta\s+rutina/i, /crea\s+esta\s+rutina/i,
+        /save\s+(this\s+)?routine\s+as/i, /create\s+this\s+routine/i,
+        /salva\s+essa\s+rotina\s+como/i, /cria\s+essa\s+rotina/i,
+        /把.{0,12}保存为/i, /例行程序/i
+      ],
+      extract: function (t) {
+        var r = q11(t); r.kind = 'guardar'; r.name = '';
+        try { var m = /como\s+([^:]+)/i.exec(String(t || '')); if (m) r.name = m[1].trim(); } catch (_) {}
+        return r;
+      }
+    }
+  ];
+
+  try {
+    var IR = (typeof baroIntentRules !== 'undefined' && Array.isArray(baroIntentRules)) ? baroIntentRules :
+             ((W.baroIntentRules && Array.isArray(W.baroIntentRules)) ? W.baroIntentRules : null);
+    if (IR && IR.push) {
+      for (var ri = 0; ri < V11_RULES.length; ri++) IR.push(V11_RULES[ri]);
+    }
+  } catch (_) {}
+  /* Sin mapeos nuevos en baroIntentToTool: 'vigilar' y 'mi_rutina' ya los
+     registro v10. No se registra ninguna tool nueva. */
+
+  /* ================= 2. Fingerprint barato =================
+   * Hash djb2 sobre recorrido acotado del DOM. Ignora subarboles propios
+   * de Baro (cursor, ripples, hilo del chat y vista de Baro) para que el
+   * movimiento del mouse NO cuente como "cambio real".
+   */
+  var FP_MAX_NODES = 600;
+  function fpSkip(el) {
+    var id = '';
+    try { id = el.id || ''; } catch (_) {}
+    if (id === 'baro-v9-cursor' || id === 'baro-thread' || id === 'baro-view') return true;
+    var cls = '';
+    try { cls = el.className || ''; } catch (_) {}
+    if (typeof cls !== 'string') { try { cls = String(cls); } catch (_) { cls = ''; } }
+    if (cls.indexOf('baro-v9-ripple') !== -1) return true;
+    return false;
+  }
+  function fpDirectText(el) {
+    var t = '';
+    try {
+      var cn = el.childNodes, k;
+      for (k = 0; k < cn.length; k++) {
+        if (cn[k] && cn[k].nodeType === 3) {
+          t += cn[k].nodeValue || '';
+          if (t.length > 40) break;
+        }
+      }
+    } catch (_) {}
+    return t.replace(/\s+/g, ' ').slice(0, 40);
+  }
+  function fpHash(str) {
+    var h = 5381, i;
+    for (i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+  function ojosLoopFingerprint() {
+    try {
+      if (!D || !D.body) return 'noroot';
+      var parts = [];
+      try { parts.push('route=' + (W.location && W.location.hash ? W.location.hash : '')); } catch (_) {}
+      try { parts.push('title=' + D.title); } catch (_) {}
+      var stack = [D.body], count = 0, el, i, k, ch;
+      while (stack.length && count < FP_MAX_NODES) {
+        el = stack.pop();
+        if (!el || el.nodeType !== 1) continue;
+        if (fpSkip(el)) continue; // subarbol propio de Baro: no cuenta
+        count++;
+        var tag = '';
+        try { tag = el.tagName || ''; } catch (_) {}
+        var idc = '';
+        try { idc = el.id || ''; } catch (_) {}
+        var clsc = '';
+        try { clsc = el.className || ''; if (typeof clsc !== 'string') clsc = ''; } catch (_) {}
+        clsc = clsc.split(' ')[0] || '';
+        var sig = tag + '|' + idc + '|' + clsc;
+        if (tag !== 'SCRIPT' && tag !== 'STYLE') {
+          sig += '|' + fpDirectText(el);
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+            try { sig += '|v=' + String(el.value == null ? '' : el.value).slice(0, 40); } catch (_) {}
+          }
+          try {
+            var dsp = (el.style && el.style.display) ? el.style.display : '';
+            if (dsp) sig += '|d=' + dsp;
+            if (el.hidden) sig += '|h=1';
+          } catch (_) {}
+        }
+        parts.push(sig);
+        try {
+          ch = el.children;
+          for (k = ch.length - 1; k >= 0; k--) stack.push(ch[k]);
+        } catch (_) {}
+      }
+      parts.push('n=' + count + (count >= FP_MAX_NODES ? '+' : ''));
+      /* Posicion de scroll: scroll_a y navegaciones que solo mueven el
+         viewport tambien cuentan como cambio visible. */
+      try {
+        var sx = 0, sy = 0;
+        if (W.pageXOffset != null) { sx = W.pageXOffset; sy = W.pageYOffset; }
+        else if (D.documentElement) {
+          sx = D.documentElement.scrollLeft || 0;
+          sy = D.documentElement.scrollTop || 0;
+        }
+        parts.push('scroll=' + sx + ',' + sy);
+      } catch (_) {}
+      return 'v11|' + fpHash(parts.join('\n'));
+    } catch (_) {
+      return 'error';
+    }
+  }
+
+  /* ================= 3. Verificador de pasos ================= */
+  var SETTLE_MS = 500;
+  function isThenable(x) { return x && typeof x.then === 'function'; }
+  function fpChanged(before, after) {
+    return after !== 'error' && before !== 'error' && after !== before;
+  }
+  function failVisual(step) {
+    var label = '?';
+    try { label = (step && (step.label || step.action)) || '?'; } catch (_) {}
+    return {
+      ok: false,
+      code: 'sin_cambio_visual',
+      error: 'sin_cambio_visual: el paso "' + label + '" se ejecutó pero la ' +
+             'pantalla no cambió de forma visible tras esperar dos ventanas ' +
+             'de settle. No se re-ejecutó (repetir el paso podría duplicar ' +
+             'un efecto público/destructivo). No se marca como completado.'
+    };
+  }
+  /* Ejecuta runFn() con verificacion visual. runFn: function() -> {ok} | Promise.
+   * Retorna Promise que resuelve {ok:true,...} o un fallo honesto.
+   *
+   * REGLAS DE SEGURIDAD (v11.1):
+   *  - step.verifyNoCheck: la accion se ejecuta y su resultado pasa directo,
+   *    sin verificacion visual. Para lecturas (leer_pantalla), esperas
+   *    (esperar) y pickers que esperan al usuario (adjuntar_foto): su ok
+   *    ya es la verificacion y no producen cambio DOM.
+   *  - JAMAS se re-ejecuta runFn para verificar. Si no hay cambio visible
+   *    tras el primer settle, se espera un segundo settle (el SPA puede
+   *    tardar en pintar) y se vuelve a comparar SIN correr la accion otra
+   *    vez. Si sigue igual -> fallo honesto.
+   *  - Un runFn que ya devuelve ok:false (o lanza) se propaga tal cual,
+   *    sin verificacion: el fallo honesto de la accion manda. */
+  function verifyStep(step, runFn) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish(r) { if (!done) { done = true; resolve(r); } }
+      var noCheck = false;
+      try { noCheck = !!(step && step.verifyNoCheck); } catch (_) {}
+      var before = noCheck ? null : ojosLoopFingerprint();
+      var p = null;
+      try { p = runFn(); } catch (e) {
+        finish({ ok: false, error: String((e && e.message) || e), code: 'ex' });
+        return;
+      }
+      function afterFirst(res) {
+        if (!res || res.ok === false) { finish(res); return; } // ya es honesto
+        if (noCheck) { finish(res); return; } // lectura/espera: su ok es la prueba
+        setTimeout(function () {
+          if (fpChanged(before, ojosLoopFingerprint())) { finish(res); return; }
+          /* Sin cambio visible: segundo settle SIN re-ejecutar. */
+          setTimeout(function () {
+            if (fpChanged(before, ojosLoopFingerprint())) { finish(res); return; }
+            finish(failVisual(step));
+          }, SETTLE_MS);
+        }, SETTLE_MS);
+      }
+      if (isThenable(p)) p.then(afterFirst, function (e) {
+        finish({ ok: false, error: String((e && e.message) || e), code: 'ex' });
+      });
+      else afterFirst(p);
+    });
+  }
+
+  /* Envuelve las acciones de window.baroAgentActions (mapa {id:{run}} y/o
+   * forma {get(id), list()}). Idempotente: no re-envuelve. El ejecutor v9
+   * lee window.baroAgentActions en cada paso, asi el envoltorio aplica sin
+   * tocar su codigo.
+   *
+   * CLASIFICACION DE SEGURIDAD (v11.1):
+   *  - OJOS_NO_VERIFY: acciones cuyo ok ya ES la verificacion y que no
+   *    producen cambio DOM. Se ejecutan y su resultado pasa directo.
+   *      leer_pantalla: lectura pura; el dato devuelto es el exito.
+   *      esperar: espera una condicion; la espera en si no muta el DOM.
+   *      adjuntar_foto: abre el picker NATIVO y espera al USUARIO (hasta
+   *        120s). Su ok:true ya viene verificado por el evento change real;
+   *        verificar por DOM daria falsos fallos y re-ejecutar re-abriria
+   *        el dialogo del sistema.
+   *    Una accion tambien puede declararse entry.verifyNoCheck = true.
+   *  - Todo lo demas (incluidas las publicas/destructivas: publicar,
+   *    votar_post, hacer_eco, comentar_post) se verifica visualmente pero
+   *    JAMAS se re-ejecuta: ante la duda se espera y se falla honesto. */
+  var OJOS_NO_VERIFY = { leer_pantalla: 1, esperar: 1, adjuntar_foto: 1 };
+  function wrapEntry(id, entry) {
+    if (!entry || typeof entry.run !== 'function' || entry.__ojosLoopWrapped) return;
+    var origRun = entry.run;
+    var noCheck = !!OJOS_NO_VERIFY[id] || !!entry.verifyNoCheck;
+    function wrappedRun(args, ui) {
+      var step = { action: id, verifyNoCheck: noCheck };
+      try {
+        if (ui && typeof ui.step === 'string') step.label = ui.step;
+        else if (args && args._label) step.label = args._label;
+      } catch (_) {}
+      return verifyStep(step, function () { return origRun.call(entry, args, ui); });
+    }
+    try { entry.__ojosLoopOrig = origRun; } catch (_) {}
+    entry.run = wrappedRun;
+    entry.__ojosLoopWrapped = true;
+  }
+  function rewrapActions() {
+    var A = null;
+    try { A = W.baroAgentActions; } catch (_) {}
+    if (!A || typeof A !== 'object') return 0;
+    var n = 0;
+    try {
+      if (typeof A.get === 'function' && typeof A.list === 'function') {
+        var ids = A.list() || [];
+        for (var i = 0; i < ids.length; i++) {
+          var e = null;
+          try { e = A.get(ids[i]); } catch (_) {}
+          if (e && !e.__ojosLoopWrapped) { wrapEntry(ids[i], e); n++; }
+        }
+      }
+    } catch (_) {}
+    try {
+      var keys = Object.keys(A);
+      for (var k = 0; k < keys.length; k++) {
+        var key = keys[k];
+        if (key === 'get' || key === 'list') continue;
+        var ent = null;
+        try { ent = A[key]; } catch (_) {}
+        if (ent && typeof ent === 'object') {
+          if (!ent.__ojosLoopWrapped) { wrapEntry(key, ent); n++; }
+        }
+      }
+    } catch (_) {}
+    return n;
+  }
+  function uninstallLoop() {
+    var A = null;
+    try { A = W.baroAgentActions; } catch (_) {}
+    if (A && typeof A === 'object') {
+      try {
+        var keys = Object.keys(A);
+        for (var k = 0; k < keys.length; k++) {
+          var ent = null;
+          try { ent = A[keys[k]]; } catch (_) {}
+          if (ent && ent.__ojosLoopWrapped && typeof ent.__ojosLoopOrig === 'function') {
+            ent.run = ent.__ojosLoopOrig;
+            try { delete ent.__ojosLoopWrapped; delete ent.__ojosLoopOrig; } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  /* Auto-instalacion: las acciones v8/v9/v10 ya existen a esta altura del
+   * script. Si aun no (orden de insercion distinta), reintenta una vez. */
+  try {
+    var w0 = rewrapActions();
+    if (!w0 && typeof setTimeout === 'function') {
+      setTimeout(function () { try { rewrapActions(); } catch (_) {} }, 1500);
+    }
+  } catch (_) {}
+
+  W.baroOjosLoop = {
+    version: '11-carrilB',
+    rules: V11_RULES,
+    fingerprint: ojosLoopFingerprint,
+    verifyStep: verifyStep,
+    rewrap: rewrapActions,
+    uninstall: uninstallLoop,
+    SETTLE_MS: SETTLE_MS
+  };
+})();
+
+/* ================= BARO v11 · NLU VOTAR (fix F5) =================
+ * Snippet AUTOCONTENIDO para el bloque BARO de index.html.
+ *
+ * PUNTO DE INSERCION: como IIFE propio DENTRO del bloque script final,
+ * DESPUES del bloque v10-VIGILANTES y ANTES del cierre del script final
+ * (junto a los otros parches v11). NO crea bloques script nuevos.
+ * NO toca baroHandleUserMessage, el scorer, ni v5-v10: solo REPARA reglas.
+ *
+ * CAUSA RAIZ (verificada contra el scorer real baroScoreRule):
+ * El punto de idioma solo se otorga si `rule.langs` (array) contiene el
+ * idioma detectado. Las 23 reglas votar del bloque v4 (oleada 2) usan el
+ * formato viejo `lang:"es"` (string singular) -> jamas reciben el punto
+ * de idioma. Resultado:
+ *   "vota positivo en el post" -> votar_post 4pts vs publicar 4pts
+ *   (keyword 'post' 3 + idioma 1) -> empate -> desempate alfabetico ->
+ *   'publicar' gana. INCORRECTO.
+ * Ademas "quiero votar en la encuesta" no matchea ningun pattern votar
+ * existente (los regex exigen "vota"/"voto" pegado a "encuesta").
+ *
+ * FIX:
+ *  1. Normalizar `lang` (string) -> `langs` ([string]) en TODAS las reglas
+ *     cargadas que aun usen el formato viejo. Solo afecta al bloque votar
+ *     (es el unico que usa `lang:` singular en produccion).
+ *  2. Dos reglas aditivas ES para el phrasing "quiero votar...".
+ * Todo aditivo: no se modifica ni elimina ninguna regla existente.
+ * ================================================================ */
+(function () {
+  'use strict';
+  try {
+    if (typeof baroIntentRules === 'undefined' || !baroIntentRules) return;
+    /* 1. Normalizar formato viejo lang:"xx" -> langs:["xx"] */
+    if (typeof baroIntentRules.forEach === 'function') {
+      baroIntentRules.forEach(function (r) {
+        if (r && typeof r.lang === 'string' && !r.langs) {
+          try { r.langs = [r.lang]; } catch (_) {}
+        }
+      });
+    }
+    /* 2. Phrasing "quiero votar..." (el bloque v4 no lo cubre) */
+    if (typeof baroIntentRules.push === 'function') {
+      baroIntentRules.push(
+        { langs: ['es'], patterns: [/quiero\s+votar\s+en\s+el\s+post/i, /votar\s+en\s+el\s+post/i], tool: 'votar_post', intent: 'votar_post' },
+        { langs: ['es'], patterns: [/quiero\s+votar\s+en\s+la\s+encuesta/i, /quiero\s+votar/i], tool: 'votar_encuesta', intent: 'votar_encuesta' }
+      );
+    }
+  } catch (_) {}
+})();
+
+/* =============== FIN BARO v11 =============== */
 </script>
 
 </body>
