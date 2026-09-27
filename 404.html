@@ -57109,6 +57109,359 @@ try { if (typeof baro6dExpose === 'function') { baro6dExpose('baroBrainPickTie',
 /* ---------- 8M-D: seam de test (test-c122) ---------- */
 try { if (typeof baro6dExpose === 'function') { baro6dExpose('baroBrain', { detect: function(t){ return baroDetectIntent(t); }, split: baroBrainSplit, tie: baroBrainTie, scoreAll: baroBrainScoreAll, memGet: baroBrainMemGet, memClear: baroBrainMemClear, resolveRef: baroBrainResolveRef, recordResult: baroBrainMemRecordResult, peekForced: baroBrainPeekForced, pickTie: baroBrainPickTie, runMulti: baroBrainRunMulti, chainPrefill: baroBrainChainPrefill }); } } catch (_) {}
 
+/* ================= BARO · v5-NLU: stemming ES, sinónimos, typos, entidades ================= */
+/* =====================================================================
+   BARO v5 — NLU: stemming ES, sinonimos, typos sobre stems, entidades
+   extendidas y desempate por longitud de match.
+   ---------------------------------------------------------------------
+   INSERCION (patron 8M): pegar este bloque DENTRO del IIFE del
+   sub-bloque 6b, justo antes de la linea
+     /* ---------- exposicion global ---------- *\/
+   (despues del bloque 8M). Sin IIFE propio, sin bloques <script> nuevos,
+   sin APIs externas ni fetch. Todo con guards try/catch: ante cualquier
+   fallo, el comportamiento original se conserva intacto.
+
+   NO toca: baroHandleUserMessage, su catch ("Detalle tecnico"), ni el
+   blindaje null-det. NO toca: BARO_INTENT_CONF_THRESHOLD ni BARO_SCORE_W
+   (el EPS de empates de 8M se calcula desde sus pesos).
+   No agrega strings visibles -> no requiere claves i18n nuevas.
+   ===================================================================== */
+
+var __baroV5WrapDone = false;
+try { __baroV5WrapDone = !!(baroScoreRule && baroScoreRule.__baroV5Wrapped); } catch (_) { __baroV5WrapDone = false; }
+
+/* ---------- v5-1: stemming ligero espanol ----------
+ * Opera sobre texto ya normalizado (baroNorm: minusculas, sin acentos).
+ * Reglas ordenadas de sufijo mas largo a mas corto; se itera hasta
+ * estabilizar (max 5 rondas). Ambos lados se stemmean (palabras del
+ * mensaje y keywords), asi la comparacion es consistente. */
+function baroV5Stem(w) {
+  try {
+    var s = String(w || '');
+    if (s.length < 4) return s;
+    var prev = '', rounds = 0;
+    while (s !== prev && rounds < 5) {
+      prev = s; rounds++;
+      if (s.length > 6 && /mente$/.test(s)) s = s.replace(/mente$/, '');
+      else if (s.length > 6 && /(ando|iendo|yendo)$/.test(s)) s = s.replace(/(ando|iendo|yendo)$/, '');
+      else if (s.length > 5 && /(ado|ido)$/.test(s)) s = s.replace(/(ado|ido)$/, '');
+      else if (s.length > 6 && /(acion|cion|sion)$/.test(s)) s = s.replace(/(acion|cion|sion)$/, '');
+      else if (s.length > 4 && /(ar|er|ir)$/.test(s)) s = s.replace(/(ar|er|ir)$/, '');
+      else if (s.length > 4 && /es$/.test(s)) s = s.replace(/es$/, '');
+      else if (s.length > 4 && /s$/.test(s)) s = s.replace(/s$/, '');
+      else if (s.length > 4 && /[aeo]$/.test(s)) s = s.replace(/[aeo]$/, '');
+    }
+    return s;
+  } catch (_) { return String(w || ''); }
+}
+
+/* ---------- v5-2: expansion de sinonimos ES/EN/PT ----------
+ * Solo intents EXISTENTES (no se inventa ninguno). Se normalizan con
+ * baroNorm al cargar. Curados para no colisionar con keywords base. */
+var BARO_V5_SYNONYMS_RAW = {
+  ayuda: ['auxilio', 'echenme una mano'],
+  eliminar_post: ['retira', 'retirar', 'tumba', 'tumbar', 'erase'],
+  reportar: ['flag'],
+  resumir_hilo: ['sintetiza', 'sintesis', 'condensa', 'condensar'],
+  programar: ['calendariza', 'calendarizar', 'pospone', 'posponer',
+              'reprograma', 'reprogramar', 'aplaza', 'aplazar'],
+  publicar: ['sube', 'subir', 'comparte', 'compartir', 'difunde', 'difundir',
+             'upload', 'share', 'compartilha'],
+  investigar_tema: ['averigua', 'averiguar', 'indaga', 'indagar',
+                    'explora', 'explorar'],
+  preguntar: [],
+  perfil_foto: ['selfie', 'avatar'],
+  perfil_portada: ['banner'],
+  musica_subir: ['track'],
+  musica_mis_subidas: []
+};
+var BARO_V5_SYNONYMS = {};
+try {
+  Object.keys(BARO_V5_SYNONYMS_RAW).forEach(function (k) {
+    var arr = BARO_V5_SYNONYMS_RAW[k] || [];
+    BARO_V5_SYNONYMS[k] = arr.map(function (s) {
+      try { return baroNorm(s); } catch (_) { return String(s || '').toLowerCase(); }
+    });
+  });
+} catch (_) {}
+
+/* Pesos v5: locales (NO se agregan a BARO_SCORE_W para no alterar el
+ * EPS de empates del carril 8M, que es el peso minimo de ese objeto). */
+var BARO_V5_W = { synonym: 3, stem: 2, typoStem: 1 };
+
+var __baroV5StemCache = {};
+function baroV5StemKws(intent) {
+  try {
+    if (__baroV5StemCache[intent]) return __baroV5StemCache[intent];
+    var out = [];
+    var base = (typeof BARO_INTENT_KEYWORDS === 'object' && BARO_INTENT_KEYWORDS)
+      ? (BARO_INTENT_KEYWORDS[intent] || []) : [];
+    var extra = BARO_V5_SYNONYMS[intent] || [];
+    var all = base.concat(extra);
+    for (var i = 0; i < all.length; i++) {
+      var kw = all[i];
+      if (!kw || /[\u4e00-\u9fff]/.test(kw) || kw.indexOf(' ') !== -1) continue;
+      out.push({ kw: kw, stem: baroV5Stem(kw) });
+    }
+    __baroV5StemCache[intent] = out;
+    return out;
+  } catch (_) { return []; }
+}
+
+/* Senales v5 para una regla: sinonimos (peso keyword), stemming y
+ * typos sobre stems (Levenshtein <=2, palabra >=5, misma inicial). */
+function baroV5ScoreExtra(rule, t, norm, words) {
+  var out = { add: 0, syn: 0, stem: 0, typoStem: 0 };
+  try {
+    var intent = rule && rule.intent;
+    if (!intent) return out;
+    var syns = BARO_V5_SYNONYMS[intent] || [];
+    var baseKws = (typeof BARO_INTENT_KEYWORDS === 'object' && BARO_INTENT_KEYWORDS)
+      ? (BARO_INTENT_KEYWORDS[intent] || []) : [];
+    var padded = ' ' + norm + ' ';
+    var cjkRe = /[\u4e00-\u9fff]/;
+    var i, kw;
+    /* Palabras ya cubiertas por un match exacto (base o sinonimo):
+     * el stemming no debe contar doble la misma senal. */
+    var exactWords = {};
+    function markExact(list) {
+      for (var k = 0; k < list.length; k++) {
+        var ek = list[k];
+        if (!ek || cjkRe.test(ek) || ek.indexOf(' ') !== -1) continue;
+        var re = null;
+        try { re = new RegExp('\\b' + ek.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b'); } catch (_) { re = null; }
+        if (re && re.test(norm)) exactWords[ek] = 1;
+      }
+    }
+    markExact(baseKws);
+    markExact(syns);
+    /* 1) sinonimos con peso de keyword exacta */
+    for (i = 0; i < syns.length; i++) {
+      kw = syns[i];
+      var hit = false;
+      if (cjkRe.test(kw)) hit = t.indexOf(kw) !== -1;
+      else if (kw.indexOf(' ') !== -1) hit = padded.indexOf(' ' + kw + ' ') !== -1;
+      else {
+        var kre = null;
+        try { kre = new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b'); } catch (_) { kre = null; }
+        hit = !!(kre && kre.test(norm));
+      }
+      if (hit) out.syn += BARO_V5_W.synonym;
+    }
+    /* 2) stemming y 3) typos sobre stems */
+    var skws = baroV5StemKws(intent);
+    if (skws.length && words && words.length) {
+      var wi, w, sw, ki, ks;
+      var stemOf = {};
+      for (wi = 0; wi < words.length; wi++) {
+        w = words[wi];
+        if (!w || exactWords[w]) continue;
+        sw = baroV5Stem(w);
+        if (sw && sw.length >= 3) stemOf[w] = sw;
+      }
+      var creditedStem = {};
+      for (wi = 0; wi < words.length; wi++) {
+        w = words[wi];
+        sw = stemOf[w];
+        if (!sw || creditedStem[sw]) continue;
+        for (ki = 0; ki < skws.length; ki++) {
+          if (skws[ki].stem === sw && skws[ki].kw !== w) {
+            creditedStem[sw] = 1;
+            out.stem += BARO_V5_W.stem;
+            break;
+          }
+        }
+      }
+      if (typeof baroLevenshtein === 'function') {
+        for (wi = 0; wi < words.length; wi++) {
+          w = words[wi];
+          if (!w || w.length < 5 || exactWords[w] || cjkRe.test(w)) continue;
+          sw = stemOf[w] || baroV5Stem(w);
+          if (!sw || sw.length < 5) continue;
+          for (ki = 0; ki < skws.length; ki++) {
+            ks = skws[ki].stem;
+            if (!ks || ks.length < 5 || ks === sw) continue;
+            if (ks.charAt(0) !== sw.charAt(0)) continue;
+            if (Math.abs(ks.length - sw.length) > 2) continue;
+            if (baroLevenshtein(sw, ks, 2) <= 2) { out.typoStem += BARO_V5_W.typoStem; break; }
+          }
+        }
+      }
+    }
+    out.add = out.syn + out.stem + out.typoStem;
+  } catch (_) {}
+  return out;
+}
+
+/* Longitud del match mas largo (patterns por texto matcheado real,
+ * keywords/sinonimos por longitud). Usado solo para desempatar. */
+function baroV5MatchLen(rule, t, norm) {
+  var ml = 0;
+  try {
+    var pats = (rule && rule.patterns) || [], i, pat, m;
+    for (i = 0; i < pats.length; i++) {
+      pat = pats[i];
+      try {
+        if (pat instanceof RegExp) {
+          m = t.match(pat) || norm.match(pat);
+          if (m && m[0]) ml = Math.max(ml, m[0].length);
+        } else {
+          var ps = String(pat);
+          if (ps && norm.indexOf(ps.toLowerCase()) !== -1) ml = Math.max(ml, ps.length);
+        }
+      } catch (_) {}
+    }
+    var kws = ((typeof BARO_INTENT_KEYWORDS === 'object' && BARO_INTENT_KEYWORDS)
+      ? (BARO_INTENT_KEYWORDS[rule.intent] || []) : [])
+      .concat(BARO_V5_SYNONYMS[rule.intent] || []);
+    var padded = ' ' + norm + ' ';
+    var cjkRe = /[\u4e00-\u9fff]/;
+    for (i = 0; i < kws.length; i++) {
+      var kw = kws[i];
+      try {
+        if (cjkRe.test(kw)) { if (t.indexOf(kw) !== -1) ml = Math.max(ml, kw.length); }
+        else if (kw.indexOf(' ') !== -1) { if (padded.indexOf(' ' + kw + ' ') !== -1) ml = Math.max(ml, kw.length); }
+        else {
+          var kre = new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+          if (kre.test(norm)) ml = Math.max(ml, kw.length);
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return ml;
+}
+
+/* ---------- v5-4: entidades extendidas ----------
+ * Envuelve baroExtractEntities (aditivo): agrega url, numbers y
+ * extiende timeRef con 'manana', 'pasado_manana', relativas
+ * ("en 2 horas"/"en 30 minutos") y dia de semana ("el lunes").
+ * El shape existente se conserva; los hints de entidad del scoring
+ * (BARO_INTENT_ENTITY_HINTS) se benefician solos. */
+var __v5OrigExtractEntities = null;
+try { __v5OrigExtractEntities = (typeof baroExtractEntities === 'function') ? baroExtractEntities : null; } catch (_) { __v5OrigExtractEntities = null; }
+
+function baroV5NormEntities(ent) {
+  var o = { mention: null, wave: null, url: null, song: null, time: null, numbers: [] };
+  try {
+    if (!ent || typeof ent !== 'object') return o;
+    if (ent.mention) o.mention = String(ent.mention);
+    if (ent.wave) o.wave = String(ent.wave);
+    if (ent.url) o.url = String(ent.url);
+    if (ent.song) o.song = String(ent.song);
+    var tr = ent.timeRef;
+    if (typeof tr === 'string' && tr) o.time = { kind: 'named', value: tr };
+    else if (tr && typeof tr === 'object') {
+      if (tr.kind === 'relative') o.time = { kind: 'relative', minutes: tr.minutes };
+      else if (tr.kind === 'weekday') o.time = { kind: 'weekday', day: tr.day };
+      else o.time = { kind: 'named', value: String(tr.value || '') };
+    }
+    if (ent.numbers && ent.numbers.length) {
+      o.numbers = ent.numbers.slice(0, 5).map(function (x) { return String(x); });
+    }
+  } catch (_) {}
+  return o;
+}
+
+if (!__baroV5WrapDone) {
+  try {
+    baroExtractEntities = function (text) {
+      var ent = null;
+      try { ent = __v5OrigExtractEntities ? __v5OrigExtractEntities(text) : {}; }
+      catch (e0) { ent = {}; }
+      if (!ent || typeof ent !== 'object') ent = {};
+      try {
+        var t = String(text || '');
+        var n = '';
+        try { n = baroNorm(t); } catch (_) { n = t.toLowerCase(); }
+        try {
+          var um = t.match(/https?:\/\/[^\s<>"']{4,220}/i);
+          ent.url = um ? um[0] : (ent.url || null);
+        } catch (_) { if (!('url' in ent)) ent.url = null; }
+        var days = { lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6, domingo: 0 };
+        var relH = n.match(/\b(?:en|dentro de)\s+(\d{1,3})\s+horas?\b/);
+        var relM = relH ? null : n.match(/\b(?:en|dentro de)\s+(\d{1,3})\s+minutos?\b/);
+        var dm = n.match(/\b(?:el|este)\s+(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/);
+        if (/\bpasado\s+manana\b/.test(n)) ent.timeRef = 'pasado_manana';
+        else if (/\bmanana\b/.test(n)) ent.timeRef = 'manana';
+        else if (relH) ent.timeRef = { kind: 'relative', minutes: parseInt(relH[1], 10) * 60 };
+        else if (relM) ent.timeRef = { kind: 'relative', minutes: parseInt(relM[1], 10) };
+        else if (dm) ent.timeRef = { kind: 'weekday', day: days[dm[1]] };
+        var nums = t.match(/\b\d{1,6}\b/g);
+        ent.numbers = nums ? nums.slice(0, 5) : [];
+      } catch (_) {}
+      return ent;
+    };
+  } catch (_) {}
+}
+
+/* ---------- v5-2/3/5: scoring mejorado ----------
+ * Envuelve baroScoreRule (aditivo): suma senales v5 y agrega una
+ * fraccion determinista matchLen/1000 (< EPS(1) de empates de 8M) para
+ * desempatar por longitud de match en vez de solo alfabetico. No altera
+ * el umbral de confianza de forma material (<=0.06/12 en conf). */
+var __v5OrigScoreRule = null;
+try { __v5OrigScoreRule = (typeof baroScoreRule === 'function') ? baroScoreRule : null; } catch (_) { __v5OrigScoreRule = null; }
+
+if (!__baroV5WrapDone) {
+  try {
+    baroScoreRule = function (rule, t, norm, words, entities, lang) {
+      var base = null;
+      try { base = __v5OrigScoreRule ? __v5OrigScoreRule(rule, t, norm, words, entities, lang) : null; }
+      catch (e0) { base = null; }
+      if (!base || typeof base.score !== 'number') {
+        base = { score: 0, sig: { pattern: 0, keyword: 0, entity: 0, lang: 0, typo: 0 } };
+      }
+      try {
+        var extra = baroV5ScoreExtra(rule, t, norm, words);
+        if (extra.add > 0) {
+          base.score += extra.add;
+          base.sig.v5syn = extra.syn;
+          base.sig.v5stem = extra.stem;
+          base.sig.v5typoStem = extra.typoStem;
+          if (!(base.sig.lang > 0) && rule && rule.langs && rule.langs.indexOf(lang) !== -1) {
+            base.score += 1;
+            base.sig.lang = (base.sig.lang || 0) + 1;
+          }
+        }
+        var ml = baroV5MatchLen(rule, t, norm);
+        base.sig.v5matchLen = ml;
+        if (ml > 0 && base.score > 0) base.score += Math.min(ml, 60) / 1000;
+      } catch (_) { /* fallback silencioso: score base intacto */ }
+      return base;
+    };
+    try { baroScoreRule.__baroV5Wrapped = true; } catch (_) {}
+  } catch (_) {}
+}
+
+/* ---------- args.entities normalizadas ----------
+ * Envuelve baroDetectIntent (solo agrega; respeta el contrato null que
+ * usa el blindaje null-det del handler). */
+var __v5OrigDetect = null;
+try { __v5OrigDetect = (typeof baroDetectIntent === 'function') ? baroDetectIntent : null; } catch (_) { __v5OrigDetect = null; }
+
+if (!__baroV5WrapDone) {
+  try {
+    baroDetectIntent = function (text) {
+      var res = null;
+      try { res = __v5OrigDetect ? __v5OrigDetect(text) : null; }
+      catch (e0) { res = null; }
+      if (!res || typeof res !== 'object') return res;
+      try {
+        var ent = null;
+        try { ent = (typeof baroExtractEntities === 'function') ? baroExtractEntities(text) : null; }
+        catch (_) { ent = null; }
+        if (!res.args || typeof res.args !== 'object') res.args = {};
+        res.args.entities = baroV5NormEntities(ent);
+      } catch (_) {}
+      return res;
+    };
+    try { baroDetectIntent.__baroV5Wrapped = true; } catch (_) {}
+  } catch (_) {}
+}
+
+try { __baroV5WrapDone = true; } catch (_) {}
+
+
 /* ---------- exposición global ---------- */
   // baroHandleUserMessage SOBREESCRIBE la versión inicial de 6a (mismo nombre,
   // este bloque va después). El resto son helpers del sub-bloque 6b.
@@ -57123,6 +57476,765 @@ try { if (typeof baro6dExpose === 'function') { baro6dExpose('baroBrain', { dete
   __export('baroClarifyIntent', baroClarifyIntent);
   __export('baroMakeCtx', baroMakeCtx);
   __export('baroIntentToTool', baroIntentToTool);
+})();
+
+
+/* ================= BARO · v5-MEM: referencias, slot filling, fechas relativas ================= */
+/* ================= BARO v5 · memoria conversacional + slot filling =================
+ * Snippet AUTOCONTENIDO para el bloque BARO de index.html.
+ *
+ * PUNTO DE INSERCION: como IIFE propio DENTRO del bloque script del bloque BARO,
+ * DESPUES del cierre del sub-bloque 6b+8M y ANTES del marcador
+ *   /* ================= BARO · integración: enlaces de fuentes ================= *\/
+ * NO crea bloques script nuevos. NO edita ninguna funcion existente: solo
+ * ENVUELVE (wrapping aditivo, mismo patron del carril 8M). No redefine
+ * baroHandleUserMessage (solo la envuelve por fuera), ni su catch con
+ * "Detalle tecnico", ni el blindaje null-det.
+ *
+ * Usa SOLO globales ya existentes (todo con guards): window.baroBrain (seam 8M-D),
+ * baroTools, baroRegisterTool, baroResolvePostTarget, baroClarifyHtml,
+ * baroAddBaroMessage, baroAddUserMessage, baroMakeV2Ctx, baro6dExpose.
+ * Cero red, cero APIs externas. Memoria 100% en sesion (se pierde al recargar).
+ *
+ * Contenido:
+ *   1. baroV5ParseDate(text, nowMs) — fechas relativas ES/EN/PT/ZH -> timestamp.
+ *      Extra v5 (puro, testeable): "pasado mañana", "esta noche", dia de semana
+ *      sin hora, "en N horas"; delega al baroExtractSchedule base para el resto.
+ *   2. baroV5ResolveRef(desc, mem) — referencias robustas ("ese", "el segundo",
+ *      "el anterior", "el de @juan"); delega PRIMERO al 8M-B (no lo duplica).
+ *   3. Slot filling publicar/programar: la aclaratoria existente (missing_text /
+ *      missing_time) se convierte en tarjeta con estado pendiente; al responder
+ *      (texto o boton) completa los slots y ejecuta la herramienta real, que
+ *      muestra su tarjeta de confirmacion 6d. Nada se escribe sin confirmacion.
+ *   4. Preferencias del hilo: idioma ("en español", "in english", ...) y ultima
+ *      opcion de hora elegida (reservada); solo sesion.
+ * Si algo falla: mensaje honesto / aclaracion con botones. Nunca inventa.
+ */
+(function () {
+  'use strict';
+
+  /* ---------- 0. utilidades ---------- */
+  function __v5g() {
+    try {
+      if (typeof window !== 'undefined' && window) return window;
+      if (typeof globalThis !== 'undefined' && globalThis) return globalThis;
+      if (typeof self !== 'undefined' && self) return self;
+    } catch (_) {}
+    return null;
+  }
+  function __v5norm(s) {
+    var t = String(s == null ? '' : s).toLowerCase();
+    try { t = t.normalize('NFD').replace(/[̀-ͯ]/g, ''); } catch (_) {}
+    return t;
+  }
+  function __v5esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function __v5paint(html) {
+    try {
+      var g = __v5g();
+      if (g && typeof g.baroAddBaroMessage === 'function') { g.baroAddBaroMessage(html); return true; }
+      if (typeof baroAddBaroMessage === 'function') { baroAddBaroMessage(html); return true; }
+    } catch (_) {}
+    return false;
+  }
+  function __v5paintUser(t) {
+    try {
+      var g = __v5g();
+      if (g && typeof g.baroAddUserMessage === 'function') { g.baroAddUserMessage(t); return; }
+      if (typeof baroAddUserMessage === 'function') baroAddUserMessage(t);
+    } catch (_) {}
+  }
+
+  /* ---------- 1. i18n ES/EN/ZH/PT (patron de merge del carril 8M-A) ---------- */
+  var baroV5I18nDict = {
+    'baro.v5.slot.ask_text': {
+      es: '¿Qué texto quieres publicar? Escríbelo y lo preparo.',
+      en: 'What do you want to post? Type it and I’ll get it ready.',
+      zh: '你想发布什么内容？写下来，我来准备。',
+      pt: 'Qual texto você quer publicar? Escreva e eu preparo.'
+    },
+    'baro.v5.slot.ask_text_sched': {
+      es: '¿Qué texto quieres programar? Escríbelo y lo preparo.',
+      en: 'What do you want to schedule? Type it and I’ll get it ready.',
+      zh: '你想定时发布什么内容？写下来，我来准备。',
+      pt: 'Qual texto você quer agendar? Escreva e eu preparo.'
+    },
+    'baro.v5.slot.ask_text_hint': {
+      es: 'Puedes escribir «cancelar» para anular.',
+      en: 'You can type “cancel” to abort.',
+      zh: '你可以输入“取消”来中止。',
+      pt: 'Você pode escrever “cancelar” para anular.'
+    },
+    'baro.v5.slot.ask_when': {
+      es: '¿Cuándo lo programo?',
+      en: 'When should I schedule it?',
+      zh: '什么时候定时发布？',
+      pt: 'Quando devo agendar?'
+    },
+    'baro.v5.slot.when_hint': {
+      es: 'O escríbela como quieras: «mañana a las 9», «el lunes», «en 3 horas».',
+      en: 'Or just type it: “tomorrow at 9”, “on Monday”, “in 3 hours”.',
+      zh: '也可以直接写，比如“明天9点”“周一”“3小时后”。',
+      pt: 'Ou escreva como quiser: “amanhã às 9”, “segunda-feira”, “em 3 horas”.'
+    },
+    'baro.v5.slot.when.today': { es: 'Hoy', en: 'Today', zh: '今天', pt: 'Hoje' },
+    'baro.v5.slot.when.tomorrow': { es: 'Mañana', en: 'Tomorrow', zh: '明天', pt: 'Amanhã' },
+    'baro.v5.slot.when.in2h': { es: 'En 2 horas', en: 'In 2 hours', zh: '2小时后', pt: 'Em 2 horas' },
+    'baro.v5.slot.when.tonight': { es: 'Esta noche', en: 'Tonight', zh: '今晚', pt: 'Esta noite' },
+    'baro.v5.slot.cancel': { es: 'Cancelar', en: 'Cancel', zh: '取消', pt: 'Cancelar' },
+    'baro.v5.slot.cancelled': {
+      es: 'Cancelado, no hice nada.',
+      en: 'Cancelled, I didn’t do anything.',
+      zh: '已取消，什么都没做。',
+      pt: 'Cancelado, não fiz nada.'
+    },
+    'baro.v5.slot.when_reask': {
+      es: 'No entendí la hora. Toca una opción o escríbela (p. ej. «mañana a las 9»).',
+      en: 'I didn’t get the time. Tap an option or type it (e.g. “tomorrow at 9”).',
+      zh: '没理解时间。点一个选项或写出来（例如“明天9点”）。',
+      pt: 'Não entendi a hora. Toque uma opção ou escreva (ex.: “amanhã às 9”).'
+    }
+  };
+  function baroV5FuseI18n() {
+    try {
+      var keys = Object.keys(baroV5I18nDict);
+      var g = __v5g(), u = null;
+      try { u = (typeof BARO_UI_I18N !== 'undefined') ? BARO_UI_I18N : null; } catch (_) { u = null; }
+      if (u && typeof u === 'object') {
+        keys.forEach(function (k) { if (!(k in u)) { try { u[k] = baroV5I18nDict[k]; } catch (_) {} } });
+      }
+      if (g) {
+        var arr = [];
+        if (g.APP_ENGLISH_TEXT) arr.push(['en', g.APP_ENGLISH_TEXT]);
+        if (g.APP_CHINESE_TEXT) arr.push(['zh', g.APP_CHINESE_TEXT]);
+        if (g.APP_PORTUGUESE_TEXT) arr.push(['pt', g.APP_PORTUGUESE_TEXT]);
+        arr.forEach(function (pair) {
+          var lg = pair[0], dict = pair[1];
+          keys.forEach(function (k) {
+            var pack = baroV5I18nDict[k], tv = pack ? pack[lg] : null;
+            if (tv && !(k in dict)) { try { dict[k] = tv; } catch (_) {} }
+          });
+        });
+      }
+    } catch (_) { /* i18n es mejora, nunca rompe */ }
+  }
+  function baroV5T(key) {
+    try {
+      var lang = (__v5Prefs && __v5Prefs.lang) || 'es';
+      var pack = baroV5I18nDict[key];
+      if (pack) return pack[lang] || pack.es || key;
+    } catch (_) {}
+    return key;
+  }
+
+  /* ---------- 2. preferencias del hilo (solo sesion) ---------- */
+  var __v5Prefs = {};
+  function baroV5GetPref(k) {
+    try { return __v5Prefs[String(k)]; } catch (_) { return undefined; }
+  }
+  function baroV5ScanPrefs(text) {
+    try {
+      var n = ' ' + __v5norm(text) + ' ';
+      var lang = null;
+      if (/[(\s]en espanol[\s).,!?]|hablame en espanol|respondeme en espanol|habla espanol/.test(n)) lang = 'es';
+      else if (/[(\s]in english[\s).,!?]|speak english|answer in english/.test(n)) lang = 'en';
+      else if (/[(\s]em portugues[\s).,!?]|fala portugues/.test(n)) lang = 'pt';
+      else if (/中文|用中文/.test(String(text || ''))) lang = 'zh';
+      if (lang && __v5Prefs.lang !== lang) { __v5Prefs.lang = lang; return lang; }
+    } catch (_) {}
+    return null;
+  }
+
+  /* ---------- 3. fechas relativas -> timestamp (pura, testeable) ---------- */
+  var __v5Days = {
+    domingo: 0, sunday: 0, lunes: 1, monday: 1, segunda: 1,
+    martes: 2, tuesday: 2, terca: 2, miercoles: 3, wednesday: 3, quarta: 3,
+    jueves: 4, thursday: 4, quinta: 4, viernes: 5, friday: 5, sexta: 5,
+    sabado: 6, saturday: 6
+  };
+  function __v5AtDay(now, offDays, h, min) {
+    var d = new Date(now);
+    d.setDate(d.getDate() + offDays);
+    d.setHours(h, min, 0, 0);
+    return d.getTime();
+  }
+  function __v5ParseHM(t, n) {
+    var hm = t.match(/(\d{1,2})(?::|：)(\d{2})/) ||
+             n.match(/\ba\s+las?\s+(\d{1,2})\b/) ||
+             n.match(/\b(\d{1,2})\s*h\b/);
+    var h = hm ? parseInt(hm[1], 10) : null;
+    var min = (hm && hm[2] !== undefined) ? parseInt(hm[2], 10) : 0;
+    if (h === null || h > 23 || min > 59) return null;
+    if (/\bpm\b/i.test(t) && h < 12) h += 12;
+    if (/\bam\b/i.test(t) && h === 12) h = 0;
+    return { h: h, min: min };
+  }
+  /* Extra v5: lo que el parser base no cubre (o lee mal). PURA. */
+  function baroV5ParseDateExtra(text, nowMs) {
+    try {
+      var t = String(text == null ? '' : text);
+      var n = __v5norm(t);
+      var now = (typeof nowMs === 'number' && isFinite(nowMs)) ? nowMs : Date.now();
+      var hm = __v5ParseHM(t, n);
+      var H = hm ? hm.h : null, M = hm ? hm.min : 0;
+      /* "pasado mañana" / "day after tomorrow" / "后天" (+2 dias). */
+      if (/\bpasado\s+manana\b/.test(n) || /\bday\s+after\s+tomorrow\b/i.test(t) || /后天/.test(t)) {
+        return __v5AtDay(now, 2, H !== null ? H : 9, M);
+      }
+      /* "mañana" / "tomorrow" / "明天" (respaldo autocontenido). */
+      if (/\bmanana\b/.test(n) || /\btomorrow\b/i.test(t) || /明天/.test(t)) {
+        return __v5AtDay(now, 1, H !== null ? H : 9, M);
+      }
+      /* "esta noche" / "tonight" / "今晚" -> 21:00 (o la hora dicha). */
+      if (/\besta\s+noche\b/.test(n) || /\btonight\b/i.test(t) || /今晚/.test(t)) {
+        var ts = __v5AtDay(now, 0, H !== null ? H : 21, M);
+        if (ts <= now) ts = __v5AtDay(now, 1, H !== null ? H : 21, M);
+        return ts;
+      }
+      /* "hoy" / "today" / "今天" con hora explicita. */
+      if ((/\bhoy\b/.test(n) || /\btoday\b/i.test(t) || /今天/.test(t)) && H !== null) {
+        var t0 = __v5AtDay(now, 0, H, M);
+        if (t0 <= now) t0 = __v5AtDay(now, 1, H, M);
+        return t0;
+      }
+      /* "en N minutos/horas" / "in N minutes/hours" / "dentro de N ..." */
+      var m = n.match(/\b(?:en|dentro\s+de)\s+(\d+)\s*(minuto|hora)/) ||
+              t.match(/\bin\s+(\d+)\s*(minute|hour)/i);
+      if (m) {
+        var mins = /hora|hour/.test(m[2]) ? parseInt(m[1], 10) * 60 : parseInt(m[1], 10);
+        if (mins > 0 && mins <= 525600) return now + mins * 60000;
+      }
+      /* dia de semana ES/EN/PT, con o sin hora ("el lunes", "el viernes a las 18"). */
+      var dm = n.match(/\b(domingo|lunes|martes|miercoles|jueves|viernes|sabado|sunday|monday|tuesday|wednesday|thursday|friday|saturday|segunda|terca|quarta|quinta|sexta)\b/);
+      if (dm) {
+        var target = __v5Days[dm[1]];
+        var cur = new Date(now).getDay();
+        var diff = (target - cur + 7) % 7;
+        if (diff === 0) diff = 7; /* mismo dia -> la proxima semana (igual que el base) */
+        return __v5AtDay(now, diff, H !== null ? H : 9, M);
+      }
+      return null;
+    } catch (_) { return null; }
+  }
+  /* Combinado: extra primero ("pasado mañana" el base lo leeria como "mañana"). */
+  function baroV5ParseDate(text, nowMs) {
+    var r = baroV5ParseDateExtra(text, nowMs);
+    if (r) return r;
+    try {
+      if (typeof baroExtractSchedule === 'function') {
+        var e = baroExtractSchedule(text);
+        if (e) return e;
+      }
+    } catch (_) {}
+    return null;
+  }
+  function baroV5HasDate(text) { return !!baroV5ParseDate(text); }
+
+  /* Quita el verbo de programar (con cliticos: "programalo") para el contenido. */
+  function baroV5StripVerb(t) {
+    try {
+      var s = String(t == null ? '' : t);
+      s = s.replace(/^[^\n]*?\bprograma(r|me|te|se|nos)?(lo|la|los|las)?\b\s*/i, '');
+      s = s.replace(/^[^\n]*?\bschedule(d)?(\s+it)?\b\s*/i, '');
+      s = s.replace(/^[^\n]*?\bagenda(r|me|te|se|nos)?(lo|la|los|las)?\b\s*/i, '');
+      s = s.replace(/^[^\n]*?定时\s*/, '');
+      s = s.replace(/^[^\n]*?安排\s*/, '');
+      return s.trim();
+    } catch (_) { return String(t == null ? '' : t); }
+  }
+  /* Quita expresiones de fecha para detectar "programalo mañana" sin contenido. */
+  function baroV5StripDatePhrases(t) {
+    try {
+      var s = ' ' + __v5norm(String(t == null ? '' : t)) + ' ';
+      s = s.replace(/\bpasado\s+manana\b/g, ' ');
+      s = s.replace(/\besta\s+noche\b/g, ' ');
+      s = s.replace(/\bmanana\b/g, ' ');
+      s = s.replace(/\bhoy\b/g, ' ');
+      s = s.replace(/\bayer\b/g, ' ');
+      s = s.replace(/\bday\s+after\s+tomorrow\b/g, ' ');
+      s = s.replace(/\btomorrow\b/g, ' ');
+      s = s.replace(/\btonight\b/g, ' ');
+      s = s.replace(/\btoday\b/g, ' ');
+      s = s.replace(/\b(?:en|dentro\s+de)\s+\d+\s*(?:minuto|hora)s?\b/g, ' ');
+      s = s.replace(/\bin\s+\d+\s*(?:minute|hour)s?\b/g, ' ');
+      s = s.replace(/\b(domingo|lunes|martes|miercoles|jueves|viernes|sabado|sunday|monday|tuesday|wednesday|thursday|friday|saturday|segunda|terca|quarta|quinta|sexta)\b/g, ' ');
+      s = s.replace(/\ba\s+las?\s+\d{1,2}\b/g, ' ');
+      s = s.replace(/\b\d{1,2}(?::|：)\d{2}\b/g, ' ');
+      s = s.replace(/\b\d{1,2}\s*h\b/g, ' ');
+      s = s.replace(/[¿?¡!.,:;()«»"'\-\s]+/g, ' ').trim();
+      return s;
+    } catch (_) { return String(t == null ? '' : t); }
+  }
+  function baroV5LooksLikeProgramar(t) {
+    try {
+      var raw = String(t || '');
+      var n = ' ' + __v5norm(raw) + ' ';
+      if (/\bschedule(d)?\b/.test(n)) return true;
+      if (/定时|安排/.test(raw)) return true;
+      if (/\bagenda(r|me|te|se|nos)?(lo|la|los|las)?\b/.test(n)) return true;
+      if (/\bprograma(r|me|te|se|nos)?(lo|la|los|las)?\b/.test(n)) return true;
+      return false;
+    } catch (_) { return false; }
+  }
+
+  /* ---------- 4. resolucion de referencias (extiende 8M-B, no lo duplica) ---------- */
+  var __v5Ords = [
+    [/\b(primero|first|primeiro|第一)\b/, 0],
+    [/\b(segundo|second|segundo|第二)\b/, 1],
+    [/\b(tercero|third|terceiro|第三)\b/, 2],
+    [/\b(cuarto|fourth|第四)\b/, 3],
+    [/\b(quinto|fifth|第五)\b/, 4]
+  ];
+  /* PURA: desc + mem -> {postId} | {posts:[...]} | null. */
+  function baroV5ResolveRef(desc, mem) {
+    /* 1. El 8M-B primero (no duplicar lo que ya resuelve). */
+    try {
+      var g = __v5g();
+      var brain = g && g.baroBrain;
+      if (brain && typeof brain.resolveRef === 'function') {
+        var r0 = brain.resolveRef(desc, mem);
+        if (r0 && (r0.postId || (r0.posts && r0.posts.length))) return r0;
+      }
+    } catch (_) {}
+    try {
+      var raw = String(desc == null ? '' : desc);
+      var n = __v5norm(raw).trim();
+      mem = (mem && typeof mem === 'object') ? mem : { posts: [], actions: [] };
+      var posts = (mem.posts && typeof mem.posts.length === 'number') ? mem.posts : [];
+      if (!posts.length) return null;
+      var first = (posts[0] && posts[0].id) ? posts[0] : null;
+      var i, o;
+      /* 2. Demostrativos sueltos: "ese", "este", "esa", "esta", "aquel", "eso". */
+      if (/^(ese|este|esa|esta|aquel|aquella|eso|esto)(\s+(post|publicacion))?[\s:;,.!?\-]*$/.test(n)) {
+        return first ? { postId: String(first.id) } : null;
+      }
+      /* 3. "el anterior" / "la anterior" / "el previo" -> el mas reciente. */
+      if (/\b(anterior|anteriores|previo|previa|previous)\b/.test(n)) {
+        return first ? { postId: String(first.id) } : null;
+      }
+      /* 4. "el mas reciente" / "el mas nuevo" / "el latest". */
+      if (/\b(mas\s+reciente|mas\s+nuevo|latest|newest)\b/.test(n)) {
+        return first ? { postId: String(first.id) } : null;
+      }
+      /* 5. Ordinales (respaldo autocontenido si el seam no esta). */
+      for (o = 0; o < __v5Ords.length; o++) {
+        if (__v5Ords[o][0].test(n)) {
+          var idx = __v5Ords[o][1];
+          return (idx < posts.length && posts[idx] && posts[idx].id)
+            ? { postId: String(posts[idx].id) } : null;
+        }
+      }
+      if (/\b(ultimo|last)\b/.test(n)) {
+        var li = posts.length - 1;
+        return (li >= 0 && posts[li] && posts[li].id) ? { postId: String(posts[li].id) } : null;
+      }
+      /* 6. "el de @usuario" -> por autor (memoria enriquecida por el wrap). */
+      var am = n.match(/(?:^|[\s¿?¡!.,:;()«»"'])(?:el\s+|la\s+)?de\s+@([a-z0-9._\-]{2,30})\b/);
+      if (am) {
+        var want = am[1];
+        var hits = [];
+        for (i = 0; i < posts.length; i++) {
+          var au = (posts[i] && posts[i].author) ? __v5norm(String(posts[i].author)).replace(/^@/, '') : '';
+          if (au && (au === want || au.indexOf(want) === 0 || want.indexOf(au) === 0)) hits.push(posts[i]);
+        }
+        if (hits.length === 1) return { postId: String(hits[0].id) };
+        if (hits.length > 1) return { posts: hits.slice(0, 4) };
+        return null;
+      }
+      return null;
+    } catch (_) { return null; }
+  }
+  /* Enriquece mem.posts con el autor cuando el resultado lo trae. */
+  function baroV5EnrichAuthors(res) {
+    try {
+      var d = res && res.data;
+      if (!d || typeof d !== 'object') return;
+      var g = __v5g(), brain = g && g.baroBrain;
+      if (!brain || typeof brain.memGet !== 'function') return;
+      var mem = brain.memGet();
+      var posts = mem && mem.posts;
+      if (!posts || typeof posts.length !== 'number' || !posts.length) return;
+      var keys = ['posts', 'comments', 'results', 'items'];
+      for (var k = 0; k < keys.length; k++) {
+        var arr = d[keys[k]];
+        if (!arr || typeof arr.length !== 'number') continue;
+        for (var j = 0; j < arr.length; j++) {
+          var p = arr[j];
+          if (!p || typeof p !== 'object') continue;
+          var pid = (p.id != null) ? p.id : ((p.postId != null) ? p.postId : p.noteId);
+          if (pid == null || pid === '') continue;
+          var au = p.author || p.username || p.authorName || p.authorUsername || p.user || p.autor;
+          if (!au) continue;
+          au = String(au).slice(0, 60);
+          for (var i = 0; i < posts.length; i++) {
+            if (posts[i] && String(posts[i].id) === String(pid) && !posts[i].author) {
+              posts[i].author = au; break;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  /* ---------- 5. slot filling publicar / programar ---------- */
+  var __v5Pending = null; /* {kind, asked:'texto'|'when', slots:{texto,programar,foto}, ts} */
+  var __v5LastRaw = '';   /* ultimo texto crudo (para extraer contenido en missing_time) */
+  var __v5SlotTTL = 10 * 60 * 1000;
+
+  function __v5SlotBtns() {
+    var toks = ['today', 'tomorrow', 'in2h', 'tonight'];
+    var keys = ['baro.v5.slot.when.today', 'baro.v5.slot.when.tomorrow',
+                'baro.v5.slot.when.in2h', 'baro.v5.slot.when.tonight'];
+    var h = '';
+    for (var i = 0; i < toks.length; i++) {
+      h += '<button class="baro-intent-btn" onclick="baroV5SlotPick(\'when\',\'' + toks[i] + '\')">' +
+           __v5esc(baroV5T(keys[i])) + '</button>';
+    }
+    h += '<button class="baro-intent-btn" onclick="baroV5SlotPick(\'when\',\'__cancel\')">' +
+         __v5esc(baroV5T('baro.v5.slot.cancel')) + '</button>';
+    return h;
+  }
+  function baroV5AskTextHtml(isSched) {
+    return '<div class="baro-clarify baro-v5-slot"><p>' +
+      __v5esc(baroV5T(isSched ? 'baro.v5.slot.ask_text_sched' : 'baro.v5.slot.ask_text')) +
+      '</p><p style="opacity:.7">' + __v5esc(baroV5T('baro.v5.slot.ask_text_hint')) +
+      '</p><div class="baro-intent-btns"><button class="baro-intent-btn" ' +
+      'onclick="baroV5SlotPick(\'texto\',\'__cancel\')">' +
+      __v5esc(baroV5T('baro.v5.slot.cancel')) + '</button></div></div>';
+  }
+  function baroV5AskWhenHtml(reask) {
+    return '<div class="baro-clarify baro-v5-slot"><p>' +
+      __v5esc(baroV5T(reask ? 'baro.v5.slot.when_reask' : 'baro.v5.slot.ask_when')) +
+      '</p><p style="opacity:.7">' + __v5esc(baroV5T('baro.v5.slot.when_hint')) +
+      '</p><div class="baro-intent-btns">' + __v5SlotBtns() + '</div></div>';
+  }
+  /* Creadores: arman el pendiente y DEVUELVEN el html (el llamador decide pintar). */
+  function __v5MakeTextSlot(isSched, programarTs, foto) {
+    __v5Pending = {
+      kind: isSched ? 'programar' : 'publicar', asked: 'texto',
+      slots: { texto: '', programar: programarTs || 0, foto: foto || null },
+      ts: Date.now()
+    };
+    return baroV5AskTextHtml(isSched);
+  }
+  function __v5MakeWhenSlot(rawText) {
+    var resto = baroV5StripVerb(rawText);
+    var content = baroV5StripDatePhrases(resto);
+    __v5Pending = {
+      kind: 'programar', asked: 'when',
+      slots: { texto: content, programar: 0, foto: null },
+      ts: Date.now()
+    };
+    return baroV5AskWhenHtml(false);
+  }
+  function baroV5StartTextSlot(isSched, programarTs, foto) {
+    var h = __v5MakeTextSlot(isSched, programarTs, foto);
+    __v5paint(h);
+    return h;
+  }
+  function baroV5StartWhenSlot(rawText) {
+    var h = __v5MakeWhenSlot(rawText);
+    __v5paint(h);
+    return h;
+  }
+  /* Logica de la aclaratoria: PURA salvo por el orig opcional (testeable). */
+  function baroV5Clarify(args, ctx, orig) {
+    try {
+      if (args && args.clarify && !args.tie) {
+        var c0 = (args.candidates && args.candidates.length) ? args.candidates[0] : null;
+        var reason = args.reason || null;
+        if (c0 === 'programar' && reason === 'missing_time') {
+          return __v5MakeWhenSlot(__v5LastRaw);
+        }
+        if (c0 === 'publicar' && reason === 'missing_text') {
+          return __v5MakeTextSlot(false, 0, null);
+        }
+      }
+    } catch (_) {}
+    if (typeof orig === 'function') {
+      try { return orig(args, ctx); } catch (_) { return ''; }
+    }
+    return '';
+  }
+  /* Botones tocables (expuesto con baro6dExpose). Tokens fijos: sin inyeccion. */
+  function baroV5SlotPick(slot, token) {
+    try {
+      if (!__v5Pending || __v5Pending.asked !== slot) return;
+      if (token === '__cancel') {
+        __v5Pending = null;
+        __v5paint('<p>' + __v5esc(baroV5T('baro.v5.slot.cancelled')) + '</p>');
+        return;
+      }
+      if (slot === 'when') {
+        var now = Date.now(), ts = 0;
+        if (token === 'today') {
+          ts = __v5AtDay(now, 0, 20, 0);
+          if (ts <= now) ts = now + 2 * 3600000;
+        } else if (token === 'tomorrow') {
+          ts = __v5AtDay(now, 1, 9, 0);
+        } else if (token === 'in2h') {
+          ts = now + 2 * 3600000;
+        } else if (token === 'tonight') {
+          ts = __v5AtDay(now, 0, 21, 0);
+          if (ts <= now) ts = __v5AtDay(now, 1, 21, 0);
+        } else { return; }
+        __v5Pending.slots.programar = ts;
+        try { __v5Prefs.lastWhen = token; } catch (_) {}
+        var p = __v5Pending;
+        if (!p.slots.texto) {
+          /* Falta el texto: encadenar al slot de texto (slot filling real). */
+          p.asked = 'texto';
+          p.ts = Date.now();
+          __v5paint(baroV5AskTextHtml(true));
+          return;
+        }
+        baroV5CompletePending();
+      }
+    } catch (_) {}
+  }
+  function baroV5AnswerSlot(t) {
+    try {
+      var p = __v5Pending;
+      if (!p) return null;
+      var n = __v5norm(t).trim();
+      if (/^(cancelar|cancel|取消|olvidalo|mejor\s+no|no\s+importa)\b/.test(n)) {
+        __v5Pending = null;
+        __v5paint('<p>' + __v5esc(baroV5T('baro.v5.slot.cancelled')) + '</p>');
+        return null;
+      }
+      if (p.asked === 'texto') {
+        if (!n) return null;
+        p.slots.texto = String(t).trim().slice(0, 2000);
+        return baroV5CompletePending();
+      }
+      if (p.asked === 'when') {
+        var ts = baroV5ParseDate(t);
+        if (!ts) { __v5paint(baroV5AskWhenHtml(true)); return null; }
+        p.slots.programar = ts;
+        if (!p.slots.texto) {
+          p.asked = 'texto';
+          p.ts = Date.now();
+          __v5paint(baroV5AskTextHtml(true));
+          return null;
+        }
+        return baroV5CompletePending();
+      }
+      __v5Pending = null;
+      return null;
+    } catch (_) { __v5Pending = null; return null; }
+  }
+  function baroV5CompletePending() {
+    var p = __v5Pending;
+    __v5Pending = null;
+    if (!p) return null;
+    /* Seguridad: programar sin hora NUNCA se ejecuta; se repregunta la hora. */
+    if (p.kind === 'programar' && !p.slots.programar) {
+      __v5Pending = { kind: 'programar', asked: 'when', slots: p.slots, ts: Date.now() };
+      __v5paint(baroV5AskWhenHtml(false));
+      return null;
+    }
+    try {
+      var g = __v5g();
+      var tools = (g && typeof g.baroTools === 'object' && g.baroTools) ? g.baroTools : null;
+      if (!tools && typeof baroTools === 'object' && baroTools) tools = baroTools;
+      var def = tools && tools.publicar;
+      if (!def || typeof def.run !== 'function') return null;
+      var ctx = {};
+      try {
+        if (g && typeof g.baroMakeV2Ctx === 'function') ctx = g.baroMakeV2Ctx() || {};
+        else if (typeof baroMakeV2Ctx === 'function') ctx = baroMakeV2Ctx() || {};
+      } catch (_) { ctx = {}; }
+      var args = { texto: String(p.slots.texto || '') };
+      if (p.slots.programar) args.programar = p.slots.programar;
+      if (p.slots.foto) args.foto = p.slots.foto;
+      /* Llamada directa a la herramienta (ya con slots completos): el wrap v5
+         la deja pasar y 6d muestra su tarjeta de confirmacion tactil. */
+      return def.run(args, ctx);
+    } catch (_) { return null; }
+  }
+
+  /* ---------- 6. wiring (solo aditivo) ---------- */
+  /* 6a. Envolver baroHandleUserMessage por fuera (el original y el 8M intactos):
+        - guarda el texto crudo (para extraer contenido en missing_time),
+        - detecta preferencias de idioma del hilo,
+        - consume respuestas de slots pendientes antes del router normal. */
+  try {
+    var __v5gA = __v5g();
+    var __v5OrigHandle = (__v5gA && typeof __v5gA.baroHandleUserMessage === 'function')
+      ? __v5gA.baroHandleUserMessage : null;
+    if (__v5OrigHandle && !__v5OrigHandle.__v5Wrapped) {
+      var __v5HandleWrapped = async function (text) {
+        try {
+          var t = String(text == null ? '' : text);
+          __v5LastRaw = t;
+          baroV5ScanPrefs(t);
+          var g = __v5g();
+          var brain = (g && g.baroBrain) ? g.baroBrain : null;
+          /* Flujo forzado (boton de desambiguacion): delegar intacto. */
+          var forced = null;
+          try { forced = (brain && typeof brain.peekForced === 'function') ? brain.peekForced() : null; } catch (_) {}
+          if (forced && forced.intent) return __v5OrigHandle(text);
+          /* Slot pendiente (con TTL): la respuesta lo completa. */
+          if (__v5Pending) {
+            if (Date.now() - (__v5Pending.ts || 0) > __v5SlotTTL) __v5Pending = null;
+            else {
+              if (!t.trim()) return null;
+              __v5paintUser(t);
+              var ans = baroV5AnswerSlot(t);
+              /* La herramienta real muestra sus propios errores en su UI;
+                 aqui solo evitamos unhandled rejection. */
+              if (ans && typeof ans.catch === 'function') ans.catch(function () {});
+              return ans;
+            }
+          }
+          return __v5OrigHandle(text);
+        } catch (_) { return __v5OrigHandle(text); }
+      };
+      __v5HandleWrapped.__v5Wrapped = true;
+      __v5gA.baroHandleUserMessage = __v5HandleWrapped;
+    }
+  } catch (_) {}
+
+  /* 6b. Envolver baroClarifyHtml por fuera (el 8M y el original intactos):
+        missing_text/missing_time -> tarjeta de slot con estado pendiente. */
+  try {
+    var __v5ClarOrig = (typeof baroClarifyHtml === 'function') ? baroClarifyHtml : null;
+    if (!__v5ClarOrig && __v5g() && typeof __v5g().baroClarifyHtml === 'function') {
+      __v5ClarOrig = __v5g().baroClarifyHtml;
+    }
+    var __v5ClarWrap = function (args, ctx) { return baroV5Clarify(args, ctx, __v5ClarOrig); };
+    __v5ClarWrap.__v5Wrapped = true;
+    try { baroClarifyHtml = __v5ClarWrap; } catch (_) {}
+    try { if (__v5g()) __v5g().baroClarifyHtml = __v5ClarWrap; } catch (_) {}
+  } catch (_) {}
+
+  /* 6c. Envolver runs: red de seguridad para slots vacios + enriquecer autores.
+        (El flujo normal ya pasa por la aclaratoria; esto cubre llamadas
+        directas a la herramienta con args incompletos.) */
+  function baroV5WrapRun(name, def) {
+    if (!def || typeof def.run !== 'function' || def.run.__v5Wrapped) return;
+    var orig = def.run;
+    var w = async function (args, ctx) {
+      if (String(name) === 'publicar') {
+        try {
+          args = args || {};
+          var texto = String(args.texto == null ? '' : args.texto).trim();
+          var foto = (typeof args.foto === 'string' && args.foto) ? args.foto : null;
+          var isProg = args.programar !== undefined && args.programar !== null && args.programar !== '';
+          var content = texto;
+          if (isProg && texto) content = baroV5StripDatePhrases(texto);
+          if (!content && !foto) {
+            var ts = 0;
+            if (isProg) {
+              var nn = Number(args.programar);
+              ts = isFinite(nn) ? nn : 0;
+            }
+            /* La tarjeta la pinta el pipeline con este html (sin doble pintado). */
+            return { html: __v5MakeTextSlot(isProg, ts, foto) };
+          }
+        } catch (_) {}
+      }
+      var res = await orig(args, ctx);
+      try { baroV5EnrichAuthors(res); } catch (_) {}
+      return res;
+    };
+    w.__v5Wrapped = true;
+    def.run = w;
+  }
+  try {
+    var __v5gB = __v5g();
+    var __v5BT = (__v5gB && typeof __v5gB.baroTools === 'object' && __v5gB.baroTools) ? __v5gB.baroTools : null;
+    if (!__v5BT && typeof baroTools === 'object' && baroTools) __v5BT = baroTools;
+    if (__v5BT) {
+      for (var __v5k in __v5BT) {
+        if (Object.prototype.hasOwnProperty.call(__v5BT, __v5k)) {
+          try { baroV5WrapRun(__v5k, __v5BT[__v5k]); } catch (_) {}
+        }
+      }
+    }
+  } catch (_) {}
+  /* Registros futuros tambien pasan por el wrap (patron 4c del 8M-B). */
+  try {
+    var __v5RegOrig = (typeof baroRegisterTool === 'function') ? baroRegisterTool : null;
+    if (__v5RegOrig && !__v5RegOrig.__v5Wrapped) {
+      var __v5RegWrap = function (name, def) {
+        try { baroV5WrapRun(name, def); } catch (_) {}
+        return __v5RegOrig(name, def);
+      };
+      __v5RegWrap.__v5Wrapped = true;
+      try { baroRegisterTool = __v5RegWrap; } catch (_) {}
+      try { if (__v5g()) __v5g().baroRegisterTool = __v5RegWrap; } catch (_) {}
+    }
+  } catch (_) {}
+
+  /* 6d. Resolver extendido con prioridad (envuelve al 8M-B por fuera). */
+  try {
+    var __v5RPT = (typeof baroResolvePostTarget === 'function') ? baroResolvePostTarget : null;
+    if (!__v5RPT && __v5g() && typeof __v5g().baroResolvePostTarget === 'function') {
+      __v5RPT = __v5g().baroResolvePostTarget;
+    }
+    if (__v5RPT && !__v5RPT.__v5Wrapped) {
+      var __v5RPTW = async function (desc, rctx, deps) {
+        try {
+          var g = __v5g(), brain = g && g.baroBrain;
+          var mem = (brain && typeof brain.memGet === 'function') ? brain.memGet() : null;
+          var ref = baroV5ResolveRef(desc, mem);
+          if (ref && ref.postId) return { status: 'resolved', postId: String(ref.postId) };
+          if (ref && ref.posts && ref.posts.length) return { status: 'candidates', posts: ref.posts };
+        } catch (_) {}
+        return __v5RPT(desc, rctx, deps);
+      };
+      __v5RPTW.__v5Wrapped = true;
+      try { baroResolvePostTarget = __v5RPTW; } catch (_) {}
+      try { if (__v5g()) __v5g().baroResolvePostTarget = __v5RPTW; } catch (_) {}
+    }
+  } catch (_) {}
+
+  /* 6e. Exponer handler de botones + fusionar i18n. */
+  try {
+    var __v5gD = __v5g();
+    var __v5expose = (typeof baro6dExpose === 'function') ? baro6dExpose
+      : ((__v5gD && typeof __v5gD.baro6dExpose === 'function') ? __v5gD.baro6dExpose : null);
+    if (__v5expose) { try { __v5expose('baroV5SlotPick', baroV5SlotPick); } catch (_) {} }
+    else if (__v5gD) { try { __v5gD.baroV5SlotPick = baroV5SlotPick; } catch (_) {} }
+  } catch (_) {}
+  try { baroV5FuseI18n(); } catch (_) {}
+
+  /* ---------- 7. seam de tests ---------- */
+  var __v5api = {
+    parseDateExtra: function (t, now) { return baroV5ParseDateExtra(t, now); },
+    parseDate: function (t, now) { return baroV5ParseDate(t, now); },
+    hasDate: function (t) { return baroV5HasDate(t); },
+    resolveRef: function (d, m) { return baroV5ResolveRef(d, m); },
+    looksLikeProgramar: function (t) { return baroV5LooksLikeProgramar(t); },
+    stripVerb: function (t) { return baroV5StripVerb(t); },
+    stripDatePhrases: function (t) { return baroV5StripDatePhrases(t); },
+    scanPrefs: function (t) { return baroV5ScanPrefs(t); },
+    getPref: function (k) { return baroV5GetPref(k); },
+    clarifyHtml: function (args, ctx, orig) { return baroV5Clarify(args, ctx, orig); },
+    answerSlot: function (t) { return baroV5AnswerSlot(t); },
+    startTextSlot: function (sched, ts, foto) { return baroV5StartTextSlot(sched, ts, foto); },
+    startWhenSlot: function (t) { return baroV5StartWhenSlot(t); },
+    slotPick: function (s, tok) { return baroV5SlotPick(s, tok); },
+    completePending: function () { return baroV5CompletePending(); },
+    pending: function () { return __v5Pending; },
+    setPending: function (p) { __v5Pending = p; },
+    clearPending: function () { __v5Pending = null; },
+    lastRaw: function () { return __v5LastRaw; },
+    setLastRaw: function (t) { __v5LastRaw = String(t == null ? '' : t); },
+    enrichAuthors: function (res) { return baroV5EnrichAuthors(res); },
+    t: function (k) { return baroV5T(k); }
+  };
+  try {
+    var __v5gE = __v5g();
+    if (__v5gE) __v5gE.baroV5 = __v5api;
+  } catch (_) {}
+  try {
+    if (typeof module !== 'undefined' && module.exports) module.exports = __v5api;
+  } catch (_) {}
 })();
 
 
@@ -64163,6 +65275,690 @@ if (typeof module !== 'undefined' && module.exports) {
       };
     } catch (_) {}
   }
+})();
+
+/* ================= BARO · v5-TOOLS: mi_panel, analizar_post, que_paso_hoy, buscar_con_filtros, programar_recuerdo ================= */
+/* ================= BARO v5 · herramientas "épicas" =================
+ * SNIPPET autocontenido. Punto de inserción: DESPUÉS del último bloque BARO
+ * (carril 8L, termina en `})();`) y ANTES del cierre del script final del index.html.
+ * NO crea bloques <script> nuevos. NO toca baroHandleUserMessage, su catch ni
+ * el blindaje null-det.
+ *
+ * QUÉ APORTA (5 herramientas, 100% client-side, datos REALES de DrexCloud):
+ *  1. mi_panel          — tablero del usuario (posts, votos/ecos recibidos,
+ *                         seguidores/siguiendo, sin leer). Requiere sesión.
+ *  2. analizar_post     — métricas reales de un post (votos, score, ecos,
+ *                         comentarios). Resuelve "ese", "el segundo", "el de
+ *                         ayer" o #/post/id vía baroResolvePostTarget.
+ *  3. que_paso_hoy      — digest real del día: posts de seguidos + avisos.
+ *                         Requiere sesión.
+ *  4. buscar_con_filtros— búsqueda con filtros por autor (@usuario) y
+ *                         recencia (hoy/ayer/esta semana).
+ *  5. programar_recuerdo— aviso LOCAL (localStorage + setTimeout, sin
+ *                         servidor): te avisa en el chat de Baro. Funciona
+ *                         mientras Drex siga abierto.
+ *
+ * CONTRATOS que sigue:
+ *  - baroRegisterTool(name, {label, icon, run}) — run(args,ctx) -> Promise de
+ *    {html, stats?} con conteos REALES; si un dato no existe, mensaje honesto,
+ *    JAMÁS inventar.
+ *  - Reglas 6b: baroIntentRules.push({langs, patterns, intent, extract}) +
+ *    baroIntentToTool[intent] = tool (mismo objeto que lee el router).
+ *  - i18n ES/EN/ZH/PT vía BARO_UI_I18N + baroMergeI18n() (patrón 8L).
+ *  - Enlaces a posts como <a href="#/post/{id}"> (los intercepta el bloque
+ *    "integración: enlaces de fuentes").
+ *  - Nada público/destructivo aquí: ninguna tool necesita tarjeta 6d.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patrón 8L) ---------------- */
+  var BARO_V5_I18N = {
+    'baro.v5.login_needed':   { es: 'Inicia sesión para usar esto.', en: 'Sign in to use this.', zh: '请先登录。', pt: 'Entre para usar isto.' },
+    'baro.v5.no_db':          { es: 'No pude leer los datos ahora mismo.', en: 'Could not read the data right now.', zh: '暂时无法读取数据。', pt: 'Não consegui ler os dados agora.' },
+    'baro.v5.error':          { es: 'Algo falló leyendo los datos.', en: 'Something failed while reading the data.', zh: '读取数据时出错。', pt: 'Algo falhou ao ler os dados.' },
+    'baro.v5.ahora':          { es: 'ahora', en: 'now', zh: '刚刚', pt: 'agora' },
+    'baro.v5.hace_min':       { es: 'hace {n} min', en: '{n} min ago', zh: '{n} 分钟前', pt: 'há {n} min' },
+    'baro.v5.hace_horas':     { es: 'hace {n} h', en: '{n} h ago', zh: '{n} 小时前', pt: 'há {n} h' },
+    'baro.v5.hace_dias':      { es: 'hace {n} d', en: '{n} d ago', zh: '{n} 天前', pt: 'há {n} d' },
+    'baro.v5.ver_post':       { es: 'Ver post', en: 'View post', zh: '查看帖子', pt: 'Ver publicação' },
+
+    'baro.v5.panel.label':    { es: 'Mi panel', en: 'My dashboard', zh: '我的面板', pt: 'Meu painel' },
+    'baro.v5.panel.title':    { es: 'Tu panel', en: 'Your dashboard', zh: '你的面板', pt: 'Seu painel' },
+    'baro.v5.panel.posts':    { es: 'Posts publicados', en: 'Published posts', zh: '已发布帖子', pt: 'Publicações' },
+    'baro.v5.panel.votos':    { es: 'Votos recibidos (neto)', en: 'Votes received (net)', zh: '收到的投票（净）', pt: 'Votos recebidos (líquido)' },
+    'baro.v5.panel.ecos':     { es: 'Ecos recibidos', en: 'Echoes received', zh: '收到的转发', pt: 'Ecos recebidos' },
+    'baro.v5.panel.seguidores': { es: 'Seguidores', en: 'Followers', zh: '粉丝', pt: 'Seguidores' },
+    'baro.v5.panel.siguiendo':  { es: 'Siguiendo', en: 'Following', zh: '关注中', pt: 'Seguindo' },
+    'baro.v5.panel.sin_leer': { es: 'Sin leer', en: 'Unread', zh: '未读', pt: 'Não lidas' },
+    'baro.v5.panel.empty':    { es: 'Aún no publicas nada. Cuando publiques, aquí verás tus números.', en: 'You have not posted anything yet. Your numbers will show up here once you do.', zh: '你还没有发布任何内容。发布后这里会显示你的数据。', pt: 'Você ainda não publicou nada. Seus números aparecem aqui quando publicar.' },
+    'baro.v5.panel.nota':     { es: 'Ventana: últimos 500 posts de la comunidad.', en: 'Window: last 500 community posts.', zh: '范围：社区最近 500 条帖子。', pt: 'Janela: últimas 500 publicações da comunidade.' },
+
+    'baro.v5.analizar.label': { es: 'Analizar post', en: 'Analyze post', zh: '分析帖子', pt: 'Analisar publicação' },
+    'baro.v5.analizar.no_target': { es: 'No sé a qué post te refieres. Pásame el enlace (#/post/…) o descríbelo ("ese", "el de ayer").', en: 'I am not sure which post you mean. Send me the link (#/post/…) or describe it ("that one", "yesterday\'s").', zh: '不确定你指的是哪个帖子。发我链接（#/post/…）或描述一下（“那个”、“昨天的”）。', pt: 'Não sei a qual publicação você se refere. Me passe o link (#/post/…) ou descreva ("esse", "o de ontem").' },
+    'baro.v5.analizar.no_encontrado': { es: 'No encontré ese post (quizá se eliminó).', en: 'I could not find that post (it may have been deleted).', zh: '找不到那个帖子（可能已被删除）。', pt: 'Não encontrei essa publicação (talvez foi excluída).' },
+    'baro.v5.analizar.candidatos': { es: 'Encontré varios; dime cuál:', en: 'I found several; tell me which one:', zh: '找到了好几个，你指哪一个：', pt: 'Encontrei várias; me diga qual:' },
+    'baro.v5.analizar.votos_up':   { es: 'A favor', en: 'Up', zh: '赞成', pt: 'A favor' },
+    'baro.v5.analizar.votos_down': { es: 'En contra', en: 'Down', zh: '反对', pt: 'Contra' },
+    'baro.v5.analizar.score':      { es: 'Puntaje', en: 'Score', zh: '得分', pt: 'Pontuação' },
+    'baro.v5.analizar.ecos':       { es: 'Ecos', en: 'Echoes', zh: '转发', pt: 'Ecos' },
+    'baro.v5.analizar.comentarios':{ es: 'Comentarios', en: 'Comments', zh: '评论', pt: 'Comentários' },
+    'baro.v5.analizar.publicado':  { es: 'Publicado {t}', en: 'Posted {t}', zh: '发布于{t}', pt: 'Publicado {t}' },
+
+    'baro.v5.hoy.label':      { es: 'Qué pasó hoy', en: 'What happened today', zh: '今日动态', pt: 'O que aconteceu hoje' },
+    'baro.v5.hoy.title':      { es: 'Hoy en Drex', en: 'Today on Drex', zh: '今日 Drex', pt: 'Hoje no Drex' },
+    'baro.v5.hoy.posts':      { es: 'Posts nuevos de gente que sigues', en: 'New posts from people you follow', zh: '你关注的人的新帖子', pt: 'Publicações novas de quem você segue' },
+    'baro.v5.hoy.avisos':     { es: 'Tus avisos de hoy', en: 'Your notifications today', zh: '你今天的通知', pt: 'Seus avisos de hoje' },
+    'baro.v5.hoy.vacio':      { es: 'Hoy no hay movimiento todavía.', en: 'Nothing happening yet today.', zh: '今天暂时还没有动态。', pt: 'Hoje ainda não há movimento.' },
+
+    'baro.v5.filtros.label':  { es: 'Búsqueda con filtros', en: 'Filtered search', zh: '筛选搜索', pt: 'Busca com filtros' },
+    'baro.v5.filtros.autor_nf': { es: 'No encontré al usuario @{u}.', en: 'Could not find user @{u}.', zh: '找不到用户 @{u}。', pt: 'Não encontrei o usuário @{u}.' },
+    'baro.v5.filtros.sin_resultados': { es: 'Sin resultados con esos filtros.', en: 'No results with those filters.', zh: '按这些筛选条件没有结果。', pt: 'Sem resultados com esses filtros.' },
+    'baro.v5.filtros.rec_hoy':    { es: 'de hoy', en: 'from today', zh: '今天的', pt: 'de hoje' },
+    'baro.v5.filtros.rec_ayer':   { es: 'desde ayer', en: 'since yesterday', zh: '昨天以来的', pt: 'desde ontem' },
+    'baro.v5.filtros.rec_semana': { es: 'de esta semana', en: 'from this week', zh: '本周的', pt: 'desta semana' },
+
+    'baro.v5.rec.label':      { es: 'Recordatorio', en: 'Reminder', zh: '提醒', pt: 'Lembrete' },
+    'baro.v5.rec.set':        { es: 'Listo, te avisaré aquí en el chat {cuando}.', en: 'Done, I will ping you here in the chat {cuando}.', zh: '好的，我会在聊天里{cuando}提醒你。', pt: 'Pronto, vou te avisar aqui no chat {cuando}.' },
+    'baro.v5.rec.cuando_min': { es: 'en {n} min', en: 'in {n} min', zh: '{n} 分钟后', pt: 'em {n} min' },
+    'baro.v5.rec.cuando_horas': { es: 'en {n} h', en: 'in {n} h', zh: '{n} 小时后', pt: 'em {n} h' },
+    'baro.v5.rec.cuando_hora':  { es: 'a las {h}', en: 'at {h}', zh: '{h}', pt: 'às {h}' },
+    'baro.v5.rec.falta_cuando': { es: '¿Cuándo te aviso? Dime "en 20 minutos" o "a las 9".', en: 'When should I remind you? Say "in 20 minutes" or "at 9".', zh: '什么时候提醒你？说“20 分钟后”或“9 点”。', pt: 'Quando te aviso? Diga "em 20 minutos" ou "às 9".' },
+    'baro.v5.rec.falta_texto':  { es: '¿Qué quieres que te recuerde?', en: 'What should I remind you about?', zh: '要提醒你什么？', pt: 'O que você quer que eu lembre?' },
+    'baro.v5.rec.aviso_local':   { es: 'Aviso local: funciona mientras Drex siga abierto en este dispositivo.', en: 'Local reminder: works while Drex stays open on this device.', zh: '本地提醒：仅在此设备上保持 Drex 打开时有效。', pt: 'Aviso local: funciona enquanto o Drex ficar aberto neste dispositivo.' },
+    'baro.v5.rec.disparado':     { es: 'Recordatorio', en: 'Reminder', zh: '提醒', pt: 'Lembrete' },
+    'baro.v5.rec.list_title':    { es: 'Tus recordatorios', en: 'Your reminders', zh: '你的提醒', pt: 'Seus lembretes' },
+    'baro.v5.rec.vacio':         { es: 'No tienes recordatorios pendientes.', en: 'You have no pending reminders.', zh: '你没有待处理的提醒。', pt: 'Você não tem lembretes pendentes.' },
+    'baro.v5.rec.cancelados':    { es: 'Recordatorios cancelados.', en: 'Reminders cancelled.', zh: '已取消提醒。', pt: 'Lembretes cancelados.' }
+  };
+
+  function baroV5MergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V5_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V5_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+
+  /* ---------------- 1. helpers ---------------- */
+  function v5lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v5esc(ctx, s) {
+    try {
+      if (ctx && typeof ctx.esc === 'function') return ctx.esc(s);
+      if (typeof escapeHtml === 'function') return escapeHtml(s);
+    } catch (_) {}
+    return String(s == null ? '' : s);
+  }
+  function v5t(ctx, key, vars) {
+    var s = null;
+    try { s = (ctx && typeof ctx.t === 'function') ? ctx.t(key) : null; } catch (_) { s = null; }
+    if (!s || s === key) {
+      var e = BARO_V5_I18N[key];
+      s = (e && (e[v5lang()] || e.es)) || key;
+    }
+    if (vars) {
+      var esc = function (v) { return v5esc(ctx, v); };
+      Object.keys(vars).forEach(function (k) {
+        s = String(s).split('{' + k + '}').join(esc(vars[k]));
+      });
+    }
+    return s;
+  }
+  function v5db() {
+    try {
+      if (typeof DrexCloud !== 'undefined' && DrexCloud && typeof DrexCloud.database === 'function') {
+        return DrexCloud.database();
+      }
+    } catch (_) {}
+    return null;
+  }
+  function v5uid(ctx) {
+    try { return (ctx && ctx.user && ctx.user.uid) || ''; } catch (_) { return ''; }
+  }
+  function v5needLogin(ctx) {
+    if (v5uid(ctx)) return null;
+    return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.login_needed')) + '</p>' };
+  }
+  function v5noDb(ctx) {
+    return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.no_db')) + '</p>' };
+  }
+  function v5err(ctx) {
+    return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.error')) + '</p>' };
+  }
+  function v5norm(s) {
+    try {
+      return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    } catch (_) {
+      return String(s || '').toLowerCase();
+    }
+  }
+  function v5clip(s, n) {
+    s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+  function v5textOf(note) {
+    if (!note) return '';
+    var t = (note.content != null ? note.content : (note.text != null ? note.text : ''));
+    return String(t || '');
+  }
+  function v5authorUid(note) {
+    return String((note && (note.authorId || note.userId || note.uid)) || '');
+  }
+  function v5count(obj) {
+    if (!obj || typeof obj !== 'object') return 0;
+    return Object.keys(obj).length;
+  }
+  function v5timeAgo(ctx, ts) {
+    var d = Date.now() - Number(ts || 0);
+    if (!(d > 0)) return v5t(ctx, 'baro.v5.ahora');
+    var m = Math.floor(d / 60000);
+    if (m < 1) return v5t(ctx, 'baro.v5.ahora');
+    if (m < 60) return v5t(ctx, 'baro.v5.hace_min', { n: m });
+    var h = Math.floor(m / 60);
+    if (h < 24) return v5t(ctx, 'baro.v5.hace_horas', { n: h });
+    return v5t(ctx, 'baro.v5.hace_dias', { n: Math.floor(h / 24) });
+  }
+  function v5postLink(id) {
+    return '#/post/' + String(id);
+  }
+  function v5postItemHtml(ctx, p) {
+    var esc = function (s) { return v5esc(ctx, s); };
+    return '<div class="baro-v5-item"><p>' + esc(v5clip(v5textOf(p), 120)) + '</p>' +
+      '<p class="baro-v5-sub">' + esc(v5timeAgo(ctx, p.timestamp)) +
+      ' · <a href="' + esc(v5postLink(p.id)) + '">' + esc(v5t(ctx, 'baro.v5.ver_post')) + '</a></p></div>';
+  }
+  /* Lee una ruta RTDB; null si falla (nunca lanza). */
+  function v5read(db, path) {
+    try {
+      return db.ref(path).once('value').then(
+        function (snap) { try { return snap ? snap.val() : null; } catch (_) { return null; } },
+        function () { return null; }
+      );
+    } catch (_) { return Promise.resolve(null); }
+  }
+  /* Ventana de posts recientes (misma que el buscador: últimos 500). */
+  async function v5readPosts(db) {
+    var out = [];
+    try {
+      var snap = await db.ref('communityNotes').orderByChild('timestamp').limitToLast(500).once('value');
+      if (snap) snap.forEach(function (ch) {
+        var n = ch.val() || {};
+        n.id = ch.key;
+        out.push(n);
+      });
+    } catch (_) { return []; }
+    out.sort(function (a, b) { return Number(b.timestamp || 0) - Number(a.timestamp || 0); });
+    return out;
+  }
+
+  /* ---------------- 2a. mi_panel — tablero del usuario ---------------- */
+  async function v5RunMiPanel(args, ctx) {
+    var need = v5needLogin(ctx);
+    if (need) return need;
+    var db = v5db();
+    if (!db) return v5noDb(ctx);
+    var uid = v5uid(ctx);
+    try {
+      var r = await Promise.all([
+        v5readPosts(db),
+        v5read(db, 'followers/' + uid),
+        v5read(db, 'following/' + uid),
+        v5read(db, 'notifUnread/' + uid)
+      ]);
+      var mine = r[0].filter(function (n) { return v5authorUid(n) === uid; });
+      var votos = 0, ecos = 0, i;
+      for (i = 0; i < mine.length; i++) {
+        votos += Number(mine[i].upvotes || 0) - Number(mine[i].downvotes || 0);
+        ecos += Number(mine[i].ecosCount || 0);
+      }
+      var unread = Number((r[3] && r[3].c) || 0);
+      var row = function (k, v) {
+        return '<div class="baro-v5-row"><span>' + v5esc(ctx, v5t(ctx, k)) +
+          '</span><strong>' + v5esc(ctx, v) + '</strong></div>';
+      };
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        v5esc(ctx, v5t(ctx, 'baro.v5.panel.title')) + '</strong></p>' +
+        row('baro.v5.panel.posts', mine.length) +
+        row('baro.v5.panel.votos', votos) +
+        row('baro.v5.panel.ecos', ecos) +
+        row('baro.v5.panel.seguidores', v5count(r[1])) +
+        row('baro.v5.panel.siguiendo', v5count(r[2])) +
+        row('baro.v5.panel.sin_leer', unread) +
+        '</div>';
+      if (!mine.length) {
+        h += '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.panel.empty')) + '</p>';
+      }
+      h += '<p class="baro-v5-sub">' + v5esc(ctx, v5t(ctx, 'baro.v5.panel.nota')) + '</p>';
+      return { html: h, stats: { count: r[0].length, results: mine.length } };
+    } catch (_) { return v5err(ctx); }
+  }
+
+  /* ---------------- 2b. analizar_post — métricas reales ---------------- */
+  async function v5RunAnalizarPost(args, ctx) {
+    args = args || {};
+    var db = v5db();
+    if (!db) return v5noDb(ctx);
+    var postId = String(args.postId || '').trim();
+    var note = null;
+    try {
+      if (!postId && typeof baroResolvePostTarget === 'function') {
+        var desc = String(args.rawText || '');
+        var rr = await baroResolvePostTarget(desc, ctx);
+        if (rr && rr.status === 'resolved') {
+          postId = String(rr.postId || '');
+          note = rr.note || null;
+        } else if (rr && rr.status === 'candidates' && rr.posts && rr.posts.length) {
+          var ch = '<p><strong>' + v5esc(ctx, v5t(ctx, 'baro.v5.analizar.candidatos')) + '</strong></p>';
+          rr.posts.slice(0, 3).forEach(function (p) {
+            var pid = String(p.id || p.noteId || '');
+            ch += '<div class="baro-v5-item"><p>' + v5esc(ctx, v5clip(v5textOf(p), 100)) + '</p>' +
+              '<p class="baro-v5-sub"><a href="' + v5esc(ctx, v5postLink(pid)) + '">' +
+              v5esc(ctx, v5t(ctx, 'baro.v5.ver_post')) + '</a></p></div>';
+          });
+          return { html: ch, stats: { count: rr.posts.length, results: Math.min(3, rr.posts.length) } };
+        }
+      }
+      if (!postId) {
+        return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.analizar.no_target')) + '</p>' };
+      }
+      if (!note) note = await v5read(db, 'communityNotes/' + postId);
+      if (!note) {
+        return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.analizar.no_encontrado')) + '</p>' };
+      }
+      var cr = await Promise.all([
+        v5read(db, 'postComments/' + postId),
+        v5read(db, 'postEcos/' + postId)
+      ]);
+      var up = Number(note.upvotes || 0), down = Number(note.downvotes || 0);
+      var nEcos = v5count(cr[1]) || Number(note.ecosCount || 0);
+      var nCom = v5count(cr[0]);
+      var row = function (k, v) {
+        return '<div class="baro-v5-row"><span>' + v5esc(ctx, v5t(ctx, k)) +
+          '</span><strong>' + v5esc(ctx, v) + '</strong></div>';
+      };
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        v5esc(ctx, v5clip(v5textOf(note), 140)) + '</strong></p>' +
+        '<p class="baro-v5-sub">' + v5esc(ctx, v5t(ctx, 'baro.v5.analizar.publicado', { t: v5timeAgo(ctx, note.timestamp) })) + '</p>' +
+        row('baro.v5.analizar.votos_up', up) +
+        row('baro.v5.analizar.votos_down', down) +
+        row('baro.v5.analizar.score', up - down) +
+        row('baro.v5.analizar.ecos', nEcos) +
+        row('baro.v5.analizar.comentarios', nCom) +
+        '<p class="baro-v5-sub"><a href="' + v5esc(ctx, v5postLink(postId)) + '">' +
+        v5esc(ctx, v5t(ctx, 'baro.v5.ver_post')) + '</a></p></div>';
+      return { html: h, stats: { count: 1 + nCom, results: 1 } };
+    } catch (_) { return v5err(ctx); }
+  }
+
+  /* ---------------- 2c. que_paso_hoy — digest real del día ---------------- */
+  async function v5RunQuePasoHoy(args, ctx) {
+    var need = v5needLogin(ctx);
+    if (need) return need;
+    var db = v5db();
+    if (!db) return v5noDb(ctx);
+    var uid = v5uid(ctx);
+    try {
+      var d0 = new Date(); d0.setHours(0, 0, 0, 0);
+      var start = d0.getTime();
+      var r = await Promise.all([
+        v5read(db, 'following/' + uid),
+        v5readPosts(db),
+        v5read(db, 'notifications/' + uid)
+      ]);
+      var fmap = {};
+      Object.keys(r[0] || {}).forEach(function (k) { fmap[k] = 1; });
+      var posts = r[0] ? r[1].filter(function (n) {
+        return fmap[v5authorUid(n)] && Number(n.timestamp || 0) >= start;
+      }).slice(0, 8) : [];
+      var notifs = [];
+      var nn = r[2] || {};
+      Object.keys(nn).forEach(function (k) {
+        var n = nn[k] || {};
+        if (Number(n.timestamp || 0) >= start) {
+          notifs.push({ message: String(n.message || ''), ts: Number(n.timestamp || 0), actor: String(n.actorName || '') });
+        }
+      });
+      notifs.sort(function (a, b) { return b.ts - a.ts; });
+      notifs = notifs.slice(0, 8);
+      if (!posts.length && !notifs.length) {
+        return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.hoy.vacio')) + '</p>', stats: { count: 0, results: 0 } };
+      }
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        v5esc(ctx, v5t(ctx, 'baro.v5.hoy.title')) + '</strong></p></div>';
+      if (posts.length) {
+        h += '<p><strong>' + v5esc(ctx, v5t(ctx, 'baro.v5.hoy.posts')) + ' (' + posts.length + ')</strong></p>';
+        posts.forEach(function (p) { h += v5postItemHtml(ctx, p); });
+      }
+      if (notifs.length) {
+        h += '<p><strong>' + v5esc(ctx, v5t(ctx, 'baro.v5.hoy.avisos')) + ' (' + notifs.length + ')</strong></p>';
+        notifs.forEach(function (n) {
+          h += '<div class="baro-v5-item"><p>' + v5esc(ctx, v5clip(n.message, 120)) + '</p>' +
+            '<p class="baro-v5-sub">' + v5esc(ctx, v5timeAgo(ctx, n.ts)) + '</p></div>';
+        });
+      }
+      return { html: h, stats: { count: r[1].length, results: posts.length + notifs.length } };
+    } catch (_) { return v5err(ctx); }
+  }
+
+  /* ---------------- 2d. buscar_con_filtros — autor + recencia ---------------- */
+  function v5parseFiltros(text) {
+    var t = String(text || '');
+    var out = { q: '', author: null, days: 0, recLabel: null };
+    var m = t.match(/#\/u\/([A-Za-z0-9_.-]+)/) || t.match(/(?:^|[\s(])@([A-Za-z0-9_.-]{2,30})/);
+    if (m) out.author = m[1];
+    var n = v5norm(t);
+    var d0 = new Date(); d0.setHours(0, 0, 0, 0);
+    var today0 = d0.getTime();
+    if (/\bhoy\b|\btoday\b|\bhoje\b|今天/.test(n)) {
+      out.days = 1; out.cutoff = today0; out.recKey = 'baro.v5.filtros.rec_hoy';
+    } else if (/\bayer\b|\byesterday\b|\bontem\b|昨天/.test(n)) {
+      out.days = 2; out.cutoff = today0 - 86400000; out.recKey = 'baro.v5.filtros.rec_ayer';
+    } else if (/esta semana|this week|esta semana|本周|essa semana/.test(n)) {
+      out.days = 7; out.cutoff = Date.now() - 7 * 86400000; out.recKey = 'baro.v5.filtros.rec_semana';
+    }
+    var q = t
+      .replace(/#\/u\/[A-Za-z0-9_.-]+/g, ' ')
+      .replace(/(?:^|[\s(])@[A-Za-z0-9_.-]{2,30}/g, ' ')
+      .replace(/busca|buscar|search|find|posts?|publicaciones|publicações|帖子|de|del|from|por|por|con|with|con|com|hoy|today|hoje|ayer|yesterday|ontem|esta semana|this week|essa semana/gi, ' ')
+      .replace(/[?!¿¡:;,."“”‘’]/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+    out.q = q;
+    return out;
+  }
+  async function v5RunBuscarFiltros(args, ctx) {
+    args = args || {};
+    var db = v5db();
+    if (!db) return v5noDb(ctx);
+    try {
+      var f = v5parseFiltros(args.rawText || '');
+      var authorUid = null;
+      if (f.author) {
+        var urec = await v5read(db, 'usernames/' + String(f.author).toLowerCase());
+        if (urec) authorUid = String(urec);
+        else {
+          return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.filtros.autor_nf', { u: f.author })) + '</p>', stats: { count: 0, results: 0 } };
+        }
+      }
+      var posts = await v5readPosts(db);
+      var qn = v5norm(f.q);
+      var res = posts.filter(function (p) {
+        if (authorUid) {
+          var au = v5authorUid(p);
+          var an = v5norm(String(p.authorName || p.username || p.displayName || ''));
+          if (au !== authorUid && an.indexOf(v5norm(f.author)) === -1) return false;
+        }
+        if (f.cutoff && Number(p.timestamp || 0) < f.cutoff) return false;
+        if (qn && v5norm(v5textOf(p)).indexOf(qn) === -1) return false;
+        return true;
+      }).slice(0, 8);
+      if (!res.length) {
+        return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.filtros.sin_resultados')) + '</p>', stats: { count: posts.length, results: 0 } };
+      }
+      var desc = [];
+      if (f.author) desc.push('@' + f.author);
+      if (f.recKey) desc.push(v5t(ctx, f.recKey));
+      if (f.q) desc.push('"' + f.q + '"');
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        v5esc(ctx, v5t(ctx, 'baro.v5.filtros.label')) +
+        (desc.length ? ': ' + desc.map(function (x) { return v5esc(ctx, x); }).join(' · ') : '') +
+        ' (' + res.length + ')</strong></p></div>';
+      res.forEach(function (p) { h += v5postItemHtml(ctx, p); });
+      return { html: h, stats: { count: posts.length, results: res.length } };
+    } catch (_) { return v5err(ctx); }
+  }
+
+  /* ---------------- 2e. programar_recuerdo — aviso LOCAL ---------------- */
+  var V5_REC_KEY = 'baro_v5_reminders';
+  var V5_REC_TIMERS = {};
+  function v5recLoad() {
+    try {
+      var raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(V5_REC_KEY) : null;
+      var arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) { return []; }
+  }
+  function v5recSave(arr) {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(V5_REC_KEY, JSON.stringify(arr || []));
+    } catch (_) {}
+  }
+  function v5recFire(id) {
+    var arr = v5recLoad();
+    var rec = null, rest = [];
+    arr.forEach(function (r) { if (String(r.id) === String(id)) rec = r; else rest.push(r); });
+    v5recSave(rest);
+    try { delete V5_REC_TIMERS[String(id)]; } catch (_) {}
+    if (!rec) return;
+    var msg = '<p>⏰ <strong>' + v5esc(null, v5t(null, 'baro.v5.rec.disparado')) + ':</strong> ' +
+      v5esc(null, rec.text) + '</p>';
+    try {
+      if (typeof baroAddBaroMessage === 'function') baroAddBaroMessage(msg);
+    } catch (_) {}
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        new Notification('Baro', { body: String(rec.text || '') });
+      }
+    } catch (_) {}
+  }
+  function v5recArm(rec) {
+    var delay = Number(rec.at || 0) - Date.now();
+    if (!(delay > 0)) { v5recFire(rec.id); return; }
+    if (delay > 2147483647) delay = 2147483647;
+    try {
+      if (V5_REC_TIMERS[String(rec.id)]) clearTimeout(V5_REC_TIMERS[String(rec.id)]);
+      V5_REC_TIMERS[String(rec.id)] = setTimeout(function () { v5recFire(rec.id); }, delay);
+    } catch (_) {}
+  }
+  function v5recSweep() {
+    var arr = v5recLoad();
+    arr.forEach(function (r) { v5recArm(r); });
+  }
+  function v5parseRecuerdo(text) {
+    var t = String(text || '');
+    var n = v5norm(t);
+    var out = { accion: 'crear', texto: '', at: 0, cuandoKey: null, cuandoVars: null };
+    if (/(cancela\w*|elimina\w*|borra\w*).*(recordatorio|aviso|reminder)/.test(n) ||
+        /cancel.*reminder/.test(n) || /mis recordatorios|my reminders/.test(n)) {
+      out.accion = /cancela|elimina|borra|cancel/.test(n) ? 'cancelar' : 'listar';
+      return out;
+    }
+    var m = t.match(/en\s+(\d+)\s*(minutos?|minutes?|horas?|hours?)/i);
+    if (m) {
+      var qty = parseInt(m[1], 10);
+      var mins = /hora|hour/.test(v5norm(m[2])) ? qty * 60 : qty;
+      out.at = Date.now() + mins * 60000;
+      out.cuandoKey = mins >= 60 && mins % 60 === 0 ? 'baro.v5.rec.cuando_horas' : 'baro.v5.rec.cuando_min';
+      out.cuandoVars = mins >= 60 && mins % 60 === 0 ? { n: mins / 60 } : { n: mins };
+    } else if ((m = t.match(/a las\s+(\d{1,2})(?::(\d{2}))?/i)) || (m = t.match(/at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i))) {
+      var hh = parseInt(m[1], 10), mm2 = parseInt(m[2] || '0', 10);
+      var ap = v5norm(m[3] || '');
+      if (ap === 'pm' && hh < 12) hh += 12;
+      if (ap === 'am' && hh === 12) hh = 0;
+      var d = new Date(); d.setHours(hh, mm2, 0, 0);
+      if (d.getTime() <= Date.now()) d = new Date(d.getTime() + 86400000);
+      out.at = d.getTime();
+      out.cuandoKey = 'baro.v5.rec.cuando_hora';
+      out.cuandoVars = { h: String(hh).padStart(2, '0') + ':' + String(mm2).padStart(2, '0') };
+    } else if (/mañana|tomorrow|amanhã|明天/.test(n)) {
+      var d2 = new Date(); d2.setDate(d2.getDate() + 1); d2.setHours(9, 0, 0, 0);
+      out.at = d2.getTime();
+      out.cuandoKey = 'baro.v5.rec.cuando_hora';
+      out.cuandoVars = { h: '09:00' };
+    }
+    var txt = t
+      .replace(/recu[ée]rdame|remind me|av[íi]same|me lembra|提醒我|programa(r)? un recordatorio|set a reminder|lembrete/gi, ' ')
+      .replace(/en\s+\d+\s*(minutos?|minutes?|horas?|hours?)/gi, ' ')
+      .replace(/a las\s+\d{1,2}(?::\d{2})?/gi, ' ')
+      .replace(/at\s+\d{1,2}(?::\d{2})?\s*(am|pm)?/gi, ' ')
+      .replace(/mañana|tomorrow|amanhã|por favor|please|que/gi, ' ')
+      .replace(/[?!¿¡:;,."“”‘’]/g, ' ').replace(/\s+/g, ' ').trim();
+    out.texto = txt;
+    return out;
+  }
+  async function v5RunProgramarRecuerdo(args, ctx) {
+    args = args || {};
+    try {
+      var p = v5parseRecuerdo(args.rawText || '');
+      if (p.accion === 'cancelar') {
+        var arr = v5recLoad();
+        arr.forEach(function (r) { try { clearTimeout(V5_REC_TIMERS[String(r.id)]); } catch (_) {} });
+        V5_REC_TIMERS = {};
+        v5recSave([]);
+        return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.rec.cancelados')) + '</p>', stats: { count: arr.length, results: 0 } };
+      }
+      if (p.accion === 'listar') {
+        var list = v5recLoad().filter(function (r) { return Number(r.at || 0) > Date.now(); });
+        if (!list.length) {
+          return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.rec.vacio')) + '</p>', stats: { count: 0, results: 0 } };
+        }
+        var h = '<p><strong>' + v5esc(ctx, v5t(ctx, 'baro.v5.rec.list_title')) + '</strong></p>';
+        list.forEach(function (r) {
+          h += '<div class="baro-v5-item"><p>' + v5esc(ctx, r.text) + '</p>' +
+            '<p class="baro-v5-sub">' + v5esc(ctx, new Date(Number(r.at)).toLocaleString()) + '</p></div>';
+        });
+        return { html: h, stats: { count: list.length, results: list.length } };
+      }
+      if (!p.texto) {
+        return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.rec.falta_texto')) + '</p>' };
+      }
+      if (!p.at) {
+        return { html: '<p>' + v5esc(ctx, v5t(ctx, 'baro.v5.rec.falta_cuando')) + '</p>' };
+      }
+      var rec = { id: 'r' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36), text: p.texto, at: p.at };
+      var all = v5recLoad();
+      all.push(rec);
+      v5recSave(all);
+      v5recArm(rec);
+      var cuando = v5t(ctx, p.cuandoKey, p.cuandoVars);
+      var ok = '<p>⏰ ' + v5esc(ctx, v5t(ctx, 'baro.v5.rec.set', { cuando: cuando })) + '</p>' +
+        '<p class="baro-v5-sub">' + v5esc(ctx, v5t(ctx, 'baro.v5.rec.aviso_local')) + '</p>';
+      return { html: ok, stats: { count: 1, results: 1 } };
+    } catch (_) { return v5err(ctx); }
+  }
+
+  /* ---------------- 3. estilos mínimos (inyectados por JS, sin bloques nuevos) ---------------- */
+  function v5injectCss() {
+    try {
+      if (typeof document === 'undefined' || document.getElementById('baro-v5-css')) return;
+      var st = document.createElement('style');
+      st.id = 'baro-v5-css';
+      st.textContent = '.baro-v5-panel{margin:6px 0}.baro-v5-row{display:flex;justify-content:space-between;' +
+        'gap:12px;padding:7px 2px;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}' +
+        '.baro-v5-item{padding:8px 2px;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}' +
+        '.baro-v5-item p{margin:2px 0}.baro-v5-sub{font-size:12px;opacity:.65}' +
+        '.baro-v5-sub a{color:#2F33B8;text-decoration:underline}';
+      document.head.appendChild(st);
+    } catch (_) {}
+  }
+
+  /* ---------------- 4. registro de herramientas ---------------- */
+  function v5register() {
+    if (typeof baroRegisterTool !== 'function') return;
+    baroRegisterTool('mi_panel',           { label: 'baro.v5.panel.label',   icon: 'chart',  run: v5RunMiPanel });
+    baroRegisterTool('analizar_post',      { label: 'baro.v5.analizar.label', icon: 'chart',  run: v5RunAnalizarPost });
+    baroRegisterTool('que_paso_hoy',       { label: 'baro.v5.hoy.label',      icon: 'bell',   run: v5RunQuePasoHoy });
+    baroRegisterTool('buscar_con_filtros', { label: 'baro.v5.filtros.label',  icon: 'search', run: v5RunBuscarFiltros });
+    baroRegisterTool('programar_recuerdo', { label: 'baro.v5.rec.label',      icon: 'clock',  run: v5RunProgramarRecuerdo });
+  }
+
+  /* ---------------- 5. intenciones ES/EN/ZH/PT (contrato 6b) ----------------
+     extract: autocontenido (corre en el contexto del router; NO usa helpers
+     del IIFE v5). El parseo pesado vive en run(), que sí los ve. */
+  function v5registerIntents() {
+    var R = (typeof window !== 'undefined' && window.baroIntentRules) ||
+            (typeof baroIntentRules === 'object' && baroIntentRules) || null;
+    var T = (typeof window !== 'undefined' && window.baroIntentToTool) ||
+            (typeof baroIntentToTool === 'object' && baroIntentToTool) || null;
+    if (!R || typeof R.push !== 'function' || !T) return;
+    try {
+      R.push(
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /mi panel\b/, /c[óo]mo va mi cuenta/, /mis estad[íi]sticas/, /estad[íi]sticas de mi cuenta/, /resumen de mi cuenta/,
+            /my dashboard/, /my stats/, /account stats/, /how is my account doing/,
+            /meu painel/, /minhas estat[íi]sticas/, /estat[íi]sticas da minha conta/,
+            /我的面板/, /我的统计/, /我的(账户|帐户)(数据|统计)/
+          ],
+          intent: 'mi_panel',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /analiza\w* (este|ese|el|mi) post/, /m[ée]tricas del post/, /estad[íi]sticas del post/,
+            /c[óo]mo va (este|ese|mi) post/, /rendimiento de (este|ese|mi) post/,
+            /analy[sz]e (this|that|my) post/, /post metrics/, /post stats/, /how is (this|that|my) post doing/,
+            /analisa\w* (este|esse|meu) post/, /m[ée]tricas do post/,
+            /分析(这|那)(篇|个)?帖子/
+          ],
+          intent: 'analizar_post',
+          extract: function (text) {
+            var t = String(text || '');
+            var m = t.match(/#\/post\/([A-Za-z0-9_-]+)/) || t.match(/\bpost\s+([A-Za-z0-9_-]{6,})\b/i);
+            return { postId: m ? m[1] : null, rawText: t };
+          }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /qu[ée] pas[óo] hoy/, /novedades de hoy/, /resumen del d[íi]a/, /qu[ée] hay de nuevo hoy/,
+            /what happened today/, /today'?s (digest|summary)/, /\bnews today\b/,
+            /o que aconteceu hoje/, /resumo do dia/, /novidades de hoje/,
+            /今天(发生|有)什么/, /今日(摘要|动态)/
+          ],
+          intent: 'que_paso_hoy',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /busca .+ de @/, /posts? de @/, /busca .+ (de )?(hoy|ayer|esta semana)/, /qu[ée] public[óo] @/,
+            /(search|find) .+ from @/, /posts? from @/, /(search|find) .+ (today|yesterday|this week)/,
+            /busca .+ de @/, /posts? de @/,
+            /搜索@.+的帖子/, /找(今天|昨天).+的帖子/
+          ],
+          intent: 'buscar_con_filtros',
+          extract: function (text) { return { rawText: String(text || '') }; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /recu[ée]rdame/, /av[íi]same/, /programa(r)? un recordatorio/, /no me dejes olvidar/, /mis recordatorios/,
+            /remind me/, /set a reminder/, /my reminders/,
+            /(me )?lembra/, /lembrete/,
+            /提醒我/, /我的提醒/
+          ],
+          intent: 'programar_recuerdo',
+          extract: function (text) { return { rawText: String(text || '') }; }
+        }
+      );
+      T['mi_panel'] = 'mi_panel';
+      T['analizar_post'] = 'analizar_post';
+      T['que_paso_hoy'] = 'que_paso_hoy';
+      T['buscar_con_filtros'] = 'buscar_con_filtros';
+      T['programar_recuerdo'] = 'programar_recuerdo';
+    } catch (_) {}
+  }
+
+  /* ---------------- 6. arranque ---------------- */
+  try { baroV5MergeI18n(); } catch (_) {}
+  try { v5injectCss(); } catch (_) {}
+  try { v5register(); } catch (_) {}
+  try { v5registerIntents(); } catch (_) {}
+  try { v5recSweep(); } catch (_) {}
+
 })();
 
 </script>
