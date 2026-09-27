@@ -53,13 +53,20 @@ function layerWithoutMedia(css) {
 /* ---------- El layer existe y todo vive en min-width ---------- */
 test('el responsive layer existe y es el único sistema responsive', function () {
   assert(L.length > 4000, 'layer sospechosamente pequeño: ' + L.length);
-  assert(L.length < 14000, 'layer creció sin control: ' + L.length + ' (presupuesto peso)');
+  // Techo 17KB (C208: la puerta de auth a pantalla completa sumó ~4.3KB
+  // deliberados el 2026-09-27; ver test 'peso del layer acotado').
+  assert(L.length < 17000, 'layer creció sin control: ' + L.length + ' (presupuesto peso)');
 });
 
 test('todo el CSS del layer vive dentro de @media (min-width:…)', function () {
   var rest = layerWithoutMedia(L).replace(/\/\*[\s\S]*?\*\//g, '').trim();
   // Única excepción legítima: el oculto base del sidebar/panel en móvil.
   rest = rest.replace(/#desktop-sidebar,\s*#desktop-rightpanel\s*\{\s*display:\s*none;\s*\}/g, '').trim();
+  // C208: base móvil de las puertas de auth (marca oculta, wrapper
+  // transparente). Probado móvil-neutro: el render a 390px es pixel
+  // idéntico al anterior (test-c208-auth-desktop.js + screenshots).
+  rest = rest.replace(/\.drex-auth-brand\s*\{\s*display:\s*none;\s*\}/g, '').trim();
+  rest = rest.replace(/\.drex-auth-main\s*\{\s*display:\s*contents;\s*\}/g, '').trim();
   assert(!/[a-z#.\[][a-z-]*\s*\{/.test(rest),
     'hay reglas fuera de @media (min-width): el móvil cambiaría: ' + rest.slice(0, 120));
 });
@@ -167,15 +174,19 @@ test('sidebar 252px / 76px solo-iconos y panel derecho 300px en >=1360', functio
   assert(sidePos, 'el sidebar debe posicionarse con var(--drex-col)');
 });
 
-/* ---------- Auth como tarjeta en escritorio ---------- */
-test('auth-form como tarjeta centrada en >=1024px', function () {
+/* ---------- Auth como puerta a pantalla completa en escritorio ----------
+   C208 (2026-09-27, orden directa del usuario): el login/registro en
+   escritorio ya NO es tarjeta modal (la tarjeta de 460px de C207 queda
+   superada). Es puerta a pantalla completa con panel de marca índigo.
+   Los detalles viven en test-c208-auth-desktop.js; aquí solo se fija
+   que la tarjeta vieja no regrese. */
+test('auth-form como puerta fullscreen en >=1024px (C208 reemplaza la tarjeta C207)', function () {
   var m = L.match(/@media\s*\(\s*min-width:\s*1024px\s*\)[\s\S]*?#auth-form\s*\{([\s\S]*?)\}/);
   assert(m, 'falta regla #auth-form en el bloque >=1024px');
   var body = m[1];
-  assert(/max-width:\s*460px/.test(body), 'la tarjeta debe tener max-width 460px');
-  assert(/height:\s*auto\s*!important/.test(body), 'falta height:auto !important (pisa el 100dvh en línea)');
-  assert(/border-radius:\s*28px/.test(body), 'falta border-radius de tarjeta');
-  assert(/box-shadow:\s*0 24px 80px/.test(body), 'falta sombra de tarjeta');
+  assert(!/max-width:\s*460px/.test(body), 'la tarjeta modal de 460px no debe regresar');
+  assert(/width:\s*100vw/.test(body), 'la puerta debe ocupar todo el viewport');
+  assert(L.indexOf('.drex-gate > .drex-auth-brand') !== -1, 'falta el panel de marca del gate');
 });
 
 test('la tarjeta de auth no es franja en tablet (sigue confinada a la columna)', function () {
@@ -220,8 +231,10 @@ test('el layer no agrega onclick ni texto visible nuevo (sin i18n pendiente)', f
   assert(!/\sonclick\s*=/.test(L), 'el layer no debe agregar atributos onclick=');
 });
 
-test('peso del layer acotado (delta neto ≈ 0)', function () {
-  assert(L.length < 14000, 'layer: ' + L.length + ' bytes (techo 14KB)');
+test('peso del layer acotado', function () {
+  // Techo 17KB: la puerta de auth C208 (2026-09-27) sumó ~4.3KB
+  // deliberados. Crecimiento futuro debe justificarse aquí.
+  assert(L.length < 17000, 'layer: ' + L.length + ' bytes (techo 17KB)');
 });
 
 console.log('\nRESULTADO: ' + passed + ' ok, ' + failed + ' fallos');

@@ -4060,6 +4060,13 @@ document.addEventListener("DOMContentLoaded", function() {
 /* ===== ESCRITORIO (>=1024px): layout adaptativo de 3 columnas estilo Twitter =====
    La columna central se ensancha a 640px; la navegación inferior móvil se reemplaza
    por un sidebar persistente a la izquierda y un panel informativo a la derecha. */
+
+/* Puertas de auth: base móvil (sin cambios visuales).
+   El panel de marca solo existe en escritorio; en móvil el wrapper es
+   transparente para no alterar el layout actual. */
+.drex-auth-brand { display: none; }
+.drex-auth-main { display: contents; }
+
 @media (min-width: 1024px) {
   :root { --drex-col: 640px; }
 
@@ -4079,24 +4086,105 @@ document.addEventListener("DOMContentLoaded", function() {
     --tw-translate-x: calc(-100% - (50vw - (var(--drex-col) / 2)) - 4px);
   }
 
-  /* Login/registro como tarjeta centrada elegante (no franja de 680px).
-     El height:100dvh en línea se pisa; las sub-vistas absolute inset-0
-     (login-options, email-step) siguen cubriendo la tarjeta. */
+  /* ═══ PUERTAS DE AUTH A PANTALLA COMPLETA (>=1024px) ═══
+     Login/registro (y el reto 2FA del login) como web de escritorio real:
+     layout dividido con panel de marca índigo a la izquierda (44%) y los
+     pasos del formulario a la derecha, ocupando TODO el viewport. Sin
+     tarjeta modal, sin columna de teléfono.
+     - En móvil (<1024px) NO cambia nada: .drex-auth-brand está oculto y
+       .drex-auth-main es display:contents (transparente al layout).
+     - Las sub-vistas `absolute inset-0` (login-options, email-step, …)
+       quedan confinadas al panel derecho porque .drex-auth-main es su
+       ancestro posicionado en escritorio.
+     (La base móvil — brand oculto, main transparente — está definida
+     fuera de este media query.) */
+
+  /* Puerta -> fila en escritorio (pisa el flex-col de las clases Tailwind) */
+  #auth-form.drex-gate, #twofactor-challenge-view.drex-gate {
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: 0;
+  }
+
   #auth-form {
-    max-width: 460px;
-    height: auto !important;
-    min-height: min(720px, calc(100dvh - 64px));
-    margin-top: 32px;
-    margin-bottom: 32px;
-    border: 1px solid #e7ecf3;
-    border-radius: 28px;
-    box-shadow: 0 24px 80px rgba(15, 35, 70, .18);
+    max-width: none;
+    width: 100vw;
+    height: 100dvh !important;
+    min-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
-  #auth-form > #auth-options { flex: 1 1 auto; }
-  body.theme-dark #auth-form {
-    border-color: #1c2534;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, .55);
+  #auth-form #auth-options { flex: 1 1 auto; }
+
+  /* Panel de marca compartido por todas las puertas de auth */
+  .drex-gate > .drex-auth-brand {
+    display: flex;
+    flex: 0 0 44%;
+    max-width: 620px;
+    min-width: 380px;
+    position: relative;
+    overflow: hidden;
+    flex-direction: column;
+    justify-content: center;
+    padding: 64px 60px;
+    color: #fff;
+    background: linear-gradient(135deg, #2F33B8 0%, #252a7d 52%, #151847 100%);
   }
+  .drex-auth-brand::before {
+    content: ""; position: absolute; width: 520px; height: 520px;
+    right: -160px; top: -120px; pointer-events: none;
+    background: radial-gradient(circle, rgba(154,163,255,.35) 0%, rgba(154,163,255,0) 65%);
+  }
+  .drex-auth-brand::after {
+    content: ""; position: absolute; width: 380px; height: 380px;
+    left: -120px; bottom: -140px; pointer-events: none;
+    background: radial-gradient(circle, rgba(255,255,255,.10) 0%, rgba(255,255,255,0) 65%);
+  }
+  .drex-auth-brand-inner { position: relative; z-index: 1; }
+  .drex-auth-brand-logo { font-size: 54px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+  .drex-auth-brand-tagline { margin-top: 16px; font-size: 18px; line-height: 1.55; opacity: .92; max-width: 400px; }
+  .drex-auth-brand-feats { list-style: none; margin: 36px 0 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+  .drex-auth-brand-feats li { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 500; opacity: .95; }
+  .drex-auth-feat-ico { width: 28px; height: 28px; border-radius: 999px; background: rgba(255,255,255,.16); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .drex-auth-feat-ico svg { width: 14px; height: 14px; }
+  .drex-auth-brand-foot { position: absolute; left: 60px; bottom: 32px; z-index: 1; font-size: 12px; opacity: .6; margin: 0; }
+
+  /* Panel del formulario: ancestro posicionado de los pasos en escritorio */
+  .drex-gate > .drex-auth-main {
+    display: block;
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    background: var(--theme-bg);
+  }
+  /* Variante centrada (reto 2FA del login): contenido en flujo, no pasos absolute */
+  .drex-gate > .drex-auth-main--center {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    overflow-y: auto; padding: 48px 32px;
+  }
+  /* El reto 2FA usa colores fijos claros: mantener su fondo original */
+  #twofactor-challenge-view > .drex-auth-main--center { background: #f0f4f9; }
+  /* El reto 2FA es puerta deliberada a pantalla completa: eximirlo de la
+     regla @768px que acota los `fixed inset-0` a la columna centrada
+     (su especificidad 4,2,2 exige !important; en tablet 768-1023 se
+     conserva la columna). */
+  #twofactor-challenge-view {
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+  /* Pasos del auth: confinados al panel derecho, con ancho de lectura cómodo.
+     (Los absolute inset-0 se centran con max-width + márgenes auto.) */
+  #auth-form .drex-auth-main > div { max-width: 520px; margin-left: auto; margin-right: auto; }
+
+  /* Onboarding post-registro: a pantalla completa en escritorio
+     (ya no confinado a la columna); contenido centrado y legible. */
+  #onboarding-overlay { max-width: none; border-left: 0; border-right: 0; }
+  #onboarding-overlay .onb-screen { max-width: 640px; width: 100%; margin-left: auto; margin-right: auto; }
 
   /* ---------- Sidebar izquierdo ---------- */
   #desktop-sidebar {
@@ -4518,7 +4606,26 @@ document.addEventListener("DOMContentLoaded", function() {
   
 
 
-  <div id="auth-form" class="hidden w-full h-screen flex flex-col relative overflow-hidden bg-[var(--theme-bg)]" style="height:100dvh;">
+  <div id="auth-form" class="drex-gate hidden w-full h-screen flex flex-col relative overflow-hidden bg-[var(--theme-bg)]" style="height:100dvh;">
+
+    <!-- ══════════════════════════════════════════════
+         PANEL DE MARCA: solo visible en escritorio (>=1024px).
+         En móvil queda oculto (display:none) y .drex-auth-main es
+         display:contents (transparente): el layout móvil no cambia.
+    ══════════════════════════════════════════════ -->
+    <div class="drex-auth-brand" aria-hidden="true">
+      <div class="drex-auth-brand-inner">
+        <div class="drex-auth-brand-logo">Drex</div>
+        <p class="drex-auth-brand-tagline">Salas de voz en vivo para practicar idiomas y conocer gente.</p>
+        <ul class="drex-auth-brand-feats">
+          <li><span class="drex-auth-feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg></span>Publica fotos, videos y votaciones</li>
+          <li><span class="drex-auth-feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg></span>Vota y haz eco de lo que te gusta</li>
+          <li><span class="drex-auth-feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg></span>Conecta con personas de todo el mundo</li>
+        </ul>
+      </div>
+      <p class="drex-auth-brand-foot">© 2026 Drex</p>
+    </div>
+    <div class="drex-auth-main">
 
     <!-- ══════════════════════════════════════════════
          PANTALLA PRINCIPAL: Logo + Comenzar aventura / Iniciar sesión
@@ -5047,6 +5154,7 @@ document.addEventListener("DOMContentLoaded", function() {
     </div>
 
         </div>
+    </div><!-- /drex-auth-main (puerta de auth) -->
   </div>
 
 <!-- ══════════════════════════════════════════════════════════
@@ -43933,7 +44041,20 @@ body.theme-dark #continueWithPhone:hover {
 <!-- ============================================================ -->
 <!-- =====  DESAFÍO DE 2FA AL INICIAR SESIÓN (bloquea la app)  ===== -->
 <!-- ============================================================ -->
-<div id="twofactor-challenge-view" class="fixed inset-0 bg-[#f0f4f9] text-[#1c2b4a] z-[220] hidden overflow-y-auto flex flex-col items-center justify-center px-6">
+<div id="twofactor-challenge-view" class="drex-gate fixed inset-0 bg-[#f0f4f9] text-[#1c2b4a] z-[220] hidden overflow-y-auto flex flex-col items-center justify-center px-6">
+  <div class="drex-auth-brand" aria-hidden="true">
+    <div class="drex-auth-brand-inner">
+      <div class="drex-auth-brand-logo">Drex</div>
+      <p class="drex-auth-brand-tagline">Salas de voz en vivo para practicar idiomas y conocer gente.</p>
+      <ul class="drex-auth-brand-feats">
+        <li><span class="drex-auth-feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg></span>Publica fotos, videos y votaciones</li>
+        <li><span class="drex-auth-feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg></span>Vota y haz eco de lo que te gusta</li>
+        <li><span class="drex-auth-feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg></span>Conecta con personas de todo el mundo</li>
+      </ul>
+    </div>
+    <p class="drex-auth-brand-foot">© 2026 Drex</p>
+  </div>
+  <div class="drex-auth-main drex-auth-main--center">
   <div class="w-full max-w-sm text-center">
     <div class="w-14 h-14 rounded-2xl bg-[#eef2f7] flex items-center justify-center mx-auto mb-4 text-[#24324c]">
       <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
@@ -43946,6 +44067,7 @@ body.theme-dark #continueWithPhone:hover {
     <button id="twofactor-challenge-backup-link" onclick="toggleMfaBackupMode()" class="w-full mt-3 p-2 text-sm font-bold text-[var(--brand-indigo-text)] active:opacity-70">Usar código de respaldo</button>
     <button onclick="signOutFromTwoFactorChallenge()" class="w-full mt-1 p-3 text-sm font-bold text-[#6b7280] active:opacity-70">Cancelar</button>
   </div>
+  </div><!-- /drex-auth-main (2FA challenge) -->
 </div>
 
 <!-- ============================================================ -->

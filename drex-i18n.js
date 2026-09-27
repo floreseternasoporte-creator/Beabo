@@ -2156,7 +2156,11 @@ var APP_ENGLISH_TEXT = {
 "No tienes chats silenciados.":"You have no muted chats.",
 "Inicia sesión para ver los chats silenciados.":"Sign in to see your muted chats.",
 "Hasta {d}":"Until {d}",
-"Chat reactivado":"Chat unmuted"
+"Chat reactivado":"Chat unmuted",
+"Publica fotos, videos y votaciones":"Post photos, videos and polls",
+"Vota y haz eco de lo que te gusta":"Vote and echo what you love",
+"Conecta con personas de todo el mundo":"Connect with people around the world",
+"Salas de voz en vivo para practicar idiomas y conocer gente.":"Live voice rooms to practice languages and meet people."
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4311,7 +4315,11 @@ var APP_CHINESE_TEXT = {
 "No tienes chats silenciados.":"你没有已静音的聊天。",
 "Inicia sesión para ver los chats silenciados.":"登录以查看已静音的聊天。",
 "Hasta {d}":"至 {d}",
-"Chat reactivado":"已取消聊天静音"
+"Chat reactivado":"已取消聊天静音",
+"Publica fotos, videos y votaciones":"发布照片、视频和投票",
+"Vota y haz eco de lo que te gusta":"为你喜欢的内容投票并转发",
+"Conecta con personas de todo el mundo":"与世界各地的人建立连接",
+"Salas de voz en vivo para practicar idiomas y conocer gente.":"实时语音房，练习语言、结识朋友。"
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6457,7 +6465,11 @@ var APP_PORTUGUESE_TEXT = {
 "No tienes chats silenciados.":"Você não tem conversas silenciadas.",
 "Inicia sesión para ver los chats silenciados.":"Inicie sessão para ver as conversas silenciadas.",
 "Hasta {d}":"Até {d}",
-"Chat reactivado":"Conversa reativada"
+"Chat reactivado":"Conversa reativada",
+"Publica fotos, videos y votaciones":"Publique fotos, vídeos e votações",
+"Vota y haz eco de lo que te gusta":"Vote e ecoe o que você gosta",
+"Conecta con personas de todo el mundo":"Conecte-se com pessoas do mundo todo",
+"Salas de voz en vivo para practicar idiomas y conocer gente.":"Salas de voz ao vivo para praticar idiomas e conhecer pessoas."
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
