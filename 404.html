@@ -9888,6 +9888,10 @@ function fiestaGameHTMLFinal() {
             <button class="tab-button py-4 px-2 border-b-2 border-transparent text-[var(--theme-muted)] hover:text-[var(--theme-text)] font-medium" data-tab="music" onclick="loadProfileMusic()" role="tab" aria-selected="false">
               Música
             </button>
+            <!-- DREX-EFFECTS v1: pestaña de efectos del perfil -->
+            <button class="tab-button py-4 px-2 border-b-2 border-transparent text-[var(--theme-muted)] hover:text-[var(--theme-text)] font-medium" data-tab="efectos" role="tab" aria-selected="false">
+              Efectos
+            </button>
           </nav>
         </div>
       </div>
@@ -9948,6 +9952,17 @@ function fiestaGameHTMLFinal() {
                 <button onclick="openMusicUpload()" class="bg-[var(--drex-brand)] text-white px-6 py-3 rounded-xl hover:bg-[#24324c] transition-all font-semibold">+ Subir música</button>
               </div>
               <div id="profile-music-list" class="space-y-2"></div>
+            </div>
+
+            <!-- DREX-EFFECTS v1: Tab de Efectos del perfil propio -->
+            <div id="efectos-tab-content" class="tab-content hidden">
+              <div class="flex justify-between items-center mb-6">
+                <div>
+                  <h2 id="profile-efectos-header" class="text-2xl font-bold text-[var(--theme-text)]">0 efectos</h2>
+                  <p class="text-sm text-[var(--theme-muted)] mt-1">Efectos que creaste en Drex</p>
+                </div>
+              </div>
+              <div id="profile-efectos-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
             </div>
           </div>
 
@@ -10013,6 +10028,10 @@ function fiestaGameHTMLFinal() {
         }
         if (tabName === 'ecos' && typeof loadProfileEcosTab === 'function') {
           loadProfileEcosTab();
+        }
+        // DREX-EFFECTS v1: carga perezosa de la pestaña de efectos.
+        if (tabName === 'efectos' && typeof drexFxLoadProfileTab === 'function') {
+          drexFxLoadProfileTab();
         }
       }
     });
@@ -10117,6 +10136,9 @@ function fiestaGameHTMLFinal() {
         <div id="author-profile-posts-list" class="flex flex-col"></div>
         <h3 class="text-[15px] font-extrabold text-[var(--theme-text)] mb-2 px-1 mt-6">Ecos</h3>
         <div id="author-profile-ecos-list" class="flex flex-col"></div>
+        <!-- DREX-EFFECTS v1: sección de efectos del autor -->
+        <h3 class="text-[15px] font-extrabold text-[var(--theme-text)] mb-2 px-1 mt-6">Efectos</h3>
+        <div id="author-profile-efectos-list" class="grid grid-cols-2 gap-3"></div>
       </div>
 
         <!-- Nota de perfil -->
@@ -15636,6 +15658,10 @@ function saveNote() {
       notePostPublishing = false;
       // Invalidar snapshot del feed: hay un post nuevo que el caché no tiene.
       try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
+      // DREX-EFFECTS v1: la nota se publicó con un efecto de la cámara;
+      // incrementar su contador de usos (transacción atómica, best-effort,
+      // no bloquea la publicación).
+      try { if (note.effectId && typeof drexFxBumpUsos === 'function') drexFxBumpUsos(note.effectId); } catch (_) {}
       // Índice notesByAuthor: mantiene el índice secundario para que los
       // perfiles lean solo los posts del autor en vez de descargar
       // communityNotes completo en cada polling. No bloquea la publicación.
@@ -41045,6 +41071,11 @@ function renderAccountsList(accounts) {
       if (typeof _loadAuthorEcosContent === 'function') {
         const ecosContainer = document.getElementById('author-profile-ecos-list');
         if (ecosContainer) _loadAuthorEcosContent(authorId, ecosContainer);
+      }
+      // DREX-EFFECTS v1: sección de efectos publicados del autor.
+      if (typeof drexFxLoadAuthorTab === 'function') {
+        const fxContainer = document.getElementById('author-profile-efectos-list');
+        if (fxContainer) drexFxLoadAuthorTab(authorId, fxContainer);
       }
     }).catch(() => {
       if (currentViewedAuthorId !== authorId) return;
@@ -77805,6 +77836,335 @@ function drexApplyEffect(effectDef) {
 window.drexCameraOpen = drexCameraOpen;
 window.drexApplyEffect = drexApplyEffect;
 /* === FIN DREX-CAM v1 === */
+
+/* === DREX-EFFECTS v1: pestaña "Efectos" en perfiles + botón "Usar" (2026-09-27)
+ * ---------------------------------------------------------------------------
+ * CONTRATO DE DATOS (nodo `effects/<effectId>` del backend, coordinado con
+ * Drex Studio que escribe los envíos):
+ *   { id, nombre, autorUid, portada, tipo: 'cara'|'fondo'|'juego'|'codigo',
+ *     definicion, createdAt, usos, status: 'published'|'pending' }
+ * - Solo `status:'published'` aparece en listados públicos. Las entradas
+ *   antiguas sin `status` se tratan como 'published' (compatibilidad con
+ *   efectos escritos antes de existir el campo; 'pending' siempre oculta).
+ * - `definicion` puede traer {filter, overlay} (CSS que entiende
+ *   drexApplyEffect); también se aceptan `filter`/`overlay`/`icon`/`name`
+ *   a nivel raíz (compatibilidad con el catálogo DREX-CAM v1).
+ *
+ * FLUJO "Usar":
+ *   tarjeta (perfil propio o de autor) -> botón "Usar" ->
+ *   drexFxUseEffect(id) resuelve la definición y llama
+ *   window.drexCameraOpen({effect: <def>}) con el efecto aplicado.
+ *   NOTA DE CONTRATO: drexCameraOpen guarda `opts.effect` tal cual en
+ *   drexCamSelectedEffect y la captura lee `.id` para file.drexEffectId
+ *   (luego note.effectId al publicar). Por eso se pasa el OBJETO
+ *   definición (con id), no el id suelto: con un string, el efecto se
+ *   aplicaría al preview pero el effectId se perdería al publicar.
+ *
+ * CONTEO DE USOS:
+ *   publishNoteToDatabase() llama a drexFxBumpUsos(note.effectId) tras la
+ *   escritura real: transacción atómica sobre `effects/<id>/usos`
+ *   (best-effort; no bloquea la publicación).
+ * ============================================================================
+ */
+
+/* ---------- Utilidades puras (testeables sin DOM) ---------- */
+
+function drexFxT(esText) {
+  try { if (typeof appT === 'function') return appT(esText); } catch (_) {}
+  return esText;
+}
+
+function drexFxSanitizeId(id) {
+  return String(id == null ? '' : id).replace(/[.#$\[\]\/]/g, '_').slice(0, 128);
+}
+
+var DREX_FX_TIPOS = ['cara', 'fondo', 'juego', 'codigo'];
+
+function drexFxTypeLabel(tipo) {
+  switch (String(tipo || '').toLowerCase()) {
+    case 'cara': return drexFxT('Cara');
+    case 'fondo': return drexFxT('Fondo');
+    case 'juego': return drexFxT('Juego');
+    case 'codigo': return drexFxT('Código');
+    default: return '';
+  }
+}
+
+/* Normaliza UNA entrada cruda del nodo effects/ al contrato. Acepta tanto
+ * los nombres del contrato (nombre/autorUid/portada/definicion) como los
+ * del catálogo DREX-CAM v1 (name/filter/overlay/icon). */
+function drexFxNormalizeEffect(raw, key) {
+  var e = (raw && typeof raw === 'object') ? raw : {};
+  var id = String(e.id || key || '');
+  var def = (e.definicion && typeof e.definicion === 'object') ? e.definicion : {};
+  var tipo = String(e.tipo || '').toLowerCase();
+  if (DREX_FX_TIPOS.indexOf(tipo) === -1) tipo = '';
+  var createdAt = Number(e.createdAt || 0);
+  if (isNaN(createdAt)) createdAt = 0;
+  var usos = Number(e.usos);
+  if (isNaN(usos) || usos < 0) usos = 0;
+  var status = String(e.status || 'published');
+  var filter = (typeof def.filter === 'string' && def.filter) ? def.filter
+    : (typeof e.filter === 'string' ? e.filter : '');
+  var overlay = (typeof def.overlay === 'string' && def.overlay) ? def.overlay
+    : (typeof e.overlay === 'string' ? e.overlay : '');
+  return {
+    id: id,
+    nombre: String(e.nombre || e.name || id),
+    autorUid: String(e.autorUid || e.authorUid || ''),
+    portada: String(e.portada || e.icon || e.cover || ''),
+    tipo: tipo,
+    definicion: def,
+    filter: filter,
+    overlay: overlay,
+    createdAt: createdAt,
+    usos: Math.floor(usos),
+    status: status
+  };
+}
+
+function drexFxNormalizeEffects(raw) {
+  if (!raw || typeof raw !== 'object') return [];
+  var out = [];
+  var keys = Object.keys(raw);
+  for (var i = 0; i < keys.length; i++) {
+    var fx = drexFxNormalizeEffect(raw[keys[i]], keys[i]);
+    if (fx.id) out.push(fx);
+  }
+  return out;
+}
+
+/* Solo publicados del autor, más recientes primero. */
+function drexFxPublishedByAuthor(list, uid) {
+  var u = String(uid || '');
+  var arr = (list || []).filter(function (fx) {
+    return fx && fx.autorUid === u && fx.status === 'published';
+  });
+  arr.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+  return arr;
+}
+
+/* Función de actualización para la transacción atómica de `usos`. */
+function drexFxCountUpdate(cur) {
+  var n = (typeof cur === 'number') ? cur : parseInt(cur, 10);
+  if (isNaN(n) || n < 0) n = 0;
+  return n + 1;
+}
+
+/* ---------- Render (requiere DOM) ---------- */
+
+var drexFxCache = {};
+
+function drexFxEscapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function drexFxSafeImg(url) {
+  var u = String(url || '').trim();
+  if (/^(https?:\/\/|data:image\/)/i.test(u)) return u;
+  return '';
+}
+
+function drexFxCoverHTML(fx) {
+  var src = drexFxSafeImg(fx.portada);
+  if (src) {
+    return '<img src="' + drexFxEscapeHtml(src) + '" alt="" loading="lazy" class="w-full h-full object-cover">';
+  }
+  var initial = drexFxEscapeHtml(String(fx.nombre || '✦').trim().charAt(0).toUpperCase() || '✦');
+  return '<span class="text-3xl font-extrabold text-[var(--brand-indigo-text)]">' + initial + '</span>';
+}
+
+function drexFxCardHTML(fx) {
+  var tipoLabel = drexFxTypeLabel(fx.tipo);
+  var usosTxt = drexFxT('{n} usos').replace('{n}', String(fx.usos));
+  return '' +
+    '<div class="rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-surface)] overflow-hidden">' +
+      '<div class="aspect-square bg-[var(--theme-surface-muted)] flex items-center justify-center overflow-hidden">' +
+        drexFxCoverHTML(fx) +
+      '</div>' +
+      '<div class="p-2.5">' +
+        '<p class="text-[13px] font-bold text-[var(--theme-text)] truncate" title="' + drexFxEscapeHtml(fx.nombre) + '">' + drexFxEscapeHtml(fx.nombre) + '</p>' +
+        '<div class="flex items-center justify-between mt-1.5 gap-2">' +
+          (tipoLabel
+            ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-[var(--theme-surface-muted)] text-[var(--brand-indigo-text)] font-semibold whitespace-nowrap">' + drexFxEscapeHtml(tipoLabel) + '</span>'
+            : '<span></span>') +
+          '<span class="text-[11px] text-[var(--theme-muted)] whitespace-nowrap">' + drexFxEscapeHtml(usosTxt) + '</span>' +
+        '</div>' +
+        '<button type="button" data-drexfx-usar="' + drexFxEscapeHtml(fx.id) + '" ' +
+          'class="mt-2 w-full min-h-[40px] rounded-xl bg-[var(--drex-brand)] text-white text-sm font-bold active:opacity-80 transition" ' +
+          'aria-label="' + drexFxEscapeHtml(drexFxT('Usar') + ': ' + fx.nombre) + '">' +
+          drexFxEscapeHtml(drexFxT('Usar')) +
+        '</button>' +
+      '</div>' +
+    '</div>';
+}
+
+function drexFxSpinnerHTML() {
+  try {
+    if (typeof getSpinnerMarkup === 'function') return '<div class="py-10 flex justify-center col-span-full">' + getSpinnerMarkup() + '</div>';
+  } catch (_) {}
+  return '<div class="py-10 text-center text-sm text-[var(--theme-muted)] col-span-full">…</div>';
+}
+
+function drexFxRenderList(container, list, opts) {
+  if (!container) return;
+  opts = opts || {};
+  while (container.firstChild) container.removeChild(container.firstChild);
+  if (!list || !list.length) {
+    var emptyTitle = opts.emptyTitle || drexFxT('Aún no ha creado efectos');
+    var emptySub = opts.emptySub || drexFxT('Los efectos que cree aparecerán aquí.');
+    container.innerHTML =
+      '<div class="py-12 text-center col-span-full">' +
+        '<div class="mx-auto mb-3 w-14 h-14 rounded-2xl bg-[var(--theme-surface-muted)] flex items-center justify-center text-2xl">✦</div>' +
+        '<p class="font-bold text-[var(--theme-text)] mb-1">' + drexFxEscapeHtml(emptyTitle) + '</p>' +
+        '<p class="text-sm text-[var(--theme-muted)]">' + drexFxEscapeHtml(emptySub) + '</p>' +
+      '</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < list.length; i++) {
+    drexFxCache[list[i].id] = list[i];
+    html += drexFxCardHTML(list[i]);
+  }
+  container.innerHTML = html;
+}
+
+function drexFxSetHeader(headerId, count) {
+  try {
+    var h = document.getElementById(headerId);
+    if (h) h.textContent = String(count) + ' ' + drexFxT('Efectos');
+  } catch (_) {}
+}
+
+function drexFxFetchAuthorEffects(uid) {
+  var u = String(uid || '');
+  if (!u) return Promise.resolve([]);
+  try {
+    if (typeof DrexCloud === 'undefined' || !DrexCloud.database) return Promise.resolve([]);
+    return DrexCloud.database().ref('effects').once('value').then(function (snap) {
+      var val = null;
+      try { val = snap && snap.val ? snap.val() : null; } catch (_) {}
+      return drexFxPublishedByAuthor(drexFxNormalizeEffects(val), u);
+    }).catch(function () { return []; });
+  } catch (_) { return Promise.resolve([]); }
+}
+
+/* Pestaña "Efectos" del perfil propio. */
+function drexFxLoadProfileTab() {
+  var container = (typeof document !== 'undefined') ? document.getElementById('profile-efectos-list') : null;
+  if (!container) return;
+  var user = null;
+  try { user = DrexCloud.auth().currentUser; } catch (_) {}
+  if (!user) {
+    drexFxRenderList(container, [], {
+      emptyTitle: drexFxT('Aún no has creado efectos'),
+      emptySub: drexFxT('Tus efectos aparecerán aquí cuando crees el primero.')
+    });
+    drexFxSetHeader('profile-efectos-header', 0);
+    return;
+  }
+  container.innerHTML = drexFxSpinnerHTML();
+  drexFxFetchAuthorEffects(user.uid).then(function (list) {
+    if (!document.getElementById('profile-efectos-list')) return;
+    drexFxRenderList(container, list, {
+      emptyTitle: drexFxT('Aún no has creado efectos'),
+      emptySub: drexFxT('Tus efectos aparecerán aquí cuando crees el primero.')
+    });
+    drexFxSetHeader('profile-efectos-header', list.length);
+  }).catch(function () {
+    container.innerHTML = '<div class="py-10 text-center text-sm text-[var(--theme-muted)] col-span-full">' +
+      drexFxEscapeHtml(drexFxT('Error al cargar los efectos.')) + '</div>';
+  });
+}
+
+/* Sección "Efectos" del modal de perfil de autor. */
+function drexFxLoadAuthorTab(authorId, container) {
+  if (!container) {
+    try { container = document.getElementById('author-profile-efectos-list'); } catch (_) {}
+  }
+  if (!container) return;
+  container.innerHTML = drexFxSpinnerHTML();
+  var aid = String(authorId || '');
+  drexFxFetchAuthorEffects(aid).then(function (list) {
+    drexFxRenderList(container, list, {
+      emptyTitle: drexFxT('Aún no ha creado efectos'),
+      emptySub: drexFxT('Los efectos que cree aparecerán aquí.')
+    });
+  }).catch(function () {
+    container.innerHTML = '<div class="py-10 text-center text-sm text-[var(--theme-muted)] col-span-full">' +
+      drexFxEscapeHtml(drexFxT('Error al cargar los efectos.')) + '</div>';
+  });
+}
+
+/* Botón "Usar": abre la cámara propia con el efecto ya aplicado. */
+function drexFxUseEffect(effectId) {
+  var id = String(effectId || '');
+  if (!id) return;
+  var cached = drexFxCache[id] || null;
+  var openWith = function (def) {
+    if (!def) {
+      try {
+        if (typeof showMiniToast === 'function') showMiniToast(drexFxT('Error al cargar los efectos.'));
+      } catch (_) {}
+      return;
+    }
+    try {
+      if (typeof window !== 'undefined' && typeof window.drexCameraOpen === 'function') {
+        /* Se pasa el objeto definición (con id): drexCameraOpen lo guarda
+         * como efecto seleccionado, drexApplyEffect lo pinta en el preview
+         * y la captura conserva file.drexEffectId -> note.effectId. */
+        window.drexCameraOpen({ effect: def });
+      }
+    } catch (_) {}
+  };
+  if (cached) { openWith(cached); return; }
+  try {
+    if (typeof DrexCloud === 'undefined' || !DrexCloud.database) { openWith(null); return; }
+    DrexCloud.database().ref('effects/' + drexFxSanitizeId(id)).once('value').then(function (snap) {
+      var val = null;
+      try { val = snap && snap.val ? snap.val() : null; } catch (_) {}
+      var def = val ? drexFxNormalizeEffect(val, id) : null;
+      if (def && def.status === 'published') { drexFxCache[id] = def; openWith(def); }
+      else openWith(null);
+    }).catch(function () { openWith(null); });
+  } catch (_) { openWith(null); }
+}
+
+/* Incrementa `usos` del efecto tras publicar con él (transacción atómica,
+ * best-effort: nunca bloquea ni rompe la publicación). */
+function drexFxBumpUsos(effectId) {
+  try {
+    var id = drexFxSanitizeId(effectId);
+    if (!id || typeof DrexCloud === 'undefined' || !DrexCloud.database) return;
+    var p = DrexCloud.database().ref('effects/' + id + '/usos').transaction(drexFxCountUpdate);
+    if (p && typeof p.catch === 'function') p.catch(function () {});
+  } catch (_) {}
+}
+
+/* Click delegado en los botones "Usar" (sin onclick inline con ids). */
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('click', function (ev) {
+    var t = ev && ev.target;
+    if (!t || !t.closest) return;
+    var btn = t.closest('[data-drexfx-usar]');
+    if (!btn) return;
+    try { ev.preventDefault(); } catch (_) {}
+    drexFxUseEffect(btn.getAttribute('data-drexfx-usar'));
+  });
+}
+
+try {
+  if (typeof window !== 'undefined') {
+    window.drexFxUseEffect = drexFxUseEffect;
+    window.drexFxBumpUsos = drexFxBumpUsos;
+    window.drexFxLoadProfileTab = drexFxLoadProfileTab;
+    window.drexFxLoadAuthorTab = drexFxLoadAuthorTab;
+  }
+} catch (_) {}
+
+/* === FIN DREX-EFFECTS v1 === */
 
 </script>
 

@@ -2174,6 +2174,18 @@ var APP_ENGLISH_TEXT = {
 "Detener": "Stop",
 "La cámara aún no está lista.": "The camera isn't ready yet.",
 "Tu navegador no soporta la grabación de video.": "Your browser doesn't support video recording.",
+/* DREX-EFFECTS v1 */
+"Usar": "Use",
+"Aún no has creado efectos": "You haven't created any effects yet",
+"Tus efectos aparecerán aquí cuando crees el primero.": "Your effects will appear here when you create your first one.",
+"Aún no ha creado efectos": "No effects created yet",
+"Los efectos que cree aparecerán aquí.": "Effects they create will appear here.",
+"Error al cargar los efectos.": "Couldn't load the effects.",
+"Cara": "Face",
+"Fondo": "Background",
+"Juego": "Game",
+"Código": "Code",
+"{n} usos": "{n} uses"
 
 };
 var APP_CHINESE_TEXT = {
@@ -4347,6 +4359,18 @@ var APP_CHINESE_TEXT = {
 "Detener": "停止",
 "La cámara aún no está lista.": "相机尚未就绪。",
 "Tu navegador no soporta la grabación de video.": "你的浏览器不支持录制视频。",
+/* DREX-EFFECTS v1 */
+"Usar": "使用",
+"Aún no has creado efectos": "你还没有创建特效",
+"Tus efectos aparecerán aquí cuando crees el primero.": "创建第一个特效后，你的特效将显示在这里。",
+"Aún no ha creado efectos": "尚未创建特效",
+"Los efectos que cree aparecerán aquí.": "其创建的特效将显示在这里。",
+"Error al cargar los efectos.": "无法加载特效。",
+"Cara": "脸部",
+"Fondo": "背景",
+"Juego": "游戏",
+"Código": "代码",
+"{n} usos": "{n} 次使用"
 
 };
 var APP_PORTUGUESE_TEXT = {
@@ -6511,6 +6535,18 @@ var APP_PORTUGUESE_TEXT = {
 "Detener": "Parar",
 "La cámara aún no está lista.": "A câmera ainda não está pronta.",
 "Tu navegador no soporta la grabación de video.": "Teu navegador não suporta gravação de vídeo.",
+/* DREX-EFFECTS v1 */
+"Usar": "Usar",
+"Aún no has creado efectos": "Você ainda não criou efeitos",
+"Tus efectos aparecerán aquí cuando crees el primero.": "Seus efeitos aparecerão aqui quando você criar o primeiro.",
+"Aún no ha creado efectos": "Ainda não criou efeitos",
+"Los efectos que cree aparecerán aquí.": "Os efeitos que criar aparecerão aqui.",
+"Error al cargar los efectos.": "Não foi possível carregar os efeitos.",
+"Cara": "Rosto",
+"Fondo": "Fundo",
+"Juego": "Jogo",
+"Código": "Código",
+"{n} usos": "{n} usos"
 
 };
 var APP_CHINESE_ATTRS = {
@@ -7102,5 +7138,5 @@ var APP_PORTUGUESE_ATTRS = {
 "+1 (555) 123-4567": "+1 (555) 123-4567",
 "Cerrar reporte": "Fechar denúncia",
 "Analizando": "Analisando",
-"Letra de la canción (opcional)": "Letra da música (opcional)"
+"Letra de la canción (opcional)": "Letra da música (opcional)",
 };
