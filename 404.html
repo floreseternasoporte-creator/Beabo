@@ -65961,6 +65961,1941 @@ if (typeof module !== 'undefined' && module.exports) {
 
 })();
 
+/* ================= BARO · v6-GESTION ================= */
+/* ================= BARO v6 · gestión personal =================
+ * SNIPPET autocontenido. Punto de inserción: DESPUÉS del bloque v5-TOOLS
+ * y ANTES del cierre final del script del index.html. NO crea bloques
+ * script nuevos. NO toca baroHandleUserMessage, su catch "Detalle
+ * técnico", el blindaje null-det ni los parches v5 (solo los lee).
+ *
+ * QUÉ APORTA (7 herramientas, 100% client-side, datos REALES):
+ *  1. ver_borradores      — lista de borradores con botones [Publicar] /
+ *                           [Descartar] por borrador. (El listado plano ya
+ *                           existe como `borradores_listar` de la ola H: esta
+ *                           tool SOLO responde a frases de gestión y su
+ *                           extract cede ("mis borradores" pelado -> null)
+ *                           para no duplicar.)
+ *  2. publicar_borrador   — publica un borrador por el pipeline REAL 6d
+ *                           (baro6dDoPublish). Acción pública -> tarjeta de
+ *                           confirmación por toque. Borradores con votación:
+ *                           mensaje honesto (el pipeline 6d es solo texto;
+ *                           se sugiere retomar en el composer).
+ *  3. descartar_borrador  — elimina un borrador (destructivo -> tarjeta 6d
+ *                           danger). Real: saveAllNoteDrafts sin el draft.
+ *  4. bloquear_usuario    — bloqueo REAL: blocks/<uid>/<target>.set() +
+ *                           breakFollowRelationsOnBlock (con guards).
+ *                           Destructivo -> tarjeta 6d danger obligatoria.
+ *  5. desbloquear_usuario — quita el bloqueo (.remove()). Tarjeta 6d.
+ *  6. ver_bloqueados      — lista REAL de blocks/<uid> con botones
+ *                           [Desbloquear].
+ *  7. compartir_post      — comparte un post REAL vía sharePostExternally
+ *                           (la MISMA función de la UI: navigator.share ->
+ *                           portapapeles -> prompt). Resuelve el post con
+ *                           baroResolvePostTarget (C102).
+ * (El listado plano de guardados ya existe como `guardados_listar` de la
+ * ola H: no se duplica; se documenta en el README.)
+ *
+ * CONTRATOS que sigue:
+ *  - baroRegisterTool(name, {label, icon, run}) — run(args,ctx) -> Promise.
+ *  - Reglas 6b: baroIntentRules.push({langs, patterns, intent, extract}) +
+ *    baroIntentToTool[intent] = tool. extract AUTOCONTENIDO (sin helpers
+ *    del IIFE; el parseo pesado vive en run()).
+ *  - i18n ES/EN/ZH/PT vía BARO_UI_I18N + baroMergeI18n() (patrón 8L/v5).
+ *  - Confirmación por toque con baroAskConfirm (patrón 6d/eliminar):
+ *    NADA público o destructivo se ejecuta sin el tap en la tarjeta.
+ *  - Botones en linea via baro6dExpose (patrón v5-MEM baroV5SlotPick).
+ *  - HTML siempre escapado; try/catch en cada tool; sin fetch externo.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patrón 8L/v5) ---------------- */
+  var BARO_V6_I18N = {
+    'baro.v6.login_needed': { es: 'Inicia sesión para usar esto.', en: 'Sign in to use this.', zh: '请先登录。', pt: 'Entre para usar isto.' },
+    'baro.v6.no_db':        { es: 'No pude leer los datos ahora mismo.', en: 'Could not read the data right now.', zh: '暂时无法读取数据。', pt: 'Não consegui ler os dados agora.' },
+    'baro.v6.error':        { es: 'Algo falló. Inténtalo de nuevo.', en: 'Something failed. Try again.', zh: '出错了，请重试。', pt: 'Algo falhou. Tente de novo.' },
+    'baro.v6.no_confirm':   { es: 'No pude mostrar la confirmación ahora mismo.', en: 'Could not show the confirmation right now.', zh: '暂时无法显示确认。', pt: 'Não consegui mostrar a confirmação agora.' },
+    'baro.v6.cancelado':    { es: 'Cancelado, no se hizo ningún cambio.', en: 'Cancelled, nothing changed.', zh: '已取消，未做任何更改。', pt: 'Cancelado, nada mudou.' },
+    'baro.v6.confirmar':    { es: 'Confirmar', en: 'Confirm', zh: '确认', pt: 'Confirmar' },
+    'baro.v6.cancelar':     { es: 'Cancelar', en: 'Cancel', zh: '取消', pt: 'Cancelar' },
+
+    'baro.v6.borr.label':      { es: 'Gestionar borradores', en: 'Manage drafts', zh: '管理草稿', pt: 'Gerenciar rascunhos' },
+    'baro.v6.borr.titulo':     { es: 'Tus borradores ({n})', en: 'Your drafts ({n})', zh: '你的草稿（{n}）', pt: 'Seus rascunhos ({n})' },
+    'baro.v6.borr.vacios':     { es: 'No tienes borradores.', en: 'You have no drafts.', zh: '你没有草稿。', pt: 'Você não tem rascunhos.' },
+    'baro.v6.borr.btn_pub':    { es: 'Publicar', en: 'Publish', zh: '发布', pt: 'Publicar' },
+    'baro.v6.borr.btn_del':    { es: 'Descartar', en: 'Discard', zh: '丢弃', pt: 'Descartar' },
+    'baro.v6.borr.cual':       { es: '¿Cuál borrador? Dime el número.', en: 'Which draft? Tell me the number.', zh: '哪一篇草稿？告诉我编号。', pt: 'Qual rascunho? Me diga o número.' },
+    'baro.v6.borr.no_existe':  { es: 'Ese borrador ya no existe.', en: 'That draft no longer exists.', zh: '那篇草稿已不存在。', pt: 'Esse rascunho não existe mais.' },
+    'baro.v6.borr.vacio_txt':  { es: 'Ese borrador está vacío.', en: 'That draft is empty.', zh: '那篇草稿是空的。', pt: 'Esse rascunho está vazio.' },
+    'baro.v6.borr.con_poll':   { es: 'Ese borrador trae una votación y Baro solo publica texto. Retómalo en el editor para publicarlo con su votación.', en: 'That draft has a poll and Baro only publishes text. Resume it in the editor to publish it with its poll.', zh: '那篇草稿带投票，而 Baro 只能发布纯文本。请在编辑器中继续以带投票发布。', pt: 'Esse rascunho tem votação e o Baro só publica texto. Retome no editor para publicar com a votação.' },
+
+    'baro.v6.pub.label':        { es: 'Publicar borrador', en: 'Publish draft', zh: '发布草稿', pt: 'Publicar rascunho' },
+    'baro.v6.pub.confirm':      { es: '¿Publicar este borrador?', en: 'Publish this draft?', zh: '发布这篇草稿吗？', pt: 'Publicar este rascunho?' },
+    'baro.v6.pub.sin_borr':     { es: 'No tienes borradores para publicar.', en: 'You have no drafts to publish.', zh: '你没有可发布的草稿。', pt: 'Você não tem rascunhos para publicar.' },
+
+    'baro.v6.del.label':        { es: 'Descartar borrador', en: 'Discard draft', zh: '丢弃草稿', pt: 'Descartar rascunho' },
+    'baro.v6.del.confirm':      { es: '¿Descartar este borrador? Se perderá su contenido.', en: 'Discard this draft? Its content will be lost.', zh: '丢弃这篇草稿吗？内容将丢失。', pt: 'Descartar este rascunho? O conteúdo será perdido.' },
+    'baro.v6.del.ok':           { es: 'Borrador descartado.', en: 'Draft discarded.', zh: '草稿已丢弃。', pt: 'Rascunho descartado.' },
+    'baro.v6.del.sin_borr':     { es: 'No tienes borradores para descartar.', en: 'You have no drafts to discard.', zh: '你没有可丢弃的草稿。', pt: 'Você não tem rascunhos para descartar.' },
+
+    'baro.v6.bloq.label':       { es: 'Bloquear usuario', en: 'Block user', zh: '屏蔽用户', pt: 'Bloquear usuário' },
+    'baro.v6.bloq.confirm':     { es: '¿Bloquear a este usuario?', en: 'Block this user?', zh: '屏蔽此用户吗？', pt: 'Bloquear este usuário?' },
+    'baro.v6.bloq.aviso':       { es: 'Dejará de aparecer en tu feed y no podrá interactuar contigo.', en: 'They will stop appearing in your feed and will not be able to interact with you.', zh: '他将不再出现在你的动态中，也无法再与你互动。', pt: 'Ele deixará de aparecer no seu feed e não poderá interagir com você.' },
+    'baro.v6.bloq.ok':          { es: '@{u} bloqueado.', en: '@{u} blocked.', zh: '@{u} 已屏蔽。', pt: '@{u} bloqueado.' },
+    'baro.v6.bloq.ya':          { es: '@{u} ya estaba bloqueado.', en: '@{u} was already blocked.', zh: '@{u} 已经被屏蔽了。', pt: '@{u} já estava bloqueado.' },
+    'baro.v6.bloq.self':        { es: 'No puedes bloquearte a ti mismo.', en: 'You cannot block yourself.', zh: '你不能屏蔽自己。', pt: 'Você não pode bloquear a si mesmo.' },
+    'baro.v6.bloq.no_user':     { es: '¿A quién bloqueo? Menciona al usuario con @.', en: 'Who should I block? Mention the user with @.', zh: '要屏蔽谁？用 @ 提到该用户。', pt: 'Quem eu bloqueio? Mencione o usuário com @.' },
+    'baro.v6.bloq.no_encontrado': { es: 'No encontré al usuario @{u}.', en: 'Could not find user @{u}.', zh: '找不到用户 @{u}。', pt: 'Não encontrei o usuário @{u}.' },
+    'baro.v6.bloq.fallo':       { es: 'No se pudo completar el bloqueo.', en: 'Could not complete the block.', zh: '无法完成屏蔽。', pt: 'Não foi possível concluir o bloqueio.' },
+
+    'baro.v6.desbloq.label':    { es: 'Desbloquear usuario', en: 'Unblock user', zh: '取消屏蔽', pt: 'Desbloquear usuário' },
+    'baro.v6.desbloq.confirm':  { es: '¿Desbloquear a este usuario?', en: 'Unblock this user?', zh: '取消屏蔽此用户吗？', pt: 'Desbloquear este usuário?' },
+    'baro.v6.desbloq.ok':       { es: '@{u} desbloqueado.', en: '@{u} unblocked.', zh: '@{u} 已取消屏蔽。', pt: '@{u} desbloqueado.' },
+    'baro.v6.desbloq.no':       { es: '@{u} no estaba bloqueado.', en: '@{u} was not blocked.', zh: '@{u} 并未被屏蔽。', pt: '@{u} não estava bloqueado.' },
+
+    'baro.v6.vbloq.label':      { es: 'Ver bloqueados', en: 'Blocked users', zh: '屏蔽名单', pt: 'Bloqueados' },
+    'baro.v6.vbloq.titulo':     { es: 'Cuentas bloqueadas ({n})', en: 'Blocked accounts ({n})', zh: '已屏蔽账号（{n}）', pt: 'Contas bloqueadas ({n})' },
+    'baro.v6.vbloq.vacios':     { es: 'No tienes cuentas bloqueadas.', en: 'You have no blocked accounts.', zh: '你没有屏蔽任何账号。', pt: 'Você não tem contas bloqueadas.' },
+    'baro.v6.vbloq.btn':        { es: 'Desbloquear', en: 'Unblock', zh: '取消屏蔽', pt: 'Desbloquear' },
+
+    'baro.v6.comp.label':       { es: 'Compartir post', en: 'Share post', zh: '分享帖子', pt: 'Compartilhar publicação' },
+    'baro.v6.comp.no_post':     { es: 'No sé a qué post te refieres. Pásame el enlace o descríbelo.', en: 'I am not sure which post you mean. Send me the link or describe it.', zh: '不确定你指的是哪个帖子。发我链接或描述一下。', pt: 'Não sei a qual publicação você se refere. Me passe o link ou descreva.' },
+    'baro.v6.comp.no_encontrado': { es: 'No encontré ese post (quizá se eliminó).', en: 'I could not find that post (it may have been deleted).', zh: '找不到那个帖子（可能已被删除）。', pt: 'Não encontrei essa publicação (talvez foi excluída).' },
+    'baro.v6.comp.candidatos':  { es: 'Encontré varios; dime cuál:', en: 'I found several; tell me which one:', zh: '找到了好几个，你指哪一个：', pt: 'Encontrei várias; me diga qual:' },
+    'baro.v6.comp.no_fn':       { es: 'No pude abrir el menú de compartir en este dispositivo.', en: 'Could not open the share sheet on this device.', zh: '无法在此设备上打开分享菜单。', pt: 'Não consegui abrir o menu de compartilhar neste dispositivo.' },
+    'baro.v6.comp.abriendo':    { es: 'Abriendo para compartir…', en: 'Opening share…', zh: '正在打开分享…', pt: 'Abrindo compartilhamento…' }
+  };
+
+  function v6MergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V6_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V6_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+
+  /* ---------------- 1. helpers ---------------- */
+  function v6lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v6esc(ctx, s) {
+    try {
+      if (ctx && typeof ctx.esc === 'function') return ctx.esc(s);
+      if (typeof escapeHtml === 'function') return escapeHtml(s);
+    } catch (_) {}
+    return String(s == null ? '' : s);
+  }
+  function v6t(ctx, key, vars) {
+    var s = null;
+    try { s = (ctx && typeof ctx.t === 'function') ? ctx.t(key) : null; } catch (_) { s = null; }
+    if (!s || s === key) {
+      var e = BARO_V6_I18N[key];
+      s = (e && (e[v6lang()] || e.es)) || key;
+    }
+    if (vars) {
+      Object.keys(vars).forEach(function (k) {
+        s = String(s).split('{' + k + '}').join(v6esc(ctx, vars[k]));
+      });
+    }
+    return s;
+  }
+  function v6db() {
+    try {
+      if (typeof DrexCloud !== 'undefined' && DrexCloud && typeof DrexCloud.database === 'function') return DrexCloud.database();
+    } catch (_) {}
+    return null;
+  }
+  function v6uid(ctx) {
+    try { return (ctx && ctx.user && ctx.user.uid) || ''; } catch (_) { return ''; }
+  }
+  function v6needLogin(ctx) {
+    if (v6uid(ctx)) return null;
+    return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.login_needed')) + '</p>' };
+  }
+  function v6noDb(ctx) {
+    return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.no_db')) + '</p>' };
+  }
+  function v6say(ctx, html) {
+    try {
+      if (typeof baro6dSay === 'function') { baro6dSay(ctx, html); return; }
+      if (typeof baroAddBaroMessage === 'function') { baroAddBaroMessage(html); return; }
+    } catch (_) {}
+  }
+  function v6norm(s) {
+    try { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+    catch (_) { return String(s || '').toLowerCase(); }
+  }
+  function v6clip(s, n) {
+    s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+  function v6p(ctx, inner) { return '<p>' + v6esc(ctx, inner) + '</p>'; }
+
+  /* ---- borradores: lectura/escritura reales (mismo origen que la UI) ---- */
+  function v6DraftsRead() {
+    try {
+      if (typeof baro6dGetDrafts === 'function') { var l = baro6dGetDrafts(); if (Array.isArray(l)) return l; }
+    } catch (_) {}
+    try {
+      if (typeof getAllNoteDrafts === 'function') { var l2 = getAllNoteDrafts(); if (Array.isArray(l2)) return l2; }
+    } catch (_) {}
+    return [];
+  }
+  function v6DraftsSave(list) {
+    try { if (typeof baro6dSaveDrafts === 'function') return !!baro6dSaveDrafts(list); } catch (_) {}
+    try { if (typeof saveAllNoteDrafts === 'function') { saveAllNoteDrafts(list); return true; } } catch (_) {}
+    return false;
+  }
+  function v6ByTsDesc(a, b) {
+    var ta = (a && (a.updatedAt || 0)) || 0, tb = (b && (b.updatedAt || 0)) || 0;
+    return tb - ta;
+  }
+  function v6DraftPreview(d) {
+    var c = v6clip((d && d.content) || '', 80);
+    if (c) return c;
+    if (d && d.poll) return '🗳️';
+    return '…';
+  }
+  function v6DraftHasPoll(d) {
+    try { if (typeof drexDraftHasPoll === 'function') return !!drexDraftHasPoll(d); } catch (_) {}
+    return !!(d && d.poll);
+  }
+  var V6_ID_SAFE = /^[A-Za-z0-9_-]+$/;
+  function v6ResolveDraft(list, args) {
+    args = args || {};
+    if (args.id != null && String(args.id) !== '') {
+      var want = String(args.id);
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && String(list[i].id) === want) return list[i];
+      }
+      return null;
+    }
+    if (args.indice != null) {
+      var n = parseInt(args.indice, 10);
+      if (n >= 1 && n <= list.length) return list[n - 1];
+      return null;
+    }
+    return null;
+  }
+
+  /* ---- tarjeta 6d de confirmación (patrón eliminar) ---- */
+  function v6Ask() {
+    try { if (typeof baroHAsk === 'function') { var a = baroHAsk(); if (a) return a; } } catch (_) {}
+    try { if (typeof baroAskConfirm === 'function') return baroAskConfirm; } catch (_) {}
+    return null;
+  }
+  function v6ConfirmCard(ctx, o) {
+    // o: {titleKey, previewHtml, confirmKey, danger, onConfirm}
+    var ask = v6Ask();
+    if (!ask) return null;
+    var card = null;
+    try {
+      card = ask({
+        titleKey: o.titleKey,
+        previewHtml: o.previewHtml || '',
+        confirmKey: o.confirmKey || 'baro.v6.confirmar',
+        cancelKey: 'baro.v6.cancelar',
+        danger: !!o.danger,
+        onConfirm: o.onConfirm,
+        onCancel: function () { v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.cancelado'))); }
+      });
+    } catch (_) { card = null; }
+    return card;
+  }
+
+  /* ---- usuarios: @mención -> uid ---- */
+  async function v6ResolveUid(db, username) {
+    var lower = String(username || '').toLowerCase().replace(/^@/, '').trim();
+    if (!lower || !/^[a-z0-9_.-]+$/.test(lower)) return '';
+    try {
+      var snap = await db.ref('usernames/' + lower).once('value');
+      var v = snap.val();
+      return (typeof v === 'string' && v) ? v : '';
+    } catch (_) { return ''; }
+  }
+  async function v6UsernameOf(db, uid) {
+    try {
+      var snap = await db.ref('users/' + uid).once('value');
+      var d = snap.val() || {};
+      return String(d.username || d.displayName || '');
+    } catch (_) { return ''; }
+  }
+
+  /* ---- ctx guardado para los botones en línea ---- */
+  var v6lastCtx = null;
+  function v6rememberCtx(ctx) { v6lastCtx = ctx || null; }
+
+  /* ---------------- 2. herramientas ---------------- */
+
+  /* 2a. ver_borradores — gestión con botones [Publicar] [Descartar] */
+  async function v6RunVerBorradores(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    v6rememberCtx(ctx);
+    var esc = function (s) { return v6esc(ctx, s); };
+    var list = v6DraftsRead().slice().sort(v6ByTsDesc);
+    if (!list.length) return { html: v6p(ctx, v6t(ctx, 'baro.v6.borr.vacios')) };
+    var N = Math.min(list.length, 8);
+    var out = '<div class="baro-v6-list"><p><strong>' + esc(v6t(ctx, 'baro.v6.borr.titulo', { n: list.length })) + '</strong></p>';
+    for (var k = 0; k < N; k++) {
+      var d = list[k] || {};
+      var id = String(d.id || '');
+      var safeId = V6_ID_SAFE.test(id) ? id : '';
+      out += '<div class="baro-v6-row"><div class="baro-v6-rowtxt"><p>' + esc(v6DraftPreview(d)) + '</p></div><div class="baro-v6-actions">';
+      if (safeId) {
+        out += '<button type="button" class="baro-v6-btn" onclick="baroV6DraftAction(\'publicar\',\'' + esc(safeId) + '\')">' + esc(v6t(ctx, 'baro.v6.borr.btn_pub')) + '</button>';
+        out += '<button type="button" class="baro-v6-btn baro-v6-btn-danger" onclick="baroV6DraftAction(\'descartar\',\'' + esc(safeId) + '\')">' + esc(v6t(ctx, 'baro.v6.borr.btn_del')) + '</button>';
+      }
+      out += '</div></div>';
+    }
+    out += '</div>';
+    return { html: out };
+  }
+  function v6DraftAction(kind, id) {
+    var ctx = v6lastCtx || {};
+    var list = v6DraftsRead().slice().sort(v6ByTsDesc);
+    var d = v6ResolveDraft(list, { id: id });
+    if (!d) { v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.borr.no_existe'))); return; }
+    if (kind === 'publicar') v6PublicarFlow(d, ctx);
+    else v6DescartarFlow(d, ctx);
+  }
+
+  /* 2b. publicar_borrador — pipeline REAL 6d tras confirmación por toque */
+  function v6PublicarFlow(d, ctx) {
+    ctx = ctx || {};
+    var esc = function (s) { return v6esc(ctx, s); };
+    var content = String((d && d.content) || '').trim();
+    if (!content && !v6DraftHasPoll(d)) { v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.borr.vacio_txt'))); return; }
+    if (v6DraftHasPoll(d)) { v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.borr.con_poll'))); return; }
+    var card = v6ConfirmCard(ctx, {
+      titleKey: 'baro.v6.pub.confirm',
+      previewHtml: '<div class="baro-v6-preview"><p>' + esc(v6clip(content, 140)) + '</p></div>',
+      confirmKey: 'baro.v6.borr.btn_pub',
+      danger: false,
+      onConfirm: async function () {
+        try {
+          if (typeof baro6dNewDraftId !== 'function' || typeof baro6dDoPublish !== 'function') {
+            v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.no_confirm'))); return;
+          }
+          var d6 = { id: baro6dNewDraftId(), texto: content, foto: null, programar: null, ctx: ctx };
+          try { baro6dPendingDrafts[d6.id] = d6; } catch (_) {}
+          await baro6dDoPublish(d6);
+          // baro6dDoPublish solo borra de baro6dPendingDrafts en el camino de
+          // éxito: esa es la señal honesta de que se publicó.
+          var ok = false;
+          try { ok = !(d6.id in baro6dPendingDrafts); } catch (_) {}
+          if (ok) {
+            var list = v6DraftsRead();
+            v6DraftsSave(list.filter(function (x) { return x && String(x.id) !== String(d.id); }));
+          }
+        } catch (_) {
+          v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.error')));
+        }
+      }
+    });
+    if (!card) v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.no_confirm')));
+  }
+  async function v6RunPublicarBorrador(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    var nl = v6needLogin(ctx); if (nl) return nl;
+    v6rememberCtx(ctx);
+    var list = v6DraftsRead().slice().sort(v6ByTsDesc);
+    if (!list.length) return { html: v6p(ctx, v6t(ctx, 'baro.v6.pub.sin_borr')) };
+    var d = v6ResolveDraft(list, args);
+    if (!d) {
+      var out = '<div class="baro-v6-list"><p><strong>' + v6esc(ctx, v6t(ctx, 'baro.v6.borr.cual')) + '</strong></p><ul>';
+      var N = Math.min(list.length, 8);
+      for (var k = 0; k < N; k++) out += '<li>' + (k + 1) + '. ' + v6esc(ctx, v6DraftPreview(list[k])) + '</li>';
+      out += '</ul></div>';
+      return { html: out };
+    }
+    v6PublicarFlow(d, ctx);
+    return { html: '' };
+  }
+
+  /* 2c. descartar_borrador — destructivo: tarjeta 6d danger */
+  function v6DescartarFlow(d, ctx) {
+    ctx = ctx || {};
+    var esc = function (s) { return v6esc(ctx, s); };
+    var card = v6ConfirmCard(ctx, {
+      titleKey: 'baro.v6.del.confirm',
+      previewHtml: '<div class="baro-v6-preview"><p>' + esc(v6clip(String((d && d.content) || ''), 140) || '…') + '</p></div>',
+      confirmKey: 'baro.v6.borr.btn_del',
+      danger: true,
+      onConfirm: async function () {
+        try {
+          var list = v6DraftsRead();
+          if (v6DraftsSave(list.filter(function (x) { return x && String(x.id) !== String(d.id); }))) {
+            v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.del.ok')));
+          } else {
+            v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.error')));
+          }
+        } catch (_) { v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.error'))); }
+      }
+    });
+    if (!card) v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.no_confirm')));
+  }
+  async function v6RunDescartarBorrador(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    v6rememberCtx(ctx);
+    var list = v6DraftsRead().slice().sort(v6ByTsDesc);
+    if (!list.length) return { html: v6p(ctx, v6t(ctx, 'baro.v6.del.sin_borr')) };
+    var d = v6ResolveDraft(list, args);
+    if (!d) {
+      var out = '<div class="baro-v6-list"><p><strong>' + v6esc(ctx, v6t(ctx, 'baro.v6.borr.cual')) + '</strong></p><ul>';
+      var N = Math.min(list.length, 8);
+      for (var k = 0; k < N; k++) out += '<li>' + (k + 1) + '. ' + v6esc(ctx, v6DraftPreview(list[k])) + '</li>';
+      out += '</ul></div>';
+      return { html: out };
+    }
+    v6DescartarFlow(d, ctx);
+    return { html: '' };
+  }
+
+  /* 2d. bloquear_usuario — destructivo: tarjeta 6d danger obligatoria */
+  async function v6RunBloquear(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    var nl = v6needLogin(ctx); if (nl) return nl;
+    var db = v6db(); if (!db) return v6noDb(ctx);
+    var esc = function (s) { return v6esc(ctx, s); };
+    var mention = String((args && args.mention) || '').replace(/^@/, '').trim();
+    var target = '';
+    if (args && args.uid && V6_ID_SAFE.test(String(args.uid))) {
+      target = String(args.uid);
+    } else {
+      if (!mention) return { html: v6p(ctx, v6t(ctx, 'baro.v6.bloq.no_user')) };
+      target = await v6ResolveUid(db, mention);
+    }
+    if (!target) return { html: v6p(ctx, v6t(ctx, 'baro.v6.bloq.no_encontrado', { u: mention })) };
+    var me = v6uid(ctx);
+    if (target === me) return { html: v6p(ctx, v6t(ctx, 'baro.v6.bloq.self')) };
+    var already = false;
+    try {
+      var s0 = await db.ref('blocks/' + me + '/' + target).once('value');
+      already = !!s0.val();
+    } catch (_) {}
+    if (already) return { html: v6p(ctx, v6t(ctx, 'baro.v6.bloq.ya', { u: mention })) };
+    var uname = mention;
+    var card = v6ConfirmCard(ctx, {
+      titleKey: 'baro.v6.bloq.confirm',
+      previewHtml: '<div class="baro-v6-preview"><p><strong>@' + esc(uname) + '</strong></p><p>' + esc(v6t(ctx, 'baro.v6.bloq.aviso')) + '</p></div>',
+      confirmKey: 'baro.v6.bloq.label',
+      danger: true,
+      onConfirm: async function () {
+        try {
+          await db.ref('blocks/' + me + '/' + target).set({ blockedAt: Date.now(), username: uname });
+          try { if (typeof breakFollowRelationsOnBlock === 'function') breakFollowRelationsOnBlock(me, target); } catch (_) {}
+          try { if (typeof blockedAccountsSet !== 'undefined' && blockedAccountsSet && typeof blockedAccountsSet.add === 'function') blockedAccountsSet.add(target); } catch (_) {}
+          v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.bloq.ok', { u: uname })));
+        } catch (_) { v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.bloq.fallo'))); }
+      }
+    });
+    // titleKey con variable: se re-resuelve aquí porque baroAskConfirm no
+    // interpola {u}. Reemplazo directo del título ya pintado si existe.
+    if (!card) { v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.no_confirm'))); return { html: '' }; }
+    return { html: '' };
+  }
+
+  /* 2e. desbloquear_usuario */
+  async function v6RunDesbloquear(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    var nl = v6needLogin(ctx); if (nl) return nl;
+    var db = v6db(); if (!db) return v6noDb(ctx);
+    var esc = function (s) { return v6esc(ctx, s); };
+    var mention = String((args && args.mention) || '').replace(/^@/, '').trim();
+    var target = '';
+    if (args && args.uid && V6_ID_SAFE.test(String(args.uid))) {
+      target = String(args.uid);
+    } else {
+      if (!mention) return { html: v6p(ctx, v6t(ctx, 'baro.v6.bloq.no_user')) };
+      target = await v6ResolveUid(db, mention);
+    }
+    if (!target) return { html: v6p(ctx, v6t(ctx, 'baro.v6.bloq.no_encontrado', { u: mention })) };
+    var me = v6uid(ctx);
+    var isBlocked = false;
+    try {
+      var s0 = await db.ref('blocks/' + me + '/' + target).once('value');
+      isBlocked = !!s0.val();
+    } catch (_) {}
+    if (!isBlocked) return { html: v6p(ctx, v6t(ctx, 'baro.v6.desbloq.no', { u: mention })) };
+    var uname = mention || String(target).slice(0, 12);
+    var card = v6ConfirmCard(ctx, {
+      titleKey: 'baro.v6.desbloq.confirm',
+      previewHtml: '<div class="baro-v6-preview"><p><strong>@' + esc(uname) + '</strong></p></div>',
+      confirmKey: 'baro.v6.desbloq.label',
+      danger: false,
+      onConfirm: async function () {
+        try {
+          await db.ref('blocks/' + me + '/' + target).remove();
+          try { if (typeof blockedAccountsSet !== 'undefined' && blockedAccountsSet && typeof blockedAccountsSet.delete === 'function') blockedAccountsSet.delete(target); } catch (_) {}
+          v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.desbloq.ok', { u: uname })));
+        } catch (_) { v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.error'))); }
+      }
+    });
+    if (!card) { v6say(ctx, v6p(ctx, v6t(ctx, 'baro.v6.no_confirm'))); return { html: '' }; }
+    return { html: '' };
+  }
+
+  /* 2f. ver_bloqueados — lista REAL con botones [Desbloquear] */
+  async function v6RunVerBloqueados(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    var nl = v6needLogin(ctx); if (nl) return nl;
+    var db = v6db(); if (!db) return v6noDb(ctx);
+    v6rememberCtx(ctx);
+    var esc = function (s) { return v6esc(ctx, s); };
+    var me = v6uid(ctx);
+    var data = {};
+    try {
+      var snap = await db.ref('blocks/' + me).once('value');
+      data = snap.val() || {};
+    } catch (_) { return { html: v6p(ctx, v6t(ctx, 'baro.v6.error')) }; }
+    var uids = Object.keys(data);
+    if (!uids.length) return { html: v6p(ctx, v6t(ctx, 'baro.v6.vbloq.vacios')) };
+    uids.sort(function (a, b) { return ((data[b] || {}).blockedAt || 0) - ((data[a] || {}).blockedAt || 0); });
+    var N = Math.min(uids.length, 20);
+    var out = '<div class="baro-v6-list"><p><strong>' + esc(v6t(ctx, 'baro.v6.vbloq.titulo', { n: uids.length })) + '</strong></p>';
+    for (var k = 0; k < N; k++) {
+      var uid = uids[k];
+      var uname = String((data[uid] || {}).username || '') || await v6UsernameOf(db, uid);
+      var safeUid = V6_ID_SAFE.test(uid) ? uid : '';
+      out += '<div class="baro-v6-row"><div class="baro-v6-rowtxt"><p><strong>@' + esc(uname || uid.slice(0, 10)) + '</strong></p></div><div class="baro-v6-actions">';
+      if (safeUid) {
+        out += '<button type="button" class="baro-v6-btn" onclick="baroV6UnblockAction(\'' + esc(safeUid) + '\')">' + esc(v6t(ctx, 'baro.v6.vbloq.btn')) + '</button>';
+      }
+      out += '</div></div>';
+    }
+    out += '</div>';
+    return { html: out };
+  }
+  async function v6UnblockAction(uid) {
+    var ctx = v6lastCtx || {};
+    if (!V6_ID_SAFE.test(String(uid || ''))) return;
+    var db = v6db();
+    var uname = '';
+    try {
+      if (db) {
+        var b = await db.ref('blocks/' + v6uid(ctx) + '/' + uid).once('value');
+        uname = String(((b.val() || {}).username) || '');
+        if (!uname) {
+          var u = await db.ref('users/' + uid).once('value');
+          uname = String(((u.val() || {}).username) || '');
+        }
+      }
+    } catch (_) {}
+    // Reutiliza el flujo real de desbloquear con confirmación por toque.
+    v6RunDesbloquear({ uid: String(uid), mention: uname }, ctx);
+  }
+
+  /* 2g. compartir_post — vía la FUNCIÓN REAL de la UI */
+  async function v6RunCompartir(args, ctx) {
+    args = args || {}; ctx = ctx || {};
+    var esc = function (s) { return v6esc(ctx, s); };
+    var rawText = String((args && args.rawText) || '');
+    var postId = String((args && args.postId) || '');
+    if (!postId) {
+      var m = rawText.match(/#\/?post[-/]([A-Za-z0-9_-]+)/) || rawText.match(/\bpost\s+([A-Za-z0-9_-]{6,})\b/i);
+      if (m) postId = m[1];
+    }
+    if (!postId && typeof baroResolvePostTarget === 'function') {
+      try {
+        var r = await baroResolvePostTarget(rawText, ctx);
+        if (r && r.status === 'resolved' && r.postId) postId = String(r.postId);
+        else if (r && r.status === 'id_not_found') return { html: v6p(ctx, v6t(ctx, 'baro.v6.comp.no_encontrado')) };
+        else if (r && r.status === 'candidates' && r.posts && r.posts.length) {
+          var out = '<div class="baro-v6-list"><p><strong>' + esc(v6t(ctx, 'baro.v6.comp.candidatos')) + '</strong></p><ul>';
+          var ps = r.posts.slice(0, 5);
+          for (var k = 0; k < ps.length; k++) {
+            var pp = ps[k] || {};
+            var pt = String(pp.content != null ? pp.content : (pp.text != null ? pp.text : '')).replace(/\s+/g, ' ').trim().slice(0, 80);
+            out += '<li>' + esc(pt || ('#' + String(pp.id || pp.noteId || ''))) + '</li>';
+          }
+          out += '</ul></div>';
+          return { html: out };
+        }
+      } catch (_) {}
+    }
+    if (!postId) return { html: v6p(ctx, v6t(ctx, 'baro.v6.comp.no_post')) };
+    if (!V6_ID_SAFE.test(postId)) return { html: v6p(ctx, v6t(ctx, 'baro.v6.comp.no_encontrado')) };
+    var fn = null;
+    try { fn = (typeof sharePostExternally === 'function') ? sharePostExternally : null; } catch (_) {}
+    if (!fn) return { html: v6p(ctx, v6t(ctx, 'baro.v6.comp.no_fn')) };
+    try { fn(postId); } catch (_) { return { html: v6p(ctx, v6t(ctx, 'baro.v6.comp.no_fn')) }; }
+    return { html: v6p(ctx, v6t(ctx, 'baro.v6.comp.abriendo')) };
+  }
+
+  /* ---------------- 3. CSS ---------------- */
+  function v6injectCss() {
+    try {
+      if (typeof document === 'undefined' || !document.head || document.getElementById('baro-v6-css')) return;
+      var st = document.createElement('style');
+      st.id = 'baro-v6-css';
+      st.textContent =
+        '.baro-v6-list{margin:6px 0}.baro-v6-row{display:flex;justify-content:space-between;align-items:center;' +
+        'gap:10px;padding:8px 2px;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}' +
+        '.baro-v6-rowtxt{min-width:0;flex:1}.baro-v6-rowtxt p{margin:2px 0;overflow:hidden;text-overflow:ellipsis}' +
+        '.baro-v6-actions{display:flex;gap:6px;flex-shrink:0}' +
+        '.baro-v6-btn{border:1px solid #2F33B8;color:#2F33B8;background:transparent;border-radius:999px;' +
+        'padding:7px 12px;font-size:12px;font-weight:700;min-height:36px}' +
+        '.baro-v6-btn-danger{border-color:#c0392b;color:#c0392b}' +
+        '.baro-v6-preview{padding:8px 2px;font-size:14px}.baro-v6-preview p{margin:4px 0}' +
+        '.baro-v6-list ul{margin:6px 0;padding-left:18px}.baro-v6-list li{margin:4px 0;font-size:14px}';
+      document.head.appendChild(st);
+    } catch (_) {}
+  }
+
+  /* ---------------- 4. registro de herramientas ---------------- */
+  function v6register() {
+    if (typeof baroRegisterTool !== 'function') return;
+    baroRegisterTool('ver_borradores',      { label: 'baro.v6.borr.label',   icon: 'doc',    run: v6RunVerBorradores });
+    baroRegisterTool('publicar_borrador',   { label: 'baro.v6.pub.label',    icon: 'send',   run: v6RunPublicarBorrador });
+    baroRegisterTool('descartar_borrador',  { label: 'baro.v6.del.label',    icon: 'trash',  run: v6RunDescartarBorrador });
+    baroRegisterTool('bloquear_usuario',    { label: 'baro.v6.bloq.label',   icon: 'block',  run: v6RunBloquear });
+    baroRegisterTool('desbloquear_usuario', { label: 'baro.v6.desbloq.label', icon: 'unblock', run: v6RunDesbloquear });
+    baroRegisterTool('ver_bloqueados',      { label: 'baro.v6.vbloq.label',  icon: 'list',   run: v6RunVerBloqueados });
+    baroRegisterTool('compartir_post',      { label: 'baro.v6.comp.label',   icon: 'share',  run: v6RunCompartir });
+  }
+
+  /* ---------------- 5. intenciones (contrato 6b; extract autocontenido) ---------------- */
+  function v6mention(text) {
+    var m = String(text || '').match(/@([A-Za-z0-9_.-]+)/);
+    return m ? m[1] : '';
+  }
+  function v6draftRef(text) {
+    var t = String(text || ''), out = {};
+    var idm = t.match(/draft_[A-Za-z0-9_]+/);
+    if (idm) { out.id = idm[0]; return out; }
+    var n = t.match(/(?:^|[^a-z])(?:n(?:ú|u)mero|#)?\s*(\d{1,3})(?![0-9])/);
+    if (n) { out.indice = parseInt(n[1], 10); return out; }
+    var ords = [['primero', 1], ['primer', 1], ['segundo', 2], ['tercero', 3], ['tercer', 3], ['cuarto', 4], ['quinto', 5],
+                ['first', 1], ['second', 2], ['third', 3], ['fourth', 4], ['fifth', 5],
+                ['primeiro', 1], ['segundo', 2], ['terceiro', 3]];
+    var low = t.toLowerCase();
+    for (var i = 0; i < ords.length; i++) {
+      if (new RegExp('(^|[^a-z])' + ords[i][0] + '([^a-z]|$)').test(low)) { out.indice = ords[i][1]; return out; }
+    }
+    return out;
+  }
+  function v6registerIntents() {
+    var R = (typeof window !== 'undefined' && window.baroIntentRules) ||
+            (typeof baroIntentRules === 'object' && baroIntentRules) || null;
+    var T = (typeof window !== 'undefined' && window.baroIntentToTool) ||
+            (typeof baroIntentToTool === 'object' && baroIntentToTool) || null;
+    if (!R || typeof R.push !== 'function' || !T) return;
+    try {
+      R.push(
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /gestiona\w* (mis )?borradores/, /qu[ée] hago con (mis )?borradores/, /mis borradores pendientes/,
+            /organiza\w* (mis )?borradores/, /administra\w* (mis )?borradores/,
+            /manage (my )?drafts/, /what (should|do) i do with (my )?drafts/,
+            /gerencia\w* (meus )?rascunhos/, /o que fa[çc]o com (meus )?rascunhos/,
+            /管理草稿/, /草稿(怎么|如何)处理/
+          ],
+          intent: 'ver_borradores',
+          extract: function (text) {
+            // Cede ante el listado plano existente (borradores_listar, ola H):
+            // "mis borradores" / "ver borradores" pelado -> null.
+            var n = String(text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+            if (/^(ver|muestrame|ensename|lista|listado de|mis)\s+(mis\s+)?borradores\s*[?.!]*$/.test(n)) return null;
+            return {};
+          }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /publica\w* (el |mi )?borrador/, /sube\w* (el |mi )?borrador/, /publica(r)? mi borrador/,
+            /publish (the |my )?draft/, /post (the |my )?draft/,
+            /publica\w* (o |meu )?rascunho/, /posta\w* (o |meu )?rascunho/,
+            /发布草稿/
+          ],
+          intent: 'publicar_borrador',
+          extract: function (text) { return v6draftRef(text); }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /descarta\w* (el |mi )?borrador/, /elimina\w* (el |mi )?borrador/, /borra\w* (el |mi )?borrador/,
+            /tira\w* (el |mi )?borrador/,
+            /discard (the |my )?draft/, /delete (the |my )?draft/,
+            /descarta\w* (o |meu )?rascunho/, /apaga\w* (o |meu )?rascunho/,
+            /删除草稿/, /丢弃草稿/
+          ],
+          intent: 'descartar_borrador',
+          extract: function (text) { return v6draftRef(text); }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /bloquea\w* a? @/, /bloquear (al usuario|a este usuario|a) @/,
+            /block @/,
+            /bloquea\w* @/,
+            /屏蔽@/, /拉黑@/
+          ],
+          intent: 'bloquear_usuario',
+          extract: function (text) { return { mention: v6mention(text), rawText: String(text || '') }; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /desbloquea\w* a? @/, /quitar el bloqueo a @/,
+            /unblock @/,
+            /desbloquea\w* @/,
+            /取消屏蔽@/, /解除拉黑@/
+          ],
+          intent: 'desbloquear_usuario',
+          extract: function (text) { return { mention: v6mention(text), rawText: String(text || '') }; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /bloqueados/, /a qui[ée]n(es)? (he |has )?bloqueado/, /mis bloqueados/, /lista de bloqueados/,
+            /blocked (users|accounts)/, /who (have|did) i block/, /my blocked/,
+            /quem (eu )?bloqueei/, /minha lista de bloqueados/,
+            /屏蔽(名单|列表)/, /我屏蔽了谁/
+          ],
+          intent: 'ver_bloqueados',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /comparte (este|ese|el) post/, /compartir (este|ese) post/, /p[áa]same el enlace (de|del) (este|ese) post/,
+            /manda\w* (este|ese) post/,
+            /share (this|that|the) post/,
+            /compartilha\w* (este|esse) post/,
+            /分享(这|那)(篇|个)?帖子/
+          ],
+          intent: 'compartir_post',
+          extract: function (text) {
+            var t = String(text || '');
+            var m = t.match(/#\/?post[-/]([A-Za-z0-9_-]+)/);
+            return { postId: m ? m[1] : null, rawText: t };
+          }
+        }
+      );
+      T['ver_borradores'] = 'ver_borradores';
+      T['publicar_borrador'] = 'publicar_borrador';
+      T['descartar_borrador'] = 'descartar_borrador';
+      T['bloquear_usuario'] = 'bloquear_usuario';
+      T['desbloquear_usuario'] = 'desbloquear_usuario';
+      T['ver_bloqueados'] = 'ver_bloqueados';
+      T['compartir_post'] = 'compartir_post';
+    } catch (_) {}
+  }
+
+  /* ---------------- 6. botones en línea + arranque ---------------- */
+  try {
+    if (typeof baro6dExpose === 'function') {
+      baro6dExpose('baroV6DraftAction', v6DraftAction);
+      baro6dExpose('baroV6UnblockAction', v6UnblockAction);
+    }
+  } catch (_) {}
+
+  try { v6MergeI18n(); } catch (_) {}
+  try { v6injectCss(); } catch (_) {}
+  try { v6register(); } catch (_) {}
+  try { v6registerIntents(); } catch (_) {}
+
+})();
+
+/* ================= BARO · v6-DESCUBRIMIENTO ================= */
+/* ================= BARO v6 · descubrimiento =================
+ * SNIPPET autocontenido. Punto de inserción: DESPUÉS del bloque v5-TOOLS
+ * y ANTES del cierre del script final del index.html.
+ * NO crea bloques <script> nuevos. NO toca baroHandleUserMessage, su catch
+ * "Detalle técnico", el blindaje null-det ni los parches v5.
+ * Reutiliza las clases CSS .baro-v5-* (inyectadas por el bloque v5).
+ *
+ * QUÉ APORTA (5 herramientas, 100% client-side, datos REALES de DrexCloud):
+ *  1. ver_conexiones   — conexiones = seguimiento MUTUO (sigues ↔ te siguen),
+ *                         con enlace al perfil de cada una. Requiere sesión.
+ *  2. buscar_personas  — resuelve @usuario vía usernames/<nick> → tarjeta con
+ *                         enlace #/u/<nick>. Sin sesión requerida.
+ *  3. jugar            — "Quién es el mentiroso": reglas reales del juego,
+ *                         deep link #/fiestas y conteo de fiestas en vivo.
+ *  4. recomiendame     — MOTOR DE RECOMENDACIÓN real: cruza tus votos
+ *                         (userVotes), tus seguidos y las ondas de lo que
+ *                         votaste → 3-5 posts/personas/ondas con motivo
+ *                         explicado ("porque votaste…"). Sin historial: lo
+ *                         dice y sugiere tendencias. Requiere sesión.
+ *  5. estadisticas_onda— stats reales de una #onda (posts, top autores,
+ *                         último post) escaneando la ventana de 500 posts.
+ *
+ * CONTRATOS: baroRegisterTool(name,{label,icon,run}); reglas 6b
+ * (baroIntentRules.push + baroIntentToTool); i18n ES/EN/ZH/PT vía
+ * BARO_UI_I18N + baroMergeI18n() (patrón 8L/v5); enlaces #/post/, #/u/,
+ * #/fiestas, #/ondas (rutas reales del router v2). JAMÁS inventar datos.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patrón 8L/v5) ---------------- */
+  var BARO_V6_I18N = {
+    'baro.v6.login_needed': { es: 'Inicia sesión para usar esto.', en: 'Sign in to use this.', zh: '请先登录。', pt: 'Entre para usar isto.' },
+    'baro.v6.no_db':        { es: 'No pude leer los datos ahora mismo.', en: 'Could not read the data right now.', zh: '暂时无法读取数据。', pt: 'Não consegui ler os dados agora.' },
+    'baro.v6.error':        { es: 'Algo falló leyendo los datos.', en: 'Something failed while reading the data.', zh: '读取数据时出错。', pt: 'Algo falhou ao ler os dados.' },
+    'baro.v6.ver_post':     { es: 'Ver post', en: 'View post', zh: '查看帖子', pt: 'Ver publicação' },
+    'baro.v6.ver_perfil':   { es: 'Ver perfil', en: 'View profile', zh: '查看主页', pt: 'Ver perfil' },
+
+    'baro.v6.conex.label':  { es: 'Mis conexiones', en: 'My connections', zh: '我的互关', pt: 'Minhas conexões' },
+    'baro.v6.conex.title':  { es: 'Tus conexiones', en: 'Your connections', zh: '你的互关', pt: 'Suas conexões' },
+    'baro.v6.conex.sub':    { es: 'Seguimiento mutuo: se siguen entre sí.', en: 'Mutual follows: you follow each other.', zh: '互相关注：你们互相关注。', pt: 'Seguimento mútuo: vocês se seguem.' },
+    'baro.v6.conex.vacio':  { es: 'Aún no tienes conexiones. Sigue a alguien y pídele que te siga de vuelta.', en: 'No connections yet. Follow someone and ask them to follow you back.', zh: '你还没有互关。关注某人并请对方回关。', pt: 'Você ainda não tem conexões. Siga alguém e peça para seguir de volta.' },
+
+    'baro.v6.personas.label': { es: 'Buscar personas', en: 'Find people', zh: '找人', pt: 'Buscar pessoas' },
+    'baro.v6.personas.falta': { es: 'Dime a quién buscar, por ejemplo: «busca a @ana».', en: 'Tell me who to look for, e.g.: "find @ana".', zh: '告诉我要找谁，例如：“找 @ana”。', pt: 'Diga quem procurar, por exemplo: "busca @ana".' },
+    'baro.v6.personas.nf':    { es: 'No encontré a @{u} en Drex.', en: 'Could not find @{u} on Drex.', zh: '在 Drex 上找不到 @{u}。', pt: 'Não encontrei @{u} no Drex.' },
+    'baro.v6.personas.ok':    { es: 'La encontré:', en: 'Found them:', zh: '找到了：', pt: 'Encontrei:' },
+
+    'baro.v6.jugar.label':  { es: 'Jugar', en: 'Play', zh: '玩游戏', pt: 'Jogar' },
+    'baro.v6.jugar.title':  { es: 'Quién es el mentiroso', en: "Who's the liar", zh: '谁是说谎者', pt: 'Quem é o mentiroso' },
+    'baro.v6.jugar.desc':   { es: 'Descubre al impostor con tu palabra secreta.', en: 'Find the impostor with your secret word.', zh: '用你的秘密词找出卧底。', pt: 'Descubra o impostor com sua palavra secreta.' },
+    'baro.v6.jugar.meta':   { es: '4–12 jugadores · ~5 min · mínimo 4 para empezar', en: '4–12 players · ~5 min · at least 4 to start', zh: '4–12 名玩家 · 约 5 分钟 · 至少 4 人开始', pt: '4–12 jogadores · ~5 min · mínimo 4 para começar' },
+    'baro.v6.jugar.p1':     { es: 'Entra a una Fiesta en vivo o crea la tuya.', en: 'Join a live Fiesta or create your own.', zh: '加入一个正在进行的派对或创建你自己的。', pt: 'Entre numa Festa ao vivo ou crie a sua.' },
+    'baro.v6.jugar.p2':     { es: 'El dueño abre «Juegos» y toca «Jugar».', en: 'The host opens "Games" and taps "Play".', zh: '房主打开“游戏”并点击“开始”。', pt: 'O dono abre "Jogos" e toca "Jogar".' },
+    'baro.v6.jugar.p3':     { es: 'Cada jugador recibe una palabra secreta; 1–2 mentirosos reciben otra.', en: 'Each player gets a secret word; 1–2 liars get a different one.', zh: '每位玩家得到一个秘密词；1–2 名说谎者得到另一个词。', pt: 'Cada jogador recebe uma palavra secreta; 1–2 mentirosos recebem outra.' },
+    'baro.v6.jugar.p4':     { es: 'Descríbela por voz sin decirla y voten al sospechoso.', en: 'Describe it by voice without saying it, then vote for the suspect.', zh: '用语音描述但不要说出词，然后投票选出嫌疑人。', pt: 'Descreva por voz sem dizê-la e votem no suspeito.' },
+    'baro.v6.jugar.p5':     { es: 'Revelado: ¿atraparon al mentiroso?', en: 'Reveal: did you catch the liar?', zh: '揭晓：你们抓到说谎者了吗？', pt: 'Revelação: pegaram o mentiroso?' },
+    'baro.v6.jugar.abrir':  { es: 'Abrir Fiestas', en: 'Open Fiestas', zh: '打开派对', pt: 'Abrir Festas' },
+    'baro.v6.jugar.envivo': { es: '{n} fiestas en vivo ahora mismo', en: '{n} live fiestas right now', zh: '现在有 {n} 个派对正在进行', pt: '{n} festas ao vivo agora' },
+
+    'baro.v6.rec.label':     { es: 'Recomiéndame', en: 'Recommend me', zh: '给我推荐', pt: 'Recomende-me' },
+    'baro.v6.rec.title':     { es: 'Recomendado para ti', en: 'Recommended for you', zh: '为你推荐', pt: 'Recomendado para você' },
+    'baro.v6.rec.vacio':     { es: 'Aún no tienes historial de votos: te muestro lo más votado de la comunidad.', en: 'No voting history yet: showing the community’s top-voted posts.', zh: '你还没有投票记录：为你展示社区最热门的帖子。', pt: 'Você ainda não tem histórico de votos: mostrando as mais votadas da comunidade.' },
+    'baro.v6.rec.porque_sigues':  { es: 'porque sigues a @{u}', en: 'because you follow @{u}', zh: '因为你关注了 @{u}', pt: 'porque você segue @{u}' },
+    'baro.v6.rec.porque_votaste': { es: 'porque votaste algo de @{u}', en: 'because you voted on @{u}’s content', zh: '因为你给 @{u} 的内容投过票', pt: 'porque você votou em algo de @{u}' },
+    'baro.v6.rec.por_onda':  { es: 'por la onda #{t}', en: 'for the wave #{t}', zh: '因为波浪 #{t}', pt: 'pela onda #{t}' },
+    'baro.v6.rec.personas':  { es: 'Personas que te pueden gustar', en: 'People you may like', zh: '你可能喜欢的人', pt: 'Pessoas que você pode gostar' },
+    'baro.v6.rec.ondas':     { es: 'Ondas para explorar', en: 'Waves to explore', zh: '值得探索的波浪', pt: 'Ondas para explorar' },
+    'baro.v6.rec.tendencias':{ es: 'Tendencias de la comunidad', en: 'Community trends', zh: '社区热门', pt: 'Tendências da comunidade' },
+
+    'baro.v6.onda.label':   { es: 'Stats de onda', en: 'Wave stats', zh: '波浪统计', pt: 'Stats da onda' },
+    'baro.v6.onda.falta':   { es: 'Dime la onda, por ejemplo: «stats de #musica».', en: 'Tell me the wave, e.g.: "stats of #musica".', zh: '告诉我是哪个波浪，例如：“#musica 的统计”。', pt: 'Diga a onda, por exemplo: "stats de #musica".' },
+    'baro.v6.onda.vacia':   { es: 'No hay posts recientes con #{t} en la ventana actual.', en: 'No recent posts with #{t} in the current window.', zh: '当前范围内没有带 #{t} 的近期帖子。', pt: 'Não há publicações recentes com #{t} na janela atual.' },
+    'baro.v6.onda.posts':   { es: 'posts', en: 'posts', zh: '帖子', pt: 'publicações' },
+    'baro.v6.onda.autores': { es: 'autores activos', en: 'active authors', zh: '活跃作者', pt: 'autores ativos' },
+    'baro.v6.onda.top':     { es: 'Top autores', en: 'Top authors', zh: '热门作者', pt: 'Top autores' },
+    'baro.v6.onda.explorar':{ es: 'Explorar ondas', en: 'Explore waves', zh: '探索波浪', pt: 'Explorar ondas' }
+  };
+
+  function baroV6MergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V6_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V6_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+
+  /* ---------------- 1. helpers ---------------- */
+  function v6lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v6esc(ctx, s) {
+    try {
+      if (ctx && typeof ctx.esc === 'function') return ctx.esc(s);
+      if (typeof escapeHtml === 'function') return escapeHtml(s);
+    } catch (_) {}
+    return String(s == null ? '' : s);
+  }
+  function v6t(ctx, key, vars) {
+    var s = null;
+    try { s = (ctx && typeof ctx.t === 'function') ? ctx.t(key) : null; } catch (_) { s = null; }
+    if (!s || s === key) {
+      var e = BARO_V6_I18N[key];
+      s = (e && (e[v6lang()] || e.es)) || key;
+    }
+    if (vars) {
+      var esc = function (v) { return v6esc(ctx, v); };
+      Object.keys(vars).forEach(function (k) {
+        s = String(s).split('{' + k + '}').join(esc(vars[k]));
+      });
+    }
+    return s;
+  }
+  function v6db() {
+    try {
+      if (typeof DrexCloud !== 'undefined' && DrexCloud && typeof DrexCloud.database === 'function') {
+        return DrexCloud.database();
+      }
+    } catch (_) {}
+    return null;
+  }
+  function v6uid(ctx) {
+    try { return (ctx && ctx.user && ctx.user.uid) || ''; } catch (_) { return ''; }
+  }
+  function v6needLogin(ctx) {
+    if (v6uid(ctx)) return null;
+    return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.login_needed')) + '</p>' };
+  }
+  function v6noDb(ctx) {
+    return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.no_db')) + '</p>' };
+  }
+  function v6err(ctx) {
+    return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.error')) + '</p>' };
+  }
+  function v6norm(s) {
+    try {
+      return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    } catch (_) {
+      return String(s || '').toLowerCase();
+    }
+  }
+  function v6clip(s, n) {
+    s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+  function v6textOf(note) {
+    if (!note) return '';
+    var t = (note.content != null ? note.content : (note.text != null ? note.text : ''));
+    return String(t || '');
+  }
+  function v6authorUid(note) {
+    return String((note && (note.authorId || note.userId || note.uid)) || '');
+  }
+  function v6authorName(p) {
+    return String((p && (p.authorName || p.username || p.displayName)) || '');
+  }
+  function v6count(obj) {
+    if (!obj || typeof obj !== 'object') return 0;
+    return Object.keys(obj).length;
+  }
+  function v6timeAgo(ctx, ts) {
+    var d = Date.now() - Number(ts || 0);
+    if (!(d > 0)) return '·';
+    var m = Math.floor(d / 60000);
+    if (m < 1) return '·';
+    if (m < 60) return m + 'm';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h';
+    return Math.floor(h / 24) + 'd';
+  }
+  /* Lee una ruta RTDB; null si falla (nunca lanza). */
+  function v6read(db, path) {
+    try {
+      return db.ref(path).once('value').then(
+        function (snap) { try { return snap ? snap.val() : null; } catch (_) { return null; } },
+        function () { return null; }
+      );
+    } catch (_) { return Promise.resolve(null); }
+  }
+  /* Ventana de posts recientes (misma que el buscador v5: últimos 500). */
+  async function v6readPosts(db) {
+    var out = [];
+    try {
+      var snap = await db.ref('communityNotes').orderByChild('timestamp').limitToLast(500).once('value');
+      if (snap) snap.forEach(function (ch) {
+        var n = ch.val() || {};
+        n.id = ch.key;
+        out.push(n);
+      });
+    } catch (_) { return []; }
+    return out;
+  }
+  /* Hashtags como la app: /#([\p{L}\p{N}_]+)/gu, NFC + minúsculas. */
+  function v6tagsOf(text) {
+    var out = [], seen = {};
+    try {
+      var re = /#([\p{L}\p{N}_]+)/gu, m;
+      var t = String(text || '');
+      while ((m = re.exec(t)) !== null) {
+        var tag = m[1];
+        try { tag = tag.normalize('NFC').toLowerCase(); }
+        catch (_) { tag = String(tag).toLowerCase(); }
+        if (tag.length < 2 || tag.length > 40) continue;
+        if (!seen[tag]) { seen[tag] = 1; out.push(tag); }
+      }
+    } catch (_) {}
+    return out;
+  }
+  var V6_STOP = { de: 1, la: 1, el: 1, en: 1, y: 1, a: 1, los: 1, del: 1, se: 1, las: 1, por: 1, un: 1, para: 1, con: 1, no: 1, una: 1, su: 1, al: 1, lo: 1, como: 1, mas: 1, pero: 1, sus: 1, le: 1, ya: 1, o: 1, este: 1, esta: 1, ese: 1, esa: 1, eso: 1, esto: 1, estos: 1, estas: 1, hay: 1, son: 1, estan: 1, fue: 1, ser: 1, tiene: 1, tienen: 1, hace: 1, muy: 1, tambien: 1, tan: 1, entre: 1, cuando: 1, donde: 1, porque: 1, pues: 1, sin: 1, sobre: 1, hasta: 1, desde: 1, todo: 1, todos: 1, nada: 1, algo: 1, alguien: 1, cada: 1, cual: 1, cuales: 1, aqui: 1, mi: 1, mis: 1, tu: 1, tus: 1, the: 1, and: 1, for: 1, are: 1, was: 1, with: 1, that: 1, this: 1, have: 1, has: 1, from: 1, they: 1, you: 1, your: 1, its: 1, and: 1, not: 1, all: 1, can: 1 };
+  function v6keywords(text) {
+    var out = [];
+    try {
+      var words = v6norm(text).split(/[^a-z0-9]+/);
+      for (var i = 0; i < words.length; i++) {
+        var w = words[i];
+        if (w.length >= 4 && !V6_STOP[w]) out.push(w);
+      }
+    } catch (_) {}
+    return out;
+  }
+  function v6postLink(id) {
+    return '#/post/' + String(id);
+  }
+  function v6userLink(nick) {
+    return '#/u/' + String(nick);
+  }
+  function v6postItemHtml(ctx, p, reason) {
+    var esc = function (s) { return v6esc(ctx, s); };
+    return '<div class="baro-v5-item"><p>' + esc(v6clip(v6textOf(p), 120)) + '</p>' +
+      '<p class="baro-v5-sub">' + esc(v6timeAgo(ctx, p.timestamp)) +
+      (reason ? ' · ' + esc(reason) : '') +
+      ' · <a href="' + esc(v6postLink(p.id)) + '">' + esc(v6t(ctx, 'baro.v6.ver_post')) + '</a></p></div>';
+  }
+  /* Resuelve nombres de usuario para una lista de uids (máx. 12 lecturas). */
+  async function v6namesFor(db, uids) {
+    var out = {};
+    try {
+      var list = uids.slice(0, 12);
+      var recs = await Promise.all(list.map(function (id) { return v6read(db, 'users/' + id); }));
+      list.forEach(function (id, i) {
+        var u = recs[i] || {};
+        out[id] = String(u.username || u.displayName || '');
+      });
+    } catch (_) {}
+    return out;
+  }
+
+  /* ---------------- 2. ver_conexiones ----------------
+     Conexión = seguimiento mutuo (following ∩ followers). */
+  async function v6RunVerConexiones(args, ctx) {
+    var need = v6needLogin(ctx);
+    if (need) return need;
+    var db = v6db();
+    if (!db) return v6noDb(ctx);
+    var uid = v6uid(ctx);
+    try {
+      var r = await Promise.all([
+        v6read(db, 'following/' + uid),
+        v6read(db, 'followers/' + uid)
+      ]);
+      var fing = r[0] || {}, fers = r[1] || {};
+      var mutual = Object.keys(fing).filter(function (k) { return !!fers[k]; });
+      if (!mutual.length) {
+        return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.conex.vacio')) + '</p>', stats: { count: 0, results: 0 } };
+      }
+      var names = await v6namesFor(db, mutual);
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        v6esc(ctx, v6t(ctx, 'baro.v6.conex.title')) + ' (' + mutual.length + ')</strong></p>' +
+        '<p class="baro-v5-sub">' + v6esc(ctx, v6t(ctx, 'baro.v6.conex.sub')) + '</p></div>';
+      mutual.slice(0, 12).forEach(function (id) {
+        var nick = names[id] || id.slice(0, 8) + '…';
+        h += '<div class="baro-v5-item"><p><strong>@' + v6esc(ctx, nick) + '</strong></p>' +
+          '<p class="baro-v5-sub"><a href="' + v6esc(ctx, v6userLink(nick)) + '">' +
+          v6esc(ctx, v6t(ctx, 'baro.v6.ver_perfil')) + '</a></p></div>';
+      });
+      return { html: h, stats: { count: mutual.length, results: Math.min(mutual.length, 12) } };
+    } catch (_) { return v6err(ctx); }
+  }
+
+  /* ---------------- 3. buscar_personas ---------------- */
+  function v6nickFrom(text) {
+    var t = String(text || '');
+    var m = t.match(/@([A-Za-z0-9_]{2,30})/);
+    if (m) return m[1];
+    var m2 = t.match(/(?:usuario|persona|user|person)\s+@?([A-Za-z0-9_]{2,30})/i);
+    return m2 ? m2[1] : null;
+  }
+  async function v6RunBuscarPersonas(args, ctx) {
+    var db = v6db();
+    if (!db) return v6noDb(ctx);
+    var nick = v6nickFrom((args && (args.nick || args.rawText)) || '');
+    if (!nick) {
+      return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.personas.falta')) + '</p>' };
+    }
+    try {
+      var urec = await v6read(db, 'usernames/' + nick.toLowerCase());
+      if (!urec) {
+        return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.personas.nf', { u: nick })) + '</p>', stats: { count: 0, results: 0 } };
+      }
+      var foundUid = String((urec && urec.uid) || urec);
+      var uread = await v6read(db, 'users/' + foundUid);
+      var shown = String((uread && (uread.username || uread.displayName)) || nick);
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        v6esc(ctx, v6t(ctx, 'baro.v6.personas.ok')) + '</strong></p></div>' +
+        '<div class="baro-v5-item"><p><strong>@' + v6esc(ctx, shown) + '</strong></p>' +
+        '<p class="baro-v5-sub"><a href="' + v6esc(ctx, v6userLink(shown)) + '">' +
+        v6esc(ctx, v6t(ctx, 'baro.v6.ver_perfil')) + '</a></p></div>';
+      return { html: h, stats: { count: 1, results: 1 } };
+    } catch (_) { return v6err(ctx); }
+  }
+
+  /* ---------------- 4. jugar ----------------
+     Info real del catálogo (fiestaGameCatalog): nombre, desc, meta.
+     El juego lo inicia el DUEÑO desde la sala; Baro explica + deep link. */
+  async function v6RunJugar(args, ctx) {
+    var db = v6db();
+    var liveCount = 0;
+    try {
+      if (db) {
+        var snap = await db.ref('communityNotes').orderByChild('timestamp').limitToLast(200).once('value');
+        var seen = {};
+        if (snap) snap.forEach(function (ch) {
+          var n = ch.val() || {};
+          if (n.fiestaId && n.fiestaStatus === 'live' && !seen[n.fiestaId]) {
+            seen[n.fiestaId] = 1;
+            liveCount++;
+          }
+        });
+      }
+    } catch (_) { liveCount = 0; }
+    var esc = function (s) { return v6esc(ctx, s); };
+    var steps = ['baro.v6.jugar.p1', 'baro.v6.jugar.p2', 'baro.v6.jugar.p3', 'baro.v6.jugar.p4', 'baro.v6.jugar.p5'];
+    var h = '<div class="baro-v5-panel"><p><strong>🎲 ' + esc(v6t(ctx, 'baro.v6.jugar.title')) + '</strong></p>' +
+      '<p class="baro-v5-sub">' + esc(v6t(ctx, 'baro.v6.jugar.desc')) + ' ' + esc(v6t(ctx, 'baro.v6.jugar.meta')) + '</p></div>';
+    h += '<div class="baro-v5-item"><p>' + steps.map(function (k, i) {
+      return (i + 1) + '. ' + esc(v6t(ctx, k));
+    }).join('<br>') + '</p>';
+    if (liveCount > 0) {
+      h += '<p class="baro-v5-sub">🔴 ' + esc(v6t(ctx, 'baro.v6.jugar.envivo', { n: liveCount })) + '</p>';
+    }
+    h += '<p><a href="#/fiestas"><strong>' + esc(v6t(ctx, 'baro.v6.jugar.abrir')) + ' →</strong></a></p></div>';
+    return { html: h, stats: { count: liveCount, results: 1 } };
+  }
+
+  /* ---------------- 5. recomiendame ----------------
+     MOTOR DE RECOMENDACIÓN (explicado en README.md):
+     perfil = hashtags + autores + keywords de tus votos "up" + tus seguidos;
+     puntúa candidatos (no propios, no votados) y explica cada motivo. */
+  async function v6RunRecomiendame(args, ctx) {
+    var need = v6needLogin(ctx);
+    if (need) return need;
+    var db = v6db();
+    if (!db) return v6noDb(ctx);
+    var uid = v6uid(ctx);
+    try {
+      var r = await Promise.all([
+        v6readPosts(db),
+        v6read(db, 'userVotes/' + uid),
+        v6read(db, 'following/' + uid)
+      ]);
+      var posts = r[0], myVotes = r[1] || {}, following = r[2] || {};
+      var followedSet = {};
+      Object.keys(following).forEach(function (k) { followedSet[k] = 1; });
+
+      var byId = {};
+      posts.forEach(function (p) { byId[p.id] = p; });
+      var votedSet = {}, upIds = [];
+      Object.keys(myVotes).forEach(function (pid) {
+        votedSet[pid] = 1;
+        if (myVotes[pid] === 'up') upIds.push(pid);
+      });
+
+      /* --- perfil de intereses --- */
+      var tagW = {}, authorW = {}, kwW = {};
+      upIds.forEach(function (pid) {
+        var p = byId[pid];
+        if (!p) return;
+        var au = v6authorUid(p);
+        if (au) authorW[au] = (authorW[au] || 0) + 1;
+        v6tagsOf(v6textOf(p)).forEach(function (t) { tagW[t] = (tagW[t] || 0) + 1; });
+        v6keywords(v6textOf(p)).forEach(function (w) { kwW[w] = (kwW[w] || 0) + 1; });
+      });
+      var topKwSet = {};
+      Object.keys(kwW).sort(function (a, b) { return kwW[b] - kwW[a]; }).slice(0, 40)
+        .forEach(function (w) { topKwSet[w] = 1; });
+      var hasProfile = upIds.length > 0 || Object.keys(followedSet).length > 0;
+
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        v6esc(ctx, v6t(ctx, 'baro.v6.rec.title')) + '</strong></p></div>';
+
+      if (!hasProfile) {
+        /* Sin historial: honesto + tendencias reales por votos. */
+        h += '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.rec.vacio')) + '</p>';
+        var trend = posts.filter(function (p) {
+          return v6authorUid(p) && v6authorUid(p) !== uid && v6textOf(p).trim();
+        }).sort(function (a, b) {
+          return (Number(b.upvotes || 0) - Number(b.downvotes || 0)) - (Number(a.upvotes || 0) - Number(a.downvotes || 0));
+        }).slice(0, 5);
+        h += '<p><strong>' + v6esc(ctx, v6t(ctx, 'baro.v6.rec.tendencias')) + '</strong></p>';
+        trend.forEach(function (p) { h += v6postItemHtml(ctx, p, null); });
+        return { html: h, stats: { count: posts.length, results: trend.length, mode: 'tendencias' } };
+      }
+
+      /* --- puntuar candidatos --- */
+      var now = Date.now(), cands = [];
+      posts.forEach(function (p) {
+        var au = v6authorUid(p);
+        if (!au || au === uid) return;
+        if (votedSet[p.id]) return;
+        if (!v6textOf(p).trim()) return;
+        var score = 0, why = [];
+        if (followedSet[au]) { score += 3; why.push('sigues'); }
+        if (authorW[au]) { score += 2; why.push('votaste'); }
+        var sh = 0;
+        v6tagsOf(v6textOf(p)).forEach(function (t) { if (tagW[t]) sh++; });
+        if (sh) { score += Math.min(sh, 3) * 2; why.push('onda'); }
+        var kh = 0;
+        v6keywords(v6textOf(p)).forEach(function (w) { if (topKwSet[w]) kh++; });
+        if (kh) { score += Math.min(kh, 5); why.push('tema'); }
+        score += Math.log10(Number(p.upvotes || 0) + 1) * 0.5;
+        var age = now - Number(p.timestamp || 0);
+        if (age > 0 && age < 86400000) score += 1;
+        else if (age >= 86400000 && age < 259200000) score += 0.5;
+        cands.push({ p: p, score: score, why: why });
+      });
+      cands.sort(function (a, b) { return b.score - a.score; });
+      var top = cands.slice(0, 8);
+
+      /* resolver nombres de autores para motivos legibles */
+      var auids = [];
+      top.forEach(function (c) { if (auids.indexOf(c.p && v6authorUid(c.p)) === -1) auids.push(v6authorUid(c.p)); });
+      var names = await v6namesFor(db, auids);
+      var nickOf = function (id) { return names[id] || v6authorName(byId[id]) || id.slice(0, 8) + '…'; };
+
+      var shown = 0;
+      top.slice(0, 5).forEach(function (c) {
+        var p = c.p, au = v6authorUid(p), nick = nickOf(au);
+        var reasons = [];
+        c.why.forEach(function (w) {
+          if (w === 'sigues') reasons.push(v6t(ctx, 'baro.v6.rec.porque_sigues', { u: nick }));
+          else if (w === 'votaste') reasons.push(v6t(ctx, 'baro.v6.rec.porque_votaste', { u: nick }));
+          else if (w === 'onda') {
+            var shared = v6tagsOf(v6textOf(p)).filter(function (t) { return tagW[t]; }).slice(0, 2);
+            shared.forEach(function (t) { reasons.push(v6t(ctx, 'baro.v6.rec.por_onda', { t: t })); });
+          }
+        });
+        h += v6postItemHtml(ctx, p, reasons.slice(0, 2).join(' · '));
+        shown++;
+      });
+
+      /* --- personas: autores que te gustaron y no sigues --- */
+      var personIds = Object.keys(authorW).filter(function (id) { return !followedSet[id] && id !== uid; })
+        .sort(function (a, b) { return authorW[b] - authorW[a]; }).slice(0, 5);
+      if (personIds.length) {
+        var pnames = await v6namesFor(db, personIds);
+        h += '<p><strong>' + v6esc(ctx, v6t(ctx, 'baro.v6.rec.personas')) + '</strong></p>';
+        personIds.slice(0, 3).forEach(function (id) {
+          var nick = pnames[id] || id.slice(0, 8) + '…';
+          h += '<div class="baro-v5-item"><p><strong>@' + v6esc(ctx, nick) + '</strong></p>' +
+            '<p class="baro-v5-sub">' + v6esc(ctx, v6t(ctx, 'baro.v6.rec.porque_votaste', { u: nick })) +
+            ' · <a href="' + v6esc(ctx, v6userLink(nick)) + '">' + v6esc(ctx, v6t(ctx, 'baro.v6.ver_perfil')) + '</a></p></div>';
+        });
+      }
+
+      /* --- ondas: top hashtags de tu perfil --- */
+      var topTags = Object.keys(tagW).sort(function (a, b) { return tagW[b] - tagW[a]; }).slice(0, 5);
+      if (topTags.length) {
+        h += '<p><strong>' + v6esc(ctx, v6t(ctx, 'baro.v6.rec.ondas')) + '</strong></p><p>';
+        topTags.forEach(function (t) {
+          h += '<a href="#/ondas">#' + v6esc(ctx, t) + '</a> ';
+        });
+        h += '</p>';
+      }
+      return { html: h, stats: { count: posts.length, results: shown, mode: 'perfil' } };
+    } catch (_) { return v6err(ctx); }
+  }
+
+  /* ---------------- 6. estadisticas_onda ---------------- */
+  function v6ondaFrom(text) {
+    var m = String(text || '').match(/#([A-Za-z0-9_]{2,40})/);
+    if (!m) return null;
+    try { return m[1].normalize('NFC').toLowerCase(); }
+    catch (_) { return String(m[1]).toLowerCase(); }
+  }
+  async function v6RunEstadisticasOnda(args, ctx) {
+    var db = v6db();
+    if (!db) return v6noDb(ctx);
+    var tag = v6ondaFrom((args && (args.tag || args.rawText)) || '');
+    if (!tag) {
+      return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.onda.falta')) + '</p>' };
+    }
+    try {
+      var posts = await v6readPosts(db);
+      var hits = posts.filter(function (p) {
+        return v6tagsOf(v6textOf(p)).indexOf(tag) !== -1;
+      });
+      if (!hits.length) {
+        return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.onda.vacia', { t: tag })) + '</p>', stats: { count: posts.length, results: 0 } };
+      }
+      var byAuthor = {};
+      hits.forEach(function (p) {
+        var au = v6authorUid(p) || '?';
+        byAuthor[au] = (byAuthor[au] || 0) + 1;
+      });
+      var topAu = Object.keys(byAuthor).sort(function (a, b) { return byAuthor[b] - byAuthor[a]; }).slice(0, 3);
+      var names = await v6namesFor(db, topAu.filter(function (id) { return id !== '?'; }));
+      hits.sort(function (a, b) { return Number(b.timestamp || 0) - Number(a.timestamp || 0); });
+      var h = '<div class="baro-v5-panel"><p><strong>#' + v6esc(ctx, tag) + '</strong></p>' +
+        '<div class="baro-v5-row"><span>' + v6esc(ctx, v6t(ctx, 'baro.v6.onda.posts')) + '</span><strong>' + hits.length + '</strong></div>' +
+        '<div class="baro-v5-row"><span>' + v6esc(ctx, v6t(ctx, 'baro.v6.onda.autores')) + '</span><strong>' + Object.keys(byAuthor).length + '</strong></div>' +
+        '<p><strong>' + v6esc(ctx, v6t(ctx, 'baro.v6.onda.top')) + ':</strong> ' +
+        topAu.map(function (id) {
+          var nick = id === '?' ? '?' : (names[id] || id.slice(0, 8) + '…');
+          return '@' + v6esc(ctx, nick) + ' (' + byAuthor[id] + ')';
+        }).join(' · ') + '</p></div>';
+      h += v6postItemHtml(ctx, hits[0], null);
+      h += '<p><a href="#/ondas"><strong>' + v6esc(ctx, v6t(ctx, 'baro.v6.onda.explorar')) + ' →</strong></a></p>';
+      return { html: h, stats: { count: posts.length, results: hits.length } };
+    } catch (_) { return v6err(ctx); }
+  }
+
+  /* ---------------- 7. registro de herramientas ---------------- */
+  function v6register() {
+    if (typeof baroRegisterTool !== 'function') return;
+    baroRegisterTool('ver_conexiones',   { label: 'baro.v6.conex.label',   icon: 'users',  run: v6RunVerConexiones });
+    baroRegisterTool('buscar_personas',   { label: 'baro.v6.personas.label', icon: 'search', run: v6RunBuscarPersonas });
+    baroRegisterTool('jugar',             { label: 'baro.v6.jugar.label',    icon: 'game',   run: v6RunJugar });
+    baroRegisterTool('recomiendame',      { label: 'baro.v6.rec.label',      icon: 'spark',  run: v6RunRecomiendame });
+    baroRegisterTool('estadisticas_onda',{ label: 'baro.v6.onda.label',     icon: 'chart',  run: v6RunEstadisticasOnda });
+  }
+
+  /* ---------------- 8. intenciones ES/EN/ZH/PT (contrato 6b) ----------------
+     extract: autocontenido (corre en el contexto del router; NO usa helpers
+     del IIFE v6). El parseo pesado vive en run(). */
+  function v6registerIntents() {
+    var R = (typeof window !== 'undefined' && window.baroIntentRules) ||
+            (typeof baroIntentRules === 'object' && baroIntentRules) || null;
+    var T = (typeof window !== 'undefined' && window.baroIntentToTool) ||
+            (typeof baroIntentToTool === 'object' && baroIntentToTool) || null;
+    if (!R || typeof R.push !== 'function' || !T) return;
+    try {
+      R.push(
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /mis conexiones\b/, /conexiones que tengo/, /con qui[ée]n tengo conexi[óo]n/, /conexi[óo]n mutua/,
+            /mu[ée]strame mis conexiones/, /ver mis conexiones/,
+            /my connections\b/, /mutual connections/, /who am i connected with/,
+            /minhas conex[õo]es/, /com quem tenho conex[ãa]o/,
+            /我的互关/, /我(的)?互相关注/
+          ],
+          intent: 'ver_conexiones',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /busca(r)? (a |al |la )?(el |la )?(usuario |persona )?@/, /encuentra a @/, /busca al usuario @/,
+            /find (the )?(user |person )?@/, /search (for )?@/, /look up @/,
+            /busca(r)? (o |a )?(usu[áa]rio|pessoa) @/, /encontra @/,
+            /找(用户|人)?@/, /搜索@/
+          ],
+          intent: 'buscar_personas',
+          extract: function (text) { return { rawText: String(text || '') }; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /quiero jugar/, /juguemos/, /vamos a jugar/, /\bjugar\b/, /juega conmigo/,
+            /qui[ée]n es el mentiroso/, /el (juego del )?mentiroso/,
+            /play( a)? game/, /let'?s play/, /who'?s the liar/, /the liar game/,
+            /quero jogar/, /vamos jogar/, /quem [ée] o mentiroso/, /o jogo do mentiroso/,
+            /我想玩游戏/, /玩游戏/, /谁是说谎者/, /说谎者游戏/
+          ],
+          intent: 'jugar',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /recomi[ée]ndame/, /recomienda/, /qu[ée] me recomiendas/, /sugi[ée]reme algo/,
+            /sugerencias para m[íi]/, /qu[ée] ver/,
+            /recommend( me)?/, /what do you recommend/, /suggest/,
+            /recomenda/, /me recomenda/, /sugest[õo]es para mim/,
+            /给我推荐/, /推荐(一下|点)/
+          ],
+          intent: 'recomiendame',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /estad[íi]sticas? de #/, /stats? de #/, /c[óo]mo va (la onda|el hashtag) #/,
+            /qu[ée] se dice en #/, /onda #\w/,
+            /stats? (of|for) #/, /how is (the wave|hashtag) #/,
+            /stats? de #/, /como vai a onda #/,
+            /#\w+ ?的统计/, /波浪 ?#\w+/
+          ],
+          intent: 'estadisticas_onda',
+          extract: function (text) { return { rawText: String(text || '') }; }
+        }
+      );
+      T['ver_conexiones'] = 'ver_conexiones';
+      T['buscar_personas'] = 'buscar_personas';
+      T['jugar'] = 'jugar';
+      T['recomiendame'] = 'recomiendame';
+      T['estadisticas_onda'] = 'estadisticas_onda';
+    } catch (_) {}
+  }
+
+  /* ---------------- 9. arranque ---------------- */
+  try { baroV6MergeI18n(); } catch (_) {}
+  try { v6register(); } catch (_) {}
+  try { v6registerIntents(); } catch (_) {}
+
+})();
+
+/* ================= BARO · v6-SEGURIDAD ================= */
+/* ================= BARO v6 · seguridad y resúmenes =================
+ * SNIPPET autocontenido. Punto de inserción: DESPUÉS del bloque BARO v5-TOOLS
+ * y ANTES del cierre del script final del index.html. NO crea bloques
+ * <script> nuevos. NO toca baroHandleUserMessage, su catch "Detalle técnico",
+ * el blindaje null-det ni los parches v5 (los extiende, no los rompe).
+ *
+ * QUÉ APORTA (100% client-side, datos REALES de DrexCloud):
+ *  1. ver_sesiones     — sesiones activas reales vía DrexCloud.listDrexSessions()
+ *                         (deviceLabel, ciudad tz, última actividad; marca la
+ *                         actual). Solo INFORMA: el cierre de sesiones se hace
+ *                         en el Centro de seguridad (botón que lo abre).
+ *  2. guia_seguridad    — checklist interactiva: 2FA (users/<uid>/twoFactorEnabled),
+ *                         códigos de respaldo (DrexRecoveryCodes.getStatus()),
+ *                         correo verificado. Botones que abren el Centro de
+ *                         seguridad. CERO acciones destructivas desde Baro.
+ *  3. resumen_semanal   — digest real de 7 días: tus posts y rendimiento
+ *                         (votos netos, ecos), nuevos seguidores (followedAt),
+ *                         avisos destacados. Ventana y límites declarados.
+ *  4. saludo_proactivo  — al abrir Baro, UNA línea útil solo si hay algo
+ *                         pendiente (borradores sin publicar, avisos sin leer),
+ *                         con throttle (máx 1 vez por hora, sessionStorage).
+ *                         Envuelve baroOpenView con guarda __v6Wrapped; no
+ *                         duplica el saludo existente.
+ *
+ * CONTRATOS que sigue (mismo patrón v5):
+ *  - baroRegisterTool(name, {label, icon, run}) — run(args,ctx) -> Promise de
+ *    {html, stats?}; dato ausente = mensaje honesto, JAMÁS inventar.
+ *  - Reglas 6b: baroIntentRules.push({langs, patterns, intent, extract}) +
+ *    baroIntentToTool[intent] = tool (mismo objeto que lee el router).
+ *  - i18n ES/EN/ZH/PT vía BARO_UI_I18N + baroMergeI18n() (patrón 8L/v5).
+ *  - Botones tocables expuestos con baro6dExpose (tokens fijos, sin inyección).
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------------- 0. i18n ES/EN/ZH/PT (patrón 8L/v5) ---------------- */
+  var BARO_V6_I18N = {
+    'baro.v6.login_needed': { es: 'Inicia sesión para usar esto.', en: 'Sign in to use this.', zh: '请先登录。', pt: 'Entre para usar isto.' },
+    'baro.v6.no_db':       { es: 'No pude leer los datos ahora mismo.', en: 'Could not read the data right now.', zh: '暂时无法读取数据。', pt: 'Não consegui ler os dados agora.' },
+    'baro.v6.error':       { es: 'Algo falló leyendo los datos.', en: 'Something failed while reading the data.', zh: '读取数据时出错。', pt: 'Algo falhou ao ler os dados.' },
+    'baro.v6.ahora':       { es: 'ahora mismo', en: 'just now', zh: '刚刚', pt: 'agora mesmo' },
+    'baro.v6.hace_min':    { es: 'hace {n} min', en: '{n} min ago', zh: '{n} 分钟前', pt: 'há {n} min' },
+    'baro.v6.hace_horas':  { es: 'hace {n} h', en: '{n} h ago', zh: '{n} 小时前', pt: 'há {n} h' },
+    'baro.v6.hace_dias':   { es: 'hace {n} d', en: '{n} d ago', zh: '{n} 天前', pt: 'há {n} d' },
+    'baro.v6.abrir_centro': { es: 'Abrir Centro de seguridad', en: 'Open Security Center', zh: '打开安全中心', pt: 'Abrir Central de segurança' },
+
+    'baro.v6.ses.label':   { es: 'Mis sesiones', en: 'My sessions', zh: '我的会话', pt: 'Minhas sessões' },
+    'baro.v6.ses.title':   { es: 'Sesiones activas', en: 'Active sessions', zh: '活跃会话', pt: 'Sessões ativas' },
+    'baro.v6.ses.actual':  { es: 'Esta sesión', en: 'This session', zh: '当前会话', pt: 'Esta sessão' },
+    'baro.v6.ses.vacia':   { es: 'No veo sesiones activas registradas.', en: 'I do not see any active sessions.', zh: '没有看到活跃会话。', pt: 'Não vejo sessões ativas registradas.' },
+    'baro.v6.ses.no_api':  { es: 'No pude leer tus sesiones desde aquí. Ábrelas en el Centro de seguridad.', en: 'I could not read your sessions from here. Open them in the Security Center.', zh: '无法在这里读取你的会话，请在安全中心查看。', pt: 'Não consegui ler suas sessões daqui. Abra-as na Central de segurança.' },
+    'baro.v6.ses.nota':    { es: 'Por seguridad, el cierre de sesiones se hace en el Centro de seguridad.', en: 'For security, sessions are closed from the Security Center.', zh: '出于安全考虑，请在安全中心关闭会话。', pt: 'Por segurança, as sessões são encerradas na Central de segurança.' },
+    'baro.v6.ses.navegador': { es: 'Navegador', en: 'Browser', zh: '浏览器', pt: 'Navegador' },
+
+    'baro.v6.guia.label':  { es: 'Guía de seguridad', en: 'Security guide', zh: '安全指南', pt: 'Guia de segurança' },
+    'baro.v6.guia.title':  { es: 'Protege tu cuenta', en: 'Protect your account', zh: '保护你的账户', pt: 'Proteja sua conta' },
+    'baro.v6.guia.2fa_on':  { es: 'Verificación en dos pasos: activada', en: 'Two-step verification: on', zh: '两步验证：已开启', pt: 'Verificação em duas etapas: ativada' },
+    'baro.v6.guia.2fa_off': { es: 'Verificación en dos pasos: desactivada', en: 'Two-step verification: off', zh: '两步验证：未开启', pt: 'Verificação em duas etapas: desativada' },
+    'baro.v6.guia.2fa_cta': { es: 'Actívala en el Centro de seguridad', en: 'Turn it on in the Security Center', zh: '请在安全中心开启', pt: 'Ative na Central de segurança' },
+    'baro.v6.guia.rc_ok':   { es: 'Códigos de respaldo: {n} de 10 disponibles', en: 'Backup codes: {n} of 10 available', zh: '备用码：10 个中有 {n} 个可用', pt: 'Códigos de reserva: {n} de 10 disponíveis' },
+    'baro.v6.guia.rc_no':   { es: 'Códigos de respaldo: sin generar', en: 'Backup codes: not generated', zh: '备用码：尚未生成', pt: 'Códigos de reserva: não gerados' },
+    'baro.v6.guia.rc_na':   { es: 'Códigos de respaldo: requieren la verificación en dos pasos', en: 'Backup codes: require two-step verification', zh: '备用码：需要先开启两步验证', pt: 'Códigos de reserva: exigem a verificação em duas etapas' },
+    'baro.v6.guia.mail_ok': { es: 'Correo verificado', en: 'Email verified', zh: '邮箱已验证', pt: 'E-mail verificado' },
+    'baro.v6.guia.mail_no': { es: 'Correo sin verificar', en: 'Email not verified', zh: '邮箱未验证', pt: 'E-mail não verificado' },
+    'baro.v6.guia.nota':    { es: 'Baro solo informa: los cambios se hacen en el Centro de seguridad.', en: 'Baro only informs: changes are made in the Security Center.', zh: 'Baro 仅提供信息：请在安全中心进行更改。', pt: 'O Baro só informa: as alterações são feitas na Central de segurança.' },
+
+    'baro.v6.sem.label':    { es: 'Resumen semanal', en: 'Weekly digest', zh: '每周摘要', pt: 'Resumo semanal' },
+    'baro.v6.sem.title':    { es: 'Tu semana en Drex', en: 'Your week on Drex', zh: '你在 Drex 的一周', pt: 'Sua semana no Drex' },
+    'baro.v6.sem.posts':    { es: 'Posts publicados', en: 'Posts published', zh: '发布的帖子', pt: 'Publicações feitas' },
+    'baro.v6.sem.votos':    { es: 'Votos netos recibidos', en: 'Net votes received', zh: '收到的净投票', pt: 'Votos líquidos recebidos' },
+    'baro.v6.sem.ecos':     { es: 'Ecos recibidos', en: 'Echoes received', zh: '收到的转发', pt: 'Ecos recebidos' },
+    'baro.v6.sem.seg':      { es: 'Nuevos seguidores', en: 'New followers', zh: '新增粉丝', pt: 'Novos seguidores' },
+    'baro.v6.sem.avisos':   { es: 'Avisos destacados', en: 'Top notifications', zh: '重要通知', pt: 'Avisos em destaque' },
+    'baro.v6.sem.vacio':    { es: 'Esta semana no hay movimiento todavía.', en: 'No activity this week yet.', zh: '本周还没有动态。', pt: 'Esta semana ainda não há movimento.' },
+    'baro.v6.sem.nota':     { es: 'Ventana: últimos 7 días. Posts: últimos 500 de la comunidad.', en: 'Window: last 7 days. Posts: last 500 community posts.', zh: '范围：最近 7 天。帖子：社区最近 500 条。', pt: 'Janela: últimos 7 dias. Publicações: últimas 500 da comunidade.' },
+
+    'baro.v6.pro.borradores': { es: 'Tienes {n} borrador(es) sin publicar.', en: 'You have {n} unpublished draft(s).', zh: '你有 {n} 篇未发布的草稿。', pt: 'Você tem {n} rascunho(s) não publicado(s).' },
+    'baro.v6.pro.avisos':     { es: 'Tienes {n} aviso(s) sin leer.', en: 'You have {n} unread notification(s).', zh: '你有 {n} 条未读通知。', pt: 'Você tem {n} aviso(s) não lido(s).' },
+    'baro.v6.pro.y':          { es: 'y', en: 'and', zh: '，', pt: 'e' }
+  };
+
+  function baroV6MergeI18n() {
+    try {
+      if (typeof BARO_UI_I18N === 'object' && BARO_UI_I18N) {
+        Object.keys(BARO_V6_I18N).forEach(function (k) {
+          if (!(k in BARO_UI_I18N)) BARO_UI_I18N[k] = BARO_V6_I18N[k];
+        });
+      }
+    } catch (_) {}
+    try { if (typeof baroMergeI18n === 'function') baroMergeI18n(); } catch (_) {}
+  }
+
+  /* ---------------- 1. helpers (estilo v5, prefijo v6) ---------------- */
+  function v6lang() {
+    try {
+      var l = String((typeof navigator !== 'undefined' && navigator.language) || 'es').toLowerCase();
+      if (l.indexOf('zh') === 0) return 'zh';
+      if (l.indexOf('pt') === 0) return 'pt';
+      if (l.indexOf('en') === 0) return 'en';
+    } catch (_) {}
+    return 'es';
+  }
+  function v6esc(ctx, s) {
+    try {
+      if (ctx && typeof ctx.esc === 'function') return ctx.esc(s);
+      if (typeof escapeHtml === 'function') return escapeHtml(s);
+    } catch (_) {}
+    return String(s == null ? '' : s);
+  }
+  function v6t(ctx, key, vars) {
+    var s = null;
+    try { s = (ctx && typeof ctx.t === 'function') ? ctx.t(key) : null; } catch (_) { s = null; }
+    if (!s || s === key) {
+      var e = BARO_V6_I18N[key];
+      s = (e && (e[v6lang()] || e.es)) || key;
+    }
+    if (vars) {
+      var esc = function (v) { return v6esc(ctx, v); };
+      Object.keys(vars).forEach(function (k) {
+        s = String(s).split('{' + k + '}').join(esc(vars[k]));
+      });
+    }
+    return s;
+  }
+  function v6db() {
+    try {
+      if (typeof DrexCloud !== 'undefined' && DrexCloud && typeof DrexCloud.database === 'function') {
+        return DrexCloud.database();
+      }
+    } catch (_) {}
+    return null;
+  }
+  function v6uid(ctx) {
+    try { return (ctx && ctx.user && ctx.user.uid) || ''; } catch (_) { return ''; }
+  }
+  function v6needLogin(ctx) {
+    if (v6uid(ctx)) return null;
+    return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.login_needed')) + '</p>' };
+  }
+  function v6noDb(ctx) {
+    return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.no_db')) + '</p>' };
+  }
+  function v6err(ctx) {
+    return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.error')) + '</p>' };
+  }
+  function v6read(db, path) {
+    try {
+      return db.ref(path).once('value').then(
+        function (snap) { try { return snap ? snap.val() : null; } catch (_) { return null; } },
+        function () { return null; }
+      );
+    } catch (_) { return Promise.resolve(null); }
+  }
+  function v6count(obj) {
+    if (!obj || typeof obj !== 'object') return 0;
+    return Object.keys(obj).length;
+  }
+  function v6timeAgo(ctx, ts) {
+    var d = Date.now() - Number(ts || 0);
+    if (!(d > 0)) return v6t(ctx, 'baro.v6.ahora');
+    var m = Math.floor(d / 60000);
+    if (m < 1) return v6t(ctx, 'baro.v6.ahora');
+    if (m < 60) return v6t(ctx, 'baro.v6.hace_min', { n: m });
+    var h = Math.floor(m / 60);
+    if (h < 24) return v6t(ctx, 'baro.v6.hace_horas', { n: h });
+    return v6t(ctx, 'baro.v6.hace_dias', { n: Math.floor(h / 24) });
+  }
+  function v6textOf(note) {
+    if (!note) return '';
+    var t = (note.content != null ? note.content : (note.text != null ? note.text : ''));
+    return String(t || '');
+  }
+  function v6authorUid(note) {
+    return String((note && (note.authorId || note.userId || note.uid)) || '');
+  }
+  async function v6readPosts(db) {
+    var out = [];
+    try {
+      var snap = await db.ref('communityNotes').orderByChild('timestamp').limitToLast(500).once('value');
+      if (snap) snap.forEach(function (ch) {
+        var n = ch.val() || {};
+        n.id = ch.key;
+        out.push(n);
+      });
+    } catch (_) { return []; }
+    out.sort(function (a, b) { return Number(b.timestamp || 0) - Number(a.timestamp || 0); });
+    return out;
+  }
+  function v6row(ctx, k, v) {
+    return '<div class="baro-v5-row"><span>' + v6esc(ctx, v6t(ctx, k)) +
+      '</span><strong>' + v6esc(ctx, v) + '</strong></div>';
+  }
+  function v6checkRow(ctx, ok, labelKey) {
+    var mark = ok ? '✅' : '⚠️';
+    return '<div class="baro-v5-row"><span>' + mark + ' ' + v6esc(ctx, v6t(ctx, labelKey)) +
+      '</span><span></span></div>';
+  }
+  function v6openBtn(ctx) {
+    return '<p style="margin-top:8px"><button type="button" class="baro-intent-btn" ' +
+      'onclick="baroV6OpenSecurity()">' +
+      v6esc(ctx, v6t(ctx, 'baro.v6.abrir_centro')) + '</button></p>';
+  }
+
+  /* ---------------- 2. botón global: abrir el Centro de seguridad -------- */
+  function baroV6OpenSecurity() {
+    try {
+      if (typeof openSecurityCenter === 'function') { openSecurityCenter(); return; }
+    } catch (_) {}
+    try {
+      var g = (typeof window !== 'undefined') ? window : null;
+      if (g && typeof g.openSecurityCenter === 'function') { g.openSecurityCenter(); return; }
+    } catch (_) {}
+  }
+  function v6expose() {
+    try {
+      if (typeof baro6dExpose === 'function') { baro6dExpose('baroV6OpenSecurity', baroV6OpenSecurity); return; }
+    } catch (_) {}
+    try {
+      var g = (typeof window !== 'undefined') ? window : null;
+      if (g) g.baroV6OpenSecurity = baroV6OpenSecurity;
+    } catch (_) {}
+  }
+
+  /* ---------------- 3a. ver_sesiones — solo informa, no cierra ---------- */
+  async function v6RunVerSesiones(args, ctx) {
+    var need = v6needLogin(ctx);
+    if (need) return need;
+    var db = v6db();
+    if (!db) return v6noDb(ctx);
+    try {
+      var list = null;
+      try {
+        if (typeof DrexCloud !== 'undefined' && DrexCloud &&
+            typeof DrexCloud.listDrexSessions === 'function') {
+          list = await DrexCloud.listDrexSessions();
+        }
+      } catch (_) { list = null; }
+      if (!Array.isArray(list)) {
+        return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.ses.no_api')) + '</p>' + v6openBtn(ctx) };
+      }
+      var current = null;
+      try {
+        if (typeof DrexCloud.getActiveDrexSessionId === 'function') current = DrexCloud.getActiveDrexSessionId();
+      } catch (_) {}
+      var act = list.filter(function (s) { return s && s.id && s.revoked !== true && !s.endedAt; });
+      act.sort(function (a, b) { return Number(b.lastActivity || 0) - Number(a.lastActivity || 0); });
+      if (!act.length) {
+        return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.ses.vacia')) + '</p>' + v6openBtn(ctx) };
+      }
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        v6esc(ctx, v6t(ctx, 'baro.v6.ses.title')) + ' (' + act.length + ')</strong></p></div>';
+      act.slice(0, 10).forEach(function (s) {
+        var mine = current && String(s.id) === String(current);
+        var sub = [];
+        var city = '';
+        try { city = String(s.tz || '').split('/').pop().replace(/_/g, ' '); } catch (_) {}
+        if (city) sub.push(city);
+        sub.push(mine ? v6t(ctx, 'baro.v6.ses.actual') : v6timeAgo(ctx, s.lastActivity));
+        h += '<div class="baro-v5-item"><p><strong>' +
+          v6esc(ctx, String(s.deviceLabel || v6t(ctx, 'baro.v6.ses.navegador'))) +
+          '</strong>' + (mine ? ' · <span class="baro-v5-sub">📍 ' + v6esc(ctx, v6t(ctx, 'baro.v6.ses.actual')) + '</span>' : '') +
+          '</p><p class="baro-v5-sub">' + v6esc(ctx, sub.join(' · ')) + '</p></div>';
+      });
+      h += '<p class="baro-v5-sub">' + v6esc(ctx, v6t(ctx, 'baro.v6.ses.nota')) + '</p>' + v6openBtn(ctx);
+      return { html: h, stats: { count: act.length } };
+    } catch (_) { return v6err(ctx); }
+  }
+
+  /* ---------------- 3b. guia_seguridad — checklist informativa ---------- */
+  async function v6RunGuiaSeguridad(args, ctx) {
+    var need = v6needLogin(ctx);
+    if (need) return need;
+    var db = v6db();
+    if (!db) return v6noDb(ctx);
+    var uid = v6uid(ctx);
+    try {
+      var userDoc = await v6read(db, 'users/' + uid);
+      var twoFa = !!(userDoc && userDoc.twoFactorEnabled);
+      var mailOk = false;
+      try {
+        var cu = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
+        mailOk = !!(cu && cu.emailVerified);
+      } catch (_) {}
+      var rc = null;
+      try {
+        if (typeof DrexRecoveryCodes !== 'undefined' && DrexRecoveryCodes &&
+            typeof DrexRecoveryCodes.getStatus === 'function') {
+          rc = await DrexRecoveryCodes.getStatus();
+        }
+      } catch (_) { rc = null; }
+      var h = '<div class="baro-v5-panel"><p><strong>' +
+        v6esc(ctx, v6t(ctx, 'baro.v6.guia.title')) + '</strong></p>' +
+        v6checkRow(ctx, twoFa, twoFa ? 'baro.v6.guia.2fa_on' : 'baro.v6.guia.2fa_off');
+      if (twoFa && rc && rc.hasCodes) {
+        h += '<div class="baro-v5-row"><span>' + v6esc(ctx, v6t(ctx, 'baro.v6.guia.rc_ok', { n: rc.remaining })) + '</span><span></span></div>';
+      } else if (twoFa) {
+        h += v6checkRow(ctx, false, 'baro.v6.guia.rc_no');
+      } else {
+        h += '<p class="baro-v5-sub">' + v6esc(ctx, v6t(ctx, 'baro.v6.guia.rc_na')) + '</p>';
+      }
+      h += v6checkRow(ctx, mailOk, mailOk ? 'baro.v6.guia.mail_ok' : 'baro.v6.guia.mail_no');
+      h += '</div>';
+      if (!twoFa) {
+        h += '<p class="baro-v5-sub">' + v6esc(ctx, v6t(ctx, 'baro.v6.guia.2fa_cta')) + '</p>';
+      }
+      h += '<p class="baro-v5-sub">' + v6esc(ctx, v6t(ctx, 'baro.v6.guia.nota')) + '</p>' + v6openBtn(ctx);
+      return { html: h, stats: { count: 3 } };
+    } catch (_) { return v6err(ctx); }
+  }
+
+  /* ---------------- 3c. resumen_semanal — digest real de 7 días --------- */
+  async function v6RunResumenSemanal(args, ctx) {
+    var need = v6needLogin(ctx);
+    if (need) return need;
+    var db = v6db();
+    if (!db) return v6noDb(ctx);
+    var uid = v6uid(ctx);
+    try {
+      var start = Date.now() - 7 * 86400000;
+      var r = await Promise.all([
+        v6readPosts(db),
+        v6read(db, 'followers/' + uid),
+        v6read(db, 'notifications/' + uid)
+      ]);
+      var mine = r[0].filter(function (n) {
+        return v6authorUid(n) === uid && Number(n.timestamp || 0) >= start;
+      });
+      var votos = 0, ecos = 0, i;
+      for (i = 0; i < mine.length; i++) {
+        votos += Number(mine[i].upvotes || 0) - Number(mine[i].downvotes || 0);
+        ecos += Number(mine[i].ecosCount || 0);
+      }
+      var nuevosSeg = 0;
+      var fmap = r[1] || {};
+      Object.keys(fmap).forEach(function (k) {
+        var f = fmap[k] || {};
+        var ts = Number(f.followedAt || 0);
+        if (ts >= start) nuevosSeg++;
+      });
+      var notifs = [];
+      var nn = r[2] || {};
+      Object.keys(nn).forEach(function (k) {
+        var n = nn[k] || {};
+        if (Number(n.timestamp || 0) >= start) {
+          notifs.push({ message: String(n.message || ''), ts: Number(n.timestamp || 0), actor: String(n.actorName || '') });
+        }
+      });
+      notifs.sort(function (a, b) { return b.ts - a.ts; });
+      notifs = notifs.slice(0, 5);
+      if (!mine.length && !nuevosSeg && !notifs.length) {
+        return { html: '<p>' + v6esc(ctx, v6t(ctx, 'baro.v6.sem.vacio')) + '</p>' +
+          '<p class="baro-v5-sub">' + v6esc(ctx, v6t(ctx, 'baro.v6.sem.nota')) + '</p>',
+          stats: { count: 0, results: 0 } };
+      }
+      var esc = function (s) { return v6esc(ctx, s); };
+      var h = '<div class="baro-v5-panel"><p><strong>' + esc(v6t(ctx, 'baro.v6.sem.title')) + '</strong></p>' +
+        v6row(ctx, 'baro.v6.sem.posts', mine.length) +
+        v6row(ctx, 'baro.v6.sem.votos', votos) +
+        v6row(ctx, 'baro.v6.sem.ecos', ecos) +
+        v6row(ctx, 'baro.v6.sem.seg', nuevosSeg) +
+        '</div>';
+      if (notifs.length) {
+        h += '<p><strong>' + esc(v6t(ctx, 'baro.v6.sem.avisos')) + ' (' + notifs.length + ')</strong></p>';
+        notifs.forEach(function (n) {
+          h += '<div class="baro-v5-item"><p>' + esc(n.message || '—') + '</p>' +
+            '<p class="baro-v5-sub">' + esc(v6timeAgo(ctx, n.ts)) + '</p></div>';
+        });
+      }
+      h += '<p class="baro-v5-sub">' + esc(v6t(ctx, 'baro.v6.sem.nota')) + '</p>';
+      return { html: h, stats: { count: mine.length + nuevosSeg, results: notifs.length } };
+    } catch (_) { return v6err(ctx); }
+  }
+
+  /* ---------------- 4. saludo proactivo (throttle 1/h, sin spam) ------- */
+  var V6_PRO_KEY = 'baro_v6_proactivo_ts';
+  var V6_PRO_MS = 3600000;
+  function v6proThrottleOk() {
+    try {
+      if (typeof sessionStorage === 'undefined') return true;
+      var last = Number(sessionStorage.getItem(V6_PRO_KEY) || 0);
+      return !(last > 0 && (Date.now() - last) < V6_PRO_MS);
+    } catch (_) { return true; }
+  }
+  function v6proMark() {
+    try {
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(V6_PRO_KEY, String(Date.now()));
+    } catch (_) {}
+  }
+  function v6countDrafts() {
+    try {
+      var uid = '';
+      try {
+        uid = (typeof DrexCloud !== 'undefined' && DrexCloud.auth && DrexCloud.auth().currentUser)
+          ? String(DrexCloud.auth().currentUser.uid || '') : '';
+      } catch (_) {}
+      if (!uid || typeof localStorage === 'undefined') return 0;
+      var raw = localStorage.getItem('drex_note_drafts_v3_' + uid);
+      var list = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(list)) return 0;
+      var n = 0, i;
+      for (i = 0; i < list.length; i++) {
+        var d = list[i] || {};
+        var txt = String(d.content || '');
+        var hasPoll = !!(d.poll && d.poll.options && d.poll.options.length);
+        if (txt.trim() || hasPoll) n++;
+      }
+      return n;
+    } catch (_) { return 0; }
+  }
+  async function v6proCheck() {
+    try {
+      if (!v6proThrottleOk()) return;
+      var drafts = v6countDrafts();
+      var unread = 0;
+      try {
+        var uid = '';
+        try {
+          uid = (typeof DrexCloud !== 'undefined' && DrexCloud.auth && DrexCloud.auth().currentUser)
+            ? String(DrexCloud.auth().currentUser.uid || '') : '';
+        } catch (_) {}
+        if (uid && typeof DrexCloud !== 'undefined' && DrexCloud.database) {
+          var snap = await DrexCloud.database().ref('notifUnread/' + uid).once('value');
+          var v = snap ? snap.val() : null;
+          unread = Number((v && v.c) || 0);
+        }
+      } catch (_) {}
+      if (!drafts && !unread) return;
+      var parts = [];
+      var lang = v6lang();
+      var T = function (es, en, zh, pt) {
+        return lang === 'en' ? en : lang === 'zh' ? zh : lang === 'pt' ? pt : es;
+      };
+      if (drafts) parts.push(T('Tienes {n} borrador(es) sin publicar.', 'You have {n} unpublished draft(s).', '你有 {n} 篇未发布的草稿。', 'Você tem {n} rascunho(s) não publicado(s).').split('{n}').join(String(drafts)));
+      if (unread) parts.push(T('Tienes {n} aviso(s) sin leer.', 'You have {n} unread notification(s).', '你有 {n} 条未读通知。', 'Você tem {n} aviso(s) não lido(s).').split('{n}').join(String(unread)));
+      var sep = T(' y ', ' and ', '，', ' e ');
+      var esc = function (s) {
+        try {
+          if (typeof escapeHtml === 'function') return escapeHtml(s);
+        } catch (_) {}
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      };
+      var html = '<p>📌 ' + esc(parts.join(sep)) + '</p>';
+      try {
+        if (typeof baroAddBaroMessage === 'function') baroAddBaroMessage(html);
+        else if (typeof window !== 'undefined' && typeof window.baroAddBaroMessage === 'function') window.baroAddBaroMessage(html);
+        else return;
+      } catch (_) { return; }
+      v6proMark();
+    } catch (_) {}
+  }
+  function v6wrapOpenView() {
+    try {
+      var g = (typeof window !== 'undefined') ? window : null;
+      var orig = (g && typeof g.baroOpenView === 'function') ? g.baroOpenView
+        : ((typeof baroOpenView === 'function') ? baroOpenView : null);
+      if (!orig || orig.__v6Wrapped) return;
+      var wrapped = function () {
+        var r;
+        try { r = orig.apply(this, arguments); } catch (e) { r = undefined; }
+        try { v6proCheck(); } catch (_) {}
+        return r;
+      };
+      wrapped.__v6Wrapped = true;
+      try { if (g) g.baroOpenView = wrapped; } catch (_) {}
+      try { baroOpenView = wrapped; } catch (_) {}
+    } catch (_) {}
+  }
+
+  /* ---------------- 5. estilos (reusa v5 si existe) -------------------- */
+  function v6injectCss() {
+    try {
+      if (typeof document === 'undefined') return;
+      if (document.getElementById('baro-v5-css') || document.getElementById('baro-v6-css')) return;
+      var st = document.createElement('style');
+      st.id = 'baro-v6-css';
+      st.textContent = '.baro-v5-panel{margin:6px 0}.baro-v5-row{display:flex;justify-content:space-between;' +
+        'gap:12px;padding:7px 2px;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}' +
+        '.baro-v5-item{padding:8px 2px;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}' +
+        '.baro-v5-item p{margin:2px 0}.baro-v5-sub{font-size:12px;opacity:.65}' +
+        '.baro-v5-sub a{color:#2F33B8;text-decoration:underline}' +
+        '.baro-intent-btn{font-size:13px;font-weight:700;color:#fff;background:#2F33B8;border:0;border-radius:12px;padding:9px 14px;cursor:pointer}';
+      document.head.appendChild(st);
+    } catch (_) {}
+  }
+
+  /* ---------------- 6. registro de herramientas ------------------------ */
+  function v6register() {
+    if (typeof baroRegisterTool !== 'function') return;
+    baroRegisterTool('ver_sesiones',   { label: 'baro.v6.ses.label',  icon: 'shield', run: v6RunVerSesiones });
+    baroRegisterTool('guia_seguridad', { label: 'baro.v6.guia.label', icon: 'shield', run: v6RunGuiaSeguridad });
+    baroRegisterTool('resumen_semanal', { label: 'baro.v6.sem.label', icon: 'chart',  run: v6RunResumenSemanal });
+  }
+
+  /* ---------------- 7. intenciones ES/EN/ZH/PT (contrato 6b) ------------
+     extract: autocontenido (corre en el contexto del router; NO usa helpers
+     del IIFE v6). El parseo pesado vive en run(). */
+  function v6registerIntents() {
+    var R = (typeof window !== 'undefined' && window.baroIntentRules) ||
+            (typeof baroIntentRules === 'object' && baroIntentRules) || null;
+    var T = (typeof window !== 'undefined' && window.baroIntentToTool) ||
+            (typeof baroIntentToTool === 'object' && baroIntentToTool) || null;
+    if (!R || typeof R.push !== 'function' || !T) return;
+    try {
+      R.push(
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /mis sesiones/, /sesiones activas/, /d[óo]nde (tengo|estoy) (sesi[óo]n|conectado)/, /dispositivos conectados/,
+            /cerrar sesi[óo]n (en|de) otro/,
+            /my sessions/, /active sessions/, /where am i logged in/, /connected devices/,
+            /minhas sess[õo]es/, /sess[õo]es ativas/, /onde estou logado/,
+            /我的会话/, /活跃会话/, /登录的设备/
+          ],
+          intent: 'ver_sesiones',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /gu[íi]a de seguridad/, /c[óo]mo protejo mi cuenta/, /proteger mi cuenta/,
+            /activar (la )?verificaci[óo]n/, /verificaci[óo]n en dos pasos/, /\b2fa\b/, /doble factor/,
+            /c[óo]digos de respaldo/, /seguridad de mi cuenta/,
+            /security guide/, /how (do|can) i protect my account/, /protect my account/,
+            /enable (two.factor|2fa)/, /two.factor (authentication|verification)/, /backup codes/, /\b2fa\b/,
+            /guia de seguran[çc]a/, /proteger minha conta/, /verifica[çc][ãa]o em duas etapas/, /c[óo]digos de reserva/,
+            /安全指南/, /保护我的账[户号]/, /两步验证/, /双重验证/, /备用码/
+          ],
+          intent: 'guia_seguridad',
+          extract: function () { return {}; }
+        },
+        {
+          langs: ['es', 'en', 'zh', 'pt'],
+          patterns: [
+            /resumen (de la )?semana/, /\bmi semana\b/, /c[óo]mo me fue (esta|la) semana/,
+            /balance semanal/, /resumen semanal/,
+            /weekly (summary|digest|recap)/, /\bmy week\b/, /how was my week/, /week(ly)? recap/,
+            /resumo (da )?semana/, /minha semana/, /balan[çc]o semanal/,
+            /本(周|星期)(总结|摘要|回顾)/, /我这(一)?周/
+          ],
+          intent: 'resumen_semanal',
+          extract: function () { return {}; }
+        }
+      );
+      T['ver_sesiones'] = 'ver_sesiones';
+      T['guia_seguridad'] = 'guia_seguridad';
+      T['resumen_semanal'] = 'resumen_semanal';
+    } catch (_) {}
+  }
+
+  /* ---------------- 8. arranque ---------------- */
+  try { baroV6MergeI18n(); } catch (_) {}
+  try { v6injectCss(); } catch (_) {}
+  try { v6register(); } catch (_) {}
+  try { v6registerIntents(); } catch (_) {}
+  try { v6expose(); } catch (_) {}
+  try { v6wrapOpenView(); } catch (_) {}
+
+})();
+
 </script>
 
 </body>
