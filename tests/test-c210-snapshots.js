@@ -167,7 +167,7 @@ test('hook one-shot de la cámara C209 presente', function () {
 });
 test('todos los onclick de instantáneas apuntan a funciones definidas', function () {
   var fns = ['drexSnapNew', 'drexSnapFilterChange', 'drexSnapFileChosen', 'drexSnapOpenAuthor',
-             'drexSnapCloseViewer', 'drexSnapNav', 'drexSnapToggleReaction'];
+             'drexSnapCloseViewer', 'drexSnapNav', 'drexSnapToggleReaction', 'drexSnapAskDelete'];
   fns.forEach(function (fn) {
     assert(src.indexOf('function ' + fn + '(') !== -1, 'no definida: ' + fn);
   });
@@ -185,15 +185,19 @@ test('constante TTL y purga en el código', function () {
 });
 
 // ---- 8. Paridad i18n ----
-test('las 15 claves C210 existen en EN/ZH/PT', function () {
+test('las 19 claves C210 existen en EN/ZH/PT', function () {
   var keys = [
-    'Instantáneas', 'Amigos', 'Filtrar instantáneas', 'Tomar una instantánea',
-    'Nueva', 'Publicando instantánea…', 'Tu instantánea se publicó',
-    'No se pudo publicar la instantánea. Inténtalo de nuevo.',
-    'Aún no hay instantáneas. ¡Sé la primera persona en compartir una!',
+    'Destellos', 'Amigos', 'Filtrar destellos', 'Tomar un destello',
+    'Nueva', 'Publicando destello…', 'Tu destello se publicó',
+    'No se pudo publicar el destello. Inténtalo de nuevo.',
+    'Aún no hay destellos. ¡Sé la primera persona en compartir uno!',
     'quedan {n} h', 'quedan {n} min', 'menos de 1 min',
-    'La instantánea ha expirado', 'Ver instantánea de ',
-    'Inicia sesión para compartir una instantánea.'
+    'El destello ha expirado', 'Ver destello de ',
+    'Inicia sesión para compartir un destello.',
+    '¿Eliminar este destello? Esta acción no se puede deshacer.',
+    'El destello se eliminó',
+    'No se pudo eliminar el destello. Inténtalo de nuevo.',
+    'Los destellos desaparecen a las 5 horas'
   ];
   keys.forEach(function (k) {
     var needle = JSON.stringify(k) + ':';
