@@ -1025,6 +1025,7 @@ var APP_ENGLISH_TEXT = {
 "Mi gente":"My people",
 
 "Mostrando destacados":"Showing top posts",
+"Mostrando lo más reciente":"Showing the most recent",
 "Mostrando tu gente":"Showing your people",
 "publicaciones":"posts",
 "canción":"song",
@@ -3193,6 +3194,7 @@ var APP_CHINESE_TEXT = {
 "Mi gente":"我的圈子",
 
 "Mostrando destacados":"正在显示精选",
+"Mostrando lo más reciente":"正在显示最新内容",
 "Mostrando tu gente":"正在显示我的圈子",
 "publicaciones":"帖子",
 "canción":"首歌曲",
@@ -5138,6 +5140,7 @@ var APP_PORTUGUESE_TEXT = {
 "Modo silencio nocturno activado. Notificaciones pausadas hasta las 8:00 a.m.":"Modo silencioso noturno ativado. Notificações pausadas até as 8:00 a.m.",
 "Monitoreo continuo para detectar accesos no autorizados o actividades sospechosas.":"Monitoramento contínuo para detectar acessos não autorizados ou atividades suspeitas.",
 "Mostrando destacados":"Mostrando destaques",
+"Mostrando lo más reciente":"Mostrando os mais recentes",
 "Mostrando tu gente":"Mostrando sua gente",
 "Mostrar":"Mostrar",
 "Mostrar contraseña":"Mostrar senha",

@@ -15391,6 +15391,7 @@ function saveNote() {
 
     if (tab === 'foryou') {
       loadNotes(false, 'foryou');
+      showToast(appT('Mostrando lo más reciente'));
     } else if (tab === 'popular') {
       loadNotes(false, 'popular');
       showToast(appT('Mostrando destacados'));
@@ -15690,11 +15691,103 @@ function saveNote() {
       </div>`;
   }
 
+  // ============ GESTOS COMPARTIDOS DE LOS VISORES (fotos + video) ============
+  // El visor de fotos y el de video comparten umbrales y feedback visual de
+  // "deslizar abajo para cerrar" (y pellizco hacia adentro para cerrar): un
+  // solo lugar para los números, sin duplicados que diverjan. 2026-09-27.
+  var DREX_VIEWER_TAP_SLOP = 12;       // px: movimiento máximo para contar como tap
+  var DREX_VIEWER_DISMISS_DY = 90;     // px: arrastre vertical para cerrar
+  var DREX_VIEWER_DISMISS_RATIO = 1.4; // el dy debe dominar sobre el dx
+
+  // Feedback de "deslizar abajo para cerrar": el medio baja con el dedo
+  // (factor 0.85) y el fondo negro se atenúa. `extra` permite sufijos de
+  // transform (ej. la rotación del visor de fotos). Devuelve true si aplicó.
+  function drexViewerDismissDrag(mediaEl, backdropEl, dy, extra) {
+    if (!(dy > 0)) return false;
+    try {
+      if (mediaEl) {
+        mediaEl.style.transition = 'none';
+        mediaEl.style.transform = 'translateY(' + (dy * 0.85).toFixed(1) + 'px)' + (extra || '');
+      }
+      if (backdropEl) {
+        var f = Math.max(0, 1 - dy / (window.innerHeight * 0.55));
+        backdropEl.style.transition = 'none';
+        backdropEl.style.backgroundColor = 'rgba(0,0,0,' + f.toFixed(3) + ')';
+      }
+    } catch (_) {}
+    return true;
+  }
+
+  // Rebote: el medio regresa a su transform (vía restoreMedia) y el fondo a
+  // negro puro. Con instant=true el regreso es inmediato (sin animación).
+  function drexViewerDismissSnapBack(mediaEl, backdropEl, restoreMedia, instant) {
+    try {
+      if (mediaEl) {
+        mediaEl.style.transition = instant ? 'none' : 'transform .22s ease-out';
+        if (typeof restoreMedia === 'function') restoreMedia();
+        else mediaEl.style.transform = '';
+      }
+      if (backdropEl) {
+        backdropEl.style.transition = instant ? 'none' : 'background-color .22s ease-out';
+        backdropEl.style.backgroundColor = '';
+      }
+    } catch (_) {}
+  }
+
+  // Feedback de "pellizco hacia adentro para cerrar": el medio se encoge con
+  // los dedos y el fondo negro se atenúa con la escala.
+  function drexViewerPinchCloseDrag(mediaEl, backdropEl, scale, extra) {
+    try {
+      var s = Math.max(0.35, Math.min(1, scale));
+      if (mediaEl) {
+        mediaEl.style.transition = 'none';
+        mediaEl.style.transform = (extra ? extra + ' ' : '') + 'scale(' + s.toFixed(3) + ')';
+      }
+      if (backdropEl) {
+        backdropEl.style.transition = 'none';
+        backdropEl.style.backgroundColor = 'rgba(0,0,0,' + s.toFixed(3) + ')';
+      }
+    } catch (_) {}
+  }
+
   // ---- Visor de video a pantalla completa (reproductor propio) ----
   let _videoModalNoteId = null;
   let _videoModalCache = {};   // noteId -> dataUrl (solo en memoria, por sesión)
   let _videoModalChrome = true;
   let _videoModalWired = false;
+  // 2026-09-27: reproducir por Blob/Object URL en vez de data URL gigante
+  // (las data URL de varios MB son frágiles en móviles: iOS las rechaza en
+  // silencio y el player dispara 'error'). _videoModalPendingDataUrl es la
+  // data URL original pendiente de cachear cuando carga el video.
+  let _videoModalObjectUrl = null;
+  let _videoModalPendingDataUrl = null;
+  function _videoModalRevokeObjectUrl() {
+    if (_videoModalObjectUrl) { try { URL.revokeObjectURL(_videoModalObjectUrl); } catch (_) {} _videoModalObjectUrl = null; }
+  }
+  function _videoModalDataUrlToObjectUrl(dataUrl) {
+    try {
+      const m = /^data:([^;,]+);base64,([\s\S]*)$/.exec(String(dataUrl || ''));
+      if (!m) return dataUrl;
+      const bin = atob(m[2]);
+      const len = bin.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+      _videoModalRevokeObjectUrl();
+      _videoModalObjectUrl = URL.createObjectURL(new Blob([bytes], { type: m[1] }));
+      return _videoModalObjectUrl;
+    } catch (_) { return dataUrl; }
+  }
+  // 2026-09-27: el visor de video hereda los gestos del visor de fotos —
+  // deslizar abajo para cerrar y pellizco hacia adentro para cerrar — con
+  // los mismos umbrales compartidos (DREX_VIEWER_*).
+  let _videoModalDismissY = 0;   // arrastre vertical de cierre en curso (px)
+  let _videoModalPinchScale = 1; // escala visual del pellizco de cierre
+  let _videoModalPinchD = 0;     // distancia inicial del pellizco (px)
+  let _videoModalPointers = null; // Map pointerId -> {x,y}
+  let _videoModalLastTap = 0;    // para doble tap = play/pausa
+  function _videoModalSnapBack() {
+    drexViewerDismissSnapBack(_videoModalEl('video-modal-player'), _videoModalEl('video-modal'), null, false);
+  }
 
   function _videoModalEl(id) { return document.getElementById(id); }
 
@@ -15723,9 +15816,11 @@ function saveNote() {
       _videoModalRenderDur();
       // Cachear solo cuando el video demuestra que carga: evita envenenar
       // la caché con un dataUrl corrupto (la reapertura reintenta la descarga).
+      // Se cachea la data URL original (el player ahora usa Blob/Object URL).
       const nid = _videoModalNoteId;
-      const src = player.src || '';
-      if (nid && src.indexOf('data:video') === 0) _videoModalCache[nid] = src;
+      const du = _videoModalPendingDataUrl;
+      if (nid && du && du.indexOf('data:video') === 0) _videoModalCache[nid] = du;
+      _videoModalPendingDataUrl = null;
     });
     player.addEventListener('timeupdate', () => {
       const dur = player.duration || 0;
@@ -15806,6 +15901,10 @@ function saveNote() {
   let _videoModalPressX = 0;
   let _videoModalPressY = 0;
 
+  // Gestos del visor de video: tap = mostrar-ocultar chrome, doble tap =
+  // reproducir/pausar, deslizar abajo = cerrar, pellizco hacia adentro =
+  // cerrar, mantener = 2x. Los dos primeros usan los umbrales compartidos
+  // con el visor de fotos (DREX_VIEWER_*): un solo lugar para los números.
   function _videoModalStageDown(e) {
     _videoModalPressMoved = false;
     _videoModalPress2x = false;
@@ -15813,9 +15912,23 @@ function saveNote() {
     // Captura el pointer: el pointerup siempre llega aunque el dedo se
     // deslice fuera del escenario (evita que el 2x se quede trabado).
     try { _videoModalEl('video-modal-stage')?.setPointerCapture(e.pointerId); } catch (_) {}
+    // Pellizco para cerrar (mismo gesto que el visor de fotos).
+    try {
+      if (!_videoModalPointers) _videoModalPointers = new Map();
+      _videoModalPointers.set(e.pointerId, { x: e.clientX || 0, y: e.clientY || 0 });
+      if (_videoModalPointers.size === 2) {
+        const p = [..._videoModalPointers.values()];
+        _videoModalPinchD = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+        _videoModalPinchScale = 1;
+        if (_videoModalDismissY > 0) { _videoModalDismissY = 0; _videoModalSnapBack(); }
+        clearTimeout(_videoModalPressTimer); // el pellizco cancela el 2x
+      }
+    } catch (_) {}
     clearTimeout(_videoModalPressTimer);
     _videoModalPressTimer = setTimeout(() => {
       if (_videoModalPressMoved) return;
+      if (_videoModalDismissY > 0) return; // arrastre de cierre en curso
+      if (_videoModalPointers && _videoModalPointers.size > 1) return; // pellizco
       const player = _videoModalEl('video-modal-player');
       if (!player || !player.src || player.paused) return;
       _videoModalPress2x = true;
@@ -15826,25 +15939,82 @@ function saveNote() {
   }
   function _videoModalStageMove(e) {
     try {
+      // Pellizco hacia adentro = cerrar (mismo gesto que las fotos).
+      if (_videoModalPointers && _videoModalPointers.has(e.pointerId)) {
+        _videoModalPointers.set(e.pointerId, { x: e.clientX || 0, y: e.clientY || 0 });
+        if (_videoModalPointers.size >= 2) {
+          const p = [..._videoModalPointers.values()];
+          const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+          const scale = d / (_videoModalPinchD || 1);
+          if (scale < 1) {
+            _videoModalPressMoved = true;
+            clearTimeout(_videoModalPressTimer);
+            _videoModalPinchScale = scale;
+            drexViewerPinchCloseDrag(_videoModalEl('video-modal-player'), _videoModalEl('video-modal'), scale);
+            return;
+          }
+          if (_videoModalPinchScale < 1) { _videoModalPinchScale = 1; _videoModalSnapBack(); }
+          return;
+        }
+      }
       const dx = Math.abs((e.clientX || 0) - _videoModalPressX);
       const dy = Math.abs((e.clientY || 0) - _videoModalPressY);
-      if (dx > 12 || dy > 12) {
+      if (dx > DREX_VIEWER_TAP_SLOP || dy > DREX_VIEWER_TAP_SLOP) {
         _videoModalPressMoved = true;
         clearTimeout(_videoModalPressTimer);
       }
+      // Deslizar hacia abajo para cerrar (mismo umbral y feedback que fotos).
+      const tdx = (e.clientX || 0) - _videoModalPressX;
+      const tdy = (e.clientY || 0) - _videoModalPressY;
+      if (tdy > DREX_VIEWER_TAP_SLOP && tdy > Math.abs(tdx) * DREX_VIEWER_DISMISS_RATIO) {
+        _videoModalDismissY = tdy;
+        drexViewerDismissDrag(_videoModalEl('video-modal-player'), _videoModalEl('video-modal'), tdy);
+      } else if (_videoModalDismissY > 0) {
+        _videoModalDismissY = 0;
+        _videoModalSnapBack();
+      }
     } catch (_) {}
   }
-  function _videoModalStageUp() {
+  function _videoModalStageUp(e) {
     clearTimeout(_videoModalPressTimer);
+    try { if (_videoModalPointers) _videoModalPointers.delete(e && e.pointerId); } catch (_) {}
+    // 1) Pellizco para cerrar: si se encogió lo suficiente, cierra.
+    if (_videoModalPinchScale < 1) {
+      const cs = _videoModalPinchScale;
+      _videoModalPinchScale = 1;
+      _videoModalDismissY = 0;
+      if (cs < 0.75) { closeVideoModal(); return; }
+      _videoModalSnapBack();
+      return;
+    }
+    // 2) Mantener presionado = 2x (no alternar chrome con este gesto).
     if (_videoModalPress2x) {
       const player = _videoModalEl('video-modal-player');
       try { if (player) player.playbackRate = 1; } catch (_) {}
       const badge = _videoModalEl('video-modal-2x');
       if (badge) badge.classList.add('hidden');
       _videoModalPress2x = false;
+      _videoModalDismissY = 0;
       return; // fue 2x: no alternar los controles con este gesto
     }
-    if (!_videoModalPressMoved) toggleVideoModalChrome();
+    // 3) Tap / doble tap (sin arrastre): tap = mostrar-ocultar chrome,
+    // doble tap = reproducir/pausar (revierte el chrome del primer tap).
+    if (!_videoModalPressMoved) {
+      const now = Date.now();
+      if (now - _videoModalLastTap < 300) {
+        _videoModalLastTap = 0;
+        toggleVideoModalChrome();
+        toggleVideoModalPlay();
+      } else {
+        _videoModalLastTap = now;
+        toggleVideoModalChrome();
+      }
+      _videoModalDismissY = 0;
+      return;
+    }
+    // 4) Deslizar hacia abajo para cerrar (mismo umbral que las fotos).
+    if (_videoModalDismissY > DREX_VIEWER_DISMISS_DY) { _videoModalDismissY = 0; closeVideoModal(); return; }
+    if (_videoModalDismissY > 0) { _videoModalDismissY = 0; _videoModalSnapBack(); }
   }
 
   // ---- Tiempo restante / total (tocar el número alterna) ----
@@ -15928,7 +16098,10 @@ function saveNote() {
     const cached = _videoModalCache[noteId];
     const startPlayback = (dataUrl) => {
       if (_videoModalNoteId !== noteId) return; // se cerró antes de terminar
-      try { player.src = dataUrl; } catch (_) {}
+      _videoModalPendingDataUrl = dataUrl;
+      // Blob/Object URL: el camino robusto en móviles (iOS rechaza en
+      // silencio las data URL gigantes asignadas al <video>).
+      try { player.src = _videoModalDataUrlToObjectUrl(dataUrl); } catch (_) {}
       const pr = player.play();
       if (pr && pr.catch) pr.catch(() => {
         // Autoplay bloqueado (p. ej. gesto expirado): mostrar botón grande.
@@ -15964,8 +16137,14 @@ function saveNote() {
       try { player.playbackRate = 1; } catch (_) {}
       try { player.removeAttribute('src'); player.load(); } catch (_) {}
     }
+    _videoModalRevokeObjectUrl();
+    _videoModalPendingDataUrl = null;
     clearTimeout(_videoModalPressTimer);
     _videoModalPress2x = false;
+    // Estado de gestos compartidos (fotos+video) limpio para la próxima vez.
+    _videoModalDismissY = 0; _videoModalPinchScale = 1; _videoModalPinchD = 0; _videoModalLastTap = 0;
+    try { if (_videoModalPointers) _videoModalPointers.clear(); } catch (_) {}
+    drexViewerDismissSnapBack(player, modal, null, true);
     const badge2x = _videoModalEl('video-modal-2x');
     if (badge2x) badge2x.classList.add('hidden');
     _videoModalLoading(false);
@@ -16665,24 +16844,15 @@ function saveNote() {
   // Offset X del arrastre lateral del carrusel (0 = inactivo).
   let _feedImageModalDragX = 0;
 
-  // Feedback del gesto "deslizar abajo para cerrar": la foto sigue al dedo y
-  // el fondo se atenúa. Con dy = 0 la foto regresa a su lugar (con animación,
-  // o al instante si instant es true).
+  // Delegado al módulo de gestos compartidos (fotos+video): los umbrales y
+  // el feedback visual viven en un solo lugar (drexViewerDismissDrag /
+  // drexViewerDismissSnapBack / DREX_VIEWER_*). 2026-09-27.
   function _setFeedImageModalDismissDrag(dy, instant) {
     const img = document.getElementById('modal-image');
     const modal = document.getElementById('image-modal');
-    if (dy > 0) {
-      if (img) { img.style.transition = 'none'; img.style.transform = `translateY(${(dy * 0.85).toFixed(1)}px)${_feedImageModalRotSuffix()}`; }
-      if (modal) {
-        const f = Math.max(0, 1 - dy / (window.innerHeight * 0.55));
-        modal.style.transition = 'none';
-        modal.style.backgroundColor = `rgba(0,0,0,${f.toFixed(3)})`;
-      }
-    } else {
-      // Al regresar se restaura el transform completo (incluye rotación).
-      if (img) { img.style.transition = instant ? 'none' : 'transform .22s ease-out'; _feedImageModalApplyTransform(); }
-      if (modal) { modal.style.transition = instant ? 'none' : 'background-color .22s ease-out'; modal.style.backgroundColor = ''; }
-    }
+    if (dy > 0) { drexViewerDismissDrag(img, modal, dy, _feedImageModalRotSuffix()); return; }
+    // Al regresar se restaura el transform completo (incluye rotación).
+    drexViewerDismissSnapBack(img, modal, () => _feedImageModalApplyTransform(), instant);
   }
 
   // Feedback del pellizco para cerrar: la foto se encoge con los dedos y el
@@ -16691,18 +16861,9 @@ function saveNote() {
   function _setFeedImageModalPinchCloseDrag(scale, instant) {
     const img = document.getElementById('modal-image');
     const modal = document.getElementById('image-modal');
-    if (scale < 1) {
-      const _rs = _feedImageModalRotSuffix();
-      if (img) { img.style.transition = 'none'; img.style.transform = (_rs ? _rs + ' ' : '') + `scale(${scale.toFixed(3)})`; }
-      if (modal) {
-        modal.style.transition = 'none';
-        modal.style.backgroundColor = `rgba(0,0,0,${Math.max(0, Math.min(1, scale)).toFixed(3)})`;
-      }
-    } else {
-      // Al regresar se restaura el transform completo (incluye rotación).
-      if (img) { img.style.transition = instant ? 'none' : 'transform .22s ease-out'; _feedImageModalApplyTransform(); }
-      if (modal) { modal.style.transition = instant ? 'none' : 'background-color .22s ease-out'; modal.style.backgroundColor = ''; }
-    }
+    if (scale < 1) { drexViewerPinchCloseDrag(img, modal, scale, _feedImageModalRotSuffix()); return; }
+    // Al regresar se restaura el transform completo (incluye rotación).
+    drexViewerDismissSnapBack(img, modal, () => _feedImageModalApplyTransform(), instant);
   }
 
   // Feedback del swipe lateral: la pista del carrusel sigue al dedo y la foto
@@ -17231,7 +17392,7 @@ function saveNote() {
             } else {
               snapBackDrag(); // en el borde: rebote de goma
             }
-          } else if (_feedImageModalZoom === 1 && dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.4) {
+          } else if (_feedImageModalZoom === 1 && dy > DREX_VIEWER_DISMISS_DY && Math.abs(dy) > Math.abs(dx) * DREX_VIEWER_DISMISS_RATIO) {
             // Con la hoja de detalles abierta, deslizar hacia abajo sobre la
             // foto solo cierra la hoja; el visor sigue abierto.
             if (_feedImageModalDetailsOpen) { snapBackDrag(); _closeFeedImageModalDetails(); }
@@ -17879,7 +18040,9 @@ function saveNote() {
     } catch (_) { placeAtEnd(); }
   }
   // Reordena "Para ti" cuando el perfil llega tarde (red de seguridad).
+  // 2026-09-27: desactivado — "Para ti" es cronológico (DREX_FORYOU_CHRONO).
   function drexRecResortForYou() {
+    if (window.DREX_FORYOU_CHRONO === true) return;
     try {
       const feedContainer = document.getElementById('notes-feed');
       if (!feedContainer || feedContainer.dataset.feedMode !== 'foryou') return;
@@ -17909,6 +18072,13 @@ function saveNote() {
   }
 
 
+
+  // ORDEN DEL FEED (2026-09-27): la pestaña principal "Descubre" ("Para ti")
+  // y "Mi gente" son CRONOLÓGICAS — lo más reciente primero, estilo
+  // Instagram — por pedido directo del usuario. "Destacados" y "Mi Marea"
+  // conservan su orden por puntaje: ese es su propósito. Ponerlo en false
+  // reactiva el ranking algorítmico legado de "Para ti".
+  window.DREX_FORYOU_CHRONO = true;
 
   function loadNotes(showLoader = true, feedMode = 'foryou') {
     const feedContainer = document.getElementById('notes-feed');
@@ -19002,8 +19172,9 @@ function saveNote() {
           if (ctx.olderSentinel) ctx.feedContainer.insertBefore(noteElement, ctx.olderSentinel);
           else ctx.feedContainer.appendChild(noteElement);
         }
-      } else if (ctx.feedMode === 'foryou') {
-        // Drex Rec: "Para ti" se ordena por puntaje personal, no por fecha.
+      } else if (ctx.feedMode === 'foryou' && window.DREX_FORYOU_CHRONO !== true) {
+        // Ranking algorítmico legado de "Para ti" (desactivado 2026-09-27:
+        // ahora es cronológico y cae al prepend de abajo).
         drexRecInsertForYou(ctx.feedContainer, noteElement, note);
       } else if (appendAtBottom) {
         // Paginación: los más viejos van al fondo, antes del centinela.
@@ -19051,7 +19222,12 @@ function saveNote() {
       }
     } else if (ctx._initialBatch.length > 1) {
       try {
-        if (window.DrexRecEngine && typeof window.DrexRecEngine.rankFeed === 'function') {
+        if (window.DREX_FORYOU_CHRONO === true && (ctx.feedMode === 'foryou' || ctx.feedMode === 'following')) {
+          // Cronológico estilo Instagram: el batch llega ascendente por
+          // child_added; se ordena por timestamp ascendente para que cada
+          // prepend de snfMountFeedPost deje lo más reciente arriba.
+          ctx._initialBatch.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
+        } else if (window.DrexRecEngine && typeof window.DrexRecEngine.rankFeed === 'function') {
           var _rankCtx = {};
           var _p = window.DrexRecEngine.ProfileStore ? window.DrexRecEngine.ProfileStore.get() : null;
           if (_p) _rankCtx.profile = _p;

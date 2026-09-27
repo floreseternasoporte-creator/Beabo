@@ -1983,6 +1983,9 @@
     // Reordena el feed "Para ti" cuando el perfil llega tarde.
     resortForYou: function (feedContainer, ctx) {
       try {
+        // 2026-09-27: "Para ti" es cronológico (lo más reciente primero);
+        // no reordenar por puntaje salvo desactivación explícita.
+        if (typeof window === 'undefined' || window.DREX_FORYOU_CHRONO !== false) return;
         if (!feedContainer || feedContainer.dataset.feedMode !== 'foryou') return;
         var sentinel = feedContainer.querySelector('#feed-older-sentinel');
         var kids = Array.from(feedContainer.querySelectorAll(':scope > div[id^="post-"]'));
