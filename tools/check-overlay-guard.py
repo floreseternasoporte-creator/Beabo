@@ -45,6 +45,7 @@ EXEMPT = {
     'music-upload-view': 'vista',
     'music-followers-view': 'vista',
     'image-modal': 'usa body.drex-viewer-open (no el guard)',
+    'drex-snap-viewer': 'usa body.drex-viewer-open (no el guard)',
     'signout-spinner': 'transitorio (cierre de sesión)',
 }
 

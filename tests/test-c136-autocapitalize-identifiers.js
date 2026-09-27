@@ -31,8 +31,9 @@
 //    reportes, apelacion). Ninguno pide entrada numerica/identificador.
 //    chat-edit-input ya tiene enterkeyhint=done + onkeydown honesto.
 //    -> inputmode en textarea: auditado, SIN LEADS.
-// 7. <select> nativos x12: uso consistente en toda la app (idiomas,
-//    audiencia, grupo, orden, limite, permisos, sort comentarios, genero).
+// 7. <select> nativos x13: uso consistente en toda la app (idiomas,
+//    audiencia, grupo, orden, limite, permisos, sort comentarios, genero,
+//    filtro de instantaneas Todos/Siguiendo/Amigos).
 //    Los pickers custom (cumpleanos readonly x6, pais con buscador) son
 //    diseno deliberado; reemplazarlos por selects seria decision de
 //    producto. -> auditado, SIN CAMBIO.
@@ -128,9 +129,9 @@ tcase('textarea: chat-edit-input conserva enterkeyhint=done + onkeydown honesto'
     t.indexOf('saveEditedChatMessage()') >= 0;
 });
 
-// ---- 5. select nativos: inventario x12, uso consistente ----
-tcase('select: 12 <select nativos (inventario cerrado)', () =>
-  count(/<select[\s>]/g, html) === 12);
+// ---- 5. select nativos: inventario x13, uso consistente ----
+tcase('select: 13 <select nativos (inventario cerrado)', () =>
+  count(/<select[\s>]/g, html) === 13);
 
 // ---- 6. falla-en-base: contra HEAD los 4 leads carecen del trio ----
 tcase('base: en HEAD (sin el fix) los 4 leads NO tienen el trio', () => {

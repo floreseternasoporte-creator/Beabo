@@ -94,11 +94,12 @@ tcase('_renderFeedImageModal: asigna .src por propiedad; el único innerHTML son
   return srcAssigns >= 3 && innerAssigns === 1 && body.includes('dots.innerHTML = total > 1') && dotsNoUrl;
 });
 
-// ---- 3. Estáticos: las 9 rutas de subida pasan por processImageFile ----
-tcase('processImageFile: 10 ocurrencias (1 def + 9 call sites de subida)', () =>
-  count(/processImageFile\(/g, html) === 10);
+// ---- 3. Estáticos: las 10 rutas de subida pasan por processImageFile ----
+tcase('processImageFile: 11 ocurrencias (1 def + 10 call sites de subida)', () =>
+  count(/processImageFile\(/g, html) === 11);
 for (const fn of ['handleCommentPhotoSelected', 'handleGroupInfoPhotoChange', 'handleProfileImageUpload',
-                  'saveNewProfilePhoto', 'handleMusicCoverSelect', 'handleGroupChatPhotoSelected']) {
+                  'saveNewProfilePhoto', 'handleMusicCoverSelect', 'handleGroupChatPhotoSelected',
+                  'drexSnapPublish']) {
   tcase(fn + ': su flujo de subida llama a processImageFile', () => html.includes(fn) && html.includes('processImageFile'));
 }
 tcase('processImageFile: decode real (createImageBitmap/Image) + re-encode JPEG por canvas', () => {
