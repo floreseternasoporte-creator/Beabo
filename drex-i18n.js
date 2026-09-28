@@ -849,6 +849,7 @@ var APP_ENGLISH_TEXT = {
 "Selecciona tu país para continuar.":"Select your country to continue.",
 "Selecciona un idioma":"Select a language",
 "Sesión cerrada":"Session signed out",
+"Tu sesión se cerró desde otro dispositivo. Inicia sesión de nuevo.":"Your session was signed out from another device. Please sign in again.",
 "Shqip (Albanés)":"Shqip (Albanian)",
 "Si sos el papá, la mamá o un adulto responsable, pedile a la persona menor de edad el código de 6 dígitos que le aparece en su propia sección de Control parental, e ingresalo acá para supervisar su cuenta.":"If you are the dad, mom or a responsible adult, ask the minor for the 6-digit code that appears in their own Parental controls section, and enter it here to supervise their account.",
 "Silencio desactivado":"Silence disabled",
@@ -915,6 +916,7 @@ var APP_ENGLISH_TEXT = {
 "Usar código de la app":"Use app code",
 "Próximamente: los códigos de respaldo aún no están disponibles.":"Coming soon: backup codes are not available yet.",
 "Código de respaldo inválido.":"Invalid backup code.",
+"Para usar un código de respaldo, vuelve e inicia sesión con tu nombre de usuario en lugar del correo.":"To use a backup code, go back and sign in with your username instead of your email.",
 "Verificación en dos pasos desactivada":"Two-step verification disabled",
 "Vibrantes":"Vibrant",
 "Vincular":"Link",
@@ -2238,6 +2240,10 @@ var APP_ENGLISH_TEXT = {
 ,"Sin destellos":'No Destellos yet'
 ,"No se pudo abrir el chat. Inténtalo de nuevo.":'Couldn\'t open the chat. Try again.'
 ,"Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.":'Destellos disappear after 5 hours. Tap the button below to be the first to share one.'
+,"Sin texto":'No text'
+,"No hay posts que coincidan.":'No matching posts.'
+,"No hay fotos que coincidan.":'No matching photos.'
+,"Foto de post":'Post photo'
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -3067,6 +3073,7 @@ var APP_CHINESE_TEXT = {
 "Selecciona tu país para continuar.":"选择你的国家以继续。",
 "Selecciona un idioma":"选择一种语言",
 "Sesión cerrada":"会话已退出",
+"Tu sesión se cerró desde otro dispositivo. Inicia sesión de nuevo.":"你的会话已从另一台设备退出。请重新登录。",
 "Shqip (Albanés)":"阿尔巴尼亚语",
 "Si sos el papá, la mamá o un adulto responsable, pedile a la persona menor de edad el código de 6 dígitos que le aparece en su propia sección de Control parental, e ingresalo acá para supervisar su cuenta.":"如果你是爸爸、妈妈或负责任的成年人，请向未成年人索取显示在他自己的“家长控制”版块中的 6 位验证码，并在此输入以监管他的账号。",
 "Silencio desactivado":"静音已关闭",
@@ -3132,6 +3139,7 @@ var APP_CHINESE_TEXT = {
 "Usar código de la app":"使用应用验证码",
 "Próximamente: los códigos de respaldo aún no están disponibles.":"即将推出：备用验证码暂不可用。",
 "Código de respaldo inválido.":"备用验证码无效。",
+"Para usar un código de respaldo, vuelve e inicia sesión con tu nombre de usuario en lugar del correo.":"要使用备用验证码，请返回并使用用户名（而不是邮箱）登录。",
 "Verificación en dos pasos desactivada":"两步验证已关闭",
 "Vibrantes":"活力",
 "Vincular":"关联",
@@ -4474,6 +4482,10 @@ var APP_CHINESE_TEXT = {
 ,"Sin destellos":'暂无 Destellos'
 ,"No se pudo abrir el chat. Inténtalo de nuevo.":'无法打开聊天，请重试。'
 ,"Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.":'Destellos 会在 5 小时后消失。点击下方按钮，成为第一个分享的人。'
+,"Sin texto":'无文本'
+,"No hay posts que coincidan.":'没有匹配的帖子。'
+,"No hay fotos que coincidan.":'没有匹配的照片。'
+,"Foto de post":'帖子照片'
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -4838,6 +4850,7 @@ var APP_PORTUGUESE_TEXT = {
 "Código QR":"Código QR",
 "Código de 6 dígitos":"Código de 6 dígitos",
 "Código de respaldo inválido.":"Código de reserva inválido.",
+"Para usar un código de respaldo, vuelve e inicia sesión con tu nombre de usuario en lugar del correo.":"Para usar um código de reserva, volte e entre com seu nome de usuário em vez do e-mail.",
 "Código incorrecto. Revisa e inténtalo de nuevo.":"Código incorreto. Verifique e tente novamente.",
 "Códigos de respaldo":"Códigos de reserva",
 "Cómo pensamos":"Como pensamos",
@@ -5729,6 +5742,7 @@ var APP_PORTUGUESE_TEXT = {
 "Servidor de Discord":"Servidor do Discord",
 "Sesión":"Sessão",
 "Sesión cerrada":"Sessão encerrada",
+"Tu sesión se cerró desde otro dispositivo. Inicia sesión de nuevo.":"Sua sessão foi encerrada em outro dispositivo. Entre novamente.",
 "Señal \"No rastrear\" (DNT):":"Sinal \"Não rastrear\" (DNT):",
 "Señales del dispositivo:":"Sinais do dispositivo:",
 "Si bloqueas esta cuenta desde el comentario, dejarás de ver su contenido, sus publicaciones y todo lo relacionado con ella.":"Se você bloquear esta conta a partir do comentário, vai deixar de ver o conteúdo, as publicações e tudo relacionado a ela.",
@@ -6701,6 +6715,10 @@ var APP_PORTUGUESE_TEXT = {
 ,"Sin destellos":'Sem Destellos'
 ,"No se pudo abrir el chat. Inténtalo de nuevo.":'Não foi possível abrir o chat. Tente novamente.'
 ,"Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.":'Os Destellos desaparecem após 5 horas. Toque no botão abaixo para ser a primeira pessoa a compartilhar um.'
+,"Sin texto":'Sem texto'
+,"No hay posts que coincidan.":'Nenhum post correspondente.'
+,"No hay fotos que coincidan.":'Nenhuma foto correspondente.'
+,"Foto de post":'Foto do post'
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

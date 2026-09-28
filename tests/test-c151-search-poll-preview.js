@@ -71,8 +71,11 @@ if (listBody) {
     listBody.indexOf('drexHistorialPollPreview(post.poll)') !== -1);
   tcase('A4 guarda typeof del helper (extracción segura)',
     listBody.indexOf("typeof drexHistorialPollPreview === 'function'") !== -1);
+  // C226: el fallback 'Sin texto' ahora va i18n (appT); la intención que se
+  // fija es que el avance SIEMPRE pasa por escapeHTML, con o sin appT.
   tcase('A5 el avance pasa por escapeHTML (sin HTML inyectado)',
-    listBody.indexOf("escapeHTML(_c151SearchText || 'Sin texto')") !== -1);
+    listBody.indexOf('escapeHTML(_c151SearchText') !== -1 &&
+    listBody.indexOf("_c151SearchText || appT('Sin texto')") !== -1);
   tcase('A6 insignia con 🗳️ + appT(Votación) reutilizando la clave existente',
     listBody.indexOf('🗳️') !== -1 && listBody.indexOf("appT('Votación')") !== -1);
   tcase('A7 la insignia no usa clases Tailwind arbitrary-value',
