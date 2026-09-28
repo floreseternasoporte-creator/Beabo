@@ -2305,7 +2305,22 @@ var APP_ENGLISH_TEXT = {
 ,"Sin resultados para tu búsqueda.":'No results for your search.'
 ,"Aún no hay canciones. ¡Sube la primera!":'No songs yet. Upload the first one!'
 ,"El código venció. Inicia sesión de nuevo.": "The code expired. Sign in again.","Verificación cancelada.": "Verification cancelled.","Tu sesión venció. Inicia sesión de nuevo.": "Your session expired. Sign in again.","Sin conexión. Revisa tu red e inténtalo de nuevo.": "No connection. Check your network and try again.","No tienes permiso para hacer esto.": "You do not have permission to do this.","El servidor está ocupado. Inténtalo de nuevo en unos segundos.": "The server is busy. Try again in a few seconds."
-};
+
+,"Sin carpeta":"No folder"
+,"Carpeta":"Folder"
+,"Renombrar":"Rename"
+,"+ Crear carpeta":"+ New folder"
+,"+ Nueva carpeta":"+ New folder"
+,"Ver post":"View post"
+,"Mover":"Move"
+,"Carpetas":"Folders"
+,"guardado":"saved"
+,"guardados":"saved"
+,"Esta carpeta tiene {n} guardados. Se eliminará la carpeta y esos posts pasarán a \"Sin carpeta\". ¿Continuar?":"This folder has {n} saved posts. The folder will be deleted and those posts will move to \"No folder\". Continue?"
+,"¿Eliminar esta carpeta?":"Delete this folder?"
+,"No se pudo eliminar la carpeta. Intenta de nuevo.":"Could not delete the folder. Try again."
+,"No se pudo eliminar el guardado. Intenta de nuevo.":"Could not remove the saved item. Try again."
+,"No se pudieron cargar tus guardados. Revisa tu conexión e inténtalo de nuevo.":"Could not load your saved items. Check your connection and try again."};
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
 "Ese enlace no es válido. Usa http:// o https://":"该链接无效。请使用 http:// 或 https://",
@@ -4608,7 +4623,22 @@ var APP_CHINESE_TEXT = {
 ,"Sin resultados para tu búsqueda.":'没有与你的搜索相关的结果。'
 ,"Aún no hay canciones. ¡Sube la primera!":'还没有歌曲。上传第一首吧！'
 ,"El código venció. Inicia sesión de nuevo.": "验证码已过期，请重新登录。","Verificación cancelada.": "验证已取消。","Tu sesión venció. Inicia sesión de nuevo.": "会话已过期，请重新登录。","Sin conexión. Revisa tu red e inténtalo de nuevo.": "无网络连接，请检查网络后重试。","No tienes permiso para hacer esto.": "你没有权限执行此操作。","El servidor está ocupado. Inténtalo de nuevo en unos segundos.": "服务器繁忙，请几秒后再试。"
-};
+
+,"Sin carpeta":"无文件夹"
+,"Carpeta":"文件夹"
+,"Renombrar":"重命名"
+,"+ Crear carpeta":"+ 新建文件夹"
+,"+ Nueva carpeta":"+ 新建文件夹"
+,"Ver post":"查看帖子"
+,"Mover":"移动"
+,"Carpetas":"文件夹"
+,"guardado":"个收藏"
+,"guardados":"个收藏"
+,"Esta carpeta tiene {n} guardados. Se eliminará la carpeta y esos posts pasarán a \"Sin carpeta\". ¿Continuar?":"此文件夹中有 {n} 个收藏。文件夹将被删除，这些帖子将移至“无文件夹”。继续吗？"
+,"¿Eliminar esta carpeta?":"删除此文件夹？"
+,"No se pudo eliminar la carpeta. Intenta de nuevo.":"无法删除文件夹，请重试。"
+,"No se pudo eliminar el guardado. Intenta de nuevo.":"无法移除收藏，请重试。"
+,"No se pudieron cargar tus guardados. Revisa tu conexión e inténtalo de nuevo.":"无法加载你的收藏，请检查网络后重试。"};
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
 "Ese enlace no es válido. Usa http:// o https://":"Esse link não é válido. Use http:// ou https://",
@@ -6902,7 +6932,22 @@ var APP_PORTUGUESE_TEXT = {
 ,"Sin resultados para tu búsqueda.":'Sem resultados para sua busca.'
 ,"Aún no hay canciones. ¡Sube la primera!":'Ainda não há músicas. Envie a primeira!'
 ,"El código venció. Inicia sesión de nuevo.": "O código expirou. Entre novamente.","Verificación cancelada.": "Verificação cancelada.","Tu sesión venció. Inicia sesión de nuevo.": "Sua sessão expirou. Entre novamente.","Sin conexión. Revisa tu red e inténtalo de nuevo.": "Sem conexão. Verifique sua rede e tente novamente.","No tienes permiso para hacer esto.": "Você não tem permissão para fazer isso.","El servidor está ocupado. Inténtalo de nuevo en unos segundos.": "O servidor está ocupado. Tente novamente em alguns segundos."
-};
+
+,"Sin carpeta":"Sem pasta"
+,"Carpeta":"Pasta"
+,"Renombrar":"Renomear"
+,"+ Crear carpeta":"+ Criar pasta"
+,"+ Nueva carpeta":"+ Nova pasta"
+,"Ver post":"Ver publicação"
+,"Mover":"Mover"
+,"Carpetas":"Pastas"
+,"guardado":"salvo"
+,"guardados":"salvos"
+,"Esta carpeta tiene {n} guardados. Se eliminará la carpeta y esos posts pasarán a \"Sin carpeta\". ¿Continuar?":"Esta pasta tem {n} salvos. A pasta será excluída e essas publicações irão para \"Sem pasta\". Continuar?"
+,"¿Eliminar esta carpeta?":"Excluir esta pasta?"
+,"No se pudo eliminar la carpeta. Intenta de nuevo.":"Não foi possível excluir a pasta. Tente novamente."
+,"No se pudo eliminar el guardado. Intenta de nuevo.":"Não foi possível remover o salvo. Tente novamente."
+,"No se pudieron cargar tus guardados. Revisa tu conexión e inténtalo de nuevo.":"Não foi possível carregar seus salvos. Verifique sua conexão e tente novamente."};
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
   "Escribe tu texto aquí...":"在这里写下你的文本…",
