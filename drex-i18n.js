@@ -2320,7 +2320,32 @@ var APP_ENGLISH_TEXT = {
 ,"¿Eliminar esta carpeta?":"Delete this folder?"
 ,"No se pudo eliminar la carpeta. Intenta de nuevo.":"Could not delete the folder. Try again."
 ,"No se pudo eliminar el guardado. Intenta de nuevo.":"Could not remove the saved item. Try again."
-,"No se pudieron cargar tus guardados. Revisa tu conexión e inténtalo de nuevo.":"Could not load your saved items. Check your connection and try again."};
+,"No se pudieron cargar tus guardados. Revisa tu conexión e inténtalo de nuevo.":"Could not load your saved items. Check your connection and try again.",
+"Transmitir":"Go live",
+"Transmisiones en vivo":"Live streams",
+"Aún no hay transmisiones en vivo.":"No live streams yet.",
+"Sé la primera persona en transmitir.":"Be the first to go live.",
+"Iniciar transmisión":"Start stream",
+"Título del en vivo":"Stream title",
+"Efecto":"Effect",
+"Escribe un mensaje...":"Write a message...",
+"Inicia sesión para transmitir.":"Sign in to go live.",
+"No se pudo acceder a la cámara.":"Couldn't access the camera.",
+"El en vivo terminó.":"The stream ended.",
+"Conectando...":"Connecting...",
+"Regalos":"Gifts",
+"Rosa":"Rose",
+"Corazón":"Heart",
+"Estrella":"Star",
+"Diamante":"Diamond",
+"Cambiar cámara":"Switch camera",
+"Terminar transmisión":"End stream",
+"Mira a tu gente en directo o inicia la tuya.":"Watch your people live or start your own.",
+"No se pudo iniciar la transmisión.":"Couldn't start the stream.",
+"No se pudo unir al en vivo.":"Couldn't join the stream.",
+"No se pudo enviar el mensaje.":"Couldn't send the message.",
+"¿De qué va tu en vivo?":"What is your stream about?",
+"envió":"sent"};
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
 "Ese enlace no es válido. Usa http:// o https://":"该链接无效。请使用 http:// 或 https://",
@@ -4638,7 +4663,32 @@ var APP_CHINESE_TEXT = {
 ,"¿Eliminar esta carpeta?":"删除此文件夹？"
 ,"No se pudo eliminar la carpeta. Intenta de nuevo.":"无法删除文件夹，请重试。"
 ,"No se pudo eliminar el guardado. Intenta de nuevo.":"无法移除收藏，请重试。"
-,"No se pudieron cargar tus guardados. Revisa tu conexión e inténtalo de nuevo.":"无法加载你的收藏，请检查网络后重试。"};
+,"No se pudieron cargar tus guardados. Revisa tu conexión e inténtalo de nuevo.":"无法加载你的收藏，请检查网络后重试。",
+"Transmitir":"开播",
+"Transmisiones en vivo":"正在直播",
+"Aún no hay transmisiones en vivo.":"暂无直播。",
+"Sé la primera persona en transmitir.":"成为第一个开播的人。",
+"Iniciar transmisión":"开始直播",
+"Título del en vivo":"直播标题",
+"Efecto":"特效",
+"Escribe un mensaje...":"写点什么...",
+"Inicia sesión para transmitir.":"登录后开播。",
+"No se pudo acceder a la cámara.":"无法访问摄像头。",
+"El en vivo terminó.":"直播已结束。",
+"Conectando...":"连接中...",
+"Regalos":"礼物",
+"Rosa":"玫瑰",
+"Corazón":"爱心",
+"Estrella":"星星",
+"Diamante":"钻石",
+"Cambiar cámara":"切换摄像头",
+"Terminar transmisión":"结束直播",
+"Mira a tu gente en directo o inicia la tuya.":"看大家直播，或自己开播。",
+"No se pudo iniciar la transmisión.":"无法开始直播。",
+"No se pudo unir al en vivo.":"无法加入直播。",
+"No se pudo enviar el mensaje.":"消息发送失败。",
+"¿De qué va tu en vivo?":"你的直播主题是什么？",
+"envió":"送出了"};
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
 "Ese enlace no es válido. Usa http:// o https://":"Esse link não é válido. Use http:// ou https://",
@@ -6947,7 +6997,32 @@ var APP_PORTUGUESE_TEXT = {
 ,"¿Eliminar esta carpeta?":"Excluir esta pasta?"
 ,"No se pudo eliminar la carpeta. Intenta de nuevo.":"Não foi possível excluir a pasta. Tente novamente."
 ,"No se pudo eliminar el guardado. Intenta de nuevo.":"Não foi possível remover o salvo. Tente novamente."
-,"No se pudieron cargar tus guardados. Revisa tu conexión e inténtalo de nuevo.":"Não foi possível carregar seus salvos. Verifique sua conexão e tente novamente."};
+,"No se pudieron cargar tus guardados. Revisa tu conexión e inténtalo de nuevo.":"Não foi possível carregar seus salvos. Verifique sua conexão e tente novamente.",
+"Transmitir":"Transmitir",
+"Transmisiones en vivo":"Transmissões ao vivo",
+"Aún no hay transmisiones en vivo.":"Ainda não há transmissões ao vivo.",
+"Sé la primera persona en transmitir.":"Seja a primeira pessoa a transmitir.",
+"Iniciar transmisión":"Iniciar transmissão",
+"Título del en vivo":"Título da transmissão",
+"Efecto":"Efeito",
+"Escribe un mensaje...":"Escreva uma mensagem...",
+"Inicia sesión para transmitir.":"Entre para transmitir.",
+"No se pudo acceder a la cámara.":"Não foi possível acessar a câmera.",
+"El en vivo terminó.":"A transmissão terminou.",
+"Conectando...":"Conectando...",
+"Regalos":"Presentes",
+"Rosa":"Rosa",
+"Corazón":"Coração",
+"Estrella":"Estrela",
+"Diamante":"Diamante",
+"Cambiar cámara":"Trocar câmera",
+"Terminar transmisión":"Encerrar transmissão",
+"Mira a tu gente en directo o inicia la tuya.":"Veja sua gente ao vivo ou comece a sua.",
+"No se pudo iniciar la transmisión.":"Não foi possível iniciar a transmissão.",
+"No se pudo unir al en vivo.":"Não foi possível entrar na transmissão.",
+"No se pudo enviar el mensaje.":"Não foi possível enviar a mensagem.",
+"¿De qué va tu en vivo?":"Sobre o que é sua transmissão?",
+"envió":"enviou"};
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
   "Escribe tu texto aquí...":"在这里写下你的文本…",
@@ -7238,7 +7313,7 @@ var APP_CHINESE_ATTRS = {
   "Votar publicación":"为帖子投票",
   "https://tuenlace.com":"https://yourlink.com",
 "Mínimo 8 caracteres":"至少8个字符",
-"Repite la nueva contraseña":"重复新密码"
+"Repite la nueva contraseña":"重复新密码",
 };
 var APP_ENGLISH_ATTRS = { "Explica los errores...":"Explain the mistakes...", "Escribe tu texto aquí...":"Write your text here...", "Adjuntar foto":"Attach photo", "Anclar mensaje":"Pin message", "Atrás":"Back", "Añade un comentario...":"Add a comment...", "Año":"Year", "Buscar":"Search", "Buscar GIFs":"Search GIFs", "Buscar chats":"Search chats","Buscar ajustes":"Search settings", "Buscar dentro del chat":"Search inside chat", "Buscar en la conversación...":"Search in conversation...", "Buscar en mensajes recientes":"Search recent messages", "Buscar entre mis matches":"Search among my matches", "Buscar mensajes":"Search messages", "Buscar personas…":"Search people…", "Buscar stickers":"Search stickers", "Buscar un match":"Search a match", "Buscar usuario":"Search user", "Buscar usuario...":"Search user...", "Buscar usuarios":"Search users", "Buscar usuarios...":"Search users...", "Buscar...":"Search...", "Cambiar foto de perfil":"Change profile photo", "Cambiar país":"Change country", "Cancelar edición":"Cancel edit", "Cerrar":"Close", "Cerrar búsqueda":"Close search", "Cerrar reporte de comentario":"Close comment report", "Comentarios":"Comments", "Contraseña":"Password", "Copiar texto":"Copy text", "Copiar usuario":"Copy user", "Correo electrónico":"Email", "Correo electrónico o número de móvil":"Email or mobile number", "Crear contraseña":"Create password", "Crear grupo de chat":"Create chat group", "Crear publicación":"Create post", "Cuéntale a la comunidad sobre ti...":"Tell the community about you...", "Código de 6 dígitos":"6-digit code", "Describe el problema (máx. 100 caracteres)":"Describe the problem (max 100 characters)", "Deshacer última decisión":"Undo last decision", "Detener grabación":"Stop recording", "Día":"Day", "Editar mensaje":"Edit message", "Editar nombre del grupo":"Edit group name", "Ej. Ciudad de México":"E.g. Mexico City", "Elegir foto del grupo":"Choose group photo", "Eliminar fotos":"Delete photos", "Eliminar para mí":"Delete for me", "Enviar mensaje":"Send message", "Escribe el nombre de tu país":"Type the name of your country", "Escribe tu info":"Write your bio", "Escribe tu mensaje...":"Write your message...", "Escribe tu nombre de usuario":"Write your username", "Escribe tu nota (máx. 100 caracteres)":"Write your note (max 100 characters)", "Escribe un texto...":"Write a text...", "Escribe una descripción para tu foto...":"Write a description for your photo...", "Foto":"Photo", "Guardar":"Save",  "Guardar publicación":"Save post", "Limpiar búsqueda":"Clear search", "Limpiar búsqueda GIF":"Clear GIF search", "Limpiar búsqueda de chats":"Clear chat search", "Limpiar búsqueda de stickers":"Clear sticker search", "Limpiar búsqueda de usuarios":"Clear user search", "Mensaje...":"Message...", "Mínimo 6 caracteres":"Minimum 6 characters", "Nombre":"Name", "Opciones del comentario":"Comment options", "Opción 1":"Option 1", "Opción 2":"Option 2", "Publicar comentario":"Post comment", "Quitar foto":"Remove photo", "Repetir contraseña":"Repeat password", "Repite la contraseña":"Repeat password", "Hacer eco de la publicación":"Echo post", "Resultados de países":"Country results", "Seguir usuario":"Follow user", "Tu nombre":"Your name", "Volver":"Back", "Volver de búsqueda":"Back from search", "tunombredeusuario":"tunombredeusuario", "usuario@ejemplo.com":"usuario@ejemplo.com", "¿Cuál es tu pregunta?":"What is your question?", "¿Qué quieres compartir?":"What do you want to share?", "Fiesta":"Party", "Fiestas":"Parties", "Crear fiesta":"Create party", "En vivo ahora":"Live now", "Próximas fiestas":"Upcoming parties", "Unirse":"Join", "Título de la fiesta":"Party title", "Idioma a practicar":"Language to practice", "Descripción":"Description", "Empezar ahora":"Start now", "Quiero hablar":"I want to speak","Di algo…":"Say something…","Enviar":"Send", "Terminar":"End", "Oyentes":"Listeners", "¿Cómo funcionan las fiestas?":"How do parties work?", "Unirse a la fiesta":"Join the party", "Iniciar":"Start", "En vivo":"Live", "Abrir ajustes":"Open settings", "Abrir panel lateral":"Open side panel", "Apellido (opcional)":"Last name (optional)", "Asunto":"Subject", "Autor":"Author", "Bandera de Arabia Saudita":"Saudi Arabia flag", "Bandera de Bangladesh":"Bangladesh flag", "Bandera de Brasil":"Brazil flag", "Bandera de China":"China flag", "Bandera de España":"Spain flag", "Bandera de Estados Unidos":"United States flag", "Bandera de Francia":"France flag", "Bandera de India":"India flag", "Bandera de Pakistán":"Pakistan flag", "Bandera de Rusia":"Russia flag", "Bienvenido a Drex":"Welcome to Drex", "Bloquear":"Block", "Buscar en la ayuda":"Search help", "Cambiar de cuenta":"Switch account", "Cancelar respuesta":"Cancel reply", "Centro de ayuda":"Help center", "Chat":"Chat", "Colgar":"Hang up", "Configurar idiomas":"Set up languages", "Copiar":"Copy", "Crear":"Create", "Código de verificación":"Verification code", "De acuerdo":"OK", "Desanclar":"Unpin", "Edita tu comentario":"Edit your comment", "Editar foto y perfil":"Edit photo and profile", "Ej. Café en inglés ☕":"E.g. coffee in English ☕", "Ej: Amigos del trabajo":"E.g. work friends", "Elegir foto de perfil":"Choose profile photo", "Eliminar para todos":"Delete for everyone", "Escribe tu país":"Type your country", "Escribe tu respuesta":"Write your answer", "Foto de perfil":"Profile photo", "Foto del grupo":"Group photo", "Fuego":"Fire", "Grupo":"Group", "Hola, soy… Me gusta…":"Hi, I'm… I like…", "Info del chat":"Chat info", "Ingresa tu contraseña":"Enter your password", "Ingresa tu correo o nombre de usuario":"Enter your email or username", "Inicio":"Home", "Jaja":"Haha", "Mis votos":"My votes", "Mes":"Month", "Mi perfil":"My profile", "Mis borradores":"My drafts", "Más acciones":"More actions", "No me gusta":"Dislike", "Notificaciones":"Notifications", "Nueva contraseña":"New password", "Nueva contraseña (mínimo 8 caracteres)":"New password (minimum 8 characters)", "Nuevo ejercicio":"New exercise", "Nuevo icono":"New icon", "Nuevo mensaje":"New message", "Países disponibles":"Available countries", "Perfil":"Profile", "Practicar idiomas":"Practice languages", "Quitar GIF":"Remove GIF", "Reaccionar":"React", "Reenviar":"Forward", "Reportar":"Report", "Responder":"Reply", "Seguir/Dejar de seguir":"Follow/Unfollow", "Sello de marca":"Brand badge", "Silenciar micrófono":"Mute microphone", "Sin color":"No color", "Sticker":"Sticker", "Tu apellido":"Your last name", "Usuario":"User", "Usuario bloqueado":"Blocked user", "Vista previa":"Preview", "Visor de fotos":"Photo viewer", "Volver a carpetas":"Back to folders", "Wow":"Wow", "foto":"photo", "¿De qué van a hablar?":"What will you talk about?", "¿Qué opinas?":"What do you think?","¡Drex ya está en Google Play!":"Drex is now on Google Play!","Descarga la versión oficial y recibe actualizaciones automáticas.":"Get the official version with automatic updates.","Descargar":"Get it", "Toggle break reminder":"Toggle break reminder", "Toggle comments":"Toggle comments", "Toggle followers":"Toggle followers", "Toggle following posts":"Toggle following posts", "Toggle group messages":"Toggle group messages", "Toggle likes":"Toggle likes", "Toggle mentions":"Toggle mentions", "Toggle messages":"Toggle messages", "Toggle quiet mode":"Toggle quiet mode", "+1 (555) 123-4567":"+1 (555) 123-4567", "Marcar corrección como útil":"Mark correction as helpful", "Cargando":"Loading", "Disminuir día":"Decrease day", "Aumentar día":"Increase day", "Mes anterior":"Previous month", "Mes siguiente":"Next month", "Año anterior":"Previous year", "Año siguiente":"Next year", "Me gusta":"Like", "Eliminar video":"Delete video", "Cerrar picker de GIF":"Close GIF picker", "Cerrar reporte":"Close report", "Analizando":"Analyzing", "Cerrar picker de stickers":"Close sticker picker", "Rotar":"Rotate", "Cerrar detalles":"Close details", "Reproductor de video":"Video player", "Cargando video":"Loading video", "Reproducir o pausar":"Play or pause", "Buscar en el video":"Search in video", "Toca para ver total/restante":"Tap to see total/remaining", "Buscando":"Searching", "Editar portada":"Edit cover", "Mostrar contraseña":"Show password", "Elegir foto de portada":"Choose cover photo", "Buscar canciones o artistas":"Search songs or artists", "Ej. Luna Beats":"E.g. Luna Beats", "Quitar audio":"Remove audio", "Título de la canción":"Song title", "Minimizar reproductor":"Minimize player", "Guardar canción":"Save song", "Compartir canción":"Share song", "Votar canción":"Vote for song", "Voto positivo":"Upvote", "Voto negativo":"Downvote", "Progreso":"Progress", "Anterior":"Previous", "Siguiente":"Next", "Repetir":"Repeat", "Eliminar playlist":"Delete playlist", "Nombre de la nueva playlist…":"New playlist name…", "Abrir reproductor":"Open player", "Cerrar reproductor":"Close player", "Cámara":"Camera", "Compartir publicación":"Share post", "Opciones de la publicación":"Post options", "Compartir perfil":"Share profile", "Letra de la canción (opcional)":"Song lyrics (optional)", "Fundido entre canciones":"Crossfade between songs", "Deja un comentario (máx. 150 caracteres)…":"Leave a comment (max 150 characters)…" 
 

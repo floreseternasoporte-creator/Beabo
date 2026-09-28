@@ -7938,8 +7938,15 @@ if (scrollArea) {
         </button>
         <h2 class="text-lg font-extrabold">Fiestas</h2>
       </div>
+      <div class="px-4 pt-2 pb-1">
+        <div role="tablist" aria-label="Fiestas" class="grid grid-cols-2 gap-1 p-1 rounded-full drex-live-tabs">
+          <button id="fiesta-tab-btn-fiesta" type="button" role="tab" aria-selected="true" onclick="drexFiestaSwitchTab('fiesta')" class="drex-live-tab drex-live-tab-active"><span id="fiesta-tab-label-fiesta">Fiesta</span></button>
+          <button id="fiesta-tab-btn-live" type="button" role="tab" aria-selected="false" onclick="drexFiestaSwitchTab('live')" class="drex-live-tab"><span id="fiesta-tab-label-live">En vivo</span><span id="drex-live-tab-badge" class="drex-live-badge hidden">0</span></button>
+        </div>
+      </div>
     </div>
 
+    <div id="fiesta-pane-fiesta">
     <div class="px-4 pt-4 space-y-4">
       <div id="drex-ad-fiesta" class="drex-ad-slot" data-ad-slot="adsterra" style="display:none;margin-top:0;">
         <span class="drex-ad-label">Anuncio</span>
@@ -7987,6 +7994,31 @@ if (scrollArea) {
 
     </div>
   </div>
+    <!-- ============ C232: PESTAÑA EN VIVO ============ -->
+    <div id="fiesta-pane-live" class="px-4 pt-4 space-y-4 hidden">
+      <div class="relative overflow-hidden rounded-[24px] p-5 drex-live-hero">
+        <div class="fiesta-stars absolute inset-0 opacity-60 pointer-events-none"></div>
+        <div class="absolute -right-10 -top-10 w-44 h-44 rounded-full pointer-events-none" style="background:radial-gradient(circle,rgba(91,96,255,.5),transparent 70%)"></div>
+        <div class="relative">
+          <div class="flex items-center gap-2 mb-1.5">
+            <span class="drex-live-onair"><span class="drex-live-dot"></span><span id="drex-live-hero-live">En vivo</span></span>
+          </div>
+          <p id="drex-live-hero-title" class="text-[16px] font-extrabold text-white leading-tight">Transmisiones en vivo</p>
+          <p id="drex-live-hero-sub" class="text-xs text-white/65 font-semibold mt-0.5 mb-4">Mira a tu gente en directo o inicia la tuya.</p>
+          <button type="button" onclick="drexLiveOpenSetup()" class="drex-live-cta">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z"/></svg>
+            <span id="drex-live-go-label">Transmitir</span>
+          </button>
+        </div>
+      </div>
+      <div id="drex-live-list" class="space-y-3"></div>
+      <div id="drex-live-empty" class="hidden text-center py-10">
+        <div class="w-20 h-20 mx-auto mb-4 rounded-3xl flex items-center justify-center text-4xl" style="background:rgba(47,51,184,.15);border:1px solid rgba(47,51,184,.35)">📡</div>
+        <p id="drex-live-empty-t" class="text-[15px] font-extrabold">Aún no hay transmisiones en vivo.</p>
+        <p id="drex-live-empty-s" class="text-xs text-[var(--theme-muted)] font-semibold mt-1">Sé la primera persona en transmitir.</p>
+      </div>
+    </div>
+</div>
 </div>
 
 <!-- Sala de fiesta (llamada de voz grupal) -->
@@ -49435,11 +49467,13 @@ function openFiestaSection() {
   var _fcb = document.getElementById('fiesta-create-btn');
   if (_fcb) _fcb.textContent = appT('Crear fiesta');
   fiestaFillLangs();
+  try { if (typeof drexFiestaSwitchTab === 'function') drexFiestaSwitchTab('fiesta'); } catch (_) {}
   try { if (typeof drexLoadSectionAds === 'function') drexLoadSectionAds(document.getElementById('fiesta-view')); } catch (_) {}
 }
 
 function closeFiestaSection() {
   document.getElementById('fiesta-view')?.classList.add('hidden');
+  try { if (typeof drexLiveStopList === 'function') drexLiveStopList(); } catch (_) {}
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
 }
 
@@ -80297,6 +80331,159 @@ try {
   ?drexb=<build> — el query rompe la caché HTTP y la del SW (el router SPA
   preserva location.search, así que no se pierde la vista).
 -->
+<!-- ============ C232: salas de EN VIVO (overlays) ============ -->
+<style>
+.drex-live-tabs{background:rgba(13,16,40,.55);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.drex-live-tab{position:relative;display:flex;align-items:center;justify-content:center;gap:6px;height:40px;border-radius:9999px;font-size:13.5px;font-weight:800;color:rgba(255,255,255,.55);transition:all .25s ease}
+.drex-live-tab-active{background:linear-gradient(135deg,#2F33B8,#5b60ff);color:#fff;box-shadow:0 4px 18px rgba(47,51,184,.5)}
+.drex-live-badge{min-width:20px;height:20px;padding:0 6px;border-radius:9999px;background:#ff3b5c;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;animation:drex-live-pulse 1.6s ease-in-out infinite}
+@keyframes drex-live-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.12);opacity:.85}}
+.drex-live-hero{background:linear-gradient(135deg,#070a24 0%,#141a52 60%,#2F33B8 140%);border:1px solid rgba(255,255,255,.1);box-shadow:0 18px 40px -18px rgba(47,51,184,.55)}
+.drex-live-onair{display:inline-flex;align-items:center;gap:6px;background:rgba(255,59,92,.16);border:1px solid rgba(255,59,92,.5);color:#ff6b85;font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:4px 10px;border-radius:9999px}
+.drex-live-dot{width:7px;height:7px;border-radius:9999px;background:#ff3b5c;animation:drex-live-pulse 1.4s ease-in-out infinite}
+.drex-live-cta{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,#2F33B8,#5b60ff);color:#fff;font-weight:800;font-size:14.5px;padding:12px 22px;border-radius:9999px;box-shadow:0 8px 24px rgba(47,51,184,.55);transition:transform .15s ease}
+.drex-live-cta:active{transform:scale(.96)}
+.drex-live-card{display:block;width:100%;text-align:left;border-radius:22px;overflow:hidden;background:#0c0f28;border:1px solid rgba(255,255,255,.09);box-shadow:0 14px 34px -18px rgba(47,51,184,.6);transition:transform .15s ease}
+.drex-live-card:active{transform:scale(.98)}
+.drex-live-pill{display:inline-flex;align-items:center;gap:4px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.14);color:#fff;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:9999px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.drex-live-joinbtn{background:linear-gradient(135deg,#2F33B8,#5b60ff);color:#fff;font-weight:800;font-size:13px;padding:9px 18px;border-radius:9999px;box-shadow:0 6px 18px rgba(47,51,184,.5);flex-shrink:0}
+.drex-live-iconbtn{width:44px;height:44px;border-radius:9999px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.16);color:#fff;font-size:18px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:transform .15s ease}
+.drex-live-iconbtn:active{transform:scale(.92)}
+.drex-live-iconbtn.off{background:rgba(255,59,92,.25);border-color:rgba(255,59,92,.6)}
+.drex-live-endbtn{background:linear-gradient(135deg,#d92b4b,#ff5c5c);color:#fff;font-weight:800;font-size:14px;padding:11px 22px;border-radius:9999px;box-shadow:0 8px 22px rgba(217,43,75,.45)}
+.drex-live-endbtn:active{transform:scale(.96)}
+.drex-live-chatinput{flex:1;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.16);border-radius:9999px;padding:11px 16px;color:#fff;font-size:13.5px;outline:none;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.drex-live-chatinput::placeholder{color:rgba(255,255,255,.45)}
+.drex-live-chatinput:focus{border-color:rgba(91,96,255,.7)}
+.drex-live-sendbtn{width:44px;height:44px;border-radius:9999px;background:linear-gradient(135deg,#2F33B8,#5b60ff);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(47,51,184,.5);flex-shrink:0}
+.drex-live-sendbtn:active{transform:scale(.92)}
+.drex-live-msg{pointer-events:auto;max-width:82%;background:rgba(10,13,38,.72);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:7px 11px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.drex-live-msg .n{font-size:11px;font-weight:800;color:#9aa3ff}
+.drex-live-msg .x{font-size:13px;color:#fff;line-height:1.35;word-break:break-word}
+.drex-live-msg.sys{background:rgba(47,51,184,.28);border-color:rgba(91,96,255,.35);text-align:center;max-width:100%}
+.drex-live-msg.sys .x{font-size:11.5px;color:#c3c8ff;font-weight:600}
+.drex-live-float{position:absolute;font-size:2.2rem;line-height:1;animation:drex-live-floatup 2.4s ease-out forwards;pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.5)}
+@keyframes drex-live-floatup{0%{transform:translateY(0) scale(.6);opacity:0}12%{opacity:1;transform:translateY(-14px) scale(1.15)}100%{transform:translateY(-46vh) scale(1);opacity:0}}
+.drex-live-fxchip{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:62px;padding:8px 6px;border-radius:16px;background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.75);font-size:10.5px;font-weight:700;flex-shrink:0;transition:all .2s ease}
+.drex-live-fxchip-on{border-color:#5b60ff;background:rgba(47,51,184,.35);color:#fff;box-shadow:0 0 14px rgba(91,96,255,.4)}
+.drex-live-fxdot{width:34px;height:34px;border-radius:9999px;background:linear-gradient(135deg,#2b2f6e,#5b60ff);border:1px solid rgba(255,255,255,.2)}
+.drex-live-sheet{background:#0d1026;border-top:1px solid rgba(255,255,255,.1);border-radius:28px 28px 0 0;animation:drex-live-sheetup .28s cubic-bezier(.32,.72,.35,1)}
+@keyframes drex-live-sheetup{from{transform:translateY(60px);opacity:.6}to{transform:translateY(0);opacity:1}}
+.drex-live-gift{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);transition:transform .15s ease}
+.drex-live-gift:active{transform:scale(.92);border-color:#5b60ff}
+.drex-live-gift .e{font-size:30px;line-height:1}
+.drex-live-gift .l{font-size:10.5px;font-weight:700;color:rgba(255,255,255,.8)}
+.drex-live-field{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:13px 16px;color:#fff;font-size:14px;font-weight:600;outline:none}
+.drex-live-field::placeholder{color:rgba(255,255,255,.4)}
+.drex-live-field:focus{border-color:rgba(91,96,255,.7)}
+.drex-live-flabel{display:block;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:6px}
+</style>
+
+<!-- C232: hoja de configuración del en vivo -->
+<div id="drex-live-setup" class="fixed inset-0 hidden" style="z-index:80;background:#04050d">
+  <video id="drex-live-preview" class="absolute inset-0 w-full h-full object-cover" playsinline muted autoplay></video>
+  <img id="drex-live-preview-fx" alt="" class="absolute inset-0 w-full h-full object-cover pointer-events-none" style="display:none">
+  <div class="absolute inset-x-0 top-0 p-3 pt-4 flex items-center gap-2" style="background:linear-gradient(to bottom,rgba(0,0,0,.6),transparent)">
+    <button type="button" onclick="drexLiveCloseSetup()" class="drex-live-iconbtn" id="drex-live-setup-close" aria-label="Cancelar">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+    <p id="drex-live-setup-title" class="text-white font-extrabold text-[15px]">Vista previa</p>
+  </div>
+  <div class="absolute inset-x-0 bottom-0 p-4 pb-6 drex-live-sheet">
+    <label class="drex-live-flabel" for="drex-live-title" id="drex-live-title-label">Título del en vivo</label>
+    <input id="drex-live-title" maxlength="60" class="drex-live-field mb-4" placeholder="¿De qué va tu en vivo?">
+    <span class="drex-live-flabel" id="drex-live-fx-label">Efecto</span>
+    <div id="drex-live-fx-strip" class="flex gap-2 overflow-x-auto pb-1 mb-4" style="scrollbar-width:none"></div>
+    <button type="button" id="drex-live-start-btn" onclick="drexLiveStartFromSetup()" class="drex-live-cta w-full justify-center" style="padding:15px 22px;font-size:15.5px">Iniciar transmisión</button>
+  </div>
+</div>
+
+<!-- C232: sala del anfitrión -->
+<div id="drex-live-host" class="fixed inset-0 hidden" style="z-index:80;background:#04050d">
+  <video id="drex-live-host-video" class="absolute inset-0 w-full h-full object-cover" playsinline muted autoplay></video>
+  <img id="drex-live-host-fx" alt="" class="absolute inset-0 w-full h-full object-cover pointer-events-none" style="display:none">
+  <div class="absolute inset-x-0 top-0 p-3 pt-4" style="background:linear-gradient(to bottom,rgba(0,0,0,.55),transparent)">
+    <div class="flex items-center gap-2">
+      <span class="drex-live-onair"><span class="drex-live-dot"></span><span id="drex-live-host-live-label">En vivo</span></span>
+      <span id="drex-live-host-viewers" class="drex-live-pill">👁 0</span>
+      <span id="drex-live-host-likes" class="drex-live-pill">❤️ 0</span>
+      <div class="flex-1"></div>
+      <button type="button" onclick="drexLiveHostEnd()" class="drex-live-iconbtn" aria-label="Terminar">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <p id="drex-live-host-title" class="text-white font-extrabold text-[15px] mt-2 leading-tight"></p>
+  </div>
+  <div id="drex-live-host-float" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+  <div id="drex-live-host-chat" class="absolute inset-x-0 bottom-40 px-3 space-y-1.5 overflow-y-auto pointer-events-none" style="top:120px"></div>
+  <div class="absolute inset-x-0 bottom-0 p-3 pb-6" style="background:linear-gradient(to top,rgba(0,0,0,.7),transparent)">
+    <div class="flex items-center gap-2 mb-2.5">
+      <button type="button" id="drex-live-mute-btn" onclick="drexLiveToggleMute()" class="drex-live-iconbtn" aria-label="Silenciar">🎙️</button>
+      <button type="button" onclick="drexLiveSwitchCamera()" class="drex-live-iconbtn" aria-label="Cambiar cámara">🔄</button>
+      <button type="button" onclick="drexLiveOpenGifts('host')" class="drex-live-iconbtn" aria-label="Regalos">🎁</button>
+      <div class="flex-1"></div>
+      <button type="button" id="drex-live-end-btn" onclick="drexLiveHostEnd()" class="drex-live-endbtn">Terminar transmisión</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <input id="drex-live-host-chat-input" class="drex-live-chatinput" maxlength="200" autocomplete="off">
+      <button type="button" onclick="drexLiveSendChat('host')" class="drex-live-sendbtn" aria-label="Enviar">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- C232: sala del espectador -->
+<div id="drex-live-viewer" class="fixed inset-0 hidden" style="z-index:80;background:#04050d">
+  <div id="drex-live-viewer-stage" class="absolute inset-0">
+    <video id="drex-live-viewer-video" class="absolute inset-0 w-full h-full object-cover" playsinline autoplay></video>
+    <img id="drex-live-viewer-fx" alt="" class="absolute inset-0 w-full h-full object-cover pointer-events-none" style="display:none">
+  </div>
+  <div id="drex-live-viewer-connecting" class="absolute inset-0 flex flex-col items-center justify-center gap-3">
+    <div class="w-14 h-14 rounded-full flex items-center justify-center" style="border:3px solid rgba(91,96,255,.3);border-top-color:#5b60ff;animation:drex-live-spin 1s linear infinite"></div>
+    <p id="drex-live-viewer-connecting-t" class="text-white/80 font-bold text-sm">Conectando...</p>
+  </div>
+  <div class="absolute inset-x-0 top-0 p-3 pt-4" style="background:linear-gradient(to bottom,rgba(0,0,0,.55),transparent)">
+    <div class="flex items-center gap-2">
+      <img id="drex-live-viewer-avatar" alt="" class="w-9 h-9 rounded-full object-cover" style="border:2px solid rgba(255,255,255,.35)">
+      <div class="min-w-0">
+        <p id="drex-live-viewer-host" class="text-white font-extrabold text-[13.5px] leading-tight truncate"></p>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="drex-live-onair" style="font-size:9px;padding:2px 8px"><span class="drex-live-dot" style="width:5px;height:5px"></span><span id="drex-live-viewer-live-label">En vivo</span></span>
+          <span id="drex-live-viewer-viewers" class="drex-live-pill" style="font-size:10.5px">👁 0</span>
+        </div>
+      </div>
+      <div class="flex-1"></div>
+      <button type="button" onclick="drexLiveViewerLeave()" class="drex-live-iconbtn" aria-label="Salir">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+  </div>
+  <div id="drex-live-viewer-float" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+  <div id="drex-live-viewer-chat" class="absolute inset-x-0 bottom-40 px-3 space-y-1.5 overflow-y-auto pointer-events-none" style="top:120px"></div>
+  <div class="absolute inset-x-0 bottom-0 p-3 pb-6" style="background:linear-gradient(to top,rgba(0,0,0,.7),transparent)">
+    <div class="flex items-center gap-2 mb-2.5">
+      <button type="button" onclick="drexLiveOpenGifts('viewer')" class="drex-live-iconbtn" aria-label="Regalos">🎁</button>
+      <button type="button" onclick="drexLiveLike('viewer')" class="drex-live-iconbtn" aria-label="Me gusta">❤️</button>
+      <span id="drex-live-viewer-likes" class="drex-live-pill">0</span>
+      <div class="flex-1"></div>
+      <button type="button" id="drex-live-leave-btn" onclick="drexLiveViewerLeave()" class="drex-live-endbtn" style="background:rgba(255,255,255,.14);box-shadow:none;border:1px solid rgba(255,255,255,.2)">Salir</button>
+    </div>
+    <div class="flex items-center gap-2">
+      <input id="drex-live-viewer-chat-input" class="drex-live-chatinput" maxlength="200" autocomplete="off">
+      <button type="button" onclick="drexLiveSendChat('viewer')" class="drex-live-sendbtn" aria-label="Enviar">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- C232: hoja de regalos -->
+<div id="drex-live-gifts" class="fixed inset-0 hidden" style="z-index:90">
+  <div class="absolute inset-0" style="background:rgba(0,0,0,.55)" onclick="drexLiveCloseGifts()"></div>
+  <div class="absolute inset-x-0 bottom-0 p-5 pb-7 drex-live-sheet">
+    <p id="drex-live-gifts-t" class="text-white font-extrabold text-[15px]">Regalos</p>
+    <div id="drex-live-gifts-grid" class="grid grid-cols-5 gap-2.5 mt-4"></div>
+  </div>
+</div>
+<style>@keyframes drex-live-spin{to{transform:rotate(360deg)}}</style>
+
 <script>window.DREX_BUILD='202609272347';</script>
 <div id="drex-update-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#171a2e;color:#f4f5ff;font-size:14px;line-height:1.4;padding:10px 14px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.35);border-bottom:1px solid rgba(255,255,255,.14);font-family:system-ui,-apple-system,'Segoe UI',sans-serif" role="status" aria-live="polite">
   <span id="drex-update-banner-text"></span><button id="drex-update-banner-btn" type="button" style="margin-left:12px;background:#5b5ee8;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap"></button>
@@ -80344,5 +80531,1268 @@ try {
 </script>
 
 
+<script>
+/* drexlive-core.js — Núcleo DrexLive (C232).
+ *
+ * Lógica WebRTC mesh para lives, SIN UI. El padre construye la UI;
+ * este módulo es el núcleo testeable.
+ *
+ * Contrato de datos (DrexCloud.database().ref):
+ *   lives/<liveId>            = {id, hostUid, hostName, hostAvatar, title,
+ *                                effectId, status:'live'|'ended', startedAt,
+ *                                endedAt, viewers, likes, transport:'mesh'}
+ *   liveChat/<liveId>/<push>   = {uid, name, text, ts}
+ *   liveViewers/<liveId>/<uid> = {uid, name, joinedAt}
+ *   liveGifts/<liveId>/<push>  = {uid, name, giftId, ts}
+ *   liveSignals/<liveId>/<push>= {type:'viewer-join'|'offer'|'answer'|'ice',
+ *                                from, to, payload, ts}
+ *
+ * Uso (navegador, inlinear tal cual en index.html):
+ *   var live = new DrexLiveCore({ db: DrexCloud.database(),
+ *                                 RTC: { PeerConnection: window.RTCPeerConnection,
+ *                                        SessionDescription: window.RTCSessionDescription,
+ *                                        IceCandidate: window.RTCIceCandidate,
+ *                                        MediaStream: window.MediaStream } });
+ *   live.setUser({ uid: ..., name: ..., avatar: ... });
+ *
+ * Estilo ES5 estricto: var/function, sin ESM, sin top-level await.
+ */
+(function () {
+  'use strict';
+
+  // Un solo segmento RTDB: sin '/', '.', '#', '$', '[', ']' ni controles.
+  // Igual que el gate C199 de fiestas: un `from` forjado con '/' fragmentaría
+  // rutas (inyección estructural). La señal malformada se ignora.
+  var SEGMENT_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+  var GIFT_IDS = ['rosa', 'corazon', 'estrella', 'diamante', 'fuego'];
+
+  var CHAT_MAX = 200;
+
+  var DEFAULT_ICE = {
+    iceServers: [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
+      { urls: 'stun:stun.cloudflare.com:3478' }
+    ],
+    iceCandidatePoolSize: 10
+  };
+
+  function defaultRand() {
+    return 'lv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+
+  function mkErr(code, message) {
+    var e = new Error(message || code);
+    e.code = code;
+    return e;
+  }
+
+  function isSeg(s) {
+    return SEGMENT_RE.test(s || '');
+  }
+
+  /* ---------------- constructor ---------------- */
+
+  function DrexLiveCore(opts) {
+    if (!(this instanceof DrexLiveCore)) return new DrexLiveCore(opts);
+    opts = opts || {};
+    if (!opts.db) throw new Error('DrexLiveCore: falta opts.db');
+    this._db = opts.db;
+    this._RTC = opts.RTC || {};
+    this._ice = opts.iceServers || DEFAULT_ICE;
+    this._now = opts.now || function () { return Date.now(); };
+    this._rand = opts.rand || defaultRand;
+
+    this._user = null;        // {uid,name,avatar}
+    this._role = null;        // 'host' | 'viewer' | null
+    this._liveId = null;
+    this._hostUid = null;
+    this._localStream = null;
+
+    this._pcs = {};           // host: viewerUid -> RTCPeerConnection
+    this._pc = null;          // viewer: única PC (hacia el host)
+    this._pend = {};          // peerUid -> [candidate] (ICE temprano, sin remoteDescription)
+    this._offs = [];          // funciones off de suscripciones DB
+    this._evts = {};          // evt -> [cb]
+    this._viewerCount = 0;
+    this._ended = false;
+    this._hostStarted = false;
+    this._sigSeen = {};   // keys de señales ya procesadas (anti-replay)
+    this._odisc = null;   // handle onDisconnect de presencia (viewer)
+  }
+
+  /* ---------------- eventos ---------------- */
+
+  DrexLiveCore.prototype.on = function (evt, cb) {
+    if (typeof cb !== 'function') return function () {};
+    (this._evts[evt] = this._evts[evt] || []).push(cb);
+    var self = this;
+    return function () { self.off(evt, cb); };
+  };
+
+  DrexLiveCore.prototype.off = function (evt, cb) {
+    var list = this._evts[evt];
+    if (!list) return;
+    if (!cb) { delete this._evts[evt]; return; }
+    var i = list.indexOf(cb);
+    if (i >= 0) list.splice(i, 1);
+  };
+
+  DrexLiveCore.prototype._emit = function (evt, data) {
+    var list = this._evts[evt];
+    if (!list || !list.length) return;
+    var cbs = list.slice();
+    for (var i = 0; i < cbs.length; i++) {
+      try { cbs[i](data); } catch (e) { /* un oyente no tumba al resto */ }
+    }
+  };
+
+  DrexLiveCore.prototype._err = function (code, message) {
+    this._emit('error', { code: code, message: message || code });
+  };
+
+  /* ---------------- suscripciones DB ---------------- */
+
+  // Suscribe y rastrea el off para limpieza en leaveLive/dispose.
+  DrexLiveCore.prototype._sub = function (ref, type, cb) {
+    var off = ref.on(type, cb);
+    this._offs.push(off);
+    return off;
+  };
+
+  DrexLiveCore.prototype._unsubAll = function () {
+    var offs = this._offs;
+    this._offs = [];
+    for (var i = 0; i < offs.length; i++) {
+      try { offs[i](); } catch (e) {}
+    }
+  };
+
+  /* ---------------- usuario / live ---------------- */
+
+  DrexLiveCore.prototype.setUser = function (u) {
+    u = u || {};
+    if (!isSeg(u.uid)) throw mkErr('invalid-uid', 'uid inválido');
+    this._user = { uid: u.uid, name: u.name || '', avatar: u.avatar || '' };
+    return this._user;
+  };
+
+  DrexLiveCore.prototype._me = function () {
+    return this._user ? this._user.uid : null;
+  };
+
+  DrexLiveCore.prototype.createLive = function (o) {
+    o = o || {};
+    if (!this._user) return Promise.reject(mkErr('no-user', 'llama setUser primero'));
+    // push() sin valor reserva la key (ID opaco, nunca el uid crudo).
+    var ref = this._db.ref('lives').push();
+    var liveId = ref.key;
+    if (!liveId) return Promise.reject(mkErr('no-key', 'no se pudo generar el id del live'));
+    var self = this;
+    var doc = {
+      id: liveId,
+      hostUid: this._user.uid,
+      hostName: this._user.name || '',
+      hostAvatar: this._user.avatar || '',
+      title: typeof o.title === 'string' ? o.title : '',
+      effectId: o.effectId || null,
+      status: 'live',
+      startedAt: this._now(),
+      endedAt: null,
+      viewers: 0,
+      likes: 0,
+      transport: 'mesh'
+    };
+    return ref.set(doc).then(function () {
+      self._role = 'host';
+      self._liveId = liveId;
+      self._hostUid = self._user.uid;
+      self._ended = false;
+      return { liveId: liveId };
+    });
+  };
+
+  DrexLiveCore.prototype.listLives = function () {
+    return this._db.ref('lives').once('value').then(function (snap) {
+      var val = snap.val() || {};
+      var out = [];
+      Object.keys(val).forEach(function (k) {
+        if (val[k] && val[k].status === 'live') out.push(val[k]);
+      });
+      return out;
+    });
+  };
+
+  // cb(array de lives con status 'live'); dispara una vez al suscribirse.
+  // Devuelve fn off.
+  DrexLiveCore.prototype.onLiveList = function (cb) {
+    var self = this;
+    var ref = this._db.ref('lives');
+    var off = ref.on('value', function (snap) {
+      var val = snap.val() || {};
+      var out = [];
+      Object.keys(val).forEach(function (k) {
+        if (val[k] && val[k].status === 'live') out.push(val[k]);
+      });
+      try { cb(out); } catch (e) {}
+    });
+    this._offs.push(off);
+    return function () {
+      try { off(); } catch (e) {}
+      var i = self._offs.indexOf(off);
+      if (i >= 0) self._offs.splice(i, 1);
+    };
+  };
+
+  /* ---------------- señales ---------------- */
+
+  DrexLiveCore.prototype._sendSignal = function (sig) {
+    if (!this._liveId) return;
+    sig.ts = this._now();
+    try {
+      this._db.ref('liveSignals/' + this._liveId).push(sig);
+    } catch (e) {
+      this._err('signal-failed', String((e && e.message) || e));
+    }
+  };
+
+  // Valida forma de la señal antes de tocar WebRTC o rutas.
+  DrexLiveCore.prototype._validSignal = function (msg) {
+    if (!msg || typeof msg !== 'object') return false;
+    if (!isSeg(msg.from) || !isSeg(msg.to)) return false;
+    if (msg.to !== this._me()) return false;
+    if (msg.from === this._me()) return false;
+    return true;
+  };
+
+  DrexLiveCore.prototype._peerPc = function (uid) {
+    if (this._role === 'host') return this._pcs[uid] || null;
+    if (this._role === 'viewer' && uid === this._hostUid) return this._pc;
+    return null;
+  };
+
+  DrexLiveCore.prototype._addIce = function (uid, cand) {
+    var pc = this._peerPc(uid);
+    if (!pc || !cand) return;
+    var self = this;
+    if (pc.remoteDescription) {
+      try {
+        var r = pc.addIceCandidate(new this._RTC.IceCandidate(cand));
+        if (r && typeof r.catch === 'function') {
+          r.catch(function (e) { self._err('ice-failed', String((e && e.message) || e)); });
+        }
+      } catch (e) {
+        this._err('ice-failed', String((e && e.message) || e));
+      }
+    } else {
+      // ICE temprano: cola hasta tener remoteDescription (patrón fiestas).
+      (this._pend[uid] = this._pend[uid] || []).push(cand);
+    }
+  };
+
+  DrexLiveCore.prototype._flushPending = function (uid) {
+    var pc = this._peerPc(uid);
+    var q = this._pend[uid];
+    if (!pc || !q || !q.length) return;
+    this._pend[uid] = [];
+    var self = this;
+    q.forEach(function (cand) {
+      try {
+        var r = pc.addIceCandidate(new self._RTC.IceCandidate(cand));
+        if (r && typeof r.catch === 'function') {
+          r.catch(function () {});
+        }
+      } catch (e) {}
+    });
+  };
+
+  /* ---------------- host ---------------- */
+
+  DrexLiveCore.prototype.startHost = function (o) {
+    o = o || {};
+    if (this._role !== 'host' || !this._liveId || (o.liveId && o.liveId !== this._liveId)) {
+      return Promise.reject(mkErr('not-host', 'startHost requiere haber creado el live'));
+    }
+    if (this._hostStarted) return Promise.resolve({ liveId: this._liveId });
+    this._hostStarted = true;
+    this._localStream = o.stream || null;
+    var self = this;
+    var id = this._liveId;
+
+    this._subscribeLiveCommon();
+
+    this._sub(this._db.ref('liveSignals/' + id), 'child_added', function (snap) {
+      self._onHostSignal(snap.key, snap.val());
+    });
+    // El viewer que se va: cerrar su PC y limpiar.
+    this._sub(this._db.ref('liveViewers/' + id), 'child_removed', function (snap) {
+      self._dropPeer(snap.key);
+    });
+    return Promise.resolve({ liveId: id });
+  };
+
+  DrexLiveCore.prototype._setupHostPC = function (uid, pc) {
+    var self = this;
+    var me = this._me();
+    pc.onicecandidate = function (e) {
+      if (e && e.candidate) {
+        self._sendSignal({ type: 'ice', from: me, to: uid, payload: { candidate: e.candidate } });
+      }
+    };
+    pc.onconnectionstatechange = function () {
+      var st = pc.connectionState || 'unknown';
+      self._emit('pcstate', { peer: uid, state: st });
+      if (st === 'closed') self._dropPeer(uid, true);
+    };
+  };
+
+  DrexLiveCore.prototype._onHostSignal = function (key, msg) {
+    if (key && this._sigSeen[key]) return; // ya procesada
+    if (key) this._sigSeen[key] = 1;
+    if (!this._validSignal(msg)) return;
+    var from = msg.from;
+    var self = this;
+    if (msg.type === 'viewer-join') {
+      this._hostCallViewer(from);
+    } else if (msg.type === 'answer') {
+      var pc = this._pcs[from];
+      if (!pc || !msg.payload || !msg.payload.sdp) return;
+      pc.setRemoteDescription(new this._RTC.SessionDescription(msg.payload.sdp)).then(function () {
+        self._flushPending(from);
+      }).catch(function (e) {
+        self._err('answer-failed', String((e && e.message) || e));
+      });
+    } else if (msg.type === 'ice') {
+      if (msg.payload && msg.payload.candidate) this._addIce(from, msg.payload.candidate);
+    }
+    // otros tipos se ignoran
+  };
+
+  DrexLiveCore.prototype._hostCallViewer = function (uid) {
+    // Si el viewer re-entra (nuevo viewer-join), se tumba la PC vieja y se
+    // re-oferta: la anterior pudo quedar muerta tras un corte de red.
+    this._dropPeer(uid);
+    var self = this;
+    var me = this._me();
+    var pc;
+    try {
+      pc = new this._RTC.PeerConnection(this._ice);
+    } catch (e) {
+      this._err('pc-failed', String((e && e.message) || e));
+      return;
+    }
+    this._setupHostPC(uid, pc);
+    this._pcs[uid] = pc;
+    try {
+      if (this._localStream && typeof this._localStream.getTracks === 'function') {
+        var tracks = this._localStream.getTracks();
+        for (var i = 0; i < tracks.length; i++) {
+          pc.addTrack(tracks[i], this._localStream);
+        }
+      }
+    } catch (e) {}
+    this._flushPending(uid);
+    var offer;
+    pc.createOffer().then(function (o) {
+      offer = o;
+      return pc.setLocalDescription(o);
+    }).then(function () {
+      self._sendSignal({
+        type: 'offer', from: me, to: uid,
+        payload: { sdp: { type: (offer && offer.type) || 'offer', sdp: offer && offer.sdp } }
+      });
+    }).catch(function (e) {
+      self._err('offer-failed', String((e && e.message) || e));
+      self._dropPeer(uid);
+    });
+  };
+
+  DrexLiveCore.prototype._dropPeer = function (uid, alreadyClosed) {
+    var pc = this._pcs[uid];
+    if (pc) {
+      delete this._pcs[uid];
+      if (!alreadyClosed) {
+        try { pc.close(); } catch (e) {}
+      }
+    }
+    delete this._pend[uid];
+  };
+
+  // ADENDA 1: reemplaza los tracks locales en TODAS las PCs activas
+  // (sender.replaceTrack por kind). No renegocia.
+  DrexLiveCore.prototype.replaceLocalStream = function (stream) {
+    if (this._role !== 'host') return Promise.reject(mkErr('not-host', 'replaceLocalStream solo en modo host'));
+    if (!stream || typeof stream.getTracks !== 'function') {
+      return Promise.reject(mkErr('bad-stream', 'stream inválido'));
+    }
+    var tracks = stream.getTracks();
+    function trackFor(kind) {
+      for (var i = 0; i < tracks.length; i++) {
+        if (tracks[i] && tracks[i].kind === kind) return tracks[i];
+      }
+      return null;
+    }
+    var jobs = [];
+    var self = this;
+    Object.keys(this._pcs).forEach(function (uid) {
+      var pc = self._pcs[uid];
+      if (!pc || typeof pc.getSenders !== 'function') return;
+      var senders;
+      try { senders = pc.getSenders() || []; } catch (e) { return; }
+      senders.forEach(function (sender) {
+        if (!sender || typeof sender.replaceTrack !== 'function') return;
+        var cur = sender.track;
+        var kind = cur && cur.kind;
+        if (!kind) return;
+        var next = trackFor(kind);
+        if (next && next !== cur) {
+          try {
+            var r = sender.replaceTrack(next);
+            if (r && typeof r.then === 'function') jobs.push(r);
+          } catch (e) { /* un sender no tumba al resto */ }
+        }
+      });
+    });
+    this._localStream = stream;
+    return Promise.all(jobs).then(function () { return { replaced: jobs.length }; });
+  };
+
+  DrexLiveCore.prototype.endLive = function () {
+    if (this._role !== 'host' || !this._liveId) {
+      return Promise.reject(mkErr('not-host', 'solo el host puede terminar el live'));
+    }
+    var self = this;
+    var id = this._liveId;
+    return this._db.ref('lives/' + id).update({ status: 'ended', endedAt: this._now() })
+      .then(function () { return self._db.ref('liveViewers/' + id).remove(); })
+      .then(function () { return self._db.ref('liveSignals/' + id).remove(); })
+      .then(function () { return self.leaveLive(); })
+      .then(function () { return { liveId: id }; });
+  };
+
+  /* ---------------- viewer ---------------- */
+
+  DrexLiveCore.prototype.joinLive = function (liveId) {
+    var self = this;
+    if (!this._user) return Promise.reject(mkErr('no-user', 'llama setUser primero'));
+    if (!isSeg(liveId)) return Promise.reject(mkErr('live-not-found', 'live no encontrado'));
+    return this._db.ref('lives/' + liveId).once('value').then(function (snap) {
+      var live = snap.val();
+      if (!snap.exists() || !live) throw mkErr('live-not-found', 'live no encontrado');
+      if (live.status !== 'live') throw mkErr('live-ended', 'el live ya terminó');
+      if (!isSeg(live.hostUid)) throw mkErr('live-not-found', 'live inválido');
+      self._role = 'viewer';
+      self._liveId = liveId;
+      self._hostUid = live.hostUid;
+      self._ended = false;
+      return self._db.ref('liveViewers/' + liveId + '/' + self._user.uid).set({
+        uid: self._user.uid,
+        name: self._user.name || '',
+        joinedAt: self._now()
+      });
+    }).then(function () {
+      // Si la pestaña se cierra de golpe, el wrapper quita la presencia.
+      try {
+        var od = self._db.ref('liveViewers/' + liveId + '/' + self._user.uid).onDisconnect();
+        if (od && typeof od.remove === 'function') self._odisc = od.remove();
+      } catch (e) {}
+      return null;
+    }).then(function () {
+      // contador del doc (las vistas en lista usan este número)
+      return self._db.ref('lives/' + liveId + '/viewers').transaction(function (v) {
+        return (v || 0) + 1;
+      });
+    }).then(function () {
+      var pc;
+      try {
+        pc = new self._RTC.PeerConnection(self._ice);
+      } catch (e) {
+        throw mkErr('pc-failed', String((e && e.message) || e));
+      }
+      self._pc = pc;
+      self._setupViewerPC(pc);
+      self._subscribeLiveCommon();
+      self._sub(self._db.ref('liveSignals/' + liveId), 'child_added', function (snap) {
+        self._onViewerSignal(snap.key, snap.val());
+      });
+      // El viewer NO envía media: PC sin tracks, solo recibe.
+      self._sendSignal({ type: 'viewer-join', from: self._user.uid, to: self._hostUid, payload: {} });
+      return { liveId: liveId };
+    });
+  };
+
+  DrexLiveCore.prototype._setupViewerPC = function (pc) {
+    var self = this;
+    var me = this._me();
+    pc.ontrack = function (e) {
+      var stream = (e && e.streams && e.streams[0]) || null;
+      if (!stream && self._RTC.MediaStream && e && e.track) {
+        try { stream = new self._RTC.MediaStream([e.track]); } catch (x) { stream = null; }
+      }
+      if (stream) self._emit('remotetrack', { stream: stream });
+    };
+    pc.onicecandidate = function (e) {
+      if (e && e.candidate && self._hostUid) {
+        self._sendSignal({ type: 'ice', from: me, to: self._hostUid, payload: { candidate: e.candidate } });
+      }
+    };
+    pc.onconnectionstatechange = function () {
+      self._emit('pcstate', { peer: self._hostUid, state: pc.connectionState || 'unknown' });
+    };
+  };
+
+  DrexLiveCore.prototype._onViewerSignal = function (key, msg) {
+    if (key && this._sigSeen[key]) return; // ya procesada
+    if (key) this._sigSeen[key] = 1;
+    if (!this._validSignal(msg)) return;
+    var from = msg.from;
+    var self = this;
+    if (from !== this._hostUid) return; // solo el host negocia conmigo
+    if (msg.type === 'offer') {
+      var pc = this._pc;
+      if (!pc || !msg.payload || !msg.payload.sdp) return;
+      pc.setRemoteDescription(new this._RTC.SessionDescription(msg.payload.sdp)).then(function () {
+        self._flushPending(from);
+        return pc.createAnswer();
+      }).then(function (ans) {
+        return pc.setLocalDescription(ans).then(function () { return ans; });
+      }).then(function (ans) {
+        self._sendSignal({
+          type: 'answer', from: self._me(), to: self._hostUid,
+          payload: { sdp: { type: (ans && ans.type) || 'answer', sdp: ans && ans.sdp } }
+        });
+      }).catch(function (e) {
+        self._err('answer-failed', String((e && e.message) || e));
+      });
+    } else if (msg.type === 'ice') {
+      if (msg.payload && msg.payload.candidate) this._addIce(from, msg.payload.candidate);
+    }
+    // viewer-join / answer ajenos se ignoran
+  };
+
+  /* ---------------- común host/viewer ---------------- */
+
+  DrexLiveCore.prototype._subscribeLiveCommon = function () {
+    var self = this;
+    var id = this._liveId;
+    this._viewerCount = 0;
+
+    this._sub(this._db.ref('liveChat/' + id), 'child_added', function (snap) {
+      var m = snap.val() || {};
+      self._emit('chat', { uid: m.uid, name: m.name, text: m.text, ts: m.ts });
+    });
+    this._sub(this._db.ref('liveGifts/' + id), 'child_added', function (snap) {
+      var m = snap.val() || {};
+      self._emit('gifts', { uid: m.uid, name: m.name, giftId: m.giftId, ts: m.ts });
+    });
+    this._sub(this._db.ref('lives/' + id + '/likes'), 'value', function (snap) {
+      self._emit('likes', { count: snap.val() || 0 });
+    });
+    var vref = this._db.ref('liveViewers/' + id);
+    this._sub(vref, 'child_added', function () {
+      self._viewerCount++;
+      self._emit('viewers', { count: self._viewerCount });
+    });
+    this._sub(vref, 'child_removed', function () {
+      self._viewerCount = Math.max(0, self._viewerCount - 1);
+      self._emit('viewers', { count: self._viewerCount });
+    });
+    this._sub(this._db.ref('lives/' + id + '/status'), 'value', function (snap) {
+      if (snap.val() === 'ended' && !self._ended) {
+        self._ended = true;
+        self._emit('ended', { liveId: id });
+      }
+    });
+  };
+
+  /* ---------------- salir / limpiar ---------------- */
+
+  DrexLiveCore.prototype.leaveLive = function () {
+    var self = this;
+    var id = this._liveId;
+    var role = this._role;
+    var me = this._me();
+    var p = Promise.resolve();
+    if (id && role === 'viewer' && me) {
+      p = p.then(function () {
+        return self._db.ref('liveViewers/' + id + '/' + me).remove();
+      }).then(function () {
+        return self._db.ref('lives/' + id + '/viewers').transaction(function (v) {
+          return Math.max(0, (v || 0) - 1);
+        });
+      });
+    }
+    return p.then(function () {
+      self._closePCs();
+      self._unsubAll();
+      if (self._odisc) { try { self._odisc.cancel(); } catch (e) {} self._odisc = null; }
+      self._role = null;
+      self._liveId = null;
+      self._hostUid = null;
+      self._localStream = null;
+      self._ended = false;
+      self._viewerCount = 0;
+      self._hostStarted = false;
+      self._sigSeen = {};
+      return {};
+    });
+  };
+
+  DrexLiveCore.prototype._closePCs = function () {
+    var self = this;
+    Object.keys(this._pcs).forEach(function (uid) {
+      try { self._pcs[uid].close(); } catch (e) {}
+    });
+    this._pcs = {};
+    if (this._pc) {
+      try { this._pc.close(); } catch (e) {}
+      this._pc = null;
+    }
+    this._pend = {};
+  };
+
+  DrexLiveCore.prototype.dispose = function () {
+    this._closePCs();
+    this._unsubAll();
+    if (this._odisc) { try { this._odisc.cancel(); } catch (e) {} this._odisc = null; }
+    this._evts = {};
+    this._role = null;
+    this._liveId = null;
+    this._hostUid = null;
+    this._localStream = null;
+  };
+
+  /* ---------------- interacción ---------------- */
+
+  DrexLiveCore.prototype.sendChat = function (text) {
+    var t = String(text == null ? '' : text).trim().slice(0, CHAT_MAX);
+    if (!t) return Promise.reject(mkErr('empty-chat', 'mensaje vacío'));
+    if (!this._liveId || !this._user) return Promise.reject(mkErr('no-live', 'no estás en un live'));
+    var self = this;
+    return this._db.ref('liveChat/' + this._liveId).pushAsync({
+      uid: this._user.uid,
+      name: this._user.name || '',
+      text: t,
+      ts: this._now()
+    }).then(function () { return {}; });
+  };
+
+  DrexLiveCore.prototype.sendGift = function (giftId) {
+    if (GIFT_IDS.indexOf(giftId) < 0) return Promise.reject(mkErr('invalid-gift', 'gift inválido'));
+    if (!this._liveId || !this._user) return Promise.reject(mkErr('no-live', 'no estás en un live'));
+    return this._db.ref('liveGifts/' + this._liveId).pushAsync({
+      uid: this._user.uid,
+      name: this._user.name || '',
+      giftId: giftId,
+      ts: this._now()
+    }).then(function () { return {}; });
+  };
+
+  DrexLiveCore.prototype.bumpLike = function () {
+    if (!this._liveId) return Promise.reject(mkErr('no-live', 'no estás en un live'));
+    return this._db.ref('lives/' + this._liveId + '/likes').transaction(function (v) {
+      return (v || 0) + 1;
+    }).then(function () { return {}; });
+  };
+
+  /* ---------------- exportación ---------------- */
+
+  if (typeof window !== 'undefined') {
+    window.DrexLiveCore = window.DrexLiveCore || DrexLiveCore;
+  }
+  // Compat CommonJS para los tests node (guardia: en el navegador `module`
+  // no existe y esta rama jamás se toca al inlinear en index.html).
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = DrexLiveCore;
+  }
+})();
+
+</script>
+<script>
+/* ================= C232: DREX LIVE — pestañas Fiesta | En vivo + transmisión móvil (mesh WebRTC) =================
+ * La lógica de señalización vive en DrexLiveCore (inyectable: db + RTC). Aquí va la UI:
+ * pestañas, lista de en vivos, setup del host (preview + título + efectos), sala del host
+ * y sala del espectador (video remoto, chat, likes, regalos). Estética cinematográfica
+ * oscura con índigo Drex. i18n vía appT().
+ */
+(function () {
+'use strict';
+
+var LS = {
+  core: null, coreFailed: false,
+  mode: null,            // null | 'host' | 'viewer'
+  liveId: null,
+  stream: null,
+  fxId: null,
+  facing: 'user',
+  listOff: null,
+  evOffs: [],
+  muted: false,
+  giftFor: 'viewer',
+  lastTap: 0,
+  ending: false,
+  domInit: false
+};
+
+var DREX_LIVE_GIFTS = [
+  { id: 'rosa',     emoji: '🌹', label: 'Rosa' },
+  { id: 'corazon',  emoji: '❤️', label: 'Corazón' },
+  { id: 'estrella', emoji: '⭐', label: 'Estrella' },
+  { id: 'diamante', emoji: '💎', label: 'Diamante' },
+  { id: 'fuego',    emoji: '🔥', label: 'Fuego' }
+];
+
+var DREX_LIVE_STATICS = [
+  ['fiesta-tab-label-fiesta', 'Fiesta'],
+  ['fiesta-tab-label-live', 'En vivo'],
+  ['drex-live-hero-live', 'En vivo'],
+  ['drex-live-hero-title', 'Transmisiones en vivo'],
+  ['drex-live-hero-sub', 'Mira a tu gente en directo o inicia la tuya.'],
+  ['drex-live-go-label', 'Transmitir'],
+  ['drex-live-empty-t', 'Aún no hay transmisiones en vivo.'],
+  ['drex-live-empty-s', 'Sé la primera persona en transmitir.'],
+  ['drex-live-setup-title', 'Vista previa'],
+  ['drex-live-title-label', 'Título del en vivo'],
+  ['drex-live-fx-label', 'Efecto'],
+  ['drex-live-start-btn', 'Iniciar transmisión'],
+  ['drex-live-host-live-label', 'En vivo'],
+  ['drex-live-end-btn', 'Terminar transmisión'],
+  ['drex-live-viewer-live-label', 'En vivo'],
+  ['drex-live-leave-btn', 'Salir'],
+  ['drex-live-gifts-t', 'Regalos'],
+  ['drex-live-viewer-connecting-t', 'Conectando...']
+];
+
+function $(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function t(es) { return (typeof appT === 'function') ? appT(es) : es; }
+function toast(m) { try { if (typeof showMiniToast === 'function') showMiniToast(m); } catch (_) {} }
+function liveUser() { try { return DrexCloud.auth().currentUser || null; } catch (_) { return null; } }
+function numOf(p) {
+  if (typeof p === 'number') return p;
+  if (p && typeof p.count === 'number') return p.count;
+  return 0;
+}
+
+/* ---------- núcleo ---------- */
+function liveCore() {
+  if (LS.core) return LS.core;
+  if (LS.coreFailed) throw new Error('no-core');
+  if (typeof DrexLiveCore !== 'function') { LS.coreFailed = true; throw new Error('no-core'); }
+  LS.core = new DrexLiveCore({
+    db: DrexCloud.database(),
+    RTC: {
+      PeerConnection: window.RTCPeerConnection,
+      SessionDescription: window.RTCSessionDescription,
+      IceCandidate: window.RTCIceCandidate,
+      MediaStream: (window.MediaStream || function () {})
+    },
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    now: function () { return Date.now(); },
+    rand: function () { return 'lv' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+  });
+  return LS.core;
+}
+
+async function liveMe() {
+  var u = liveUser();
+  if (!u) return null;
+  var name = 'Usuario', photo = '';
+  try {
+    if (typeof fiestaMyProfile === 'function') {
+      var p = await fiestaMyProfile();
+      name = p.name || name; photo = p.photo || '';
+    }
+  } catch (_) {}
+  return { uid: u.uid, name: name, avatar: photo };
+}
+
+/* ---------- pestañas ---------- */
+function drexLiveTranslateStatics() {
+  for (var i = 0; i < DREX_LIVE_STATICS.length; i++) {
+    var el = $(DREX_LIVE_STATICS[i][0]);
+    if (el) el.textContent = t(DREX_LIVE_STATICS[i][1]);
+  }
+  var tp = $('drex-live-title');
+  if (tp) tp.placeholder = t('¿De qué va tu en vivo?');
+  var hi = $('drex-live-host-chat-input');
+  if (hi) hi.placeholder = t('Escribe un mensaje...');
+  var vi = $('drex-live-viewer-chat-input');
+  if (vi) vi.placeholder = t('Escribe un mensaje...');
+  var mb = $('drex-live-mute-btn');
+  if (mb) mb.setAttribute('aria-label', t('Silenciar'));
+}
+
+window.drexFiestaSwitchTab = function (tab) {
+  var isLive = (tab === 'live');
+  var pf = $('fiesta-pane-fiesta'), pl = $('fiesta-pane-live');
+  if (pf) pf.classList.toggle('hidden', isLive);
+  if (pl) pl.classList.toggle('hidden', !isLive);
+  var bf = $('fiesta-tab-btn-fiesta'), bl = $('fiesta-tab-btn-live');
+  if (bf) { bf.classList.toggle('drex-live-tab-active', !isLive); bf.setAttribute('aria-selected', String(!isLive)); }
+  if (bl) { bl.classList.toggle('drex-live-tab-active', isLive); bl.setAttribute('aria-selected', String(isLive)); }
+  drexLiveTranslateStatics();
+  if (isLive) drexLiveStartList(); else drexLiveStopList();
+};
+
+/* ---------- lista de en vivos ---------- */
+function drexLiveRenderList(lives) {
+  var box = $('drex-live-list'), empty = $('drex-live-empty');
+  if (!box) return;
+  lives = lives || [];
+  if (empty) empty.classList.toggle('hidden', lives.length !== 0);
+  var html = '';
+  for (var i = 0; i < lives.length; i++) {
+    html += drexLiveCardHTML(lives[i]);
+  }
+  box.innerHTML = html;
+}
+
+function drexLiveCardHTML(lv) {
+  var id = esc(lv.id || '');
+  var title = esc(lv.title || t('En vivo'));
+  var host = esc(lv.hostName || t('Usuario'));
+  var viewers = Number(lv.viewers) || 0;
+  var cover;
+  if (lv.hostAvatar) {
+    cover = '<img src="' + esc(lv.hostAvatar) + '" alt="" class="w-full h-full object-cover">';
+  } else {
+    cover = '<div class="w-full h-full flex items-center justify-center text-5xl font-extrabold text-white/90" style="background:linear-gradient(135deg,#141a52,#2F33B8)">' + esc(host.charAt(0).toUpperCase() || 'D') + '</div>';
+  }
+  var avatar = lv.hostAvatar
+    ? '<img src="' + esc(lv.hostAvatar) + '" alt="" class="w-10 h-10 rounded-full object-cover flex-shrink-0" style="border:2px solid rgba(91,96,255,.5)">'
+    : '<div class="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-white font-extrabold" style="background:linear-gradient(135deg,#2F33B8,#5b60ff)">' + esc(host.charAt(0).toUpperCase() || 'D') + '</div>';
+  return '' +
+    '<button type="button" data-lid="' + id + '" onclick="drexLiveJoin(this.getAttribute(\'data-lid\'))" class="drex-live-card">' +
+      '<div class="relative h-40 overflow-hidden">' + cover +
+        '<span class="drex-live-onair absolute top-2 left-2"><span class="drex-live-dot"></span>' + esc(t('En vivo')) + '</span>' +
+        '<span class="drex-live-pill absolute bottom-2 left-2">👁 ' + viewers + '</span>' +
+      '</div>' +
+      '<div class="p-3 flex items-center gap-3">' + avatar +
+        '<div class="flex-1 min-w-0 text-left">' +
+          '<p class="text-white font-extrabold text-[14px] leading-tight truncate">' + title + '</p>' +
+          '<p class="text-[12px] font-semibold truncate" style="color:rgba(255,255,255,.55)">' + host + '</p>' +
+        '</div>' +
+        '<span class="drex-live-joinbtn">' + esc(t('Unirse')) + '</span>' +
+      '</div>' +
+    '</button>';
+}
+
+function drexLiveStartList() {
+  drexLiveStopList();
+  var render = function (lives) {
+    drexLiveRenderList(lives || []);
+    var b = $('drex-live-tab-badge');
+    var n = (lives || []).length;
+    if (b) { b.textContent = String(n); b.classList.toggle('hidden', n === 0); }
+  };
+  try {
+    var core = liveCore();
+    LS.listOff = core.onLiveList(render);
+  } catch (e) { render([]); }
+}
+function drexLiveStopList() {
+  if (LS.listOff) { try { LS.listOff(); } catch (_) {} LS.listOff = null; }
+}
+window.drexLiveStopList = drexLiveStopList;
+
+/* ---------- setup del host ---------- */
+function drexLiveStopStream() {
+  if (LS.stream) {
+    try { LS.stream.getTracks().forEach(function (tr) { try { tr.stop(); } catch (_) {} }); } catch (_) {}
+    LS.stream = null;
+  }
+}
+
+window.drexLiveOpenSetup = async function () {
+  if (!liveUser()) { toast(t('Inicia sesión para transmitir.')); return; }
+  drexLiveTranslateStatics();
+  var sh = $('drex-live-setup');
+  if (sh) sh.classList.remove('hidden');
+  try {
+    drexLiveStopStream();
+    LS.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: LS.facing, width: { ideal: 720 }, height: { ideal: 1280 } },
+      audio: true
+    });
+    var v = $('drex-live-preview');
+    if (v) { v.srcObject = LS.stream; try { await v.play(); } catch (_) {} }
+  } catch (e) { toast(t('No se pudo acceder a la cámara.')); }
+  drexLiveRenderFxStrip();
+  try { if (typeof drexCameraLoadEffects === 'function') drexCameraLoadEffects(); } catch (_) {}
+  setTimeout(function () {
+    var s2 = $('drex-live-setup');
+    if (s2 && !s2.classList.contains('hidden')) drexLiveRenderFxStrip();
+  }, 1800);
+};
+
+window.drexLiveCloseSetup = function () {
+  var sh = $('drex-live-setup');
+  if (sh) sh.classList.add('hidden');
+  drexLiveStopStream();
+};
+
+function drexLiveRenderFxStrip() {
+  var strip = $('drex-live-fx-strip');
+  if (!strip) return;
+  strip.innerHTML = '';
+  var mk = function (id, label, filter) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'drex-live-fxchip' + (String(LS.fxId) === String(id) ? ' drex-live-fxchip-on' : '');
+    var dot = '<span class="drex-live-fxdot"' + (filter ? ' style="filter:' + esc(filter) + '"' : '') + '></span>';
+    b.innerHTML = dot + '<span>' + esc(label) + '</span>';
+    b.onclick = (function (fid) {
+      return function () {
+        LS.fxId = fid;
+        drexLiveApplyFx('drex-live-preview', 'drex-live-preview-fx');
+        drexLiveRenderFxStrip();
+      };
+    })(id);
+    strip.appendChild(b);
+  };
+  mk(null, t('Sin efecto'), '');
+  var list = [];
+  try { list = (typeof drexCamEffects !== 'undefined' && drexCamEffects) ? drexCamEffects : []; } catch (_) {}
+  for (var i = 0; i < list.length; i++) {
+    var e = list[i] || {};
+    var nm = e.nombre || e.name || String(e.id || '');
+    if (!nm) continue;
+    mk(e.id, nm, e.filter || '');
+  }
+}
+
+function drexLiveFindFx(fid) {
+  if (fid == null) return null;
+  var list = [];
+  try { list = (typeof drexCamEffects !== 'undefined' && drexCamEffects) ? drexCamEffects : []; } catch (_) {}
+  for (var i = 0; i < list.length; i++) {
+    if (String(list[i] && list[i].id) === String(fid)) return list[i];
+  }
+  return null;
+}
+
+function drexLiveApplyFx(videoId, imgId) {
+  drexLiveApplyFxById(videoId, imgId, LS.fxId);
+}
+function drexLiveApplyFxById(videoId, imgId, fid) {
+  var fx = drexLiveFindFx(fid);
+  var v = $(videoId), im = $(imgId);
+  if (v) v.style.filter = (fx && fx.filter) ? fx.filter : '';
+  if (im) {
+    var ov = fx && (fx.overlay || fx.portada);
+    if (ov) { im.src = ov; im.style.display = 'block'; }
+    else { try { im.removeAttribute('src'); } catch (_) {} im.style.display = 'none'; }
+  }
+}
+
+window.drexLiveStartFromSetup = async function () {
+  var titleEl = $('drex-live-title');
+  var title = ((titleEl && titleEl.value) || '').trim().slice(0, 60) || t('En vivo');
+  var btn = $('drex-live-start-btn');
+  if (btn) btn.disabled = true;
+  try {
+    var core = liveCore();
+    var me = await liveMe();
+    if (!me) throw new Error('no-auth');
+    core.setUser(me);
+    if (!LS.stream) throw new Error('no-stream');
+    var r = await core.createLive({ title: title, effectId: LS.fxId });
+    LS.liveId = r.liveId; LS.mode = 'host'; LS.ending = false; LS.muted = false;
+    await core.startHost({ liveId: LS.liveId, stream: LS.stream });
+    drexLiveWireEvents('host');
+    var sh = $('drex-live-setup');
+    if (sh) sh.classList.add('hidden');
+    var ht = $('drex-live-host-title');
+    if (ht) ht.textContent = title;
+    var hv = $('drex-live-host-video');
+    if (hv) { hv.srcObject = LS.stream; try { await hv.play(); } catch (_) {} }
+    drexLiveApplyFx('drex-live-host-video', 'drex-live-host-fx');
+    drexLiveTranslateStatics();
+    drexLiveInitDom();
+    var hr = $('drex-live-host');
+    if (hr) hr.classList.remove('hidden');
+  } catch (e) {
+    toast(t('No se pudo iniciar la transmisión.'));
+    if (btn) btn.disabled = false;
+    return;
+  }
+  if (btn) btn.disabled = false;
+};
+
+/* ---------- eventos del núcleo → UI ---------- */
+function drexLiveUnwire() {
+  for (var i = 0; i < LS.evOffs.length; i++) { try { LS.evOffs[i](); } catch (_) {} }
+  LS.evOffs = [];
+}
+
+function drexLiveWireEvents(which) {
+  drexLiveUnwire();
+  var core = LS.core;
+  if (!core) return;
+  var on = function (ev, cb) {
+    try { var off = core.on(ev, cb); if (off) LS.evOffs.push(off); } catch (_) {}
+  };
+  on('chat', function (m) { drexLiveAppendChat(which, m); });
+  on('viewers', function (p) {
+    var n = numOf(p);
+    var el = $(which === 'host' ? 'drex-live-host-viewers' : 'drex-live-viewer-viewers');
+    if (el) el.textContent = '👁 ' + n;
+  });
+  on('likes', function (p) {
+    var n = numOf(p);
+    var hl = $('drex-live-host-likes');
+    if (hl) hl.textContent = '❤️ ' + n;
+    var vl = $('drex-live-viewer-likes');
+    if (vl) vl.textContent = String(n);
+  });
+  on('gifts', function (g) { drexLiveOnGift(which, g); });
+  on('ended', function () { drexLiveOnEnded(which); });
+  on('remotetrack', function (p) {
+    if (which !== 'viewer') return;
+    var s = (p && p.stream) ? p.stream : p;
+    var v = $('drex-live-viewer-video');
+    if (v && s) {
+      try { v.srcObject = s; var pr = v.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (_) {}
+    }
+    var c = $('drex-live-viewer-connecting');
+    if (c) c.style.display = 'none';
+  });
+}
+
+function drexLiveAppendChat(which, m) {
+  var box = $(which === 'host' ? 'drex-live-host-chat' : 'drex-live-viewer-chat');
+  if (!box || !m) return;
+  var d = document.createElement('div');
+  var sys = !!m.sys;
+  d.className = 'drex-live-msg' + (sys ? ' sys' : '');
+  if (sys) {
+    d.innerHTML = '<div class="x">' + esc(m.text || '') + '</div>';
+  } else {
+    d.innerHTML = '<div class="n">' + esc(m.name || t('Usuario')) + '</div><div class="x">' + esc(m.text || '') + '</div>';
+  }
+  box.appendChild(d);
+  try { box.scrollTop = box.scrollHeight; } catch (_) {}
+  while (box.children.length > 60) { try { box.removeChild(box.firstChild); } catch (_) { break; } }
+}
+
+function drexLiveFloat(which, emoji) {
+  var layer = $(which === 'host' ? 'drex-live-host-float' : 'drex-live-viewer-float');
+  if (!layer) return;
+  var s = document.createElement('span');
+  s.className = 'drex-live-float';
+  s.textContent = emoji;
+  s.style.left = (8 + Math.random() * 80) + '%';
+  s.style.bottom = '18%';
+  layer.appendChild(s);
+  setTimeout(function () { try { layer.removeChild(s); } catch (_) {} }, 2500);
+}
+
+function drexLiveOnGift(which, g) {
+  if (!g) return;
+  var emoji = '🎁';
+  for (var i = 0; i < DREX_LIVE_GIFTS.length; i++) {
+    if (DREX_LIVE_GIFTS[i].id === g.giftId) { emoji = DREX_LIVE_GIFTS[i].emoji; break; }
+  }
+  drexLiveFloat(which, emoji);
+  drexLiveAppendChat(which, { sys: true, text: (g.name || t('Usuario')) + ' ' + t('envió') + ' ' + emoji });
+}
+
+function drexLiveOnEnded(which) {
+  if (which === 'viewer') {
+    toast(t('El en vivo terminó.'));
+    drexLiveCleanupRoom('viewer');
+  }
+}
+
+/* ---------- acciones ---------- */
+window.drexLiveSendChat = function (which) {
+  var inp = $(which === 'host' ? 'drex-live-host-chat-input' : 'drex-live-viewer-chat-input');
+  if (!inp || !LS.core) return;
+  var txt = (inp.value || '').trim();
+  if (!txt) return;
+  inp.value = '';
+  try {
+    var pr = LS.core.sendChat(txt);
+    if (pr && pr.catch) pr.catch(function () { toast(t('No se pudo enviar el mensaje.')); });
+  } catch (_) { toast(t('No se pudo enviar el mensaje.')); }
+};
+
+window.drexLiveLike = function (which) {
+  which = (which === 'host') ? 'host' : 'viewer';
+  if (LS.core) { try { var pr = LS.core.bumpLike(); if (pr && pr.catch) pr.catch(function () {}); } catch (_) {} }
+  drexLiveFloat(which, '❤️');
+};
+
+window.drexLiveToggleMute = function () {
+  LS.muted = !LS.muted;
+  if (LS.stream) {
+    try {
+      LS.stream.getAudioTracks().forEach(function (tr) { tr.enabled = !LS.muted; });
+    } catch (_) {}
+  }
+  var b = $('drex-live-mute-btn');
+  if (b) { b.classList.toggle('off', LS.muted); b.textContent = LS.muted ? '🔇' : '🎙️'; }
+};
+
+window.drexLiveSwitchCamera = async function () {
+  LS.facing = (LS.facing === 'user') ? 'environment' : 'user';
+  try {
+    var ns = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: LS.facing, width: { ideal: 720 }, height: { ideal: 1280 } },
+      audio: true
+    });
+    var old = LS.stream;
+    LS.stream = ns;
+    var v = $('drex-live-host-video');
+    if (v) { v.srcObject = ns; try { await v.play(); } catch (_) {} }
+    drexLiveApplyFx('drex-live-host-video', 'drex-live-host-fx');
+    if (LS.core && LS.mode === 'host' && typeof LS.core.replaceLocalStream === 'function') {
+      try { await LS.core.replaceLocalStream(ns); } catch (_) {}
+    }
+    if (old) { try { old.getTracks().forEach(function (tr) { try { tr.stop(); } catch (_) {} }); } catch (_) {} }
+  } catch (e) { toast(t('No se pudo acceder a la cámara.')); }
+};
+
+window.drexLiveOpenGifts = function (which) {
+  LS.giftFor = (which === 'host') ? 'host' : 'viewer';
+  var grid = $('drex-live-gifts-grid');
+  if (grid) {
+    grid.innerHTML = '';
+    for (var i = 0; i < DREX_LIVE_GIFTS.length; i++) {
+      (function (g) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'drex-live-gift';
+        b.innerHTML = '<span class="e">' + g.emoji + '</span><span class="l">' + esc(t(g.label)) + '</span>';
+        b.onclick = function () { window.drexLiveSendGift(g.id); };
+        grid.appendChild(b);
+      })(DREX_LIVE_GIFTS[i]);
+    }
+  }
+  drexLiveTranslateStatics();
+  var sh = $('drex-live-gifts');
+  if (sh) sh.classList.remove('hidden');
+};
+window.drexLiveCloseGifts = function () {
+  var sh = $('drex-live-gifts');
+  if (sh) sh.classList.add('hidden');
+};
+window.drexLiveSendGift = function (gid) {
+  if (LS.core) { try { var pr = LS.core.sendGift(gid); if (pr && pr.catch) pr.catch(function () {}); } catch (_) {} }
+  window.drexLiveCloseGifts();
+};
+
+window.drexLiveHostEnd = async function () {
+  if (LS.ending) return;
+  LS.ending = true;
+  try { if (LS.core && LS.mode === 'host') await LS.core.endLive(); } catch (_) {}
+  drexLiveCleanupRoom('host');
+  LS.ending = false;
+};
+
+window.drexLiveViewerLeave = function () {
+  drexLiveCleanupRoom('viewer');
+};
+
+function drexLiveCleanupRoom(which) {
+  drexLiveUnwire();
+  try { if (LS.core) LS.core.leaveLive(); } catch (_) {}
+  var el = $(which === 'host' ? 'drex-live-host' : 'drex-live-viewer');
+  if (el) el.classList.add('hidden');
+  drexLiveStopStream();
+  var hc = $('drex-live-host-chat'), vc = $('drex-live-viewer-chat');
+  if (hc) hc.innerHTML = '';
+  if (vc) vc.innerHTML = '';
+  var c = $('drex-live-viewer-connecting');
+  if (c) c.style.display = 'flex';
+  var vv = $('drex-live-viewer-video');
+  if (vv) { try { vv.srcObject = null; } catch (_) {} }
+  LS.mode = null; LS.liveId = null; LS.fxId = null; LS.muted = false;
+  var mb = $('drex-live-mute-btn');
+  if (mb) { mb.classList.remove('off'); mb.textContent = '🎙️'; }
+}
+
+/* ---------- unirse como espectador ---------- */
+window.drexLiveJoin = async function (liveId) {
+  if (!liveId) return;
+  if (!liveUser()) { toast(t('Inicia sesión para unirte.')); return; }
+  try {
+    var core = liveCore();
+    var me = await liveMe();
+    if (!me) throw new Error('no-auth');
+    core.setUser(me);
+    var snap = await DrexCloud.database().ref('lives/' + liveId).once('value');
+    var lv = snap.val() || {};
+    LS.mode = 'viewer'; LS.liveId = liveId; LS.ending = false;
+    drexLiveWireEvents('viewer');
+    var hn = $('drex-live-viewer-host');
+    if (hn) hn.textContent = lv.hostName || t('Usuario');
+    var av = $('drex-live-viewer-avatar');
+    if (av) {
+      if (lv.hostAvatar) { av.src = lv.hostAvatar; av.style.display = 'block'; }
+      else av.style.display = 'none';
+    }
+    if (lv.effectId) drexLiveApplyFxById('drex-live-viewer-video', 'drex-live-viewer-fx', lv.effectId);
+    else drexLiveApplyFxById('drex-live-viewer-video', 'drex-live-viewer-fx', null);
+    var c = $('drex-live-viewer-connecting');
+    if (c) c.style.display = 'flex';
+    drexLiveTranslateStatics();
+    drexLiveInitDom();
+    var vr = $('drex-live-viewer');
+    if (vr) vr.classList.remove('hidden');
+    await core.joinLive(liveId);
+  } catch (e) {
+    var code = String((e && (e.code || e.message)) || '');
+    toast(/live-ended/.test(code) ? t('El en vivo terminó.') : t('No se pudo unir al en vivo.'));
+    var vr2 = $('drex-live-viewer');
+    if (vr2) vr2.classList.add('hidden');
+    drexLiveUnwire();
+    LS.mode = null; LS.liveId = null;
+  }
+};
+
+/* ---------- init DOM (doble tap, Enter) ---------- */
+function drexLiveInitDom() {
+  if (LS.domInit) return;
+  LS.domInit = true;
+  var stage = $('drex-live-viewer-stage');
+  if (stage) {
+    stage.addEventListener('click', function () {
+      var now = Date.now();
+      if (now - LS.lastTap < 350) window.drexLiveLike('viewer');
+      LS.lastTap = now;
+    });
+  }
+  var wire = function (id, which) {
+    var inp = $(id);
+    if (inp) {
+      inp.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); window.drexLiveSendChat(which); }
+      });
+    }
+  };
+  wire('drex-live-host-chat-input', 'host');
+  wire('drex-live-viewer-chat-input', 'viewer');
+}
+
+/* Handle de pruebas: expone piezas puras sin abrir la UI. */
+window.DrexLiveUI = {
+  _ls: LS,
+  gifts: DREX_LIVE_GIFTS,
+  statics: DREX_LIVE_STATICS,
+  renderList: drexLiveRenderList,
+  cardHTML: drexLiveCardHTML,
+  translateStatics: drexLiveTranslateStatics,
+  initDom: drexLiveInitDom
+};
+
+})();
+
+</script>
 </body>
 </html>
