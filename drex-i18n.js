@@ -2244,6 +2244,7 @@ var APP_ENGLISH_TEXT = {
 ,"No hay posts que coincidan.":'No matching posts.'
 ,"No hay fotos que coincidan.":'No matching photos.'
 ,"Foto de post":'Post photo'
+,"No se pudo iniciar el juego. Revisa tu conexión.":'Couldn\'t start the game. Check your connection.'
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4486,6 +4487,7 @@ var APP_CHINESE_TEXT = {
 ,"No hay posts que coincidan.":'没有匹配的帖子。'
 ,"No hay fotos que coincidan.":'没有匹配的照片。'
 ,"Foto de post":'帖子照片'
+,"No se pudo iniciar el juego. Revisa tu conexión.":'无法开始游戏。请检查你的网络连接。'
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6719,6 +6721,7 @@ var APP_PORTUGUESE_TEXT = {
 ,"No hay posts que coincidan.":'Nenhum post correspondente.'
 ,"No hay fotos que coincidan.":'Nenhuma foto correspondente.'
 ,"Foto de post":'Foto do post'
+,"No se pudo iniciar el juego. Revisa tu conexión.":'Não foi possível iniciar o jogo. Verifique sua conexão.'
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
@@ -7309,5 +7312,5 @@ var APP_PORTUGUESE_ATTRS = {
 "+1 (555) 123-4567": "+1 (555) 123-4567",
 "Cerrar reporte": "Fechar denúncia",
 "Analizando": "Analisando",
-"Letra de la canción (opcional)": "Letra da música (opcional)",
+"Letra de la canción (opcional)": "Letra da música (opcional)"
 };
