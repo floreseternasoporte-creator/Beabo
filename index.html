@@ -20640,26 +20640,12 @@ else { try { drexSnapInit(); } catch (_) {} }
     return ctx.cardVisibilityObserver;
   }
 
-  // C226: decide si los contadores observados ameritan verificar si el post
-  // fue borrado. Antes se concluía "borrado" con los 3 campos en null SIN
-  // esperar los 3 callbacks iniciales: un post legacy (creado antes del
-  // esquema canónico, sin upvotes/downvotes/commentsCount) borraba su
-  // tarjeta en el primer callback al entrar al viewport (posts "faltantes"
-  // en la paginación infinita). Ahora se exige haber visto los 3 callbacks
-  // iniciales y, aun así, solo se marca para verificación con 1 lectura
-  // acotada (timestamp) en vez de borrar a ciegas.
-  function snfCountersNeedGoneCheck(state) {
-    return Boolean(state.seenUp && state.seenDown && state.seenComments &&
-      state.up == null && state.down == null && state.comments == null);
-  }
-
   function snfAttachPostCounterSubs(ctx, pid, el) {
     if (!ctx.alive() || ctx.postCounterSubs.has(pid)) return;
     if (!el || !el.isConnected || !el.dataset.feedPaginated) return;
-    const state = { up: null, down: null, comments: null, seenUp: false, seenDown: false, seenComments: false };
+    const state = { up: null, down: null, comments: null };
     const baseRef = DrexCloud.database().ref('communityNotes/' + pid);
     const subs = [];
-    let _goneVerifying = false;
     const pushCounter = () => {
       const card = document.getElementById('post-' + pid);
       if (!card) { snfDetachPostCounterSubs(ctx, pid); return; }
@@ -20671,36 +20657,23 @@ else { try { drexSnapInit(); } catch (_) {} }
       });
     };
     const checkGone = () => {
-      // Fuera de la ventana en vivo no llega child_removed. Pero los 3
-      // campos en null TAMBIÉN ocurren en posts legacy sin contadores: antes
-      // de quitar la tarjeta se verifica con 1 lectura acotada (timestamp).
-      // Todo post real tiene timestamp (la query del feed ordena por él);
-      // timestamp null = post borrado de verdad.
-      if (_goneVerifying || !snfCountersNeedGoneCheck(state)) return false;
-      _goneVerifying = true;
-      try {
-        baseRef.child('timestamp').once('value').then(snap => {
-          _goneVerifying = false;
-          if (!ctx.alive()) return;
-          if (snap.val() == null) {
-            const card = document.getElementById('post-' + pid);
-            if (card) { try { card.remove(); } catch (_) {} }
-            ctx.feedLoadedIds.delete(pid);
-            snfDetachPostCounterSubs(ctx, pid);
-            try { snfMaybeShowEmptyState(ctx); } catch (_) {}
-          }
-          // timestamp existe: post legacy sin contadores — la tarjeta se
-          // conserva y los contadores quedan en 0 (pushCounter ya lo hace).
-        }).catch(() => { _goneVerifying = false; });
-      } catch (_) { _goneVerifying = false; }
-      return true;
+      // Fuera de la ventana en vivo no llega child_removed: si los 3 campos
+      // son null, el post fue borrado.
+      if (state.up == null && state.down == null && state.comments == null) {
+        const card = document.getElementById('post-' + pid);
+        if (card) { try { card.remove(); } catch (_) {} }
+        ctx.feedLoadedIds.delete(pid);
+        snfDetachPostCounterSubs(ctx, pid);
+        snfMaybeShowEmptyState(ctx);
+        return true;
+      }
+      return false;
     };
-    [['upvotes', 'up', 'seenUp'], ['downvotes', 'down', 'seenDown'], ['commentsCount', 'comments', 'seenComments']].forEach(([field, key, seenKey]) => {
+    [['upvotes', 'up'], ['downvotes', 'down'], ['commentsCount', 'comments']].forEach(([field, key]) => {
       const r = baseRef.child(field);
       const cb = (snap) => {
         if (!ctx.alive()) return;
         state[key] = snap.val();
-        state[seenKey] = true;
         if (checkGone()) return;
         pushCounter();
       };
@@ -26732,6 +26705,17 @@ else { try { drexSnapInit(); } catch (_) {} }
   const recoveryStep = document.getElementById('recovery-step');
   const authFormContainer = document.getElementById('auth-form');
   const mainApp = document.getElementById('main-app');
+  // AUTH-4 (2026-09-28): si la sesión se cerró de forma remota desde otro
+  // dispositivo (drexSessionsHandleRemoteRevoke deja la marca
+  // drex_session_revoked_notice), mostrar el aviso en el formulario para
+  // que el usuario entienda por qué se cerró su sesión.
+  try {
+    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('drex_session_revoked_notice') === '1') {
+      sessionStorage.removeItem('drex_session_revoked_notice');
+      authError.textContent = appT('Tu sesión se cerró desde otro dispositivo. Inicia sesión de nuevo.');
+      authError.classList.remove('hidden');
+    }
+  } catch (_) {}
   let isLogin = true;
   let pendingEmail = '';
   let pendingUsername = ''; // username normalizado (sin @) cuando el login es por usuario
@@ -41904,7 +41888,7 @@ function renderPostsList(posts) {
         <img id="${escapeHtml(authorAvatarId)}" data-author-id="${escapeHtml(post.authorId || '')}" data-author-avatar src="${getSafeMediaUrl(post.authorImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" class="w-10 h-10 rounded-full object-cover">
         <div class="min-w-0">
           <p class="text-sm font-semibold text-[#6b7280]"><span data-author-id="${escapeHtml(post.authorId || '')}" data-author-name>${escapeHTML(post.authorName || 'Usuario')}</span>${getVerificationIconByAuthor(post.authorEmail || '', post.authorId || '')} • ${formatRelativeTime(post.timestamp)}</p>
-          <p class="text-lg leading-tight text-[#1c2b4a] line-clamp-2 mt-1">${escapeHTML(_c151SearchText || appT('Sin texto'))}</p>
+          <p class="text-lg leading-tight text-[#1c2b4a] line-clamp-2 mt-1">${escapeHTML(_c151SearchText || 'Sin texto')}</p>
           ${_c151PollBadge}
         </div>
       </div>`;
@@ -41916,7 +41900,7 @@ function renderPostsList(posts) {
     try { hydrateIdentitySlots(item); } catch (_) {}
     loadUserFrame(post.authorId || '', authorAvatarId);
   });
-  if (!posts.length) list.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-3xl p-5 text-sm text-[#6b7280]">' + escapeHTML(appT('No hay posts que coincidan.')) + '</div>';
+  if (!posts.length) list.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-3xl p-5 text-sm text-[#6b7280]">No hay posts que coincidan.</div>';
 }
 
 function renderPhotosList(photos) {
@@ -41927,25 +41911,25 @@ function renderPhotosList(photos) {
     const btn = document.createElement('button');
     btn.className = 'relative aspect-square rounded-2xl overflow-hidden border border-[#dce1e5] bg-white';
     if (photo.url) {
-      btn.innerHTML = `<img src="${getSafeMediaUrl(photo.url)}" class="w-full h-full object-cover" alt="${escapeHTML(appT('Foto de post'))}">`;
+      btn.innerHTML = `<img src="${getSafeMediaUrl(photo.url)}" class="w-full h-full object-cover" alt="Foto de post">`;
     } else if (photo.postId && Number(photo.imageCount || 0) > 0 && typeof loadNoteImages === 'function') {
       // Formato nuevo: primera foto bajo demanda, con shimmer mientras carga.
       btn.innerHTML = `<div class="drex-imgs-shimmer w-full h-full" style="border-radius:0;min-height:0"></div>`;
       loadNoteImages(photo.postId).then(imgs => {
-        if (imgs.length && btn.isConnected) btn.innerHTML = `<img src="${getSafeMediaUrl(imgs[0])}" class="w-full h-full object-cover" alt="${escapeHTML(appT('Foto de post'))}">`;
+        if (imgs.length && btn.isConnected) btn.innerHTML = `<img src="${getSafeMediaUrl(imgs[0])}" class="w-full h-full object-cover" alt="Foto de post">`;
       }).catch(() => {});
     } else if (photo.postId && Array.isArray(photo.imgKeys) && photo.imgKeys.length) {
       // Post viejo: primera foto bajo demanda desde su hoja inline.
       btn.innerHTML = `<div class="drex-imgs-shimmer w-full h-full" style="border-radius:0;min-height:0"></div>`;
       DrexCloud.database().ref('communityNotes/' + photo.postId + '/' + photo.imgKeys[0]).once('value').then(snap => {
         const u = snap.val();
-        if (typeof u === 'string' && u.indexOf('data:image/') === 0 && btn.isConnected) btn.innerHTML = `<img src="${getSafeMediaUrl(u)}" class="w-full h-full object-cover" alt="${escapeHTML(appT('Foto de post'))}">`;
+        if (typeof u === 'string' && u.indexOf('data:image/') === 0 && btn.isConnected) btn.innerHTML = `<img src="${getSafeMediaUrl(u)}" class="w-full h-full object-cover" alt="Foto de post">`;
       }).catch(() => {});
     }
     btn.onclick = () => { closeSearch(); openCommentsView(photo.postId); };
     grid.appendChild(btn);
   });
-  if (!photos.length) grid.innerHTML = '<div class="col-span-3 bg-white border border-[#dce1e5] rounded-3xl p-5 text-sm text-[#6b7280]">' + escapeHTML(appT('No hay fotos que coincidan.')) + '</div>';
+  if (!photos.length) grid.innerHTML = '<div class="col-span-3 bg-white border border-[#dce1e5] rounded-3xl p-5 text-sm text-[#6b7280]">No hay fotos que coincidan.</div>';
 }
 
 function renderAccountsList(accounts) {
@@ -41957,13 +41941,13 @@ function renderAccountsList(accounts) {
     const item = document.createElement('div');
     item.className = 'flex items-center space-x-3 cursor-pointer p-3 rounded-2xl bg-[var(--theme-surface)] border border-[var(--theme-border)] hover:border-[var(--theme-border)] shadow-sm';
     item.innerHTML = `
-      <img id="${escapeHtml(accountAvatarId)}" data-author-id="${escapeHtml(account.uid || '')}" src="${getSafeMediaUrl(account.profileImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" alt="${escapeHTML(account.username || appT('Cuenta'))}" class="w-11 h-11 rounded-full object-cover">
-      <span class="font-semibold text-[var(--theme-text)]">${escapeHTML(account.username || appT('Cuenta'))}${getVerificationIconByAuthor(account.email || '', account.uid || '')}</span>`;
+      <img id="${escapeHtml(accountAvatarId)}" data-author-id="${escapeHtml(account.uid || '')}" src="${getSafeMediaUrl(account.profileImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='}" alt="${escapeHTML(account.username || 'Cuenta')}" class="w-11 h-11 rounded-full object-cover">
+      <span class="font-semibold text-[var(--theme-text)]">${escapeHTML(account.username || 'Cuenta')}${getVerificationIconByAuthor(account.email || '', account.uid || '')}</span>`;
     item.addEventListener('click', () => { closeSearch(); openAuthorProfile(account.uid); });
     list.appendChild(item);
     loadUserFrame(account.uid || '', accountAvatarId);
   });
-  if (!accounts.length) list.innerHTML = '<div class="bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-3xl p-5 text-sm text-[var(--theme-muted)]">' + escapeHTML(appT('No hay cuentas que coincidan.')) + '</div>';
+  if (!accounts.length) list.innerHTML = '<div class="bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-3xl p-5 text-sm text-[var(--theme-muted)]">No hay cuentas que coincidan.</div>';
 }
 
 // Perfil (propio)
@@ -46307,6 +46291,10 @@ function submitTwoFactorChallenge() {
           if (err && err.code === 'auth/mfa-expired') {
             showErr(err.message);
             signOutFromTwoFactorChallenge();
+            return;
+          }
+          if (err && err.code === 'auth/recovery-needs-username') {
+            showErr(appT('Para usar un código de respaldo, vuelve e inicia sesión con tu nombre de usuario en lugar del correo.'));
             return;
           }
           showErr((err && err.message) || appT('Código de respaldo inválido.'));

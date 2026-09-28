@@ -2240,10 +2240,6 @@ var APP_ENGLISH_TEXT = {
 ,"Sin destellos":'No Destellos yet'
 ,"No se pudo abrir el chat. Inténtalo de nuevo.":'Couldn\'t open the chat. Try again.'
 ,"Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.":'Destellos disappear after 5 hours. Tap the button below to be the first to share one.'
-,"Sin texto":'No text'
-,"No hay posts que coincidan.":'No matching posts.'
-,"No hay fotos que coincidan.":'No matching photos.'
-,"Foto de post":'Post photo'
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4482,10 +4478,6 @@ var APP_CHINESE_TEXT = {
 ,"Sin destellos":'暂无 Destellos'
 ,"No se pudo abrir el chat. Inténtalo de nuevo.":'无法打开聊天，请重试。'
 ,"Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.":'Destellos 会在 5 小时后消失。点击下方按钮，成为第一个分享的人。'
-,"Sin texto":'无文本'
-,"No hay posts que coincidan.":'没有匹配的帖子。'
-,"No hay fotos que coincidan.":'没有匹配的照片。'
-,"Foto de post":'帖子照片'
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6715,10 +6707,6 @@ var APP_PORTUGUESE_TEXT = {
 ,"Sin destellos":'Sem Destellos'
 ,"No se pudo abrir el chat. Inténtalo de nuevo.":'Não foi possível abrir o chat. Tente novamente.'
 ,"Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.":'Os Destellos desaparecem após 5 horas. Toque no botão abaixo para ser a primeira pessoa a compartilhar um.'
-,"Sin texto":'Sem texto'
-,"No hay posts que coincidan.":'Nenhum post correspondente.'
-,"No hay fotos que coincidan.":'Nenhuma foto correspondente.'
-,"Foto de post":'Foto do post'
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

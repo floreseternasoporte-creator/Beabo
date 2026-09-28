@@ -3960,10 +3960,28 @@ function withCredRetry(opFn) {
             totpRequired: function (challengeName, challengeParameters) {
               mfaPhase = true;
               try { clearTimeout(netTimer); } catch (_) {}
-              mfaTimer = setTimeout(function () { fail(mfaExpiredError()); }, MFA_CODE_WINDOW_MS);
+              // AUTH-3: al vencer se avisa a la UI para que cierre el
+              // desafío; si no, el usuario quedaría atrapado tras el overlay.
+              mfaTimer = setTimeout(function () {
+                var expiredErr = mfaExpiredError();
+                mfaNotifyChallengeExpired(expiredErr);
+                fail(expiredErr);
+              }, MFA_CODE_WINDOW_MS);
               beginMfaChallenge({
                 kind: 'email',
                 submitCode: function (code) {
+                  // AUTH-1 (2026-09-28): los códigos de respaldo NO se
+                  // pueden canjear por correo. El canje en servidor (paso
+                  // R) solo existe en la Lambda de login con nombre de
+                  // usuario; enviar el código a Cognito como TOTP siempre
+                  // fallaría y dejaría al usuario sin vía de recuperación
+                  // con un mensaje confuso. Se devuelve un error claro y
+                  // accionable en vez de llamar a Cognito.
+                  if (looksLikeRecoveryCode(code)) {
+                    return Promise.reject(Object.assign(
+                      new Error('Para usar un código de respaldo, vuelve e inicia sesión con tu nombre de usuario en lugar del correo.'),
+                      { code: 'auth/recovery-needs-username', retryable: false }));
+                  }
                   return new Promise(function (res, rej) {
                     try {
                       cognitoUser.sendMFACode(String(code).trim(), {
@@ -4239,7 +4257,13 @@ function withCredRetry(opFn) {
         // código en la vista de desafío y se completa con el paso 2.
         if (data && data.challenge === 'mfa' && data.session) {
           mfaPhase = true;
-          mfaTimer = setTimeout(function () { fail(mfaExpiredError()); }, MFA_CODE_WINDOW_MS);
+          // AUTH-3: al vencer se avisa a la UI para que cierre el
+          // desafío; si no, el usuario quedaría atrapado tras el overlay.
+          mfaTimer = setTimeout(function () {
+            var expiredErr = mfaExpiredError();
+            mfaNotifyChallengeExpired(expiredErr);
+            fail(expiredErr);
+          }, MFA_CODE_WINDOW_MS);
           beginMfaChallenge({
             kind: 'username',
             submitCode: function (code) {
@@ -4851,6 +4875,20 @@ function withCredRetry(opFn) {
 
   function mfaExpiredError() {
     return Object.assign(new Error('El código venció. Inicia sesión de nuevo.'), { code: 'auth/mfa-expired' });
+  }
+
+  // AUTH-3 (2026-09-28): al vencer la ventana del código, el desafío de
+  // la UI debe cerrarse. Sin este aviso, el overlay
+  // #twofactor-challenge-view queda abierto sobre un login ya muerto y
+  // el usuario queda atrapado: cualquier código posterior se traga en
+  // silencio (done=true) o falla con un mensaje confuso. La UI expone
+  // challenge.onExpired al presentar el desafío (installMfaChallengeUi
+  // en index.html); aquí solo se invoca el gancho si existe.
+  function mfaNotifyChallengeExpired(err) {
+    try {
+      var ch = global.__drexMfaChallenge;
+      if (ch && typeof ch.onExpired === 'function') ch.onExpired(err);
+    } catch (_) {}
   }
 
   function mfaCurrentCognitoUser() {
