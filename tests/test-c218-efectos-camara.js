@@ -355,8 +355,10 @@ test('CSS: en pantallas bajas la tira se compacta', function () {
 
 test('cámara: el catálogo filtra por status published', function () {
   var i = src.indexOf('function drexCameraLoadEffects()');
-  var body = src.slice(i, i + 700);
-  assert(body.indexOf("drexCamPublishedOnly(drexCamNormalizeEffects(val))") !== -1,
+  var body = src.slice(i, i + 900);
+  /* C223: el filtro published-only se aplica sobre el catalogo fusionado
+   * (canonico effects/ + legado public/effects/ de Studio). */
+  assert(body.indexOf('drexCamPublishedOnly(drexCamNormalizeEffects(') !== -1,
     'drexCameraLoadEffects filtra publicados');
 });
 

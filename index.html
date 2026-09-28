@@ -79183,10 +79183,12 @@ function drexCameraLoadEffects() {
   const done = function (list) { drexCamEffects = list; drexCamRenderEffects(); };
   try {
     if (typeof DrexCloud === 'undefined' || !DrexCloud.database) { done([]); return; }
-    DrexCloud.database().ref('effects').once('value').then(function (snap) {
-      let val = null;
-      try { val = snap && snap.val ? snap.val() : null; } catch (_) {}
-      done(drexCamPublishedOnly(drexCamNormalizeEffects(val))); // C218: solo publicados
+    /* C223: lectura fusionada (canonico `effects/` + legado `public/effects/`
+     * de Drex Studio); el canonico gana en colision de id. */
+    drexFxReadAllRaw().then(function (res) {
+      const list = drexCamPublishedOnly(drexCamNormalizeEffects(res.merged)); // C218: solo publicados
+      drexFxWithNs(list, res.ns);
+      done(list);
     }).catch(function () { done([]); });
   } catch (_) { done([]); }
 }
@@ -79359,6 +79361,10 @@ window.drexApplyEffect = drexApplyEffect;
  * - `status` lo decide el EMISOR (Drex Studio escritorio): 'published'
  *   directo para la cuenta oficial (bypass), 'pending' para el resto. El
  *   cliente web NUNCA auto-publica efectos ajenos.
+ * - C223: Drex Studio escribe en el espacio LEGADO `public/effects/<id>`
+ *   (su wrapper putPublic antepone 'public/'); el contrato canonico es
+ *   `effects/<id>`. La app lee y fusiona AMBOS (canonico gana); aprobar,
+ *   rechazar y el bump de `usos` escriben en el espacio de cada efecto.
  * - Listados públicos (cámara, perfil de otro autor): solo 'published'.
  *   Entradas sin `status` (legacy) cuentan como 'published'.
  * - El dueño ve TODOS los suyos con insignia de estado.
@@ -79434,6 +79440,75 @@ function drexFxNormalizeEffects(raw) {
     if (fx.id) out.push(fx);
   }
   return out;
+}
+
+/* === C223: DOBLE ESPACIO DE NOMBRES DE EFECTOS =============================
+ * Causa raiz del "publique mi efecto y no aparece": Drex Studio escribe los
+ * envios con su wrapper putPublic(), que antepone 'public/' a la ruta
+ * (-> pk='public', sk='effects/<id>/...'), mientras la app lee el nodo
+ * `effects/<id>` (-> pk='effects'). Son particiones distintas de DynamoDB:
+ * lo enviado NUNCA era visible en la camara, el perfil ni la bandeja de
+ * revision. La app ahora lee AMBOS espacios y los fusiona por id (el
+ * canonico gana en colision); las escrituras (aprobar/rechazar, bump de
+ * `usos`) van al espacio donde vive cada efecto. `_ns` ('canon'|'legacy')
+ * se adjunta tras normalizar; no forma parte del contrato persistido.
+ * =========================================================================== */
+function drexFxReadNsRaw(ns) {
+  var path = (ns === 'legacy') ? 'public/effects' : 'effects';
+  try {
+    if (typeof DrexCloud === 'undefined' || !DrexCloud.database) return Promise.resolve(null);
+    return DrexCloud.database().ref(path).once('value').then(function (snap) {
+      var val = null;
+      try { val = (snap && snap.val) ? snap.val() : null; } catch (_) {}
+      return (val && typeof val === 'object') ? val : null;
+    }).catch(function () { return null; });
+  } catch (_) { return Promise.resolve(null); }
+}
+/* Devuelve {merged:{id:raw}, ns:{id:'canon'|'legacy'}}; el canonico gana. */
+function drexFxReadAllRaw() {
+  return Promise.all([drexFxReadNsRaw('canon'), drexFxReadNsRaw('legacy')]).then(function (vals) {
+    var merged = {}, ns = {};
+    var pairs = [['legacy', vals[1]], ['canon', vals[0]]];
+    for (var i = 0; i < pairs.length; i++) {
+      var n = pairs[i][0], val = pairs[i][1];
+      if (!val || typeof val !== 'object') continue;
+      var keys = Object.keys(val);
+      for (var j = 0; j < keys.length; j++) {
+        var k = keys[j];
+        if (val[k] && typeof val[k] === 'object') { merged[k] = val[k]; ns[k] = n; }
+      }
+    }
+    return { merged: merged, ns: ns };
+  });
+}
+/* Adjunta `_ns` a una lista ya normalizada. */
+function drexFxWithNs(list, nsMap) {
+  (list || []).forEach(function (fx) { if (fx) fx._ns = (nsMap && nsMap[fx.id]) || 'canon'; });
+  return list;
+}
+/* Un efecto por id: primero canonico, luego legado. Devuelve el efecto
+ * normalizado con `_ns`, o null si no existe. */
+function drexFxReadOneEffect(id) {
+  var clean = drexFxSanitizeId(id);
+  if (!clean) return Promise.resolve(null);
+  try {
+    if (typeof DrexCloud === 'undefined' || !DrexCloud.database) return Promise.resolve(null);
+    var db = DrexCloud.database();
+    var readOne = function (path) {
+      return db.ref(path).once('value').then(function (snap) {
+        var val = null;
+        try { val = (snap && snap.val) ? snap.val() : null; } catch (_) {}
+        return (val && typeof val === 'object') ? val : null;
+      }).catch(function () { return null; });
+    };
+    return readOne('effects/' + clean).then(function (v) {
+      if (v) { var fx = drexFxNormalizeEffect(v, clean); fx._ns = 'canon'; return fx; }
+      return readOne('public/effects/' + clean).then(function (v2) {
+        if (!v2) return null;
+        var fx2 = drexFxNormalizeEffect(v2, clean); fx2._ns = 'legacy'; return fx2;
+      });
+    }).catch(function () { return null; });
+  } catch (_) { return Promise.resolve(null); }
 }
 
 /* Solo publicados del autor, más recientes primero. */
@@ -79581,10 +79656,9 @@ function drexFxFetchAuthorEffects(uid, includeAll) {
   if (!u) return Promise.resolve([]);
   try {
     if (typeof DrexCloud === 'undefined' || !DrexCloud.database) return Promise.resolve([]);
-    return DrexCloud.database().ref('effects').once('value').then(function (snap) {
-      var val = null;
-      try { val = snap && snap.val ? snap.val() : null; } catch (_) {}
-      var list = drexFxNormalizeEffects(val);
+    /* C223: lectura fusionada (canonico + legado de Drex Studio). */
+    return drexFxReadAllRaw().then(function (res) {
+      var list = drexFxWithNs(drexFxNormalizeEffects(res.merged), res.ns);
       /* C219: el dueño ve todos los suyos (con insignia de estado);
        * el perfil de otro autor sigue mostrando solo publicados. */
       return includeAll ? drexFxEffectsByAuthor(list, u) : drexFxPublishedByAuthor(list, u);
@@ -79671,10 +79745,8 @@ function drexFxUseEffect(effectId) {
   if (cached) { openWith(cached); return; }
   try {
     if (typeof DrexCloud === 'undefined' || !DrexCloud.database) { openWith(null); return; }
-    DrexCloud.database().ref('effects/' + drexFxSanitizeId(id)).once('value').then(function (snap) {
-      var val = null;
-      try { val = snap && snap.val ? snap.val() : null; } catch (_) {}
-      var def = val ? drexFxNormalizeEffect(val, id) : null;
+    /* C223: busca en ambos espacios de nombres (canonico primero). */
+    drexFxReadOneEffect(id).then(function (def) {
       /* C219-FETCH-OPENWITH: la rama de fetch pasa la definición al guard
        * para el mismo aviso que la caché ("aún no está publicado"). */
       if (def && def.status === 'published') { drexFxCache[id] = def; }
@@ -79689,8 +79761,17 @@ function drexFxBumpUsos(effectId) {
   try {
     var id = drexFxSanitizeId(effectId);
     if (!id || typeof DrexCloud === 'undefined' || !DrexCloud.database) return;
-    var p = DrexCloud.database().ref('effects/' + id + '/usos').transaction(drexFxCountUpdate);
-    if (p && typeof p.catch === 'function') p.catch(function () {});
+    /* C223: el `usos` debe escribirse en el MISMO espacio de nombres donde
+     * vive el efecto; si no, se crea un `usos` fantasma en el espacio
+     * equivocado que eclipsaria al efecto real en la fusion. */
+    var bumpIn = function (ns) {
+      var base = (ns === 'legacy') ? 'public/effects/' : 'effects/';
+      var p = DrexCloud.database().ref(base + id + '/usos').transaction(drexFxCountUpdate);
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    };
+    var cached = (typeof drexFxCache !== 'undefined' && drexFxCache) ? drexFxCache[id] : null;
+    if (cached && cached._ns) { bumpIn(cached._ns); return; }
+    drexFxReadOneEffect(id).then(function (fx) { bumpIn(fx && fx._ns ? fx._ns : 'canon'); }).catch(function () {});
   } catch (_) {}
 }
 
@@ -79835,10 +79916,12 @@ function drexStudioLoadReviewInbox() {
     }
   } catch (_) { return Promise.resolve([]); }
   listEl.innerHTML = drexFxSpinnerHTML();
-  return DrexCloud.database().ref('effects').once('value').then(function (snap) {
-    var val = null;
-    try { val = snap && snap.val ? snap.val() : null; } catch (_) {}
-    var pend = drexFxNormalizeEffects(val).filter(function (fx) { return fx && fx.status === 'pending'; });
+  /* C223: la bandeja tambien ve los pendientes del espacio legado de Studio. */
+  return drexFxReadAllRaw().then(function (res) {
+    var val = res.merged;
+    var pend = drexFxWithNs(
+      drexFxNormalizeEffects(val).filter(function (fx) { return fx && fx.status === 'pending'; }),
+      res.ns);
     pend.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
     if (!pend.length) {
       listEl.innerHTML = '<div class="py-10 text-center">' +
@@ -79887,11 +79970,9 @@ function drexStudioReviewDecide(effectId, approve, reviewNote) {
   } catch (_) { return Promise.resolve(false); }
   var meUid = '';
   try { var cu = DrexCloud.auth().currentUser; meUid = (cu && cu.uid) ? String(cu.uid) : ''; } catch (_) {}
-  return db.ref('effects/' + id).once('value').then(function (snap) {
-    var v = null;
-    try { v = snap && snap.val ? snap.val() : null; } catch (_) {}
-    if (!v) return false;
-    var fx = drexFxNormalizeEffect(v, id);
+  /* C223: lee/escribe en el espacio de nombres donde vive el efecto. */
+  return drexFxReadOneEffect(id).then(function (fx) {
+    if (!fx) return false;
     if (fx.status !== 'pending') return false;
     var updates = {
       status: approve ? 'published' : 'rejected',
@@ -79899,7 +79980,8 @@ function drexStudioReviewDecide(effectId, approve, reviewNote) {
       reviewedBy: meUid
     };
     if (!approve) updates.reviewNote = String(reviewNote || '').slice(0, 500);
-    return db.ref('effects/' + id).update(updates).then(function () {
+    var base = (fx._ns === 'legacy') ? 'public/effects/' : 'effects/';
+    return db.ref(base + id).update(updates).then(function () {
       var nombre = fx.nombre || id;
       var msg = approve
         ? 'Tu efecto "' + nombre + '" fue aprobado y ya está disponible en la cámara de Drex.'
