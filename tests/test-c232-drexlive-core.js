@@ -509,6 +509,36 @@ async function main() {
   assert((await db.ref('lives/' + liveId + '/viewers').once('value')).val() === 0, 'contador viewers del doc = 0');
   await waitFor(function () { return has(hostEvts, 'viewers', function (d) { return d.count === 0; }); }, 3000, "viewers {count:0} tras leave");
 
+  console.log('\n[8b] co-anfitrión (guest): ICE completo + limpieza al salir');
+  var guest = new DrexLiveCore(opts);
+  guest.setUser({ uid: 'guest1', name: 'Coanfitri\u00f3n' });
+  var guestEvts = capture(guest);
+  var guestStream = new FakeMediaStream([fakeTrack('video', 'gv1'), fakeTrack('audio', 'ga1')]);
+  await guest.joinAsGuest(liveId, guestStream);
+  assert((await db.ref('liveViewers/' + liveId + '/guest1').once('value')).exists(), 'guest registrado en liveViewers/<id>/<uid>');
+  assert(guest._odisc !== null, 'guest arm\u00f3 onDisconnect().remove() para su presencia');
+  assert((await db.ref('lives/' + liveId + '/viewers').once('value')).val() === 1, 'contador viewers del doc = 1 (guest)');
+  // FIX C242: _peerPc devolv\u00eda null para el rol 'guest' → _addIce/_flushPending
+  // eran no-op y el invitado nunca recib\u00eda el stream del host.
+  assert(guest._pc !== null, 'guest tiene PC propia');
+  assert(guest._peerPc('host1') === guest._pc, "_peerPc('hostUid') devuelve la PC del guest");
+  assert(guest._peerPc('otro') === null, "_peerPc(uid ajeno) sigue null para guest");
+  await waitFor(function () { return has(guestEvts, 'remotetrack'); }, 4000, 'remotetrack en guest');
+  var gpc = guest._pc;
+  assert(gpc && gpc.remoteDescription && gpc.remoteDescription.type === 'offer', 'guest aplic\u00f3 remoteDescription (offer)');
+  assert(gpc._candsAdded.length >= 1, 'guest recibi\u00f3 candidato(s) ICE del host');
+  assert(gpc.getSenders().length === 2, 'PC del guest tiene 2 senders (tracks locales del invitado)');
+  assert(host._pcs['guest1'] && !host._pcs['guest1']._closed, 'host cre\u00f3 PC para guest1');
+  assert(has(hostEvts, 'pcstate', function (d) { return d.peer === 'guest1' && d.state === 'connected'; }), "host emiti\u00f3 'pcstate' → {peer:guest1, state:connected}");
+  await guest.leaveLive();
+  await tick(60);
+  assert(!(await db.ref('liveViewers/' + liveId + '/guest1').once('value')).exists(), 'guest borrado de liveViewers al salir');
+  assert(guest._odisc === null, 'leaveLive del guest cancel\u00f3 el handle onDisconnect');
+  assert(gpc._closed === true, 'PC del guest cerrada');
+  assert(!host._pcs['guest1'] || host._pcs['guest1']._closed === true, 'PC del host para guest1 cerrada/limpia (child_removed)');
+  assert((await db.ref('lives/' + liveId + '/viewers').once('value')).val() === 0, 'contador viewers del doc = 0 tras salir el guest');
+  guest.dispose();
+
   console.log('\n[9] segundo viewer se queda → endLive del host');
   var viewer2 = new DrexLiveCore(opts);
   viewer2.setUser({ uid: 'viewer2', name: 'Lurker' });
