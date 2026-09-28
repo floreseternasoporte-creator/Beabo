@@ -15280,7 +15280,7 @@ function saveNote() {
         if (oldId !== noteId) delete _noteImagesCache[oldId];
       }
       return imgs;
-    }).catch(() => []).finally(() => { delete _noteImagesPending[noteId]; });
+    }).finally(() => { delete _noteImagesPending[noteId]; });
     _noteImagesPending[noteId] = p;
     return p;
   }
@@ -16334,6 +16334,14 @@ function drexSnapPublishDataUrl(dataUrl) {
       drexSnapLoadTray();
     })
     .catch(() => {
+      // MEDIA-B1: la publicación hace 3 escrituras (imagen, doc, índice).
+      // Si falla a mitad de camino, los bytes en snapImages/<id> quedaban
+      // huérfanos para siempre: el barrido solo enumera snapshots con doc.
+      // Limpieza best-effort de lo parcial (remove sobre keys inexistentes
+      // es no-op).
+      try { db.ref('snapImages/' + id).remove().catch(() => {}); } catch (_) {}
+      try { db.ref('snapshots/' + id).remove().catch(() => {}); } catch (_) {}
+      try { db.ref('userSnapshots/' + me + '/' + id).remove().catch(() => {}); } catch (_) {}
       try { showMiniToast(appT('No se pudo publicar el destello. Inténtalo de nuevo.')); } catch (_) {}
     });
 }
