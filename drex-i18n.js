@@ -2466,7 +2466,7 @@ var APP_ENGLISH_TEXT = {
 "Nave Drex":"Drex Starship",
 "Núcleo Drex":"Drex Core",
 "Perla Nebular":"Nebular Pearl",
-"Rayo de Ión":"Ion Ray"};
+"Rayo de Ión":"Ion Ray", "Vista previa del en vivo":"Live preview"};
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
 "Ese enlace no es válido. Usa http:// o https://":"该链接无效。请使用 http:// 或 https://",
@@ -4930,7 +4930,7 @@ var APP_CHINESE_TEXT = {
 "Nave Drex":"Drex 星舰",
 "Núcleo Drex":"Drex 核心",
 "Perla Nebular":"星云珍珠",
-"Rayo de Ión":"离子射线"};
+"Rayo de Ión":"离子射线", "Vista previa del en vivo":"直播预览"};
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
 "Ese enlace no es válido. Usa http:// o https://":"Esse link não é válido. Use http:// ou https://",
@@ -7385,7 +7385,7 @@ var APP_PORTUGUESE_TEXT = {
 "Nave Drex":"Nave Drex",
 "Núcleo Drex":"Núcleo Drex",
 "Perla Nebular":"Pérola Nebular",
-"Rayo de Ión":"Raio de Íon"};
+"Rayo de Ión":"Raio de Íon", "Vista previa del en vivo":"Prévia ao vivo"};
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
   "Escribe tu texto aquí...":"在这里写下你的文本…",

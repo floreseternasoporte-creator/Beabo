@@ -20096,11 +20096,27 @@ else { try { drexSnapInit(); } catch (_) {} }
     var live = note.liveStatus !== 'ended';
     var title = escapeHtml(note.liveTitle || note.title || note.content || t('En vivo'));
     var author = escapeHtml(note.authorName || t('Usuario'));
+    var safeLiveId = escapeHtml(String(note.liveId || '').replace(/'/g, ''));
     var btn = live
       ? '<button type="button" class="dlc-live-btn" onclick="window.drexLiveBadgeGo(\'' + String(note.liveId).replace(/'/g, '') + '\')">' +
         '<span class="drex-live-dot" style="width:7px;height:7px"></span>' + esc(t('Ver en vivo')) + '</button>'
       : '<span class="dlc-live-ended">' + esc(t('Transmisión terminada')) + '</span>';
-    return '<div class="dlc-live-card">' +
+    // C237-L1: preview del stream en vivo dentro de la tarjeta del feed (paridad TikTok).
+    // El <video> lo llena drexFeedLivePreview con WebRTC cuando la tarjeta es visible.
+    var preview = '';
+    if (live && note.liveId) {
+      var av = note.authorAvatar
+        ? '<img class="dlc-live-preview-avatar" src="' + escapeHtml(note.authorAvatar) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'"/>'
+        : '';
+      preview = '<div class="dlc-live-preview">' +
+        '<video class="dlc-live-preview-video" data-flp-video muted playsinline autoplay preload="none" aria-label="' + escapeHtml(t('Vista previa del en vivo')) + '"></video>' +
+        '<div class="dlc-live-preview-cover" data-flp-cover>' + av +
+        '<span class="dlc-live-preview-play"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg></span></div>' +
+        '<span class="drex-live-onair dlc-live-preview-badge"><span class="drex-live-dot"></span>' + esc(t('EN VIVO')) + '</span></div>';
+    }
+    return '<div class="dlc-live-card"' +
+      (live && note.liveId ? ' data-live-preview="1" data-live-id="' + safeLiveId + '" data-live-status="' + escapeHtml(note.liveStatus || 'live') + '"' : '') + '>' +
+      preview +
       '<div class="dlc-live-card-top"><span class="drex-live-onair">' +
       (live ? '<span class="drex-live-dot"></span>' + esc(t('EN VIVO')) : esc(t('EN VIVO'))) + '</span>' +
       (typeof window.drexLiveCardRebroadcastHTML === 'function' ? window.drexLiveCardRebroadcastHTML(note) : '') +
@@ -80448,6 +80464,10 @@ try {
 .drex-live-msg .x{font-size:13px;color:#fff;line-height:1.35;word-break:break-word}
 .drex-live-msg.sys{background:rgba(47,51,184,.28);border-color:rgba(91,96,255,.35);text-align:center;max-width:100%}
 .drex-live-msg.sys .x{font-size:11.5px;color:#c3c8ff;font-weight:600}
+/* C237-L2: chat del En vivo anclado abajo (paridad TikTok) */
+.drex-live-bottombar{padding-bottom:calc(1.5rem + env(safe-area-inset-bottom,0px))}
+.drex-live-chatlist{position:absolute;left:0;right:0;bottom:calc(150px + env(safe-area-inset-bottom,0px));max-height:34%;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;padding:0 12px;overflow-y:auto;pointer-events:none;scrollbar-width:none;-webkit-mask-image:linear-gradient(to top,#000 80%,transparent);mask-image:linear-gradient(to top,#000 80%,transparent)}
+.drex-live-chatlist::-webkit-scrollbar{display:none}
 .drex-live-float{position:absolute;font-size:2.2rem;line-height:1;animation:drex-live-floatup 2.4s ease-out forwards;pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.5)}
 @keyframes drex-live-floatup{0%{transform:translateY(0) scale(.6);opacity:0}12%{opacity:1;transform:translateY(-14px) scale(1.15)}100%{transform:translateY(-46vh) scale(1);opacity:0}}
 .drex-live-fxchip{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:62px;padding:8px 6px;border-radius:16px;background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.75);font-size:10.5px;font-weight:700;flex-shrink:0;transition:all .2s ease}
@@ -80455,10 +80475,6 @@ try {
 .drex-live-fxdot{width:34px;height:34px;border-radius:9999px;background:linear-gradient(135deg,#2b2f6e,#5b60ff);border:1px solid rgba(255,255,255,.2)}
 .drex-live-sheet{background:#0d1026;border-top:1px solid rgba(255,255,255,.1);border-radius:28px 28px 0 0;animation:drex-live-sheetup .28s cubic-bezier(.32,.72,.35,1)}
 @keyframes drex-live-sheetup{from{transform:translateY(60px);opacity:.6}to{transform:translateY(0);opacity:1}}
-.drex-live-gift{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);transition:transform .15s ease}
-.drex-live-gift:active{transform:scale(.92);border-color:#5b60ff}
-.drex-live-gift .e{font-size:30px;line-height:1}
-.drex-live-gift .l{font-size:10.5px;font-weight:700;color:rgba(255,255,255,.8)}
 .drex-live-field{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:13px 16px;color:#fff;font-size:14px;font-weight:600;outline:none}
 .drex-live-field::placeholder{color:rgba(255,255,255,.4)}
 .drex-live-field:focus{border-color:rgba(91,96,255,.7)}
@@ -80590,6 +80606,7 @@ try {
 </style>
 <!-- C232: hoja de configuración del en vivo -->
 <div id="drex-live-setup" class="fixed inset-0 hidden" style="z-index:80;background:#04050d">
+  <video id="drex-live-preview-bg" class="absolute inset-0 w-full h-full object-cover pointer-events-none" style="display:none;filter:blur(26px) brightness(.5) saturate(1.25);transform:scale(1.18)" playsinline muted aria-hidden="true"></video>
   <video id="drex-live-preview" class="absolute inset-0 w-full h-full object-cover" playsinline muted autoplay></video>
 <video id="drex-live-videosrc" class="hidden" playsinline muted preload="auto" crossorigin="anonymous"></video>
   <img id="drex-live-preview-fx" alt="" class="absolute inset-0 w-full h-full object-cover pointer-events-none" style="display:none">
@@ -80649,6 +80666,7 @@ try {
 </div>
 <!-- C232: sala del anfitrión -->
 <div id="drex-live-host" class="fixed inset-0 hidden" style="z-index:80;background:#04050d">
+  <video id="drex-live-host-video-bg" class="absolute inset-0 w-full h-full object-cover pointer-events-none" style="display:none;filter:blur(26px) brightness(.5) saturate(1.25);transform:scale(1.18)" playsinline muted aria-hidden="true"></video>
   <video id="drex-live-host-video" class="absolute inset-0 w-full h-full object-cover" playsinline muted autoplay></video>
   <img id="drex-live-host-fx" alt="" class="absolute inset-0 w-full h-full object-cover pointer-events-none" style="display:none">
   <div class="absolute inset-x-0 top-0 p-3 pt-4" style="background:linear-gradient(to bottom,rgba(0,0,0,.55),transparent)">
@@ -80665,8 +80683,8 @@ try {
     <p id="drex-live-host-title" class="text-white font-extrabold text-[15px] mt-2 leading-tight"></p>
   </div>
   <div id="drex-live-host-float" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
-  <div id="drex-live-host-chat" class="absolute inset-x-0 bottom-40 px-3 space-y-1.5 overflow-y-auto pointer-events-none" style="top:120px"></div>
-  <div class="absolute inset-x-0 bottom-0 p-3 pb-6" style="background:linear-gradient(to top,rgba(0,0,0,.7),transparent)">
+  <div id="drex-live-host-chat" class="drex-live-chatlist" aria-live="polite"></div>
+  <div class="absolute inset-x-0 bottom-0 p-3 pb-6 drex-live-bottombar" style="background:linear-gradient(to top,rgba(0,0,0,.7),transparent)">
     <div class="flex items-center gap-2 mb-2.5">
       <button type="button" id="drex-live-mute-btn" onclick="drexLiveToggleMute()" class="drex-live-iconbtn" aria-label="Silenciar"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
       <button type="button" onclick="drexLiveSwitchCamera()" class="drex-live-iconbtn" aria-label="Cambiar cámara"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
@@ -80709,8 +80727,8 @@ try {
     </div>
   </div>
   <div id="drex-live-viewer-float" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
-  <div id="drex-live-viewer-chat" class="absolute inset-x-0 bottom-40 px-3 space-y-1.5 overflow-y-auto pointer-events-none" style="top:120px"></div>
-  <div class="absolute inset-x-0 bottom-0 p-3 pb-6" style="background:linear-gradient(to top,rgba(0,0,0,.7),transparent)">
+  <div id="drex-live-viewer-chat" class="drex-live-chatlist" aria-live="polite"></div>
+  <div class="absolute inset-x-0 bottom-0 p-3 pb-6 drex-live-bottombar" style="background:linear-gradient(to top,rgba(0,0,0,.7),transparent)">
     <div class="flex items-center gap-2 mb-2.5">
       <button type="button" onclick="drexLiveOpenGifts('viewer')" class="drex-live-iconbtn" aria-label="Regalos"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg></button>
       <button type="button" onclick="drexLiveLike('viewer')" class="drex-live-iconbtn" aria-label="Me gusta"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
@@ -80734,19 +80752,33 @@ try {
 .fiesta-reaction-float svg{width:34px;height:34px;color:#fff;filter:drop-shadow(0 3px 8px rgba(0,0,0,.5))}
 .drex-live-iconbtn svg{width:20px;height:20px}
 .drex-live-sendbtn svg{width:16px;height:16px}
-.drex-live-gift-balance{display:flex;align-items:center;gap:8px;color:#fff;font-weight:800;font-size:14px;margin-bottom:6px}
-.drex-live-gift-balance svg{color:#FFC93C}
-.dlgb-cur{font-size:11px;font-weight:600;color:rgba(255,255,255,.55)}
-.drex-live-gift-recharge{margin-left:auto;background:#2F33B8;color:#fff;font-size:12px;font-weight:800;padding:7px 14px;border-radius:999px}
+/* C237: hoja de regalos — layout reescrito para móvil */
+.dlgs{display:flex;flex-direction:column;max-height:86vh;overflow:hidden}
+.dlgs-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 2px;flex:none}
+.dlgs-title{color:#fff;font-weight:800;font-size:16px;line-height:1.25}
+.dlgs-close{width:34px;height:34px;flex:none;border-radius:9999px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.08);color:#fff}
+.dlgs-close:active{opacity:.65}
+.dlgs-close svg{width:16px;height:16px}
+.dlgs-sub{display:flex;align-items:center;gap:8px;padding:10px 20px 12px;flex:none;border-bottom:1px solid rgba(255,255,255,.07)}
+.dlgs-coins{display:inline-flex;align-items:center;gap:6px;color:#fff;font-weight:800;font-size:14px;min-width:0}
+.dlgs-coins>svg{width:16px;height:16px;color:#FFC93C;flex:none}
+.dlgb-cur{font-size:11px;font-weight:600;color:rgba(255,255,255,.55);white-space:nowrap}
+.drex-live-gift-recharge{margin-left:auto;background:#2F33B8;color:#fff;font-size:12.5px;font-weight:800;padding:8px 18px;border-radius:999px;flex:none;white-space:nowrap}
 .drex-live-gift-recharge:active{opacity:.8}
+.dlgs-body{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 20px 30px;overscroll-behavior:contain}
+.dlgs-tier{margin:0 0 20px}
+.dlgs-tier:last-child{margin-bottom:2px}
+.dlgs-tier-head{display:flex;align-items:center;gap:10px;margin:2px 0 10px}
+.dlgs-tier-name{flex:none;color:rgba(255,255,255,.62);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em}
+.dlgs-tier-line{flex:1 1 auto;height:1px;background:rgba(255,255,255,.09);border-radius:1px}
+.dlgs-tier-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.drex-live-gift{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;padding:12px 6px 10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:16px;transition:transform .15s ease}
+.drex-live-gift:active{transform:scale(.93);border-color:#5b60ff}
+.drex-live-gift img.gi{width:52px;height:52px;object-fit:contain;flex:none}
+.drex-live-gift .l{width:100%;font-size:11px;font-weight:700;line-height:1.3;min-height:2.6em;color:rgba(255,255,255,.88);text-align:center;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:break-word}
+.drex-live-gift .p{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:#FFC93C;white-space:nowrap;line-height:1}
+.drex-live-gift .p svg{width:12px;height:12px;color:#FFC93C;flex:none}
 .drex-live-gift-tier{color:rgba(255,255,255,.55);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px}
-.drex-live-gift-tier-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.drex-live-gift{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px}
-.drex-live-gift:active{transform:scale(.92);border-color:#5b60ff}
-.drex-live-gift img.gi{width:46px;height:46px;object-fit:contain}
-.drex-live-gift .l{font-size:10.5px;font-weight:700;color:rgba(255,255,255,.85)}
-.drex-live-gift .p{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:800;color:#FFC93C}
-.drex-live-gift .p svg{color:#FFC93C}
 .drex-live-gift-alert{position:absolute;top:64px;left:12px;right:12px;z-index:30;display:flex;align-items:center;gap:10px;background:rgba(10,12,28,.92);border:1px solid rgba(255,201,60,.5);border-radius:16px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:drex-live-gift-in .25s ease-out}
 .drex-live-gift-alert img{width:40px;height:40px;object-fit:contain;flex:none}
 .drex-live-gift-alert .dlga-txt{display:flex;flex-direction:column;color:#fff;font-size:13px;line-height:1.3}
@@ -80803,6 +80835,15 @@ button.drex-live-pill{cursor:pointer}
 .dlc-live-card-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
 .dlc-live-card-author{color:#fff;font-weight:800;font-size:13px}
 .dlc-live-card-title{color:#fff;font-weight:700;font-size:15px;margin:4px 0 10px}
+.dlc-live-preview{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:radial-gradient(120% 120% at 50% 0%,#241d5e 0%,#0d1026 70%);margin-bottom:10px}
+.dlc-live-preview-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;background:#000}
+.dlc-live-preview-video.is-on{display:block}
+.dlc-live-preview-cover{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.dlc-live-preview-cover.is-off{display:none}
+.dlc-live-preview-avatar{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.45;filter:blur(2px)}
+.dlc-live-preview-play{display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;background:rgba(47,51,184,.9);color:#fff;box-shadow:0 4px 18px rgba(47,51,184,.5);position:relative;z-index:1}
+.dlc-live-preview-play svg{width:26px;height:26px;margin-left:3px}
+.dlc-live-preview-badge{position:absolute;top:10px;left:10px;z-index:2}
 .dlc-live-btn{display:inline-flex;align-items:center;gap:8px;background:#ff3d71;color:#fff;font-weight:800;font-size:13.5px;padding:10px 18px;border-radius:999px}
 .dlc-live-btn:active{opacity:.8}
 /* ============================================================================
@@ -80882,12 +80923,19 @@ button.drex-live-pill{cursor:pointer}
 .drex-live-rebc-card{margin-left:6px}
 
 </style>
-<!-- C232: hoja de regalos -->
+<!-- C237: hoja de regalos (layout reescrito para móvil) -->
 <div id="drex-live-gifts" class="fixed inset-0 hidden" style="z-index:90">
   <div class="absolute inset-0" style="background:rgba(0,0,0,.55)" onclick="drexLiveCloseGifts()"></div>
-  <div class="absolute inset-x-0 bottom-0 p-5 pb-7 drex-live-sheet">
-    <p id="drex-live-gifts-t" class="text-white font-extrabold text-[15px]">Regalos</p>
-    <div id="drex-live-gifts-grid" class="grid grid-cols-5 gap-2.5 mt-4"></div>
+  <div class="absolute inset-x-0 bottom-0 drex-live-sheet dlgs">
+    <div class="dlgs-head">
+      <p id="drex-live-gifts-t" class="dlgs-title">Regalos</p>
+      <button type="button" class="dlgs-close" onclick="drexLiveCloseGifts()" aria-label="Cerrar"><svg fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <div class="dlgs-sub">
+      <span class="dlgs-coins"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 8.5h2.6a2.9 2.9 0 0 1 0 5.8H10zM10 8.5v5.8"/></svg><b id="drex-live-gift-balance-n">0</b><span id="drex-live-gifts-cur" class="dlgb-cur">Drex Coins</span></span>
+      <button type="button" id="drex-live-gifts-recharge" class="drex-live-gift-recharge" onclick="drexCoinsOpenShop()">Recargar</button>
+    </div>
+    <div id="drex-live-gifts-grid" class="dlgs-body"></div>
   </div>
 </div>
 <style>@keyframes drex-live-spin{to{transform:rotate(360deg)}}</style>
@@ -81803,6 +81851,8 @@ var DREX_LIVE_STATICS = [
   ['drex-live-viewer-live-label', 'En vivo'],
   ['drex-live-leave-btn', 'Salir'],
   ['drex-live-gifts-t', 'Regalos'],
+  ['drex-live-gifts-cur', 'Drex Coins'],
+  ['drex-live-gifts-recharge', 'Recargar'],
   ['drex-live-viewer-connecting-t', 'Conectando...'],
   ['drex-live-src-label', 'Fuente'],
   ['drex-live-srcbtn-camera', 'Cámara'],
@@ -81900,6 +81950,11 @@ function drexLiveVideoResetState() {
 window.drexLiveSetSource = function (kind) {
   var st = drexLiveVideoState();
   if (!st) return;
+  /* C237-L5: la retransmision desde video es exclusiva del estudio (PC);
+   * en el flujo movil siempre se fuerza camara. */
+  var __fromStudio = false;
+  try { __fromStudio = !!(window.__drexStudioTx && window.__drexStudioTx.fromStudio); } catch (_) {}
+  if (kind === 'video' && !__fromStudio) kind = 'camera';
   if (kind !== 'camera' && kind !== 'video') kind = 'camera';
   st.kind = kind;
   var seg = document.getElementById('drex-live-srcseg');
@@ -81942,12 +81997,103 @@ window.drexLiveAcquireCamera = async function () {
   try {
     drexLiveStopStream();
     LS.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: LS.facing, width: { ideal: 720 }, height: { ideal: 1280 } },
+      video: { facingMode: LS.facing, width: { ideal: 720 }, height: { ideal: 1280 }, aspectRatio: { ideal: 9 / 16 } },
       audio: true
     });
     var v = document.getElementById('drex-live-preview');
     if (v) { v.srcObject = LS.stream; try { await v.play(); } catch (_) {} }
+    try { window.drexLiveAdaptPreview('drex-live-preview', 'drex-live-preview-bg'); } catch (_) {}
   } catch (e) { toast(t('No se pudo acceder a la cámara.')); }
+};
+
+/* C237-L4: encuadre real de la cámara del host.
+ * Causa raíz: se pedía 720x1280 pero nunca se verificaba lo entregado;
+ * con object-fit:cover incondicional, si el dispositivo entrega un cuadro
+ * apaisado (típico en la cámara frontal del iPhone), el recorte central
+ * equivale a un zoom digital (~3.8x en 1280x720 -> 390x844). Aquí se mide
+ * el cuadro real en loadedmetadata y se adapta la presentación sin recorte
+ * destructivo. El pellizco usa el constraint `zoom` del dispositivo solo
+ * cuando está soportado. */
+window.drexLivePickFit = function (vw, vh, cw, ch) {
+  vw = +vw || 0; vh = +vh || 0; cw = +cw || 0; ch = +ch || 0;
+  if (!vw || !vh || !cw || !ch) return 'cover';
+  var sc = Math.max(cw / vw, ch / vh); // escala que aplicaría object-fit:cover
+  var cutW = 1 - cw / (vw * sc), cutH = 1 - ch / (vh * sc);
+  return (Math.max(cutW, cutH) > 0.35) ? 'contain' : 'cover';
+};
+window.drexLiveAdaptPreview = function (videoId, bgId) {
+  var v = $(videoId);
+  if (!v) return;
+  var bg = bgId ? $(bgId) : null;
+  var apply = function () {
+    var r = { width: 0, height: 0 };
+    try { if (v.getBoundingClientRect) r = v.getBoundingClientRect(); } catch (_) {}
+    var fit = window.drexLivePickFit(v.videoWidth || 0, v.videoHeight || 0, r.width, r.height);
+    if (fit === 'contain') {
+      v.style.objectFit = 'contain';
+      if (bg) {
+        try { bg.srcObject = v.srcObject; } catch (_) {}
+        try { bg.play(); } catch (_) {}
+        bg.style.display = 'block';
+      }
+    } else {
+      v.style.objectFit = 'cover';
+      if (bg) {
+        bg.style.display = 'none';
+        try { bg.pause(); } catch (_) {}
+        try { bg.removeAttribute('src'); } catch (_) {}
+        try { if ('srcObject' in bg) bg.srcObject = null; } catch (_) {}
+      }
+    }
+  };
+  try { v.addEventListener('loadedmetadata', apply); } catch (_) {}
+  try { apply(); } catch (_) {}
+};
+window.drexLiveInitHostZoom = function (videoId) {
+  var v = $(videoId);
+  if (!v || v.__dlZoom) return;
+  v.__dlZoom = true;
+  try { v.style.touchAction = 'none'; } catch (_) {}
+  var d0 = 0, z0 = 1;
+  var caps = function () {
+    try {
+      var s = (typeof LS !== 'undefined') ? LS.stream : null;
+      var tr = s ? s.getVideoTracks()[0] : null;
+      if (tr && tr.getCapabilities) {
+        var z = tr.getCapabilities().zoom;
+        if (z) return { tr: tr, min: (z.min == null ? 1 : z.min), max: z.max || 1 };
+      }
+    } catch (_) {}
+    return null;
+  };
+  var setZ = function (c, z) {
+    if (!c) return;
+    z = Math.min(c.max, Math.max(c.min, z));
+    try {
+      var p = c.tr.applyConstraints({ advanced: [{ zoom: z }] });
+      if (p && p.catch) p.catch(function () {});
+    } catch (_) {}
+  };
+  v.addEventListener('touchstart', function (e) {
+    v.__dlZoomC = null;
+    if (e.touches && e.touches.length === 2) {
+      var c = caps();
+      if (!c) return;
+      v.__dlZoomC = c;
+      d0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) || 0;
+      z0 = 1;
+      try { if (c.tr.getSettings) z0 = c.tr.getSettings().zoom || 1; } catch (_) {}
+    }
+  }, { passive: true });
+  v.addEventListener('touchmove', function (e) {
+    var c = v.__dlZoomC;
+    if (!c || !e.touches || e.touches.length !== 2 || !d0) return;
+    var d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) || 0;
+    if (d > 0) setZ(c, z0 * (d / d0));
+  }, { passive: true });
+  v.addEventListener('touchend', function (e) {
+    if (!e.touches || e.touches.length < 2) { d0 = 0; v.__dlZoomC = null; }
+  }, { passive: true });
 };
 
 /* ---------------- carga del video ---------------- */
@@ -82128,6 +82274,30 @@ window.drexLiveVideoCleanup = function () {
   if (sb) sb.style.display = 'none';
 };
 
+/* C237-L5: la retransmision desde video es exclusiva del estudio (PC).
+ * En el flujo movil la hoja de configuracion solo ofrece camara: se oculta
+ * el selector de fuente y el panel de video, y el estado se fuerza a camara.
+ * La insignia "Retransmision" del espectador no se toca (un live de PC
+ * visto desde el movil si la muestra). */
+function drexLiveSetupGateSource() {
+  var fromStudio = false;
+  try { fromStudio = !!(window.__drexStudioTx && window.__drexStudioTx.fromStudio); } catch (_) {}
+  var show = fromStudio ? '' : 'none';
+  var label = document.getElementById('drex-live-src-label');
+  var seg = document.getElementById('drex-live-srcseg');
+  var pane = document.getElementById('drex-live-video-pane');
+  if (label) label.style.display = show;
+  if (seg) seg.style.display = show;
+  if (pane) {
+    if (fromStudio) { pane.style.display = ''; }
+    else { pane.classList.add('hidden'); pane.style.display = 'none'; }
+  }
+  if (!fromStudio) {
+    try { if (typeof drexLiveVideoResetState === 'function') drexLiveVideoResetState(); } catch (_) {}
+  }
+}
+/* C237-L5: fin del bloque de fuente */
+
 function liveCore() {
   if (LS.core) return LS.core;
   if (LS.coreFailed) throw new Error('no-core');
@@ -82271,7 +82441,9 @@ window.drexLiveOpenSetup = async function () {
   var sh = $('drex-live-setup');
   if (sh) sh.classList.remove('hidden');
   try { if (window.drexLiveVideoCleanup) window.drexLiveVideoCleanup(); } catch (_) {}
+  try { if (typeof drexLiveSetupGateSource === 'function') drexLiveSetupGateSource(); } catch (_) {}
   await window.drexLiveAcquireCamera();
+  try { window.drexLiveInitHostZoom('drex-live-preview'); } catch (_) {}
   drexLiveRenderFxStrip();
   try { if (typeof drexCameraLoadEffects === 'function') drexCameraLoadEffects(); } catch (_) {}
   setTimeout(function () {
@@ -83309,6 +83481,242 @@ if (typeof module !== 'undefined' && module.exports) {
   };
 })();
 
+/* ===== C237-L1 feed-live-preview: INICIO ===== */
+/* C237-L1 — Preview del En vivo en el feed (paridad TikTok).
+ * Cuando una tarjeta kind:'live' con status 'live' entra al viewport, abre una
+ * sesion espectador DrexLive (el MISMO transporte: senalizacion por
+ * liveSignals/<liveId>/, presencia en liveViewers/) y pinta el stream en el
+ * <video data-flp-video> de la tarjeta (autoplay, muted, playsinline, cover).
+ * Al salir del viewport o al removerse la tarjeta: leaveLive() (cierra la PC,
+ * quita presencia, desuscribe) — regla DrexLive: limpiar al salir.
+ * Si el host no transmite o falla la conexion: queda badge EN VIVO + portada.
+ */
+function createDrexFeedLivePreview(deps) {
+  'use strict';
+  deps = deps || {};
+  var IO = deps.IO || (typeof IntersectionObserver !== 'undefined' ? IntersectionObserver : null);
+  var MO = deps.MO || (typeof MutationObserver !== 'undefined' ? MutationObserver : null);
+  var createCore = deps.createCore || null;
+  var getUser = deps.getUser || function () { return null; };
+  var setT = deps.setTimeout || function (fn) { return setTimeout(fn); };
+  var clearT = deps.clearTimeout || function (id) { clearTimeout(id); };
+  var observeTarget = deps.observeTarget ||
+    (((typeof document !== 'undefined') && document.body) || null);
+  var MAX = deps.MAX || 2;
+  var TIMEOUT = deps.TIMEOUT || 15000;
+
+  var entries = [];   // {card, video, cover, core, state, timer}
+  var pending = [];   // tarjetas visibles esperando un slot
+  var io = null, mo = null, watching = false;
+
+  function activeCount() {
+    var n = 0;
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].state === 'active' || entries[i].state === 'starting') n++;
+    }
+    return n;
+  }
+  function findEntry(card) {
+    for (var i = 0; i < entries.length; i++) if (entries[i].card === card) return entries[i];
+    return null;
+  }
+  function isPending(card) {
+    for (var i = 0; i < pending.length; i++) if (pending[i] === card) return true;
+    return false;
+  }
+
+  function showVideo(entry, stream) {
+    var v = entry.video;
+    if (!v) return;
+    try {
+      v.srcObject = stream;
+      if (v.classList) v.classList.add('is-on');
+      if (entry.cover && entry.cover.classList) entry.cover.classList.add('is-off');
+      var pr = v.play(); if (pr && pr.catch) pr.catch(function () {});
+    } catch (_) {}
+  }
+  function hideVideo(entry) {
+    var v = entry.video;
+    if (!v) return;
+    try {
+      if (v.classList) v.classList.remove('is-on');
+      if (entry.cover && entry.cover.classList) entry.cover.classList.remove('is-off');
+      try { v.pause(); } catch (_) {}
+      v.srcObject = null;
+    } catch (_) {}
+  }
+
+  function pump() {
+    while (pending.length && activeCount() < MAX) {
+      var card = pending.shift();
+      if (!card || !card.isConnected) continue;
+      start(card);
+    }
+  }
+
+  function start(card) {
+    if (findEntry(card) || isPending(card)) return;
+    if (!card || !card.dataset || card.dataset.liveStatus !== 'live') return;
+    var liveId = card.dataset.liveId;
+    if (!liveId || !createCore || !IO) return;
+    var me = null;
+    try { me = getUser(); } catch (_) {}
+    if (!me || !me.uid) return;
+    if (activeCount() >= MAX) { pending.push(card); return; }
+    var video = null, cover = null;
+    try {
+      video = card.querySelector('[data-flp-video]');
+      cover = card.querySelector('[data-flp-cover]');
+    } catch (_) {}
+    if (!video) return;
+    var core;
+    try {
+      core = createCore();
+      core.setUser({ uid: me.uid, name: me.name || '', avatar: me.avatar || '' });
+    } catch (_) { return; }
+    var entry = { card: card, video: video, cover: cover, core: core, state: 'starting', timer: 0 };
+    entries.push(entry);
+    core.on('remotetrack', function (p) {
+      var s = (p && p.stream) ? p.stream : p;
+      if (!s || entry.state === 'done') return;
+      if (entry.timer) { try { clearT(entry.timer); } catch (_) {} entry.timer = 0; }
+      entry.state = 'active';
+      showVideo(entry, s);
+    });
+    core.on('ended', function () { stop(card); });
+    core.on('error', function () { stop(card); });
+    entry.timer = setT(function () { stop(card); }, TIMEOUT);
+    var pr;
+    try { pr = core.joinLive(liveId); } catch (e) { stop(card); return; }
+    if (pr && typeof pr.then === 'function') pr.catch(function () { stop(card); });
+  }
+
+  function stop(card) {
+    var idx = -1;
+    for (var i = 0; i < entries.length; i++) if (entries[i].card === card) { idx = i; break; }
+    if (idx < 0) {
+      for (var j = 0; j < pending.length; j++) if (pending[j] === card) pending.splice(j, 1);
+      return;
+    }
+    var entry = entries[idx];
+    entries.splice(idx, 1);
+    entry.state = 'done';
+    if (entry.timer) { try { clearT(entry.timer); } catch (_) {} }
+    hideVideo(entry);
+    try { var r = entry.core.leaveLive(); if (r && r.catch) r.catch(function () {}); } catch (_) {}
+    pump();
+  }
+
+  function onIntersect(list) {
+    for (var i = 0; i < list.length; i++) {
+      var en = list[i];
+      if (!en || !en.target) continue;
+      if (en.isIntersecting) start(en.target);
+      else stop(en.target);
+    }
+  }
+
+  function scan(root) {
+    ensure();
+    var found = [];
+    try {
+      if (root && typeof root.querySelectorAll === 'function') {
+        var nl = root.querySelectorAll('[data-live-preview="1"]:not([data-flp-done])');
+        for (var i = 0; i < nl.length; i++) found.push(nl[i]);
+      }
+      if (root && typeof root.matches === 'function' && root.matches('[data-live-preview="1"]') &&
+          typeof root.hasAttribute === 'function' && !root.hasAttribute('data-flp-done')) found.push(root);
+    } catch (_) {}
+    for (var k = 0; k < found.length; k++) {
+      try { found[k].setAttribute('data-flp-done', '1'); } catch (_) {}
+      try { io.observe(found[k]); } catch (_) {}
+    }
+  }
+
+  function onMut(list) {
+    for (var i = 0; i < list.length; i++) {
+      var rec = list[i] || {};
+      var an = rec.addedNodes || [], rn = rec.removedNodes || [];
+      for (var a = 0; a < an.length; a++) {
+        var n = an[a];
+        if (n && n.nodeType === 1) scan(n);
+      }
+      for (var r = 0; r < rn.length; r++) {
+        var x = rn[r];
+        if (!x) continue;
+        for (var e = entries.length - 1; e >= 0; e--) {
+          var card = entries[e].card;
+          var gone = (card === x) || (x.contains && x.contains(card)) || !card.isConnected;
+          if (gone) stop(card);
+        }
+        for (var q = pending.length - 1; q >= 0; q--) {
+          var pc2 = pending[q];
+          var pgone = (pc2 === x) || (x.contains && x.contains(pc2)) || !pc2.isConnected;
+          if (pgone) pending.splice(q, 1);
+        }
+      }
+    }
+  }
+
+  function ensure() {
+    if (watching) return;
+    if (!IO || !MO || !observeTarget) return;
+    try {
+      io = new IO(onIntersect, { rootMargin: '120px' });
+      mo = new MO(onMut);
+      mo.observe(observeTarget, { childList: true, subtree: true });
+      watching = true;
+    } catch (_) {}
+  }
+
+  return { scan: scan, start: start, stop: stop, _entries: entries, _pending: pending };
+}
+window.drexFeedLivePreviewFactory = createDrexFeedLivePreview;
+
+/* Instancia cableada a DrexLive (lazy, una sola vez). */
+(function () {
+  function kick() {
+    try {
+      if (typeof window.drexFeedLivePreviewFactory !== 'function') return;
+      if (window.__drexFLP) return;
+      var inst = window.drexFeedLivePreviewFactory({
+        getUser: function () {
+          try {
+            var u = (typeof liveUser === 'function') ? liveUser() : null;
+            if (!u || !u.uid) return null;
+            return { uid: u.uid, name: u.displayName || u.name || '', avatar: u.photoURL || u.avatar || '' };
+          } catch (_) { return null; }
+        },
+        createCore: function () {
+          return new DrexLiveCore({
+            db: DrexCloud.database(),
+            RTC: {
+              PeerConnection: window.RTCPeerConnection,
+              SessionDescription: window.RTCSessionDescription,
+              IceCandidate: window.RTCIceCandidate,
+              MediaStream: (window.MediaStream || function () {})
+            },
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+            now: function () { return Date.now(); },
+            rand: function () { return 'lv' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+          });
+        }
+      });
+      window.__drexFLP = inst;
+      window.drexFeedLivePreviewScan = function (root) {
+        try { inst.scan(root || document); } catch (_) {}
+      };
+      try { inst.scan(document); } catch (_) {}
+    } catch (_) {}
+  }
+  try {
+    if (typeof document === 'undefined') return;
+    if (document.readyState !== 'loading') kick();
+    else document.addEventListener('DOMContentLoaded', kick);
+  } catch (_) {}
+})();
+/* ===== C237-L1 feed-live-preview: FIN ===== */
+
 window.drexLiveStartFromSetup = async function () {
   var titleEl = $('drex-live-title');
   var title = ((titleEl && titleEl.value) || '').trim().slice(0, 60) || t('En vivo');
@@ -83372,6 +83780,8 @@ window.drexLiveStartFromSetup = async function () {
     try { window.drexLiveHostSourceBadge(srcFlags.sourceKind); } catch (_) {}
     var hr = $('drex-live-host');
     if (hr) hr.classList.remove('hidden');
+    try { window.drexLiveAdaptPreview('drex-live-host-video', 'drex-live-host-video-bg'); } catch (_) {}
+    try { window.drexLiveInitHostZoom('drex-live-host-video'); } catch (_) {}
     if (typeof drexCoinsRefreshChips === 'function') drexCoinsRefreshChips();
   } catch (e) {
     toast(t('No se pudo iniciar la transmisión.'));
@@ -83503,13 +83913,14 @@ window.drexLiveSwitchCamera = async function () {
   LS.facing = (LS.facing === 'user') ? 'environment' : 'user';
   try {
     var ns = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: LS.facing, width: { ideal: 720 }, height: { ideal: 1280 } },
+      video: { facingMode: LS.facing, width: { ideal: 720 }, height: { ideal: 1280 }, aspectRatio: { ideal: 9 / 16 } },
       audio: true
     });
     var old = LS.stream;
     LS.stream = ns;
     var v = $('drex-live-host-video');
     if (v) { v.srcObject = ns; try { await v.play(); } catch (_) {} }
+    try { window.drexLiveAdaptPreview('drex-live-host-video', 'drex-live-host-video-bg'); } catch (_) {}
     drexLiveApplyFx('drex-live-host-video', 'drex-live-host-fx');
     if (LS.core && LS.mode === 'host' && typeof LS.core.replaceLocalStream === 'function') {
       try { await LS.core.replaceLocalStream(ns); } catch (_) {}
@@ -83518,27 +83929,30 @@ window.drexLiveSwitchCamera = async function () {
   } catch (e) { toast(t('No se pudo acceder a la cámara.')); }
 };
 
+/* C237: render de la hoja de regalos — secciones por tier, sin solapes */
 window.drexLiveOpenGifts = function (which) {
   LS.giftFor = (which === 'host') ? 'host' : 'viewer';
+  try {
+    var __gb = $('drex-live-gift-balance-n');
+    if (__gb) __gb.textContent = String(DrexCoins.balance());
+  } catch (_) {}
   var grid = $('drex-live-gifts-grid');
   if (grid) {
-    var html = '<div class="drex-live-gift-balance">' + drexIcon('coin', 'w-4 h-4') +
-      '<span id="drex-live-gift-balance-n">' + DrexCoins.balance() + '</span>' +
-      '<span class="dlgb-cur">' + esc(t('Drex Coins')) + '</span>' +
-      '<button type="button" class="drex-live-gift-recharge" onclick="drexCoinsOpenShop()">' + esc(t('Recargar')) + '</button></div>';
     var tiers = ['bronce', 'plata', 'oro', 'leyenda'];
+    var html = '';
     for (var ti = 0; ti < tiers.length; ti++) {
       (function (tier) {
-        html += '<p class="drex-live-gift-tier">' + esc(t(drexTierLabel(tier))) + '</p><div class="drex-live-gift-tier-grid">';
+        html += '<section class="dlgs-tier"><div class="dlgs-tier-head"><span class="dlgs-tier-name">' +
+          esc(t(drexTierLabel(tier))) + '</span><span class="dlgs-tier-line"></span></div><div class="dlgs-tier-grid">';
         for (var i = 0; i < DREX_LIVE_GIFTS.length; i++) {
           var g = DREX_LIVE_GIFTS[i];
           if (g.tier !== tier) continue;
           html += '<button type="button" class="drex-live-gift" data-gid="' + g.id + '">' +
-            '<img class="gi" src="' + g.img + '" alt="' + esc(g.label) + '"/>' +
+            '<img class="gi" src="' + g.img + '" alt="' + esc(g.label) + '" loading="lazy"/>' +
             '<span class="l">' + esc(t(g.label)) + '</span>' +
             '<span class="p">' + drexIcon('coin', 'w-3 h-3') + esc(String(g.price)) + '</span></button>';
         }
-        html += '</div>';
+        html += '</div></section>';
       })(tiers[ti]);
     }
     grid.innerHTML = html;
@@ -83546,6 +83960,7 @@ window.drexLiveOpenGifts = function (which) {
     for (var b = 0; b < btns.length; b++) {
       (function (btn) { btn.onclick = function () { window.drexLiveSendGift(btn.getAttribute('data-gid')); }; })(btns[b]);
     }
+    grid.scrollTop = 0;
   }
   drexLiveTranslateStatics();
   var sh = $('drex-live-gifts');
