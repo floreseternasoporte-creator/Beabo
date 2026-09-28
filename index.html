@@ -16623,9 +16623,15 @@ function drexSnapRenderViewer() {
   const img = document.getElementById('drex-snap-viewer-img');
   if (img) {
     img.style.transform = '';
-    const show = (url) => { if (url) img.src = url; };
-    if (_snapImgCache[s.id]) show(_snapImgCache[s.id]);
-    else drexSnapLoadImage(s.id).then(show);
+    const sid = s.id; // C227: guarda anti-carreras (la imagen lenta no pisa al destello actual)
+    const show = (url) => {
+      if (!url) return;
+      const cur = drexSnapCurrent();
+      if (!cur || cur.id !== sid) return; // ya navego a otro destello: descartar
+      img.src = url;
+    };
+    if (_snapImgCache[sid]) show(_snapImgCache[sid]);
+    else drexSnapLoadImage(sid).then(show);
   }
   const ava = document.getElementById('drex-snap-viewer-ava');
   if (ava) { ava.src = au.ava || ''; ava.style.visibility = au.ava ? 'visible' : 'hidden'; }
@@ -16670,8 +16676,11 @@ function drexSnapRenderReactions() {
   const bar = document.getElementById('drex-snap-reactions');
   if (!bar || !s) return;
   const me = drexSnapMe();
-  drexSnapDb().ref('snapshots/' + s.id + '/reactions').once('value')
+  const sid = s.id; // C227: guarda anti-carreras (no pintar reacciones rancias)
+  drexSnapDb().ref('snapshots/' + sid + '/reactions').once('value')
     .then(rsnap => {
+      const cur = drexSnapCurrent();
+      if (!cur || cur.id !== sid) return; // el usuario ya cambio de destello
       const r = rsnap.val() || {};
       bar.innerHTML = DREX_SNAP_EMOJIS.map(em => {
         const users = r[em] || {};
