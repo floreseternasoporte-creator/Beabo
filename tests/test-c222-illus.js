@@ -49,15 +49,11 @@ ok(html.includes('drex-illus-float'), 'animacion float presente');
 ok(html.includes('prefers-reduced-motion'), 'respeta reduced-motion');
 
 // 5. Ubicaciones: cada estado vacio contiene su ilustracion cerca del texto
-// (C224: el PNG también se usa en cabeceras, así que se busca CUALQUIER
-// ocurrencia cercana al texto del estado vacío, no solo la primera.)
 function near(img, text) {
-  let i = -1;
-  while ((i = html.indexOf(img, i + 1)) >= 0) {
-    const win = html.slice(Math.max(0, i - 200), i + 600);
-    if (win.includes(text)) return true;
-  }
-  return false;
+  const i = html.indexOf(img);
+  if (i < 0) return false;
+  const win = html.slice(Math.max(0, i - 200), i + 600);
+  return win.includes(text);
 }
 ok(near('drex-illus-notif.png', 'Sin actividad por ahora'), 'notif: ilustracion junto a "Sin actividad por ahora"');
 ok(near('drex-illus-chat.png', 'Sin conversaciones'), 'inbox: ilustracion junto a "Sin conversaciones"');
