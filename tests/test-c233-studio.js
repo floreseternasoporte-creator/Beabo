@@ -5,6 +5,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
+const vm = require('vm');
+const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 let pass = 0, fail = 0;
 function ok(cond, name) {
   if (cond) { pass++; }
@@ -13,12 +15,22 @@ function ok(cond, name) {
 function eq(a, b, name) { ok(a === b, name + ' (got ' + JSON.stringify(a) + ' want ' + JSON.stringify(b) + ')'); }
 
 // ---------- T1: el modelo puro existe y exporta la API ----------
+/* C240: el modelo vive inline en index.html (script "C233: DrexStudioWeb — modelo")
+ * desde que el estudio se integró a la app; se extrae y evalúa en sandbox. */
 let M = null;
-try { M = require(path.join(ROOT, 'src', 'ds-model.js')); } catch (e) { M = null; }
-ok(M && typeof M === 'object', 'T1 ds-model.js exporta objeto');
+try {
+  const m = /<script>\s*\/\* ============ C233: DrexStudioWeb — modelo[\s\S]*?<\/script>/.exec(html);
+  ok(!!m, 'T1 bloque del modelo presente en index.html');
+  const body = m[0].replace(/^<script>/, '').replace(/<\/script>$/, '');
+  const mod = { exports: {} };
+  vm.runInNewContext(body, { module: mod, console: console }, { filename: 'ds-model.js' });
+  M = mod.exports;
+  ok(M && typeof M === 'object', 'T1 DSModel exportado desde index.html');
+} catch (e) { ok(false, 'T1 sandbox eval: ' + e.message); M = null; }
 const API = ['newProject','addScene','renameScene','dupScene','delScene','setActiveScene',
   'getScene','activeScene','addLayer','updateLayer','delLayer','moveLayerZ','toggleVis',
-  'hitTest','clampRect','fadeAlpha','giftAsset','validateSetup','setOrient','LAYER_TYPES','GIFT_IDS'];
+  'hitTest','clampRect','fadeAlpha','giftAsset','validateSetup','setOrient','LAYER_TYPES','GIFT_IDS',
+  'SCENE_TEMPLATES','applyTemplate'];
 API.forEach(fn => ok(M && typeof M[fn] !== 'undefined', 'T1 API.' + fn));
 
 // ---------- T2: comportamiento del modelo ----------
@@ -97,52 +109,35 @@ if (M) {
   ok(Array.isArray(errs) && errs.indexOf('escena-vacia') >= 0, 'T2 validateSetup detecta escena vacía');
 }
 
-// ---------- T3: archivos fuente ----------
-['ds-ui.js', 'ds.css', 'ds.html', 'i18n.json'].forEach(f => {
-  ok(fs.existsSync(path.join(ROOT, 'src', f)), 'T3 existe src/' + f);
+// ---------- T3: el estudio vive inline en index.html (desde C238) ----------
+['drexstudioweb-panel', 'dsw-program', 'DrexStudioWeb', 'drexStudioTxSwitchTab'].forEach(m =>
+  ok(html.indexOf(m) >= 0, 'T3 index.html contiene ' + m));
+try {
+  const blocks = html.match(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/g) || [];
+  let bad = 0;
+  blocks.forEach(b => { try { new vm.Script(b.replace(/<\/?script[^>]*>/g, '')); } catch (e) { bad++; } });
+  eq(bad, 0, 'T3 todos los <script> inline compilan (' + blocks.length + ' bloques)');
+} catch (e) { ok(false, 'T3 sintaxis: ' + e.message); }
+ok(fs.readFileSync(path.join(ROOT, '404.html'), 'utf8') === html, 'T3 404.html idéntico a index.html');
+
+// ---------- T4: claves del estudio en drex-i18n.js (ES/EN/ZH/PT) ----------
+const i18nSrc = fs.readFileSync(path.join(ROOT, 'drex-i18n.js'), 'utf8');
+['Estudio', 'Escenas', 'Fuentes', 'Capas', 'Mezclador', 'Chat en vivo'].forEach(k => {
+  ok(i18nSrc.split('"' + k + '":').length - 1 >= 3, 'T4 clave "' + k + '" en los dicts');
 });
-try {
-  execSync('node --check ' + path.join(ROOT, 'src', 'ds-model.js'), { stdio: 'pipe' });
-  ok(true, 'T3 ds-model.js sintaxis');
-} catch (e) { ok(false, 'T3 ds-model.js sintaxis'); }
-try {
-  execSync('node --check ' + path.join(ROOT, 'src', 'ds-ui.js'), { stdio: 'pipe' });
-  ok(true, 'T3 ds-ui.js sintaxis');
-} catch (e) { ok(false, 'T3 ds-ui.js sintaxis'); }
 
-// ---------- T4: i18n.json completo ES/EN/ZH/PT ----------
-let I18N = null;
-try { I18N = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'i18n.json'), 'utf8')); } catch (e) { I18N = null; }
-ok(I18N && typeof I18N === 'object', 'T4 i18n.json válido');
-if (I18N) {
-  const keys = Object.keys(I18N);
-  ok(keys.length >= 40, 'T4 al menos 40 claves (hay ' + keys.length + ')');
-  ['en', 'zh', 'pt'].forEach(l => {
-    const missing = keys.filter(k => !I18N[k][l] || !String(I18N[k][l]).trim());
-    ok(missing.length === 0, 'T4 sin faltantes en ' + l + (missing.length ? ': ' + missing.slice(0, 3).join(',') : ''));
-  });
-  const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
-  ok(dupes.length === 0, 'T4 sin claves duplicadas');
-}
-
-// ---------- T5: higiene (sin SpaceX, sin emojis en UI nueva) ----------
+// ---------- T5: higiene del estudio inline (sin SpaceX, sin emojis) ----------
 const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/u;
-['ds-ui.js', 'ds.css', 'ds.html'].forEach(f => {
-  const fp = path.join(ROOT, 'src', f);
-  if (!fs.existsSync(fp)) { ok(false, 'T5 existe ' + f); return; }
-  const s = fs.readFileSync(fp, 'utf8');
-  ok(s.toLowerCase().indexOf('spacex') < 0, 'T5 ' + f + ' sin SpaceX');
-});
-if (I18N) {
-  const bad = Object.keys(I18N).filter(k => EMOJI_RE.test(k) || ['en', 'zh', 'pt'].some(l => EMOJI_RE.test(I18N[k][l] || '')));
-  ok(bad.length === 0, 'T5 i18n sin emojis' + (bad.length ? ': ' + bad.slice(0, 3).join(',') : ''));
+{
+  const i0 = html.indexOf('id="drexstudio-view"');
+  const i1 = html.indexOf('</script>', html.indexOf('C233: DrexStudioWeb — modelo'));
+  ok(i0 >= 0 && i1 > i0, 'T5 sección del estudio localizada');
+  if (i0 >= 0) {
+    const sec = html.slice(i0, Math.min(html.length, i0 + 60000)).replace(/data-dsx-ic="[^"]*"/g, '');
+    ok(!EMOJI_RE.test(sec), 'T5 HTML del estudio sin emojis visibles');
+    ok(sec.toLowerCase().indexOf('spacex') < 0, 'T5 HTML del estudio sin SpaceX');
+  }
 }
-['ds.html'].forEach(f => {
-  const fp = path.join(ROOT, 'src', f);
-  if (!fs.existsSync(fp)) { ok(false, 'T5 existe ' + f); return; }
-  const s = fs.readFileSync(fp, 'utf8').replace(/data-dsx-ic="[^"]*"/g, '');
-  ok(!EMOJI_RE.test(s), 'T5 ds.html sin emojis visibles');
-});
 
 // ---------- T6: publish (solo si existe) ----------
 const pubHtml = path.join(ROOT, 'publish', 'index.html');

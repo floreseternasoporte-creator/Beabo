@@ -17,8 +17,21 @@ var DrexLiveCore = null;
 try {
   DrexLiveCore = require(path.join('..', 'drexlive-core.js'));
 } catch (e) {
-  console.error('ROJO: no se pudo cargar ../drexlive-core.js: ' + (e && e.message));
-  process.exit(1);
+  /* C240: el core vive inline en index.html desde C238; se extrae el bloque
+   * y se requiere desde un archivo temporal (el bloque tiene guarda CommonJS). */
+  try {
+    var fs = require('fs');
+    var os = require('os');
+    var html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    var m = /<script>\s*\/\* drexlive-core\.js — Núcleo DrexLive \(C232\)\.[\s\S]*?<\/script>/.exec(html);
+    if (!m) throw new Error('bloque drexlive-core no encontrado en index.html');
+    var tmp = path.join(os.tmpdir(), 'drexlive-core-extract.js');
+    fs.writeFileSync(tmp, m[0].replace(/^<script>/, '').replace(/<\/script>$/, ''));
+    DrexLiveCore = require(tmp);
+  } catch (e2) {
+    console.error('ROJO: no se pudo cargar el core (ni archivo ni inline): ' + (e2 && e2.message));
+    process.exit(1);
+  }
 }
 if (typeof DrexLiveCore !== 'function') {
   console.error('ROJO: drexlive-core.js no exporta una factory DrexLiveCore (function).');
@@ -456,9 +469,9 @@ async function main() {
   assert(true, 'chat largo saneado a máx 200 caracteres');
 
   console.log('\n[5] gift');
-  await viewer.sendGift('rosa');
-  await waitFor(function () { return has(hostEvts, 'gifts', function (d) { return d.giftId === 'rosa'; }); }, 3000, 'gift en host');
-  var giftEvt = hostEvts.filter(function (x) { return x.e === 'gifts' && x.d.giftId === 'rosa'; })[0].d;
+  await viewer.sendGift('chispa');
+  await waitFor(function () { return has(hostEvts, 'gifts', function (d) { return d.giftId === 'chispa'; }); }, 3000, 'gift en host');
+  var giftEvt = hostEvts.filter(function (x) { return x.e === 'gifts' && x.d.giftId === 'chispa'; })[0].d;
   assert(giftEvt.uid === 'viewer1' && giftEvt.name === 'Espectador' && typeof giftEvt.ts === 'number', "gifts → {uid, name, giftId, ts}");
 
   console.log('\n[6] likes (transaction)');

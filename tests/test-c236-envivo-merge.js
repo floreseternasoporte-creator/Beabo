@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-const DIR = '/home/hatch/workspace/c236';
+const DIR = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
 const i18n = fs.readFileSync(path.join(DIR, 'drex-i18n.js'), 'utf8');
 const html404 = fs.readFileSync(path.join(DIR, '404.html'), 'utf8');
