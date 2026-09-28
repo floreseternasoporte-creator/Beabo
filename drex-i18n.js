@@ -2304,6 +2304,7 @@ var APP_ENGLISH_TEXT = {
 ,"Sin resultados para \"{q}\".":'No results for "{q}".'
 ,"Sin resultados para tu búsqueda.":'No results for your search.'
 ,"Aún no hay canciones. ¡Sube la primera!":'No songs yet. Upload the first one!'
+,"El código venció. Inicia sesión de nuevo.": "The code expired. Sign in again.","Verificación cancelada.": "Verification cancelled.","Tu sesión venció. Inicia sesión de nuevo.": "Your session expired. Sign in again.","Sin conexión. Revisa tu red e inténtalo de nuevo.": "No connection. Check your network and try again.","No tienes permiso para hacer esto.": "You do not have permission to do this.","El servidor está ocupado. Inténtalo de nuevo en unos segundos.": "The server is busy. Try again in a few seconds."
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4606,6 +4607,7 @@ var APP_CHINESE_TEXT = {
 ,"Sin resultados para \"{q}\".":'没有与"{q}"相关的结果。'
 ,"Sin resultados para tu búsqueda.":'没有与你的搜索相关的结果。'
 ,"Aún no hay canciones. ¡Sube la primera!":'还没有歌曲。上传第一首吧！'
+,"El código venció. Inicia sesión de nuevo.": "验证码已过期，请重新登录。","Verificación cancelada.": "验证已取消。","Tu sesión venció. Inicia sesión de nuevo.": "会话已过期，请重新登录。","Sin conexión. Revisa tu red e inténtalo de nuevo.": "无网络连接，请检查网络后重试。","No tienes permiso para hacer esto.": "你没有权限执行此操作。","El servidor está ocupado. Inténtalo de nuevo en unos segundos.": "服务器繁忙，请几秒后再试。"
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6899,6 +6901,7 @@ var APP_PORTUGUESE_TEXT = {
 ,"Sin resultados para \"{q}\".":'Sem resultados para "{q}".'
 ,"Sin resultados para tu búsqueda.":'Sem resultados para sua busca.'
 ,"Aún no hay canciones. ¡Sube la primera!":'Ainda não há músicas. Envie a primeira!'
+,"El código venció. Inicia sesión de nuevo.": "O código expirou. Entre novamente.","Verificación cancelada.": "Verificação cancelada.","Tu sesión venció. Inicia sesión de nuevo.": "Sua sessão expirou. Entre novamente.","Sin conexión. Revisa tu red e inténtalo de nuevo.": "Sem conexão. Verifique sua rede e tente novamente.","No tienes permiso para hacer esto.": "Você não tem permissão para fazer isso.","El servidor está ocupado. Inténtalo de nuevo en unos segundos.": "O servidor está ocupado. Tente novamente em alguns segundos."
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
