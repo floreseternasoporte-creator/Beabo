@@ -24,8 +24,8 @@ const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F
 // ---------- T1: hook de dibujo compartido en tick() ----------
 const HOOK_LINE = 'if (window.__dswDrawHooks) { for (var __hi = 0; __hi < window.__dswDrawHooks.length; __hi++) { try { window.__dswDrawHooks[__hi](ctx, W, H, ts); } catch (__he) {} } }';
 eq(html.split(HOOK_LINE).length - 1, 1, 'T1 hook __dswDrawHooks exacto 1 vez');
-ok(/drawAlerts\(ctx, W, H, ts\);\n(?:.*\n)?  if \(window\.__dswDrawHooks\)/.test(html),
-  'T1 hook va justo después de drawAlerts en tick()');
+ok(/drawAlerts\(ctx, W, H, ts\);\n(?:.*\n){0,4}  if \(window\.__dswDrawHooks\)/.test(html),
+  'T1 hook va justo después de drawAlerts en tick() (C240: admite sync de iframes web entre medias)');
 ok(/  if \(window\.__dswDrawHooks\)[^\n]*\n  updateSelBox\(\);/.test(html),
   'T1 hook va antes de updateSelBox()');
 
@@ -121,7 +121,7 @@ if (sandbox && sandbox.window.__dswov) {
   D.boot();
   ok(S.inited === true, 'T5 boot marca inited');
   const hooks = sandbox.window.__dswDrawHooks;
-  ok(Array.isArray(hooks) && hooks.length === 7, 'T5 7 hooks registrados (sondeo + 6 widgets)');
+  ok(Array.isArray(hooks) && hooks.length === 9, 'T5 9 hooks registrados (sondeo + 6 widgets + marco y cuenta de inicio C240)');
   ['poll', 'alerts', 'goal', 'timer', 'lower', 'chat', 'ticker'].forEach(k => {
     ok(hooks.indexOf(D.hooks[k]) >= 0, 'T5 hook registrado: ' + k);
   });
