@@ -4446,15 +4446,15 @@ background:var(--dsw-bg);color:var(--dsw-txt);border-radius:16px;overflow:hidden
   /* Vistas de pantalla completa y modales -> columna centrada con sombra.
      EXCEPCIONES (pantalla completa deliberada): solo los visores de
      foto/video, que deben cubrir todo el viewport. */
-  body div.fixed.inset-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view),
-  body div.fixed.left-0.right-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view) {
+  body div.fixed.inset-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view):not(#drexstudio-view),
+  body div.fixed.left-0.right-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view):not(#drexstudio-view) {
     max-width: var(--drex-col);
     margin-left: auto;
     margin-right: auto;
     box-shadow: 0 0 60px rgba(15, 35, 70, .10);
   }
-  body.theme-dark div.fixed.inset-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view),
-  body.theme-dark div.fixed.left-0.right-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view) {
+  body.theme-dark div.fixed.inset-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view):not(#drexstudio-view),
+  body.theme-dark div.fixed.left-0.right-0:not(#chat-photo-carousel):not(#image-modal):not(#video-modal):not(#cover-fullscreen-view):not(#drexstudio-view) {
     box-shadow: 0 0 60px rgba(0, 0, 0, .45);
   }
 
@@ -45238,8 +45238,7 @@ body.theme-dark #continueWithPhone:hover {
     <p class="ds-tx-note" data-dsx-t="Se abrirá la vista previa del en vivo para confirmar antes de salir al aire.">Se abrirá la vista previa del en vivo para confirmar antes de salir al aire.</p>
   </div>
 </div>
-</div>
-<div id="drexstudio-pane-estudio" class="hidden">
+<div id="drexstudio-pane-estudio" class="hidden px-3 py-4 sm:px-5">
   <div id="drexstudioweb-panel" class="dsw">
     <div class="dsw-topbar">
       <div class="dsw-brand">
@@ -45521,6 +45520,7 @@ body.theme-dark #continueWithPhone:hover {
     <input type="file" id="dsw-file-video" accept="video/*" class="hidden">
     <input type="file" id="dsw-file-image" accept="image/*" class="hidden">
   </div>
+</div>
 </div>
 
 <script>
@@ -80921,21 +80921,7 @@ try {
 
 </script>
 
-<!--
-  === MECANISMO DE ACTUALIZACIÓN C220 (2026-09-27) ===
-  Por qué el usuario veía código viejo aunque Pages servía el nuevo (cadena de staleness):
-    1) GitHub Pages manda Cache-Control: max-age=600 en index.html → el navegador
-       reutiliza el HTML viejo hasta 10 minutos sin pedirlo de nuevo.
-    2) El service worker (sw.js) era network-first con timeout de 10s: en red lenta
-       servía en silencio la copia vieja en caché.
-    3) iOS restaura la pestaña desde memoria (bfcache) sin hacer ningún fetch.
-  Solución: version.json (el SW lo excluye de la caché: solo red, nunca se guarda
-  ni se sirve de caché) se compara contra el build embebido (window.DREX_BUILD).
-  Si difieren, se muestra el banner "Hay una nueva versión de Drex". Al tocar
-  "Actualizar": se borran las cachés drex-* (best-effort) y se recarga con
-  ?drexb=<build> — el query rompe la caché HTTP y la del SW (el router SPA
-  preserva location.search, así que no se pierde la vista).
--->
+
 <!-- ============ C232: salas de EN VIVO (overlays) ============ -->
 <style>
 .drex-live-tabs{background:rgba(13,16,40,.55);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
@@ -81451,51 +81437,7 @@ button.drex-live-pill{cursor:pointer}
 </div>
 <style>@keyframes drex-live-spin{to{transform:rotate(360deg)}}</style>
 
-<script>window.DREX_BUILD='202609272347';</script>
-<div id="drex-update-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#171a2e;color:#f4f5ff;font-size:14px;line-height:1.4;padding:10px 14px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.35);border-bottom:1px solid rgba(255,255,255,.14);font-family:system-ui,-apple-system,'Segoe UI',sans-serif" role="status" aria-live="polite">
-  <span id="drex-update-banner-text"></span><button id="drex-update-banner-btn" type="button" style="margin-left:12px;background:#5b5ee8;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap"></button>
-</div>
-<script>
-(function(){
-  // t() usa el i18n de la app si ya está cargado; si no, el texto en español.
-  var t = function(s){ return (typeof appT==='function') ? appT(s) : s; };
-  var banner = document.getElementById('drex-update-banner');
-  document.getElementById('drex-update-banner-text').textContent = t('Hay una nueva versión de Drex');
-  var btn = document.getElementById('drex-update-banner-btn');
-  btn.textContent = t('Actualizar');
-  var latestBuild = null;
-  var lastCheck = 0;
-  function checkUpdate(force){
-    var now = Date.now();
-    if (!force && now - lastCheck < 5*60*1000) return; // throttle ≥5 min
-    lastCheck = now;
-    if (!window.DREX_BUILD) return;
-    fetch('./version.json', {cache:'no-store'}).then(function(r){
-      if (!r || !r.ok) return null;
-      return r.json().catch(function(){ return null; });
-    }).then(function(j){
-      if (!j || typeof j.build !== 'string' || !j.build) return;
-      if (j.build !== window.DREX_BUILD){
-        latestBuild = j.build;
-        banner.style.display = 'block';
-      }
-    }).catch(function(){}); // errores de red = silencio, sin falsos positivos
-  }
-  btn.addEventListener('click', function(){
-    try {
-      caches.keys().then(function(keys){
-        return Promise.all(keys.filter(function(k){ return k.indexOf('drex-')===0; })
-          .map(function(k){ return caches.delete(k).catch(function(){ return false; }); }));
-      }).catch(function(){});
-    } catch(e){} // best-effort: no bloquear la recarga si caches no existe
-    var b = latestBuild || window.DREX_BUILD;
-    location.href = location.pathname + '?drexb=' + encodeURIComponent(b) + location.hash;
-  });
-  checkUpdate(true); // al boot
-  window.addEventListener('pageshow', function(e){ if (e && e.persisted) checkUpdate(true); }); // bfcache iOS
-  document.addEventListener('visibilitychange', function(){ if (!document.hidden) checkUpdate(false); }); // vuelve a la pestaña
-})();
-</script>
+
 
 
 <script>
