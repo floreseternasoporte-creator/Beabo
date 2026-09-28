@@ -390,7 +390,7 @@ var APP_ENGLISH_TEXT = {
 "Reglas de nuestra comunidad":"Our community rules",
 "Reiniciar contador de hoy":"Reset today's counter",
 "Reportar":"Report",
-"Ecos":'Echoes',
+"Ecos":"Echoes",
 "Responder":"Reply",
 "Restringe quién envía mensajes":"Restrict who sends messages",
 "Revisa quién quiere seguirte":"Check who wants to follow you",
@@ -443,29 +443,29 @@ var APP_ENGLISH_TEXT = {
 "Traducir publicaciones en otros idiomas":"Translate posts in other languages",
 "Tu cuenta":"Your account",
 "Tu cuenta ha sido creada con éxito.":"Your account has been created successfully.",
-"Tu foto de perfil":'Your profile photo',
-"Tu nombre de usuario":'Your username',
-"Tu nombre real. Será visible en tu perfil.":'Your real name. It will be visible on your profile.',
-"Tu perfil está configurado.":'Your profile is set up.',
-"Tus decisiones se guardan en este dispositivo":'Your decisions are saved on this device',
-"Tus notas y pensamientos publicados en la comunidad":'Your notes and thoughts posted in the community',
+"Tu foto de perfil":"Your profile photo",
+"Tu nombre de usuario":"Your username",
+"Tu nombre real. Será visible en tu perfil.":"Your real name. It will be visible on your profile.",
+"Tu perfil está configurado.":"Your profile is set up.",
+"Tus decisiones se guardan en este dispositivo":"Your decisions are saved on this device",
+"Tus notas y pensamientos publicados en la comunidad":"Your notes and thoughts posted in the community",
 "Términos de Servicio":"Terms of service",
 "Términos de servicio":"Terms of service",
-"Tú":'You',
+"Tú":"You",
 "Ubicación no especificada":"Location not specified",
 "Ubicación aproximada":"Approximate location",
-"Un par de pasos más para empezar.":'Just a couple more steps to get started.',
-"Usuario":'User',
-"Vaciar chat del grupo":'Clear group chat',
-"Ver historial":'View history',
+"Un par de pasos más para empezar.":"Just a couple more steps to get started.",
+"Usuario":"User",
+"Vaciar chat del grupo":"Clear group chat",
+"Ver historial":"View history",
 "Ver perfil":"View profile",
-"Ver sus publicaciones en tu feed":'See their posts in your feed',
+"Ver sus publicaciones en tu feed":"See their posts in your feed",
 "Ver tu actividad diaria":"See your daily activity",
-"Ver y desbloquear cuentas":'View and unblock accounts',
-"Verifica tu correo":'Verify your email',
-"Verificación en dos pasos":'Two-step verification',
+"Ver y desbloquear cuentas":"View and unblock accounts",
+"Verifica tu correo":"Verify your email",
+"Verificación en dos pasos":"Two-step verification",
 "Verificando disponibilidad…":"Checking availability…",
-"Verificando...":'Verifying...',
+"Verificando...":"Verifying...",
 "Verificar":"Verify",
 "Escribe el código de 6 dígitos que enviamos a:":"Enter the 6-digit code we sent to:",
 "Escribe el código de 6 dígitos que recibiste por correo.":"Enter the 6-digit code you received by email.",
@@ -473,38 +473,38 @@ var APP_ENGLISH_TEXT = {
 "✓ Código reenviado. Revisa tu bandeja de entrada.":"✓ Code resent. Check your inbox.",
 "Video":"Video",
 "Vincula tu cuenta con un adulto o supervisa la de alguien más":"Link your account with an adult or supervise someone else's",
-"Vincular a alguien más":'Link someone else',
+"Vincular a alguien más":"Link someone else",
 "Vista previa":"Preview",
-"Vista previa · se aplica solo a este chat":'Preview · applies only to this chat',
+"Vista previa · se aplica solo a este chat":"Preview · applies only to this chat",
 "Volver":"Back",
-"Volver al inicio de sesión":'Back to sign in',
-"mensaje...":'message...',
-"o continúa con":'or continue with',
-"seguidores":'followers',
-"siguiendo":'following',
-"¡Bienvenido a Drex!":'Welcome to Drex!',
-"¡Todo listo!":'All set!',
-"¿Cuándo naciste?":'When were you born?',
+"Volver al inicio de sesión":"Back to sign in",
+"mensaje...":"message...",
+"o continúa con":"or continue with",
+"seguidores":"followers",
+"siguiendo":"following",
+"¡Bienvenido a Drex!":"Welcome to Drex!",
+"¡Todo listo!":"All set!",
+"¿Cuándo naciste?":"When were you born?",
 "¿Cómo te llamas?":"What's your name?",
-"¿Estás seguro de que quieres desactivar tu cuenta?":'Are you sure you want to deactivate your account?',
-"¿Olvidaste tu contraseña?":'Forgot your password?',
-"¿Por qué quieres irte de la plataforma?":'Why do you want to leave the platform?',
-"¿Qué te interesa?":'What are you interested in?',
-"Él":'He',
-"Últimos 7 días":'Last 7 days',
-"• Después de 30 días, no habrá forma de recuperar tu información.":'• After 30 days, there will be no way to recover your information.',
-"• Privacidad total: Tu perfil y todo el contenido publicado dejarán de estar visibles para la comunidad de inmediato.":'• Total privacy: Your profile and all published content will immediately stop being visible to the community.',
-"• Puedes reactivarla en cualquier momento simplemente iniciando sesión de nuevo.":'• You can reactivate it at any time simply by signing in again.',
+"¿Estás seguro de que quieres desactivar tu cuenta?":"Are you sure you want to deactivate your account?",
+"¿Olvidaste tu contraseña?":"Forgot your password?",
+"¿Por qué quieres irte de la plataforma?":"Why do you want to leave the platform?",
+"¿Qué te interesa?":"What are you interested in?",
+"Él":"He",
+"Últimos 7 días":"Last 7 days",
+"• Después de 30 días, no habrá forma de recuperar tu información.":"• After 30 days, there will be no way to recover your information.",
+"• Privacidad total: Tu perfil y todo el contenido publicado dejarán de estar visibles para la comunidad de inmediato.":"• Total privacy: Your profile and all published content will immediately stop being visible to the community.",
+"• Puedes reactivarla en cualquier momento simplemente iniciando sesión de nuevo.":"• You can reactivate it at any time simply by signing in again.",
 "• Respaldo de seguridad: Drex mantendrá tus datos y preferencias protegidos en nuestros servidores para que no pierdas nada durante tu ausencia.":"• Safety backup: Drex will keep your data and preferences protected on our servers so you don't lose anything while you're away.",
-"• Tienes 30 días para cambiar de opinión; si inicias sesión antes de ese tiempo, la solicitud se cancelará automáticamente.":'• You have 30 days to change your mind; if you sign in before then, the request will be cancelled automatically.',
+"• Tienes 30 días para cambiar de opinión; si inicias sesión antes de ese tiempo, la solicitud se cancelará automáticamente.":"• You have 30 days to change your mind; if you sign in before then, the request will be cancelled automatically.",
 "• Todas tus publicaciones y fotos se borrarán.":"• All your posts and photos will be deleted.",
-"• Tu información se guardará de forma segura.":'• Your information will be stored securely.',
-"• Tu perfil desaparecerá para siempre.":'• Your profile will disappear forever.',
-"• Tu perfil y tus publicaciones quedarán ocultos para todos los usuarios.":'• Your profile and your posts will be hidden from all users.',
+"• Tu información se guardará de forma segura.":"• Your information will be stored securely.",
+"• Tu perfil desaparecerá para siempre.":"• Your profile will disappear forever.",
+"• Tu perfil y tus publicaciones quedarán ocultos para todos los usuarios.":"• Your profile and your posts will be hidden from all users.",
 "• Tu perfil y fotos se borrarán para siempre.":"• Your profile and photos will be deleted forever.",
-"💻 Tecnología":'💻 Technology',
-"📚 Educación":'📚 Education',
-"🔥 Símbolos":'🔥 Symbols',
+"💻 Tecnología":"💻 Technology",
+"📚 Educación":"📚 Education",
+"🔥 Símbolos":"🔥 Symbols",
 "Practicar idiomas":"Practice languages",
 "Configura tus idiomas para practicar y corregir como nativo.":"Set up your languages to practice and correct as a native speaker.",
 "Configurar idiomas":"Set up languages",
@@ -2247,9 +2247,9 @@ var APP_ENGLISH_TEXT = {
 
 ,"Actualizar":'Update'
 ,"Tu actividad de los últimos 7 días":'Your activity from the last 7 days'
-,"No se pudo cargar tu Pulso. Revisa tu conexión.":"Couldn't load your Pulso. Check your connection."
+,"No se pudo cargar tu Pulso. Revisa tu conexión.":'Couldn\'t load your Pulso. Check your connection.'
 ,"Todavía no hay Pulso":'No Pulso yet'
-,"Publica tu primer post y aquí verás cómo resuena.":"Publish your first post and you'll see how it resonates here."
+,"Publica tu primer post y aquí verás cómo resuena.":'Publish your first post and you\'ll see how it resonates here.'
 ,"Posts publicados por día":'Posts published per day'
 ,"Votos recibidos":'Votes received'
 ,"Ecos recibidos":'Echoes received'
@@ -2263,7 +2263,7 @@ var APP_ENGLISH_TEXT = {
 ,"se quedaron 5+ segundos":'stayed 5+ seconds'
 ,"Alcance por onda":'Reach per wave'
 ,"Escribe algo o crea una votación para programarlo.":'Write something or create a poll to schedule it.'
-,"La programación aún no admite fotos ni videos. Publica normal o quita los adjuntos.":"Scheduling doesn't support photos or videos yet. Post normally or remove the attachments."
+,"La programación aún no admite fotos ni videos. Publica normal o quita los adjuntos.":'Scheduling doesn\'t support photos or videos yet. Post normally or remove the attachments.'
 ,"Por favor escribe algo, agrega una foto, video o GIF, o crea una votación":'Please write something, add a photo, video or GIF, or create a poll'
 ,"Toca otra opción para cambiar tu voto":'Tap another option to change your vote'
 ,"Voto actualizado":'Vote updated'
@@ -2276,16 +2276,16 @@ var APP_ENGLISH_TEXT = {
 ,"Voto positivo":'Upvote'
 ,"Canciones que votaste":'Songs you voted for'
 ,"Fecha desconocida":'Unknown date'
-,"No se pudieron cargar más seguidores.":"Couldn't load more followers."
-,"No se pudieron cargar más seguidos.":"Couldn't load more accounts you follow."
+,"No se pudieron cargar más seguidores.":'Couldn\'t load more followers.'
+,"No se pudieron cargar más seguidos.":'Couldn\'t load more accounts you follow.'
 ,"En revisión":'In review'
 ,"Rechazado":'Rejected'
 ,"Publicado":'Published'
-,"Este efecto aún no está publicado.":"This effect isn't published yet."
+,"Este efecto aún no está publicado.":'This effect isn\'t published yet.'
 ,"Sin vista previa disponible.":'No preview available.'
 ,"Motivo (opcional)":'Reason (optional)'
 ,"Aprobar":'Approve'
-,"Pulso":'Pulso'
+,"Pulso":'Pulso',"No se pudo iniciar el juego. Revisa tu conexión.":'Couldn\'t start the game. Check your connection.'
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4569,7 +4569,7 @@ var APP_CHINESE_TEXT = {
 ,"Sin vista previa disponible.":'无可用预览。'
 ,"Motivo (opcional)":'原因（可选）'
 ,"Aprobar":'批准'
-,"Pulso":'Pulso'
+,"Pulso":'Pulso',"No se pudo iniciar el juego. Revisa tu conexión.":'无法开始游戏。请检查你的网络连接。'
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6844,7 +6844,7 @@ var APP_PORTUGUESE_TEXT = {
 ,"Sin vista previa disponible.":'Sem pré-visualização disponível.'
 ,"Motivo (opcional)":'Motivo (opcional)'
 ,"Aprobar":'Aprovar'
-,"Pulso":'Pulso'
+,"Pulso":'Pulso',"No se pudo iniciar el juego. Revisa tu conexión.":'Não foi possível iniciar o jogo. Verifique sua conexão.'
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
@@ -7435,5 +7435,5 @@ var APP_PORTUGUESE_ATTRS = {
 "+1 (555) 123-4567": "+1 (555) 123-4567",
 "Cerrar reporte": "Fechar denúncia",
 "Analizando": "Analisando",
-"Letra de la canción (opcional)": "Letra da música (opcional)",
+"Letra de la canción (opcional)": "Letra da música (opcional)"
 };

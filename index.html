@@ -8209,6 +8209,8 @@ var fiestaGameMySecret = null;    // {w, liar} de mi uid
 var fiestaGameSecretEpoch = null; // C69-F1: startedAt de la partida a la que pertenece fiestaGameMySecret
 var fiestaGameMyVote = null;      // C21: mi voto de la ronda (los votos viven en secretos)
 var fiestaGameHostBusy = false;   // C21: evita doble tally por ticks solapados
+var fiestaGameStarting = false;      // C229-F1: evita doble inicio (doble tap en "Jugar")
+var fiestaGameSecretFetching = false; // C229-F2: cadena de reintentos de lectura de secreto en curso
 var fiestaGameHiddenLocal = false;
 var fiestaGameTickInt = null;     // intervalo de cuenta atrás (cliente)
 var fiestaGameHostInt = null;     // intervalo maestro (solo dueño)
@@ -8352,6 +8354,7 @@ function fiestaGameStart() {
 function fiestaGameStartNow() {
   if (!fiestaCur || !fiestaCur.id || typeof DrexCloud === 'undefined') return;
   if (!fiestaAmHost) { showMiniToast(appT('Solo el dueño puede iniciar')); return; }
+  if (fiestaGameStarting) return; // C229-F1: doble tap en "Jugar" no publica dos partidas
   var uids = Object.keys(fiestaMembers || {});
   if (uids.length < 4) { showMiniToast(appT('Se necesitan al menos 4 jugadores para jugar.')); return; }
   uids = uids.slice(0, 12);
@@ -8362,29 +8365,53 @@ function fiestaGameStartNow() {
   var liarCount = uids.length >= 8 ? 2 : 1;
   var liars = uids.slice(0, liarCount);
   var pair = fiestaGamePickPair();
-  var now = Date.now();
   var db = DrexCloud.database();
   var sid = fiestaCur.id;
-  uids.forEach(function (u) {
-    var isLiar = liars.indexOf(u) !== -1;
-    db.ref('fiestaGameSecrets/' + sid + '/' + u).set({ w: isLiar ? pair[1] : pair[0], liar: isLiar });
+  fiestaGameStarting = true;
+  // C229-F1: los secretos se escriben PRIMERO y el doc del juego se publica
+  // solo cuando TODOS quedaron confirmados en el servidor (Ref.set resuelve
+  // al vaciarse el Outbox, es decir, con ack real). Antes el doc 'deal' se
+  // publicaba de inmediato y un invitado podía leer su secreto antes de que
+  // existiera (null -> sin palabra hasta que el doc avanzara de fase). Si
+  // algún secreto falla, no se publica nada y se avisa para reintentar.
+  var secretWrites;
+  try {
+    secretWrites = uids.map(function (u) {
+      var isLiar = liars.indexOf(u) !== -1;
+      return db.ref('fiestaGameSecrets/' + sid + '/' + u).set({ w: isLiar ? pair[1] : pair[0], liar: isLiar });
+    });
+  } catch (e) {
+    fiestaGameStarting = false;
+    showMiniToast(appT('No se pudo iniciar el juego. Revisa tu conexión.'));
+    return;
+  }
+  Promise.all(secretWrites).then(function () {
+    // C229-F1: el timestamp se toma AL PUBLICAR, no antes de los writes, para
+    // que la ventana de reparto (7 s) no se achique con la latencia de red.
+    var now = Date.now();
+    fiestaGameMySecret = null;
+    fiestaGameSecretEpoch = null; // C69-F1: la partida nueva invalida el secreto viejo
+    // C21: liars/pair/votes YA NO se publican en el doc compartido (todos los
+    // miembros lo reciben; era filtración total del juego). El dueño deriva
+    // mentirosos y palabras leyendo fiestaGameSecrets/<sid>/<uid> (el tally ya
+    // asumía esa lectura). Los votos van al subárbol de secretos.
+    return db.ref('fiestas/' + sid + '/game').set({
+      status: 'deal', players: uids, out: [],
+      round: 1, turnIndex: 0, voteCount: 0,
+      dealEndsAt: now + 7000, startedAt: now
+    });
+  }).then(function () {
+    fiestaGameStarting = false;
+    try { db.ref('fiestaGameSecrets/' + sid + '/votes').remove(); } catch (_) {}
+    fiestaGameHiddenLocal = false;
+    try { fiestaCloseGamesSheet(); } catch (_) {}
+    try { fiestaGameStartHostLoop(); } catch (_) {}
+    try { showMiniToast(appT('El juego comenzó')); } catch (_) {}
+  }, function () {
+    // C229-F1: sin secretos confirmados no hay partida; el dueño reintenta.
+    fiestaGameStarting = false;
+    showMiniToast(appT('No se pudo iniciar el juego. Revisa tu conexión.'));
   });
-  fiestaGameMySecret = null;
-  fiestaGameSecretEpoch = null; // C69-F1: la partida nueva invalida el secreto viejo
-  // C21: liars/pair/votes YA NO se publican en el doc compartido (todos los
-  // miembros lo reciben; era filtración total del juego). El dueño deriva
-  // mentirosos y palabras leyendo fiestaGameSecrets/<sid>/<uid> (el tally ya
-  // asumía esa lectura). Los votos van al subárbol de secretos.
-  db.ref('fiestas/' + sid + '/game').set({
-    status: 'deal', players: uids, out: [],
-    round: 1, turnIndex: 0, voteCount: 0,
-    dealEndsAt: now + 7000, startedAt: now
-  });
-  try { db.ref('fiestaGameSecrets/' + sid + '/votes').remove(); } catch (_) {}
-  fiestaGameHiddenLocal = false;
-  fiestaCloseGamesSheet();
-  fiestaGameStartHostLoop();
-  showMiniToast(appT('El juego comenzó'));
 }
 function fiestaGameEndForAll() {
   if (!fiestaAmHost || !fiestaCur || !fiestaCur.id) return;
@@ -8407,6 +8434,7 @@ function fiestaGameRemoteUpdate(game) {
   if (_secretEpoch !== fiestaGameSecretEpoch) {
     fiestaGameSecretEpoch = _secretEpoch;
     fiestaGameMySecret = null;
+    fiestaGameSecretFetching = false; // C229-F2: la partida nueva reintenta su propio secreto
   }
   // C21: al salir de la fase de votación se olvida mi voto local y se libera
   // el guarda anti-doble-tally del dueño.
@@ -8428,16 +8456,38 @@ function fiestaGameRemoteUpdate(game) {
       fiestaAmHost && !fiestaGameHostInt) {
     fiestaGameStartHostLoop();
   }
-  if (!fiestaGameMySecret && fiestaCur && fiestaCur.id && fiestaMyUid &&
+  if (!fiestaGameMySecret && !fiestaGameSecretFetching && fiestaCur && fiestaCur.id && fiestaMyUid &&
       (fiestaGame.players || []).indexOf(fiestaMyUid) !== -1) {
-    DrexCloud.database().ref('fiestaGameSecrets/' + fiestaCur.id + '/' + fiestaMyUid).once('value')
-      .then(function (snap) {
-        var v = snap.val();
-        if (v && v.w) { fiestaGameMySecret = v; fiestaGameRender(); }
-      }).catch(function () {});
+    fiestaGameFetchSecret(fiestaCur.id, fiestaMyUid, _secretEpoch, 0);
   }
   if (fiestaGameHiddenLocal) { fiestaGameShowFab(true); return; }
   fiestaGameShow();
+}
+/* C229-F2: el secreto puede tardar en estar legible (latencia/replicación):
+   si la lectura llega vacía se reintenta con backoff acotado en vez de
+   esperar al próximo cambio del doc (que podía dejar al jugador hasta ~30 s
+   sin palabra). El epoch evita que un reintento tardío pise el secreto de
+   una partida posterior ("Jugar de nuevo" en camino). */
+function fiestaGameFetchSecret(sid, uid, epoch, attempt) {
+  if (!sid || !uid || typeof DrexCloud === 'undefined') return;
+  if ((attempt || 0) === 0) fiestaGameSecretFetching = true;
+  DrexCloud.database().ref('fiestaGameSecrets/' + sid + '/' + uid).once('value')
+    .then(function (snap) {
+      var v = snap.val();
+      if (fiestaGameSecretEpoch !== epoch) { fiestaGameSecretFetching = false; return; }
+      if (v && v.w) {
+        fiestaGameMySecret = v;
+        fiestaGameSecretFetching = false;
+        fiestaGameRender();
+        return;
+      }
+      if ((attempt || 0) < 4 && fiestaGame && fiestaGame.status !== 'final' &&
+          (fiestaGame.players || []).indexOf(uid) !== -1 && !fiestaGameMySecret) {
+        setTimeout(function () { fiestaGameFetchSecret(sid, uid, epoch, (attempt || 0) + 1); }, 2000);
+      } else {
+        fiestaGameSecretFetching = false;
+      }
+    }).catch(function () { fiestaGameSecretFetching = false; });
 }
 function fiestaGameShow() {
   fiestaGameHiddenLocal = false;
@@ -8474,6 +8524,7 @@ function fiestaGameCleanup() {
   fiestaGame = null;
   fiestaGameMySecret = null;
   fiestaGameSecretEpoch = null; // C69-F1
+  fiestaGameSecretFetching = false; // C229-F2
   fiestaGameHiddenLocal = false;
   _fiestaGameStaleNotified = false; // C48-F1
   var v = document.getElementById('fiesta-game-view');
@@ -8500,7 +8551,12 @@ function fiestaGameHostTick() {
       ref.update({ status: 'describe', turnIndex: fiestaGameFirstActive(g.out), turnEndsAt: now + 30000 });
     }
   } else if (g.status === 'describe') {
-    if (now >= (g.turnEndsAt || 0)) fiestaGameHostNextTurn(ref, g);
+    // C229-F3: si el hablante actual salió de la sala (o fue eliminado), no
+    // dejar hasta 30 s de aire muerto: avanzar el turno de inmediato.
+    var _spk = (g.players || [])[g.turnIndex || 0];
+    var _spkGone = !_spk || (g.out || []).indexOf(_spk) !== -1 ||
+      (typeof fiestaMembers !== 'undefined' && fiestaMembers && !fiestaMembers[_spk]);
+    if (_spkGone || now >= (g.turnEndsAt || 0)) fiestaGameHostNextTurn(ref, g);
   } else if (g.status === 'vote') {
     // C21: los votos viven en fiestaGameSecrets/<sid>/votes/<uid> (ocultos a
     // los jugadores). El dueño los cuenta y espeja SOLO el conteo al doc.
