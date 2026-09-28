@@ -2285,7 +2285,25 @@ var APP_ENGLISH_TEXT = {
 ,"Sin vista previa disponible.":'No preview available.'
 ,"Motivo (opcional)":'Reason (optional)'
 ,"Aprobar":'Approve'
-,"Pulso":'Pulso',"No se pudo iniciar el juego. Revisa tu conexión.":'Couldn\'t start the game. Check your connection.',"El código venció. Inicia sesión de nuevo.":'The code expired. Sign in again.',"Verificación cancelada.":'Verification cancelled.',"Tu sesión venció. Inicia sesión de nuevo.":'Your session expired. Sign in again.',"Sin conexión. Revisa tu red e inténtalo de nuevo.":'No connection. Check your network and try again.',"No tienes permiso para hacer esto.":'You do not have permission to do this.',"El servidor está ocupado. Inténtalo de nuevo en unos segundos.":'The server is busy. Try again in a few seconds.'
+,"Pulso":'Pulso',"No se pudo iniciar el juego. Revisa tu conexión.":'Couldn\'t start the game. Check your connection.'
+
+,"Buscando...":'Searching...'
+,"Imagen no disponible":'Image unavailable'
+,"Busca a alguien para enviarle esto.":'Find someone to send this to.'
+,"No encontramos usuarios.":'No users found.'
+,"Sin resultados":'No results'
+,"Reintentando…":'Retrying…'
+,"Buscando contactos frecuentes...":'Looking for frequent contacts...'
+,"Ondas":'Ondas'
+,"Activando…":'Activating…'
+,"Cargando ecos...":'Loading echoes...'
+,"Cargando comentarios...":'Loading comments...'
+,"Mensaje visto · eliminado":'Message seen · deleted'
+,"Cargando publicaciones...":'Loading posts...'
+,"Cargando canciones…":'Loading songs…'
+,"Sin resultados para \"{q}\".":'No results for "{q}".'
+,"Sin resultados para tu búsqueda.":'No results for your search.'
+,"Aún no hay canciones. ¡Sube la primera!":'No songs yet. Upload the first one!'
 };
 var APP_CHINESE_TEXT = {
 "Archivo no disponible":"文件不可用",
@@ -4569,7 +4587,25 @@ var APP_CHINESE_TEXT = {
 ,"Sin vista previa disponible.":'无可用预览。'
 ,"Motivo (opcional)":'原因（可选）'
 ,"Aprobar":'批准'
-,"Pulso":'Pulso',"No se pudo iniciar el juego. Revisa tu conexión.":'无法开始游戏。请检查你的网络连接。',"El código venció. Inicia sesión de nuevo.":'验证码已过期，请重新登录。',"Verificación cancelada.":'验证已取消。',"Tu sesión venció. Inicia sesión de nuevo.":'会话已过期，请重新登录。',"Sin conexión. Revisa tu red e inténtalo de nuevo.":'无网络连接，请检查网络后重试。',"No tienes permiso para hacer esto.":'你没有权限执行此操作。',"El servidor está ocupado. Inténtalo de nuevo en unos segundos.":'服务器繁忙，请几秒后再试。'
+,"Pulso":'Pulso',"No se pudo iniciar el juego. Revisa tu conexión.":'无法开始游戏。请检查你的网络连接。'
+
+,"Buscando...":'搜索中...'
+,"Imagen no disponible":'图片不可用'
+,"Busca a alguien para enviarle esto.":'找个人发送此内容。'
+,"No encontramos usuarios.":'未找到用户。'
+,"Sin resultados":'无结果'
+,"Reintentando…":'重试中…'
+,"Buscando contactos frecuentes...":'正在查找常用联系人...'
+,"Ondas":'Ondas'
+,"Activando…":'激活中…'
+,"Cargando ecos...":'正在加载回声...'
+,"Cargando comentarios...":'正在加载评论...'
+,"Mensaje visto · eliminado":'消息已查看·已删除'
+,"Cargando publicaciones...":'正在加载帖子...'
+,"Cargando canciones…":'正在加载歌曲…'
+,"Sin resultados para \"{q}\".":'没有与"{q}"相关的结果。'
+,"Sin resultados para tu búsqueda.":'没有与你的搜索相关的结果。'
+,"Aún no hay canciones. ¡Sube la primera!":'还没有歌曲。上传第一首吧！'
 };
 var APP_PORTUGUESE_TEXT = {
 "Archivo no disponible":"Arquivo indisponível",
@@ -6844,7 +6880,25 @@ var APP_PORTUGUESE_TEXT = {
 ,"Sin vista previa disponible.":'Sem pré-visualização disponível.'
 ,"Motivo (opcional)":'Motivo (opcional)'
 ,"Aprobar":'Aprovar'
-,"Pulso":'Pulso',"No se pudo iniciar el juego. Revisa tu conexión.":'Não foi possível iniciar o jogo. Verifique sua conexão.',"El código venció. Inicia sesión de nuevo.": "O código expirou. Entre novamente.","Verificación cancelada.": "Verificação cancelada.","Tu sesión venció. Inicia sesión de nuevo.": "Sua sessão expirou. Entre novamente.","Sin conexión. Revisa tu red e inténtalo de nuevo.": "Sem conexão. Verifique sua rede e tente novamente.","No tienes permiso para hacer esto.": "Você não tem permissão para fazer isso.","El servidor está ocupado. Inténtalo de nuevo en unos segundos.": "O servidor está ocupado. Tente novamente em alguns segundos."
+,"Pulso":'Pulso',"No se pudo iniciar el juego. Revisa tu conexión.":'Não foi possível iniciar o jogo. Verifique sua conexão.'
+
+,"Buscando...":'Buscando...'
+,"Imagen no disponible":'Imagem indisponível'
+,"Busca a alguien para enviarle esto.":'Encontre alguém para enviar isto.'
+,"No encontramos usuarios.":'Nenhum usuário encontrado.'
+,"Sin resultados":'Sem resultados'
+,"Reintentando…":'Tentando novamente…'
+,"Buscando contactos frecuentes...":'Buscando contatos frequentes...'
+,"Ondas":'Ondas'
+,"Activando…":'Ativando…'
+,"Cargando ecos...":'Carregando ecos...'
+,"Cargando comentarios...":'Carregando comentários...'
+,"Mensaje visto · eliminado":'Mensagem vista · excluída'
+,"Cargando publicaciones...":'Carregando publicações...'
+,"Cargando canciones…":'Carregando músicas…'
+,"Sin resultados para \"{q}\".":'Sem resultados para "{q}".'
+,"Sin resultados para tu búsqueda.":'Sem resultados para sua busca.'
+,"Aún no hay canciones. ¡Sube la primera!":'Ainda não há músicas. Envie a primeira!'
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

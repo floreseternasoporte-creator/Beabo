@@ -174,4 +174,21 @@ assert(html.indexOf("showMiniToast(appT('No se pudieron cargar más seguidos.'))
   'ROJO: showMiniToast de seguidos sin appT');
 console.log('ok 4: errata corregida y showMiniToast envueltos');
 
+
+// 5) lote 2: fragmentos de texto directo (textContent/innerHTML) ahora con clave
+var batch2 = ['Buscando...','Imagen no disponible','Busca a alguien para enviarle esto.',
+  'No encontramos usuarios.','Sin resultados','Reintentando…','Buscando contactos frecuentes...',
+  'Ondas','Activando…','Cargando ecos...','Cargando comentarios...','Mensaje visto · eliminado',
+  'Cargando publicaciones...','Cargando canciones…','Sin resultados para "{q}".',
+  'Sin resultados para tu búsqueda.','Aún no hay canciones. ¡Sube la primera!'];
+batch2.forEach(function (k) {
+  assert(enSet.has(k) && zh[k] && String(zh[k]).trim() && pt[k] && String(pt[k]).trim(),
+    'ROJO: clave lote2 incompleta: ' + k);
+});
+assert(en['Sin resultados para "{q}".'].indexOf('{q}') !== -1, 'ROJO: {q} perdido en EN');
+assert(zh['Sin resultados para "{q}".'].indexOf('{q}') !== -1, 'ROJO: {q} perdido en ZH');
+assert(pt['Sin resultados para "{q}".'].indexOf('{q}') !== -1, 'ROJO: {q} perdido en PT');
+console.log('ok 5: lote 2 (' + batch2.length + ' claves x 3 idiomas, {q} preservado)');
+
 console.log('\nC230 VERDE: ' + enKeys.length + ' claves x 3 idiomas, cobertura total de literales.');
+

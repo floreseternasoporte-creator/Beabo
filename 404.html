@@ -2916,55 +2916,15 @@ body.theme-dark .notif-ig-text { color: #f5f5f5 !important; }
        así que se fuerza 16px en todos los campos editables. */
     input, textarea, select { font-size: 16px !important; }
   </style></style>
-  <script>/* C231-offline: overlay no destructivo + debounce anti-blips */
-(function(){
-  var _offT = null;
-  function _drexOfflineTexts() {
-    var lang = 'es';
-    try { lang = String(localStorage.getItem('selectedLanguage') || 'es').slice(0, 2); } catch (_) {}
-    var T = {
-      es: ['Sin conexión', 'Revisa tu internet. Cuando vuelva la red, la app se recarga sola.', 'Reintentar ahora'],
-      en: ['No connection', 'Check your internet. The app reloads itself when the network returns.', 'Retry now'],
-      zh: ['\u65e0\u7f51\u7edc\u8fde\u63a5', '\u8bf7\u68c0\u67e5\u7f51\u7edc\u8fde\u63a5\uff0c\u7f51\u7edc\u6062\u590d\u540e\u5e94\u7528\u4f1a\u81ea\u52a8\u91cd\u65b0\u52a0\u8f7d\u3002', '\u7acb\u5373\u91cd\u8bd5'],
-      pt: ['Sem conex\u00e3o', 'Verifique sua internet. O app recarrega sozinho quando a rede voltar.', 'Tentar agora']
-    };
-    return T[lang] || T.es;
-  }
-  function drexOfflineOverlay(show) {
-    if (!document || !document.body) return;
-    var ov = document.getElementById('drex-offline-overlay');
-    if (show) {
-      if (ov) { ov.style.display = 'flex'; return; }
-      var t = _drexOfflineTexts();
-      ov = document.createElement('div');
-      ov.id = 'drex-offline-overlay';
-      ov.setAttribute('role', 'alert');
-      ov.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(10,12,28,.84);backdrop-filter:blur(6px);padding:24px;';
-      ov.innerHTML = '<div style="max-width:340px;text-align:center;color:#fff">'
-        + '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#9AA3FF" stroke-width="1.6" style="margin:0 auto 16px;display:block" aria-hidden="true"><path stroke-linecap="round" d="M5 12.55a11 11 0 0 1 14.08 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01M2 8.82a15 15 0 0 1 20 0"/></svg>'
-        + '<div style="font-size:20px;font-weight:800;margin-bottom:8px">' + t[0] + '</div>'
-        + '<div style="font-size:14px;opacity:.85;margin-bottom:20px;line-height:1.5">' + t[1] + '</div>'
-        + '<button id="drex-offline-retry" style="min-width:170px;min-height:48px;padding:12px 28px;border-radius:14px;background:#2F33B8;color:#fff;font-weight:700;font-size:15px;border:0;cursor:pointer">' + t[2] + '</button>'
-        + '</div>';
-      document.body.appendChild(ov);
-      var btn = document.getElementById('drex-offline-retry');
-      if (btn && btn.addEventListener) btn.addEventListener('click', function(){ location.reload(); });
-      return;
-    }
-    if (ov) ov.style.display = 'none';
-  }
-  window.addEventListener('offline', function() {
-    // Anti-blip: un cambio momentáneo WiFi<->datos no debe tumbar la app.
-    // (comparación explícita con null: el id de timeout puede ser 0, que es falsy)
-    if (_offT !== null) { clearTimeout(_offT); _offT = null; }
-    _offT = setTimeout(function(){ _offT = null; drexOfflineOverlay(true); }, 1500);
-  });
-  window.addEventListener('online', function() {
-    if (_offT !== null) { clearTimeout(_offT); _offT = null; return; } // el blip terminó antes de mostrar nada
-    var ov = document.getElementById('drex-offline-overlay');
-    if (ov && ov.style.display !== 'none') { location.reload(); }
-  });
-})();
+  <script>window.addEventListener('offline', function() {
+  document.body.innerHTML = `
+    <div id="offline-modal">
+      <img loading="lazy" decoding="async" src="https://ideogram.ai/assets/image/lossless/response/ZL-_GzzNQdy7CzioYPtDHg" alt="Sin conexión">
+    </div>`;
+});
+window.addEventListener('online', function() {
+  location.reload();
+});
 
 document.addEventListener("DOMContentLoaded", function() {
   const savedLang = localStorage.getItem("selectedLanguage");
@@ -15865,7 +15825,7 @@ function saveNote() {
           console.error('Error al procesar/subir el video:', err);
           // Limpieza best-effort de trozos parciales sin nota.
           if (reservedVideoRef) DrexCloud.database().ref('noteVideos/' + reservedVideoRef.key).remove().catch(() => {});
-          showMiniToast(drexErrFriendly(err, appT('No se pudo procesar el video. Inténtalo de nuevo.')));
+          showMiniToast((err && err.message) || appT('No se pudo procesar el video. Inténtalo de nuevo.'));
           notePostPublishing = false;
           renderNotePostPhotoPreviews();
           renderNoteVideoPreview();
@@ -22976,22 +22936,6 @@ else { try { drexSnapInit(); } catch (_) {} }
     refreshHistorialIfVisible();
   }
 
-  // C231: convierte cualquier error técnico en un mensaje amable para el usuario.
-  // NUNCA devuelve err.message en crudo (puede ser inglés técnico de DynamoDB/Cognito).
-  function drexErrFriendly(err, fallback) {
-    var fb = fallback || appT('Ocurrió un error. Inténtalo de nuevo.');
-    if (!err) return fb;
-    if (err.code === 'auth/mfa-expired') return appT('El código venció. Inicia sesión de nuevo.');
-    var blob = (String(err.code || '') + ' ' + String(err.message || '')).toLowerCase();
-    if (/(network|networkingerror|networkrequest|fetch failed|failed to fetch|offline|drexnetworkdown|econnaborted|timeout|timed out|aws-creds-timeout)/i.test(blob))
-      return appT('Sin conexión. Revisa tu red e inténtalo de nuevo.');
-    if (/(permission|denied|accessdenied|notauthorized|unauthorized)/i.test(blob))
-      return appT('No tienes permiso para hacer esto.');
-    if (/(throttl|provisionedthroughput|requestlimitexceeded|toomanyrequests|limitexceeded|too many requests|429)/i.test(blob))
-      return appT('El servidor está ocupado. Inténtalo de nuevo en unos segundos.');
-    return fb;
-  }
-
   // showToast existía como llamadas pero nunca se definió (ReferenceError).
   // Se comporta igual que showMiniToast.
   function showToast(msg) { showMiniToast(msg); }
@@ -25618,7 +25562,7 @@ else { try { drexSnapInit(); } catch (_) {} }
         cancelCommentEdit();
       }).catch(error => {
         console.error('Error al editar comentario:', error);
-        showMiniToast(drexErrFriendly(error, appT('No se pudo editar el comentario. Inténtalo de nuevo.')));
+        showMiniToast(error.message || appT('No se pudo editar el comentario. Inténtalo de nuevo.'));
       }).finally(() => {
         setCommentSubmitting(false);
       });
@@ -26482,7 +26426,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       });
     }).catch(error => {
       console.error('Error al fijar comentario:', error);
-      showMiniToast(drexErrFriendly(error, appT('No se pudo actualizar el comentario fijado.')));
+      showMiniToast(error.message || appT('No se pudo actualizar el comentario fijado.'));
     });
   }
 
@@ -26525,7 +26469,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       bumpStoredCommentsCount(noteId, -removedCommentsDelta);
     }).catch(error => {
       console.error('Error al eliminar comentario:', error);
-      showMiniToast(drexErrFriendly(error, appT('No se pudo eliminar el comentario.')));
+      showMiniToast(error.message || appT('No se pudo eliminar el comentario.'));
     });
   }
 
@@ -29675,10 +29619,6 @@ else { try { drexSnapInit(); } catch (_) {} }
       case 'auth/user-not-confirmed':       return 'Debes verificar tu correo antes de iniciar sesión.';
       case 'auth/invalid-verification-code':return 'El código no es válido. Revísalo e inténtalo de nuevo.';
       case 'auth/code-expired':             return appT('El código venció. Pide uno nuevo con "Reenviar código".');
-      case 'auth/invalid-mfa-code':     return appT('Código incorrecto. Revisa e inténtalo de nuevo.');
-      case 'auth/mfa-expired':          return appT('El código venció. Inicia sesión de nuevo.');
-      case 'auth/mfa-cancelled':        return appT('Verificación cancelada.');
-      case 'auth/session-expired':      return appT('Tu sesión venció. Inicia sesión de nuevo.');
       default:                           return 'Ocurrió un error inesperado. Inténtalo de nuevo.';
     }
   }
@@ -40863,7 +40803,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     const results = document.getElementById('group-search-results');
     if (!results) return;
     if (!matches.length) {
-      results.innerHTML = '<div class="text-center py-10"><img src="drex-illus/drex-illus-search.png" alt="" loading="lazy" class="drex-illus mx-auto mb-3" style="width:104px;height:104px;"><p class="text-sm text-[#9aa4ae]">Sin resultados para "' + escapeHtml(query) + '"</p></div>';
+      results.innerHTML = '<div class="text-center py-10"><img src="drex-illus/drex-illus-search.png" alt="" loading="lazy" class="drex-illus mx-auto mb-3" style="width:104px;height:104px;"><p class="text-sm text-[#9aa4ae]">' + escapeHtml(appT('Sin resultados para "{q}".').replace('{q}', query)) + '</p></div>';
       return;
     }
     results.innerHTML = matches.slice(-40).reverse().map(m => `
@@ -46270,7 +46210,7 @@ function confirmDisableTwoFactor() {
     })
     .catch(err => {
       pwInput.disabled = false; codeInput.disabled = false;
-      if (errBox) { errBox.textContent = drexErrFriendly(err, appT('No se pudo desactivar. Inténtalo de nuevo.')); errBox.classList.remove('hidden'); }
+      if (errBox) { errBox.textContent = (err && err.message) || appT('No se pudo desactivar. Inténtalo de nuevo.'); errBox.classList.remove('hidden'); }
     });
 }
 
@@ -46400,11 +46340,11 @@ function submitTwoFactorChallenge() {
         r.catch(err => {
           input.disabled = false; if (btn) btn.disabled = false;
           if (err && err.code === 'auth/mfa-expired') {
-            showErr(getFriendlyErrorMessage(err));
+            showErr(err.message);
             signOutFromTwoFactorChallenge();
             return;
           }
-          showErr(drexErrFriendly(err, appT('Código incorrecto. Revisa e inténtalo de nuevo.')));
+          showErr((err && err.message) || appT('Código incorrecto. Revisa e inténtalo de nuevo.'));
         });
       } else {
         // Correo: el resultado llega por beginMfaChallenge; si rechaza,
@@ -46414,7 +46354,7 @@ function submitTwoFactorChallenge() {
       }
     } catch (err) {
       input.disabled = false; if (btn) btn.disabled = false;
-      showErr(drexErrFriendly(err, appT('Código incorrecto. Revisa e inténtalo de nuevo.')));
+      showErr((err && err.message) || appT('Código incorrecto. Revisa e inténtalo de nuevo.'));
     }
     return;
   }
@@ -46449,7 +46389,7 @@ function submitTwoFactorChallenge() {
         err => {
           input.disabled = false; if (btn) btn.disabled = false;
           if (err && err.code === 'auth/mfa-expired') {
-            showErr(getFriendlyErrorMessage(err));
+            showErr(err.message);
             signOutFromTwoFactorChallenge();
             return;
           }
@@ -46457,7 +46397,7 @@ function submitTwoFactorChallenge() {
             showErr(appT('Para usar un código de respaldo, vuelve e inicia sesión con tu nombre de usuario en lugar del correo.'));
             return;
           }
-          showErr(drexErrFriendly(err, appT('Código de respaldo inválido.')));
+          showErr((err && err.message) || appT('Código de respaldo inválido.'));
         }
       );
     } else {
@@ -46492,6 +46432,7 @@ try { installMfaChallengeUi(); } catch (_) {}
 const DREX_SECURITY_PATH = 'security';
 function securityToast(message) {
   if (typeof showMiniToast === 'function') showMiniToast(message);
+  else showMiniToast(message);
 }
 async function showSecurityAlertIfEnabled(key, message) {
   const user = DrexCloud.auth().currentUser;
@@ -51711,7 +51652,7 @@ function renderExploreMusic() {
   const q = (document.getElementById('music-explore-input')?.value || '').trim().toLowerCase();
   let arr = musicExploreCache;
   if (q) arr = arr.filter(t => ((t.title || '') + ' ' + (t.artistName || '') + ' ' + (t.authorName || '')).toLowerCase().includes(q));
-  list.innerHTML = arr.length ? arr.map((t, i) => musicTrackRowHTML(t, i, 'explore', false)).join('') : musicEmptyHTML(q ? 'Sin resultados para tu búsqueda.' : 'Aún no hay canciones. ¡Sube la primera!');
+  list.innerHTML = arr.length ? arr.map((t, i) => musicTrackRowHTML(t, i, 'explore', false)).join('') : musicEmptyHTML(q ? appT('Sin resultados para tu búsqueda.') : appT('Aún no hay canciones. ¡Sube la primera!'));
 }
 window.musicFilterExplore = function () { renderExploreMusic(); try { renderMusicTop(); } catch (_) {} };
 var musicTopCache = [];
@@ -52893,7 +52834,7 @@ window.handleMusicCoverSelect = function (event) {
     const prev = document.getElementById('music-cover-preview');
     if (prev) { prev.src = dataUrl; prev.classList.remove('hidden'); }
   }).catch(err => {
-    if (typeof showMiniToast === 'function') showMiniToast(drexErrFriendly(err, appT('No se pudo procesar la portada')));
+    if (typeof showMiniToast === 'function') showMiniToast((err && err.message) || appT('No se pudo procesar la portada'));
   });
 };
 function musicSetProgress(pct, label) {
