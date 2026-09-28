@@ -36454,9 +36454,11 @@ let chatTypingListener = null;
         _burstDoubleTapHeart(e.clientX, e.clientY);
         const msgId = bubble.closest('[data-msg-id]')?.dataset?.msgId;
         if (msgId) {
-          if (typeof _activeChatMsgId === 'undefined') window._activeChatMsgId = msgId;
-          else _activeChatMsgId = msgId;
-          submitChatReaction('me gusta');
+          // C225-F1: el id debe viajar como argumento de submitChatReaction.
+          // La variable fantasma que se escribía aquí antes no la leía nadie
+          // (submitChatReaction lee activeReactionMsgId/_lastReactionMsgId),
+          // así que el corazón caía en otro mensaje o no hacía nada.
+          submitChatReaction('me gusta', msgId);
         }
       } else {
         _dtapLastTime = now;
@@ -38197,11 +38199,16 @@ let chatTypingListener = null;
           }
           
           const now = Date.now();
-          if (now - _tapTime < 300) { e.preventDefault(); submitChatReaction('me gusta'); }
+          // C225-F1: pasar resolvedId como id explícito. Sin él,
+          // submitChatReaction usaba el último id del picker (o ninguno) y
+          // el corazón del doble-tap caía en otro mensaje.
+          if (now - _tapTime < 300) { e.preventDefault(); submitChatReaction('me gusta', resolvedId); }
           _tapTime = now;
         });
         
-        bubble.addEventListener('dblclick', () => submitChatReaction('me gusta'));
+        // C225-F1: igual que el doble-tap táctil — el dblclick debe llevar
+        // el id del mensaje de ESTA burbuja, no el último del picker.
+        bubble.addEventListener('dblclick', () => submitChatReaction('me gusta', resolvedId));
       }
 
       if (resolvedId) subscribeMsgReactions(conversationId, resolvedId);
@@ -39270,8 +39277,10 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     activeReactionMsgId = null;
   }
 
-  function submitChatReaction(emoji) {
-    const msgId = activeReactionMsgId || window._lastReactionMsgId;
+  // C225-F1: msgIdOpt permite a los atajos de doble-tap dirigir la reacción
+  // al mensaje correcto sin depender del estado global del picker.
+  function submitChatReaction(emoji, msgIdOpt) {
+    const msgId = msgIdOpt || activeReactionMsgId || window._lastReactionMsgId;
     hideChatReactionPicker();
     const user = DrexCloud.auth().currentUser;
     if (!user || !msgId || !currentChatRoomId) return;
