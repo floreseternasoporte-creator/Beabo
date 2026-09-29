@@ -110,6 +110,11 @@ function orbitPriceId(plan) {
   if (plan === 'yearly') return process.env.STRIPE_PRICE_ORBIT_YEARLY || '';
   return '';
 }
+/* true cuando los Price IDs de Stripe están configurados en la Lambda.
+ * La app lo usa para activar las puertas automáticamente (fail-closed). */
+function orbitConfigured() {
+  return !!(process.env.STRIPE_PRICE_ORBIT_MONTHLY && process.env.STRIPE_PRICE_ORBIT_YEARLY);
+}
 
 // ---------- utilidades HTTP ----------
 
@@ -513,7 +518,7 @@ async function handleSubscriptionStatus(event) {
     return json(500, { error: 'db_read_failed' }, origin);
   }
   if (!rec) {
-    return json(200, { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' }, origin);
+    return json(200, { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none', configured: orbitConfigured() }, origin);
   }
   return json(200, {
     active: orbitIsActive(rec),
@@ -521,27 +526,37 @@ async function handleSubscriptionStatus(event) {
     currentPeriodEnd: rec.currentPeriodEnd || null,
     cancelAtPeriodEnd: !!rec.cancelAtPeriodEnd,
     status: rec.status || 'none',
+    configured: orbitConfigured(),
   }, origin);
 }
 
 
-// ---------- GET /transactions ----------
+// ---------- GET|POST /transactions ----------
 // Historial real de la cuenta: compras de Drex Coins (DynamoDB, lo que el
 // webhook registró) + pagos de Drex Orbit (facturas de Stripe) + estado
-// actual de la suscripción. Autenticado con Cognito ID token en el header
-// Authorization (Bearer). Si no hay registros, devuelve listas vacías:
+// actual de la suscripción. Autenticado con Cognito ID token: en el cuerpo
+// (POST, petición CORS simple sin preflight) o en el header Authorization
+// (Bearer, GET). Si no hay registros, devuelve listas vacías:
 // la app muestra un estado vacío honesto, nunca inventa movimientos.
 async function handleTransactions(event) {
   const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
   const ip = clientIp(event);
   if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
 
-  const authH = (event.headers && (event.headers.authorization || event.headers.Authorization)) || '';
-  const m = /^Bearer\s+(.+)$/.exec(String(authH).trim());
-  if (!m) return json(401, { error: 'unauthorized' }, origin);
+  const txMethod = (event.requestContext && event.requestContext.http && event.requestContext.http.method) || event.httpMethod || 'GET';
+  let txToken = '';
+  if (txMethod === 'POST') {
+    try { txToken = String(JSON.parse(rawBody(event) || '{}').idToken || ''); } catch (_) { txToken = ''; }
+  }
+  if (!txToken) {
+    const authH = (event.headers && (event.headers.authorization || event.headers.Authorization)) || '';
+    const m = /^Bearer\s+(.+)$/.exec(String(authH).trim());
+    if (m) txToken = m[1];
+  }
+  if (!txToken) return json(401, { error: 'unauthorized' }, origin);
   let userSub;
   try {
-    userSub = await verifyIdToken(m[1]);
+    userSub = await verifyIdToken(txToken);
   } catch (e) {
     const status = (e && e.status) || 401;
     return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
@@ -934,7 +949,7 @@ export const handler = async (event) => {
   if (method === 'POST' && path === '/subscription-status') {
     return handleSubscriptionStatus(event);
   }
-  if (method === 'GET' && path === '/transactions') {
+  if ((method === 'GET' || method === 'POST') && path === '/transactions') {
     return handleTransactions(event);
   }
   if (method === 'POST' && path === '/webhook') {

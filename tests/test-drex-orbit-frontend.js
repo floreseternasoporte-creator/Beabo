@@ -8,7 +8,7 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const ROOT = '/home/hatch/workspace/beabo';
+const ROOT = process.env.ORBIT_TEST_ROOT || '/home/hatch/workspace/beabo';
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -165,5 +165,21 @@ ok(mCore[0].includes('fail closed') || mCore[0].includes('fail-closed') || mCore
 /* ---- 12. Puertas: temas/analytics/en vivos no bloquean sin enforcement ---- */
 ok(html.includes('DREX_ORBIT_ENFORCE'), 'UI respeta el flag de enforcement');
 
+console.log(`\nDrex Orbit frontend: ${pass} ok, ${fail} fallos`);
+/* ---- 13. Enforcement dinámico + peticiones sin preflight ---- */
+K._serverConfigured = false;
+sandbox.window.DREX_ORBIT_ENFORCE = false;
+ok(K.enforced() === false, 'enforced() false por defecto (sin flag ni servidor)');
+K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
+ok(K.isActive() === false, 'sin configured del servidor no hay acceso aunque verificado');
+K._serverConfigured = true;
+ok(K.enforced() === true, 'enforced() true con configured:true del servidor');
+ok(K.isActive() === true, 'isActive true: verificado + configured');
+K._serverConfigured = false;
+ok(K.isActive() === false, 'fail-closed: configured false revoca acceso');
+ok(mCore[0].includes('text/plain;charset=UTF-8'), 'peticiones orbit CORS simple (text/plain)');
+ok(!mCore[0].includes("'Content-Type': 'application/json'"), 'sin application/json en el core orbit');
+ok(!mCore[0].includes("'Authorization': 'Bearer '"), 'sin header Authorization en el core orbit');
+ok(mCore[0].includes("endpoint + '/transactions'") && mCore[0].includes("method: 'POST'"), 'transactions por POST');
 console.log(`\nDrex Orbit frontend: ${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);

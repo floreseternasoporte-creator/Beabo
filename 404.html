@@ -89441,7 +89441,7 @@ var DrexOrbit = {
   },
   isConfigured: function () { return !!this._endpoint(); },
   enforced: function () {
-    try { return window.DREX_ORBIT_ENFORCE === true; } catch (_) { return false; }
+    try { return window.DREX_ORBIT_ENFORCE === true || this._serverConfigured === true; } catch (_) { return false; }
   },
   _idToken: async function () {
     try { if (typeof DrexCloud !== 'undefined' && DrexCloud.auth) return await DrexCloud.auth().getIdToken(); } catch (_) {}
@@ -89460,7 +89460,7 @@ var DrexOrbit = {
       if (!idToken) throw new Error('no-token');
       var res = await fetch(endpoint + '/subscription-status', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
         body: JSON.stringify({ idToken: idToken })
       });
       var data = null;
@@ -89474,7 +89474,8 @@ var DrexOrbit = {
         cancelAtPeriodEnd: !!data.cancelAtPeriodEnd,
         status: String(data.status || 'none')
       };
-    } catch (_) { self._st = fail; }
+      self._serverConfigured = (data.configured === true);
+    } catch (_) { self._st = fail; self._serverConfigured = false; }
     self._ts = Date.now();
     try { if (typeof window.drexOrbitApplyGates === 'function') window.drexOrbitApplyGates(); } catch (_) {}
     return self._st;
@@ -89523,7 +89524,7 @@ var DrexOrbit = {
     try { returnUrl = location.origin + location.pathname; } catch (_) {}
     var res = await fetch(endpoint + '/create-subscription-session', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
       body: JSON.stringify({ plan: planId, idToken: idToken, returnUrl: returnUrl })
     });
     var data = null;
@@ -89532,16 +89533,18 @@ var DrexOrbit = {
     location.href = data.url;
     return { redirected: true };
   },
-  /* Historial real de pagos: GET /transactions con el ID token en Authorization.
-   * Devuelve {transactions[], subscription{}}. Listas vacías si no hay datos. */
+  /* Historial real de pagos: POST /transactions con el ID token en el cuerpo
+   * (petición CORS simple, sin preflight). Devuelve {transactions[], subscription{}}.
+   * Listas vacías si no hay datos. */
   transactions: async function () {
     var endpoint = this._endpoint();
     if (!endpoint) throw new Error('no-provider');
     var idToken = await this._idToken();
     if (!idToken) throw new Error('no-token');
     var res = await fetch(endpoint + '/transactions', {
-      method: 'GET',
-      headers: { 'Authorization': 'Bearer ' + idToken }
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({ idToken: idToken })
     });
     var data = null;
     try { data = await res.json(); } catch (_) { data = null; }
@@ -89560,7 +89563,7 @@ var DrexOrbit = {
     try { returnUrl = location.origin + location.pathname; } catch (_) {}
     var res = await fetch(endpoint + '/create-customer-portal', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
       body: JSON.stringify({ idToken: idToken, returnUrl: returnUrl })
     });
     var data = null;
@@ -89572,8 +89575,11 @@ var DrexOrbit = {
   restore: async function () { return this.refresh(true); }
 };
 
-/* Enforcement: las puertas Orbit solo actúan si este flag es true.
- * Permanece en false hasta que exista una ruta de suscripción en vivo válida. */
+/* Enforcement: las puertas Orbit solo actúan si enforced() es true.
+ * Se activa automáticamente cuando el backend reporta configured:true en
+ * /subscription-status (Price IDs de Stripe presentes en la Lambda).
+ * El flag manual queda como interruptor de emergencia. Fail-closed:
+ * sin verificación del backend no hay acceso premium. */
 window.DREX_ORBIT_ENFORCE = false;
 
 /* Puerta central: true = acceso permitido. Si las puertas están activas y

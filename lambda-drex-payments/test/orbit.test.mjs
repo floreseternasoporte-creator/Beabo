@@ -142,6 +142,42 @@ test('Orbit: sin token -> 401', async () => {
   const res = await handler(httpEvent({ path: '/subscription-status', body: {} }));
   assert.equal(res.statusCode, 401);
 });
+test('Orbit: subscription-status incluye configured:true con prices en env', async () => {
+  const res = await handler(authed('/subscription-status'));
+  assert.equal(res.statusCode, 200);
+  const data = JSON.parse(res.body);
+  assert.equal(data.configured, true);
+  assert.equal(data.active, false);
+});
+
+test('Orbit: subscription-status configured:false sin prices (honesto)', async () => {
+  const m = process.env.STRIPE_PRICE_ORBIT_MONTHLY;
+  const y = process.env.STRIPE_PRICE_ORBIT_YEARLY;
+  delete process.env.STRIPE_PRICE_ORBIT_MONTHLY;
+  delete process.env.STRIPE_PRICE_ORBIT_YEARLY;
+  try {
+    const res = await handler(authed('/subscription-status'));
+    assert.equal(res.statusCode, 200);
+    const data = JSON.parse(res.body);
+    assert.equal(data.configured, false);
+    assert.equal(data.active, false);
+  } finally {
+    process.env.STRIPE_PRICE_ORBIT_MONTHLY = m;
+    process.env.STRIPE_PRICE_ORBIT_YEARLY = y;
+  }
+});
+
+test('Transactions: POST con idToken en el cuerpo -> 200 (sin preflight)', async () => {
+  const res = await handler(httpEvent({ method: 'POST', path: '/transactions', body: { idToken: validToken() } }));
+  assert.equal(res.statusCode, 200);
+  const b = JSON.parse(res.body);
+  assert.ok(Array.isArray(b.transactions), 'transactions es arreglo');
+});
+
+test('Transactions: POST sin token -> 401', async () => {
+  const res = await handler(httpEvent({ method: 'POST', path: '/transactions', body: {} }));
+  assert.equal(res.statusCode, 401);
+});
 
 // ---------- /create-customer-portal ----------
 
