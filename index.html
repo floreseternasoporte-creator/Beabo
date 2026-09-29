@@ -20814,6 +20814,19 @@ else { try { drexSnapInit(); } catch (_) {} }
     return true;
   }
 
+  // Cursor de paginación compuesto (timestamp, pushId): el par mínimo visto.
+  // Avanzar solo por timestamp salta para siempre los posts que comparten el
+  // ms del límite y no cupieron en la página anterior.
+  function snfCursorAdvance(ctx, ts, key) {
+    ts = Number(ts || 0);
+    if (!(ts > 0)) return;
+    if (ts < ctx.oldestLoadedTs ||
+        (ts === ctx.oldestLoadedTs && key && (ctx.oldestLoadedKey === null || key < ctx.oldestLoadedKey))) {
+      ctx.oldestLoadedTs = ts;
+      ctx.oldestLoadedKey = key || null;
+    }
+  }
+
   function snfMountFeedPost(ctx, note, appendAtBottom = false) {
     try {
       if (!note || !note.id) return;
@@ -20825,7 +20838,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       }
       ctx.feedLoadedIds.add(note.id);
       const noteTs = Number(note.timestamp || 0);
-      if (noteTs > 0 && noteTs < ctx.oldestLoadedTs) ctx.oldestLoadedTs = noteTs;
+      snfCursorAdvance(ctx, noteTs, note.id);
       snfClearEmptyState(ctx);
       snfClearFeedSkeleton(ctx);
       const noteElement = document.createElement('div');
@@ -20995,15 +21008,19 @@ else { try { drexSnapInit(); } catch (_) {} }
     if (!isFinite(ctx.oldestLoadedTs)) return;
     ctx.loadingOlder = true;
     snfSetOlderLoading(ctx, true);
-    DrexCloud.database().ref('communityNotes')
-      .orderByChild('timestamp').endAt(ctx.oldestLoadedTs - 1).limitToLast(FEED_PAGE_SIZE)
+    // Cursor compuesto (timestamp, pushId): endAt(ts - 1) a secas excluye
+    // para siempre los posts que comparten el ms del límite.
+    var pageQuery = DrexCloud.database().ref('communityNotes').orderByChild('timestamp');
+    pageQuery = ctx.oldestLoadedKey
+      ? pageQuery.endAt(ctx.oldestLoadedTs, ctx.oldestLoadedKey)
+      : pageQuery.endAt(ctx.oldestLoadedTs - 1);
+    pageQuery.limitToLast(FEED_PAGE_SIZE)
       .once('value').then(async (snap) => {
         if (!ctx.alive()) { ctx.loadingOlder = false; return; }
         const raw = [];
         snap.forEach(child => { raw.push([child.key, child.val() || {}]); });
         if (raw.length) {
-          const minTs = Math.min(...raw.map(([k, v]) => Number(v.timestamp || 0)).filter(t => t > 0));
-          if (isFinite(minTs) && minTs < ctx.oldestLoadedTs) ctx.oldestLoadedTs = minTs;
+          for (const [rk, rv] of raw) snfCursorAdvance(ctx, rv.timestamp, rk);
         }
         // Orden visual de más nuevo a más viejo, igual que la primera página.
         raw.sort((a, b) => Number(b[1].timestamp || 0) - Number(a[1].timestamp || 0));
@@ -21163,7 +21180,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       _mareaFollowedSet: null, _mareaWaveMax: {},
       adCount: 0, pendingInitial: 0, initialValueSeen: false,
       _feedSnapshotRaw: new Map(),
-      feedLoadedIds: new Set(), oldestLoadedTs: Infinity,
+      feedLoadedIds: new Set(), oldestLoadedTs: Infinity, oldestLoadedKey: null,
       loadingOlder: false, olderExhausted: false, olderSentinel: null,
       _feedWindowStore: new Map(),
       _feedWindowIO: null, _feedWindowRaf: 0, _feedWindowScrollOn: false,
@@ -21190,6 +21207,7 @@ else { try { drexSnapInit(); } catch (_) {} }
     // fondo se cargan páginas anteriores de 50 con una lectura única.
     ctx.feedLoadedIds = new Set();
     ctx.oldestLoadedTs = Infinity;
+    ctx.oldestLoadedKey = null;
     ctx.loadingOlder = false;
     ctx.olderExhausted = false;
     ctx.olderSentinel = null;
@@ -21223,11 +21241,10 @@ else { try { drexSnapInit(); } catch (_) {} }
         prevSentinel.remove();
       }
       ctx.olderSentinel = null;
-      ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"]').forEach(el => {
-        const pid = el.dataset.noteId || String(el.id || '').replace(/^post-/, '');
+      ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"], :scope > div[id^="postph-"]').forEach(el => {
+        const pid = el.dataset.noteId || String(el.id || '').replace(/^post-/, '').replace(/^postph-/, '');
         if (pid) ctx.feedLoadedIds.add(pid);
-        const ts = Number(el.dataset.feedTs || 0);
-        if (ts > 0 && ts < ctx.oldestLoadedTs) ctx.oldestLoadedTs = ts;
+        snfCursorAdvance(ctx, el.dataset.feedTs, pid);
       });
     } catch (_) {}
 
@@ -21238,6 +21255,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       ctx.feedContainer.dataset.feedMode = ctx.feedMode;
       ctx.feedLoadedIds = new Set();
       ctx.oldestLoadedTs = Infinity;
+      ctx.oldestLoadedKey = null;
       ctx.loadingOlder = false;
       ctx.olderExhausted = false;
       ctx.olderSentinel = null;

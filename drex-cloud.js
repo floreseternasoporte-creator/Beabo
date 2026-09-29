@@ -1010,7 +1010,7 @@ function withCredRetry(opFn) {
     return timeStampChars.join('') + '------------';
   }
 
-  function readLeavesBounded(pk, limitN, endAt) {
+  function readLeavesBounded(pk, limitN, endAt, endAtKey) {
     var want = Math.ceil(limitN * 1.5) + 10;
     // communityNotes: los posts viejos guardan las fotos como data URLs inline
     // (hasta ~300KB c/u, 20 por post). Descargarlas en cada polling (cada 3 s)
@@ -1031,7 +1031,10 @@ function withCredRetry(opFn) {
     // Paginación "cargar anteriores": endAt (timestamp) se traduce a cota de
     // pushId (misma hipótesis de correlación tiempo/pushId que el path sin
     // endAt). Sin esto, cada "cargar anteriores" descargaba el pk COMPLETO.
-    var endSk = (endAt === undefined || endAt === null) ? null : pushIdUpperBound(endAt);
+    // Con clave de desempate endAt(v, k), la cota es el pushId k en estricto:
+    // los posts que comparten el ms del límite ya no se saltan.
+    var endSk = (typeof endAtKey === 'string' && endAtKey) ? endAtKey :
+      ((endAt === undefined || endAt === null) ? null : pushIdUpperBound(endAt));
     var prefixes = [];
     var seen = {};
     var imgKeysByPrefix = {}; // pfx -> ['imageUrls/0', ...] o ['imageUrl']
@@ -1201,7 +1204,8 @@ function withCredRetry(opFn) {
     // readLeavesBounded (p. ej. musicSearch) conservan el camino viejo intacto.
     var useFeedCache = (pk === 'communityNotes');
     var feedCacheKey = 'FEEDv1\n' + pk + '\n' + limitN + '\n' +
-      ((endAt === undefined || endAt === null) ? '' : String(endAt));
+      ((endAt === undefined || endAt === null) ? '' : String(endAt)) + '\n' +
+      ((typeof endAtKey === 'string' && endAtKey) ? endAtKey : '');
     return phase1(null).then(function () {
       if (!useFeedCache) return phase2();
       var fp = phase1sks.join('\n');
@@ -1496,7 +1500,7 @@ function withCredRetry(opFn) {
         !query.limitFirst && !query.orderByKey &&
         (query.orderBy === 'timestamp' || query.orderBy === 'createdAt') &&
         query.equalTo === undefined && query.startAt === undefined) {
-      return readLeavesBounded(pk, query.limitLast, query.endAt);
+      return readLeavesBounded(pk, query.limitLast, query.endAt, query.endAtKey);
     }
     // PERF 2026-09-23: lectura ACOTADA bajo prefijo de 2 segmentos con
     // limitToLast (p. ej. conversationMessages/<id> de la sala de chat, o
@@ -1722,6 +1726,18 @@ function withCredRetry(opFn) {
       entries = entries.filter(function (e) {
         var d = dimVal(e);
         return d !== undefined && compareVals(d, spec.endAt) <= 0;
+      });
+    }
+    // Desempate por clave: con endAt(v, k) el límite es estricto en el par
+    // (valor, clave), no solo en el valor (el post del borde no se re-lee y
+    // los que comparten su timestamp no se saltan).
+    if (typeof spec.endAtKey === 'string' && spec.endAtKey && spec.endAt !== undefined &&
+        (spec.orderBy !== undefined || spec.orderByKey)) {
+      entries = entries.filter(function (e) {
+        var d = dimVal(e);
+        if (d === undefined) return false;
+        var c = compareVals(d, spec.endAt);
+        return c < 0 || (c === 0 && e[0] < spec.endAtKey);
       });
     }
     var ordered = (spec.orderBy !== undefined || spec.orderByKey);
@@ -3068,8 +3084,13 @@ function withCredRetry(opFn) {
     var q = Object.assign({}, this._query, { startAt: v });
     return new Ref(this._segs, q);
   };
-  Ref.prototype.endAt = function (v) {
+  Ref.prototype.endAt = function (v, k) {
     var q = Object.assign({}, this._query, { endAt: v });
+    // Desempate opcional por clave (firma Firebase endAt(valor, clave)): el
+    // límite es estricto en el par (valor, clave), así la paginación no
+    // salta los posts que comparten el ms del borde.
+    if (typeof k === 'string' && k) q.endAtKey = k;
+    else delete q.endAtKey;
     return new Ref(this._segs, q);
   };
   Ref.prototype.equalTo = function (v) {
