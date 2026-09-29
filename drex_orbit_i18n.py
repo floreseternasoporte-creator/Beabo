@@ -48,6 +48,25 @@ T = [
 ("Tus números reales, actualizados al abrir.", "Your real numbers, updated on open.", "真实数据，每次打开自动更新。", "Seus números reais, atualizados ao abrir."),
 ("Sin anuncios, insignia exclusiva y mucho más.", "Ad-free, exclusive badge and much more.", "无广告、专属徽章，还有更多。", "Sem anúncios, selo exclusivo e muito mais."),
 ("Miembro activo", "Active member", "在籍会员", "Membro ativo"),
+("Pagos", "Payments", "付款", "Pagamentos"),
+("Historial de pagos y compras", "Payment & purchase history", "付款与购买记录", "Histórico de pagamentos e compras"),
+("Tus movimientos reales de Drex Coins y Drex Orbit.", "Your real Drex Coins and Drex Orbit transactions.", "你的 Drex Coins 与 Drex Orbit 真实交易记录。", "Suas transações reais de Drex Coins e Drex Orbit."),
+("Aún no tienes movimientos", "No transactions yet", "暂无交易记录", "Ainda não há transações"),
+("Tus compras y pagos aparecerán aquí automáticamente.", "Your purchases and payments will appear here automatically.", "你的购买与付款将自动显示在这里。", "Suas compras e pagamentos aparecerão aqui automaticamente."),
+("Suscripción Drex Orbit", "Drex Orbit subscription", "Drex Orbit 订阅", "Assinatura Drex Orbit"),
+("Plan actual", "Current plan", "当前方案", "Plano atual"),
+("Cancelar suscripción", "Cancel subscription", "取消订阅", "Cancelar assinatura"),
+("Cambiar de plan", "Change plan", "更改方案", "Mudar de plano"),
+("Actualizar método de pago", "Update payment method", "更新付款方式", "Atualizar forma de pagamento"),
+("Gestionar en el portal seguro de Stripe", "Manage in Stripe's secure portal", "在 Stripe 安全门户中管理", "Gerenciar no portal seguro do Stripe"),
+("Compra de Drex Coins", "Drex Coins purchase", "购买 Drex Coins", "Compra de Drex Coins"),
+("Pago de Drex Orbit", "Drex Orbit payment", "Drex Orbit 付款", "Pagamento Drex Orbit"),
+("Completado", "Completed", "已完成", "Concluído"),
+("Fallido", "Failed", "失败", "Falhou"),
+("Cargando tu historial…", "Loading your history…", "正在加载你的记录…", "Carregando seu histórico…"),
+("No pudimos cargar tu historial. Inténtalo de nuevo.", "We couldn't load your history. Try again.", "无法加载你的记录，请重试。", "Não foi possível carregar seu histórico. Tente novamente."),
+("Reintentar", "Retry", "重试", "Tentar novamente"),
+("monedas", "coins", "金币", "moedas"),
 ("Procesando…", "Processing…", "处理中…", "Processando…"),
 ("Error al iniciar el pago. Inténtalo de nuevo.", "Couldn't start the payment. Try again.", "无法发起付款，请重试。", "Não foi possível iniciar o pagamento. Tente de novo."),
 ("Inicia sesión para suscribirte a Drex Orbit.", "Sign in to subscribe to Drex Orbit.", "登录后订阅 Drex Orbit。", "Entre para assinar o Drex Orbit."),
@@ -92,15 +111,18 @@ def dict_range(src, start_marker, end_marker):
     e = src.index(end_marker, s)
     return s, e
 
-ranges = [
-    dict_range(src, 'var APP_ENGLISH_TEXT = {', 'var APP_CHINESE_TEXT = {'),
-    dict_range(src, 'var APP_CHINESE_TEXT = {', 'var APP_PORTUGUESE_TEXT = {'),
-    dict_range(src, 'var APP_PORTUGUESE_TEXT = {', 'var APP_ENGLISH_ATTRS = {'),
+DICTS = [
+    ('var APP_ENGLISH_TEXT = {', 'var APP_CHINESE_TEXT = {'),
+    ('var APP_CHINESE_TEXT = {', 'var APP_PORTUGUESE_TEXT = {'),
+    ('var APP_PORTUGUESE_TEXT = {', 'var APP_ENGLISH_ATTRS = {'),
 ]
-assert len(ranges) == 3, 'no se encontraron los 3 diccionarios'
 
 added = [0, 0, 0]
-for di, (s, e) in enumerate(ranges):
+# Recalcular el rango de cada diccionario DESDE EL SRC ACTUAL en cada
+# iteración (el src crece con cada inserción; los rangos precalculados
+# quedaban stale y el ZH no recibía las claves).
+for di, (start_marker, end_marker) in enumerate(DICTS):
+    s, e = dict_range(src, start_marker, end_marker)
     block = src[s:e]
     # cierre: último "};" del bloque
     close_at = block.rstrip().rfind('};')
@@ -114,16 +136,14 @@ for di, (s, e) in enumerate(ranges):
             continue
         entries.append('"' + esc(es) + '":"' + esc(val) + '",')
     if not entries:
+        print(f'dict {di}: sin claves nuevas')
         continue
-    ins = '/* KOR-ONE */' + ''.join(entries)
+    ins = '/* DREX-ORBIT */' + ''.join(entries)
     # insertar antes del "};" de cierre (el bloque termina con ",\n};")
     at = s + close_at
     src = src[:at] + ins + '\n' + src[at:]
     added[di] = len(entries)
     print(f'dict {di}: +{len(entries)} claves')
-    # recalcular rangos posteriores (el src creció)
-    delta = len(ins) + 1
-    ranges = [(a + (delta if a > s else 0), b + (delta if b > s else 0)) for (a, b) in ranges]
 
 open(P, 'w', encoding='utf-8').write(src)
 print(f'LISTO: EN +{added[0]}, ZH +{added[1]}, PT +{added[2]} (total claves: {len(T)})')

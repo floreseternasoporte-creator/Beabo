@@ -10892,7 +10892,19 @@ function saveNote() {
     <div id="orbit-analytics-content" class="flex-1 overflow-y-auto scrollbar-hide pb-6"></div>
   </div>
 
-  <div id="settings-view" class="fixed inset-0 bg-[var(--theme-bg)] z-[110] hidden flex flex-col">
+  <!-- ============ Pagos: historial y suscripción ============ -->
+  <div id="payments-view" class="fixed inset-0 bg-[var(--theme-bg)] z-[120] hidden flex flex-col">
+    <div class="flex items-center gap-2 px-3 py-2 border-b border-[var(--theme-border)] bg-[var(--theme-header-bg)] shrink-0">
+      <button onclick="closePaymentsView()" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[var(--theme-text)] active:bg-[var(--theme-surface-subtle)] transition" aria-label="Volver">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h2 id="payments-view-title" class="text-base font-extrabold text-[var(--theme-text)]">Pagos</h2>
+    </div>
+    <div id="payments-view-content" class="flex-1 overflow-y-auto scrollbar-hide pb-6"></div>
+  </div>
+
+  <div id="settings-view"
+ class="fixed inset-0 bg-[var(--theme-bg)] z-[110] hidden flex flex-col">
     <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border)] bg-[var(--theme-surface)]" style="padding-top:max(1rem,env(safe-area-inset-top));">
       <button onclick="closeSettingsView()" class="tap44 relative text-[var(--theme-icon)] p-1" aria-label="Volver">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -10917,6 +10929,18 @@ function saveNote() {
               <span id="orbit-settings-preview" class="block text-white/80 text-[13px] mt-0.5">Funciones orbit de Drex</span>
             </span>
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-white/70 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+        <div class="px-4 pt-3">
+          <button id="pagos-settings-card" onclick="openPaymentsView()" class="tap44 w-full text-left rounded-2xl p-4 flex items-center gap-4 active:opacity-80 transition bg-[var(--theme-surface)] border border-[var(--theme-border)]">
+            <span class="w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0" style="background:linear-gradient(135deg,#2F33B8,#6D28D9)">
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.68 60.68 0 0115.748-2.581l-4.528-4.53m-6.626 7.11c-.645.098-1.289.195-1.936.293m15.748-2.581a60.68 60.68 0 00-15.748-2.581m15.748 2.581l-4.529-4.53m6.625 7.11c.645.098 1.289.195 1.936.293M4.5 8.25V6.75A2.25 2.25 0 016.75 4.5h12A2.25 2.25 0 0121 6.75v1.5m-18 0h18M4.5 8.25v7.5A2.25 2.25 0 006.75 18h12a2.25 2.25 0 002.25-2.25v-7.5"/></svg>
+            </span>
+            <span class="flex-1 min-w-0">
+              <span id="pagos-settings-title" class="block text-[var(--theme-text)] font-black text-[17px]">Pagos</span>
+              <span id="pagos-settings-preview" class="block text-[var(--theme-muted)] text-[13px] mt-0.5">Historial de pagos y compras</span>
+            </span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[var(--theme-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
           </button>
         </div>
 <div>
@@ -89508,8 +89532,26 @@ var DrexOrbit = {
     location.href = data.url;
     return { redirected: true };
   },
+  /* Historial real de pagos: GET /transactions con el ID token en Authorization.
+   * Devuelve {transactions[], subscription{}}. Listas vacías si no hay datos. */
+  transactions: async function () {
+    var endpoint = this._endpoint();
+    if (!endpoint) throw new Error('no-provider');
+    var idToken = await this._idToken();
+    if (!idToken) throw new Error('no-token');
+    var res = await fetch(endpoint + '/transactions', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + idToken }
+    });
+    var data = null;
+    try { data = await res.json(); } catch (_) { data = null; }
+    if (!res.ok || !data) throw new Error(String((data && data.error) || ('http_' + res.status)));
+    if (!Array.isArray(data.transactions)) data.transactions = [];
+    return data;
+  },
   /* Abre el portal de facturación de Stripe (gestionar/cancelar). */
   manage: async function () {
+
     var endpoint = this._endpoint();
     if (!endpoint) throw new Error('no-provider');
     var idToken = await this._idToken();
@@ -89924,6 +89966,110 @@ function orbitCloseAnalytics() {
   var v = document.getElementById('orbit-analytics-view');
   if (v) v.classList.add('hidden');
 }
+/* ============ Pagos: historial real + gestión de suscripción ============ */
+function openPaymentsView() {
+  var v = document.getElementById('payments-view');
+  if (!v) return;
+  if (v.parentElement !== document.body) document.body.appendChild(v);
+  v.classList.remove('hidden');
+  try { if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard(); } catch (_) {}
+  renderPaymentsView();
+}
+function closePaymentsView() {
+  var v = document.getElementById('payments-view');
+  if (v) v.classList.add('hidden');
+}
+function renderPagosSettingsPreview() {
+  try {
+    var tEl = document.getElementById('pagos-settings-title');
+    if (tEl && typeof t === 'function') tEl.textContent = t('Pagos');
+    var sEl = document.getElementById('pagos-settings-preview');
+    if (sEl && typeof t === 'function') sEl.textContent = t('Historial de pagos y compras');
+  } catch (_) {}
+}
+try {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', renderPagosSettingsPreview);
+  else renderPagosSettingsPreview();
+} catch (_) {}
+function orbitTxStatusLabel(status) {
+  if (status === 'completed') return t('Completado');
+  if (status === 'failed') return t('Fallido');
+  return String(status || '');
+}
+function orbitTxAmount(tx) {
+  try {
+    if (tx.type === 'coins') {
+      if (tx.cents != null) return '$' + (tx.cents / 100).toFixed(2) + ' · ' + tx.amount + ' ' + t('monedas');
+      return tx.amount + ' ' + t('monedas');
+    }
+    var cur = String(tx.currency || 'usd').toUpperCase();
+    var sym = cur === 'USD' ? '$' : (cur + ' ');
+    return sym + (Number(tx.amount || 0) / 100).toFixed(2);
+  } catch (_) { return ''; }
+}
+async function renderPaymentsView() {
+  var body = document.getElementById('payments-view-content');
+  if (!body) return;
+  var titleEl = document.getElementById('payments-view-title');
+  if (titleEl) titleEl.textContent = t('Pagos');
+  var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
+  body.innerHTML = '<div class="px-5 py-10 text-center text-sm text-[var(--theme-muted)]">' + escFn(t('Cargando tu historial…')) + '</div>';
+
+  var data = null, err = null;
+  try { data = await DrexOrbit.transactions(); }
+  catch (e) { err = e; data = null; }
+
+  if (err || !data) {
+    body.innerHTML = '<div class="px-5 py-10 text-center">'
+      + '<p class="text-sm text-[var(--theme-muted)]">' + escFn(t('No pudimos cargar tu historial. Inténtalo de nuevo.')) + '</p>'
+      + '<button onclick="renderPaymentsView()" class="tap44 mt-4 min-h-[44px] px-6 rounded-2xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(t('Reintentar')) + '</button></div>';
+    return;
+  }
+
+  var html = '<div class="px-5 pt-4"><p class="text-[13px] text-[var(--theme-muted)]">' + escFn(t('Tus movimientos reales de Drex Coins y Drex Orbit.')) + '</p></div>';
+
+  /* Suscripción activa: plan, renovación y gestión vía portal de Stripe. */
+  var sub = data.subscription || {};
+  if (sub.active) {
+    var renewTxt = sub.currentPeriodEnd ? orbitFmtDate(sub.currentPeriodEnd * 1000) : '';
+    html += '<div class="mx-5 mt-4 rounded-2xl p-5 text-white" style="background:linear-gradient(135deg,#2F33B8,#6D28D9)">'
+      + '<div class="flex items-center gap-2 text-white/90">' + orbitIconSVG('w-5 h-5') + '<span class="font-black text-[16px]">' + escFn(t('Suscripción Drex Orbit')) + '</span></div>'
+      + '<div class="text-white/85 text-sm mt-1 font-semibold">' + escFn(t('Plan actual')) + ': ' + escFn(orbitPlanName(sub.plan)) + ' · ' + escFn(orbitPlanPrice(sub.plan)) + '</div>'
+      + (renewTxt ? '<div class="text-white/75 text-xs mt-1">' + escFn(sub.cancelAtPeriodEnd ? t('Se cancela al final del periodo') : (t('Se renueva el') + ' ' + renewTxt)) + '</div>' : '')
+      + '<button onclick="orbitManage()" class="tap44 w-full min-h-[44px] mt-4 rounded-xl bg-white text-[#2F33B8] font-extrabold text-sm active:opacity-80">' + escFn(t('Gestionar en el portal seguro de Stripe')) + '</button>'
+      + '<p class="text-white/60 text-[11px] mt-2 text-center">' + escFn(t('Cancelar suscripción')) + ' · ' + escFn(t('Cambiar de plan')) + ' · ' + escFn(t('Actualizar método de pago')) + '</p>'
+      + '</div>';
+  }
+
+  /* Historial de transacciones reales. */
+  html += '<div class="px-5 mt-6"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Historial de pagos y compras')) + '</h3>';
+  var txs = data.transactions || [];
+  if (!txs.length) {
+    html += '<div class="mt-3 rounded-2xl border border-dashed border-[var(--theme-border)] p-8 text-center">'
+      + '<div class="text-4xl mb-2">🧾</div>'
+      + '<p class="font-bold text-[var(--theme-text)] text-sm">' + escFn(t('Aún no tienes movimientos')) + '</p>'
+      + '<p class="text-xs text-[var(--theme-muted)] mt-1">' + escFn(t('Tus compras y pagos aparecerán aquí automáticamente.')) + '</p></div>';
+  } else {
+    html += '<div class="grid grid-cols-1 gap-2 mt-3">';
+    txs.forEach(function (tx) {
+      var icon = tx.type === 'coins' ? '🪙' : '🪐';
+      var label = tx.type === 'coins' ? t('Compra de Drex Coins') : t('Pago de Drex Orbit');
+      var dt = tx.ts ? orbitFmtDate(Number(tx.ts)) : '';
+      var stLbl = orbitTxStatusLabel(tx.status);
+      var stColor = tx.status === 'completed' ? 'text-green-600' : (tx.status === 'failed' ? 'text-red-500' : 'text-[var(--theme-muted)]');
+      html += '<div class="flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 bg-[var(--theme-surface)]">'
+        + '<span class="text-2xl shrink-0">' + icon + '</span>'
+        + '<span class="flex-1 min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm truncate">' + escFn(label) + '</span>'
+        + '<span class="block text-xs text-[var(--theme-muted)] truncate">' + escFn(tx.label || '') + (dt ? ' · ' + escFn(dt) : '') + '</span></span>'
+        + '<span class="text-right shrink-0"><span class="block font-extrabold text-[var(--theme-text)] text-sm">' + escFn(orbitTxAmount(tx)) + '</span>'
+        + '<span class="block text-[11px] font-semibold ' + stColor + '">' + escFn(stLbl) + '</span></span></div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  body.innerHTML = html;
+}
+
 async function renderOrbitAnalytics() {
   var body = document.getElementById('orbit-analytics-content');
   if (!body) return;

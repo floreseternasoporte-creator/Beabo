@@ -15,6 +15,9 @@ export class UpdateCommand {
 export class TransactWriteCommand {
   constructor(input) { this.input = input; }
 }
+export class QueryCommand {
+  constructor(input) { this.input = input; }
+}
 
 function evalCondition(item, expr, values) {
   expr = String(expr || '').trim();
@@ -86,6 +89,15 @@ export const DynamoDBDocumentClient = {
             }
           }
           return {};
+        }
+        if (cmd instanceof QueryCommand) {
+          const { ':pk': pk, ':pre': pre } = cmd.input.ExpressionAttributeValues;
+          const items = [];
+          for (const [key, item] of store) {
+            if (item.pk === pk && String(item.sk).startsWith(pre)) items.push({ ...item });
+          }
+          items.sort((a, b) => String(a.sk) < String(b.sk) ? -1 : 1);
+          return { Items: items };
         }
         throw new Error('stub: comando no soportado');
       },

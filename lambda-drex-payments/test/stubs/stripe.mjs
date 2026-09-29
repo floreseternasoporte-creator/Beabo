@@ -3,6 +3,11 @@
 import crypto from 'node:crypto';
 
 export let lastSessionParams = null;
+export let lastPortalParams = null;
+export let lastSubscriptionRetrieve = null;
+const fakeSubscriptions = {};
+export function __setSubscription(id, obj) { fakeSubscriptions[id] = obj; }
+export function __clearSubscriptions() { for (const k of Object.keys(fakeSubscriptions)) delete fakeSubscriptions[k]; }
 
 function parseSigHeader(h) {
   const out = {};
@@ -24,6 +29,33 @@ export default class Stripe {
         lastSessionParams = params;
         return { id: 'cs_test_abc123', url: 'https://checkout.stripe.com/c/pay/cs_test_abc123', ...params };
       },
+    },
+  };
+  invoices = {
+    list: async (params) => {
+      const data = (globalThis.__fakeInvoices || []).filter(
+        (inv) => !params.customer || inv.customer === params.customer);
+      return { data: data.slice(0, params.limit || 10) };
+    },
+  };
+  billingPortal = {
+    sessions: {
+      create: async (params) => {
+        lastPortalParams = params;
+        return { id: 'bps_test_1', url: 'https://billing.stripe.com/p/session/bps_test_1', ...params };
+      },
+    },
+  };
+  subscriptions = {
+    retrieve: async (id) => {
+      lastSubscriptionRetrieve = id;
+      if (fakeSubscriptions[id]) return { ...fakeSubscriptions[id] };
+      return {
+        id, status: 'active', customer: 'cus_test_1',
+        current_period_end: Math.floor(Date.now() / 1000) + 2592000,
+        cancel_at_period_end: false,
+        metadata: { drex_user_sub: 'user-abc', drex_orbit_plan: 'monthly' },
+      };
     },
   };
   webhooks = {

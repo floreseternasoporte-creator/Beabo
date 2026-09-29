@@ -1,9 +1,16 @@
 // Drex Payments — Lambda (Node 20) del backend REAL de pagos de Drex Coins.
 //
 // Endpoints (detrás de una Function URL con Auth NONE):
-//   POST /create-checkout-session  {packageId, idToken, returnUrl} -> {url}
-//   POST /webhook                  (llamado por Stripe, firma verificada)
-//   GET  /health                    {ok:true} (smoke test)
+//   POST /create-checkout-session      {packageId, idToken, returnUrl} -> {url}
+//   POST /create-subscription-session {plan, idToken, returnUrl} -> {url}
+//                                     (Stripe Checkout mode:'subscription', planes Drex Orbit)
+//   POST /create-customer-portal      {idToken, returnUrl?} -> {url}
+//                                     (portal de facturación de Stripe)
+//   POST /subscription-status         {idToken} -> {active, plan, currentPeriodEnd, cancelAtPeriodEnd, status}
+//   GET  /transactions                Authorization: Bearer <idToken> -> {transactions[], subscription{}}
+//                                     (fail closed: sin registro -> active:false)
+//   POST /webhook                      (llamado por Stripe, firma verificada)
+//   GET  /health                        {ok:true} (smoke test)
 //
 // Flujo:
 //   1. La app pide una Checkout Session con el ID token de Cognito del
@@ -20,11 +27,19 @@
 //   transactions/<uid>/<tx>  -> pk='transactions', sk='<uid>/<txid>/<campo>', v=JSON
 //   stripe_events/<eventId>  -> pk='stripe_events', sk='<eventId>' (idempotencia)
 //   ratelimit/pay/...       -> interno de la Lambda (rate limiting)
+//   users/<sub>/orbit      -> pk='users', sk='<sub>/orbit', v=JSON con
+//                              {status, plan, stripeCustomerId, stripeSubscriptionId,
+//                               currentPeriodEnd, cancelAtPeriodEnd, updatedAt}
+//                              status: 'active' | 'past_due' | 'canceled' | 'none'.
+//                              La app NUNCA escribe este nodo: solo la Lambda,
+//                              y solo desde eventos firmados de Stripe.
 //
 // Despliegue: ver README.md y DEPLOY-CHECKLIST.md
 // Variables de entorno requeridas:
 //   STRIPE_SECRET_KEY      (sk_test_... / sk_live_... — SECRETO)
 //   STRIPE_WEBHOOK_SECRET  (whsec_... — SECRETO)
+//   STRIPE_PRICE_ORBIT_MONTHLY (price_... del plan mensual Drex Orbit; si falta -> 503 honesto)
+//   STRIPE_PRICE_ORBIT_YEARLY  (price_... del plan anual Drex Orbit; si falta -> 503 honesto)
 //   DREX_TABLE             (default: drex-kv)
 //   COGNITO_USER_POOL_ID   (ej. us-east-1_kDSYEBsnY)
 //   COGNITO_CLIENT_ID      (app client de Drex; público, vive en la app)
@@ -41,6 +56,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   GetCommand,
+  QueryCommand,
   UpdateCommand,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
@@ -78,6 +94,21 @@ const PACKAGES = [
 ];
 function packageById(id) {
   return PACKAGES.find((p) => p.id === id) || null;
+}
+
+// ---------- Drex Orbit: planes de suscripción orbit ----------
+// Un solo nivel (Drex Orbit), dos planes. Los price IDs viven en env vars
+// (no son secretos, pero sí configuración del deployment): si falta el
+// price del plan pedido, la ruta responde 503 honesto en vez de inventar
+// un precio.
+const ORBIT_PLANS = {
+  monthly: { name: 'Drex Orbit Mensual' },
+  yearly: { name: 'Drex Orbit Anual' },
+};
+function orbitPriceId(plan) {
+  if (plan === 'monthly') return process.env.STRIPE_PRICE_ORBIT_MONTHLY || '';
+  if (plan === 'yearly') return process.env.STRIPE_PRICE_ORBIT_YEARLY || '';
+  return '';
 }
 
 // ---------- utilidades HTTP ----------
@@ -251,7 +282,499 @@ async function handleCreateSession(event) {
   return json(200, { url: session.url }, origin);
 }
 
+// ---------- Drex Orbit: suscripción orbit ----------
+
+async function readOrbit(userSub) {
+  try {
+    const r = await ddb.send(new GetCommand({ TableName: TABLE, Key: { pk: 'users', sk: userSub + '/orbit' } }));
+    if (!r.Item || typeof r.Item.v === 'undefined') return null;
+    const o = JSON.parse(String(r.Item.v));
+    return (o && typeof o === 'object') ? o : null;
+  } catch (e) {
+    console.error('orbit read failed:', e && e.message);
+    throw Object.assign(new Error('db_read_failed'), { status: 500 });
+  }
+}
+
+// Fail closed: cualquier estado que no sea inequívocamente activo se trata
+// como no suscriptor. Un periodo ya vencido nunca cuenta como activo.
+function orbitIsActive(rec) {
+  if (!rec) return false;
+  if (rec.status !== 'active') return false;
+  if (rec.currentPeriodEnd && Number(rec.currentPeriodEnd) * 1000 < Date.now()) return false;
+  return true;
+}
+
+function mapSubscriptionStatus(s) {
+  if (s === 'active' || s === 'trialing') return 'active';
+  if (s === 'past_due' || s === 'unpaid' || s === 'incomplete') return 'past_due';
+  return 'canceled'; // canceled | incomplete_expired | desconocido -> no activo
+}
+
+// Guarda el estado de Drex Orbit de forma idempotente por evento de Stripe:
+// el mismo evento reintentado no escribe dos veces (condición sobre
+// stripe_events dentro de la misma transacción que el Put del estado).
+async function saveOrbitState({ userSub, status, plan, stripeCustomerId, stripeSubscriptionId, currentPeriodEnd, cancelAtPeriodEnd, eventId, eventType }) {
+  const now = Date.now();
+  let prev = null;
+  try {
+    prev = await readOrbit(userSub);
+  } catch (e) {
+    throw e;
+  }
+  const next = {
+    status,
+    plan: plan || (prev && prev.plan) || null,
+    stripeCustomerId: stripeCustomerId || (prev && prev.stripeCustomerId) || null,
+    stripeSubscriptionId: stripeSubscriptionId || (prev && prev.stripeSubscriptionId) || null,
+    currentPeriodEnd: (currentPeriodEnd != null ? currentPeriodEnd : (prev && prev.currentPeriodEnd)) || null,
+    cancelAtPeriodEnd: !!cancelAtPeriodEnd,
+    updatedAt: now,
+  };
+  try {
+    await ddb.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: TABLE,
+            Item: { pk: 'users', sk: userSub + '/orbit', v: JSON.stringify(next) },
+          },
+        },
+        {
+          Put: {
+            TableName: TABLE,
+            Item: {
+              pk: 'stripe_events',
+              sk: eventId,
+              v: JSON.stringify({ type: eventType, userSub, status, ts: now }),
+            },
+            ConditionExpression: 'attribute_not_exists(sk)',
+          },
+        },
+      ],
+    }));
+  } catch (e) {
+    if (e && e.name === 'TransactionCanceledException') {
+      const reasons = e.CancellationReasons || [];
+      if (reasons[1] && reasons[1].Code === 'ConditionalCheckFailed') {
+        return { duplicate: true };
+      }
+    }
+    console.error('orbit save failed:', e && e.message);
+    throw Object.assign(new Error('db_write_failed'), { status: 500 });
+  }
+  return { saved: true, state: next };
+}
+
+function subscriptionStateFrom(sub, planHint) {
+  const md = (sub && sub.metadata) || {};
+  const sid = sub && sub.subscription;
+  return {
+    status: mapSubscriptionStatus(sub && sub.status),
+    plan: md.drex_orbit_plan || planHint || null,
+    stripeCustomerId: (sub && sub.customer) || null,
+    stripeSubscriptionId: (sub && sub.id) || null,
+    currentPeriodEnd: (sub && sub.current_period_end != null) ? sub.current_period_end : null,
+    cancelAtPeriodEnd: !!(sub && sub.cancel_at_period_end),
+  };
+}
+
+// ---------- POST /create-subscription-session ----------
+
+async function handleCreateSubscriptionSession(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  let body;
+  try {
+    body = JSON.parse(rawBody(event) || '{}');
+  } catch (_) {
+    return json(400, { error: 'bad_json' }, origin);
+  }
+  const ip = clientIp(event);
+  if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
+
+  const plan = body.plan;
+  if (plan !== 'monthly' && plan !== 'yearly') return json(400, { error: 'invalid_plan' }, origin);
+  const priceId = orbitPriceId(plan);
+  if (!priceId) {
+    // Honesto: el producto/precio aún no está configurado en Stripe.
+    return json(503, { error: 'subscription_not_configured' }, origin);
+  }
+  const returnUrl = validReturnUrl(body.returnUrl);
+  if (!returnUrl) return json(400, { error: 'invalid_return_url' }, origin);
+
+  let userSub;
+  try {
+    userSub = await verifyIdToken(body.idToken);
+  } catch (e) {
+    const status = (e && e.status) || 401;
+    return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
+  }
+
+  let session;
+  try {
+    session = await stripe().checkout.sessions.create({
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }],
+      metadata: {
+        drex_user_sub: userSub,
+        drex_orbit_plan: plan,
+      },
+      // El metadata se copia a la suscripción para que los webhooks
+      // posteriores (subscription.updated/deleted, invoice.*) puedan
+      // identificar al usuario sin depender solo del customer id.
+      subscription_data: {
+        metadata: { drex_user_sub: userSub, drex_orbit_plan: plan },
+      },
+      client_reference_id: userSub,
+      success_url: `${returnUrl}/?orbit=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${returnUrl}/?orbit=cancelled`,
+    });
+  } catch (e) {
+    console.error('orbit session create failed:', e && e.message);
+    return json(502, { error: 'payment_provider_error' }, origin);
+  }
+  console.log('orbit checkout session created', session.id, 'plan', plan);
+  return json(200, { url: session.url, plan }, origin);
+}
+
+// ---------- POST /create-customer-portal ----------
+
+async function handleCustomerPortal(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  let body;
+  try {
+    body = JSON.parse(rawBody(event) || '{}');
+  } catch (_) {
+    return json(400, { error: 'bad_json' }, origin);
+  }
+  const ip = clientIp(event);
+  if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
+
+  let userSub;
+  try {
+    userSub = await verifyIdToken(body.idToken);
+  } catch (e) {
+    const status = (e && e.status) || 401;
+    return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
+  }
+
+  let rec = null;
+  try {
+    rec = await readOrbit(userSub);
+  } catch (e) {
+    return json(500, { error: 'db_read_failed' }, origin);
+  }
+  const customerId = rec && rec.stripeCustomerId;
+  if (!customerId) return json(404, { error: 'no_subscription' }, origin);
+
+  const returnUrl = validReturnUrl(body.returnUrl) || (ALLOWED_ORIGINS[0] || '');
+  if (!returnUrl) return json(400, { error: 'invalid_return_url' }, origin);
+
+  let ps;
+  try {
+    // Requiere que el portal de facturación esté activado en el dashboard
+    // de Stripe (Settings > Billing > Customer portal).
+    ps = await stripe().billingPortal.sessions.create({ customer: customerId, return_url: returnUrl });
+  } catch (e) {
+    console.error('orbit portal create failed:', e && e.message);
+    return json(502, { error: 'payment_provider_error' }, origin);
+  }
+  return json(200, { url: ps.url }, origin);
+}
+
+// ---------- POST /subscription-status ----------
+// NOTA: es POST (no GET) a propósito: el idToken en un query string de GET
+// quedaría registrado en los logs de acceso de la Function URL. El cuerpo
+// JSON no se registra.
+
+async function handleSubscriptionStatus(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  let body;
+  try {
+    body = JSON.parse(rawBody(event) || '{}');
+  } catch (_) {
+    return json(400, { error: 'bad_json' }, origin);
+  }
+  const ip = clientIp(event);
+  if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
+
+  let userSub;
+  try {
+    userSub = await verifyIdToken(body.idToken);
+  } catch (e) {
+    const status = (e && e.status) || 401;
+    return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
+  }
+
+  let rec = null;
+  try {
+    rec = await readOrbit(userSub);
+  } catch (e) {
+    return json(500, { error: 'db_read_failed' }, origin);
+  }
+  if (!rec) {
+    return json(200, { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' }, origin);
+  }
+  return json(200, {
+    active: orbitIsActive(rec),
+    plan: rec.plan || null,
+    currentPeriodEnd: rec.currentPeriodEnd || null,
+    cancelAtPeriodEnd: !!rec.cancelAtPeriodEnd,
+    status: rec.status || 'none',
+  }, origin);
+}
+
+
+// ---------- GET /transactions ----------
+// Historial real de la cuenta: compras de Drex Coins (DynamoDB, lo que el
+// webhook registró) + pagos de Drex Orbit (facturas de Stripe) + estado
+// actual de la suscripción. Autenticado con Cognito ID token en el header
+// Authorization (Bearer). Si no hay registros, devuelve listas vacías:
+// la app muestra un estado vacío honesto, nunca inventa movimientos.
+async function handleTransactions(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  const ip = clientIp(event);
+  if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
+
+  const authH = (event.headers && (event.headers.authorization || event.headers.Authorization)) || '';
+  const m = /^Bearer\s+(.+)$/.exec(String(authH).trim());
+  if (!m) return json(401, { error: 'unauthorized' }, origin);
+  let userSub;
+  try {
+    userSub = await verifyIdToken(m[1]);
+  } catch (e) {
+    const status = (e && e.status) || 401;
+    return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
+  }
+
+  // 1) Compras de Drex Coins desde DynamoDB (hojas transactions/<sub>/<txid>/<campo>)
+  const txs = [];
+  try {
+    let lastKey = undefined;
+    do {
+      const q = await ddb.send(new QueryCommand({
+        TableName: TABLE,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :pre)',
+        ExpressionAttributeValues: { ':pk': 'transactions', ':pre': userSub + '/' },
+        ...(lastKey ? { ExclusiveStartKey: lastKey } : {}),
+      }));
+      const byTx = {};
+      for (const it of (q.Items || [])) {
+        const parts = String(it.sk || '').split('/');
+        if (parts.length < 3) continue;
+        const txid = parts[1];
+        const field = parts.slice(2).join('/');
+        let v = null;
+        try { v = JSON.parse(it.v); } catch (_) { v = it.v; }
+        (byTx[txid] = byTx[txid] || {})[field] = v;
+      }
+      for (const txid of Object.keys(byTx)) {
+        const r = byTx[txid];
+        if (!r.ts) continue;
+        const pkg = r.meta && r.meta.pkg ? packageById(r.meta.pkg) : null;
+        txs.push({
+          id: txid,
+          type: 'coins',
+          ts: Number(r.ts) || 0,
+          amount: Number(r.amount) || 0,
+          currency: 'coins',
+          cents: pkg ? pkg.cents : null,
+          label: pkg ? (pkg.name + ' — ' + pkg.coins + ' monedas') : 'Compra de Drex Coins',
+          status: r.type === 'purchase' ? 'completed' : String(r.type || 'unknown'),
+        });
+      }
+      lastKey = q.LastEvaluatedKey;
+    } while (lastKey);
+  } catch (e) {
+    console.error('transactions query failed:', e && e.message);
+    return json(500, { error: 'db_read_failed' }, origin);
+  }
+
+  // 2) Estado de la suscripción Drex Orbit (DynamoDB, fuente de verdad local)
+  let rec = null;
+  try {
+    rec = await readOrbit(userSub);
+  } catch (e) {
+    return json(500, { error: 'db_read_failed' }, origin);
+  }
+  const subscription = rec ? {
+    active: orbitIsActive(rec),
+    plan: rec.plan || null,
+    status: rec.status || 'none',
+    currentPeriodEnd: rec.currentPeriodEnd || null,
+    cancelAtPeriodEnd: !!rec.cancelAtPeriodEnd,
+  } : { active: false, plan: null, status: 'none', currentPeriodEnd: null, cancelAtPeriodEnd: false };
+
+  // 3) Pagos de Drex Orbit desde Stripe (facturas del cliente)
+  if (rec && rec.stripeCustomerId) {
+    try {
+      const invs = await stripe().invoices.list({ customer: rec.stripeCustomerId, limit: 25 });
+      for (const inv of (invs && invs.data) || []) {
+        const planName = rec.plan === 'yearly' ? 'Drex Orbit Anual' : 'Drex Orbit Mensual';
+        txs.push({
+          id: String(inv.id || ''),
+          type: 'orbit',
+          ts: Number(inv.created || 0) * 1000,
+          amount: Number(inv.amount_paid || 0),
+          currency: String(inv.currency || 'usd'),
+          label: planName,
+          status: inv.status === 'paid' ? 'completed' : String(inv.status || 'unknown'),
+        });
+      }
+    } catch (e) {
+      // Stripe caído no rompe el historial: se devuelven las compras locales.
+      console.error('stripe invoices failed:', e && e.message);
+    }
+  }
+
+  txs.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return json(200, { transactions: txs, subscription }, origin);
+}
+
+// ---------- webhook: eventos de suscripción Drex Orbit ----------
+
+function wok(body) {
+  return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}
+function werr(status, body) {
+  return { statusCode: status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}
+
+// checkout.session.completed con mode:'subscription': activa Drex Orbit.
+// La suscripción se recupera de Stripe para datos autoritativos
+// (periodo actual, customer id).
+async function handleKoroneCheckoutCompleted(stripeEvent, session) {
+  if (session.payment_status && session.payment_status !== 'paid' && session.status !== 'complete') {
+    return wok({ received: true, ignored: 'unpaid' });
+  }
+  const md = session.metadata || {};
+  const userSub = md.drex_user_sub || session.client_reference_id || null;
+  const plan = md.drex_orbit_plan;
+  if (!userSub || (plan !== 'monthly' && plan !== 'yearly')) {
+    console.error('orbit webhook missing/invalid metadata', { hasSub: !!userSub, plan });
+    return wok({ received: true, ignored: 'bad_metadata' });
+  }
+  const subRef = session.subscription;
+  const subId = typeof subRef === 'string' ? subRef : (subRef && subRef.id);
+  if (!subId) {
+    console.error('orbit webhook without subscription id', { session: session.id });
+    return wok({ received: true, ignored: 'no_subscription' });
+  }
+  let sub = null;
+  try {
+    sub = await stripe().subscriptions.retrieve(subId);
+  } catch (e) {
+    console.error('orbit subscription retrieve failed:', e && e.message);
+    // 500 => Stripe reintenta; la idempotencia evita doble activación.
+    return werr(500, { error: 'subscription_fetch_failed' });
+  }
+  const st = subscriptionStateFrom(sub, plan);
+  if (!st.stripeCustomerId) st.stripeCustomerId = session.customer || null;
+  if (!st.stripeSubscriptionId) st.stripeSubscriptionId = subId;
+  try {
+    const r = await saveOrbitState({ userSub, ...st, eventId: stripeEvent.id, eventType: stripeEvent.type });
+    if (r.duplicate) {
+      console.log('duplicate orbit webhook event ignored', stripeEvent.id);
+      return wok({ received: true, duplicate: true });
+    }
+    console.log('orbit activated', { plan: st.plan, subscription: st.stripeSubscriptionId });
+    return wok({ received: true, activated: true, plan: st.plan });
+  } catch (e) {
+    return werr(500, { error: 'orbit_save_failed' });
+  }
+}
+
+// customer.subscription.updated / customer.subscription.deleted
+async function handleKoroneSubscriptionEvent(stripeEvent, sub, type) {
+  const md = (sub && sub.metadata) || {};
+  const userSub = md.drex_user_sub || null;
+  if (!userSub) {
+    // Sin metadata no hay forma segura de identificar al usuario (no hay
+    // índice customer->sub). Se registra y se ignora; no se adivina.
+    console.error('orbit subscription event without drex_user_sub', { type, sub: sub && sub.id });
+    return wok({ received: true, ignored: 'no_user' });
+  }
+  const st = subscriptionStateFrom(sub, null);
+  if (type === 'customer.subscription.deleted') st.status = 'canceled';
+  try {
+    const r = await saveOrbitState({ userSub, ...st, eventId: stripeEvent.id, eventType: type });
+    if (r.duplicate) {
+      console.log('duplicate orbit webhook event ignored', stripeEvent.id);
+      return wok({ received: true, duplicate: true });
+    }
+    console.log('orbit subscription event', { type, status: st.status, sub: st.stripeSubscriptionId });
+    return wok({ received: true, updated: true, status: st.status });
+  } catch (e) {
+    return werr(500, { error: 'orbit_save_failed' });
+  }
+}
+
+// invoice.payment_succeeded / invoice.payment_failed: renovaciones y fallos.
+async function handleKoroneInvoiceEvent(stripeEvent, invoice, type) {
+  const subRef = invoice.subscription;
+  const subId = typeof subRef === 'string' ? subRef : (subRef && subRef.id);
+  if (!subId) return wok({ received: true, ignored: 'no_subscription' });
+  let sub = null;
+  try {
+    sub = await stripe().subscriptions.retrieve(subId);
+  } catch (e) {
+    console.error('orbit invoice subscription retrieve failed:', e && e.message);
+    return werr(500, { error: 'subscription_fetch_failed' });
+  }
+  const md = (sub && sub.metadata) || {};
+  const userSub = md.drex_user_sub || null;
+  if (!userSub) {
+    console.error('orbit invoice event without drex_user_sub', { type, sub: subId });
+    return wok({ received: true, ignored: 'no_user' });
+  }
+  const st = subscriptionStateFrom(sub, null);
+  // Un pago fallido marca morosidad aunque la suscripción siga listada
+  // como activa en este instante; el siguiente updated la corregirá.
+  if (type === 'invoice.payment_failed') st.status = 'past_due';
+  try {
+    const r = await saveOrbitState({ userSub, ...st, eventId: stripeEvent.id, eventType: type });
+    if (r.duplicate) {
+      console.log('duplicate orbit webhook event ignored', stripeEvent.id);
+      return wok({ received: true, duplicate: true });
+    }
+    console.log('orbit invoice event', { type, status: st.status, sub: subId });
+    return wok({ received: true, updated: true, status: st.status });
+  } catch (e) {
+    return werr(500, { error: 'orbit_save_failed' });
+  }
+}
+
+// checkout.session.completed de pago único (Drex Coins): lógica original,
+// sin cambios de comportamiento.
+async function handleCoinsCheckoutCompleted(stripeEvent, session) {
+  if (session.payment_status && session.payment_status !== 'paid') {
+    return wok({ received: true, ignored: 'unpaid' });
+  }
+  const md = session.metadata || {};
+  const userSub = md.drex_user_sub || session.client_reference_id || null;
+  const pkg = packageById(md.drex_package_id);
+  if (!userSub || !pkg) {
+    console.error('webhook missing/invalid metadata', { hasSub: !!userSub, pkgId: md.drex_package_id });
+    return wok({ received: true, ignored: 'bad_metadata' });
+  }
+  // Las monedas vienen de la lista canónica, nunca del metadata.
+  try {
+    const r = await creditCoins({ userSub, packageId: pkg.id, coins: pkg.coins, sessionId: session.id, eventId: stripeEvent.id });
+    if (r.duplicate) {
+      console.log('duplicate webhook event ignored', stripeEvent.id);
+      return wok({ received: true, duplicate: true });
+    }
+    console.log('coins credited', { pkg: pkg.id, coins: pkg.coins, session: session.id });
+    return wok({ received: true, credited: true, coins: r.newCoins });
+  } catch (e) {
+    console.error('credit failed:', e && e.message);
+    // 500 => Stripe reintenta el webhook; la idempotencia evita doble abono.
+    return werr(500, { error: 'credit_failed' });
+  }
+}
+
 // ---------- POST /webhook ----------
+
 
 function receiptLeafPuts(userSub, receipt) {
   const base = `${userSub}/${receipt.txid}`;
@@ -367,35 +890,22 @@ async function handleWebhook(event) {
     return { statusCode: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'invalid_signature' }) };
   }
 
-  // Solo nos interesa el pago completado; lo demás se acusa recibo sin hacer nada.
-  if (stripeEvent.type !== 'checkout.session.completed') {
-    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ received: true, ignored: stripeEvent.type }) };
+  const type = stripeEvent.type;
+  const obj = stripeEvent.data.object || {};
+
+  if (type === 'checkout.session.completed') {
+    // Suscripción Drex Orbit vs compra única de Coins: el modo manda.
+    if (obj.mode === 'subscription') return handleKoroneCheckoutCompleted(stripeEvent, obj);
+    return handleCoinsCheckoutCompleted(stripeEvent, obj);
   }
-  const session = stripeEvent.data.object || {};
-  if (session.payment_status && session.payment_status !== 'paid') {
-    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ received: true, ignored: 'unpaid' }) };
+  if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') {
+    return handleKoroneSubscriptionEvent(stripeEvent, obj, type);
   }
-  const md = session.metadata || {};
-  const userSub = md.drex_user_sub || session.client_reference_id || null;
-  const pkg = packageById(md.drex_package_id);
-  if (!userSub || !pkg) {
-    console.error('webhook missing/invalid metadata', { hasSub: !!userSub, pkgId: md.drex_package_id });
-    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ received: true, ignored: 'bad_metadata' }) };
+  if (type === 'invoice.payment_succeeded' || type === 'invoice.payment_failed') {
+    return handleKoroneInvoiceEvent(stripeEvent, obj, type);
   }
-  // Las monedas vienen de la lista canónica, nunca del metadata.
-  try {
-    const r = await creditCoins({ userSub, packageId: pkg.id, coins: pkg.coins, sessionId: session.id, eventId: stripeEvent.id });
-    if (r.duplicate) {
-      console.log('duplicate webhook event ignored', stripeEvent.id);
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ received: true, duplicate: true }) };
-    }
-    console.log('coins credited', { pkg: pkg.id, coins: pkg.coins, session: session.id });
-    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ received: true, credited: true, coins: r.newCoins }) };
-  } catch (e) {
-    console.error('credit failed:', e && e.message);
-    // 500 => Stripe reintenta el webhook; la idempotencia evita doble abono.
-    return { statusCode: 500, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'credit_failed' }) };
-  }
+  // Lo demás se acusa recibo sin hacer nada.
+  return wok({ received: true, ignored: type });
 }
 
 // ---------- handler ----------
@@ -414,6 +924,18 @@ export const handler = async (event) => {
   }
   if (method === 'POST' && path === '/create-checkout-session') {
     return handleCreateSession(event);
+  }
+  if (method === 'POST' && path === '/create-subscription-session') {
+    return handleCreateSubscriptionSession(event);
+  }
+  if (method === 'POST' && path === '/create-customer-portal') {
+    return handleCustomerPortal(event);
+  }
+  if (method === 'POST' && path === '/subscription-status') {
+    return handleSubscriptionStatus(event);
+  }
+  if (method === 'GET' && path === '/transactions') {
+    return handleTransactions(event);
   }
   if (method === 'POST' && path === '/webhook') {
     return handleWebhook(event);
