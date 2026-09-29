@@ -21990,12 +21990,30 @@ else { try { drexSnapInit(); } catch (_) {} }
       if (n.groupId) await DrexCloud.database().ref('postsByGroup/' + n.groupId + '/' + noteId).remove().catch(() => {});
       if (n.fiestaId) await DrexCloud.database().ref('postsByFiesta/' + n.fiestaId + '/' + noteId).remove().catch(() => {});
     } catch (_) {}
-    DrexCloud.database().ref('noteImages/' + noteId).remove().catch(() => {});
-    DrexCloud.database().ref('noteVideos/' + noteId).remove().catch(() => {});
-    // FIX AUDITORÍA FEED/COMENTARIOS 2026-09-23 (ciclo 24): borrar un post
-    // dejaba postComments/<noteId> huérfano (toda la conversación y sus
-    // respuestas) creciendo sin límite en la BD; la cascada nunca lo tocaba.
-    DrexCloud.database().ref('postComments/' + noteId).remove().catch(() => {});
+    // DATA-INTEGRITY: la limpieza de medios y comentarios se ESPERA (no es
+    // fire-and-forget). Antes se devolvía `true` ("Publicación eliminada.")
+    // con estas escrituras aún en vuelo: cerrar la app o navegar en ese
+    // instante dejaba noteImages/noteVideos/postComments huérfanos.
+    // allSettled (no all): una limpieza lenta o fallida no cancela las demás;
+    // el post ya está borrado, así que un fallo residual se traga igual que
+    // el resto de la cascada, pero ya no hay ventana de orfandad por no esperar.
+    await Promise.allSettled([
+      DrexCloud.database().ref('noteImages/' + noteId).remove().catch(() => {}),
+      DrexCloud.database().ref('noteVideos/' + noteId).remove().catch(() => {}),
+      // FIX AUDITORÍA FEED/COMENTARIOS 2026-09-23 (ciclo 24): borrar un post
+      // dejaba postComments/<noteId> huérfano (toda la conversación y sus
+      // respuestas) creciendo sin límite en la BD; la cascada nunca lo tocaba.
+      DrexCloud.database().ref('postComments/' + noteId).remove().catch(() => {}),
+      // DATA-INTEGRITY: subárboles post-céntricos huérfanos tras el borrado.
+      // postSavedBy/<noteId> no lo lee nadie (índice solo-escritura);
+      // postEcos/<noteId> solo lo lee el analizador de Baro tras verificar
+      // que el post existe; postReposts/<noteId> es legacy sin lectores.
+      // (Los inversos por-usuario userEcos/savedPosts/userReposts requieren
+      // fan-out y quedan como hallazgo pendiente: ver reporte.)
+      DrexCloud.database().ref('postEcos/' + noteId).remove().catch(() => {}),
+      DrexCloud.database().ref('postSavedBy/' + noteId).remove().catch(() => {}),
+      DrexCloud.database().ref('postReposts/' + noteId).remove().catch(() => {})
+    ]);
     try { if (window.DrexCache) window.DrexCache.invalidate('feed'); } catch (_) {}
     _closeViewerIfShowingNote(noteId);
     return true;
@@ -22879,10 +22897,12 @@ else { try { drexSnapInit(); } catch (_) {} }
         }
 
         return note;
-      }).then(transactionResult => {
+      }).then(async transactionResult => {
         if (!transactionResult || !transactionResult.committed) {
           // A16: el post desapareció entre la lectura y la escritura.
-          // No se reintenta: no es un error de red.
+          // No se reintenta: no es un error de red. Se revierte el índice
+          // escrito antes de la transacción para no dejar un voto huérfano.
+          try { await userVoteRef.remove(); } catch (_) {}
           paintVoteUI(wasUpvoted, wasDownvoted, currentScore);
           showMiniToast(appT('Esta publicación ya no existe.'));
           return { postGone: true };
@@ -22890,11 +22910,11 @@ else { try { drexSnapInit(); } catch (_) {} }
         const updatedNote = transactionResult && transactionResult.snapshot ? transactionResult.snapshot.val() : null;
         const newVote = currentVote === voteType ? null : voteType;
 
-        if (newVote === null) {
-          userVoteRef.remove();
-        } else {
-          userVoteRef.set(newVote);
-        }
+        // DATA-INTEGRITY: el índice userVotes/<uid>/<noteId> ya quedó escrito
+        // ANTES de la transacción (attemptVoteCore, dentro del reintento). El
+        // fire-and-forget posterior al commit se eliminó: si esa escritura se
+        // perdía, el siguiente voto leía un currentVote obsoleto y el
+        // contador se desincronizaba de forma permanente.
 
         // Sincronizar la UI con el valor real ya confirmado por DrexCloud
         // (corrige cualquier pequeño desajuste que haya dejado el paso optimista).
@@ -22932,12 +22952,10 @@ else { try { drexSnapInit(); } catch (_) {} }
       const serverVote = snapshot.val() || null;
       if (attempt === 1) {
         intendedVote = (serverVote === voteType) ? null : voteType;
-        return runVoteTransaction(serverVote);
-      }
-      // Reintento: si el intento anterior sí se aplicó en el servidor pero
-      // se perdió la respuesta, el voto deseado ya está guardado: no tocar
-      // nada y sincronizar la UI con el servidor.
-      if (serverVote === intendedVote) {
+      } else if (serverVote === intendedVote) {
+        // Reintento: el intento anterior ya aplicó índice + contador pero se
+        // perdió la respuesta: no tocar nada y sincronizar la UI con el
+        // servidor (evita el doble conteo).
         return noteRef.once('value').then(noteSnap => {
           const serverNote = noteSnap.val();
           if (serverNote) {
@@ -22947,7 +22965,11 @@ else { try { drexSnapInit(); } catch (_) {} }
           return { alreadyApplied: true };
         });
       }
-      return runVoteTransaction(serverVote);
+      // DATA-INTEGRITY: el índice se escribe ANTES del contador y DENTRO del
+      // flujo con reintento. Si esta escritura falla, el reintento la repite;
+      // si ya se había aplicado todo, el guard de arriba evita reaplicar.
+      const _writeIndex = (intendedVote === null) ? userVoteRef.remove() : userVoteRef.set(intendedVote);
+      return _writeIndex.then(() => runVoteTransaction(serverVote));
     });
 
     _runWithAutoRetry(attemptVoteCore, 'voto').catch(err => {
