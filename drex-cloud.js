@@ -2474,12 +2474,56 @@ function withCredRetry(opFn) {
   // tenía 3 oyentes (child_added/changed/removed) sobre la misma consulta y
   // cada uno descargaba communityNotes COMPLETO cada 3 s. Ahora los 3
   // comparten el mismo snapshot: ~3x menos lecturas al servidor.
+  // PERF 2026-09-29: polling adaptativo por INACTIVIDAD del usuario.
+  // Causa raíz del gasto DynamoDB (~111M RRU en sep 2026): el ciclo normal
+  // sondeaba cada 3 s aunque nadie tocara la app (pestaña abierta en el
+  // escritorio, teléfono sobre la mesa, sesiones de QA). El ciclo normal
+  // ahora se SALTA cuando el usuario lleva inactivo: 1 de cada 4 ciclos
+  // tras 2 min inactivo (~12 s efectivos), 1 de cada 10 tras 10 min
+  // (~30 s), 1 de cada 20 tras 30 min (~60 s). Cero lecturas en los ciclos
+  // saltados. El ciclo rápido de señalización WebRTC (fiestas) no se toca:
+  // una fiesta activa implica actividad. Al volver a interactuar o a la
+  // pestaña, el siguiente tick (<=3 s) refresca. UX con actividad intacta.
+  var _drexLastInteractTs = Date.now();
+  var _drexPollTick = 0;
+  function _drexNoteInteract() { _drexLastInteractTs = Date.now(); }
+  try {
+    if (typeof window !== 'undefined') {
+      var _drexInteractEvs = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
+      for (var _iie = 0; _iie < _drexInteractEvs.length; _iie++) {
+        window.addEventListener(_drexInteractEvs[_iie], _drexNoteInteract, { passive: true, capture: true });
+      }
+      var _drexMmThrottle = 0;
+      window.addEventListener('mousemove', function () {
+        var _n = Date.now();
+        if (_n - _drexMmThrottle > 5000) { _drexMmThrottle = _n; _drexNoteInteract(); }
+      }, { passive: true, capture: true });
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', function () {
+          try { if (!document.hidden) _drexNoteInteract(); } catch (_) {}
+        });
+      }
+    }
+  } catch (_) {}
+  function _drexIdleSkipDivisor() {
+    var idleMs = Date.now() - _drexLastInteractTs;
+    if (idleMs > 30 * 60 * 1000) return 20;
+    if (idleMs > 10 * 60 * 1000) return 10;
+    if (idleMs > 2 * 60 * 1000) return 4;
+    return 1;
+  }
   function pollListenersGrouped(fastOnly) {
     // En segundo plano no se sondea (ahorra batería y datos en el iPhone);
     // al volver a primer plano el siguiente ciclo (<=3 s) refresca. La
     // señalización de fiestas (polling rápido de WebRTC) sigue activa.
     if (typeof document !== 'undefined' && document.hidden) {
       if (!fastOnly || !fastPolling) return;
+    }
+    // PERF 2026-09-29 (inactividad): el ciclo normal se salta según el
+    // divisor de inactividad; el rápido (señalización WebRTC) nunca se salta.
+    if (!fastOnly) {
+      _drexPollTick++;
+      if ((_drexPollTick % _drexIdleSkipDivisor()) !== 0) return;
     }
     var groups = {};
     listeners.slice().forEach(function (l) {
