@@ -82,14 +82,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 596 ocurrencias en index.html (studio/live/baro/C236+, tab Notas y presencia live global: features legítimos)', () => count(/\.innerHTML/g, html) === 596);
+tcase('innerHTML: 607 ocurrencias en index.html (studio/live/baro/C236+, tab Notas y presencia live global: features legítimos)', () => count(/\.innerHTML/g, html) === 607);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 596 &&
+  count(/\.innerHTML/g, copy) === 607 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);

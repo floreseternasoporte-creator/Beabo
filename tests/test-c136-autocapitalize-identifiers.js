@@ -129,9 +129,12 @@ tcase('textarea: chat-edit-input conserva enterkeyhint=done + onkeydown honesto'
     t.indexOf('saveEditedChatMessage()') >= 0;
 });
 
+// C240-L2 (2026-09-29): +1 <select> nativo (#dl2-poll-dur, duracion de la
+// encuesta: 1h/1d/3d/1sem; uso consistente con el resto de la app).
+// Nuevo inventario: 18.
 // ---- 5. select nativos: inventario x13, uso consistente ----
-tcase('select: 17 <select nativos (inventario cerrado)', () =>
-  count(/<select[\s>]/g, html) === 17);
+tcase('select: 18 <select nativos (inventario cerrado)', () =>
+  count(/<select[\s>]/g, html) === 18);
 
 // ---- 6. falla-en-base: contra HEAD los 4 leads carecen del trio ----
 tcase('base: en HEAD (sin el fix) los 4 leads NO tienen el trio', () => {
