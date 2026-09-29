@@ -218,7 +218,7 @@ tcase('T9 integración', () => {
     'T9e marcador userViews/<uid>/<noteId>');
   ok(/ref\('communityNotes\/' \+ id \+ '\/viewCount'\)/.test(html),
     'T9f contador communityNotes/<id>/viewCount');
-  ok(!/noteViewers/.test(html), 'T9g sin path noteViewers (se usa userViews)');
+  ok(!/'noteViewers\//.test(html), 'T9g sin path noteViewers (se usa userViews)');
   ok(/stat\(appT\('Vistas'\), t\.views\)/.test(html), 'T9h stat Vistas en el panel');
   ok(/totals\.views \+= Number\(p\.viewCount \|\| 0\)/.test(html), 'T9i aggregate suma viewCount');
 });

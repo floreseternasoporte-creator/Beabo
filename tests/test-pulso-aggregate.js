@@ -65,11 +65,12 @@ check('sonda: function drexPulsoAggregate (núcleo puro)', html.includes('functi
 check('HTML: contenedor #drex-pulso-card existe', html.includes('id="drex-pulso-card"'));
 check('HTML: contenedor #drex-pulso-body existe y nace vacío',
   html.includes('<div id="drex-pulso-body"></div>'));
-check('HTML: #drex-pulso-card está dentro de #creator-hub-view',
-  html.indexOf('id="drex-pulso-card"') > html.indexOf('id="creator-hub-view"') &&
-  html.indexOf('id="drex-pulso-card"') < html.indexOf('id="fiesta-view"'));
-check('JS: openCreatorHub dispara openPulsoPanel()',
-  html.includes("try { if (typeof openPulsoPanel === 'function') openPulsoPanel(); } catch (_) {}"));
+check('HTML: #drex-pulso-card está dentro de #pulso-view (vista propia, no en el hub)',
+  html.indexOf('id="drex-pulso-card"') > html.indexOf('id="pulso-view"') &&
+  html.indexOf('id="drex-pulso-card"') < html.indexOf('id="envivo-view"'));
+check('JS: openPulsoView dispara openPulsoPanel()',
+  html.includes('function openPulsoView()') &&
+  html.indexOf("typeof openPulsoPanel === 'function') openPulsoPanel()") > html.indexOf('function openPulsoView()'));
 check('JS: caché con TTL corto', html.includes('var PULSO_CACHE_TTL_MS = 60000;'));
 
 // ---- 2. Solo lectura: el bloque Pulso no escribe ----------------------------

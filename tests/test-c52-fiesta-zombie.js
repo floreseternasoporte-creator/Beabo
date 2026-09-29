@@ -118,7 +118,7 @@ function makeCtx(fiestaDoc, membersMap) {
       { status: 'live', hostId: 'host1', createdAt: now - 120000, maxSpeakers: 6 }, noHost);
     const r = await vm.runInContext('joinFiesta("z1", false)', ctx);
     check('F1: fiesta zombi vieja -> joinFiesta devuelve false', r === false);
-    check('F1: toast "Esta fiesta ya terminó."', toasts.some(t => t.includes('Esta fiesta ya terminó.')));
+    check('F1: toast "Esta fiesta de voz ya terminó."', toasts.some(t => t.includes('Esta fiesta de voz ya terminó.')));
     check('F1: marca fiestas/z1/status = ended', writes.some(w => w.path === 'fiestas/z1/status' && w.set === 'ended'));
     check('F1: markFiestaNotesEnded caduca las tarjetas del feed', calls.includes('markEnded:z1'));
   }
