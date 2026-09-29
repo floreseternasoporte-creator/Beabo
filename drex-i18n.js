@@ -2516,8 +2516,6 @@ var APP_ENGLISH_TEXT = {
 "Recargar monedas":"Top up coins",
 "No tienes suficientes Drex Coins":"You don't have enough Drex Coins",
 "Inicia sesión para enviar regalos.":"Sign in to send gifts.",
-"pagos.no_disponible":"Real-money payments are not available in Drex yet. We are connecting the payment provider.",
-"pagos.aviso_honesto":"Drex Coins have no cash value. Purchases will only be enabled when a real payment provider is connected.",
 "Pagos no disponibles todavía":"Payments not available yet",
 "Próximamente":"Coming soon",
 "¡Monedas agregadas a tu billetera!":"Coins added to your wallet!",
@@ -2682,6 +2680,14 @@ var APP_ENGLISH_TEXT = {
 "Enlace 3":"Link 3",
 "URL":"URL",
 "Publicación de ":"Post by ",
+"Pago seguro con Stripe":"Secure payment with Stripe",
+"Inicia sesión para comprar monedas.":"Sign in to buy coins.",
+"No se pudo iniciar el pago. Inténtalo de nuevo.":"Could not start the payment. Try again.",
+"Pago recibido. Tus monedas se acreditarán en unos segundos.":"Payment received. Your coins will be credited in a few seconds.",
+"Pago cancelado. No se realizó ningún cargo.":"Payment cancelled. No charge was made.",
+"Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.":"Real-money payments are not available in Drex yet. We are connecting the payment provider.",
+"Las Drex Coins no tienen valor en efectivo.":"Drex Coins have no cash value.",
+"Las compras se activarán cuando se conecte un proveedor de pago real.":"Purchases will be enabled once a real payment provider is connected.",
 };
 var APP_CHINESE_TEXT = {
 
@@ -5196,8 +5202,6 @@ var APP_CHINESE_TEXT = {
 "Recargar monedas":"充值金币",
 "No tienes suficientes Drex Coins":"你的Drex金币不足",
 "Inicia sesión para enviar regalos.":"登录后才能发送礼物。",
-"pagos.no_disponible":"Drex暂未开通真实货币支付。我们正在接入支付服务商。",
-"pagos.aviso_honesto":"Drex金币没有现金价值。仅在接入真实支付服务商后才会启用购买。",
 "Pagos no disponibles todavía":"暂未开通支付",
 "Próximamente":"即将推出",
 "¡Monedas agregadas a tu billetera!":"金币已添加到你的钱包！",
@@ -5362,6 +5366,14 @@ var APP_CHINESE_TEXT = {
 "Enlace 3":"链接 3",
 "URL":"URL",
 "Publicación de ":"帖子作者：",
+"Pago seguro con Stripe":"通过 Stripe 安全支付",
+"Inicia sesión para comprar monedas.":"请登录以购买金币。",
+"No se pudo iniciar el pago. Inténtalo de nuevo.":"无法发起支付，请重试。",
+"Pago recibido. Tus monedas se acreditarán en unos segundos.":"已收到付款，你的金币将在几秒钟内到账。",
+"Pago cancelado. No se realizó ningún cargo.":"已取消付款，未产生任何费用。",
+"Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.":"Drex暂未开通真实货币支付，我们正在接入支付服务商。",
+"Las Drex Coins no tienen valor en efectivo.":"Drex金币没有现金价值。",
+"Las compras se activarán cuando se conecte un proveedor de pago real.":"接入真实支付服务商后将启用购买功能。",
 };
 var APP_PORTUGUESE_TEXT = {
 
@@ -7867,8 +7879,6 @@ var APP_PORTUGUESE_TEXT = {
 "Recargar monedas":"Recarregar moedas",
 "No tienes suficientes Drex Coins":"Você não tem Drex Coins suficientes",
 "Inicia sesión para enviar regalos.":"Inicie sessão para enviar presentes.",
-"pagos.no_disponible":"Pagamentos com dinheiro real ainda não estão disponíveis no Drex. Estamos conectando o provedor de pagamento.",
-"pagos.aviso_honesto":"Drex Coins não têm valor em dinheiro. As compras só serão ativadas quando um provedor de pagamento real for conectado.",
 "Pagos no disponibles todavía":"Pagamentos ainda não disponíveis",
 "Próximamente":"Em breve",
 "¡Monedas agregadas a tu billetera!":"Moedas adicionadas à sua carteira!",
@@ -8033,6 +8043,14 @@ var APP_PORTUGUESE_TEXT = {
 "Enlace 3":"Link 3",
 "URL":"URL",
 "Publicación de ":"Publicação de ",
+"Pago seguro con Stripe":"Pagamento seguro com Stripe",
+"Inicia sesión para comprar monedas.":"Faça login para comprar moedas.",
+"No se pudo iniciar el pago. Inténtalo de nuevo.":"Não foi possível iniciar o pagamento. Tente de novo.",
+"Pago recibido. Tus monedas se acreditarán en unos segundos.":"Pagamento recebido. Suas moedas serão creditadas em alguns segundos.",
+"Pago cancelado. No se realizó ningún cargo.":"Pagamento cancelado. Nenhuma cobrança foi feita.",
+"Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.":"Pagamentos com dinheiro real ainda não estão disponíveis no Drex. Estamos conectando o provedor de pagamento.",
+"Las Drex Coins no tienen valor en efectivo.":"Drex Coins não têm valor em dinheiro.",
+"Las compras se activarán cuando se conecte un proveedor de pago real.":"As compras serão ativadas quando um provedor de pagamento real for conectado.",
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

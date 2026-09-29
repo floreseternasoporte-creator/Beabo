@@ -49192,6 +49192,39 @@ function drexInitRouteObserver() {
   } catch (_) {}
 })();
 
+// Retorno de Stripe Checkout: ?coins=success | ?coins=cancelled (+session_id).
+// Las monedas las acredita el webhook en el servidor, nunca el cliente:
+// aquí solo se avisa, se invalida la caché del saldo y se limpia la URL
+// para no re-mostrar el aviso al recargar.
+(function capturePaymentReturn() {
+  try {
+    var q = new URLSearchParams(location.search);
+    var st = q.get('coins');
+    if (st !== 'success' && st !== 'cancelled') return;
+    try {
+      var url = new URL(location.href);
+      url.search = '';
+      history.replaceState(null, '', url.toString());
+    } catch (_) {}
+    var show = function () {
+      try {
+        if (st === 'success') {
+          if (typeof toast === 'function') toast(t('Pago recibido. Tus monedas se acreditarán en unos segundos.'));
+          if (typeof DrexCoins !== 'undefined') {
+            var u = DrexCoins._uid();
+            if (u && DrexCoins._cache) delete DrexCoins._cache[u];
+            DrexCoins.load().then(function () { if (typeof drexCoinsRefreshChips === 'function') drexCoinsRefreshChips(); }).catch(function () {});
+          }
+        } else if (typeof toast === 'function') {
+          toast(t('Pago cancelado. No se realizó ningún cargo.'));
+        }
+      } catch (_) {}
+    };
+    if (document.readyState === 'complete') setTimeout(show, 900);
+    else window.addEventListener('load', function () { setTimeout(show, 900); });
+  } catch (_) {}
+})();
+
 // C46-G1: unirse a un grupo desde su enlace de invitacion (?joinGroup=<id>).
 // Antes el enlace era un callejon sin salida para no-miembros: solo abria la
 // sala si ya eras miembro; si no, mostraba un toast sin forma de unirse,
@@ -87644,6 +87677,9 @@ window.drexLiveCloseGifts = function () {
  * Diamantes del host: 1 diamante por cada 20 Drex Coins recibidas en regalos.
  * El canje de diamantes a dinero real requiere proceso manual o proveedor;
  * aqui solo se registra en el libro (honesto: no se simula ningun pago).
+ * Compras con dinero real: Lambda drex-payments + Stripe Checkout
+ * (ver docs/pagos-drex-coins.md). Sin DREX_PAYMENTS_ENDPOINT configurado,
+ * la tienda muestra "Proximamente" con honestidad.
  */
 var DREX_COIN_PACKAGES = [
   { id: 'coins_100',   name: 'Paquete Inicial',  coins: 100,   base: 100,   bonus: 0,  usd: 0.99,  tag: null },
@@ -87656,20 +87692,22 @@ var DREX_COIN_PACKAGES = [
 var DREX_DIAMOND_RATE = 10;
 var DREX_DIAMOND_USD_RATE = 1000;
 
-/* Proveedor de pago ENCHUFABLE. Sin proveedor configurado, isAvailable()
- * es false y la UI lo dice con honestidad (no se simula ninguna compra).
- * Para cobrar de verdad:
- *   DrexPay.configure({
- *     name: 'stripe',
- *     isConfigured: function () { return !!window.DREX_STRIPE_PUBLISHABLE_KEY; },
- *     buy: function (pkg) {
- *       // 1. POST al backend propio -> PaymentIntent (monto: pkg.usd)
- *       // 2. stripe.confirmCardPayment(clientSecret)
- *       // 3. return { txId: paymentIntent.id }
- *       return Promise.reject(new Error('no-implementado'));
- *     }
- *   });
- * Credenciales exactas necesarias: ver pagos-drex-coins.md
+/* Backend REAL de pagos (Lambda drex-payments + Stripe Checkout).
+ * Se rellena con la Function URL real tras desplegar la Lambda en AWS.
+ * Vacío = pagos no disponibles: la tienda lo dice con honestidad y ningún
+ * botón "Comprar" cobra nada (no se simula ninguna compra).
+ */
+var DREX_PAYMENTS_ENDPOINT = '';
+
+/* Proveedor de pago REAL: Stripe Checkout vía la Lambda drex-payments.
+ * Sin DREX_PAYMENTS_ENDPOINT configurado, isAvailable() es false y la UI
+ * lo dice con honestidad (no se simula ninguna compra).
+ * Flujo: Comprar -> POST /create-checkout-session (el backend crea la
+ * sesión en Stripe) -> el navegador va a Stripe Checkout -> retorno a la
+ * app con ?coins=success. Las monedas las acredita el webhook de Stripe en
+ * el SERVIDOR (transaccional e idempotente); el cliente NUNCA se
+ * auto-acredita monedas por una compra (sería falsificable).
+ * Despliegue: lane-pay/DEPLOY-CHECKLIST.md y docs/pagos-drex-coins.md
  */
 var DrexPay = {
   _provider: null,
@@ -87682,8 +87720,48 @@ var DrexPay = {
   buy: function (pkg) {
     if (!this.isAvailable()) return Promise.reject(new Error('no-provider'));
     try { return this._provider.buy(pkg); } catch (e) { return Promise.reject(e); }
+  },
+  creditsServerSide: function () {
+    try { return !!(this._provider && this._provider.creditsServerSide); } catch (_) { return false; }
   }
 };
+
+/* Proveedor Stripe Checkout (configuración real). creditsServerSide = true:
+ * drexCoinsBuy NO acredita monedas en el cliente; lo hace el webhook. */
+DrexPay.configure({
+  name: 'stripe',
+  creditsServerSide: true,
+  isConfigured: function () {
+    return typeof DREX_PAYMENTS_ENDPOINT === 'string' && DREX_PAYMENTS_ENDPOINT.replace(/\/+$/, '') !== '';
+  },
+  buy: function (pkg) { return drexStripeCheckout(pkg); }
+});
+
+/* Pide la Checkout Session al backend y redirige a Stripe. */
+async function drexStripeCheckout(pkg) {
+  var endpoint = String((typeof DREX_PAYMENTS_ENDPOINT !== 'undefined') ? DREX_PAYMENTS_ENDPOINT : '').replace(/\/+$/, '');
+  if (!endpoint) throw new Error('no-provider');
+  var idToken = null;
+  try {
+    if (typeof DrexCloud !== 'undefined' && DrexCloud.auth) idToken = await DrexCloud.auth().getIdToken();
+  } catch (_) { idToken = null; }
+  if (!idToken) throw new Error('no-token');
+  var returnUrl = '';
+  try { returnUrl = location.origin + location.pathname; } catch (_) {}
+  var res = await fetch(endpoint + '/create-checkout-session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ packageId: pkg.id, idToken: idToken, returnUrl: returnUrl })
+  });
+  var data = null;
+  try { data = await res.json(); } catch (_) { data = null; }
+  if (!res.ok || !data || !data.url) {
+    var code = (data && data.error) || ('http_' + res.status);
+    throw new Error(String(code));
+  }
+  location.href = data.url; /* Stripe Checkout; el retorno trae ?coins=success */
+  return { redirected: true };
+}
 
 var DrexCoins = {
   _cache: {},
@@ -87827,7 +87905,7 @@ window.drexCoinsOpenShop = function () {
   if (!avail) {
     h += '<div class="dlc-nopay">' + drexIcon('wallet', 'w-8 h-8') +
       '<p><b>' + esc(t('Pagos no disponibles todavía')) + '</b></p>' +
-      '<p>' + esc(t('pagos.no_disponible')) + '</p></div>';
+      '<p>' + esc(t('Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.')) + '</p></div>';
   }
   h += '<div class="dlc-packs">';
   DREX_COIN_PACKAGES.forEach(function (p) {
@@ -87843,7 +87921,9 @@ window.drexCoinsOpenShop = function () {
       '</div>';
   });
   h += '</div>';
-  if (!avail) h += '<p class="dlc-fine">' + esc(t('pagos.aviso_honesto')) + '</p>';
+  h += '<p class="dlc-fine">' + (avail
+    ? esc(t('Pago seguro con Stripe')) + ' · ' + esc(t('Las Drex Coins no tienen valor en efectivo.'))
+    : esc(t('Las compras se activarán cuando se conecte un proveedor de pago real.'))) + '</p>';
   body.innerHTML = h;
   document.getElementById('drex-coins-title').textContent = t('Recargar monedas');
   sh.classList.remove('hidden');
@@ -87852,17 +87932,23 @@ window.drexCoinsBuy = async function (pkgId) {
   var pkg = null;
   for (var i = 0; i < DREX_COIN_PACKAGES.length; i++) if (DREX_COIN_PACKAGES[i].id === pkgId) pkg = DREX_COIN_PACKAGES[i];
   if (!pkg) return;
-  if (!DrexPay.isAvailable()) { toast(t('pagos.no_disponible')); return; }
-  var btn = document.getElementById('drex-coins-title');
+  if (!DrexPay.isAvailable()) { toast(t('Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.')); return; }
+  var uid = (typeof DrexCoins !== 'undefined') ? DrexCoins._uid() : null;
+  if (!uid) { toast(t('Inicia sesión para comprar monedas.')); return; }
   try {
     toast(t('Procesando pago…'));
-    var r = await DrexPay.buy(pkg);
-    var txId = (r && r.txId) || ('pay_' + Date.now());
-    var ok = await DrexCoins.credit(DrexCoins._uid(), pkg.coins, { type: 'purchase', provider: DrexPay.providerName(), pkg: pkg.id, txId: txId });
+    await DrexPay.buy(pkg);
+    /* Con Stripe Checkout el navegador ya va camino a Stripe; las monedas
+     * las acredita el webhook en el servidor, nunca el cliente. */
+    if (DrexPay.creditsServerSide()) return;
+    var txId = 'pay_' + Date.now();
+    var ok = await DrexCoins.credit(uid, pkg.coins, { type: 'purchase', provider: DrexPay.providerName(), pkg: pkg.id, txId: txId });
     if (ok) { toast(t('¡Monedas agregadas a tu billetera!')); drexCoinsRefreshChips(); window.drexCoinsOpenWallet(); }
     else toast(t('No se pudo completar la compra.'));
   } catch (e) {
-    toast(t('No se pudo completar la compra.'));
+    var m = (e && e.message) || '';
+    if (m === 'no-token') toast(t('Inicia sesión para comprar monedas.'));
+    else toast(t('No se pudo iniciar el pago. Inténtalo de nuevo.'));
   }
 };
 
