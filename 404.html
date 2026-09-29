@@ -30337,7 +30337,18 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         // Mensajes específicos para la ruta de nombre de usuario; la ruta de
         // correo conserva exactamente sus mensajes de siempre.
         const friendlyForId = (err) => {
-          if (!isUsername) return getFriendlyErrorMessage(err);
+          // FIX-URG-3 (2026-09-28): anti-enumeración de cuentas. Cognito
+          // distingue "cuenta inexistente" (UserNotFoundException) de
+          // "contraseña incorrecta" (NotAuthorizedException); mostrar mensajes
+          // distintos permitiría probar qué correos están registrados. AMBOS
+          // casos devuelven el mismo mensaje genérico (estándar Meta): ni
+          // siquiera "contraseña incorrecta" puede distinguirse, porque
+          // implica que la cuenta existe. La ruta de usuario ya era genérica
+          // (la Lambda responde 401 único).
+          if (!isUsername) {
+            if (err && (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password')) return getFriendlyErrorMessage({ code: 'auth/invalid-credential' });
+            return getFriendlyErrorMessage(err);
+          }
           if (err && err.code === 'auth/user-not-found') return 'No se encontró ninguna cuenta con ese nombre de usuario.';
           if (err && (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-login-credentials')) return 'Nombre de usuario o contraseña incorrectos.';
           return getFriendlyErrorMessage(err);
@@ -47628,7 +47639,13 @@ async function drexDenyNewDevice() {
     const user = DrexCloud.auth().currentUser;
     if (user && info && info.fpHash) {
       await DrexCloud.database().ref('users/' + user.uid + '/devices/' + String(info.fpHash)).remove();
-      try { await recordSecurityEvent('Dispositivo no reconocido', 'El usuario indicó que no reconoce un inicio de sesión desde ' + (info.label || 'un dispositivo') + '.'); } catch (_) {}
+      // FIX-URG-2 (2026-09-28): "No fui yo" cierra de verdad la sesión del
+      // intruso: revoca todas las demás sesiones (el otro dispositivo detecta
+      // la marca y cierra sesión + revoca sus tokens en Cognito). Best-effort:
+      // si falla, el registro eliminado ya evita que ese dispositivo vuelva a
+      // considerarse reconocido.
+      try { if (DrexCloud.revokeOtherDrexSessions) await DrexCloud.revokeOtherDrexSessions(); } catch (_) {}
+      try { await recordSecurityEvent('Dispositivo no reconocido', 'El usuario indicó que no reconoce un inicio de sesión desde ' + (info.label || 'un dispositivo') + '. Se cerraron las demás sesiones.'); } catch (_) {}
     }
   } catch (_) {}
   try { openSecurityCenter(); } catch (_) {}

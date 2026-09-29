@@ -5341,19 +5341,19 @@ function withCredRetry(opFn) {
   //   a primer plano (throttle: mínimo 60 s entre escrituras).
   // - Limpieza perezosa: al listar, se borran las sesiones con lastActivity > 30 días.
   //
-  // DECISIÓN DE REVOCACIÓN (documentada):
+  // DECISIÓN DE REVOCACIÓN (documentada; FIX-URG-1 2026-09-28):
   // Cognito no permite revocar los tokens de OTRO dispositivo desde el cliente:
   // GlobalSignOut/AdminUserGlobalSignOut exigen credenciales admin (IAM) y en este
   // proyecto no hay ninguna Lambda admin para sesiones (la única Lambda es
   // drex-username-resolve, de login). user.globalSignOut() solo afecta a la sesión local.
   // Por eso "Cerrar" / "Cerrar todas las demás" marcan revoked:true en DynamoDB y el
   // dispositivo afectado lo detecta de dos formas: (1) oyente en tiempo real sobre su
-  // propio registro -> signOut inmediato (segundos, si tiene la app abierta); (2) al
-  // restaurar sesión se lee el registro ANTES de re-registrar: si está revocado se hace
-  // signOut local (se borran los tokens) y la app vuelve a pedir login. Efecto real:
-  // el otro dispositivo debe iniciar sesión de nuevo. Los tokens Cognito del otro
-  // dispositivo siguen siendo técnicamente válidos hasta expirar, pero la app ya no los
-  // acepta para restaurar sesión. Punto de extensión futuro: DrexCloud.revokeOtherDrexSessions().
+  // propio registro -> revocación del refresh token en Cognito + signOut local
+  // (segundos, si tiene la app abierta); (2) al restaurar sesión se lee el registro
+  // ANTES de re-registrar: si está revocado se hace lo mismo. El refresh token y su
+  // familia (access + ID) quedan invalidados en el servidor: sin refresh, los tokens
+  // en disco mueren con su vida útil (<=1 h) y la app ya no los acepta para restaurar
+  // sesión. Punto de extensión futuro: DrexCloud.revokeOtherDrexSessions().
   //
   // Cierre de la sesión PROPIA: además de marcar el registro, se intenta revocar el
   // refresh token en Cognito (revokeToken), best-effort.
@@ -5638,10 +5638,39 @@ function withCredRetry(opFn) {
     } catch (_) {}
   }
 
+  // Revoca el refresh token en Cognito UNA sola vez por objeto de sesión
+  // (bandera en el propio CognitoUser: establishSession crea uno nuevo en cada
+  // login, así que la bandera muere con la sesión). RevokeToken invalida el
+  // refresh token y toda su familia (access + ID). Best-effort.
+  function drexRevokeRefreshTokenOnce(cu) {
+    try {
+      if (!cu || cu._drexRefreshRevoked) return false;
+      var sess = null, rt = null;
+      try {
+        sess = (typeof cu.getSignInUserSession === 'function') ? cu.getSignInUserSession() : null;
+        rt = (sess && typeof sess.getRefreshToken === 'function' && sess.getRefreshToken()) ? sess.getRefreshToken().getToken() : null;
+      } catch (_) { rt = null; }
+      if (cu && rt && typeof cu.revokeToken === 'function') {
+        cu._drexRefreshRevoked = true;
+        try { cu.revokeToken(rt, function () {}); } catch (_) {}
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   function drexSessionsHandleRemoteRevoke() {
     try {
       if (drexSessionState.revokedNoticed) return;
       drexSessionState.revokedNoticed = true;
+      // FIX-URG-1 (2026-09-28): revocar el refresh token en Cognito ANTES de
+      // borrar la sesión local. El dispositivo revocado deja de poder
+      // refrescar aunque conserve los tokens en disco. Best-effort: si falla
+      // la red, el signOut local + la marca revoked:true siguen cerrando la app.
+      try {
+        var rcu = (typeof currentCognitoUser !== 'undefined') ? currentCognitoUser : null;
+        drexRevokeRefreshTokenOnce(rcu);
+      } catch (_) {}
       drexSessionsTeardown(true); // olvida el id: no debe re-registrarse
       try {
         if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('drex_session_revoked_notice', '1');
@@ -5674,14 +5703,7 @@ function withCredRetry(opFn) {
       var uid = drexSessionState.uid, sid = drexSessionState.sessionId;
       try {
         var cu = (typeof currentCognitoUser !== 'undefined') ? currentCognitoUser : null;
-        var rt = null;
-        try {
-          var sess = (cu && typeof cu.getSignInUserSession === 'function') ? cu.getSignInUserSession() : null;
-          rt = (sess && typeof sess.getRefreshToken === 'function' && sess.getRefreshToken()) ? sess.getRefreshToken().getToken() : null;
-        } catch (_) { rt = null; }
-        if (cu && rt && typeof cu.revokeToken === 'function') {
-          try { cu.revokeToken(rt, function () {}); } catch (_) {}
-        }
+        drexRevokeRefreshTokenOnce(cu);
       } catch (_) {}
       try {
         if (uid && sid) {
