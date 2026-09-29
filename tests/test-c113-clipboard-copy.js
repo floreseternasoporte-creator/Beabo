@@ -90,13 +90,13 @@ tcasesync('sin console.error silencioso', () => {
 tcasesync('llamador onclick intacto', () => {
   if (html.indexOf('onclick="copyCommentText(') < 0) throw new Error('onclick perdido');
 });
-tcasesync('familia: 8 guardas clipboard en todo el archivo (BARO-1: -1 por eliminar Series; BARO v2: +1 baro7dCopyText con guarda)', () => {
+tcasesync('familia: 9 guardas clipboard en todo el archivo (BARO-1: -1 Series; BARO v2: +1 baro7dCopyText; +1 eco share 23387; +1 fallback 39739)', () => {
   const n = (html.match(/navigator\.clipboard && navigator\.clipboard\.writeText/g) || []).length;
-  if (n !== 8) throw new Error('guardas: ' + n + ' (esperado 8)');
+  if (n !== 9) throw new Error('guardas: ' + n + ' (esperado 9)');
 });
-tcasesync('familia: 10 call sites de writeText (sin nuevos ni perdidos; BARO v2: +1 copiar respuesta)', () => {
+tcasesync('familia: 11 call sites de writeText (BARO v2: +1 copiar respuesta; +1 eco share; +1 fallback)', () => {
   const n = (html.match(/navigator\.clipboard\.writeText\(/g) || []).length;
-  if (n !== 10) throw new Error('call sites: ' + n + ' (esperado 10)');
+  if (n !== 11) throw new Error('call sites: ' + n + ' (esperado 11)');
 });
 
 // ---------- conductuales en vm ----------

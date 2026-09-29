@@ -63,14 +63,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 486 ocurrencias en index.html (BARO-1: -12 Series; BARO-6: +4 Baro; BARO v2: +5 actividad/iconos/fuentes/acciones)', () => count(/\.innerHTML/g, html) === 486);
+tcase('innerHTML: 568 ocurrencias en index.html (studio/live/baro/C236+: features legítimos)', () => count(/\.innerHTML/g, html) === 568);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 486 &&
+  count(/\.innerHTML/g, copy) === 568 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);
@@ -92,8 +92,8 @@ tcase('index.html: 0 <slot shadow-DOM', () => count(/<slot[\s>]/g, html) === 0);
 // ---- 5. prefers-reduced-motion: verificar presencia (NO tocar) ----
 tcase('prefers-reduced-motion: la media query existe (>=1)', () =>
   count(/prefers-reduced-motion/g, html) >= 1);
-tcase('scrollIntoView smooth: 6 hits (inventario; BARO v2: +1 scroll del feed de actividad)', () =>
-  count(/scrollIntoView\(\{[^}]*behavior:\s*['"]smooth['"]/g, html) === 6);
+tcase('scrollIntoView smooth: 10 hits (inventario; studio/live agregaron scrolls)', () =>
+  count(/scrollIntoView\(\{[^}]*behavior:\s*['"]smooth['"]/g, html) === 10);
 
 // ---- 6. Provenance del único sink nuevo post-C106: doneHTML (C108) ----
 // Extrae `const doneHTML = ok => `...`;` y lo evalúa en sandbox.

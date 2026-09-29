@@ -12,7 +12,7 @@ const path = require('path');
 const vm = require('vm');
 const assert = require('assert');
 
-const REPO = process.env.LANE2_REPO || '/tmp/lane2';
+const REPO = process.env.LANE2_REPO || path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(REPO, 'index.html'), 'utf8');
 
 function extractFn(name) {

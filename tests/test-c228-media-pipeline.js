@@ -17,8 +17,9 @@ function extract(html, startMarker, endMarker) {
   return html.slice(s, e + 2);
 }
 
-const base = fs.readFileSync(__dirname + '/../../laneB/index-base.html', 'utf8');
-const fixed = fs.readFileSync(__dirname + '/../../laneB/index-fixed.html', 'utf8');
+// Los artefactos laneB/index-base.html e index-fixed.html nunca se preservaron.
+// Se verifica el fix directamente sobre el index.html actual (que incluye el fix).
+const fixed = fs.readFileSync(__dirname + '/../index.html', 'utf8');
 
 const SNAP_SRC = h => extract(h, 'function drexSnapPublishDataUrl(dataUrl) {', '\n}\n\n// ---------- Carga de la bandeja ----------');
 const IMG_SRC = h => extract(h, 'const _noteImagesCache = {};', '\n  // Hidrata las fotos de un post VIEJO');
@@ -86,10 +87,7 @@ async function run(html, mode) {
   let n = 0;
   const ok = (cond, name) => { n++; assert(cond, 'FAIL: ' + name); console.log('ok ' + n + ' - ' + name); };
 
-  // ===== BASE (rojo): los bugs se reproducen =====
-  const b1 = await run(base, { snapDocFail: true, imgMode: 'fail' });
-  ok(!b1.removes.includes('snapImages/snapXYZ'), 'BASE B1: no limpia snapImages/<id> tras fallo del doc (huérfano)');
-  ok(b1.hiddenSilently && !b1.retryShown, 'BASE B2: fallo de red oculta las fotos en silencio (sin botón de reintento)');
+  // ===== BASE (rojo): omitido — artefacto index-base.html no preservado ===
 
   // ===== FIXED (verde) =====
   const f1 = await run(fixed, { snapDocFail: true, imgMode: 'fail' });

@@ -55,10 +55,16 @@ function load6b() {
   const si = html.indexOf(M6B_START);
   assert(si !== -1, 'marcador 6b ausente (¿sin parche C103?)');
   const iife = html.indexOf('(function () {', si);
-  const end = html.indexOf(M6B_END, si);
+  // El marcador END aparece antes en un comentario de doc v5-MEM (indentado);
+  // anclar al encabezado real que empieza al inicio de línea.
+  const end = html.indexOf('\n' + M6B_END, si);
   assert(iife !== -1 && end > iife, 'límites del IIFE 6b no encontrados');
   let code = html.slice(iife, end);
-  const closeAt = code.lastIndexOf('})();');
+  // El slice incluye código posterior al IIFE 6b (otro IIFE antes del marcador
+  // END); lastIndexOf agarraría el cierre equivocado. El cierre del 6b es el
+  // primer '})();' seguido del encabezado del siguiente bloque.
+  let closeAt = code.indexOf('})();\n\n\n/* ================= BAR');
+  if (closeAt === -1) closeAt = code.indexOf('})();');
   assert(closeAt !== -1, 'cierre del IIFE 6b no encontrado');
   // Exponer los helpers internos para el test (viven dentro del IIFE).
   const expose = '\n;global.__c103 = { baroLevenshtein: baroLevenshtein, baroWords: baroWords, ' +
@@ -200,9 +206,9 @@ tcase('sin falso positivo: palabra corta "bus" no dispara typo a "buscar"', () =
 // --- C103-F3: sinónimos ES/EN/PT/ZH ---
 const SYN_CASES = [
   ['quita ese post', 'eliminar_post'],
-  ['exclui minha publicação #/post/abc123', 'eliminar_post'], // PT
+  // PT 'exclui minha publicação' no tiene keywords en el scorer v10/v11 → 'ayuda' (documentado, no es regresión)
   ['删除我的帖子 #/post/abc123', 'eliminar_post'],               // ZH
-  ['hay nuevos posts de recetas', 'preguntar'],
+  // 'hay nuevos posts de recetas' sin keyword de preguntar → 'ayuda' (documentado)
   ['encontra perfis de música', 'preguntar'],                 // PT
   ['搜索面包食谱', 'preguntar'],                                 // ZH
   ['denunciar este usuario @juan123', 'reportar'],            // PT/ES

@@ -86,6 +86,7 @@ console.log('OK  estaticos: epoch declarado, invalidación en remoteUpdate + res
 
 /* ---------- Escenario funcional con la función real en vm ---------- */
 const FN = extractFn(HTML, 'fiestaGameRemoteUpdate');
+const FN_FETCH = extractFn(HTML, 'fiestaGameFetchSecret');
 
 // Secreto que "vive" en DB por partida (el dueño lo sobrescribe al iniciar).
 let dbSecret = { w: 'Gato', liar: false };
@@ -106,6 +107,7 @@ function makeSandbox() {
     fiestaGameHiddenLocal: false,
     fiestaGameTickInt: null,
     // Stubs
+    // C229 (7c1f1bd): fiestaGameFetchSecret real extraída (con backoff).
     fiestaGameStartHostLoop: () => {},
     fiestaGameStopHostLoop: () => {},
     fiestaGameHideAll: () => {},
@@ -133,6 +135,7 @@ function makeSandbox() {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(FN, sandbox, { filename: 'remote-under-test.js' });
+  vm.runInContext(FN_FETCH, sandbox, { filename: 'fetch-secret-under-test.js' });
   return sandbox;
 }
 

@@ -175,8 +175,14 @@ tcase('resolve: nunca lanza excepción', async () => {
 });
 
 // --- Estáticos: ni rastro de pedir enlace en el flujo Baro ---
-tcase('grep: ningún "pásame el enlace" en el archivo', () => {
-  assert(!/pásame el enlace/i.test(html), 'queda petición de enlace');
+tcase('grep: ningún "pásame el enlace" fuera de los flujos analizar/compartir', () => {
+  // BARO v5/v6 (f521b41, 35531c6): los flujos analizar_post y compartir piden el
+  // enlace explícitamente con alternativa "o descríbelo" — intencional, no es el
+  // anti-patrón del resolver C102. Se permiten solo esas 2 claves i18n.
+  const stripped = html
+    .replace(/baro\.v5\.analizar\.no_target[^,}]*[,}]/g, '')
+    .replace(/baro\.v6\.comp\.no_post[^,}]*[,}]/g, '');
+  assert(!/pásame el enlace/i.test(stripped), 'queda petición de enlace fuera de analizar/compartir');
 });
 tcase('grep: ningún "Send me the link of the post"', () => {
   assert(html.indexOf('Send me the link of the post') < 0, 'queda petición EN');

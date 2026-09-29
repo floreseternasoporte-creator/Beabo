@@ -32,7 +32,9 @@ function extract6b(html) {
   const END = '/* ================= BARO · integración: enlaces';
   const si = html.indexOf(START);
   if (si === -1) throw new Error('marcador de inicio 6b ausente en el target');
-  const ei = html.indexOf(END, si);
+  // El marcador END aparece antes en un comentario de doc v5-MEM (indentado);
+  // anclar al encabezado real que empieza al inicio de línea.
+  const ei = html.indexOf('\n' + END, si);
   if (ei === -1 || ei <= si) throw new Error('marcador de fin (integración: enlaces) ausente');
   return html.slice(si, ei);
 }

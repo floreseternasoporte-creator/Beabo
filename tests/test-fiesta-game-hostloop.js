@@ -39,7 +39,9 @@ function extractFn(src, name) {
   throw new Error('llaves sin cerrar: ' + name);
 }
 
-const FNS = ['fiestaGameRemoteUpdate', 'fiestaGameStartHostLoop', 'fiestaGameStopHostLoop']
+// C229 (7c1f1bd): fiestaGameRemoteUpdate llama a fiestaGameFetchSecret;
+ // incluirla en la extracción para el sandbox.
+const FNS = ['fiestaGameRemoteUpdate', 'fiestaGameFetchSecret', 'fiestaGameStartHostLoop', 'fiestaGameStopHostLoop']
   .map(n => extractFn(HTML, n)).join('\n');
 
 function makeSandbox() {

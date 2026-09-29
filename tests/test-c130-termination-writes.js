@@ -79,8 +79,10 @@ function extractFnBody(src, fnName) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---------- 1. Inventario de listeners de terminación en index.html ----------
-ok('index.html: exactamente 2 addEventListener(pagehide)',
-  count(/addEventListener\(\s*['"]pagehide['"]/g, html) === 2);
+// 3 pagehide: draft flush (13760), _drexRecPersistNow (19519), y el estudio
+// En vivo termina el live al cerrar la página (82759, carril live/studio).
+ok('index.html: exactamente 3 addEventListener(pagehide)',
+  count(/addEventListener\(\s*['"]pagehide['"]/g, html) === 3);
 ok('index.html: pagehide -> drexFlushNoteDraftOnPageHide (por nombre)',
   /addEventListener\(\s*['"]pagehide['"]\s*,\s*drexFlushNoteDraftOnPageHide\s*\)/.test(html));
 ok('index.html: pagehide -> _drexRecPersistNow (recomendador)',

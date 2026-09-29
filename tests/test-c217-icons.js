@@ -37,8 +37,9 @@ test('path de cámara correcto presente', function () {
 });
 
 // (3) Íconos clave de la cámara existen con viewBox válido
-['drex-cam-close', 'drex-cam-flip', 'drex-cam-flash', 'drex-cam-effects-btn',
- 'drex-cam-capture', 'drex-cam-effects-close'].forEach(function (id) {
+// C220: drex-cam-effects-btn/close eliminados (tira superior fx-topbar en su lugar)
+['drex-cam-close', 'drex-cam-flip', 'drex-cam-flash',
+ 'drex-cam-capture'].forEach(function (id) {
   test('botón de cámara con SVG válido: ' + id, function () {
     var re = new RegExp('<button[^>]*id="' + id + '"[\\s\\S]{0,900}?<svg[^>]*viewBox="0 0 24 24"');
     assert(re.test(src), 'falta SVG con viewBox 0 0 24 24 en #' + id);
@@ -51,10 +52,10 @@ test('ícono voltear-cámara redibujado', function () {
   assert(src.indexOf('M4 4v6h6M20 20v-6h-6') === -1, 'persiste el ícono viejo de voltear');
 });
 
-// (5) Ícono de efectos redibujado (triple destello)
-test('ícono de efectos redibujado', function () {
-  assert(src.indexOf('M11 4l1.6 4.4L17 10l-4.4 1.6L11 16l-1.6-4.4L5 10l4.4-1.6L11 4z') !== -1,
-    'falta el destello principal del nuevo ícono de efectos');
+// (5) Tira de efectos C220 (reemplaza el panel inferior y sus botones)
+test('tira de efectos C220 presente', function () {
+  assert(src.indexOf('drex-cam-fx-topbar') !== -1, 'falta #drex-cam-fx-topbar (C220)');
+  assert(src.indexOf('drex-cam-fx-list') !== -1, 'falta #drex-cam-fx-list (C220)');
 });
 
 // (6) Flash: botón + función + cableado

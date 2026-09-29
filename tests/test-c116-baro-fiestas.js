@@ -351,7 +351,7 @@ function has(h, s, name) { ok(String(h || "").includes(s), name, "no contiene: "
     eq(writesAfter, writesBefore, "ya miembro: no reescribe");
     // 4d. fiesta inexistente: mensaje honesto
     const r3 = await T.tools.fiesta_unirse({ fiesta: "Fantasma Inexistente" }, ctx);
-    has(r3.html, "No encontré ninguna fiesta llamada", "fiesta inexistente → mensaje honesto");
+    has(r3.html, "No encontré ninguna sala de voz llamada", "fiesta inexistente → mensaje honesto");
     // 4e. nombre ambiguo («fiesta» coincide con Zombie y Disfraces): candidatas tocables
     const r4 = await T.tools.fiesta_unirse({ fiesta: "fiesta" }, ctx);
     const links = (r4.html.match(/baroResolvePickTarget\('fiesta_unirse','[^']+'/g) || []);
@@ -390,7 +390,7 @@ function has(h, s, name) { ok(String(h || "").includes(s), name, "no contiene: "
     ok(b.confirmCalls[0].danger === false, "salir: confirmación no destructiva");
     // 5c. salir de nuevo: no_miembro honesto
     const r2 = await T.tools.fiesta_salir({ fiesta: "Karaoke" }, ctx);
-    has(r2.html, "No estás en la fiesta", "salir sin membresía → mensaje honesto");
+    has(r2.html, "No estás en la sala de voz", "salir sin membresía → mensaje honesto");
   }
 
   // ---------- 6. Invitar: hueco honesto, cero escrituras ----------
@@ -438,13 +438,13 @@ function has(h, s, name) { ok(String(h || "").includes(s), name, "no contiene: "
     vm.runInNewContext(code, b3.sandbox, { filename: "baro-8g.js" });
     const T3 = b3.sandbox.baroFiesta8gTest;
     const r3 = await T3.tools.fiesta_gestionar({ ambiguous: true }, makeCtx(hostUser));
-    has(r3.html, "¿Qué quieres hacer con la fiesta", "gestionar genérico como anfitrión → pregunta acción (sin_accion)");
+    has(r3.html, "¿Qué quieres hacer con la sala de voz", "gestionar genérico como anfitrión → pregunta acción (sin_accion)");
     // 7e. gestionar sin fiesta propia
     const b4 = buildSandbox(meUser);
     vm.runInNewContext(code, b4.sandbox, { filename: "baro-8g.js" });
     const T4 = b4.sandbox.baroFiesta8gTest;
     const r4 = await T4.tools.fiesta_gestionar({ ambiguous: true }, makeCtx(meUser));
-    has(r4.html, "No tienes ninguna fiesta en vivo", "sin fiesta propia → mensaje honesto");
+    has(r4.html, "No tienes ninguna sala de voz en vivo", "sin fiesta propia → mensaje honesto");
   }
 
   // ---------- 8. Asistentes: conteo real + roles ----------

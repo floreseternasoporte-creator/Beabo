@@ -74,6 +74,9 @@ function makeLocalStorage(seed) {
 const sandbox = {
   console,
   Buffer,
+  // BARO v10 (d2f30a6): el bloque usa 'use strict' con W = window ?? global ?? this;
+  // en el sandbox this es undefined → definir window como en producción.
+  window: {},
   module: __dModule,
   APP_ENGLISH_TEXT: {},
   APP_CHINESE_TEXT: {},
@@ -87,6 +90,8 @@ const sandbox = {
   localStorage: makeLocalStorage(),
   baroResolveForTool: async function () { return { postId: 'notePOST123456789' }; }
 };
+sandbox.global = sandbox;
+sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(src, sandbox, { filename: 'block-lane-8l.js' });
 const M = __dModule.exports;
@@ -184,7 +189,9 @@ tcase('registro: 4 herramientas con label i18n y run (sin mod_silenciar_palabra)
     assert(typeof registered[n].run === 'function', 'run no es funcion: ' + n);
     assert(M.BARO_I18N_L[registered[n].label], 'label sin i18n: ' + n);
   });
-  eqJ(Object.keys(registered).sort(), TOOL_NAMES.slice().sort(), 'nombres registrados');
+  // Con window definido el bloque registra el catálogo completo; las 4 de
+  // moderación deben estar presentes (subconjunto verificado arriba).
+  TOOL_NAMES.forEach((n) => assert(registered[n], 'falta en catálogo: ' + n));
   assert(!registered.mod_silenciar_palabra, 'mod_silenciar_palabra no debe existir (hueco honesto)');
 });
 tcase('registro: BARO_ICONS con 4 svg propios índigo sin emoji', () => {
@@ -196,9 +203,10 @@ tcase('registro: BARO_ICONS con 4 svg propios índigo sin emoji', () => {
     assert(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(svg), 'icono con emoji: ' + k);
   });
 });
-tcase('registro: 4 reglas en baroIntentRules + mapa intent->tool', () => {
-  assert(sandbox.baroIntentRules.length === 4, 'reglas: ' + sandbox.baroIntentRules.length);
-  sandbox.baroIntentRules.forEach((r) => {
+tcase('registro: reglas de moderación en baroIntentRules + mapa intent->tool', () => {
+  const modRules = sandbox.baroIntentRules.filter((r) => r.intent.indexOf('mod_') === 0);
+  assert(modRules.length === 4, 'reglas mod: ' + modRules.length);
+  modRules.forEach((r) => {
     eqJ(r.langs, ['es', 'en', 'zh', 'pt'], 'langs de ' + r.intent);
     assert(Array.isArray(r.patterns) && r.patterns.length > 0, 'patterns vacios: ' + r.intent);
     r.patterns.forEach((p) => assert(Object.prototype.toString.call(p) === '[object RegExp]', 'pattern no RegExp en ' + r.intent));

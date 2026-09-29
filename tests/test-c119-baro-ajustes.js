@@ -377,7 +377,7 @@ const EXP = moduleObj.exports;
     has("T13-conteo", r.html, "9 de 10 activadas");
     has("T13-cat-votos", r.html, "Votos");
     has("T13-cat-comentarios", r.html, "Comentarios");
-    has("T13-cat-fiestas", r.html, "Fiestas de seguidos");
+    has("T13-cat-fiestas", r.html, "En vivo de seguidos");
     has("T13-cat-md", r.html, "Mensajes directos");
     has("T13-cat-corr", r.html, "Correcciones de ejercicios");
     has("T13-desactivadas", r.html, "desactivadas");

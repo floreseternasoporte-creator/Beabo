@@ -97,6 +97,9 @@ function classify(site) {
   if (site.refPath.startsWith('conversationMessages/') && decorative) return 'decorative-c75';
   if (/^'fiestas\/'/.test(site.refArg) && /\/chat/.test(site.refArg) && decorative) return 'cosmetic-broadcast';
   if (site.refPath.startsWith('fiestaReactions/')) return 'cosmetic-ephemeral';
+  // C232 (f68a51d): señalización WebRTC efímera de DrexLive (liveSignals/);
+  // fire-and-forget deliberado como fiestaReactions/.
+  if (site.refPath.startsWith('liveSignals/')) return 'signaling-ephemeral';
   return null;
 }
 
@@ -113,6 +116,7 @@ for (const s of sites) {
 }
 
 const EXPECTED = {
+  'signaling-ephemeral': 1, // liveSignals/ de DrexLiveCore._sendSignal (C232)
   'decorative-c75': 10, // 9 preexistentes + mensaje system de chat_grupo_crear (Baro v4 oleada 1)
   'cosmetic-broadcast': 2,
   'cosmetic-ephemeral': 1,

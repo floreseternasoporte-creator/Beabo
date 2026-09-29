@@ -43,7 +43,7 @@ function test(name, fn) {
   catch (e) { failed++; console.log('FALLO - ' + name + ': ' + e.message); }
 }
 
-var DOWNLOAD_URL = 'https://floreseternasoporte-creator.github.io/Beabo/Drex-Studio-1.0-Windows.zip';
+var DOWNLOAD_URL = 'https://floreseternasoporte-creator.github.io/Beabo/Drex-Studio-1.5-Windows.zip';
 
 var NEW_KEYS = [
   'Drex Studio',

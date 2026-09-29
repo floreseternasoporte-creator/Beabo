@@ -58,11 +58,11 @@ function extractBetween(startMarker, endMarker) {
 // ---- 1. Re-verifies rápidos ----
 tcase('scrollRestoration: 0 en index.html (C120 sigue en cero)', () =>
   count(/scrollRestoration/g, html) === 0);
-tcase('execCommand: 9 ocurrencias (8 en código + 1 en comentario; BARO-1: -1 por eliminar Series; BARO v2: +1 fallback copy de Baro)', () =>
-  count(/execCommand/g, html) === 9);
+tcase('execCommand: 10 ocurrencias (9 en código + 1 en comentario; C236: +1 fallback)', () =>
+  count(/execCommand/g, html) === 10);
 tcase('execCommand: todos los usos en código son copy (fallback portapapeles)', () => {
   const uses = html.match(/\.execCommand\([^)]*\)/g) || [];
-  return uses.length === 8 && uses.every(u => u === ".execCommand('copy')");
+  return uses.length === 9 && uses.every(u => u === ".execCommand('copy')");
 });
 
 // ---- 2. Estáticos: pipeline de render de imágenes ----

@@ -214,8 +214,10 @@ async function main() {
     ok(rules.length >= 20, 'intents: reglas suficientes (' + rules.length + ')');
     const langs = new Set(rules.map(r => r.lang));
     ok(['es', 'en', 'zh', 'pt'].every(l => langs.has(l)), 'intents: ES/EN/ZH/PT presentes');
+    // BARO v10 (d2f30a6): reglas normalizadas a patterns:[] con blindaje __pats.
+    // El match itera el array como hace el scorer real.
     function match(lang, text) {
-      const r = rules.find(r => r.lang === lang && r.pattern.test(text));
+      const r = rules.find(r => r.lang === lang && (r.__pats || r.patterns || [r.pattern]).some(p => p && p.test(text)));
       return r ? r.tool : null;
     }
     eq(match('es', 'vota este post'), 'votar_post', 'intent es: votar post');

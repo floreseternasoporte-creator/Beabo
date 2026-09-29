@@ -49,7 +49,10 @@ ok('0 password inputs sin autocomplete (quedan ' + sinAutocomplete.length + ')',
   sinAutocomplete.length === 0);
 
 // ---------- 3. Tokens válidos: solo current-password / new-password / one-time-code ----------
+// C239 (d4a6b0a): dswout-rtmpkey es la clave secreta de RTMP del estudio,
+// no un login — autocomplete="off" es intencional (no se quiere autofill).
 const bad = pwTags.filter(t => {
+  if (/id\s*=\s*"dswout-rtmpkey"/i.test(t)) return false;
   const m = t.match(/\bautocomplete\s*=\s*"([^"]+)"/i);
   return m && !/^(current-password|new-password|one-time-code)$/.test(m[1]);
 });

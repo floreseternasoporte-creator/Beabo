@@ -6,8 +6,7 @@ const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert');
 
-const file = process.argv[2];
-if (!file) { console.error('uso: node tests/test-c235-saved.js <html>'); process.exit(2); }
+const file = process.argv[2] || require('path').join(__dirname, '..', 'index.html');
 const src = fs.readFileSync(file, 'utf8');
 
 // --- extraer el bloque de guardados (funciones reales del HTML)

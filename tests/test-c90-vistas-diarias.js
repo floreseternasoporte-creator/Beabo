@@ -196,7 +196,9 @@ tcase('T5 integración', () => {
     'T5f readAuthorPosts adjunta _pid (id para el top)');
   ok(/openPostPermalink\(\\?'/.test(extractFunction(html, 'drexPulsoTopViewedHTML')),
     'T5g el top abre el permalink del post');
-  ok(!/noteViewers/.test(html), 'T5h sin path noteViewers');
+  // C239: existe la función legítima noteViewers() de stats de En vivo;
+  // solo se prohíbe el path de BD 'noteViewers/ (mismo acotamiento que C249 en c89).
+  ok(!/'noteViewers\//.test(html), 'T5h sin path noteViewers/');
   // El bloque PULSO sigue sin escrituras (invariante del test viejo).
   const pulsoBlock = extractBlock(html, '// ============ PULSO:', '// ============ /PULSO');
   const writes = (pulsoBlock.match(/\.(push|set|update|transaction|remove)\s*\(/g) || [])
