@@ -4288,6 +4288,10 @@ background:var(--dsw-bg);color:var(--dsw-txt);border-radius:16px;overflow:hidden
   #drex-snap-row::-webkit-scrollbar { display: none; }
   /* C215 DESTELLOS: bandeja de diamantes premium */
   #drex-snap-row { align-items: flex-start; }
+.drex-snap-locked { border: 1.5px dashed var(--drex-brand); background: color-mix(in srgb, var(--drex-brand) 8%, transparent); border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 118px; }
+  .drex-snap-locked-ic { color: var(--drex-brand); display: flex; }
+  .drex-snap-locked-tx { font-size: 12px; font-weight: 800; color: var(--theme-text); }
+  .drex-snap-locked-sub { font-size: 10px; font-weight: 700; color: var(--drex-brand); }
   .drex-snap-cell {
     position: relative; flex: 0 0 auto; width: 84px; padding: 0;
     background: none; border: none; cursor: pointer; font: inherit;
@@ -14688,6 +14692,8 @@ function saveNote() {
   }
 
   function getCurrentNoteMaxLength() {
+    /* ORBIT: los miembros escriben hasta 2,000 caracteres. */
+    try { if (typeof DrexOrbit !== 'undefined' && DrexOrbit.isActive()) return 2000; } catch (_) {}
     return 200;
   }
 
@@ -16205,6 +16211,9 @@ function saveNote() {
     // Se espera a la escritura REAL antes de mostrar éxito: push() tragaba los
     // errores en segundo plano y el toast de "éxito" salía aunque nada se
     // hubiera guardado (el post no aparecía en el feed ni en ningún lado).
+    // ORBIT: prioridad en Destacados. Se marca al publicar con el estado
+    // verificado del autor (fail-closed: sin suscripción activa no hay marca).
+    try { if (typeof DrexOrbit !== 'undefined' && DrexOrbit.isActive()) note.orbitBoost = true; } catch (_) {}
     const notesRef = DrexCloud.database().ref('communityNotes');
     // VIDEO-POSTS: si la key ya se reservó (video: los trozos se subieron
     // primero), se escribe con set() y la promesa resuelve con el ref, igual
@@ -16602,6 +16611,8 @@ function drexSnapFilterChange() {
 function drexSnapNew() {
   const me = drexSnapMe();
   if (!me) { try { showMiniToast(appT('Inicia sesión para compartir un destello.')); } catch (_) {} return; }
+  /* ORBIT: crear destellos es función premium. */
+  if (typeof orbitGate === 'function' && !orbitGate('destellos')) return;
   try {
     if (typeof drexCameraOpen === 'function') {
       // Entrega one-shot: la cámara de Drex (C209) la consume en vez del composer.
@@ -16748,6 +16759,20 @@ function drexSnapRenderTray(latest, seen, now) {
   const row = document.getElementById('drex-snap-row');
   const empty = document.getElementById('drex-snap-empty');
   if (!row) return;
+  /* ORBIT: sin suscripción activa, la bandeja muestra la tarjeta de
+     desbloqueo en vez del contenido. Fail-closed solo si el backend de
+     Orbit está configurado. */
+  try {
+    if (typeof DrexOrbit !== 'undefined' && DrexOrbit.enforced() && !DrexOrbit.isActive()) {
+      const __lk = (typeof window.dxIcon === 'function') ? window.dxIcon('lock', 'w-7 h-7') : '🔒';
+      row.innerHTML = '<button type="button" onclick="openOrbitView()" class="drex-snap-cell drex-snap-locked" aria-label="' + escapeHtml(appT('Destellos es exclusivo de Drex Orbit')) + '">'
+        + '<span class="drex-snap-locked-ic">' + __lk + '</span>'
+        + '<span class="drex-snap-locked-tx">' + escapeHtml(appT('Destellos')) + '</span>'
+        + '<span class="drex-snap-locked-sub">' + escapeHtml(appT('Solo Orbit')) + '</span></button>';
+      if (empty) empty.classList.add('hidden');
+      return;
+    }
+  } catch (_) {}
   seen = seen || drexSnapSeenGet();
   now = (typeof now === 'number') ? now : Date.now();
   const animate = _snapTrayAnimateOnce || !_snapTrayAnimated;
@@ -16883,6 +16908,8 @@ function drexSnapSweep() {
 
 // ---------- Visor ----------
 function drexSnapOpenAuthor(authorUid) {
+  /* ORBIT: ver destellos es función premium. */
+  if (typeof orbitGate === 'function' && !orbitGate('destellos')) return;
   const list = (_snapAuthorSnaps[authorUid] || []).filter(s => !drexSnapIsExpired(s));
   if (!list.length) {
     try { showMiniToast(appT('El destello ha expirado')); } catch (_) {}
@@ -20752,7 +20779,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       // MI MAREA: el puntaje se re-normaliza en vivo con los máximos del tab.
       const newScore = ctx.feedMode === 'marea'
         ? (note._mareaNorm = drexMareaLiveNorm(ctx, note))
-        : Number(note.upvotes || 0) - Number(note.downvotes || 0);
+        : Number(note.upvotes || 0) - Number(note.downvotes || 0) + (note.orbitBoost ? 25 : 0);
       existingPost.dataset.feedScore = String(newScore);
       // Recolocar la tarjeta para mantener el orden por puntaje (mayor primero).
       const kids = ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"]');
@@ -20806,7 +20833,8 @@ else { try { drexSnapInit(); } catch (_) {} }
       noteElement.dataset.postType = note.postType || '';
       noteElement.dataset.feedTs = String(noteTs);
       if (ctx.feedMode === 'popular') {
-        noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0));
+        // ORBIT: +25 de prioridad para miembros con suscripción activa.
+        noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0) + (note.orbitBoost ? 25 : 0));
       } else if (ctx.feedMode === 'marea') {
         // MI MAREA: puntaje normalizado por nicho (del lote, o en vivo).
         const mNorm = (note._mareaNorm != null) ? note._mareaNorm : drexMareaLiveNorm(ctx, note);
@@ -21975,6 +22003,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       if (!isOwner) { if (typeof showMiniToast === 'function') showMiniToast(appT('Solo el autor puede editar esta publicación.')); return; }
       const ta = document.getElementById('edit-post-textarea');
       if (ta) {
+        try { ta.maxLength = (typeof getCurrentNoteMaxLength === 'function') ? getCurrentNoteMaxLength() : 200; } catch (_) {}
         ta.value = note.content || note.text || '';
         const cc = document.getElementById('edit-post-char-count');
         if (cc) cc.textContent = String(ta.value.length);
@@ -22004,7 +22033,9 @@ else { try { drexSnapInit(); } catch (_) {} }
     if (!user || !user.uid) { if (typeof showMiniToast === 'function') showMiniToast(appT('Inicia sesión para continuar.')); return; }
     const ta = document.getElementById('edit-post-textarea');
     const saveBtn = document.getElementById('edit-post-save-btn');
-    const newText = (ta ? ta.value : '').trim();
+    var maxLen = 200;
+    try { maxLen = (typeof getCurrentNoteMaxLength === 'function') ? getCurrentNoteMaxLength() : 200; } catch (_) {}
+    const newText = (ta ? ta.value : '').trim().slice(0, maxLen);
     if (!newText) { if (typeof showMiniToast === 'function') showMiniToast(appT('El texto no puede estar vacío.')); return; }
     if (saveBtn) saveBtn.disabled = true;
     // FIX AUDITORÍA POSTS 2026-09-22 (5): la edición guardaba el texto
@@ -88434,10 +88465,12 @@ async function drexStripeCheckout(pkg) {
  * producción hasta que exista una ruta de compra en vivo aprobada).
  * ============================================================ */
 var ORBIT_PLANS = {
-  monthly: { id: 'monthly', price: '$4.99', per: 'mes' },
-  yearly:  { id: 'yearly',  price: '$49.99', per: 'año' }
+  monthly:    { id: 'monthly',    price: '$4.99',  per: 'mes' },
+  quarterly:  { id: 'quarterly',  price: '$12.99', per: 'trimestre' },
+  semiannual: { id: 'semiannual', price: '$24.99', per: 'semestre' },
+  yearly:     { id: 'yearly',     price: '$49.99', per: 'año' }
 };
-var ORBIT_FEATURES = ['ads_free', 'badge_frame', 'profile_themes', 'studio_pro', 'live_boost', 'limits_boost', 'analytics', 'gifts', 'priority_support'];
+var ORBIT_FEATURES = ['ads_free', 'badge_frame', 'profile_themes', 'studio_pro', 'live_boost', 'limits_boost', 'analytics', 'gifts', 'priority_support', 'destellos', 'more_chars', 'priority_boost'];
 /* Aliases que usa la UI -> nombre canonico del beneficio. */
 var ORBIT_FEATURE_ALIASES = { no_ads: 'ads_free', badge: 'badge_frame', live_pro: 'live_boost', limits: 'limits_boost', exclusive_gifts: 'gifts' };
 
@@ -88526,7 +88559,7 @@ var DrexOrbit = {
   subscribe: async function (planId) {
     var endpoint = this._endpoint();
     if (!endpoint) throw new Error('no-provider');
-    if (planId !== 'monthly' && planId !== 'yearly') throw new Error('invalid_plan');
+    if (!ORBIT_PLANS[planId]) throw new Error('invalid_plan');
     var idToken = await this._idToken();
     if (!idToken) throw new Error('no-token');
     var returnUrl = '';
@@ -88541,6 +88574,26 @@ var DrexOrbit = {
     if (!res.ok || !data || !data.url) throw new Error(String((data && data.error) || ('http_' + res.status)));
     location.href = data.url;
     return { redirected: true };
+  },
+  /* Link de pago compartible: crea la sesión de Checkout y devuelve la URL
+   * SIN redirigir, para copiarla o enviarla por donde el usuario quiera. */
+  paymentLink: async function (planId) {
+    var endpoint = this._endpoint();
+    if (!endpoint) throw new Error('no-provider');
+    if (!ORBIT_PLANS[planId]) throw new Error('invalid_plan');
+    var idToken = await this._idToken();
+    if (!idToken) throw new Error('no-token');
+    var returnUrl = '';
+    try { returnUrl = location.origin + location.pathname; } catch (_) {}
+    var res = await fetch(endpoint + '/create-payment-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({ kind: 'orbit', plan: planId, idToken: idToken, returnUrl: returnUrl })
+    });
+    var data = null;
+    try { data = await res.json(); } catch (_) { data = null; }
+    if (!res.ok || !data || !data.url) throw new Error(String((data && data.error) || ('http_' + res.status)));
+    return data.url;
   },
   /* Historial real de pagos: POST /transactions con el ID token en el cuerpo
    * (petición CORS simple, sin preflight). Devuelve {transactions[], subscription{}}.
@@ -88728,10 +88781,13 @@ async function refreshOrbitAuthorBadge(authorId) {
 
 /* ============ Drex Orbit: vista, paywall, temas, analíticas ============ */
 function orbitPlanName(plan) {
+  if (plan === 'quarterly') return t('Trimestral');
+  if (plan === 'semiannual') return t('Semestral');
   return plan === 'yearly' ? t('Anual') : t('Mensual');
 }
 function orbitPlanPrice(plan) {
-  return (ORBIT_PLANS[plan] || ORBIT_PLANS.monthly).price + ' ' + t(plan === 'yearly' ? 'al año' : 'al mes');
+  var per = { monthly: 'al mes', quarterly: 'al trimestre', semiannual: 'al semestre', yearly: 'al año' }[plan] || 'al mes';
+  return (ORBIT_PLANS[plan] || ORBIT_PLANS.monthly).price + ' ' + t(per);
 }
 function orbitFmtDate(ms) {
   try {
@@ -88750,8 +88806,11 @@ function orbitBenefits() {
     { f: 'limits',           ic: 'puzzle', title: t('Límites elevados'),           desc: t('Videos más largos, más fotos y publicaciones programadas.') },
     { f: 'analytics',        ic: 'chart', title: t('Analíticas de creador'),      desc: t('Estadísticas avanzadas de tu contenido.') },
     { f: 'exclusive_gifts',  ic: 'gift', title: t('Regalos exclusivos'),         desc: t('Regalos originales solo para miembros Drex Orbit.') },
-    { f: 'priority_support',  ic: 'headphones', title: t('Soporte prioritario'),        desc: t('Tus reportes se atienden primero.') }
-  ];
+    { f: 'priority_support',  ic: 'headphones', title: t('Soporte prioritario'),        desc: t('Tus reportes se atienden primero.') },
+    { f: 'destellos',        ic: 'sparkles', title: t('Destellos exclusivos'),   desc: t('Crea y mira destellos efímeros. Solo miembros Orbit.') },
+    { f: 'more_chars',       ic: 'nota',     title: t('Más caracteres'),         desc: t('Escribe hasta 2,000 caracteres en tus publicaciones.') },
+    { f: 'priority_boost',   ic: 'star',     title: t('Prioridad en Destacados'), desc: t('Tus publicaciones suben en la sección Destacados.') }
+];
 }
 
 function openOrbitView() {
@@ -88840,10 +88899,11 @@ async function renderOrbitView(skipRefresh) {
         + '<div class="mt-1"><span class="text-3xl font-black text-[var(--theme-text)]">' + escFn(p.price) + '</span>'
         + '<span class="text-sm text-[var(--theme-muted)]"> ' + escFn(t(planId === 'yearly' ? 'al año' : 'al mes')) + '</span></div>'
         + '<button onclick="orbitSubscribe(\'' + planId + '\')" class="tap44 w-full min-h-[48px] mt-3 rounded-xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(t('Suscribirme')) + '</button>'
+        + '<button onclick="orbitCopyPaymentLink(\'' + planId + '\')" class="tap44 w-full min-h-[40px] mt-2 rounded-xl font-bold text-sm text-[var(--drex-brand)] bg-[var(--theme-surface-subtle)] active:opacity-70">' + escFn(t('Copiar link de pago')) + '</button>'
         + '</div>';
     };
     html += '<div class="px-5 mt-5"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px] mb-2">' + escFn(t('Elegir plan')) + '</h3>'
-      + '<div class="grid grid-cols-1 gap-3">' + card('monthly', false) + card('yearly', true) + '</div>'
+      + '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">' + card('monthly', false) + card('quarterly', false) + card('semiannual', false) + card('yearly', true) + '</div>'
       + '<p class="text-[11px] text-[var(--theme-muted)] text-center mt-3 leading-relaxed">'
       + escFn(t('Pago 100% seguro con Stripe. Sin permanencia. Cancela cuando quieras.')) + '</p></div>';
   }
@@ -88855,7 +88915,7 @@ async function renderOrbitView(skipRefresh) {
 
   /* Analíticas */
   html += '<div class="px-5 mt-6 mb-10"><button onclick="orbitOpenAnalytics()" class="tap44 w-full min-h-[52px] rounded-2xl border border-[var(--theme-border)] flex items-center gap-3 px-4 active:opacity-70 text-left">'
-    + '<span class="shrink-0 text-[var(--theme-muted)]">' + (typeof window.dxIcon === 'function' ? window.dxIcon('chart', 'w-6 h-6') : '') + '<span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(t('Analíticas de creador')) + '</span>'
+    + '<span class="shrink-0 text-[var(--theme-muted)]">' + (typeof window.dxIcon === 'function' ? window.dxIcon('chart', 'w-6 h-6') : '') + '</span>' + '<span class="min-w-0 flex-1"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(t('Analíticas de creador')) + '</span>'
     + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(t('Tus números reales, actualizados al abrir.')) + '</span></span>'
     + '<span class="ml-auto text-[var(--theme-muted)]">›</span></button></div>';
 
@@ -88882,6 +88942,41 @@ async function orbitManage() {
     else orbitToast(t('No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.'));
   }
 }
+function orbitCopyText(txt) {
+  return new Promise(function (resolve) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(function () { resolve(true); }, function () { resolve(false); });
+        return;
+      }
+    } catch (_) {}
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = txt;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+      document.body.removeChild(ta);
+      resolve(ok);
+    } catch (_) { resolve(false); }
+  });
+}
+async function orbitCopyPaymentLink(planId) {
+  orbitToast(t('Procesando…'));
+  try {
+    var url = await DrexOrbit.paymentLink(planId);
+    var ok = await orbitCopyText(url);
+    orbitToast(ok ? t('Link de pago copiado. Compártelo donde quieras.') : t('No se pudo copiar el link.'));
+  } catch (e) {
+    var m = String((e && e.message) || '');
+    if (m === 'no-token') orbitToast(t('Inicia sesión para generar tu link de pago.'));
+    else if (m === 'invalid_plan') orbitToast(t('Ese plan no está disponible.'));
+    else orbitToast(t('El link de pago no está disponible ahora mismo.'));
+  }
+}
 async function orbitRestore() {
   orbitToast(t('Procesando…'));
   try {
@@ -88903,7 +88998,8 @@ function orbitPaywallCopy(feature) {
     profile_themes:  { ic: 'palette', title: t('Temas de perfil Orbit'),     desc: t('Fondos exclusivos para tu portada.') },
     no_ads:          { ic: 'noads', title: t('Sin anuncios'),                desc: t('Navega Drex sin publicidad.') },
     badge:           { ic: 'crown', title: t('Insignia y marco exclusivos'), desc: t('Distintivo dorado Drex Orbit y marco en tu foto.') },
-    priority_support:{ ic: 'headphones', title: t('Soporte prioritario'),         desc: t('Tus reportes se atienden primero.') }
+    priority_support:{ ic: 'headphones', title: t('Soporte prioritario'),         desc: t('Tus reportes se atienden primero.') },
+    destellos:        { ic: 'sparkles', title: t('Destellos exclusivos'),   desc: t('Crea y mira destellos efímeros. Solo miembros Orbit.') }
   };
   return map[feature] || { ic: 'crown', title: 'Drex Orbit', desc: t('El plan Orbit de Drex') };
 }
@@ -89039,9 +89135,19 @@ try {
   else renderPagosSettingsPreview();
 } catch (_) {}
 function orbitTxStatusLabel(status) {
-  if (status === 'completed') return t('Completado');
-  if (status === 'failed') return t('Fallido');
-  return String(status || '');
+  var k = String(status || '').toLowerCase();
+  if (!k) return '';
+  var map = {
+    completed: 'Completado', paid: 'Completado', succeeded: 'Completado',
+    open: 'Pendiente de pago', processing: 'Procesando', pending: 'Pendiente de pago',
+    requires_action: 'Requiere acción', requires_payment_method: 'Requiere acción',
+    requires_confirmation: 'Requiere acción', requires_capture: 'Requiere acción',
+    draft: 'Borrador', trialing: 'En prueba',
+    past_due: 'Pago vencido', uncollectible: 'No cobrado',
+    failed: 'Fallido', canceled: 'Cancelado', cancelled: 'Cancelado', void: 'Cancelado',
+    refunded: 'Reembolsado'
+  };
+  return t(map[k] || 'Desconocido');
 }
 function orbitTxAmount(tx) {
   try {
@@ -89089,7 +89195,8 @@ async function renderPaymentsView() {
   }
 
   /* Historial de transacciones reales. */
-  html += '<div class="px-5 mt-6"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Historial de pagos y compras')) + '</h3>';
+  html += '<div class="px-5 mt-6"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Historial de pagos y compras')) + '</h3>'
+    + '<p class="text-[11px] text-[var(--theme-muted)] mt-1 leading-relaxed">' + escFn(t('Los pagos pendientes se confirman solos cuando Stripe procesa el cobro.')) + '</p>';
   var txs = data.transactions || [];
   if (!txs.length) {
     html += '<div class="mt-3 rounded-2xl border border-dashed border-[var(--theme-border)] p-8 text-center">'
@@ -89126,11 +89233,20 @@ async function renderOrbitAnalytics() {
   body.innerHTML = '<p class="text-sm text-[var(--theme-muted)] text-center py-8">' + escFn(t('Cargando…')) + '</p>';
   var me = null;
   try { me = (typeof liveUser === 'function') ? liveUser() : ((typeof DrexCloud !== 'undefined' && DrexCloud.auth().currentUser) || null); } catch (_) {}
-  var posts = '—', followers = '—', following = '—';
+  var posts = '—', followers = '—', following = '—', votesRx = '—', snapsCount = '—', topPostTxt = '', topPostScore = 0;
   if (me && me.uid) {
     try {
       var q = await DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(me.uid).once('value');
       posts = q ? q.numChildren() : 0;
+      var __vr = 0, __tp = null, __ts = -Infinity;
+      if (q) q.forEach(function (ch) {
+        var p = ch.val() || {};
+        var net = Number(p.upvotes || 0) - Number(p.downvotes || 0);
+        __vr += net;
+        if (net > __ts) { __ts = net; __tp = p; }
+      });
+      votesRx = __vr;
+      if (__tp) { topPostTxt = String(__tp.content || __tp.text || '').slice(0, 90); topPostScore = __ts; }
     } catch (_) {}
     try {
       var f1 = await DrexCloud.database().ref('followers/' + me.uid).once('value');
@@ -89140,6 +89256,16 @@ async function renderOrbitAnalytics() {
       var f2 = await DrexCloud.database().ref('following/' + me.uid).once('value');
       following = f2 ? f2.numChildren() : 0;
     } catch (_) {}
+    try {
+      var sq = await DrexCloud.database().ref('snapshots').orderByChild('a').equalTo(me.uid).once('value');
+      var __sc = 0, __now = Date.now();
+      if (sq) sq.forEach(function (ch) {
+        var s = ch.val() || {};
+        var ex = +s.expiresAt || 0;
+        if (!ex || ex > __now) __sc++;
+      });
+      snapsCount = __sc;
+    } catch (_) {}
   }
   var fmt = function (n) { try { return (typeof formatNumber === 'function' && typeof n === 'number') ? formatNumber(n) : String(n); } catch (_) { return String(n); } };
   var cardStat = function (label, val) {
@@ -89147,14 +89273,25 @@ async function renderOrbitAnalytics() {
       + '<div class="text-2xl font-black text-[var(--theme-text)]">' + escFn(fmt(val)) + '</div>'
       + '<div class="text-xs text-[var(--theme-muted)] mt-1">' + escFn(label) + '</div></div>';
   };
-  body.innerHTML = '<p class="text-xs text-[var(--theme-muted)] px-5 pt-1 pb-3">' + escFn(t('Tus números reales, actualizados al abrir.')) + '</p>'
+  var topCard = topPostTxt
+    ? '<div class="mx-5 mt-2.5 rounded-2xl border border-[var(--theme-border)] p-4 text-left">'
+      + '<div class="text-xs text-[var(--theme-muted)]">' + escFn(t('Mejor publicación')) + '</div>'
+      + '<div class="text-sm font-bold text-[var(--theme-text)] mt-1 leading-snug">&ldquo;' + escFn(topPostTxt) + '&rdquo;</div>'
+      + '<div class="text-xs text-[var(--drex-brand)] font-extrabold mt-1">' + escFn(fmt(topPostScore)) + ' ' + escFn(t('votos netos')) + '</div></div>'
+    : '';
+  body.innerHTML = '<p class="text-xs text-[var(--theme-muted)] px-5 pt-1 pb-3 text-left">' + escFn(t('Tus números reales, actualizados al abrir.')) + '</p>'
     + '<div class="px-5 grid grid-cols-3 gap-2.5">'
     + cardStat(t('Publicaciones'), posts)
     + cardStat(t('Seguidores'), followers)
     + cardStat(t('Siguiendo'), following)
     + '</div>'
-    + '<div class="mx-5 mt-4 rounded-2xl p-4 text-xs text-[var(--theme-muted)] bg-[var(--theme-surface-subtle)] flex items-center justify-center gap-2 text-center">'
-    + (typeof window.dxIcon === 'function' ? window.dxIcon('clock', 'w-4 h-4 shrink-0') : '') + '<span>' + escFn(t('Próximamente: alcance, visitas al perfil y votos por publicación.')) + '</span></div>';
+    + '<div class="px-5 mt-2.5 grid grid-cols-2 gap-2.5">'
+    + cardStat(t('Votos recibidos'), votesRx)
+    + cardStat(t('Destellos publicados'), snapsCount)
+    + '</div>'
+    + topCard
+    + '<div class="mx-5 mt-4 rounded-2xl p-4 text-xs text-[var(--theme-muted)] bg-[var(--theme-surface-subtle)] flex items-start gap-2 text-left">'
+    + (typeof window.dxIcon === 'function' ? window.dxIcon('clock', 'w-4 h-4 shrink-0 mt-0.5') : '') + '<span>' + escFn(t('Próximamente: alcance y visitas al perfil.')) + '</span></div>';
 }
 var DrexCoins = {
   _cache: {},
@@ -90354,6 +90491,7 @@ window.closeOrbitView = closeOrbitView;
 window.openOrbitPaywall = openOrbitPaywall;
 window.closeOrbitPaywall = closeOrbitPaywall;
 window.orbitSubscribe = orbitSubscribe;
+window.orbitCopyPaymentLink = orbitCopyPaymentLink;
 window.orbitManage = orbitManage;
 window.orbitRestore = orbitRestore;
 window.orbitOpenAnalytics = orbitOpenAnalytics;

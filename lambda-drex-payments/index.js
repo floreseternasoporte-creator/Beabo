@@ -3,6 +3,7 @@
 // Endpoints (detrás de una Function URL con Auth NONE):
 //   POST /create-checkout-session      {packageId, idToken, returnUrl} -> {url}
 //   POST /create-subscription-session {plan, idToken, returnUrl} -> {url}
+//   POST /create-payment-link {kind:'orbit', plan, idToken, returnUrl} -> {url} (link compartible)
 //                                     (Stripe Checkout mode:'subscription', planes Drex Orbit)
 //   POST /create-customer-portal      {idToken, returnUrl?} -> {url}
 //                                     (portal de facturación de Stripe)
@@ -97,18 +98,44 @@ function packageById(id) {
 }
 
 // ---------- Drex Orbit: planes de suscripción orbit ----------
-// Un solo nivel (Drex Orbit), dos planes. Los price IDs viven en env vars
-// (no son secretos, pero sí configuración del deployment): si falta el
-// price del plan pedido, la ruta responde 503 honesto en vez de inventar
-// un precio.
+// Un solo nivel (Drex Orbit), cuatro planes. monthly/yearly usan price IDs
+// de Stripe en env vars; quarterly/semiannual se crean con price_data inline
+// (precio fijo en el código: no requieren configuración en el dashboard de
+// Stripe). Si falta el price del plan pedido y no hay price_data, la ruta
+// responde 503 honesto en vez de inventar un precio.
 const ORBIT_PLANS = {
   monthly: { name: 'Drex Orbit Mensual' },
+  quarterly: { name: 'Drex Orbit Trimestral', priceData: { unit_amount: 1299, interval_count: 3 } },
+  semiannual: { name: 'Drex Orbit Semestral', priceData: { unit_amount: 2499, interval_count: 6 } },
   yearly: { name: 'Drex Orbit Anual' },
 };
 function orbitPriceId(plan) {
   if (plan === 'monthly') return process.env.STRIPE_PRICE_ORBIT_MONTHLY || '';
   if (plan === 'yearly') return process.env.STRIPE_PRICE_ORBIT_YEARLY || '';
   return '';
+}
+function orbitPlanDisplayName(plan) {
+  return (ORBIT_PLANS[plan] && ORBIT_PLANS[plan].name) || 'Drex Orbit';
+}
+/* line_item de Stripe para el plan: price ID configurado o price_data inline.
+ * Devuelve null si el plan no tiene precio disponible ( -> 503 honesto). */
+function orbitLineItem(plan) {
+  const spec = ORBIT_PLANS[plan];
+  if (!spec) return null;
+  const priceId = orbitPriceId(plan);
+  if (priceId) return { price: priceId, quantity: 1 };
+  if (spec.priceData) {
+    return {
+      price_data: {
+        currency: 'usd',
+        unit_amount: spec.priceData.unit_amount,
+        recurring: { interval: 'month', interval_count: spec.priceData.interval_count },
+        product_data: { name: spec.name },
+      },
+      quantity: 1,
+    };
+  }
+  return null;
 }
 /* true cuando los Price IDs de Stripe están configurados en la Lambda.
  * La app lo usa para activar las puertas automáticamente (fail-closed). */
@@ -384,6 +411,35 @@ function subscriptionStateFrom(sub, planHint) {
   };
 }
 
+// ---------- Orbit: creación compartida de sesión Checkout ----------
+async function createOrbitCheckoutSession(plan, userSub, returnUrl) {
+  const lineItem = orbitLineItem(plan);
+  if (!lineItem) {
+    const e = new Error('subscription_not_configured');
+    e.status = 503;
+    throw e;
+  }
+  const session = await stripe().checkout.sessions.create({
+    mode: 'subscription',
+    line_items: [lineItem],
+    metadata: {
+      drex_user_sub: userSub,
+      drex_orbit_plan: plan,
+    },
+    // El metadata se copia a la suscripción para que los webhooks
+    // posteriores (subscription.updated/deleted, invoice.*) puedan
+    // identificar al usuario sin depender solo del customer id.
+    subscription_data: {
+      metadata: { drex_user_sub: userSub, drex_orbit_plan: plan },
+    },
+    client_reference_id: userSub,
+    success_url: `${returnUrl}/?orbit=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${returnUrl}/?orbit=cancelled`,
+  });
+  console.log('orbit checkout session created', session.id, 'plan', plan);
+  return session;
+}
+
 // ---------- POST /create-subscription-session ----------
 
 async function handleCreateSubscriptionSession(event) {
@@ -398,12 +454,7 @@ async function handleCreateSubscriptionSession(event) {
   if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
 
   const plan = body.plan;
-  if (plan !== 'monthly' && plan !== 'yearly') return json(400, { error: 'invalid_plan' }, origin);
-  const priceId = orbitPriceId(plan);
-  if (!priceId) {
-    // Honesto: el producto/precio aún no está configurado en Stripe.
-    return json(503, { error: 'subscription_not_configured' }, origin);
-  }
+  if (!ORBIT_PLANS[plan]) return json(400, { error: 'invalid_plan' }, origin);
   const returnUrl = validReturnUrl(body.returnUrl);
   if (!returnUrl) return json(400, { error: 'invalid_return_url' }, origin);
 
@@ -415,31 +466,54 @@ async function handleCreateSubscriptionSession(event) {
     return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
   }
 
-  let session;
   try {
-    session = await stripe().checkout.sessions.create({
-      mode: 'subscription',
-      line_items: [{ price: priceId, quantity: 1 }],
-      metadata: {
-        drex_user_sub: userSub,
-        drex_orbit_plan: plan,
-      },
-      // El metadata se copia a la suscripción para que los webhooks
-      // posteriores (subscription.updated/deleted, invoice.*) puedan
-      // identificar al usuario sin depender solo del customer id.
-      subscription_data: {
-        metadata: { drex_user_sub: userSub, drex_orbit_plan: plan },
-      },
-      client_reference_id: userSub,
-      success_url: `${returnUrl}/?orbit=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${returnUrl}/?orbit=cancelled`,
-    });
+    const session = await createOrbitCheckoutSession(plan, userSub, returnUrl);
+    return json(200, { url: session.url, plan }, origin);
   } catch (e) {
+    // Honesto: el producto/precio aún no está configurado en Stripe.
+    if (e && e.status === 503) return json(503, { error: 'subscription_not_configured' }, origin);
     console.error('orbit session create failed:', e && e.message);
     return json(502, { error: 'payment_provider_error' }, origin);
   }
-  console.log('orbit checkout session created', session.id, 'plan', plan);
-  return json(200, { url: session.url, plan }, origin);
+}
+
+// ---------- POST /create-payment-link ----------
+// Link de pago compartible: crea la sesión de Checkout y devuelve {url}
+// SIN redirigir, para que el usuario la copie o la envíe por donde quiera.
+// El link es de un solo uso y expira (lo maneja Stripe).
+async function handleCreatePaymentLink(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  let body;
+  try {
+    body = JSON.parse(rawBody(event) || '{}');
+  } catch (_) {
+    return json(400, { error: 'bad_json' }, origin);
+  }
+  const ip = clientIp(event);
+  if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
+
+  if (body.kind !== 'orbit') return json(400, { error: 'invalid_kind' }, origin);
+  const plan = body.plan;
+  if (!ORBIT_PLANS[plan]) return json(400, { error: 'invalid_plan' }, origin);
+  const returnUrl = validReturnUrl(body.returnUrl);
+  if (!returnUrl) return json(400, { error: 'invalid_return_url' }, origin);
+
+  let userSub;
+  try {
+    userSub = await verifyIdToken(body.idToken);
+  } catch (e) {
+    const status = (e && e.status) || 401;
+    return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
+  }
+
+  try {
+    const session = await createOrbitCheckoutSession(plan, userSub, returnUrl);
+    return json(200, { url: session.url, plan }, origin);
+  } catch (e) {
+    if (e && e.status === 503) return json(503, { error: 'subscription_not_configured' }, origin);
+    console.error('orbit payment link failed:', e && e.message);
+    return json(502, { error: 'payment_provider_error' }, origin);
+  }
 }
 
 // ---------- POST /create-customer-portal ----------
@@ -625,7 +699,7 @@ async function handleTransactions(event) {
     try {
       const invs = await stripe().invoices.list({ customer: rec.stripeCustomerId, limit: 25 });
       for (const inv of (invs && invs.data) || []) {
-        const planName = rec.plan === 'yearly' ? 'Drex Orbit Anual' : 'Drex Orbit Mensual';
+        const planName = orbitPlanDisplayName(rec.plan);
         txs.push({
           id: String(inv.id || ''),
           type: 'orbit',
@@ -942,6 +1016,9 @@ export const handler = async (event) => {
   }
   if (method === 'POST' && path === '/create-subscription-session') {
     return handleCreateSubscriptionSession(event);
+  }
+  if (method === 'POST' && path === '/create-payment-link') {
+    return handleCreatePaymentLink(event);
   }
   if (method === 'POST' && path === '/create-customer-portal') {
     return handleCustomerPortal(event);
