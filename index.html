@@ -17332,6 +17332,10 @@ function drexSnapInit() {
   drexSnapRenderStaticTexts();
   drexSnapWrapTabSwitch();
   drexSnapLoadTray();
+  /* ORBIT: re-render cuando cambia el estado de la suscripción (puertas). */
+  try {
+    document.addEventListener('drex-orbit-change', function () { try { drexSnapLoadTray(); } catch (_) {} });
+  } catch (_) {}
   try { setInterval(drexSnapLoadTray, 120000); } catch (_) {}
   try {
     document.addEventListener('visibilitychange', () => {
@@ -47818,7 +47822,21 @@ async function downloadMySecurityData() {
 DrexCloud.auth().onAuthStateChanged(user => {
   if (user) registerDrexSecuritySession(user).catch(() => {});
   else detachDrexSecuritySession(null);
-  try { if (user && typeof DrexOrbit !== 'undefined') setTimeout(function () { DrexOrbit.refresh(); }, 1500); } catch (_) {} /* Drex Orbit: refresh tras login */
+  try {
+    if (user && typeof DrexOrbit !== 'undefined') setTimeout(function () {
+      try {
+        DrexOrbit.refresh().then(function () {
+          /* Reintento único: si el primer refresh no verificó (token aún no
+             listo), reintentar con force para activar las puertas. */
+          try {
+            if (!DrexOrbit.enforced() && DrexOrbit.isConfigured()) {
+              setTimeout(function () { try { DrexOrbit.refresh(true); } catch (_) {} }, 6000);
+            }
+          } catch (_) {}
+        }).catch(function () {});
+      } catch (_) {}
+    }, 1500);
+  } catch (_) {} /* Drex Orbit: refresh tras login (+1 reintento si no verificó) */
   // POSTS PROGRAMADOS: chequeo inicial al entrar + timer periódico liviano.
   try { if (typeof onDrexAuthForScheduledPosts === 'function') onDrexAuthForScheduledPosts(user); } catch (_) {}
 });
@@ -88699,7 +88717,11 @@ window.drexOrbitApplyGates = function () {
     var pw = document.getElementById('orbit-paywall');
     if (pw && !pw.classList.contains('hidden') && window.__orbitPaywallFeature && typeof openOrbitPaywall === 'function') openOrbitPaywall(window.__orbitPaywallFeature);
   } catch (_) {}
-  /* 9. Evento central para futuros suscriptores (studio, live, regalos...). */
+  /* 9. Bandeja de Destellos: re-render con el estado ya verificado. Sin esto,
+     la bandeja quedaba con el render previo al refresh() y un no-miembro la
+     veía completamente abierta (botón Nuevo + CTA). */
+  try { if (typeof drexSnapLoadTray === 'function') drexSnapLoadTray(); } catch (_) {}
+  /* 10. Evento central para futuros suscriptores (studio, live, regalos...). */
   try { document.dispatchEvent(new CustomEvent('drex-orbit-change', { detail: { active: !!on } })); } catch (_) {}
   window.__orbitGatesRunning = false;
 };
@@ -88943,7 +88965,9 @@ function orbitPaywallCopy(feature) {
     no_ads:          { ic: 'noads', title: t('Sin anuncios'),                desc: t('Navega Drex sin publicidad.') },
     badge:           { ic: 'crown', title: t('Insignia y marco exclusivos'), desc: t('Distintivo dorado Drex Orbit y marco en tu foto.') },
     priority_support:{ ic: 'headphones', title: t('Soporte prioritario'),         desc: t('Tus reportes se atienden primero.') },
-    destellos:        { ic: 'sparkles', title: t('Destellos exclusivos'),   desc: t('Crea y mira destellos efímeros. Solo miembros Orbit.') }
+    destellos:        { ic: 'sparkles', title: t('Destellos exclusivos'),   desc: t('Crea y mira destellos efímeros. Solo miembros Orbit.') },
+    more_chars:       { ic: 'nota',     title: t('Más caracteres'),         desc: t('Escribe hasta 2,000 caracteres en tus publicaciones.') },
+    priority_boost:   { ic: 'star',     title: t('Prioridad en Destacados'), desc: t('Tus publicaciones suben en la sección Destacados.') }
   };
   return map[feature] || { ic: 'crown', title: 'Drex Orbit', desc: t('El plan Orbit de Drex') };
 }

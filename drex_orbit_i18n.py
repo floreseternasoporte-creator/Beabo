@@ -42,7 +42,7 @@ T = [
 ("Elegir plan", "Choose a plan", "选择方案", "Escolher plano"),
 ("Ahorra 2 meses", "Save 2 months", "节省 2 个月", "Economize 2 meses"),
 ("Suscribirme", "Subscribe", "订阅", "Assinar"),
-("Pago 100% seguro con Stripe. Sin permanencia. Cancela cuando quieras.", "100% secure payment with Stripe. No commitment. Cancel anytime.", "通过 Stripe 100% 安全支付。无合约，随时取消。", "Pagamento 100% seguro com Stripe. Sem fidelidade. Cancele quando quiser."),
+("Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.", "100% secure payment with Stripe. We accept cards and Link. No commitment. Cancel anytime.", "通过 Stripe 100% 安全支付。接受银行卡和 Link。无合约，随时取消。", "Pagamento 100% seguro com Stripe. Aceitamos cartões e Link. Sem fidelidade. Cancele quando quiser."),
 ("Tema de perfil", "Profile theme", "主页主题", "Tema de perfil"),
 ("Elige el fondo de tu portada", "Choose your cover background", "选择封面背景", "Escolha o fundo da sua capa"),
 ("Tus números reales, actualizados al abrir.", "Your real numbers, updated on open.", "真实数据，每次打开自动更新。", "Seus números reais, atualizados ao abrir."),
