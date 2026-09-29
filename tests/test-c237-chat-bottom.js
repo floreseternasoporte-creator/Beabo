@@ -12,7 +12,9 @@
 const fs = require('fs');
 const assert = require('assert');
 
-const target = process.argv[2] || '/home/hatch/workspace/c237-chat/index.html';
+const path = require('path');
+const _c237chatDev = '/home/hatch/workspace/c237-chat/index.html';
+const target = process.argv[2] || (fs.existsSync(_c237chatDev) ? _c237chatDev : path.join(__dirname, '..', 'index.html'));
 const html = fs.readFileSync(target, 'utf8');
 
 function cssRule(selector) {

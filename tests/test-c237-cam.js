@@ -13,7 +13,8 @@ const vm = require('vm');
 const assert = require('assert');
 const { execSync } = require('child_process');
 
-const W = '/home/hatch/workspace/c237-cam';
+const _c237camDev = '/home/hatch/workspace/c237-cam';
+const W = process.env.C237_W || (fs.existsSync(_c237camDev) ? _c237camDev : path.join(__dirname, '..'));
 const html = fs.readFileSync(path.join(W, 'index.html'), 'utf8');
 function grab(re, msg) {
   const m = html.match(re);
@@ -85,7 +86,13 @@ assert.strictEqual(applied.length, 2, 'sin soporte de zoom no debe aplicar nada 
 console.log('OK zoom por pellizco: aplica, clampa e idempotente; degradado sin soporte');
 
 // 5. El espectador NO se toca
-const base = execSync('git -C /home/hatch/workspace/beabo show origin/main:index.html', { maxBuffer: 64 * 1024 * 1024 }).toString('utf8');
+const _c237camRepo = path.join(__dirname, '..');
+function _c237camBase() {
+  try { return execSync('git -C /home/hatch/workspace/beabo show origin/main:index.html', { maxBuffer: 64 * 1024 * 1024 }).toString('utf8'); }
+  catch (_) {}
+  return execSync('git -C ' + _c237camRepo + ' show HEAD:index.html', { maxBuffer: 64 * 1024 * 1024 }).toString('utf8');
+}
+const base = _c237camBase();
 function lineWith(s, id) { return s.split('\n').find(function (l) { return l.indexOf('id="' + id + '"') >= 0; }); }
 assert.strictEqual(lineWith(html, 'drex-live-viewer-video'), lineWith(base, 'drex-live-viewer-video'), 'ROJO: video del espectador modificado');
 console.log('OK espectador intacto');

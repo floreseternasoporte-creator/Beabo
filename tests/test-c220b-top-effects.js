@@ -1,8 +1,10 @@
 /* C220-B: la tira de efectos de cámara es SOLO superior (círculos estilo TikTok).
    Nada de efectos abajo: ni panel inferior, ni botón inferior, ni sheet. */
 const fs = require('fs');
-const path = process.argv[2] || '/home/hatch/workspace/beabo/index.html';
-const html = fs.readFileSync(path, 'utf8');
+const pathMod = require('path');
+const _c220bDev = '/home/hatch/workspace/beabo/index.html';
+const _c220bTarget = process.argv[2] || (fs.existsSync(_c220bDev) ? _c220bDev : pathMod.join(__dirname, '..', 'index.html'));
+const html = fs.readFileSync(_c220bTarget, 'utf8');
 let pass = 0, fail = 0;
 function ok(cond, name) { if (cond) pass++; else { fail++; console.log('FAIL:', name); } }
 

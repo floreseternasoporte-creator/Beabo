@@ -11,7 +11,9 @@ const vm = require('vm');
 let passed = 0;
 function ok(name, cond) { assert(cond, 'FALLO: ' + name); passed++; console.log('ok -', name); }
 
-const SRC = fs.readFileSync('/home/hatch/workspace/drex-laneA-c230/work/index.html', 'utf8');
+const path = require('path');
+const _c231Dev = '/home/hatch/workspace/drex-laneA-c230/work/index.html';
+const SRC = fs.readFileSync(fs.existsSync(_c231Dev) ? _c231Dev : path.join(__dirname, '..', 'index.html'), 'utf8');
 
 // ---------- A + B: helpers evaluados desde el archivo real ----------
 function extractFunction(src, name) {

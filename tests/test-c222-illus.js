@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const REPO = '/home/hatch/workspace/beabo';
+const REPO = fs.existsSync('/home/hatch/workspace/beabo') ? '/home/hatch/workspace/beabo' : path.join(__dirname, '..');
 let pass = 0, fail = 0;
 function ok(cond, name) {
   if (cond) { pass++; console.log('  ok  ' + name); }
