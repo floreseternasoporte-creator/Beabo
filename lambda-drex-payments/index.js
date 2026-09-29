@@ -3,7 +3,6 @@
 // Endpoints (detrás de una Function URL con Auth NONE):
 //   POST /create-checkout-session      {packageId, idToken, returnUrl} -> {url}
 //   POST /create-subscription-session {plan, idToken, returnUrl} -> {url}
-//   POST /create-payment-link {kind:'orbit', plan, idToken, returnUrl} -> {url} (link compartible)
 //                                     (Stripe Checkout mode:'subscription', planes Drex Orbit)
 //   POST /create-customer-portal      {idToken, returnUrl?} -> {url}
 //                                     (portal de facturación de Stripe)
@@ -473,45 +472,6 @@ async function handleCreateSubscriptionSession(event) {
     // Honesto: el producto/precio aún no está configurado en Stripe.
     if (e && e.status === 503) return json(503, { error: 'subscription_not_configured' }, origin);
     console.error('orbit session create failed:', e && e.message);
-    return json(502, { error: 'payment_provider_error' }, origin);
-  }
-}
-
-// ---------- POST /create-payment-link ----------
-// Link de pago compartible: crea la sesión de Checkout y devuelve {url}
-// SIN redirigir, para que el usuario la copie o la envíe por donde quiera.
-// El link es de un solo uso y expira (lo maneja Stripe).
-async function handleCreatePaymentLink(event) {
-  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
-  let body;
-  try {
-    body = JSON.parse(rawBody(event) || '{}');
-  } catch (_) {
-    return json(400, { error: 'bad_json' }, origin);
-  }
-  const ip = clientIp(event);
-  if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
-
-  if (body.kind !== 'orbit') return json(400, { error: 'invalid_kind' }, origin);
-  const plan = body.plan;
-  if (!ORBIT_PLANS[plan]) return json(400, { error: 'invalid_plan' }, origin);
-  const returnUrl = validReturnUrl(body.returnUrl);
-  if (!returnUrl) return json(400, { error: 'invalid_return_url' }, origin);
-
-  let userSub;
-  try {
-    userSub = await verifyIdToken(body.idToken);
-  } catch (e) {
-    const status = (e && e.status) || 401;
-    return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
-  }
-
-  try {
-    const session = await createOrbitCheckoutSession(plan, userSub, returnUrl);
-    return json(200, { url: session.url, plan }, origin);
-  } catch (e) {
-    if (e && e.status === 503) return json(503, { error: 'subscription_not_configured' }, origin);
-    console.error('orbit payment link failed:', e && e.message);
     return json(502, { error: 'payment_provider_error' }, origin);
   }
 }
@@ -1016,9 +976,6 @@ export const handler = async (event) => {
   }
   if (method === 'POST' && path === '/create-subscription-session') {
     return handleCreateSubscriptionSession(event);
-  }
-  if (method === 'POST' && path === '/create-payment-link') {
-    return handleCreatePaymentLink(event);
   }
   if (method === 'POST' && path === '/create-customer-portal') {
     return handleCustomerPortal(event);

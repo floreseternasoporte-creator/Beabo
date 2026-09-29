@@ -88575,26 +88575,6 @@ var DrexOrbit = {
     location.href = data.url;
     return { redirected: true };
   },
-  /* Link de pago compartible: crea la sesión de Checkout y devuelve la URL
-   * SIN redirigir, para copiarla o enviarla por donde el usuario quiera. */
-  paymentLink: async function (planId) {
-    var endpoint = this._endpoint();
-    if (!endpoint) throw new Error('no-provider');
-    if (!ORBIT_PLANS[planId]) throw new Error('invalid_plan');
-    var idToken = await this._idToken();
-    if (!idToken) throw new Error('no-token');
-    var returnUrl = '';
-    try { returnUrl = location.origin + location.pathname; } catch (_) {}
-    var res = await fetch(endpoint + '/create-payment-link', {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({ kind: 'orbit', plan: planId, idToken: idToken, returnUrl: returnUrl })
-    });
-    var data = null;
-    try { data = await res.json(); } catch (_) { data = null; }
-    if (!res.ok || !data || !data.url) throw new Error(String((data && data.error) || ('http_' + res.status)));
-    return data.url;
-  },
   /* Historial real de pagos: POST /transactions con el ID token en el cuerpo
    * (petición CORS simple, sin preflight). Devuelve {transactions[], subscription{}}.
    * Listas vacías si no hay datos. */
@@ -88899,13 +88879,12 @@ async function renderOrbitView(skipRefresh) {
         + '<div class="mt-1"><span class="text-3xl font-black text-[var(--theme-text)]">' + escFn(p.price) + '</span>'
         + '<span class="text-sm text-[var(--theme-muted)]"> ' + escFn(t(planId === 'yearly' ? 'al año' : 'al mes')) + '</span></div>'
         + '<button onclick="orbitSubscribe(\'' + planId + '\')" class="tap44 w-full min-h-[48px] mt-3 rounded-xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(t('Suscribirme')) + '</button>'
-        + '<button onclick="orbitCopyPaymentLink(\'' + planId + '\')" class="tap44 w-full min-h-[40px] mt-2 rounded-xl font-bold text-sm text-[var(--drex-brand)] bg-[var(--theme-surface-subtle)] active:opacity-70">' + escFn(t('Copiar link de pago')) + '</button>'
         + '</div>';
     };
     html += '<div class="px-5 mt-5"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px] mb-2">' + escFn(t('Elegir plan')) + '</h3>'
       + '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">' + card('monthly', false) + card('quarterly', false) + card('semiannual', false) + card('yearly', true) + '</div>'
       + '<p class="text-[11px] text-[var(--theme-muted)] text-center mt-3 leading-relaxed">'
-      + escFn(t('Pago 100% seguro con Stripe. Sin permanencia. Cancela cuando quieras.')) + '</p></div>';
+      + escFn(t('Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.')) + '</p></div>';
   }
 
   /* Tema de perfil */
@@ -88940,41 +88919,6 @@ async function orbitManage() {
     var m = String((e && e.message) || '');
     if (m === 'no_subscription') orbitToast(t('No tienes una suscripción activa.'));
     else orbitToast(t('No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.'));
-  }
-}
-function orbitCopyText(txt) {
-  return new Promise(function (resolve) {
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(txt).then(function () { resolve(true); }, function () { resolve(false); });
-        return;
-      }
-    } catch (_) {}
-    try {
-      var ta = document.createElement('textarea');
-      ta.value = txt;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      var ok = false;
-      try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
-      document.body.removeChild(ta);
-      resolve(ok);
-    } catch (_) { resolve(false); }
-  });
-}
-async function orbitCopyPaymentLink(planId) {
-  orbitToast(t('Procesando…'));
-  try {
-    var url = await DrexOrbit.paymentLink(planId);
-    var ok = await orbitCopyText(url);
-    orbitToast(ok ? t('Link de pago copiado. Compártelo donde quieras.') : t('No se pudo copiar el link.'));
-  } catch (e) {
-    var m = String((e && e.message) || '');
-    if (m === 'no-token') orbitToast(t('Inicia sesión para generar tu link de pago.'));
-    else if (m === 'invalid_plan') orbitToast(t('Ese plan no está disponible.'));
-    else orbitToast(t('El link de pago no está disponible ahora mismo.'));
   }
 }
 async function orbitRestore() {
@@ -90491,7 +90435,6 @@ window.closeOrbitView = closeOrbitView;
 window.openOrbitPaywall = openOrbitPaywall;
 window.closeOrbitPaywall = closeOrbitPaywall;
 window.orbitSubscribe = orbitSubscribe;
-window.orbitCopyPaymentLink = orbitCopyPaymentLink;
 window.orbitManage = orbitManage;
 window.orbitRestore = orbitRestore;
 window.orbitOpenAnalytics = orbitOpenAnalytics;
