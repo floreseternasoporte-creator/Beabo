@@ -81339,6 +81339,8 @@ button.drex-live-pill{cursor:pointer}
 /* Píldora "Por comenzar" (ventana de inicio) */
 .drex-sched-soon{display:inline-flex;align-items:center;gap:6px;background:rgba(255,59,92,.14);border:1px solid rgba(255,59,92,.45);color:#ff8ba0;font-size:12px;font-weight:800;padding:6px 12px;border-radius:9999px;animation:drex-sched-blink 1.6s ease-in-out infinite}
 @keyframes drex-sched-blink{0%,100%{opacity:1}50%{opacity:.55}}
+/* Píldora "Programación vencida" (más de 60 min pasada la hora) */
+.drex-sched-expired{display:inline-flex;align-items:center;gap:6px;background:rgba(120,130,160,.14);border:1px solid rgba(120,130,160,.4);color:#9aa3b8;font-size:12px;font-weight:800;padding:6px 12px;border-radius:9999px}
 
 /* Botón "Iniciar ahora" (prominente solo en ventana de inicio) */
 .drex-sched-startbtn{padding:10px 18px !important;font-size:13.5px !important}
@@ -81505,6 +81507,7 @@ button.drex-live-pill{cursor:pointer}
     this._hostStarted = false;
     this._sigSeen = {};   // keys de señales ya procesadas (anti-replay)
     this._odisc = null;   // handle onDisconnect de presencia (viewer)
+    this._guestUids = {}; // host: uids que entraron como co-anfitrión (para 'guestleft')
   }
 
   /* ---------------- eventos ---------------- */
@@ -81757,6 +81760,7 @@ button.drex-live-pill{cursor:pointer}
     } else if (msg.type === 'guest-join') {
       /* C240: co-anfitrión — negocia igual que un viewer pero avisa al estudio */
       this._hostCallViewer(from);
+      this._guestUids[from] = 1;
       this._emit('guestjoined', { uid: from, name: (msg.payload && msg.payload.name) || '' });
     } else if (msg.type === 'answer') {
       var pc = this._pcs[from];
@@ -81775,7 +81779,8 @@ button.drex-live-pill{cursor:pointer}
   DrexLiveCore.prototype._hostCallViewer = function (uid) {
     // Si el viewer re-entra (nuevo viewer-join), se tumba la PC vieja y se
     // re-oferta: la anterior pudo quedar muerta tras un corte de red.
-    this._dropPeer(uid);
+    // silent: no es una salida real, no emitir 'guestleft'.
+    this._dropPeer(uid, false, true);
     var self = this;
     var me = this._me();
     var pc;
@@ -81811,7 +81816,7 @@ button.drex-live-pill{cursor:pointer}
     });
   };
 
-  DrexLiveCore.prototype._dropPeer = function (uid, alreadyClosed) {
+  DrexLiveCore.prototype._dropPeer = function (uid, alreadyClosed, silent) {
     var pc = this._pcs[uid];
     if (pc) {
       delete this._pcs[uid];
@@ -81820,6 +81825,13 @@ button.drex-live-pill{cursor:pointer}
       }
     }
     delete this._pend[uid];
+    /* FIX: avisar cuando un co-anfitrión se va (presencia removida o PC
+     * cerrada) para que el estudio limpie la capa Invitado en vez de dejar
+     * el último cuadro congelado. silent=true en re-ofertas del host. */
+    if (!silent && this._guestUids && this._guestUids[uid]) {
+      delete this._guestUids[uid];
+      this._emit('guestleft', { uid: uid });
+    }
   };
 
   // ADENDA 1: reemplaza los tracks locales en TODAS las PCs activas
@@ -82102,6 +82114,7 @@ button.drex-live-pill{cursor:pointer}
       self._viewerCount = 0;
       self._hostStarted = false;
       self._sigSeen = {};
+      self._guestUids = {};
       return {};
     });
   };
@@ -82128,6 +82141,7 @@ button.drex-live-pill{cursor:pointer}
     this._liveId = null;
     this._hostUid = null;
     this._localStream = null;
+    this._guestUids = {};
   };
 
   /* ---------------- interacción ---------------- */
@@ -84037,6 +84051,20 @@ function dswGuestWire(core) {
       if (l) { l.cfg = l.cfg || {}; l.cfg.guestName = (d && d.name) || ''; }
       toast(t('Se unió un co-anfitrión'));
     }));
+    G.offs.push(core.on('guestleft', function (d) {
+      /* FIX: al salir el co-anfitrión, soltar su video para que la capa
+       * vuelva al placeholder "Esperando invitado…" en vez de congelarse. */
+      var l = dswGuestLayer();
+      if (l) {
+        l.cfg = l.cfg || {}; l.cfg.guestName = '';
+        var m = G.media[l.id];
+        if (m) {
+          try { if (m.el) { try { m.el.pause(); } catch (_) {} m.el.srcObject = null; } } catch (_) {}
+          try { delete G.media[l.id]; } catch (_) {}
+        }
+      }
+      toast(t('El co-anfitrión salió'));
+    }));
     G.offs.push(core.on('remotetrack', function (d) {
       if (!d || !d.stream) return;
       var hasVideo = false;
@@ -84099,6 +84127,7 @@ function goLive() {
       }, 1000);
       setHealth('ok', t('Conectando…'));
     } catch (e) {
+      try { if (stream) stream.getVideoTracks().forEach(function (tr) { try { tr.stop(); } catch (_) {} }); } catch (_) {}
       toast(t('Ocurrió un error'));
       btn.disabled = false;
     }
@@ -84113,6 +84142,14 @@ function cleanupLiveUI() {
   if (G.timerInt) { clearInterval(G.timerInt); G.timerInt = 0; }
   (G.offs || []).forEach(function (off) { try { off(); } catch (_) {} });
   G.offs = [];
+  /* FIX: el video del programa es propio del live (captureStream del canvas):
+   * se detiene al bajar del aire para no seguir componiendo a 30 fps en
+   * segundo plano. El audio pertenece al mezclador del estudio: NO se toca. */
+  try {
+    if (G.live && G.live.stream) {
+      G.live.stream.getVideoTracks().forEach(function (tr) { try { tr.stop(); } catch (_) {} });
+    }
+  } catch (_) {}
   G.live = null;
   setLiveUI(false);
   setHealth(null, '—');
@@ -86019,6 +86056,10 @@ window.drexLiveOpenSetup = async function () {
 window.drexLiveCloseSetup = function () {
   var sh = $('drex-live-setup');
   if (sh) sh.classList.add('hidden');
+  // FIX: si se abrió el setup desde "Iniciar ahora" de un programado y se
+  // cancela sin transmitir, no arrastrar el id: un en vivo posterior lo
+  // vincularía por error al programado viejo.
+  window._drexPendingSchedId = null;
   drexLiveStopStream();
 };
 
@@ -86546,6 +86587,15 @@ var DrexSchedPure = (function () {
     return (Number(nowMs) - Number(sched.scheduledAt)) >= -START_WINDOW_MS;
   }
 
+  // ¿Ya venció sin iniciar? (más de EXPIRE_MS pasada la hora programada: la
+  // tarjeta deja de ofrecer "Iniciar ahora", no genera insignia y el tick no
+  // la cuenta como próxima).
+  var EXPIRE_MS = 60 * 60 * 1000;
+  function isExpired(sched, nowMs) {
+    if (!sched || sched.status !== 'scheduled') return false;
+    return (Number(nowMs) - Number(sched.scheduledAt)) > EXPIRE_MS;
+  }
+
   function buildRecord(o) {
     var now = Number(o.nowMs);
     if (!now || !isFinite(now)) now = Date.now();
@@ -86565,11 +86615,11 @@ var DrexSchedPure = (function () {
 
   return {
     MAX_DAYS: MAX_DAYS, MIN_LEAD_MS: MIN_LEAD_MS, REMIND_MS: REMIND_MS,
-    START_WINDOW_MS: START_WINDOW_MS, TITLE_MAX: TITLE_MAX,
+    START_WINDOW_MS: START_WINDOW_MS, TITLE_MAX: TITLE_MAX, EXPIRE_MS: EXPIRE_MS,
     sanitizeTitle: sanitizeTitle, validate: validate,
     countdownParts: countdownParts, formatCountdown: formatCountdown,
     transition: transition, isRemindable: isRemindable,
-    isStartWindow: isStartWindow, buildRecord: buildRecord
+    isStartWindow: isStartWindow, isExpired: isExpired, buildRecord: buildRecord
   };
 })();
 
@@ -86790,12 +86840,15 @@ if (typeof module !== 'undefined' && module.exports) {
       'style="background:linear-gradient(135deg,#2F33B8,#5b60ff)" aria-hidden="true">' + initial + '</span>';
   }
   function schedCardHTML(rec, mine, now) {
-    var inWindow = P.isStartWindow(rec, now);
+    var expired = P.isExpired(rec, now);
+    var inWindow = !expired && P.isStartWindow(rec, now);
     var countId = 'drex-sched-count-' + String(rec.id).replace(/[^a-zA-Z0-9_-]/g, '');
-    var pill = inWindow
+    var pill = expired
+      ? '<span class="drex-sched-expired">' + icon('clock', 'w-3.5 h-3.5') + '<span>' + hh(tt('Programación vencida')) + '</span></span>'
+      : (inWindow
       ? '<span class="drex-sched-soon">' + icon('zap', 'w-3.5 h-3.5') + '<span>' + hh(tt('Por comenzar')) + '</span></span>'
       : '<span class="drex-sched-countpill">' + icon('clock', 'w-3.5 h-3.5') +
-        '<span id="' + countId + '" class="drex-sched-count" data-sched-id="' + hh(rec.id) + '">…</span></span>';
+        '<span id="' + countId + '" class="drex-sched-count" data-sched-id="' + hh(rec.id) + '">…</span></span>');
     var actions = '';
     if (mine) {
       if (inWindow) {
@@ -86908,12 +86961,15 @@ if (typeof module !== 'undefined' && module.exports) {
     var now = Date.now(), hot = false;
     for (var k in window.DrexSchedCache) {
       var r = window.DrexSchedCache[k];
-      if (r && r.status === 'scheduled' && (P.isRemindable(r, now) || P.isStartWindow(r, now))) { hot = true; break; }
+      if (r && r.status === 'scheduled' && !P.isExpired(r, now) && (P.isRemindable(r, now) || P.isStartWindow(r, now))) { hot = true; break; }
     }
     badge.classList.toggle('hidden', !hot);
   }
   function drexSchedCheckReminders() {
     var now = Date.now();
+    var me = null;
+    try { me = (typeof liveUser === 'function') ? liveUser() : null; } catch (_) {}
+    var myUid = me && me.uid;
     var reminded = remindedSet(), changed = false;
     for (var k in window.DrexSchedCache) {
       var r = window.DrexSchedCache[k];
@@ -86922,7 +86978,13 @@ if (typeof module !== 'undefined' && module.exports) {
         reminded[r.id] = 1; changed = true;
         try { markReminded(r.id); } catch (_) {}
         if (typeof toast === 'function') {
-          toast(tt('Tu en vivo comienza pronto') + ': ' + (r.title || ''));
+          // FIX: el caché mezcla programados propios y de seguidos; el aviso
+          // "Tu en vivo..." solo vale para los propios.
+          if (myUid && r.hostUid === myUid) {
+            toast(tt('Tu en vivo comienza pronto') + ': ' + (r.title || ''));
+          } else {
+            toast(tt('{n} comienza en vivo pronto').replace('{n}', r.hostName || tt('Usuario')) + ': ' + (r.title || ''));
+          }
         }
       }
     }
@@ -86961,6 +87023,11 @@ if (typeof module !== 'undefined' && module.exports) {
     var rec = window.DrexSchedCache[schedId];
     if (!rec || rec.status !== 'scheduled') {
       if (typeof toast === 'function') toast(tt('Programación cancelada'));
+      try { if (typeof window.drexSchedRender === 'function') window.drexSchedRender(); } catch (_) {}
+      return;
+    }
+    if (P.isExpired(rec, Date.now())) {
+      if (typeof toast === 'function') toast(tt('Programación vencida'));
       try { if (typeof window.drexSchedRender === 'function') window.drexSchedRender(); } catch (_) {}
       return;
     }
@@ -87880,6 +87947,20 @@ window.drexLiveJoinAsGuest = async function () {
     toast(t('Eres co-anfitrión'));
   } catch (e) {
     try { if (stream) stream.getTracks().forEach(function (tr) { tr.stop(); }); } catch (_) {}
+    /* FIX: el viewer ya había salido (leaveLive) antes de intentar ser
+     * invitado: re-unirse como espectador para no quedar en una sala sin
+     * conexión (video congelado). */
+    try {
+      var _gjc = $('drex-live-viewer-connecting');
+      if (_gjc) _gjc.style.display = 'flex';
+      await core.joinLive(LS.liveId);
+      LS.mode = 'viewer';
+    } catch (_) {
+      var _gjv = $('drex-live-viewer');
+      if (_gjv) _gjv.classList.add('hidden');
+      try { drexLiveUnwire(); } catch (_) {}
+      LS.mode = null; LS.liveId = null;
+    }
     toast(t('No se pudo unir al en vivo.'));
   }
 };
@@ -88048,7 +88129,7 @@ function dswG() {
 }
 
 /* ---------------- 1. Grabacion local ---------------- */
-var rec = { mr: null, chunks: [], ownTracks: [], t0: 0, timer: 0 };
+var rec = { mr: null, chunks: [], ownTracks: [], t0: 0, timer: 0, mime: '' };
 
 function dswoutBuildRecordStream() {
   var out;
@@ -88101,6 +88182,7 @@ function dswoutStartRecord() {
   mr.onstop = function () { dswoutFinishRecord(); };
   try { mr.start(500); } catch (e) { toast(t('No disponible')); return false; }
   rec.mr = mr;
+  try { rec.mime = (mr && mr.mimeType) || mime || ''; } catch (_) { rec.mime = mime || ''; }
   rec.t0 = Date.now();
   dswoutPaintRec(true);
   if (rec.timer) clearInterval(rec.timer);
@@ -88119,14 +88201,18 @@ function dswoutFinishRecord() {
   dswoutPaintRec(false);
   try {
     if (rec.chunks.length) {
-      var blob = new Blob(rec.chunks, { type: 'video/webm' });
+      // FIX: el mime real puede no ser webm (p. ej. Safari graba mp4 por
+      // defecto): el Blob y la extensión siguen al mime efectivo.
+      var blobType = rec.mime || 'video/webm';
+      var blob = new Blob(rec.chunks, { type: blobType });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       var d = new Date();
       var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+      var ext = /mp4/i.test(String(blobType)) ? '.mp4' : '.webm';
       a.href = url;
       a.download = 'drex-studio-' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) +
-        '-' + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds()) + '.webm';
+        '-' + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds()) + ext;
       document.body.appendChild(a);
       a.click();
       setTimeout(function () {
@@ -88136,6 +88222,7 @@ function dswoutFinishRecord() {
     }
   } catch (_) {}
   rec.chunks = [];
+  rec.mime = '';
   /* Solo se detienen las pistas de video propias (del captureStream creado
    * aqui). Las de audio pertenecen al mezclador del estudio. */
   for (var i = 0; i < rec.ownTracks.length; i++) {
