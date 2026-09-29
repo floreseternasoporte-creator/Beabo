@@ -88658,16 +88658,31 @@ async function drexStripeCheckout(pkg) {
   if (!idToken) throw new Error('no-token');
   var returnUrl = '';
   try { returnUrl = location.origin + location.pathname; } catch (_) {}
-  var res = await fetch(endpoint + '/create-checkout-session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ packageId: pkg.id, idToken: idToken, returnUrl: returnUrl })
-  });
+  var body = JSON.stringify({ packageId: pkg.id, idToken: idToken, returnUrl: returnUrl });
+  /* Reintento unico ante fallo de red: en movil la conexion es inestable y un
+   * POST perdido no debe mostrar "no se pudo iniciar el pago" sin mas. */
+  var res = null, attempt = 0, netErr = null;
+  while (attempt < 2 && !res) {
+    attempt++;
+    try {
+      res = await fetch(endpoint + '/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body
+      });
+    } catch (fe) {
+      netErr = fe; res = null;
+      if (attempt < 2) await new Promise(function (r) { setTimeout(r, 1500); });
+    }
+  }
+  if (!res) { var nerr = new Error('network'); nerr.cause = netErr; throw nerr; }
   var data = null;
   try { data = await res.json(); } catch (_) { data = null; }
   if (!res.ok || !data || !data.url) {
     var code = (data && data.error) || ('http_' + res.status);
-    throw new Error(String(code));
+    var herr = new Error('backend:' + String(code));
+    herr.status = res.status; herr.backendError = (data && data.error) || null;
+    throw herr;
   }
   location.href = data.url; /* Stripe Checkout; el retorno trae ?coins=success */
   return { redirected: true };
@@ -88907,7 +88922,13 @@ window.drexCoinsBuy = async function (pkgId) {
     else toast(t('No se pudo completar la compra.'));
   } catch (e) {
     var m = (e && e.message) || '';
+    var st = (e && e.status) || 0;
+    try { console.error('[DrexPay] no se pudo iniciar el pago:', m, 'status=' + st, (e && e.backendError) || ''); } catch (_) {}
+    try { DrexPay.lastError = { code: m, status: st, at: Date.now() }; } catch (_) {}
     if (m === 'no-token') toast(t('Inicia sesión para comprar monedas.'));
+    else if (m === 'network') toast(t('No se pudo conectar con el servidor de pagos. Revisa tu conexión a internet e inténtalo de nuevo.'));
+    else if (st === 401 || st === 403) toast(t('Tu sesión expiró. Cierra sesión y vuelve a entrar para comprar.'));
+    else if (st === 429) toast(t('Demasiados intentos. Espera un minuto e inténtalo de nuevo.'));
     else toast(t('No se pudo iniciar el pago. Inténtalo de nuevo.'));
   }
 };
