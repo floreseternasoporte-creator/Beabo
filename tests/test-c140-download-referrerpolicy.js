@@ -52,9 +52,14 @@ function extractFn(src, name) {
 }
 
 // ---- 1. Inventario de la familia `download` (multiconjunto) ----
-tcase('inventario .download = : 5 sitios en total (3 index.html + 1 drex-data-export.js + 1 recovery-codes.js)', () => {
+tcase('inventario .download = : 6 sitios en total (4 index.html + 1 drex-data-export.js + 1 recovery-codes.js)', () => {
   const n = count(/\.download\s*=/g, html) + count(/\.download\s*=/g, dataExportJs) + count(/\.download\s*=/g, recoveryJs);
-  return n === 5;
+  return n === 6;
+});
+
+tcase('dswoutFinishRecord: descarga de grabacion del estudio via blob (createObjectURL + revoke)', () => {
+  const body = extractFn(html, 'dswoutFinishRecord');
+  return /\.download\s*=/.test(body) && /URL\.createObjectURL/.test(body) && /revokeObjectURL/.test(body);
 });
 
 tcase('downloadChatFile: descarga vía blob (createObjectURL en la misma función)', () => {
@@ -85,8 +90,10 @@ tcase('recovery-codes.js downloadTxt: a.download con blob URL', () => {
   return /a\.download = 'drex-codigos-respaldo\.txt'/.test(body) && /URL\.createObjectURL\(blob\)/.test(body) && /URL\.revokeObjectURL\(/.test(body);
 });
 
-tcase('<a download ...> estático en HTML: 0 (todos los usos son programáticos)', () =>
-  count(/<a [^>]*\bdownload\b[^>]*>/g, html) === 0);
+tcase('<a download ...> estatico en HTML: 1 (boton Descargar Drex Studio, mismo origen)', () => {
+  return count(/<a [^>]*\bdownload\b[^>]*>/g, html) === 1 &&
+    /Drex-Studio-[^"]*\.zip/.test(html);
+});
 
 // ---- 2. ping= : cero repo-wide ----
 tcase('ping=: 0 en index.html', () => count(/ping=/g, html) === 0);

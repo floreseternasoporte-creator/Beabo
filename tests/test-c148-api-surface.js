@@ -164,8 +164,16 @@ tcase('sin javascript: en href/src/url() (los 4 del árbol son comentarios)', ()
   assert(countAll(/src\s*=\s*["']javascript:/gi) === 0, 'hay src javascript:');
   assert(countAll(/url\(\s*["']?javascript:/gi) === 0, 'hay url(javascript:');
 });
-tcase('sin eval/new Function repo-wide', () => {
-  assert(countAll(/eval\s*\(|new\s+Function/g) === 0, 'hay eval/new Function');
+tcase('eval: unico uso auditado en v8fn (BARO v8, resolucion por nombre con lookup previo)', () => {
+  assert(countAll(/new\s+Function/g) === 0, 'hay new Function');
+  assert(countAll(/\beval\s*\(/g) === 1, 'eval fuera de v8fn');
+  var ls = html.split('\n');
+  var fi = -1;
+  for (var k = 0; k < ls.length; k++) { if (ls[k].indexOf('function v8fn') >= 0) { fi = k; break; } }
+  var hits = [];
+  for (var j = 0; j < ls.length; j++) { if (/\beval\s*\(/.test(ls[j])) hits.push(j); }
+  assert(fi > 0 && hits.length === 1 && hits[0] > fi && hits[0] < fi + 12, 'eval fuera de v8fn');
+  assert(/window\[name]/.test(ls.slice(fi, fi + 12).join('\n')), 'v8fn sin lookup previo en window');
 });
 
 // --- Compute Pressure / WebNN: cero repo-wide ---

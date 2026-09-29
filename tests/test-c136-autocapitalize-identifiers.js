@@ -117,11 +117,11 @@ tcase('teclado movil consistente: todos los OTP conservan inputmode=numeric', ()
 });
 
 // ---- 4. textarea: inventario x14, ninguno con inputmode (sin leads) ----
-tcase('textarea: 15 ocurrencias y ninguna declara inputmode', () => {
+tcase('textarea: 16 ocurrencias y ninguna declara inputmode', () => {
   const n = count(/<textarea/g, html);
-  if (n !== 15) return false;
+  if (n !== 16) return false;
   const tags = html.match(/<textarea[\s\S]*?>/g) || [];
-  return tags.length === 15 && tags.every(t => t.indexOf('inputmode=') < 0);
+  return tags.length === 16 && tags.every(t => t.indexOf('inputmode=') < 0);
 });
 tcase('textarea: chat-edit-input conserva enterkeyhint=done + onkeydown honesto', () => {
   const t = tagOf(html, 'chat-edit-input');
@@ -130,8 +130,8 @@ tcase('textarea: chat-edit-input conserva enterkeyhint=done + onkeydown honesto'
 });
 
 // ---- 5. select nativos: inventario x13, uso consistente ----
-tcase('select: 13 <select nativos (inventario cerrado)', () =>
-  count(/<select[\s>]/g, html) === 13);
+tcase('select: 17 <select nativos (inventario cerrado)', () =>
+  count(/<select[\s>]/g, html) === 17);
 
 // ---- 6. falla-en-base: contra HEAD los 4 leads carecen del trio ----
 tcase('base: en HEAD (sin el fix) los 4 leads NO tienen el trio', () => {

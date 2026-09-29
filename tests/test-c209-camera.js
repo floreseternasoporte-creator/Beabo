@@ -128,11 +128,12 @@ test('window.drexCameraOpen y window.drexApplyEffect expuestos', function () {
 test('todas las funciones de los onclick del modal existen', function () {
   var fns = ['drexCameraOpen', 'drexCameraClose', 'drexCameraRetry',
     'drexCameraUploadFallback', 'drexCameraSwitchMode', 'drexCameraFlip',
-    'drexCameraToggleEffects', 'drexCameraCloseEffects', 'drexCameraCapture',
-    'drexCameraSelectEffect', 'drexApplyEffect'];
+    'drexCameraCapture', 'drexCameraSelectEffect', 'drexCamRenderEffects', 'drexApplyEffect'];
   fns.forEach(function (f) {
     assert.strictEqual(run('typeof ' + f), 'function', f + ' no definida');
   });
+  assert.strictEqual(run('typeof drexCameraToggleEffects'), 'undefined', 'C220 elimino el panel inferior');
+  assert.strictEqual(run('typeof drexCameraCloseEffects'), 'undefined', 'C220 elimino el panel inferior');
 });
 
 /* ---------- HTML del modal ---------- */
@@ -151,9 +152,8 @@ test('modal: IDs requeridos y preview playsinline+muted', function () {
     'drex-cam-topbar', 'drex-cam-close', 'drex-cam-mode-photo', 'drex-cam-mode-video',
     'drex-cam-flip', 'drex-cam-progress-wrap', 'drex-cam-progress-fill',
     'drex-cam-countdown', 'drex-cam-countdown-num',
-    'drex-cam-effects-panel', 'drex-cam-effects-panel-inner', 'drex-cam-effects-title',
-    'drex-cam-effects-list', 'drex-cam-effects-empty', 'drex-cam-effects-close',
-    'drex-cam-controls', 'drex-cam-effects-btn', 'drex-cam-capture',
+    'drex-cam-fx-topbar', 'drex-cam-fx-list',
+    'drex-cam-controls', 'drex-cam-capture',
     'drex-cam-ring-svg', 'drex-cam-ring-fg', 'drex-cam-capture-icon', 'drex-cam-capture-rec'];
   ids.forEach(function (id) {
     assert(src.indexOf('id="' + id + '"') !== -1, 'falta id="' + id + '"');
@@ -173,10 +173,13 @@ test('getElementById estáticos del bloque resuelven a IDs del DOM', function ()
   assert(missing.length === 0, 'IDs sin elemento: ' + missing.join(', '));
 });
 
-test('efecto: el panel es de media pantalla y hay estado vacío diseñado', function () {
-  assert(src.indexOf('id="drex-cam-effects-panel"') !== -1);
-  assert(src.indexOf('max-height:52%') !== -1, 'panel de media pantalla');
-  assert(src.indexOf('Aún no hay efectos') !== -1, 'estado vacío');
+test('efecto: tira superior circular con scroll-snap (C220, sin panel inferior)', function () {
+  assert(src.indexOf('id="drex-cam-fx-topbar"') !== -1, 'falta la barra superior de efectos');
+  assert(src.indexOf('id="drex-cam-fx-list"') !== -1, 'falta la lista de la tira');
+  assert(src.indexOf('scroll-snap-type: x proximity') !== -1, 'tira sin scroll-snap');
+  assert(src.indexOf('drex-cam-fx-tcircle') !== -1, 'tarjetas sin circulo');
+  assert(src.indexOf('id="drex-cam-effects-panel"') === -1, 'el panel inferior debe seguir eliminado');
+  assert(src.indexOf("drexCamTx('Sin efecto')") !== -1, 'la tira siempre ofrece "Sin efecto"');
 });
 
 /* ---------- i18n ES/EN/ZH/PT ---------- */

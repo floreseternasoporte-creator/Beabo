@@ -178,13 +178,23 @@ test('drexFxUseEffect: con def en caché abre la cámara con el OBJETO (no el id
 });
 
 /* ---------- 4. Bump de usos ---------- */
-test('drexFxBumpUsos: transacción sobre effects/<id>/usos', function () {
+test('drexFxBumpUsos: transacción sobre effects/<id>/usos (namespace canon del caché)', function () {
   installMocks();
   run('var __txPath = null, __txFn = null;');
   run("__refFor = function (p) { return { transaction: function (fn) { __txPath = p; __txFn = fn; return Promise.resolve({committed:true}); } }; };");
+  run("drexFxCache['fx1'] = {_ns:'canon'};");
   run("drexFxBumpUsos('fx1');");
   assert.strictEqual(run('__txPath'), 'effects/fx1/usos');
   assert.strictEqual(run('__txFn(41)'), 42, 'la fn de transacción suma 1');
+});
+
+test('drexFxBumpUsos: namespace legacy escribe en public/effects/<id>/usos', function () {
+  installMocks();
+  run('var __txPathL = null;');
+  run("__refFor = function (p) { return { transaction: function (fn) { __txPathL = p; return Promise.resolve({committed:true}); } }; };");
+  run("drexFxCache['fx2'] = {_ns:'legacy'};");
+  run("drexFxBumpUsos('fx2');");
+  assert.strictEqual(run('__txPathL'), 'public/effects/fx2/usos');
 });
 
 test('drexFxBumpUsos: id vacío o sin DrexCloud no revienta', function () {
@@ -300,6 +310,29 @@ test('i18n: claves nuevas con paridad ES/EN/ZH/PT y placeholders iguales', funct
     if (!(k in EN)) missing.push(k);
   }
   assert(missing.length === 0, 'appT sin clave i18n: ' + missing.join(' / '));
+});
+
+
+test('drexFxBumpUsos: sin caché resuelve el namespace vía drexFxReadOneEffect (async, sandbox aislado)', function () {
+  var sb2 = { console: console, Math: Math, Date: Date, JSON: JSON, Promise: Promise,
+    setTimeout: setTimeout, clearTimeout: clearTimeout, window: {} };
+  sb2.globalThis = sb2;
+  vm.createContext(sb2);
+  vm.runInContext(code, sb2, { filename: 'drex-effects-v1-bump.js' });
+  var run2 = function (e) { return vm.runInContext(e, sb2); };
+  run2('var __txA = null;');
+  run2("__refFor = function (p) { return { transaction: function (fn) { __txA = p; return Promise.resolve({}); } }; };");
+  run2("DrexCloud = { database: function () { return { ref: function (p) { return __refFor(p); } }; } };");
+  run2("drexFxReadOneEffect = function(){ return Promise.resolve({_ns:'legacy'}); };");
+  run2("drexFxBumpUsos('fx3');");
+  return new Promise(function (resolve, reject) {
+    setImmediate(function () { setImmediate(function () {
+      try {
+        assert.strictEqual(run2('__txA'), 'public/effects/fx3/usos');
+        resolve();
+      } catch (e) { reject(e); }
+    }); });
+  });
 });
 
 console.log('\n' + passed + ' pasados, ' + failed + ' fallidos');

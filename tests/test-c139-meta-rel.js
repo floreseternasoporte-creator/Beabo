@@ -75,8 +75,16 @@ tcase('titulos consistentes con la marca Drex', () =>
   html.includes('og:title" content="Drex') && html.includes('twitter:title" content="Drex'));
 
 // ---------- DETAILS/SUMMARY (cero) ----------
-tcase('<details> cero en index.html', () => !/<details[\s>]/i.test(html));
-tcase('<summary> cero en index.html', () => !/<summary[\s>]/i.test(html));
+tcase('<details>: solo el diagnostico escapado de Baro (+1 mencion en comentario)', () => {
+  const hits = [...html.matchAll(/<details[\s>]/gi)];
+  return hits.length === 2 &&
+    html.includes('<details class="baro-error-detail">') &&
+    html.includes("__baroErrDetail.replace(/&/g, '&amp;')") 
+});
+tcase('<summary>: solo el del diagnostico de Baro', () => {
+  const sh = [...html.matchAll(/<summary[\s>]/gi)];
+  return sh.length === 1 && html.includes('<summary>Detalle t');
+});
 tcase('<details>/<summary>: unico uso legitimo en drex-data-export.js (reporte descargable, escapado)', () => {
   const jsFiles = fs.readdirSync(repoRoot).filter(f => f.endsWith('.js'));
   const hits = [];

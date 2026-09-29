@@ -103,10 +103,14 @@ tcase('C1 el comentario que seguía al bloque sigue presente',
 tcase('C2 el único listener message restante es el del service worker (legítimo)',
   count(html, "addEventListener('message'") + count(html, 'addEventListener("message"') === 1 &&
   html.indexOf("navigator.serviceWorker.addEventListener('message'") !== -1);
-tcase('C3 los bloques <script> reales abren y cierran en pares: los únicos <script> sin cierre son literales dentro de comentarios JS (preexistente C151 + BARO v2 "NO crea bloques <script> nuevos")',
-  count(html, '<script') === count(html, '</script>') + 2 &&
-  html.indexOf('del propio <script>. */') !== -1 &&
-  html.indexOf('NO crea bloques <script> nuevos.') !== -1);
+tcase('C3: los <script> sin cierre son solo literales en comentarios JS (inventario 53/43/16)', () => {
+  var totalOpens = (html.match(/<script/gi) || []).length;
+  var totalCloses = (html.match(/<\/script/gi) || []).length;
+  var noJsComments = html.replace(/\/\*[\s\S]*?\*\//g, '');
+  var opensReal = (noJsComments.match(/<script/gi) || []).length;
+  var inComments = totalOpens - opensReal;
+  return totalOpens === 53 && totalCloses === 43 && inComments === 16 && opensReal === 37;
+}),
 
 console.log(failures === 0 ? '\nTODOS LOS TESTS PASARON' : '\nFALLARON ' + failures + ' TESTS');
 process.exit(failures === 0 ? 0 : 1);

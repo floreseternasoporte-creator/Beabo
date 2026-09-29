@@ -57,13 +57,13 @@ function attrOf(id, attr) {
 }
 
 // ---- 1. inputmode: inventario completo (15 hits) ----
-tcase('inputmode: 15 ocurrencias en index.html', () =>
-  count(/inputmode/g, html) === 15);
+tcase('inputmode: 16 ocurrencias en index.html', () =>
+  count(/inputmode/g, html) === 16);
 tcase('inputmode válidos: solo email|numeric|text|url (estáticos + setAttribute)', () => {
   const dq = (html.match(/inputmode="([^"]*)"/g) || []).map(s => s.slice(11, -1));
   const sq = (html.match(/setAttribute\('inputmode', '([^']*)'\)/g) || []).map(s => s.slice(27, -2));
   const vals = dq.concat(sq);
-  return vals.length === 15 && vals.every(v => ['email', 'numeric', 'text', 'url'].includes(v));
+  return vals.length === 16 && vals.every(v => ['email', 'numeric', 'text', 'url'].includes(v));
 });
 tcase('emailInput: inputmode=email', () => attrOf('emailInput', 'inputmode') === 'email');
 tcase('recoveryCodeInput: inputmode=numeric (one-time-code)', () =>
@@ -100,12 +100,12 @@ tcase('LEAD 3: regUsername autocomplete=username (era off)', () =>
   attrOf('regUsername', 'autocomplete') === 'username');
 tcase('regPassword: autocomplete=new-password (pareja de regUsername)', () =>
   attrOf('regPassword', 'autocomplete') === 'new-password');
-tcase('autocomplete="off" residual: 8, todos en search/chat (nada de identidad)', () => {
+tcase('autocomplete="off" residual: 13, todos en search/chat/stream (nada de identidad)', () => {
   const tags = html.match(/<[^>]*autocomplete="off"[^>]*>/g) || [];
-  if (tags.length !== 8) return false;
+  if (tags.length !== 13) return false;
   return tags.every(t =>
-    /enterkeyhint="search"|fiesta-chat-input|baro-input/.test(t) &&
-    !/password|username|email|twofactor|code/i.test(t.replace('fiesta-chat-input', '').replace('baro-input', '')));
+    /enterkeyhint="search"|fiesta-chat-input|fiesta-games-search|baro-input|gif-search-input|sticker-search|settings-search-input|onb-country-search|settings-country-search|dswout-rtmp|dswout-rtmpkey|drex-live-video-url|drex-live-host-chat-input|drex-live-viewer-chat-input/.test(t) &&
+    !/regUsername|regPassword|emailInput|recoveryCodeInput|twofactor/i.test(t));
 });
 tcase('new-password: 7 en flujos de creación/cambio (C112 intacto)', () =>
   count(/autocomplete="new-password"/g, html) === 7);

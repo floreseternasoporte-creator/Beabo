@@ -55,6 +55,7 @@ vm.createContext(sandbox);
 const driver = `
 var fiestaGameMySecret = null, fiestaGameHiddenLocal = false, fiestaGameMyVote = null;
 var fiestaGameSecretEpoch = null; // C69-F1: preámbulo actualizado (lección C63)
+var fiestaGameStarting = false; // C229-F1: evita doble inicio (global en index.html:8512)
 globalThis.__T = {
   startAsHost: function () { fiestaGameStartNow(); },
   gameDoc: function () { return writes['fiestas/sid1/game']; },
@@ -79,6 +80,7 @@ console.log('index.html bajo prueba: ' + INDEX_PATH);
 
 // 1) El dueño inicia el juego.
 T.startAsHost();
+setImmediate(() => {
 const doc = T.gameDoc();
 ok(!!doc, 'se escribió el doc fiestas/sid1/game');
 const raw = JSON.stringify(doc || {});
@@ -101,3 +103,4 @@ ok(secKeys.length === 3, 'se repartieron secretos individuales a los 3 jugadores
 
 console.log('\n' + pass + ' ok, ' + fail + ' fallas');
 process.exit(fail ? 1 : 0);
+});

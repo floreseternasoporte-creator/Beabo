@@ -73,17 +73,18 @@ function attrOf(src, id, attr) {
 }
 
 // ---- 1. createElement('input')/('textarea'): inventario y contexto ----
-tcase('createElement input: 2 ocurrencias en index.html (BARO-1: -1 por eliminar Series)', () =>
-  count(/createElement\(['"]input['"]\)/g, html) === 2);
-tcase('createElement input: las 2 viven en fallbacks de portapapeles (execCommand copy + removeChild)', () => {
+tcase('createElement input: 3 ocurrencias en index.html (2 portapapeles + 1 slider volumen del mezclador)', () =>
+  count(/createElement\(['"]input['"]\)/g, html) === 3);
+tcase('createElement input: 2 en fallbacks de portapapeles, 1 slider de volumen (type=range)', () => {
   const lines = html.split('\n');
   const idxs = [];
   lines.forEach((l, i) => { if (/createElement\(['"]input['"]\)/.test(l)) idxs.push(i); });
-  if (idxs.length !== 2) return false;
-  return idxs.every(i => {
-    const win = lines.slice(Math.max(0, i - 14), i + 8).join('\n');
-    return /execCommand\(['"]copy['"]\)/.test(win) && /removeChild/.test(win) && /\.select\(\)/.test(win);
-  });
+  if (idxs.length !== 3) return false;
+  const wins = idxs.map(i => lines.slice(Math.max(0, i - 14), i + 8).join('\n'));
+  const clip = wins.filter(w =>
+    /execCommand\(['"]copy['"]\)/.test(w) && /removeChild/.test(w) && /\.select\(\)/.test(w)).length;
+  const slider = wins.filter(w => /\.type\s*=\s*['"]range['"]/.test(w)).length;
+  return clip === 2 && slider === 1;
 });
 tcase('createElement textarea: 1 ocurrencia (recovery-codes.js legacyCopy)', () =>
   count(/createElement\(['"]textarea['"]\)/g, rc) === 1);
@@ -133,11 +134,14 @@ tcase('twofactor-challenge-input (C134) sigue intacto', () =>
   attrOf(html, 'twofactor-challenge-input', 'maxlength') === '6');
 
 // ---- 4. type="number": inventario cerrado ----
-tcase('type="number": exactamente 3 (fiesta-max, timer-hours, timer-minutes)', () => {
+tcase('type="number": exactamente 6 (3 base + dswov-goal, dswov-timer-min, dswpro-crop dinámico)', () => {
   const tags = html.match(/<input[^>]*type="number"[^>]*>/g) || [];
-  if (tags.length !== 3) return false;
-  const ids = tags.map(t => /id="([^"]*)"/.exec(t)[1]).sort().join(',');
-  return ids === 'fiesta-max,timer-hours,timer-minutes';
+  if (tags.length !== 6) return false;
+  const ids = tags.map(t => /id="([^"]*)"/.exec(t)[1]).sort();
+  const ok = ids.every(id =>
+    ['dswov-goal', 'dswov-timer-min', 'fiesta-max', 'timer-hours', 'timer-minutes'].includes(id) ||
+    /^dswpro-crop-/.test(id));
+  return ok && ids.some(id => /^dswpro-crop-/.test(id));
 });
 tcase('type="number": ninguno en identidad/OTP (esos usan inputmode=numeric)', () => {
   const tags = html.match(/<input[^>]*type="number"[^>]*>/g) || [];
