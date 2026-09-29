@@ -105,7 +105,10 @@ function makeBox() {
   vm.runInContext('function getVerificationIconByAuthor(){ return ""; }', sb);
   vm.runInContext('function closeSearch(){} function openAuthorProfile(){} function loadUserFrame(){}', sb);
   sb.URL = URL;
-  sb.window = { location: { origin: 'https://drex.test' } };
+  sb.window = { location: { origin: 'https://drex.test' },
+    // presencia live global (2026-09-29): renderAccountsList envuelve el
+    // avatar con window.drexLiveRing; en el test pasa el HTML intacto.
+    drexLiveRing: function (html) { return String(html); } };
   vm.runInContext(`
     var __captured = [];
     function __fakeItem() {

@@ -27,6 +27,11 @@
 // spinner interno y limpieza; las tarjetas usan createProfilePostCard (DOM)
 // y header.textContent. Auditados: cero interpolación de datos de usuario.
 // Nuevo inventario: .innerHTML 573, .outerHTML 3, insertAdjacentHTML 8.
+// PRESENCIA LIVE GLOBAL 2026-09-29: +6 (banners feed/Buscar/perfil: rama
+// oculta con box.innerHTML='' + rama visible con HTML propio; todo dato de
+// live — titulo, nombre, avatar, viewers — pasa por esc(), y los textos por
+// t(); cero interpolacion cruda de datos de usuario/BD). Nuevo inventario:
+// .innerHTML 579, .outerHTML 3, insertAdjacentHTML 8.
 //  - drex-rec-engine.js / sw.js: 0 sinks cada uno (0 hits en los 4 patrones).
 //  - scrollIntoView({behavior:'smooth'}): 6 hits (9252, 23762, 23773, 33930,
 //    37151 + BARO v2: scroll del feed de actividad al pie); scroll-behavior:smooth real: 1 (#empresa-view); la media query
@@ -68,14 +73,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 573 ocurrencias en index.html (studio/live/baro/C236+ y tab Notas: features legítimos)', () => count(/\.innerHTML/g, html) === 573);
+tcase('innerHTML: 579 ocurrencias en index.html (studio/live/baro/C236+, tab Notas y presencia live global: features legítimos)', () => count(/\.innerHTML/g, html) === 579);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 573 &&
+  count(/\.innerHTML/g, copy) === 579 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);

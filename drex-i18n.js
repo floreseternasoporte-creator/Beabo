@@ -2694,6 +2694,9 @@ var APP_ENGLISH_TEXT = {
 "Error al cargar las notas.":"Error loading notes.",
 "nota":"note",
 "notas":"notes",
+"Ver transmisión":"Watch live stream",
+"Ver ahora":"Watch now",
+"En vivo ahora":"Live now",
 };
 var APP_CHINESE_TEXT = {
 
@@ -5386,6 +5389,9 @@ var APP_CHINESE_TEXT = {
 "Error al cargar las notas.":"加载笔记时出错。",
 "nota":"条笔记",
 "notas":"条笔记",
+"Ver transmisión":"观看直播",
+"Ver ahora":"立即观看",
+"En vivo ahora":"正在直播",
 };
 var APP_PORTUGUESE_TEXT = {
 
@@ -8069,6 +8075,9 @@ var APP_PORTUGUESE_TEXT = {
 "Error al cargar las notas.":"Erro ao carregar as notas.",
 "nota":"nota",
 "notas":"notas",
+"Ver transmisión":"Ver transmissão",
+"Ver ahora":"Ver agora",
+"En vivo ahora":"Ao vivo agora",
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
