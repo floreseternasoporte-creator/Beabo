@@ -122,16 +122,16 @@ function snapOf(id, a, createdAgoMs) {
 
 // ================= (2) Tiempo restante preciso =================
 test('tiempo restante preciso: 3 h 12 min', function () {
-  var s = { expiresAt: Date.now() + (3 * 60 + 12) * 60000 };
-  assert.strictEqual(C215.drexSnapRemainingText(s.expiresAt), 'quedan 3 h 12 min');
+  var now = Date.now();
+  assert.strictEqual(C215.drexSnapRemainingText(now + (3 * 60 + 12) * 60000, now), 'quedan 3 h 12 min');
 });
 test('tiempo restante: horas exactas sin minutos', function () {
-  var s = { expiresAt: Date.now() + 2 * 3600000 };
-  assert.strictEqual(C215.drexSnapRemainingText(s.expiresAt), 'quedan 2 h');
+  var now = Date.now();
+  assert.strictEqual(C215.drexSnapRemainingText(now + 2 * 3600000, now), 'quedan 2 h');
 });
 test('tiempo restante: menos de 1 h muestra minutos', function () {
-  var s = { expiresAt: Date.now() + 45 * 60000 };
-  assert.strictEqual(C215.drexSnapRemainingText(s.expiresAt), 'quedan 45 min');
+  var now = Date.now();
+  assert.strictEqual(C215.drexSnapRemainingText(now + 45 * 60000, now), 'quedan 45 min');
 });
 test('tiempo restante: expirado dice menos de 1 min', function () {
   assert.strictEqual(C215.drexSnapRemainingText(Date.now() - 1000), 'menos de 1 min');
