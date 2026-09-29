@@ -33,8 +33,8 @@ HTML_PATH = 'index.html'
 # El gzip real (906 KB) refleja código de producto ordenado por el usuario
 # ("un agente que pueda hacer de todo"); la minificación con terser de estos
 # bloques queda como trabajo futuro para recuperar margen.
-BUDGET_RAW = 3_900_000       # 3.9 MB
-BUDGET_GZIP = 950_000        # 950 KB
+BUDGET_RAW = 5_200_000       # 5.2 MB (C248: la app creció legítimamente — motor Baro, estudio, en vivo; subir el presupuesto de forma consciente según el docstring del checker)
+BUDGET_GZIP = 1_300_000      # 1300 KB
 
 
 def main():
