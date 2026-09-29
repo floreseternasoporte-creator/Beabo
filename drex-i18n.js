@@ -6,6 +6,8 @@
    texto original). */
 var APP_ENGLISH_TEXT = {
 
+/* ITEM2-LIVEPUSH */
+"está en vivo ahora":"is live now",
 "Rotar":"Rotate",
 "Ajustes de cámara":"Camera settings",
 "Alertas de regalos":"Gift alerts",
@@ -2697,9 +2699,13 @@ var APP_ENGLISH_TEXT = {
 "Ver transmisión":"Watch live stream",
 "Ver ahora":"Watch now",
 "En vivo ahora":"Live now",
+/* ITEM4-SCHEDREM */"{n} empieza en vivo en unos minutos":"{n} goes live in a few minutes",
+/* ITEM4-SCHEDREM */"Recordatorio enviado a tus seguidores":"Reminder sent to your followers",
 };
 var APP_CHINESE_TEXT = {
 
+/* ITEM2-LIVEPUSH */
+"está en vivo ahora":"正在直播",
 "Rotar":"旋转",
 "Ajustes de cámara":"摄像头设置",
 "Alertas de regalos":"礼物提醒",
@@ -5392,9 +5398,13 @@ var APP_CHINESE_TEXT = {
 "Ver transmisión":"观看直播",
 "Ver ahora":"立即观看",
 "En vivo ahora":"正在直播",
+/* ITEM4-SCHEDREM */"{n} empieza en vivo en unos minutos":"{n} 将在几分钟后开始直播",
+/* ITEM4-SCHEDREM */"Recordatorio enviado a tus seguidores":"已向你的粉丝发送提醒",
 };
 var APP_PORTUGUESE_TEXT = {
 
+/* ITEM2-LIVEPUSH */
+"está en vivo ahora":"está ao vivo agora",
 "Rotar":"Rotacionar",
 "Ajustes de cámara":"Ajustes de câmera",
 "Alertas de regalos":"Alertas de presentes",
@@ -8078,6 +8088,8 @@ var APP_PORTUGUESE_TEXT = {
 "Ver transmisión":"Ver transmissão",
 "Ver ahora":"Ver agora",
 "En vivo ahora":"Ao vivo agora",
+/* ITEM4-SCHEDREM */"{n} empieza en vivo en unos minutos":"{n} entra ao vivo em alguns minutos",
+/* ITEM4-SCHEDREM */"Recordatorio enviado a tus seguidores":"Lembrete enviado aos seus seguidores",
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

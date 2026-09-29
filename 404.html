@@ -28615,21 +28615,107 @@ else { try { drexSnapInit(); } catch (_) {} }
 
   // Avisa a los seguidores del autor (no bloquea). Respeta el toggle del
   // destinatario vía shouldSkipNotificationFor dentro de addNotification.
-  function notifyFollowersOfNewContent(authorId, authorName, type, message, meta) {
+  // ITEM2-LIVEPUSH + C253: el mensaje acepta string, función
+  // (fid) => string|Promise, o el parámetro `msgFor` (misma forma) para
+  // personalizarlo por destinatario (ej. su idioma). Los llamadores
+  // existentes pasan string: comportamiento sin cambios. Devuelve promesa.
+  function notifyFollowersOfNewContent(authorId, authorName, type, message, meta, msgFor) {
     try {
-      if (!authorId || typeof addNotification !== 'function') return;
-      DrexCloud.database().ref('followers/' + authorId).once('value').then(fSnap => {
+      if (!authorId || typeof addNotification !== 'function') return Promise.resolve();
+      return DrexCloud.database().ref('followers/' + authorId).once('value').then(fSnap => {
         if (!fSnap || !fSnap.exists()) return;
         const jobs = [];
         fSnap.forEach(ch => {
           const fid = ch.key;
           if (!fid || fid === authorId) return;
-          jobs.push(addNotification(fid, message, type, meta || {}).catch(() => {}));
+          jobs.push(
+            Promise.resolve()
+              .then(() => {
+                if (typeof msgFor === 'function') return msgFor(fid);
+                if (typeof message === 'function') return message(fid);
+                return message;
+              })
+              .then(m => {
+                var msg = (m == null || m === '') ? (typeof message === 'string' ? message : '') : m;
+                return addNotification(fid, msg, type, meta || {});
+              })
+              .catch(() => {})
+          );
         });
         return Promise.all(jobs);
       }).catch(() => {});
+    } catch (_) { return Promise.resolve(); }
+  }
+
+  /* ITEM2-LIVEPUSH: push "está en vivo" a los seguidores — INICIO
+   * Punto único llamado desde DrexLiveCore.prototype.createLive (tras
+   * ref.set(doc)), por donde pasan TODOS los inicios de en vivo (móvil,
+   * estudio PC, fiestas).
+   * 1) Reclama lives/<liveId>/livePushSent por transacción: solo quien la
+   *    reclama hace el fan-out → UN push por live (anti-spam y anti-doble
+   *    envío en reintentos de createLive).
+   * 2) Fan-out con notifyFollowersOfNewContent(type 'live'): respeta el
+   *    opt-out 'fiestas' del destinatario (notifTypeToPrefKey) y el mensaje
+   *    se redacta en el idioma del DESTINATARIO (userSettings/<uid>/
+   *    appLanguage, con caché de 10 min; 'es' si no está fijado).
+   * 3) meta lleva actionType:'live' + actionId:liveId → el tap en la
+   *    notificación in-app abre el visor como espectador (case 'live' en
+   *    handleNotificationNavigation → window.drexLiveJoin).
+   * La cuenta destacada (DREX_FEATURED_LIVE_EMAIL) NO necesita caso especial:
+   * también crea su live vía createLive → el mismo fan-out avisa a SUS
+   * seguidores (doc.featured solo marca presencia global en clientes).
+   */
+  const _drexLiveLangCache = {};
+  async function drexLiveRecipientLang(uid) {
+    try {
+      const now = Date.now();
+      const cached = _drexLiveLangCache[uid];
+      if (cached && now - cached.ts < 10 * 60 * 1000) return cached.lang;
+      const snap = await DrexCloud.database().ref('userSettings/' + uid + '/appLanguage').once('value');
+      let lang = String((snap && snap.val && snap.val()) || '').toLowerCase();
+      if (lang !== 'en' && lang !== 'zh' && lang !== 'pt') lang = 'es';
+      _drexLiveLangCache[uid] = { lang: lang, ts: now };
+      return lang;
+    } catch (_) { return 'es'; }
+  }
+  function drexLiveNotifT(esText, lang) {
+    // Traducción puntual al idioma pedido, sin depender del idioma del autor.
+    // drex-i18n.js carga con defer: guards typeof como getAppTextDict.
+    try {
+      const dict = lang === 'en' ? (typeof APP_ENGLISH_TEXT !== 'undefined' ? APP_ENGLISH_TEXT : null)
+        : lang === 'zh' ? (typeof APP_CHINESE_TEXT !== 'undefined' ? APP_CHINESE_TEXT : null)
+        : lang === 'pt' ? (typeof APP_PORTUGUESE_TEXT !== 'undefined' ? APP_PORTUGUESE_TEXT : null) : null;
+      if (dict && dict[esText]) return dict[esText];
+      if (lang !== 'es' && lang !== 'en' && typeof APP_ENGLISH_TEXT !== 'undefined' && APP_ENGLISH_TEXT && APP_ENGLISH_TEXT[esText]) return APP_ENGLISH_TEXT[esText];
+    } catch (_) {}
+    return esText;
+  }
+  function drexLiveNotifMessage(hostName, title, lang) {
+    const name = String(hostName || 'Drex');
+    const msg = name + ' ' + drexLiveNotifT('está en vivo ahora', lang);
+    const t = String(title || '').trim();
+    return t ? msg + ': ' + t : msg;
+  }
+  async function drexLiveNotifyFollowers(liveId, hostUid, hostName, title) {
+    try {
+      if (!liveId || !hostUid) return;
+      if (typeof notifyFollowersOfNewContent !== 'function') return;
+      let claimed = false;
+      try {
+        const res = await DrexCloud.database().ref('lives/' + liveId + '/livePushSent').transaction(cur => {
+          if (cur) return undefined; // ya reclamado → abortar (anti doble envío)
+          return { by: hostUid, at: Date.now() };
+        });
+        claimed = !!(res && res.committed);
+      } catch (_) { claimed = false; }
+      if (!claimed) return;
+      notifyFollowersOfNewContent(hostUid, hostName, 'live', async (fid) => {
+        const lang = await drexLiveRecipientLang(fid);
+        return drexLiveNotifMessage(hostName, title, lang);
+      }, { actionType: 'live', actionId: liveId, actorId: hostUid, actorName: hostName });
     } catch (_) {}
   }
+  /* ITEM2-LIVEPUSH — FIN */
 
   async function addNotification(userId, message, type = 'info', meta = {}) {
     // C201: userId forjado (authorId del payload del servidor) llegaba crudo
@@ -29798,6 +29884,14 @@ else { try { drexSnapInit(); } catch (_) {} }
           break;
         case 'support':
           openSupportModal();
+          break;
+        case 'live':
+          // ITEM2-LIVEPUSH: el tap en "X está en vivo" abre el visor como
+          // espectador (flujo existente window.drexLiveJoin, el mismo que
+          // usan el anillo EN VIVO, "En vivo ahora" y el banner destacado).
+          if (actionId && typeof window.drexLiveJoin === 'function') {
+            setTimeout(() => window.drexLiveJoin(actionId), 150);
+          }
           break;
         default:
           break;
@@ -81770,6 +81864,9 @@ button.drex-live-pill{cursor:pointer}
       self._liveId = liveId;
       self._hostUid = self._user.uid;
       self._ended = false;
+      // ITEM2-LIVEPUSH: push "está en vivo" a seguidores (fire-and-forget;
+      // la transacción en lives/<liveId>/livePushSent garantiza un solo envío).
+      try { if (typeof drexLiveNotifyFollowers === 'function') drexLiveNotifyFollowers(liveId, self._user.uid, self._user.name || '', doc.title || ''); } catch (_) {}
       return { liveId: liveId };
     });
   };
@@ -87215,6 +87312,274 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = { DrexSchedPure: DrexSchedPure };
 }
 
+/* ==========================================================================
+ * C253 — Recordatorios PUSH de en vivos programados (tickets liveReminders).
+ * Cuando la app del ANFITRIÓN está abierta, un verificador ligero dispara el
+ * recordatorio al llegar `remindAt` (= 10 min antes del en vivo) y también al
+ * abrir la app (catch-up: si venció con la app cerrada pero el live aún no
+ * empezó). Escribe ítems de notificación type 'live' vía
+ * notifyFollowersOfNewContent (respeta el opt-out 'fiestas' del destinatario)
+ * con el mensaje en el idioma de cada seguidor
+ * (userSettings/<uid>/appLanguage).
+ *
+ * Contrato de datos:
+ *   liveReminders/<liveId> = { id, hostUid, hostName, title, scheduledAt,
+ *     remindAt, status: 'pending'|'sending'|'sent'|'failed', attempts,
+ *     claimedAt?, sentAt?, createdAt }
+ * Idempotente por liveId: programar escribe el ticket (set), cancelar lo
+ * borra (remove). El claim es atómico vía transaction() para que dos
+ * dispositivos del anfitrión no dupliquen el envío.
+ *
+ * LÍMITE HONESTO: con la app del anfitrión 100% cerrada el recordatorio NO
+ * se dispara solo — la Lambda drex-push-sender no tiene entrega diferida.
+ * El parche + checklist para EventBridge están en docs/C253-* (pendiente).
+ * ========================================================================== */
+// ===== C253 recordatorios push de en vivos programados — inicio =====
+var DrexSchedRemind = (function (root) {
+  'use strict';
+
+  /* ---------- parte pura (testeable en Node) ---------- */
+  var RP = (function () {
+    function remindMs() {
+      try { if (typeof DrexSchedPure !== 'undefined' && DrexSchedPure && DrexSchedPure.REMIND_MS) return DrexSchedPure.REMIND_MS; } catch (_) {}
+      return 10 * 60 * 1000;
+    }
+    function expireMs() {
+      try { if (typeof DrexSchedPure !== 'undefined' && DrexSchedPure && DrexSchedPure.EXPIRE_MS) return DrexSchedPure.EXPIRE_MS; } catch (_) {}
+      return 60 * 60 * 1000;
+    }
+    function sanitizeId(id) { return String(id == null ? '' : id).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80); }
+    function ticketPath(id) { return 'liveReminders/' + sanitizeId(id); }
+    function buildTicket(o) {
+      o = o || {};
+      var now = Number(o.nowMs);
+      if (!now || !isFinite(now)) now = Date.now();
+      var at = Number(o.scheduledAt) || 0;
+      return {
+        id: sanitizeId(o.id),
+        hostUid: String(o.hostUid || ''),
+        hostName: String(o.hostName || ''),
+        title: String(o.title || '').slice(0, 60),
+        scheduledAt: at,
+        remindAt: at - remindMs(),
+        status: 'pending',
+        attempts: 0,
+        createdAt: now
+      };
+    }
+    function isTicketDue(t, nowMs) {
+      if (!t || t.status !== 'pending') return false;
+      var now = Number(nowMs) || Date.now();
+      var ra = Number(t.remindAt);
+      return !!(ra && isFinite(ra) && ra <= now);
+    }
+    function isTicketStale(t, nowMs) {
+      if (!t) return true;
+      var now = Number(nowMs) || Date.now();
+      var at = Number(t.scheduledAt);
+      if (!at || !isFinite(at)) return true;
+      return (now - at) > expireMs();
+    }
+    // Due y no vencido: incluye el catch-up (remindAt pasó con la app
+    // cerrada pero el live aún no empezó).
+    function shouldFireTicket(t, nowMs) {
+      return isTicketDue(t, nowMs) && !isTicketStale(t, nowMs);
+    }
+    return {
+      GRACE_ATTEMPTS: 5,
+      sanitizeId: sanitizeId,
+      ticketPath: ticketPath,
+      buildTicket: buildTicket,
+      isTicketDue: isTicketDue,
+      isTicketStale: isTicketStale,
+      shouldFireTicket: shouldFireTicket
+    };
+  })();
+
+  /* ---------- integración navegador ---------- */
+  function tt(es) {
+    try { if (typeof t === 'function') return t(es); } catch (_) {}
+    return es;
+  }
+  // /* ITEM4-SCHEDREM */: traduce una clave ES al idioma `lang` sin depender
+  // del idioma actual de la app (el mensaje va para el destinatario).
+  function appTForLang(esText, lang) {
+    try {
+      var l = (lang === 'en' || lang === 'zh' || lang === 'pt' || lang === 'es') ? lang : 'en';
+      if (l === 'es') return esText;
+      if (typeof getAppTextDict !== 'function') return esText;
+      var d = getAppTextDict(l), en = getAppTextDict('en');
+      return (d && d[esText]) || (en && en[esText]) || esText;
+    } catch (_) { return esText; }
+  }
+  function db() {
+    try { return DrexCloud.database(); } catch (_) { return null; }
+  }
+  function meUid() {
+    try {
+      var u = (typeof liveUser === 'function') ? liveUser() : null;
+      return (u && u.uid) || null;
+    } catch (_) { return null; }
+  }
+
+  var _langCache = {}; // uid -> {lang, ts}
+  function langOf(d, uid) {
+    var c = _langCache[uid], now = Date.now();
+    if (c && (now - c.ts) < 3600000) return Promise.resolve(c.lang);
+    return d.ref('userSettings/' + uid + '/appLanguage').once('value').then(function (s) {
+      var v = s && s.val();
+      var lang = (v === 'en' || v === 'zh' || v === 'pt' || v === 'es') ? v : 'en';
+      _langCache[uid] = { lang: lang, ts: Date.now() };
+      return lang;
+    }).catch(function () { return 'en'; });
+  }
+
+  // Escribe el ticket (idempotente por liveId: set sobre la misma ruta).
+  async function writeReminderTicket(d, sid, rec) {
+    var tid = RP.sanitizeId(sid);
+    if (!tid || !rec || !d) return null;
+    var ticket = RP.buildTicket({
+      id: tid, hostUid: rec.hostUid, hostName: rec.hostName || '',
+      title: rec.title || '', scheduledAt: rec.scheduledAt
+    });
+    await d.ref(RP.ticketPath(tid)).set(ticket);
+    return ticket;
+  }
+  // Cancela el ticket: sin recordatorios fantasma.
+  async function cancelReminderTicket(d, sid) {
+    var tid = RP.sanitizeId(sid);
+    if (!tid || !d) return;
+    await d.ref(RP.ticketPath(tid)).remove();
+  }
+
+  async function fetchMyScheduled(d, uid) {
+    var ids = {};
+    try {
+      var s = await d.ref('scheduledByHost/' + uid).once('value');
+      var v = (s && s.val()) || {};
+      Object.keys(v).forEach(function (k) { if (k) ids[k] = 1; });
+    } catch (_) {}
+    var keys = Object.keys(ids).slice(0, 60);
+    var recs = await Promise.all(keys.map(function (k) {
+      return d.ref('scheduledLives/' + k).once('value')
+        .then(function (s2) { return s2 && s2.val(); })
+        .catch(function () { return null; });
+    }));
+    return recs.filter(function (r) { return r && r.id && r.status === 'scheduled' && r.scheduledAt; });
+  }
+
+  // Envía el recordatorio a los seguidores con mensaje en su idioma.
+  // Reutiliza notifyFollowersOfNewContent: el opt-out 'fiestas' se respeta
+  // vía shouldSkipNotificationFor dentro de addNotification.
+  async function sendReminders(d, hostUid, rec) {
+    if (typeof notifyFollowersOfNewContent !== 'function') return 0;
+    var hostName = rec.hostName || tt('Usuario');
+    var meta = {
+      actionType: 'live', actionId: rec.id, schedId: rec.id,
+      scheduledAt: rec.scheduledAt, actorId: hostUid, reminder: true
+    };
+    var fallbackMsg = tt('{n} comienza en vivo pronto').replace('{n}', hostName);
+    var msgFor = function (fid) {
+      return langOf(d, fid).then(function (lang) {
+        /* ITEM4-SCHEDREM */
+        var m = appTForLang('{n} empieza en vivo en unos minutos', lang).replace('{n}', hostName);
+        if (rec.title) m += ': ' + rec.title;
+        return m;
+      });
+    };
+    var p = notifyFollowersOfNewContent(hostUid, hostName, 'live', fallbackMsg, meta, msgFor);
+    if (p && typeof p.then === 'function') await p;
+    /* ITEM4-SCHEDREM */
+    try { if (typeof toast === 'function') toast(tt('Recordatorio enviado a tus seguidores')); } catch (_) {}
+    return 1;
+  }
+
+  // Verificador ligero: corre cada ~2 min en el tick del programador y al
+  // abrir la app (catch-up). opts.nowMs permite tiempo simulado en tests;
+  // opts.db / opts.uid permiten inyección en tests.
+  async function pushCheck(opts) {
+    opts = opts || {};
+    var now = Number(opts.nowMs) || Date.now();
+    var d = opts.db || db();
+    var uid = opts.uid || meUid();
+    if (!d || !uid) return { fired: 0, checked: 0, reason: 'no-auth' };
+    var fired = 0, checked = 0;
+    var recs = [];
+    try { recs = await fetchMyScheduled(d, uid); } catch (_) {}
+    for (var i = 0; i < recs.length; i++) {
+      var r = recs[i], tid = RP.sanitizeId(r.id);
+      if (!tid) continue;
+      checked++;
+      var ticket = null;
+      try {
+        var tsnap = await d.ref(RP.ticketPath(tid)).once('value');
+        ticket = tsnap && tsnap.val();
+      } catch (_) { continue; }
+      if (!ticket) {
+        // Self-heal: programado sin ticket (versión anterior) -> crearlo.
+        try { await writeReminderTicket(d, tid, r); } catch (_) {}
+        continue;
+      }
+      if (!RP.shouldFireTicket(ticket, now)) continue;
+      // El programado debe seguir vigente; si no, limpiar el ticket.
+      var live = null;
+      try {
+        var lsnap = await d.ref('scheduledLives/' + tid).once('value');
+        live = lsnap && lsnap.val();
+      } catch (_) {}
+      if (!live || live.status !== 'scheduled') {
+        try { await d.ref(RP.ticketPath(tid)).remove(); } catch (_) {}
+        continue;
+      }
+      // Claim atómico: solo un dispositivo del anfitrión envía.
+      var claimed = false;
+      try {
+        var txr = await d.ref(RP.ticketPath(tid)).transaction(function (cur) {
+          if (!cur || cur.status !== 'pending') return; // aborta
+          cur.status = 'sending';
+          cur.claimedAt = now;
+          cur.attempts = (Number(cur.attempts) || 0) + 1;
+          return cur;
+        });
+        claimed = !!(txr && txr.committed);
+      } catch (_) {}
+      if (!claimed) continue;
+      try {
+        await sendReminders(d, uid, live);
+        try { await d.ref(RP.ticketPath(tid)).update({ status: 'sent', sentAt: now }); } catch (_) {}
+        fired++;
+      } catch (err) {
+        var att = (Number(ticket.attempts) || 0) + 1;
+        var st = att >= RP.GRACE_ATTEMPTS ? 'failed' : 'pending';
+        try { await d.ref(RP.ticketPath(tid)).update({ status: st, attempts: att }); } catch (_) {}
+      }
+    }
+    return { fired: fired, checked: checked };
+  }
+
+  var API = {
+    pure: RP,
+    writeReminderTicket: writeReminderTicket,
+    cancelReminderTicket: cancelReminderTicket,
+    pushCheck: pushCheck,
+    sendReminders: sendReminders,
+    appTForLang: appTForLang,
+    langOf: langOf
+  };
+  try {
+    if (root) {
+      root.DrexSchedRemindPure = RP;
+      root.drexSchedWriteReminderTicket = writeReminderTicket;
+      root.drexSchedCancelReminderTicket = cancelReminderTicket;
+      root.drexSchedPushCheck = pushCheck;
+    }
+  } catch (_) {}
+  return API;
+})(typeof window !== 'undefined' ? window : ((typeof globalThis !== 'undefined') ? globalThis : {}));
+
+if (typeof module !== 'undefined' && module.exports) { module.exports = DrexSchedRemind; }
+// ===== C253 recordatorios push de en vivos programados — fin =====
+
 /* ==================== PARTE B: integración con Drex ==================== */
 (function () {
   if (typeof window === 'undefined') return; // solo navegador
@@ -87302,6 +87667,8 @@ if (typeof module !== 'undefined' && module.exports) {
       hostAvatar: prof.avatar || null, title: v.title, scheduledAt: v.at
     });
     await sref.set(rec);
+    // C253: ticket de recordatorio push (idempotente por liveId).
+    try { if (typeof window.drexSchedWriteReminderTicket === 'function') await window.drexSchedWriteReminderTicket(d, sid, rec); } catch (_) {}
     // 2. Índice scheduledByHost/<uid>/<schedId>
     try { await d.ref('scheduledByHost/' + prof.uid + '/' + sid).set(true); } catch (_) {}
     // 3. Anuncio en el feed (kind:'live-scheduled')
@@ -87586,6 +87953,11 @@ if (typeof module !== 'undefined' && module.exports) {
     if (_schedTickN % 4 === 0) {
       try { drexSchedRefreshMine().then(function () { drexSchedUpdateBadge(); }).catch(function () {}); } catch (_) {}
     }
+    // C253: verificador de tickets de recordatorio push (cada ~2 min; el
+    // primer tick al abrir la app hace catch-up de los vencidos).
+    if (_schedTickN % 4 === 0) {
+      try { if (typeof window.drexSchedPushCheck === 'function') window.drexSchedPushCheck().catch(function () {}); } catch (_) {}
+    }
   };
   // Arranque una sola vez (llamar desde el boot de la app / INTEGRATION I11).
   window.drexSchedBoot = function () {
@@ -87660,6 +88032,8 @@ if (typeof module !== 'undefined' && module.exports) {
       if (!ns) throw new Error('bad-transition');
       var d = db();
       await d.ref('scheduledLives/' + schedId).update({ status: ns });
+      // C253: cancela el ticket de recordatorio (sin recordatorios fantasma).
+      try { if (typeof window.drexSchedCancelReminderTicket === 'function') await window.drexSchedCancelReminderTicket(d, schedId); } catch (_) {}
       try { await d.ref('scheduledByHost/' + me.uid + '/' + schedId).remove(); } catch (_) {}
       try {
         var nk = await d.ref('scheduledLives/' + schedId + '/noteKey').once('value');
@@ -87985,6 +88359,7 @@ window.drexLiveStartFromSetup = async function () {
         LS.schedId = __schedId;
         var __sdb = DrexCloud.database();
         await __sdb.ref('scheduledLives/' + __schedId).update({ status: 'live', liveId: LS.liveId });
+        try { await __sdb.ref('liveReminders/' + __schedId).remove(); } catch (_) {} // C253: el live arrancó, el ticket ya no hace falta
         try { await __sdb.ref('scheduledByHost/' + me.uid + '/' + __schedId).remove(); } catch (_) {}
         try {
           var __snk = await __sdb.ref('scheduledLives/' + __schedId + '/noteKey').once('value');
@@ -88614,6 +88989,7 @@ window.drexLiveHostEnd = async function () {
       var __esched = LS.schedId; LS.schedId = null;
       var __edb = DrexCloud.database();
       await __edb.ref('scheduledLives/' + __esched).update({ status: 'ended' });
+      try { await __edb.ref('liveReminders/' + __esched).remove(); } catch (_) {} // C253: limpiar ticket del programado
       try {
         var __enk = await __edb.ref('scheduledLives/' + __esched + '/noteKey').once('value');
         if (__enk && __enk.val()) await __edb.ref('communityNotes/' + __enk.val()).update({ liveStatus: 'ended' });
