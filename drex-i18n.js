@@ -2686,6 +2686,7 @@ var APP_ENGLISH_TEXT = {
 "Inicia sesión para comprar monedas.":"Sign in to buy coins.",
 "No se pudo iniciar el pago. Inténtalo de nuevo.":"Could not start the payment. Try again.",
 "No se pudo conectar con el servidor de pagos. Revisa tu conexión a internet e inténtalo de nuevo.":"Could not reach the payment server. Check your internet connection and try again.",
+"El servidor de pagos está tardando demasiado en responder. Revisa tu conexión e inténtalo de nuevo.":"The payment server is taking too long to respond. Check your connection and try again.",
 "Tu sesión expiró. Cierra sesión y vuelve a entrar para comprar.":"Your session expired. Log out and back in to buy.",
 "Demasiados intentos. Espera un minuto e inténtalo de nuevo.":"Too many attempts. Wait a minute and try again.",
 "Pago recibido. Tus monedas se acreditarán en unos segundos.":"Payment received. Your coins will be credited in a few seconds.",
@@ -2781,6 +2782,7 @@ var APP_ENGLISH_TEXT = {
 "Activar mic":"Unmute mic",
 "Panel del host":"Host panel",
 "💎 {n} ({p}) se unió":"💎 {n} ({p}) joined",
+/* KOR-ONE */"Pagos":"Payments","Historial de pagos y compras":"Payment & purchase history","Tus movimientos reales de Drex Coins y Drex Orbit.":"Your real Drex Coins and Drex Orbit transactions.","Aún no tienes movimientos":"No transactions yet","Tus compras y pagos aparecerán aquí automáticamente.":"Your purchases and payments will appear here automatically.","Suscripción Drex Orbit":"Drex Orbit subscription","Plan actual":"Current plan","Cancelar suscripción":"Cancel subscription","Cambiar de plan":"Change plan","Actualizar método de pago":"Update payment method","Gestionar en el portal seguro de Stripe":"Manage in Stripe's secure portal","Compra de Drex Coins":"Drex Coins purchase","Pago de Drex Orbit":"Drex Orbit payment","Completado":"Completed","Fallido":"Failed","Cargando tu historial…":"Loading your history…","No pudimos cargar tu historial. Inténtalo de nuevo.":"We couldn't load your history. Try again.","monedas":"coins",
 };
 var APP_CHINESE_TEXT = {
 
@@ -5465,6 +5467,7 @@ var APP_CHINESE_TEXT = {
 "Inicia sesión para comprar monedas.":"请登录以购买金币。",
 "No se pudo iniciar el pago. Inténtalo de nuevo.":"无法发起支付，请重试。",
 "No se pudo conectar con el servidor de pagos. Revisa tu conexión a internet e inténtalo de nuevo.":"无法连接到支付服务器，请检查网络连接后重试。",
+"El servidor de pagos está tardando demasiado en responder. Revisa tu conexión e inténtalo de nuevo.":"支付服务器响应时间过长，请检查网络连接后重试。",
 "Tu sesión expiró. Cierra sesión y vuelve a entrar para comprar.":"会话已过期，请重新登录后再购买。",
 "Demasiados intentos. Espera un minuto e inténtalo de nuevo.":"尝试次数过多，请稍候一分钟再试。",
 "Pago recibido. Tus monedas se acreditarán en unos segundos.":"已收到付款，你的金币将在几秒钟内到账。",
@@ -5560,6 +5563,7 @@ var APP_CHINESE_TEXT = {
 "Activar mic":"取消静音",
 "Panel del host":"主播面板",
 "💎 {n} ({p}) se unió":"💎 {n}（{p}）加入了",
+/* DREX-ORBIT */"Pagos":"付款","Historial de pagos y compras":"付款与购买记录","Tus movimientos reales de Drex Coins y Drex Orbit.":"你的 Drex Coins 与 Drex Orbit 真实交易记录。","Aún no tienes movimientos":"暂无交易记录","Tus compras y pagos aparecerán aquí automáticamente.":"你的购买与付款将自动显示在这里。","Suscripción Drex Orbit":"Drex Orbit 订阅","Plan actual":"当前方案","Cancelar suscripción":"取消订阅","Cambiar de plan":"更改方案","Actualizar método de pago":"更新付款方式","Gestionar en el portal seguro de Stripe":"在 Stripe 安全门户中管理","Compra de Drex Coins":"购买 Drex Coins","Pago de Drex Orbit":"Drex Orbit 付款","Completado":"已完成","Fallido":"失败","Cargando tu historial…":"正在加载你的记录…","No pudimos cargar tu historial. Inténtalo de nuevo.":"无法加载你的记录，请重试。","monedas":"金币",
 };
 var APP_PORTUGUESE_TEXT = {
 
@@ -8235,6 +8239,7 @@ var APP_PORTUGUESE_TEXT = {
 "Inicia sesión para comprar monedas.":"Faça login para comprar moedas.",
 "No se pudo iniciar el pago. Inténtalo de nuevo.":"Não foi possível iniciar o pagamento. Tente de novo.",
 "No se pudo conectar con el servidor de pagos. Revisa tu conexión a internet e inténtalo de nuevo.":"Não foi possível conectar ao servidor de pagamentos. Verifique sua conexão e tente de novo.",
+"El servidor de pagos está tardando demasiado en responder. Revisa tu conexión e inténtalo de nuevo.":"O servidor de pagamentos está demorando muito para responder. Verifique sua conexão e tente de novo.",
 "Tu sesión expiró. Cierra sesión y vuelve a entrar para comprar.":"Sua sessão expirou. Saia e entre de novo para comprar.",
 "Demasiados intentos. Espera un minuto e inténtalo de nuevo.":"Muitas tentativas. Aguarde um minuto e tente de novo.",
 "Pago recibido. Tus monedas se acreditarán en unos segundos.":"Pagamento recebido. Suas moedas serão creditadas em alguns segundos.",
@@ -8330,6 +8335,7 @@ var APP_PORTUGUESE_TEXT = {
 "Activar mic":"Ativar microfone",
 "Panel del host":"Painel do host",
 "💎 {n} ({p}) se unió":"💎 {n} ({p}) entrou",
+/* KOR-ONE */"Pagos":"Pagamentos","Historial de pagos y compras":"Histórico de pagamentos e compras","Tus movimientos reales de Drex Coins y Drex Orbit.":"Suas transações reais de Drex Coins e Drex Orbit.","Aún no tienes movimientos":"Ainda não há transações","Tus compras y pagos aparecerán aquí automáticamente.":"Suas compras e pagamentos aparecerão aqui automaticamente.","Suscripción Drex Orbit":"Assinatura Drex Orbit","Plan actual":"Plano atual","Cancelar suscripción":"Cancelar assinatura","Cambiar de plan":"Mudar de plano","Actualizar método de pago":"Atualizar forma de pagamento","Gestionar en el portal seguro de Stripe":"Gerenciar no portal seguro do Stripe","Compra de Drex Coins":"Compra de Drex Coins","Pago de Drex Orbit":"Pagamento Drex Orbit","Completado":"Concluído","Fallido":"Falhou","Cargando tu historial…":"Carregando seu histórico…","No pudimos cargar tu historial. Inténtalo de nuevo.":"Não foi possível carregar seu histórico. Tente novamente.","monedas":"moedas",
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

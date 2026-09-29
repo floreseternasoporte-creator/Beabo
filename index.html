@@ -89348,23 +89348,38 @@ async function drexStripeCheckout(pkg) {
   var returnUrl = '';
   try { returnUrl = location.origin + location.pathname; } catch (_) {}
   var body = JSON.stringify({ packageId: pkg.id, idToken: idToken, returnUrl: returnUrl });
-  /* Reintento unico ante fallo de red: en movil la conexion es inestable y un
-   * POST perdido no debe mostrar "no se pudo iniciar el pago" sin mas. */
-  var res = null, attempt = 0, netErr = null;
-  while (attempt < 2 && !res) {
+  /* Red endurecida para movil (2026-09-29):
+   * 1) Content-Type text/plain: la peticion es CORS "simple" y el navegador
+   *    NO envia preflight OPTIONS. En iOS los preflights fallan de forma
+   *    intermitente (bloqueadores de contenido / proxies del operador) y ese
+   *    fallo se ve como error de red aunque el servidor este sano. El backend
+   *    hace JSON.parse del cuerpo sin importar el Content-Type.
+   * 2) Hasta 4 intentos con backoff exponencial (1s/2s/4s) y timeout de 15s
+   *    por intento (AbortController): un POST colgado se reporta como
+   *    'timeout' con mensaje propio, no como fallo de red generico.
+   * Los errores HTTP del backend NO se reintentan (fail fast). */
+  var ATTEMPTS = 4, TIMEOUT_MS = 15000, BACKOFF_MS = [1000, 2000, 4000];
+  var res = null, attempt = 0, netErr = null, timedOut = false;
+  while (attempt < ATTEMPTS && !res) {
     attempt++;
+    var ctrl = null, timer = null;
     try {
-      res = await fetch(endpoint + '/create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: body
-      });
+      var init = { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: body };
+      if (typeof AbortController !== 'undefined') {
+        ctrl = new AbortController();
+        init.signal = ctrl.signal;
+        timer = setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, TIMEOUT_MS);
+      }
+      res = await fetch(endpoint + '/create-checkout-session', init);
     } catch (fe) {
       netErr = fe; res = null;
-      if (attempt < 2) await new Promise(function (r) { setTimeout(r, 1500); });
+      if (fe && fe.name === 'AbortError') timedOut = true;
+      if (attempt < ATTEMPTS) await new Promise(function (r) { setTimeout(r, BACKOFF_MS[attempt - 1] || 4000); });
+    } finally {
+      if (timer) { try { clearTimeout(timer); } catch (_) {} }
     }
   }
-  if (!res) { var nerr = new Error('network'); nerr.cause = netErr; throw nerr; }
+  if (!res) { var nerr = new Error(timedOut ? 'timeout' : 'network'); nerr.cause = netErr; throw nerr; }
   var data = null;
   try { data = await res.json(); } catch (_) { data = null; }
   if (!res.ok || !data || !data.url) {
@@ -90187,6 +90202,7 @@ window.drexCoinsBuy = async function (pkgId) {
     try { DrexPay.lastError = { code: m, status: st, at: Date.now() }; } catch (_) {}
     if (m === 'no-token') toast(t('Inicia sesión para comprar monedas.'));
     else if (m === 'network') toast(t('No se pudo conectar con el servidor de pagos. Revisa tu conexión a internet e inténtalo de nuevo.'));
+    else if (m === 'timeout') toast(t('El servidor de pagos está tardando demasiado en responder. Revisa tu conexión e inténtalo de nuevo.'));
     else if (st === 401 || st === 403) toast(t('Tu sesión expiró. Cierra sesión y vuelve a entrar para comprar.'));
     else if (st === 429) toast(t('Demasiados intentos. Espera un minuto e inténtalo de nuevo.'));
     else toast(t('No se pudo iniciar el pago. Inténtalo de nuevo.'));

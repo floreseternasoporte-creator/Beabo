@@ -1,6 +1,6 @@
 /* ================================================================
  * Tests del checkout de Drex Coins: errores estructurados.
- * - Fallo de red (fetch lanza) -> Error('network') tras 1 reintento.
+ * - Fallo de red (fetch lanza) -> Error('network') tras 4 intentos; AbortError -> Error('timeout').
  * - Backend 4xx/5xx -> Error('backend:<code>') con .status.
  * - Respuesta ok con url -> redirige (location.href).
  * - Sin endpoint -> Error('no-provider'); sin token -> Error('no-token').
@@ -61,7 +61,7 @@ async function test(name, fn) {
 }
 
 (async function () {
-  await test('fallo de red: reintenta 1 vez y lanza network', async function () {
+  await test('fallo de red: 4 intentos y lanza network', async function () {
     var s = makeSandbox({
       fetchImpl: async function () { throw new TypeError('Failed to fetch'); }
     });
@@ -69,7 +69,7 @@ async function test(name, fn) {
     try { await s.sandbox.drexStripeCheckout({ id: 'coins_100' }); }
     catch (e) { err = e; }
     assert(err && err.message === 'network', 'esperaba network, fue: ' + (err && err.message));
-    assert(s.fetchCalls() === 2, 'esperaba 2 intentos, fueron ' + s.fetchCalls());
+    assert(s.fetchCalls() === 4, 'esperaba 4 intentos, fueron ' + s.fetchCalls());
   });
 
   await test('red inestable: 1er intento falla, 2do ok -> redirige', async function () {
@@ -131,7 +131,8 @@ async function test(name, fn) {
     var keys = [
       'No se pudo conectar con el servidor de pagos. Revisa tu conexión a internet e inténtalo de nuevo.',
       'Tu sesión expiró. Cierra sesión y vuelve a entrar para comprar.',
-      'Demasiados intentos. Espera un minuto e inténtalo de nuevo.'
+      'Demasiados intentos. Espera un minuto e inténtalo de nuevo.',
+      'El servidor de pagos está tardando demasiado en responder. Revisa tu conexión e inténtalo de nuevo.'
     ];
     function dict(name, next) {
       var a = src.indexOf(name), b = src.indexOf(next, a);
@@ -153,6 +154,7 @@ async function test(name, fn) {
     assert(i !== -1, 'no se encontró el catch granular');
     var sec = html.slice(i, i + 1200);
     assert(sec.indexOf("m === 'network'") !== -1, 'falta rama network');
+    assert(sec.indexOf("m === 'timeout'") !== -1, 'falta rama timeout');
     assert(sec.indexOf('st === 401 || st === 403') !== -1, 'falta rama 401/403');
     assert(sec.indexOf('st === 429') !== -1, 'falta rama 429');
     assert(sec.indexOf('DrexPay.lastError') !== -1, 'falta lastError para diagnóstico');
