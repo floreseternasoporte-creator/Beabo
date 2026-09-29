@@ -56,14 +56,17 @@ function attrOf(id, attr) {
   return a ? a[1] : undefined;
 }
 
+// C240-L3 (2026-09-29): +1 inputmode="numeric" en #dl3-goal-input (meta del
+// host, campo de diamantes: type=number min=1 max=1000000; semantica correcta).
+// Nuevo inventario: 17, todos con valor valido.
 // ---- 1. inputmode: inventario completo (15 hits) ----
-tcase('inputmode: 16 ocurrencias en index.html', () =>
-  count(/inputmode/g, html) === 16);
+tcase('inputmode: 17 ocurrencias en index.html', () =>
+  count(/inputmode/g, html) === 17);
 tcase('inputmode válidos: solo email|numeric|text|url (estáticos + setAttribute)', () => {
   const dq = (html.match(/inputmode="([^"]*)"/g) || []).map(s => s.slice(11, -1));
   const sq = (html.match(/setAttribute\('inputmode', '([^']*)'\)/g) || []).map(s => s.slice(27, -2));
   const vals = dq.concat(sq);
-  return vals.length === 16 && vals.every(v => ['email', 'numeric', 'text', 'url'].includes(v));
+  return vals.length === 17 && vals.every(v => ['email', 'numeric', 'text', 'url'].includes(v));
 });
 tcase('emailInput: inputmode=email', () => attrOf('emailInput', 'inputmode') === 'email');
 tcase('recoveryCodeInput: inputmode=numeric (one-time-code)', () =>

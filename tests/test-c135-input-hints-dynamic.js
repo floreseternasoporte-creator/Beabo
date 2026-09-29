@@ -133,13 +133,16 @@ tcase('twofactor-challenge-input (C134) sigue intacto', () =>
   attrOf(html, 'twofactor-challenge-input', 'inputmode') === 'numeric' &&
   attrOf(html, 'twofactor-challenge-input', 'maxlength') === '6');
 
+// C240-L3 (2026-09-29): +1 type="number" (#dl3-goal-input, meta del host en
+// diamantes: min=1 max=1000000 step=1 + inputmode=numeric). Campo numerico
+// legitimo (monto), no identidad/OTP. Nuevo inventario: 7.
 // ---- 4. type="number": inventario cerrado ----
-tcase('type="number": exactamente 6 (3 base + dswov-goal, dswov-timer-min, dswpro-crop dinámico)', () => {
+tcase('type="number": exactamente 7 (6 base + dl3-goal-input C240-L3)', () => {
   const tags = html.match(/<input[^>]*type="number"[^>]*>/g) || [];
-  if (tags.length !== 6) return false;
+  if (tags.length !== 7) return false;
   const ids = tags.map(t => /id="([^"]*)"/.exec(t)[1]).sort();
   const ok = ids.every(id =>
-    ['dswov-goal', 'dswov-timer-min', 'fiesta-max', 'timer-hours', 'timer-minutes'].includes(id) ||
+    ['dswov-goal', 'dswov-timer-min', 'fiesta-max', 'timer-hours', 'timer-minutes', 'dl3-goal-input'].includes(id) ||
     /^dswpro-crop-/.test(id));
   return ok && ids.some(id => /^dswpro-crop-/.test(id));
 });
