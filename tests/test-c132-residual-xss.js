@@ -22,6 +22,11 @@
 // Todos pintan HTML propio del agente (registro BARO_ICONS / plantillas
 // internas); auditados sin interpolación cruda de datos de usuario.
 // Nuevo inventario: .innerHTML 486, .outerHTML 3, insertAdjacentHTML 8.
+// MISIÓN URGENTE 2026-09-29 (crash-hunt): +5 por loadUserNotes (tab Notas del
+// perfil): estados sin-sesión/vacío/error con strings i18n estáticos,
+// spinner interno y limpieza; las tarjetas usan createProfilePostCard (DOM)
+// y header.textContent. Auditados: cero interpolación de datos de usuario.
+// Nuevo inventario: .innerHTML 573, .outerHTML 3, insertAdjacentHTML 8.
 //  - drex-rec-engine.js / sw.js: 0 sinks cada uno (0 hits en los 4 patrones).
 //  - scrollIntoView({behavior:'smooth'}): 6 hits (9252, 23762, 23773, 33930,
 //    37151 + BARO v2: scroll del feed de actividad al pie); scroll-behavior:smooth real: 1 (#empresa-view); la media query
@@ -63,14 +68,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 568 ocurrencias en index.html (studio/live/baro/C236+: features legítimos)', () => count(/\.innerHTML/g, html) === 568);
+tcase('innerHTML: 573 ocurrencias en index.html (studio/live/baro/C236+ y tab Notas: features legítimos)', () => count(/\.innerHTML/g, html) === 573);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 568 &&
+  count(/\.innerHTML/g, copy) === 573 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);

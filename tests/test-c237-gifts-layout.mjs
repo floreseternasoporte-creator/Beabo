@@ -7,9 +7,9 @@ import { writeFileSync } from 'fs';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const [harness, shotPath] = process.argv.slice(2);
 
-const res = await fetch('http://127.0.0.1:9333/json/list');
-const tabs = await res.json();
-const tab = tabs.find(t => t.type === 'page');
+// Pestana fresca via PUT /json/new: no depender del estado ambiente del navegador
+// (una pestana zombi de una corrida sin args dejaba el test colgado 90s).
+const tab = await (await fetch('http://127.0.0.1:9333/json/new?about:blank', { method: 'PUT' })).json();
 const ws = new WebSocket(tab.webSocketDebuggerUrl, { maxPayload: 256 * 1024 * 1024 });
 let id = 0;
 const pending = new Map();
@@ -23,9 +23,26 @@ const ev = async e => (await send('Runtime.evaluate', { expression: e, returnByV
 
 await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
 await send('Page.navigate', { url: 'file://' + harness });
-await sleep(1200);
+// Espera robusta: el index completo (~5MB) tarda mas de 1200ms en parsear/ejecutar.
+for (let _wi = 0; _wi < 90; _wi++) {
+  // NOTA: DrexCoins vive dentro de un IIFE (no es global); no se espera por el aqui.
+  const _ready = await ev(`document.readyState === 'complete' && typeof drexLiveOpenGifts === 'function' && typeof DrexLiveUI !== 'undefined'`);
+  if (_ready) break;
+  await sleep(1000);
+}
+await sleep(500);
+const _loaded = await ev(`typeof drexLiveOpenGifts === 'function'`);
+if (!_loaded) {
+  console.log('C237-L3 ROJO: la pagina no expuso drexLiveOpenGifts en 90s');
+  try { await fetch('http://127.0.0.1:9333/json/close/' + tab.id, { method: 'PUT' }); } catch (_) {}
+  ws.close();
+  process.exit(1);
+}
 
 const M = await ev(`(() => {
+  // Saldo de prueba via el handle DrexLiveUI (DrexCoins vive dentro de un IIFE y no es
+  // alcanzable desde el scope global; sin sesion el saldo real seria 0).
+  try { if (window.DrexLiveUI && DrexLiveUI._testSetCoinsBalance) DrexLiveUI._testSetCoinsBalance(1234); } catch (_) {}
   drexLiveOpenGifts('viewer');
   const R = el => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; };
   const panel = document.querySelector('#drex-live-gifts > div:last-child');
@@ -96,5 +113,6 @@ writeFileSync(shotPath, Buffer.from(shot.result.data, 'base64'));
 
 console.log(JSON.stringify({ panel: M.panel, fails }, null, 1));
 console.log(fails.length === 0 ? 'C237-L3 VERDE' : `C237-L3 ROJO: ${fails.length} fallos`);
+try { await fetch('http://127.0.0.1:9333/json/close/' + tab.id, { method: 'PUT' }); } catch (_) {}
 ws.close();
 process.exit(fails.length === 0 ? 0 : 1);
