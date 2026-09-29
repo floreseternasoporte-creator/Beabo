@@ -49256,9 +49256,17 @@ function drexInitRouteObserver() {
         if (st === 'success') {
           if (typeof toast === 'function') toast(t('Pago recibido. Tus monedas se acreditarán en unos segundos.'));
           if (typeof DrexCoins !== 'undefined') {
-            var u = DrexCoins._uid();
-            if (u && DrexCoins._cache) delete DrexCoins._cache[u];
-            DrexCoins.load().then(function () { if (typeof drexCoinsRefreshChips === 'function') drexCoinsRefreshChips(); }).catch(function () {});
+            /* El webhook acredita en el servidor con retardo: releer varias
+             * veces para no dejar el saldo viejo en pantalla. */
+            [900, 5000, 12000].forEach(function (ms) {
+              setTimeout(function () {
+                try {
+                  var u = DrexCoins._uid();
+                  if (u && DrexCoins._cache) delete DrexCoins._cache[u];
+                  DrexCoins.load().then(function () { if (typeof drexCoinsRefreshChips === 'function') drexCoinsRefreshChips(); }).catch(function () {});
+                } catch (_) {}
+              }, ms);
+            });
           }
         } else if (typeof toast === 'function') {
           toast(t('Pago cancelado. No se realizó ningún cargo.'));
@@ -87719,7 +87727,7 @@ window.drexLiveCloseGifts = function () {
  *   transactions/<uid>/<txid> = {type, amount, currency, balance, ts, meta}
  *   config/coinPackages       = (opcional) override remoto de paquetes
  * Tipos: purchase | gift_sent | gift_received | gift_refund | diamond_redeem
- * Diamantes del host: 1 diamante por cada 20 Drex Coins recibidas en regalos.
+ * Diamantes del host: 1 diamante por cada 10 Drex Coins recibidas en regalos.
  * El canje de diamantes a dinero real requiere proceso manual o proveedor;
  * aqui solo se registra en el libro (honesto: no se simula ningun pago).
  * Compras con dinero real: Lambda drex-payments + Stripe Checkout
@@ -87824,36 +87832,86 @@ var DrexCoins = {
     } catch (_) { this._cache[uid] = this._cache[uid] || { coins: 0, diamonds: 0, _ts: Date.now() }; }
     return this._cache[uid];
   },
-  _writeTx: async function (uid, type, amount, currency, balanceAfter, meta) {
+  _writeTx: async function (uid, type, amount, currency, balanceAfter, meta, idem) {
     try {
-      var ref = DrexCloud.database().ref('transactions/' + uid).push();
-      await ref.set({
-        txid: ref.key, type: type, amount: amount | 0, currency: currency,
+      var entry = {
+        type: type, amount: amount | 0, currency: currency,
         balance: balanceAfter | 0, ts: Date.now(), meta: meta || {}
-      });
+      };
+      if (idem) {
+        /* Clave determinista: si el debito ya se asento y esto es un reintento,
+         * el set() sobrescribe el mismo nodo en vez de duplicar el asiento. */
+        entry.txid = 'tx_' + idem;
+        await DrexCloud.database().ref('transactions/' + uid + '/tx_' + idem).set(entry);
+      } else {
+        var ref = DrexCloud.database().ref('transactions/' + uid).push();
+        entry.txid = ref.key;
+        await ref.set(entry);
+      }
     } catch (_) {}
+  },
+  _idem: function () {
+    return 'idem' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   },
   _apply: async function (uid, dCoins, dDiamonds, tx) {
     // Aplica el delta con transaccion atomica y luego asienta en el libro.
+    // Idempotencia: cada intento lleva una clave unica que se guarda JUNTO al
+    // debito en la misma transaccion. Si el commit se aplica pero la respuesta
+    // se pierde (p. ej. falla el re-read post-commit de transaction()), la
+    // verificacion por clave evita declarar "no aplicado" un cobro real, y un
+    // reintento con la misma clave no vuelve a debitar (exactamente una vez).
     var self = this;
+    var idem = (tx && tx.meta && tx.meta.idem) || self._idem();
+    idem = String(idem).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || self._idem();
     var after = null;
     try {
       var r = await DrexCloud.database().ref('wallets/' + uid).transaction(function (cur) {
         cur = cur || { coins: 0, diamonds: 0 };
-        var nc = (cur.coins | 0) + dCoins, nd = (cur.diamonds | 0) + dDiamonds;
-        if (nc < 0 || nd < 0) return; // aborta: saldo insuficiente
-        cur.coins = nc; cur.diamonds = nd; cur.updatedAt = Date.now();
+        if (!cur._idemKeys || typeof cur._idemKeys !== 'object') cur._idemKeys = {};
+        if (!cur._idemKeys[idem]) {
+          var nc = (cur.coins | 0) + dCoins, nd = (cur.diamonds | 0) + dDiamonds;
+          if (nc < 0 || nd < 0) return; // aborta: saldo insuficiente
+          cur.coins = nc; cur.diamonds = nd; cur.updatedAt = Date.now();
+          cur._idemKeys[idem] = Date.now();
+          /* Poda: la billetera no crece sin cota (ultimas 12 claves). */
+          var ks = Object.keys(cur._idemKeys);
+          if (ks.length > 12) {
+            ks.sort(function (a, b) { return cur._idemKeys[a] - cur._idemKeys[b]; });
+            for (var i = 0; i < ks.length - 12; i++) delete cur._idemKeys[ks[i]];
+          }
+        }
         return cur;
       });
       if (!r || r.committed === false) return null;
       after = r.snapshot ? r.snapshot.val() : null;
-    } catch (_) { return null; }
+    } catch (_) { after = null; }
+    if (!after) {
+      // El commit pudo aplicarse y fallar solo la lectura posterior: verificar
+      // por clave idempotente antes de declarar "no aplicado" (cobro fantasma).
+      after = await self._verifyIdem(uid, idem);
+      if (!after) return null;
+    }
     if (self._cache[uid]) { self._cache[uid].coins = after.coins | 0; self._cache[uid].diamonds = after.diamonds | 0; self._cache[uid]._ts = Date.now(); }
     if (tx) {
       var cur2 = (tx.currency === 'diamonds') ? (after.diamonds | 0) : (after.coins | 0);
-      await self._writeTx(uid, tx.type, tx.amount, tx.currency, cur2, tx.meta);
+      await self._writeTx(uid, tx.type, tx.amount, tx.currency, cur2, tx.meta, idem);
     }
     return after;
+  },
+  _verifyIdem: async function (uid, idem) {
+    // Relee la billetera: si la clave idempotente esta presente, el debito SI
+    // se aplico (aunque la transaccion haya reportado error). Una lectura buena
+    // sin la clave es decisiva: no se aplico.
+    for (var i = 0; i < 4; i++) {
+      try {
+        var snap = await DrexCloud.database().ref('wallets/' + uid).once('value');
+        var v = snap.val() || {};
+        if (v._idemKeys && v._idemKeys[idem]) return v;
+        return null;
+      } catch (_) { /* reintentar */ }
+      await new Promise(function (res) { setTimeout(res, 400 * (i + 1)); });
+    }
+    return null;
   },
   spend: async function (coins, meta) {
     var uid = this._uid();
@@ -88003,17 +88061,22 @@ window.drexLiveSendGift = async function (gid) {
   var price = gift.price | 0;
   var me = (typeof DrexCoins !== 'undefined') ? DrexCoins._uid() : null;
   if (!me) { toast(t('Inicia sesión para enviar regalos.')); return; }
-  var ok = await DrexCoins.spend(price, { type: 'gift_sent', giftId: gid, liveId: LS.liveId });
+  var idem = 'gift' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  var ok = await DrexCoins.spend(price, { type: 'gift_sent', giftId: gid, liveId: LS.liveId, idem: idem });
   if (!ok) {
     toast(t('No tienes suficientes Drex Coins'));
     window.drexLiveCloseGifts();
     if (typeof drexCoinsOpenShop === 'function') drexCoinsOpenShop();
     return;
   }
+  var sent = false;
   try {
-    if (LS.core) await LS.core.sendGift(gid);
-  } catch (_) {
-    try { await DrexCoins.credit(me, price, { type: 'gift_refund', giftId: gid, liveId: LS.liveId }); } catch (_) {}
+    if (LS.core) { await LS.core.sendGift(gid); sent = true; }
+  } catch (_) { sent = false; }
+  if (!sent) {
+    /* Sin LS.core o con sendGift fallido el regalo no salio: reembolsar
+     * siempre (antes, con LS.core falsy se cobraba sin enviar ni reembolsar). */
+    try { await DrexCoins.credit(me, price, { type: 'gift_refund', giftId: gid, liveId: LS.liveId, idem: idem + 'r' }); } catch (_) {}
     toast(t('No se pudo enviar el regalo.'));
     return;
   }
@@ -88021,7 +88084,18 @@ window.drexLiveSendGift = async function (gid) {
     var hostUid = LS.hostUid || null;
     if (hostUid && hostUid !== me) {
       var dia = Math.floor(price / DREX_DIAMOND_RATE);
-      if (dia > 0) await DrexCoins.creditDiamonds(hostUid, dia, { type: 'gift_received', giftId: gid, liveId: LS.liveId, from: me });
+      if (dia > 0) {
+        /* El credito al host antes se perdia en silencio si fallaba la red.
+         * Reintento acotado con la MISMA clave idempotente: _apply garantiza
+         * que no se acredita dos veces aunque un intento quede en duda. */
+        var diaIdem = idem + 'd';
+        var credited = false;
+        for (var a = 0; a < 3 && !credited; a++) {
+          try { credited = await DrexCoins.creditDiamonds(hostUid, dia, { type: 'gift_received', giftId: gid, liveId: LS.liveId, from: me, idem: diaIdem }); }
+          catch (_) { credited = false; }
+          if (!credited && a < 2) await new Promise(function (res) { setTimeout(res, 600 * (a + 1)); });
+        }
+      }
     }
   } catch (_) {}
   window.drexLiveCloseGifts();
