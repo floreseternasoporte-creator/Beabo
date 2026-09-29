@@ -2688,6 +2688,12 @@ var APP_ENGLISH_TEXT = {
 "Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.":"Real-money payments are not available in Drex yet. We are connecting the payment provider.",
 "Las Drex Coins no tienen valor en efectivo.":"Drex Coins have no cash value.",
 "Las compras se activarán cuando se conecte un proveedor de pago real.":"Purchases will be enabled once a real payment provider is connected.",
+"Inicia sesión para ver tus notas.":"Sign in to see your notes.",
+"Aún no tienes notas":"You don't have notes yet",
+"Publica tu primera nota desde el botón de crear.":"Publish your first note from the create button.",
+"Error al cargar las notas.":"Error loading notes.",
+"nota":"note",
+"notas":"notes",
 };
 var APP_CHINESE_TEXT = {
 
@@ -5374,6 +5380,12 @@ var APP_CHINESE_TEXT = {
 "Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.":"Drex暂未开通真实货币支付，我们正在接入支付服务商。",
 "Las Drex Coins no tienen valor en efectivo.":"Drex金币没有现金价值。",
 "Las compras se activarán cuando se conecte un proveedor de pago real.":"接入真实支付服务商后将启用购买功能。",
+"Inicia sesión para ver tus notas.":"请登录以查看你的笔记。",
+"Aún no tienes notas":"你还没有笔记",
+"Publica tu primera nota desde el botón de crear.":"点击创建按钮发布你的第一条笔记。",
+"Error al cargar las notas.":"加载笔记时出错。",
+"nota":"条笔记",
+"notas":"条笔记",
 };
 var APP_PORTUGUESE_TEXT = {
 
@@ -8051,6 +8063,12 @@ var APP_PORTUGUESE_TEXT = {
 "Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.":"Pagamentos com dinheiro real ainda não estão disponíveis no Drex. Estamos conectando o provedor de pagamento.",
 "Las Drex Coins no tienen valor en efectivo.":"Drex Coins não têm valor em dinheiro.",
 "Las compras se activarán cuando se conecte un proveedor de pago real.":"As compras serão ativadas quando um provedor de pagamento real for conectado.",
+"Inicia sesión para ver tus notas.":"Faça login para ver suas notas.",
+"Aún no tienes notas":"Você ainda não tem notas",
+"Publica tu primera nota desde el botón de crear.":"Publique sua primeira nota pelo botão de criar.",
+"Error al cargar las notas.":"Erro ao carregar as notas.",
+"nota":"nota",
+"notas":"notas",
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",

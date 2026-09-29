@@ -10556,8 +10556,9 @@ function fiestaGameHTMLFinal() {
 
             <!-- Otros tabs (ocultos por defecto) -->
             <div id="notes-tab-content" class="tab-content hidden">
-              <h2 class="text-2xl font-bold mb-6">Notas</h2>
+              <h2 id="profile-notes-header" class="text-2xl font-bold mb-6">Notas</h2>
               <p class="text-[var(--theme-muted)]">Tus notas y pensamientos publicados en la comunidad</p>
+              <div id="profile-notes-list" class="flex flex-col mt-4"></div>
             </div>
             <div id="music-tab-content" class="tab-content hidden">
               <div class="flex justify-between items-center mb-6">
@@ -12734,6 +12735,50 @@ function saveNote() {
     const panel = document.getElementById('ecos-tab-content');
     if (panel && !panel.classList.contains('hidden') && typeof loadProfileEcosTab === 'function') {
       loadProfileEcosTab();
+    }
+  }
+
+  async function loadUserNotes() {
+    const panel = document.getElementById('notes-tab-content');
+    const list = document.getElementById('profile-notes-list');
+    const header = document.getElementById('profile-notes-header');
+    if (!panel || !list) return;
+    const user = DrexCloud.auth().currentUser;
+    if (!user) {
+      list.innerHTML = `<div class="py-10 text-center text-[#6b7280]">${appT('Inicia sesión para ver tus notas.')}</div>`;
+      return;
+    }
+    list.innerHTML = `<div class="py-10 flex justify-center">${typeof getSpinnerMarkup === 'function' ? getSpinnerMarkup() : '<span class="text-sm text-[#9aa4ae]">Cargando...</span>'}</div>`;
+    try {
+      const snap = await DrexCloud.database().ref('communityNotes').orderByChild('authorId').equalTo(user.uid).limitToLast(50).once('value').catch(() => null);
+      const items = [];
+      if (snap && typeof snap.forEach === 'function') {
+        snap.forEach(child => items.push({ ...(child.val() || {}), id: child.key }));
+      }
+      items.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+      if (header) header.textContent = items.length === 1 ? '1 ' + appT('nota') : items.length + ' ' + appT('notas');
+      if (!items.length) {
+        list.innerHTML = `
+          <div class="py-12 text-center text-[#6b7280]">
+            <p class="font-bold text-[#1c2b4a] mb-1">${appT('Aún no tienes notas')}</p>
+            <p class="text-sm">${appT('Publica tu primera nota desde el botón de crear.')}</p>
+          </div>`;
+        return;
+      }
+      const voteMaps = await _getProfileVoteMaps();
+      list.innerHTML = '';
+      items.forEach(post => {
+        list.appendChild(createProfilePostCard(post, {
+          user: voteMaps.user,
+          userVote: voteMaps.votes[post.id] || null,
+          hasEchoed: Boolean(voteMaps.ecos[post.id])
+        }));
+      });
+      if (typeof hydrateSaveButtons === 'function') hydrateSaveButtons(list);
+      if (typeof hydrateQuickFollowButtons === 'function') hydrateQuickFollowButtons(list);
+    } catch (error) {
+      console.error('Error al cargar notas del perfil:', error);
+      list.innerHTML = `<div class="py-10 text-center text-[#dc2626]">${appT('Error al cargar las notas.')}</div>`;
     }
   }
 
