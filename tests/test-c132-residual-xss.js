@@ -38,6 +38,15 @@
 //    prefers-reduced-motion EXISTE (2 hits) — verificar presencia, NO tocar
 //    (a11y fuera de alcance por orden del usuario 2026-09-15).
 //
+// C240 LIVE (2026-09-29): +32 en tres carriles (587 tras L1, 598 tras L1+L2,
+// 611 final). Auditados hit por hit: L1 combo/leaderboard: esc_() en nombre,
+// monedas, img del catalogo y strings t_(); re-envoltura de HTML propio sin
+// datos nuevos. L3 meta/entrada/destacado/celebracion: dl3esc() en nombre,
+// texto, titulo y conteo; ternarios booleanos y numeros en estilos; SVG
+// interno via drexIcon (literal 'heart'). L2 cofre/encuesta/Q&A: esc() en
+// nombres, preguntas, opciones y qids (data-qid); SVG interno DL2_SVG;
+// strings t()/tf() escapados. Cero interpolacion cruda de datos de
+// usuario/BD.
 // Si cualquier conteo cambia, hay un sink nuevo sin auditar: re-auditar la
 // familia antes de cerrar el ciclo.
 'use strict';
@@ -73,14 +82,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 579 ocurrencias en index.html (studio/live/baro/C236+, tab Notas y presencia live global: features legítimos)', () => count(/\.innerHTML/g, html) === 579);
+tcase('innerHTML: 596 ocurrencias en index.html (studio/live/baro/C236+, tab Notas y presencia live global: features legítimos)', () => count(/\.innerHTML/g, html) === 596);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 579 &&
+  count(/\.innerHTML/g, copy) === 596 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);
