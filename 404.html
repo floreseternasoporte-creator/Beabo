@@ -49255,19 +49255,13 @@ function drexInitRouteObserver() {
       try {
         if (st === 'success') {
           if (typeof toast === 'function') toast(t('Pago recibido. Tus monedas se acreditarán en unos segundos.'));
-          if (typeof DrexCoins !== 'undefined') {
-            /* El webhook acredita en el servidor con retardo: releer varias
-             * veces para no dejar el saldo viejo en pantalla. */
-            [900, 5000, 12000].forEach(function (ms) {
-              setTimeout(function () {
-                try {
-                  var u = DrexCoins._uid();
-                  if (u && DrexCoins._cache) delete DrexCoins._cache[u];
-                  DrexCoins.load().then(function () { if (typeof drexCoinsRefreshChips === 'function') drexCoinsRefreshChips(); }).catch(function () {});
-                } catch (_) {}
-              }, ms);
-            });
-          }
+          /* DrexCoins vive dentro del IIFE del bloque En vivo (no es global):
+           * refrescar vía el handle público, que sí tiene acceso por clausura. */
+          try {
+            if (window.DrexLiveUI && typeof window.DrexLiveUI.refreshCoinsBalance === 'function') {
+              window.DrexLiveUI.refreshCoinsBalance();
+            }
+          } catch (_) {}
         } else if (typeof toast === 'function') {
           toast(t('Pago cancelado. No se realizó ningún cargo.'));
         }
@@ -88302,7 +88296,21 @@ window.DrexLiveUI = {
   renderList: drexLiveRenderList,
   cardHTML: drexLiveCardHTML,
   translateStatics: drexLiveTranslateStatics,
-  initDom: drexLiveInitDom
+  initDom: drexLiveInitDom,
+  /* Tras ?coins=success: el webhook acredita en el servidor con retardo.
+   * Relee el saldo varias veces para no dejarlo viejo en pantalla.
+   * (DrexCoins vive en este IIFE; el handler de retorno usa este método.) */
+  refreshCoinsBalance: function () {
+    [0, 5000, 12000].forEach(function (ms) {
+      setTimeout(function () {
+        try {
+          var u = DrexCoins._uid();
+          if (u && DrexCoins._cache) delete DrexCoins._cache[u];
+          DrexCoins.load().then(function () { if (typeof drexCoinsRefreshChips === 'function') drexCoinsRefreshChips(); }).catch(function () {});
+        } catch (_) {}
+      }, ms);
+    });
+  }
 };
 
 })();
