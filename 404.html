@@ -16213,7 +16213,13 @@ function saveNote() {
     // hubiera guardado (el post no aparecía en el feed ni en ningún lado).
     // ORBIT: prioridad en Destacados. Se marca al publicar con el estado
     // verificado del autor (fail-closed: sin suscripción activa no hay marca).
-    try { if (typeof DrexOrbit !== 'undefined' && DrexOrbit.isActive()) note.orbitBoost = true; } catch (_) {}
+    try {
+      if (typeof DrexOrbit !== 'undefined' && DrexOrbit.isActive()) {
+        note.orbitBoost = true;
+        var __ost = DrexOrbit.status();
+        if (__ost && __ost.currentPeriodEnd) note.orbitBoostUntil = Number(__ost.currentPeriodEnd) * 1000;
+      }
+    } catch (_) {}
     const notesRef = DrexCloud.database().ref('communityNotes');
     // VIDEO-POSTS: si la key ya se reservó (video: los trozos se subieron
     // primero), se escribe con set() y la promesa resuelve con el ref, igual
@@ -20783,7 +20789,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       // MI MAREA: el puntaje se re-normaliza en vivo con los máximos del tab.
       const newScore = ctx.feedMode === 'marea'
         ? (note._mareaNorm = drexMareaLiveNorm(ctx, note))
-        : Number(note.upvotes || 0) - Number(note.downvotes || 0) + (note.orbitBoost ? 25 : 0);
+        : Number(note.upvotes || 0) - Number(note.downvotes || 0) + ((typeof window.drexOrbitBoostActive === 'function' ? window.drexOrbitBoostActive(note) : !!note.orbitBoost) ? 25 : 0);
       existingPost.dataset.feedScore = String(newScore);
       // Recolocar la tarjeta para mantener el orden por puntaje (mayor primero).
       const kids = ctx.feedContainer.querySelectorAll(':scope > div[id^="post-"]');
@@ -20838,7 +20844,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       noteElement.dataset.feedTs = String(noteTs);
       if (ctx.feedMode === 'popular') {
         // ORBIT: +25 de prioridad para miembros con suscripción activa.
-        noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0) + (note.orbitBoost ? 25 : 0));
+        noteElement.dataset.feedScore = String(Number(note.upvotes || 0) - Number(note.downvotes || 0) + ((typeof window.drexOrbitBoostActive === 'function' ? window.drexOrbitBoostActive(note) : !!note.orbitBoost) ? 25 : 0));
       } else if (ctx.feedMode === 'marea') {
         // MI MAREA: puntaje normalizado por nicho (del lote, o en vivo).
         const mNorm = (note._mareaNorm != null) ? note._mareaNorm : drexMareaLiveNorm(ctx, note);
@@ -35705,6 +35711,8 @@ function clearChatConversationCache() {
 // Se llama desde la rama de logout de onAuthStateChanged: cubre logout
 // manual, cambio de cuenta y "agregar cuenta" (todos pasan por signOut()).
 function clearAccountScopedState() {
+  // Orbit: limpiar estado de suscripción verificado (sin fugas entre cuentas).
+  try { if (typeof DrexOrbit !== 'undefined' && typeof DrexOrbit.reset === 'function') DrexOrbit.reset(); } catch (_) {}
   // 1. Fiesta: teardown solo-local (sin escrituras a DB: ya no hay sesión).
   //    fiestaFullCleanup() para micrófono, peers WebRTC, listeners,
   //    intervalos y juegos; luego se resetean las variables de la sala.
@@ -47824,6 +47832,7 @@ DrexCloud.auth().onAuthStateChanged(user => {
   else detachDrexSecuritySession(null);
   try {
     if (user && typeof DrexOrbit !== 'undefined') setTimeout(function () {
+      try { DrexOrbit.reset(); } catch (_) {} /* sin estado heredado de otra cuenta */
       try {
         DrexOrbit.refresh().then(function () {
           /* Reintento único: si el primer refresh no verificó (token aún no
@@ -88528,7 +88537,7 @@ var DrexOrbit = {
       var cpe = data.currentPeriodEnd ? Number(data.currentPeriodEnd) : null;
       self._st = {
         active: data.active === true,
-        plan: (data.plan === 'monthly' || data.plan === 'yearly') ? data.plan : null,
+        plan: (typeof ORBIT_PLANS !== 'undefined' && ORBIT_PLANS[data.plan]) ? data.plan : null,
         currentPeriodEnd: cpe,
         cancelAtPeriodEnd: !!data.cancelAtPeriodEnd,
         status: String(data.status || 'none')
@@ -88562,7 +88571,7 @@ var DrexOrbit = {
       var cpe = st.currentPeriodEnd ? Number(st.currentPeriodEnd) : null;
       this._st = {
         active: st.status === 'canceled' ? false : st.active === true,
-        plan: (st.plan === 'monthly' || st.plan === 'yearly') ? st.plan : null,
+        plan: (typeof ORBIT_PLANS !== 'undefined' && ORBIT_PLANS[st.plan]) ? st.plan : null,
         currentPeriodEnd: cpe,
         cancelAtPeriodEnd: !!st.cancelAtPeriodEnd,
         status: String(st.status || 'none')
@@ -88632,7 +88641,14 @@ var DrexOrbit = {
     location.href = data.url;
     return { redirected: true };
   },
-  restore: async function () { return this.refresh(true); }
+  restore: async function () { return this.refresh(true); },
+  /* Limpia el estado verificado (logout / cambio de cuenta): evita que el
+   * estado premium de una cuenta se filtre a otra en este dispositivo. */
+  reset: function () {
+    this._st = null; this._ts = 0; this._serverConfigured = false;
+    try { if (typeof window.drexOrbitApplyGates === 'function') window.drexOrbitApplyGates(); } catch (_) {}
+    return this;
+  }
 };
 
 /* Enforcement: las puertas Orbit solo actúan si enforced() es true.
@@ -88640,6 +88656,17 @@ var DrexOrbit = {
  * /subscription-status (Price IDs de Stripe presentes en la Lambda).
  * El flag manual queda como interruptor de emergencia. Fail-closed:
  * sin verificación del backend no hay acceso premium. */
+/* El boost de un post solo cuenta mientras la suscripción que lo marcó siga
+ * vigente (orbitBoostUntil = fin del periodo en ms). Sin fecha verificable,
+ * no hay boost (fail-closed). */
+function drexOrbitBoostActive(note) {
+  try {
+    if (!note || !note.orbitBoost) return false;
+    var until = Number(note.orbitBoostUntil || 0);
+    if (!until) return false;
+    return Date.now() < until;
+  } catch (_) { return false; }
+}
 window.DREX_ORBIT_ENFORCE = false;
 
 /* Puerta central: true = acceso permitido. Si las puertas están activas y
@@ -88815,6 +88842,25 @@ function orbitBenefits() {
 ];
 }
 
+/* Tocar un beneficio: sin membresía abre el paywall de ese beneficio;
+ * con membresía navega al destino cuando existe uno directo. */
+function orbitBenefitTap(feature) {
+  var active = false;
+  try { active = (typeof DrexOrbit !== 'undefined') && DrexOrbit.isActive(); } catch (_) {}
+  if (!active) {
+    try { if (typeof openOrbitPaywall === 'function') openOrbitPaywall(feature); } catch (_) {}
+    return;
+  }
+  try {
+    if (feature === 'analytics' && typeof orbitOpenAnalytics === 'function') { orbitOpenAnalytics(); return; }
+    if (feature === 'destellos') {
+      try { if (typeof closeOrbitView === 'function') closeOrbitView(); } catch (_) {}
+      try { var tray = document.getElementById('drex-snap-tray'); if (tray) tray.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
+      return;
+    }
+    if (typeof orbitToast === 'function') orbitToast(t('Beneficio Drex Orbit activo.'));
+  } catch (_) {}
+}
 function openOrbitView() {
   var v = document.getElementById('orbit-view');
   if (!v) return;
@@ -88850,10 +88896,10 @@ try {
 function orbitBenefitsListHTML(escFn) {
   var items = orbitBenefits().map(function (b, idx) {
     var ic = (typeof window.dxIcon === 'function') ? window.dxIcon(b.ic, 'w-6 h-6') : '';
-    return '<div class="flex items-center gap-3.5 px-4 py-3.5' + (idx > 0 ? ' border-t border-[var(--theme-border)]' : '') + '">'
+    return '<button type="button" onclick="orbitBenefitTap(\'' + b.f + '\')" class="tap44 w-full text-left flex items-center gap-3.5 px-4 py-3.5 active:opacity-80' + (idx > 0 ? ' border-t border-[var(--theme-border)]' : '') + '">'
       + '<span class="orbit-benefit-ic shrink-0 text-[var(--drex-brand)]">' + ic + '</span>'
       + '<span class="min-w-0"><span class="block font-black text-[var(--theme-text)] text-[15px] leading-snug">' + escFn(b.title) + '</span>'
-      + '<span class="block text-[13px] text-[var(--theme-muted)] mt-0.5 leading-snug">' + escFn(b.desc) + '</span></span></div>';
+      + '<span class="block text-[13px] text-[var(--theme-muted)] mt-0.5 leading-snug">' + escFn(b.desc) + '</span></span></button>';
   }).join('');
   return '<div class="rounded-3xl border border-[var(--theme-border)] bg-[var(--theme-surface)] overflow-hidden">' + items + '</div>';
 }
@@ -90462,6 +90508,8 @@ window.orbitSubscribe = orbitSubscribe;
 window.orbitManage = orbitManage;
 window.orbitRestore = orbitRestore;
 window.orbitOpenAnalytics = orbitOpenAnalytics;
+window.orbitBenefitTap = orbitBenefitTap;
+window.drexOrbitBoostActive = drexOrbitBoostActive;
 window.orbitCloseAnalytics = orbitCloseAnalytics;
 window.setOrbitProfileTheme = setOrbitProfileTheme;
 window.openPaymentsView = openPaymentsView;
