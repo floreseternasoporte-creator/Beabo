@@ -80619,7 +80619,7 @@ try {
   </div>
   <div class="absolute inset-x-0 top-0 p-3 pt-4" style="background:linear-gradient(to bottom,rgba(0,0,0,.55),transparent)">
     <div class="flex items-center gap-2">
-      <img id="drex-live-viewer-avatar" alt="" class="w-9 h-9 rounded-full object-cover" style="border:2px solid rgba(255,255,255,.35)">
+      <img id="drex-live-viewer-avatar" alt="" class="w-9 h-9 rounded-full object-cover" style="border:2px solid rgba(255,255,255,.35)" onerror="this.onerror=null;if(window.DREX_LIVE_DEFAULT_AVATAR)this.src=window.DREX_LIVE_DEFAULT_AVATAR">
       <div class="min-w-0">
         <p id="drex-live-viewer-host" class="text-white font-extrabold text-[13.5px] leading-tight truncate"></p>
         <div class="flex items-center gap-1.5 mt-0.5">
@@ -84855,6 +84855,8 @@ window.__dswov = {
 @keyframes drex-live-ring-pulse{0%,100%{border-color:#ef4444;box-shadow:inset 0 0 0 1px rgba(239,68,68,.85);}50%{border-color:#fca5a5;box-shadow:inset 0 0 7px 2px rgba(239,68,68,.5);}}
 .drex-live-ring-label{display:none;position:absolute;left:50%;bottom:3px;transform:translateX(-50%);background:#ef4444;color:#fff;font-size:9px;font-weight:800;letter-spacing:.05em;padding:1px 6px;border-radius:9999px;white-space:nowrap;line-height:1.4;border:1.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);pointer-events:none;z-index:2;}
 .drex-live-ring.is-live .drex-live-ring-label{display:block;}
+/* FIX en vivo: en avatares de 24px (feed) la etiqueta EN VIVO no cabe y overflow:hidden la recortaba dejandola 'fuera de sitio'. Se conserva el anillo rojo pulsante; el tap abre el en vivo igual. */
+.drex-avatar-btn .drex-live-ring.is-live .drex-live-ring-label{display:none;}
 </style>
 <script>
 /* ============ C232/C236: EN VIVO — pestañas Video | Fiestas de voz + transmisión móvil (mesh WebRTC) ============
@@ -85575,6 +85577,17 @@ async function liveMe() {
       name = p.name || name; photo = p.photo || '';
     }
   } catch (_) {}
+  /* FIX en vivo: el nombre publico nunca puede ser un email. Si lo que
+   * resolvio el perfil parece un correo, leer el username canonico
+   * (users/<uid>/username) y sanear. */
+  if (/@/.test(String(name))) {
+    try {
+      var __us = await DrexCloud.database().ref('users/' + u.uid + '/username').once('value');
+      var __uv = (__us && typeof __us.val === 'function') ? __us.val() : null;
+      if (__uv && typeof __uv === 'string' && !/@/.test(__uv) && __uv.trim()) name = __uv.trim();
+    } catch (_) {}
+  }
+  if (/@/.test(String(name))) { try { name = t('Usuario'); } catch (_) { name = 'Usuario'; } }
   return { uid: u.uid, name: name, avatar: photo };
 }
 
@@ -85841,7 +85854,7 @@ window.DrexLivePresence = (function () {
       liveId: String(id), uid: uid,
       title: String(v.title || ''),
       viewers: Number(v.viewers) || 0,
-      hostName: String(v.hostName || ''),
+      hostName: (function (h) { h = String(h || ''); return (/@/.test(h)) ? '' : h; })(v.hostName),
       hostAvatar: String(v.hostAvatar || ''),
       startedAt: Number(v.startedAt) || 0,
       featured: v.featured === true
@@ -85979,6 +85992,12 @@ window.drexLiveIsFeaturedHost = function () {
   } catch (_) { return false; };
 };
 
+/* Avatar neutro para tarjetas de en vivo: el anillo nunca debe colapsar
+ * (un <img> roto oculto con display:none dejaba la etiqueta EN VIVO
+ * flotando sobre el nombre del anfitrion). */
+var DREX_LIVE_DEFAULT_AVATAR = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIiIvPjxwYXRoIGQ9Ik0xOCA4NGM3LTE3IDE5LTI1IDMyLTI1czI1IDggMzIgMjUiIGZpbGw9IiNhN2I0YmYiLz48L3N2Zz4=';
+window.DREX_LIVE_DEFAULT_AVATAR = DREX_LIVE_DEFAULT_AVATAR; // inline onerror handlers corren en scope global
+
 window.drexLiveRing = function (avatarHTML, uid, opts) {
   // Componente anillo EN VIVO: envuelve el HTML del avatar. Si el uid está
   // en vivo pinta borde rojo pulsante + etiqueta; el tap abre el visor.
@@ -86091,7 +86110,7 @@ function refreshLiveFeedBanner() {
     var fl = DrexLivePresence.getFeaturedLive();
     if (!fl || !drexLiveElVisible('main-app')) { box.classList.add('hidden'); box.innerHTML = ''; return; }
     var av = window.drexLiveRing(
-      '<img src="' + esc(fl.hostAvatar || '') + '" alt="" class="w-12 h-12 rounded-full object-cover" onerror="this.style.display=\'none\'">',
+      '<img src="' + esc(fl.hostAvatar || DREX_LIVE_DEFAULT_AVATAR) + '" alt="" class="w-12 h-12 rounded-full object-cover" onerror="this.onerror=null;if(window.DREX_LIVE_DEFAULT_AVATAR)this.src=window.DREX_LIVE_DEFAULT_AVATAR">',
       fl.uid
     );
     box.classList.remove('hidden');
@@ -86128,7 +86147,7 @@ function drexLiveRenderSearchSection() {
     for (i = 0; i < lives.length; i++) {
       var lv = lives[i];
       var av = window.drexLiveRing(
-        '<img src="' + esc(lv.hostAvatar || '') + '" alt="" class="w-11 h-11 rounded-full object-cover" onerror="this.style.display=\'none\'">',
+        '<img src="' + esc(lv.hostAvatar || DREX_LIVE_DEFAULT_AVATAR) + '" alt="" class="w-11 h-11 rounded-full object-cover" onerror="this.onerror=null;if(window.DREX_LIVE_DEFAULT_AVATAR)this.src=window.DREX_LIVE_DEFAULT_AVATAR">',
         lv.uid
       );
       rows += '<button type="button" onclick="window.drexLiveJoin(\'' + String(lv.liveId).replace(/'/g, '') + '\')" ' +
@@ -87814,6 +87833,9 @@ function drexLiveWireEvents(which) {
   try { if (window.DrexLiveL3 && typeof window.DrexLiveL3.initRoom === 'function') window.DrexLiveL3.initRoom(which, LS.liveId); } catch (_) {}
   on('remotetrack', function (p) {
     if (which !== 'viewer') return;
+    LS._viewerConnected = true;
+    try { if (LS._viewerConnTimer) clearTimeout(LS._viewerConnTimer); } catch (_) {}
+    LS._viewerConnTimer = null;
     var s = (p && p.stream) ? p.stream : p;
     var v = $('drex-live-viewer-video');
     if (v && s) {
@@ -89703,6 +89725,8 @@ window.drexLiveJoinAsGuest = async function () {
       if (_gjc) _gjc.style.display = 'flex';
       await core.joinLive(LS.liveId);
       LS.mode = 'viewer';
+      LS._viewerConnected = false;
+      drexLiveArmViewerConnTimer();
     } catch (_) {
       var _gjv = $('drex-live-viewer');
       if (_gjv) _gjv.classList.add('hidden');
@@ -89748,11 +89772,64 @@ function drexLiveCleanupRoom(which) {
   if (c) c.style.display = 'flex';
   var vv = $('drex-live-viewer-video');
   if (vv) { try { vv.srcObject = null; } catch (_) {} }
+  try { if (LS._viewerConnTimer) clearTimeout(LS._viewerConnTimer); } catch (_) {}
+  LS._viewerConnTimer = null; LS._viewerConnected = false;
   LS.mode = null; LS.liveId = null; LS.fxId = null; LS.muted = false; LS.hostUid = null; LS.noteKey = null; LS.schedId = null;
   try { if (typeof drexStudioTxOnLiveEnd === 'function') drexStudioTxOnLiveEnd(); } catch (_) {}
   var mb = $('drex-live-mute-btn');
   if (mb) { mb.classList.remove('off'); mb.innerHTML = drexIcon('mic', 'w-5 h-5'); }
 }
+
+/* ---------- FIX transmision en vivo: nombre publico saneado ---------- */
+function drexLiveSafeName(n) {
+  n = String(n == null ? '' : n);
+  if (/@/.test(n)) return '';
+  return n;
+}
+
+/* Overlay "Conectando...": conserva su HTML original para restaurarlo en
+ * cada intento (el estado de error con Reintentar/Salir lo reemplaza). */
+var DREX_LIVE_CONNECTING_HTML = null;
+function drexLiveRestoreConnecting(c) {
+  try {
+    if (!c) return;
+    if (DREX_LIVE_CONNECTING_HTML == null) DREX_LIVE_CONNECTING_HTML = c.innerHTML;
+    else c.innerHTML = DREX_LIVE_CONNECTING_HTML;
+  } catch (_) {}
+}
+
+/* Watchdog de conexion del espectador: si WebRTC no entrega pista remota
+ * en 20 s, muestra error con Reintentar/Salir en vez de "Conectando..."
+ * eterno. */
+function drexLiveArmViewerConnTimer() {
+  try { if (LS._viewerConnTimer) clearTimeout(LS._viewerConnTimer); } catch (_) {}
+  LS._viewerConnTimer = null;
+  try {
+    LS._viewerConnTimer = setTimeout(function () { drexLiveViewerConnTimeout(); }, 20000);
+  } catch (_) {}
+}
+function drexLiveViewerConnTimeout() {
+  try { LS._viewerConnTimer = null; } catch (_) {}
+  if (LS._viewerConnected || LS.mode !== 'viewer' || !LS.liveId) return;
+  var c = $('drex-live-viewer-connecting');
+  if (!c) return;
+  c.style.display = 'flex';
+  c.innerHTML =
+    '<div class="w-14 h-14 rounded-full flex items-center justify-center" style="background:rgba(255,255,255,.08)">' +
+    '<svg class="w-7 h-7 text-white/70" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" stroke-linecap="round"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg></div>' +
+    '<p class="text-white/80 font-bold text-sm text-center px-6">' + esc(t('No se pudo conectar al en vivo.')) + '</p>' +
+    '<div class="flex gap-2 mt-1">' +
+    '<button type="button" onclick="drexLiveViewerRetry()" class="px-4 py-2 rounded-full text-sm font-bold text-white" style="background:#dc2626">' + esc(t('Reintentar')) + '</button>' +
+    '<button type="button" onclick="drexLiveViewerLeave()" class="px-4 py-2 rounded-full text-sm font-bold text-white" style="background:rgba(255,255,255,.16)">' + esc(t('Salir')) + '</button>' +
+    '</div>';
+}
+window.drexLiveViewerRetry = function () {
+  var id = LS.liveId;
+  try { if (LS._viewerConnTimer) clearTimeout(LS._viewerConnTimer); } catch (_) {}
+  LS._viewerConnTimer = null;
+  try { drexLiveCleanupRoom('viewer'); } catch (_) {}
+  if (id) window.drexLiveJoin(id);
+};
 
 /* ---------- unirse como espectador ---------- */
 window.drexLiveJoin = async function (liveId) {
@@ -89765,26 +89842,43 @@ window.drexLiveJoin = async function (liveId) {
     core.setUser(me);
     var snap = await DrexCloud.database().ref('lives/' + liveId).once('value');
     var lv = snap.val() || {};
+    /* FIX: entrar al propio en vivo como espectador dejaba "Conectando..."
+     * eternamente (las senales propias se descartan en _validSignal). */
+    if (lv.hostUid && me.uid && String(lv.hostUid) === String(me.uid)) {
+      if (LS.mode === 'host' && LS.liveId === liveId) {
+        var hr = $('drex-live-host');
+        if (hr) hr.classList.remove('hidden');
+        try { drexLiveInitDom(); } catch (_) {}
+        toast(t('Ya estás transmitiendo este en vivo.'));
+      } else {
+        toast(t('Es tu propio en vivo.'));
+      }
+      return;
+    }
     LS.mode = 'viewer'; LS.liveId = liveId; LS.ending = false; LS.hostUid = lv.hostUid || null;
+    LS._viewerConnected = false;
     drexLiveWireEvents('viewer');
     var hn = $('drex-live-viewer-host');
-    if (hn) hn.textContent = lv.hostName || t('Usuario');
+    if (hn) hn.textContent = drexLiveSafeName(lv.hostName) || t('Usuario');
     var av = $('drex-live-viewer-avatar');
     if (av) {
-      if (lv.hostAvatar) { av.src = lv.hostAvatar; av.style.display = 'block'; }
-      else av.style.display = 'none';
+      try { av.src = lv.hostAvatar || DREX_LIVE_DEFAULT_AVATAR; } catch (_) {}
+      av.style.display = 'block';
     }
     if (lv.effectId) drexLiveApplyFxById('drex-live-viewer-video', 'drex-live-viewer-fx', lv.effectId);
     else drexLiveApplyFxById('drex-live-viewer-video', 'drex-live-viewer-fx', null);
     try { window.drexLiveViewerSourceBadge(lv); } catch (_) {}
     var c = $('drex-live-viewer-connecting');
-    if (c) c.style.display = 'flex';
+    if (c) { drexLiveRestoreConnecting(c); c.style.display = 'flex'; }
     drexLiveTranslateStatics();
     drexLiveInitDom();
     var vr = $('drex-live-viewer');
     if (vr) vr.classList.remove('hidden');
     if (typeof drexCoinsRefreshChips === 'function') drexCoinsRefreshChips();
     await core.joinLive(liveId);
+    /* Watchdog: si WebRTC no entrega pista remota en 20 s, mostrar error
+     * con Reintentar/Salir en vez de "Conectando..." eterno. */
+    drexLiveArmViewerConnTimer();
   } catch (e) {
     var code = String((e && (e.code || e.message)) || '');
     toast(/live-ended/.test(code) ? t('El en vivo terminó.') : t('No se pudo unir al en vivo.'));
