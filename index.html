@@ -31395,6 +31395,17 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     if (user) {
       // Si el usuario está en mitad del flujo de registro, no redirigir aún
       if (isRegistering) return;
+      // C243: cambio de cuenta con un en vivo abierto → limpiar la sala vieja
+      // (la presencia quedó registrada con el uid anterior).
+      try {
+        var __prevLiveUid = window.__drexLiveAuthUid || null;
+        var __newLiveUid = (user && user.uid) || null;
+        if (__prevLiveUid && __newLiveUid && __prevLiveUid !== __newLiveUid &&
+            typeof drexLiveCleanupRoom === 'function') {
+          drexLiveCleanupRoom('host'); drexLiveCleanupRoom('viewer');
+        }
+        window.__drexLiveAuthUid = __newLiveUid;
+      } catch (_) {}
 
       refreshVerifiedUsersCache();
       initDrexAds();
@@ -31625,6 +31636,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       clearChatConversationCache(); // C11-2: sin fugas entre cuentas
       _notifActorCache = null; _notifActorPromise = null; // C13: sin fuga de identidad entre cuentas
       clearAccountScopedState(); // C14: sin fugas entre cuentas (fiesta, música, cachés, timers)
+      // C243: cerrar cualquier en vivo abierto (PCs, presencia, cámara, sala).
+      try {
+        if (typeof drexLiveCleanupRoom === 'function') { drexLiveCleanupRoom('host'); drexLiveCleanupRoom('viewer'); }
+      } catch (_) {}
+      try { window.__drexLiveAuthUid = null; } catch (_) {}
       // FIX: el motor de recomendaciones no debe conservar ni persistir el
       // perfil de la cuenta que cerró sesión (evita contaminar la próxima
       // cuenta con gustos ajenos si una lectura quedó en vuelo).
@@ -81072,6 +81088,11 @@ button.drex-live-pill{cursor:pointer}
     this._guestUids = {}; // host: peerIds que entraron como co-anfitrión (para 'guestleft')
     this._peerId = mkPeerId(); // identidad de SESIÓN para señalización
     this._hostPeer = null;     // peerId del host (se aprende del doc del live)
+    this._peerLegacy = {};   // C243 host: joinKey -> true si el peer es cliente viejo
+    this._joinGen = 0;       // C243 generación de unión: invalida callbacks de joins viejos
+    this._retryCount = 0;    // C243 reintentos de negociación del viewer en curso
+    this._retryTimer = null; // C243 timer del backoff de reintento
+    this._connected = false; // C243 viewer: true al recibir la primera pista remota
   }
 
   /* ---------------- eventos ---------------- */
@@ -81321,9 +81342,11 @@ button.drex-live-pill{cursor:pointer}
   DrexLiveCore.prototype._setupHostPC = function (uid, pc) {
     var self = this;
     var me = this._peerId; // FIX C242
+    // C243: a clientes viejos el ICE sale con from=uid de cuenta.
+    var legacyFrom = (this._peerLegacy[uid] && this._user && this._user.uid) || null;
     pc.onicecandidate = function (e) {
       if (e && e.candidate) {
-        self._sendSignal({ type: 'ice', from: me, to: uid, payload: { candidate: e.candidate } });
+        self._sendSignal({ type: 'ice', from: (legacyFrom || me), to: uid, payload: { candidate: e.candidate } });
       }
     };
     /* C240: co-anfitrión — el host también puede RECIBIR media del par
@@ -81349,10 +81372,13 @@ button.drex-live-pill{cursor:pointer}
     var from = msg.from;
     var self = this;
     if (msg.type === 'viewer-join') {
-      this._hostCallViewer(from);
+      // C243: modo legado por par — los clientes viejos mandan from=uid sin
+      // payload.peer; solo a ellos se les responde con from=uid (su chequeo
+      // `from === hostUid` ignoraría un peerId de sesión).
+      this._hostCallViewer(from, !(msg.payload && msg.payload.peer === from));
     } else if (msg.type === 'guest-join') {
       /* C240: co-anfitrión — negocia igual que un viewer pero avisa al estudio */
-      this._hostCallViewer(from);
+      this._hostCallViewer(from, !(msg.payload && msg.payload.peer === from));
       // FIX C242: `from` es el peerId de sesión; el uid de cuenta viaja en el payload.
       this._guestUids[from] = (msg.payload && msg.payload.uid) || from;
       this._emit('guestjoined', { uid: this._guestUids[from], peer: from, name: (msg.payload && msg.payload.name) || '' });
@@ -81370,13 +81396,18 @@ button.drex-live-pill{cursor:pointer}
     // otros tipos se ignoran
   };
 
-  DrexLiveCore.prototype._hostCallViewer = function (uid) {
+  DrexLiveCore.prototype._hostCallViewer = function (uid, legacy) {
     // Si el viewer re-entra (nuevo viewer-join), se tumba la PC vieja y se
     // re-oferta: la anterior pudo quedar muerta tras un corte de red.
     // silent: no es una salida real, no emitir 'guestleft'.
     this._dropPeer(uid, false, true);
     var self = this;
-    var me = this._peerId; // FIX C242: la oferta sale del peerId de sesión
+    // C243: modo legado por par — se fija DESPUÉS de _dropPeer (que limpia
+    // la bandera del join anterior). A clientes viejos oferta/ICE salen con
+    // from=uid de cuenta.
+    if (legacy) this._peerLegacy[uid] = true; else delete this._peerLegacy[uid];
+    var me = (legacy && this._user && this._user.uid) ? this._user.uid : this._peerId;
+    var gen = this._joinGen; // C243: no ofertar para un live ya abandonado
     var pc;
     try {
       pc = new this._RTC.PeerConnection(this._ice);
@@ -81400,6 +81431,7 @@ button.drex-live-pill{cursor:pointer}
       offer = o;
       return pc.setLocalDescription(o);
     }).then(function () {
+      if (gen !== self._joinGen) return; // el live cambió: oferta obsoleta
       self._sendSignal({
         type: 'offer', from: me, to: uid,
         payload: { sdp: { type: (offer && offer.type) || 'offer', sdp: offer && offer.sdp } }
@@ -81419,6 +81451,7 @@ button.drex-live-pill{cursor:pointer}
       }
     }
     delete this._pend[uid];
+    if (this._peerLegacy) delete this._peerLegacy[uid]; // C243
     /* FIX: avisar cuando un co-anfitrión se va (presencia removida o PC
      * cerrada) para que el estudio limpie la capa Invitado en vez de dejar
      * el último cuadro congelado. silent=true en re-ofertas del host. */
@@ -81493,7 +81526,15 @@ button.drex-live-pill{cursor:pointer}
     // FIX C242: si había una PC previa (re-unión tras ser co-anfitrión), cerrarla.
     if (this._pc) { try { this._pc.close(); } catch (e) {} this._pc = null; }
     if (!isSeg(liveId)) return Promise.reject(mkErr('live-not-found', 'live no encontrado'));
+    // C243: generación de unión — los pasos en vuelo de un join anterior se
+    // abortan en silencio cuando un join nuevo toma el mando.
+    var gen = ++this._joinGen;
+    function genOk() { if (gen !== self._joinGen) throw mkErr('stale-join', 'join reemplazado por uno nuevo'); }
+    this._retryCount = 0;
+    this._connected = false;
+    if (this._retryTimer) { try { clearTimeout(this._retryTimer); } catch (_) {} this._retryTimer = null; }
     return this._db.ref('lives/' + liveId).once('value').then(function (snap) {
+      genOk();
       var live = snap.val();
       if (!snap.exists() || !live) throw mkErr('live-not-found', 'live no encontrado');
       if (live.status !== 'live') throw mkErr('live-ended', 'el live ya terminó');
@@ -81512,6 +81553,7 @@ button.drex-live-pill{cursor:pointer}
         joinedAt: self._now()
       });
     }).then(function () {
+      genOk();
       // Si la pestaña se cierra de golpe, el wrapper quita la presencia.
       try {
         var od = self._db.ref('liveViewers/' + liveId + '/' + self._peerId).onDisconnect();
@@ -81519,11 +81561,13 @@ button.drex-live-pill{cursor:pointer}
       } catch (e) {}
       return null;
     }).then(function () {
+      genOk();
       // contador del doc (las vistas en lista usan este número)
       return self._db.ref('lives/' + liveId + '/viewers').transaction(function (v) {
         return (v || 0) + 1;
       });
     }).then(function () {
+      genOk();
       var pc;
       try {
         pc = new self._RTC.PeerConnection(self._ice);
@@ -81537,8 +81581,13 @@ button.drex-live-pill{cursor:pointer}
         self._onViewerSignal(snap.key, snap.val());
       });
       // El viewer NO envía media: PC sin tracks, solo recibe.
-      self._sendSignal({ type: 'viewer-join', from: self._peerId, to: self._hostPeer, payload: { uid: self._user.uid, name: self._user.name || '' } });
+      // C243: payload.peer anuncia cliente nuevo (el host usa modo legado si falta).
+      self._sendSignal({ type: 'viewer-join', from: self._peerId, to: self._hostPeer, payload: { uid: self._user.uid, name: self._user.name || '', peer: self._peerId } });
       return { liveId: liveId };
+    }).catch(function (e) {
+      // C243: un join reemplazado por otro más nuevo se aborta en silencio.
+      if (e && e.code === 'stale-join') return { liveId: liveId, stale: true };
+      throw e;
     });
   };
 
@@ -81554,7 +81603,14 @@ button.drex-live-pill{cursor:pointer}
       return Promise.reject(mkErr('bad-stream', 'stream inválido'));
     }
     if (this._pc) { try { this._pc.close(); } catch (e) {} this._pc = null; }
+    // C243: generación de unión (igual que joinLive).
+    var gen = ++this._joinGen;
+    function genOk() { if (gen !== self._joinGen) throw mkErr('stale-join', 'join reemplazado por uno nuevo'); }
+    this._retryCount = 0;
+    this._connected = false;
+    if (this._retryTimer) { try { clearTimeout(this._retryTimer); } catch (_) {} this._retryTimer = null; }
     return this._db.ref('lives/' + liveId).once('value').then(function (snap) {
+      genOk();
       var live = snap.val();
       if (!snap.exists() || !live) throw mkErr('live-not-found', 'live no encontrado');
       if (live.status !== 'live') throw mkErr('live-ended', 'el live ya terminó');
@@ -81572,16 +81628,19 @@ button.drex-live-pill{cursor:pointer}
         joinedAt: self._now()
       });
     }).then(function () {
+      genOk();
       try {
         var od = self._db.ref('liveViewers/' + liveId + '/' + self._peerId).onDisconnect();
         if (od && typeof od.remove === 'function') self._odisc = od.remove();
       } catch (e) {}
       return null;
     }).then(function () {
+      genOk();
       return self._db.ref('lives/' + liveId + '/viewers').transaction(function (v) {
         return (v || 0) + 1;
       });
     }).then(function () {
+      genOk();
       var pc;
       try {
         pc = new self._RTC.PeerConnection(self._ice);
@@ -81599,11 +81658,16 @@ button.drex-live-pill{cursor:pointer}
       self._sub(self._db.ref('liveSignals/' + liveId), 'child_added', function (snap) {
         self._onViewerSignal(snap.key, snap.val());
       });
+      // C243: payload.peer anuncia cliente nuevo (el host usa modo legado si falta).
       self._sendSignal({
         type: 'guest-join', from: self._peerId, to: self._hostPeer,
-        payload: { uid: self._user.uid, name: self._user.name || '' }
+        payload: { uid: self._user.uid, name: self._user.name || '', peer: self._peerId }
       });
       return { liveId: liveId };
+    }).catch(function (e) {
+      // C243: un join reemplazado por otro más nuevo se aborta en silencio.
+      if (e && e.code === 'stale-join') return { liveId: liveId, stale: true };
+      throw e;
     });
   };
 
@@ -81615,7 +81679,13 @@ button.drex-live-pill{cursor:pointer}
       if (!stream && self._RTC.MediaStream && e && e.track) {
         try { stream = new self._RTC.MediaStream([e.track]); } catch (x) { stream = null; }
       }
-      if (stream) self._emit('remotetrack', { stream: stream });
+      if (stream) {
+        // C243: primera pista remota = conectado; cancelar reintentos pendientes.
+        self._connected = true;
+        if (self._retryTimer) { try { clearTimeout(self._retryTimer); } catch (_) {} self._retryTimer = null; }
+        self._retryCount = 0;
+        self._emit('remotetrack', { stream: stream });
+      }
     };
     pc.onicecandidate = function (e) {
       if (e && e.candidate && (self._hostPeer || self._hostUid)) {
@@ -81623,8 +81693,67 @@ button.drex-live-pill{cursor:pointer}
       }
     };
     pc.onconnectionstatechange = function () {
-      self._emit('pcstate', { peer: (self._hostPeer || self._hostUid), state: pc.connectionState || 'unknown' });
+      var st = pc.connectionState || 'unknown';
+      self._emit('pcstate', { peer: (self._hostPeer || self._hostUid), state: st });
+      // C243: conexión muerta antes de la primera pista → reintento con backoff.
+      if (st === 'failed' && !self._connected) self._scheduleViewerRetry('pc-failed');
     };
+  };
+
+  /* C243: reintento acotado de negociación para el viewer/invitado.
+   * Si la negociación muere antes de la primera pista remota, se re-envía
+   * el join (el host re-oferta) con backoff 1s/2s/4s (máx 3 intentos).
+   * Agotados, se emite 'reconnect-failed' para que la UI muestre la
+   * tarjeta manual de inmediato en vez de esperar el watchdog de 20 s. */
+  DrexLiveCore.prototype._retryDelays = [1000, 2000, 4000];
+
+  DrexLiveCore.prototype._scheduleViewerRetry = function (reason) {
+    var self = this;
+    if (this._role !== 'viewer' && this._role !== 'guest') return;
+    if (this._connected || !this._liveId) return;
+    var delays = this._retryDelays || [1000, 2000, 4000];
+    if (this._retryCount >= delays.length) {
+      this._retryTimer = null;
+      this._emit('reconnect-failed', { reason: reason || 'negotiation-failed' });
+      return;
+    }
+    var delay = delays[this._retryCount] || 4000;
+    var attempt = ++this._retryCount;
+    var gen = this._joinGen;
+    this._emit('reconnecting', { attempt: attempt, max: delays.length, delay: delay, reason: reason || '' });
+    if (this._retryTimer) { try { clearTimeout(this._retryTimer); } catch (_) {} }
+    this._retryTimer = setTimeout(function () {
+      self._retryTimer = null;
+      if (gen !== self._joinGen) return; // un join nuevo tomó el mando
+      if (self._connected || !self._liveId) return;
+      try { self._viewerRenegotiate(); } catch (e) { self._err('retry-failed', String((e && e.message) || e)); }
+    }, delay);
+  };
+
+  DrexLiveCore.prototype._viewerRenegotiate = function () {
+    // Cierra la PC muerta y pide al host una oferta fresca re-enviando el join.
+    if (this._pc) { try { this._pc.close(); } catch (e) {} this._pc = null; }
+    var pc;
+    try {
+      pc = new this._RTC.PeerConnection(this._ice);
+    } catch (e) {
+      this._err('pc-failed', String((e && e.message) || e));
+      this._scheduleViewerRetry('pc-failed');
+      return;
+    }
+    this._pc = pc;
+    this._setupViewerPC(pc);
+    if (this._role === 'guest' && this._localStream) {
+      try {
+        var trs = this._localStream.getTracks();
+        for (var i = 0; i < trs.length; i++) pc.addTrack(trs[i], this._localStream);
+      } catch (e) {}
+    }
+    this._sendSignal({
+      type: (this._role === 'guest' ? 'guest-join' : 'viewer-join'),
+      from: this._peerId, to: (this._hostPeer || this._hostUid),
+      payload: { uid: this._user.uid, name: this._user.name || '', peer: this._peerId }
+    });
   };
 
   DrexLiveCore.prototype._onViewerSignal = function (key, msg) {
@@ -81640,18 +81769,24 @@ button.drex-live-pill{cursor:pointer}
     if (msg.type === 'offer') {
       var pc = this._pc;
       if (!pc || !msg.payload || !msg.payload.sdp) return;
+      var gen = self._joinGen; // C243: la respuesta pertenece a este join
       pc.setRemoteDescription(new this._RTC.SessionDescription(msg.payload.sdp)).then(function () {
+        if (gen !== self._joinGen) return null; // join reemplazado: abortar
         self._flushPending(from);
         return pc.createAnswer();
       }).then(function (ans) {
+        if (gen !== self._joinGen || !ans) return null;
         return pc.setLocalDescription(ans).then(function () { return ans; });
       }).then(function (ans) {
+        if (gen !== self._joinGen || !ans) return;
         self._sendSignal({
           type: 'answer', from: self._peerId, to: (self._hostPeer || self._hostUid),
           payload: { sdp: { type: (ans && ans.type) || 'answer', sdp: ans && ans.sdp } }
         });
       }).catch(function (e) {
         self._err('answer-failed', String((e && e.message) || e));
+        // C243: fallo de negociación antes de conectar → reintento con backoff.
+        self._scheduleViewerRetry('answer-failed');
       });
     } else if (msg.type === 'ice') {
       if (msg.payload && msg.payload.candidate) this._addIce(from, msg.payload.candidate);
@@ -81697,6 +81832,9 @@ button.drex-live-pill{cursor:pointer}
   /* ---------------- salir / limpiar ---------------- */
 
   DrexLiveCore.prototype.leaveLive = function () {
+    // C243: invalida de inmediato cualquier join/negociación en vuelo.
+    this._joinGen++;
+    if (this._retryTimer) { try { clearTimeout(this._retryTimer); } catch (_) {} this._retryTimer = null; }
     var self = this;
     var id = this._liveId;
     var role = this._role;
@@ -81728,6 +81866,9 @@ button.drex-live-pill{cursor:pointer}
       self._hostStarted = false;
       self._sigSeen = {};
       self._guestUids = {};
+      self._peerLegacy = {}; // C243
+      self._retryCount = 0;
+      self._connected = false;
       return {};
     });
   };
@@ -81746,6 +81887,8 @@ button.drex-live-pill{cursor:pointer}
   };
 
   DrexLiveCore.prototype.dispose = function () {
+    this._joinGen++;
+    if (this._retryTimer) { try { clearTimeout(this._retryTimer); } catch (_) {} this._retryTimer = null; }
     this._closePCs();
     this._unsubAll();
     if (this._odisc) { try { this._odisc.cancel(); } catch (e) {} this._odisc = null; }
@@ -81757,6 +81900,9 @@ button.drex-live-pill{cursor:pointer}
     this._peerId = null;
     this._localStream = null;
     this._guestUids = {};
+    this._peerLegacy = {}; // C243
+    this._retryCount = 0;
+    this._connected = false;
   };
 
   /* ---------------- interacción ---------------- */
@@ -85656,6 +85802,11 @@ function drexLiveTranslateStatics() {
   if (vi) vi.placeholder = t('Escribe un mensaje...');
   var mb = $('drex-live-mute-btn');
   if (mb) mb.setAttribute('aria-label', t('Silenciar'));
+  /* C243: etiquetas de accesibilidad de la hoja "Más" en el idioma de la cuenta. */
+  var mo = $('drex-live-more-btn');
+  if (mo) mo.setAttribute('aria-label', t('Más opciones'));
+  var mp = $('dl2-host-tools');
+  if (mp) mp.setAttribute('aria-label', t('Más opciones'));
 }
 
 window.drexEnVivoSwitchTab = function (tab) {
@@ -87885,6 +88036,23 @@ function drexLiveWireEvents(which) {
   });
   on('gifts', function (g) { drexLiveOnGift(which, g); });
   on('ended', function () { drexLiveOnEnded(which); });
+  /* C243: reintento automático de negociación — mostrar estado y, si se
+   * agotan los intentos, la tarjeta manual de inmediato (sin esperar el
+   * watchdog de 20 s). */
+  on('reconnecting', function () {
+    if (which !== 'viewer') return;
+    var c = $('drex-live-viewer-connecting');
+    if (c) {
+      drexLiveRestoreConnecting(c);
+      c.style.display = 'flex';
+      var te = $('drex-live-viewer-connecting-t');
+      if (te) te.textContent = t('Reconectando…');
+    }
+  });
+  on('reconnect-failed', function () {
+    if (which !== 'viewer' || LS.mode !== 'viewer' || !LS.liveId) return;
+    try { drexLiveViewerConnTimeout(); } catch (_) {}
+  });
   try { if (window.DrexLiveL3 && typeof window.DrexLiveL3.initRoom === 'function') window.DrexLiveL3.initRoom(which, LS.liveId); } catch (_) {}
   on('remotetrack', function (p) {
     if (which !== 'viewer') return;
@@ -89901,9 +90069,27 @@ window.drexLiveToggleHostTools = function () {
   } catch (_) { return; }
   if (b) { try { b.setAttribute('aria-expanded', open ? 'true' : 'false'); } catch (_) {} }
   try {
-    if (open) document.addEventListener('click', window.drexLiveCloseHostToolsOutside, true);
-    else document.removeEventListener('click', window.drexLiveCloseHostToolsOutside, true);
+    if (open) {
+      document.addEventListener('click', window.drexLiveCloseHostToolsOutside, true);
+      document.addEventListener('keydown', window.drexLiveHostToolsKey, true);
+    } else {
+      document.removeEventListener('click', window.drexLiveCloseHostToolsOutside, true);
+      document.removeEventListener('keydown', window.drexLiveHostToolsKey, true);
+    }
   } catch (_) {}
+};
+/* C243: cerrar la hoja "Más" (extraído para reuso: acción elegida, Escape). */
+window.drexLiveCloseHostTools = function () {
+  var p = document.getElementById('dl2-host-tools');
+  var b = document.getElementById('drex-live-more-btn');
+  if (!p) return;
+  try { p.classList.remove('open'); } catch (_) {}
+  if (b) { try { b.setAttribute('aria-expanded', 'false'); } catch (_) {} }
+  try { document.removeEventListener('click', window.drexLiveCloseHostToolsOutside, true); } catch (_) {}
+  try { document.removeEventListener('keydown', window.drexLiveHostToolsKey, true); } catch (_) {}
+};
+window.drexLiveHostToolsKey = function (e) {
+  if (e && e.key === 'Escape') window.drexLiveCloseHostTools();
 };
 window.drexLiveCloseHostToolsOutside = function (e) {
   var p = document.getElementById('dl2-host-tools');
@@ -89912,10 +90098,23 @@ window.drexLiveCloseHostToolsOutside = function (e) {
   try {
     if ((p.contains && p.contains(e.target)) || (b && b.contains && b.contains(e.target))) return;
   } catch (_) {}
-  try { p.classList.remove('open'); } catch (_) {}
-  if (b) { try { b.setAttribute('aria-expanded', 'false'); } catch (_) {} }
-  try { document.removeEventListener('click', window.drexLiveCloseHostToolsOutside, true); } catch (_) {}
+  window.drexLiveCloseHostTools();
 };
+/* C243: al elegir una acción (cofre, encuesta, Q&A, compartir) la hoja se
+ * cierra sola en vez de quedar flotando sobre la sala. */
+(function () {
+  try {
+    var p = document.getElementById('dl2-host-tools');
+    if (p && !p.__dl2AutoClose) {
+      p.__dl2AutoClose = 1;
+      p.addEventListener('click', function (e) {
+        var t2 = e && e.target;
+        var b2 = (t2 && t2.closest) ? t2.closest('button') : null;
+        if (b2 && p.contains(b2)) window.drexLiveCloseHostTools();
+      });
+    }
+  } catch (_) {}
+})();
 window.drexLiveViewerRetry = function () {
   var id = LS.liveId;
   try { if (LS._viewerConnTimer) clearTimeout(LS._viewerConnTimer); } catch (_) {}
@@ -90705,6 +90904,7 @@ window.closePaymentsView = closePaymentsView;
 window.DrexOrbit = DrexOrbit;
 window.DrexCoins = DrexCoins;
 window.drexLiveGiftById = drexLiveGiftById;
+window.drexLiveCleanupRoom = drexLiveCleanupRoom; // C243: usada por el hook de auth
 })();
 
 </script>
