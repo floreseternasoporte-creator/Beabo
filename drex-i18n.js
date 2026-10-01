@@ -1133,6 +1133,7 @@ var APP_ENGLISH_TEXT = {
 
 "Mostrando destacados":"Showing top posts",
 "Mostrando lo más reciente":"Showing the most recent",
+"Mostrando lo mejor para ti":"Showing the best for you",
 "Mostrando tu gente":"Showing your people",
 "publicaciones":"posts",
 "canción":"song",
@@ -3931,6 +3932,7 @@ var APP_CHINESE_TEXT = {
 
 "Mostrando destacados":"正在显示精选",
 "Mostrando lo más reciente":"正在显示最新内容",
+"Mostrando lo mejor para ti":"正在为你精选内容",
 "Mostrando tu gente":"正在显示我的圈子",
 "publicaciones":"帖子",
 "canción":"首歌曲",
@@ -6502,6 +6504,7 @@ var APP_PORTUGUESE_TEXT = {
 "Monitoreo continuo para detectar accesos no autorizados o actividades sospechosas.":"Monitoramento contínuo para detectar acessos não autorizados ou atividades suspeitas.",
 "Mostrando destacados":"Mostrando destaques",
 "Mostrando lo más reciente":"Mostrando os mais recentes",
+"Mostrando lo mejor para ti":"Mostrando o melhor para você",
 "Mostrando tu gente":"Mostrando sua gente",
 "Mostrar":"Mostrar",
 "Mostrar contraseña":"Mostrar senha",
@@ -9220,3 +9223,59 @@ var APP_PORTUGUESE_ATTRS = {
 "Activar micrófono":"Ativar microfone",
 "Detalles de la publicación":"Detalhes da publicação",
 };
+/* ================================================================
+ * Drex C228 — REDISEÑO DEL FEED: claves i18n nuevas (carril 3)
+ * El español es el idioma base (va directo en el código). Pegar este
+ * bloque AL FINAL de drex-i18n.js (después de los diccionarios).
+ * Object.assign: las claves son nuevas en los diccionarios TEXT
+ * (se verificó que no existen: "Eco", "Compartir", "Guardar",
+ * "Guardar publicación", "Ver comentarios", "Hacer eco de la
+ * publicación", "Dejar de seguir", "Solicitud de seguimiento enviada",
+ * "Seguir usuario", "Aún no sigues a nadie", "Todo tranquilo por aquí"
+ * y las dos frases de vacío no están en APP_*_TEXT).
+ * ================================================================ */
+Object.assign(APP_ENGLISH_TEXT, {
+"Eco":"Echo",
+"Compartir":"Share",
+"Guardar":"Save",
+"Guardar publicación":"Save post",
+"Ver comentarios":"View comments",
+"Hacer eco de la publicación":"Echo this post",
+"Dejar de seguir":"Unfollow",
+"Solicitud de seguimiento enviada":"Follow request sent",
+"Seguir usuario":"Follow user",
+"Aún no sigues a nadie":"You're not following anyone yet",
+"Todo tranquilo por aquí":"All quiet here",
+"Aún no hay posts. Sé la primera persona en publicar.":"No posts yet. Be the first to publish.",
+"Todavía no sigues a nadie que haya publicado. Explora perfiles y sigue a alguien para ver sus posts aquí.":"You're not following anyone who has posted yet. Explore profiles and follow someone to see their posts here."
+});
+Object.assign(APP_CHINESE_TEXT, {
+"Eco":"回声",
+"Compartir":"分享",
+"Guardar":"保存",
+"Guardar publicación":"保存帖子",
+"Ver comentarios":"查看评论",
+"Hacer eco de la publicación":"转发这条帖子",
+"Dejar de seguir":"取消关注",
+"Solicitud de seguimiento enviada":"关注请求已发送",
+"Seguir usuario":"关注用户",
+"Aún no sigues a nadie":"你还没有关注任何人",
+"Todo tranquilo por aquí":"这里很安静",
+"Aún no hay posts. Sé la primera persona en publicar.":"还没有帖子，成为第一个发布的人吧。",
+"Todavía no sigues a nadie que haya publicado. Explora perfiles y sigue a alguien para ver sus posts aquí.":"你还没有关注任何发布过内容的人。去看看个人主页并关注某人，就能在这里看到他们的帖子。"
+});
+Object.assign(APP_PORTUGUESE_TEXT, {
+"Eco":"Eco",
+"Compartir":"Compartilhar",
+"Guardar":"Salvar",
+"Guardar publicación":"Salvar publicação",
+"Ver comentarios":"Ver comentários",
+"Hacer eco de la publicación":"Ecoar esta publicação",
+"Dejar de seguir":"Deixar de seguir",
+"Solicitud de seguimiento enviada":"Solicitação de seguimento enviada",
+"Seguir usuario":"Seguir usuário",
+"Aún no sigues a nadie":"Você ainda não segue ninguém",
+"Todo tranquilo por aquí":"Tudo tranquilo por aqui",
+"Aún no hay posts. Sé la primera persona en publicar.":"Ainda não há posts. Seja a primeira pessoa a publicar.",
+"Todavía no sigues a nadie que haya publicado. Explora perfiles y sigue a alguien para ver sus posts aquí.":"Você ainda não segue ninguém que tenha publicado. Explore os perfis e siga alguém para ver os posts aqui."
+});
