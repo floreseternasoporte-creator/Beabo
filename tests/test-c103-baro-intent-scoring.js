@@ -112,7 +112,18 @@ tcase('C103 presente: motor de scoring en el HTML', () => {
 });
 
 tcase('first-match-wins eliminado (no queda el return con confidence 0.9)', () => {
-  assert(html.indexOf('confidence: 0.9 };') === -1, 'queda el detector viejo');
+  // Ronda 2 (C223): los pre-checks deterministas L2-B (contexto_vista) y L2-C
+  // (explicar_pasos) usan legítimamente confidence 0.9. Se verifica que cada
+  // ocurrencia pertenezca a uno de esos pre-checks y no al detector viejo.
+  const re = /confidence: 0\.9 \};/g;
+  let m, n = 0;
+  while ((m = re.exec(html)) !== null) {
+    n++;
+    const ctx = html.slice(Math.max(0, m.index - 160), m.index);
+    assert(/BARO_L2_VISTA_RE|intent: '(contexto_vista|explicar_pasos)'/.test(ctx),
+      'confidence 0.9 fuera de pre-check L2');
+  }
+  assert(n === 2, 'se esperaban los 2 pre-checks L2 con 0.9, hay ' + n);
 });
 
 tcase('extracción 6b + ranking OK', () => {

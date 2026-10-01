@@ -122,6 +122,10 @@ sandbox.baro6dExpose = function (n, f) { sandbox.window[n] = f; };
 sandbox.window.APP_ENGLISH_TEXT = sandbox.APP_ENGLISH_TEXT;
 sandbox.window.APP_CHINESE_TEXT = sandbox.APP_CHINESE_TEXT;
 sandbox.window.APP_PORTUGUESE_TEXT = sandbox.APP_PORTUGUESE_TEXT;
+/* Ronda 2 (C225): el bloque fusiona sus claves i18n en BARO_UI_I18N (definido
+   fuera de la región 6b en el HTML real). Se provee el objeto para que la
+   fusión ocurra también en el sandbox. */
+sandbox.BARO_UI_I18N = {};
 vm.createContext(sandbox);
 vm.runInContext(src, sandbox, { filename: 'block-6b-lane1.js' });
 const api = sandbox.window.baroBrain;
@@ -210,7 +214,10 @@ tcase('suggest: todas las labelKey existen en i18n ES/EN/ZH/PT', () => {
   keys['baro.suggest.probar_busqueda'] = 1;
   keys['baro.suggest.ver_ayuda'] = 1;
   for (const k in keys) {
-    const e = api.i18n[k];
+    /* Ronda 2 (C225): las claves de follow-ups de notas/tareas viven en
+       BARO_UI_I18N (el render usa baroResolveText); se acepta cualquiera
+       de los dos diccionarios. */
+    const e = api.i18n[k] || (sandbox.BARO_UI_I18N && sandbox.BARO_UI_I18N[k]);
     assert(e, 'clave i18n ausente: ' + k);
     for (const L of ['es', 'en', 'zh', 'pt']) {
       assert(typeof e[L] === 'string' && e[L].length > 0, 'sin ' + L + ' en ' + k);
