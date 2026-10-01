@@ -1820,6 +1820,24 @@
     return { explainPost: explainPost };
   })();
 
+  // Lane4 (2026-10-01): ventana de diversidad desde el DOM para la
+  // inserción en vivo (autor/flair/formato de las tarjetas ya colocadas).
+  function _recDomWindowState(feedContainer) {
+    var ws = [];
+    try {
+      var kids = feedContainer.querySelectorAll(':scope > div[id^="post-"]');
+      for (var i = 0; i < kids.length && ws.length < 12; i++) {
+        var d = kids[i].dataset || {};
+        ws.push({
+          authorId: d.recAuthor || '',
+          flair: d.recFlair || '',
+          format: d.recFormat || 'text'
+        });
+      }
+    } catch (_) {}
+    return ws;
+  }
+
   /* ================================================================
    * 14. DrexRecEngine — API pública del motor
    * ================================================================ */
@@ -1941,27 +1959,46 @@
     insertByScore: function (feedContainer, noteElement, note, ctx) {
       try {
         ctx = ctx || {};
+        // Lane4 (2026-10-01): contexto real en inserción en vivo — seguidos
+        // en caché (boost social) y ventana de diversidad desde el DOM.
+        if (!ctx.followingMap && global._drexRecFollowingCache && typeof global._drexRecFollowingCache === 'object') {
+          ctx.followingMap = global._drexRecFollowingCache;
+        }
+        if (!ctx.windowState || !ctx.windowState.length) {
+          ctx.windowState = _recDomWindowState(feedContainer);
+        }
         var score = RankingModel.scorePost(note, ctx);
         noteElement.dataset.recScore = String(score.total);
         var author = note.authorId || '';
         noteElement.dataset.recAuthor = author;
+        noteElement.dataset.recFlair = note.flair || '';
         noteElement.dataset.recFormat = ContentAnalyzer.detectFormat(note);
 
         var kids = feedContainer.querySelectorAll(':scope > div[id^="post-"]');
         for (var i = 0; i < kids.length; i++) {
           var kid = kids[i];
           if (score.total > parseFloat(kid.dataset.recScore || '0')) {
-            // Diversidad: no más de 2 seguidos del mismo autor.
+            // Diversidad: no más de 2 tarjetas seguidas del mismo autor.
+            // Bidireccional: cuenta la racha antes Y después del punto de
+            // inserción (antes solo miraba atrás y un score alto podía
+            // crear rachas de 3+ al insertarse delante).
             if (author) {
-              var same = 0;
+              var run = 1; // la tarjeta nueva
               var sib = kid.previousElementSibling;
-              while (sib && same < 2) {
+              while (sib && run <= 2) {
                 if (sib.matches && sib.matches('div[id^="post-"]')) {
-                  if (sib.dataset.recAuthor === author) same++; else break;
+                  if (sib.dataset.recAuthor === author) run++; else break;
                 }
                 sib = sib.previousElementSibling;
               }
-              if (same >= 2) continue;
+              var nxt = kid; // kid queda justo después de la tarjeta nueva
+              while (nxt && run <= 2) {
+                if (nxt.matches && nxt.matches('div[id^="post-"]')) {
+                  if (nxt.dataset.recAuthor === author) run++; else break;
+                }
+                nxt = nxt.nextElementSibling;
+              }
+              if (run > 2) continue;
             }
             feedContainer.insertBefore(noteElement, kid);
             return;
@@ -1991,28 +2028,44 @@
         var kids = Array.from(feedContainer.querySelectorAll(':scope > div[id^="post-"]'));
         if (!kids.length) return;
 
-        // Recalcular scores.
-        var windowState = [];
-        kids.forEach(function (el) {
+        // Recalcular scores con el contexto completo (Lane4 2026-10-01):
+        // ventana de diversidad desde el orden actual del DOM + seguidos
+        // en caché para el boost social.
+        var ctx2 = {};
+        try {
+          var _c = ctx || {};
+          for (var _k in _c) { if (Object.prototype.hasOwnProperty.call(_c, _k)) ctx2[_k] = _c[_k]; }
+        } catch (_) {}
+        if (!ctx2.followingMap && global._drexRecFollowingCache && typeof global._drexRecFollowingCache === 'object') {
+          ctx2.followingMap = global._drexRecFollowingCache;
+        }
+        var _notes = kids.map(function (el) {
           var meta = (typeof global._drexNoteMeta !== 'undefined' && global._drexNoteMeta[el.dataset.noteId]) || {};
-          var note = {
-            id: el.dataset.noteId,
-            timestamp: meta.ts,
-            upvotes: meta.up,
-            downvotes: meta.down,
-            commentsCount: meta.cc,
-            flair: meta.flair,
-            authorId: meta.authorId,
-            content: meta.text,
-            text: meta.text
+          return {
+            el: el,
+            note: {
+              id: el.dataset.noteId,
+              timestamp: meta.ts,
+              upvotes: meta.up,
+              downvotes: meta.down,
+              commentsCount: meta.cc,
+              flair: meta.flair,
+              authorId: meta.authorId,
+              content: meta.text,
+              text: meta.text
+            }
           };
-          var score = RankingModel.scorePost(note, ctx || {});
-          el.dataset.recScore = String(score.total);
-          windowState.push({
-            authorId: meta.authorId || '',
-            flair: meta.flair || '',
-            format: ContentAnalyzer.detectFormat(note)
-          });
+        });
+        ctx2.windowState = _notes.map(function (x) {
+          return {
+            authorId: x.note.authorId || '',
+            flair: x.note.flair || '',
+            format: ContentAnalyzer.detectFormat(x.note)
+          };
+        });
+        _notes.forEach(function (x) {
+          var score = RankingModel.scorePost(x.note, ctx2);
+          x.el.dataset.recScore = String(score.total);
         });
 
         // Mover cada tarjeta junto con su bloque de anuncio.
@@ -2046,6 +2099,50 @@
       BanditExplorer.reset();
       SignalTracker.cleanup();
     }
+  };
+
+  // Lane4 (2026-10-01): afinación en caliente sin tocar código.
+  //   DrexRecEngine.getConfig() → valores vigentes (clonados).
+  //   DrexRecEngine.tune(patch) → aplica y devuelve la config resultante.
+  // Ejemplo:
+  //   DrexRecEngine.tune({ rankingWeights: { personal: 2.0, recency: 0.8 },
+  //                        diversity: { penaltyPerRepeat: 5.0 } });
+  Engine.getConfig = function () {
+    var clone = function (o) {
+      var c = {};
+      try { for (var k in o) { if (Object.prototype.hasOwnProperty.call(o, k)) c[k] = o[k]; } } catch (_) {}
+      return c;
+    };
+    return {
+      version: ENGINE_VERSION,
+      signalWeights: clone(SIGNAL_WEIGHTS),
+      rankingWeights: clone(RANKING_WEIGHTS),
+      diversity: clone(DIVERSITY_CONFIG),
+      trending: clone(TRENDING_CONFIG),
+      bandit: clone(BANDIT_CONFIG)
+    };
+  };
+  Engine.tune = function (patch) {
+    try {
+      patch = patch || {};
+      var maps = {
+        signalWeights: SIGNAL_WEIGHTS, signals: SIGNAL_WEIGHTS,
+        rankingWeights: RANKING_WEIGHTS, ranking: RANKING_WEIGHTS,
+        diversity: DIVERSITY_CONFIG,
+        trending: TRENDING_CONFIG,
+        bandit: BANDIT_CONFIG
+      };
+      Object.keys(maps).forEach(function (k) {
+        var src = patch[k];
+        if (src && typeof src === 'object') {
+          Object.keys(src).forEach(function (wk) {
+            var v = Number(src[wk]);
+            if (isFinite(v)) maps[k][wk] = v;
+          });
+        }
+      });
+      return Engine.getConfig();
+    } catch (_) { return null; }
   };
 
   // Exportar al scope global.
