@@ -52,10 +52,10 @@ test('ícono voltear-cámara redibujado', function () {
   assert(src.indexOf('M4 4v6h6M20 20v-6h-6') === -1, 'persiste el ícono viejo de voltear');
 });
 
-// (5) Tira de efectos C220 (reemplaza el panel inferior y sus botones)
-test('tira de efectos C220 presente', function () {
-  assert(src.indexOf('drex-cam-fx-topbar') !== -1, 'falta #drex-cam-fx-topbar (C220)');
-  assert(src.indexOf('drex-cam-fx-list') !== -1, 'falta #drex-cam-fx-list (C220)');
+// (5) Tira de efectos C220 ELIMINADA en Fase 2 (con todos los efectos de cámara)
+test('tira de efectos C220 ausente', function () {
+  assert(src.indexOf('drex-cam-fx-topbar') === -1, 'persiste #drex-cam-fx-topbar (debió eliminarse en Fase 2)');
+  assert(src.indexOf('drex-cam-fx-list') === -1, 'persiste #drex-cam-fx-list (debió eliminarse en Fase 2)');
 });
 
 // (6) Flash: botón + función + cableado
@@ -72,22 +72,11 @@ test('JS de flash: toggle + detección torch + hooks', function () {
   assert(/applyConstraints\(\{ advanced: \[\{ torch:/.test(src), 'falta applyConstraints torch');
 });
 
-// (7) Drex Studio: gamepad en "Plantillas de juego"
-test('tarjeta Plantillas de juego usa gamepad', function () {
-  var i = src.indexOf('Plantillas de juego');
-  assert(i !== -1, 'no se encontró la tarjeta');
-  var card = src.slice(Math.max(0, i - 700), i);
-  assert(card.indexOf('M6.5 8h11a4.5 4.5 0 014.4 5.4') !== -1, 'falta el gamepad');
-  assert(card.indexOf('M14.25 6.087') === -1, 'persiste el remolino sin sentido');
-});
-
-// (8) Drex Studio: face-scan en "Detección facial"
-test('tarjeta Detección facial usa marco de escaneo', function () {
-  var i = src.indexOf('Detección facial');
-  assert(i !== -1, 'no se encontró la tarjeta');
-  var card = src.slice(Math.max(0, i - 800), i);
-  assert(card.indexOf('M4 8V6a2 2 0 012-2h2') !== -1, 'faltan las esquinas del marco de escaneo');
-  assert(card.indexOf('M15 9h.01M9 9h.01M3 12a9 9 0 109-9') === -1, 'persiste el ícono viejo');
+// (7)-(8) Drex Studio ELIMINADO en Fase 3: las tarjetas "Plantillas de juego" y
+// "Detección facial" ya no existen; se verifica su ausencia.
+test('tarjetas de Drex Studio ausentes', function () {
+  assert(src.indexOf('Plantillas de juego') === -1, 'persiste la tarjeta Plantillas de juego (Fase 3)');
+  assert(src.indexOf('Detección facial') === -1, 'persiste la tarjeta Detección facial (Fase 3)');
 });
 
 // (9) Todos los SVG del modal de cámara tienen viewBox

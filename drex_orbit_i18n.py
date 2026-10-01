@@ -27,8 +27,6 @@ T = [
 ("Distintivo dorado Drex Orbit y marco en tu foto.", "Gold Drex Orbit badge and frame on your photo.", "金色 Drex Orbit 徽章与头像框。", "Selo dourado Drex Orbit e moldura na sua foto."),
 ("Temas de perfil Orbit", "Orbit profile themes", "Orbit 个人主页主题", "Temas de perfil Orbit"),
 ("Fondos exclusivos para tu portada.", "Exclusive covers for your profile.", "专属个人主页封面背景。", "Fundos exclusivos para sua capa."),
-("Drex Studio Pro", "Drex Studio Pro", "Drex Studio 专业版", "Drex Studio Pro"),
-("Plantillas y escenas profesionales en alta calidad.", "Pro templates and scenes in high quality.", "高质量专业模板与场景。", "Modelos e cenas profissionais em alta qualidade."),
 ("En vivos potenciados", "Boosted live streams", "强化直播", "Lives potencializadas"),
 ("Más duración, calidad HD y más en vivos programados.", "Longer duration, HD quality and more scheduled lives.", "更长时长、高清画质与更多预约直播。", "Mais duração, qualidade HD e mais lives agendadas."),
 ("Límites elevados", "Higher limits", "更高额度", "Limites maiores"),
@@ -95,9 +93,6 @@ T = [
 ("Tema aplicado", "Theme applied", "主题已应用", "Tema aplicado"),
 ("No se pudo guardar el tema. Inténtalo de nuevo.", "Couldn't save the theme. Try again.", "无法保存主题，请重试。", "Não foi possível salvar o tema. Tente de novo."),
 ("Inicia sesión para personalizar tu perfil.", "Sign in to customize your profile.", "登录后自定义个人主页。", "Entre para personalizar seu perfil."),
-("Tu en vivo terminará en 15 minutos.", "Your live will end in 15 minutes.", "你的直播将在 15 分钟后结束。", "Sua live terminará em 15 minutos."),
-("Tu en vivo alcanzó el límite de duración.", "Your live reached its duration limit.", "你的直播已达到时长上限。", "Sua live atingiu o limite de duração."),
-("Límite de en vivos programados alcanzado", "Scheduled lives limit reached", "已达到预约直播上限", "Limite de lives agendadas atingido"),
 ("El video puede durar hasta {s} segundos. Elige un clip más corto.", "Videos can be up to {s} seconds. Choose a shorter clip.", "视频最长可为 {s} 秒，请选择更短的片段。", "O vídeo pode ter até {s} segundos. Escolha um clipe mais curto."),
 ("Solo puedes subir un máximo de {n} fotos por publicación.", "You can upload up to {n} photos per post.", "每个帖子最多可上传 {n} 张照片。", "Você pode subir no máximo {n} fotos por publicação."),
 ]

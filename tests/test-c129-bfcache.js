@@ -89,14 +89,15 @@ ok('visibilitychange visible reinicia la sesión (bfcache restore)',
 // ---------- 4. Re-auditoría de ceros (C103/C121/C122) ----------
 ok('BroadcastChannel sigue en cero', !/BroadcastChannel/.test(html));
 ok('document.fonts/FontFace siguen en cero', !/document\.fonts|FontFace/i.test(html));
-// Drex Cam (C209), estudio live (C239) y Fiestas usan getUserMedia legítimamente.
-// La asunción "solo mic de Fiestas" quedó obsoleta; se pinea el inventario real.
-ok('getUserMedia: inventario estable (14 hits: Fiestas mic + Drex Cam + live studio)',
-  (html.match(/getUserMedia/g) || []).length === 14);
+// Drex Cam (C209) y Fiestas usan getUserMedia legítimamente.
+// El estudio live (C239) se eliminó en Fase 3; se pinea el inventario real.
+ok('getUserMedia: inventario estable (5 hits: Fiestas mic + Drex Cam)',
+  (html.match(/getUserMedia/g) || []).length === 5);
 // Vocabulario legítimo: "voice room"/"sala de voz" (C236), instrucción del juego
-// del mentiroso ("by voice"), y palabra inglesa "voices" en texto de opiniones.
+// del mentiroso ("by voice"), palabra inglesa "voices" en texto de opiniones,
+// y "Baro voice"/BaroVoice (guía de personalidad del asistente Baro, no salas).
 ok('sin strings "voice" huérfanos fuera del vocabulario legítimo',
-  !/["'][^"'<>]*voice[^"'<>]*["']/i.test(html.replace(/voiceover/gi, '').replace(/voice room/gi, '').replace(/sala de voz/gi, '').replace(/by voice/gi, '').replace(/critical voices/gi, '')));
+  !/["'][^"'<>]*voice[^"'<>]*["']/i.test(html.replace(/voiceover/gi, '').replace(/voice room/gi, '').replace(/sala de voz/gi, '').replace(/by voice/gi, '').replace(/critical voices/gi, '').replace(/baro[_ ]?voice/gi, '').replace(/__v3voicewrapped/gi, '').replace(/__v3voiceextended/gi, '').replace(/barobrain/gi, '').replace(/__v3brain\.voice/gi, '').replace(/voice-contract/gi, '')));
 
 // ---------- 5. Conductuales en sandbox ----------
 const flushBody = extractFnBody(html, 'drexFlushNoteDraftOnPageHide');

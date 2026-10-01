@@ -21,12 +21,13 @@ function extractDict(varName, nextVarName) {
   var end = nextVarName ? src.indexOf(nextVarName, start) : src.length;
   assert(end !== -1, 'no se encontró ' + nextVarName);
   var sec = src.slice(start, end);
-  // El objeto termina en el último "\n};" de la sección (los valores son
+  // El objeto termina en el último "};" de la sección (puede ir pegado a la
+  // última entrada, no necesariamente en línea propia). Los valores son
   // literales JS con escapes no-JSON, ej. \', así que se evalúa en vez de
-  // parsear como JSON).
-  var closeIdx = sec.lastIndexOf('\n};');
+  // parsear como JSON. Se corta en '}' porque new Function ya agrega ';'.
+  var closeIdx = sec.lastIndexOf('};');
   assert(closeIdx !== -1, 'cierre no encontrado para ' + varName);
-  var objText = sec.slice(sec.indexOf('{'), closeIdx + 2);
+  var objText = sec.slice(sec.indexOf('{'), closeIdx + 1);
   var dict = new Function('return (' + objText + ');')();
   assert(Object.keys(dict).length > 100, varName + ' parece vacío o mal parseado');
   return dict;

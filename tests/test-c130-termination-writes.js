@@ -79,10 +79,10 @@ function extractFnBody(src, fnName) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---------- 1. Inventario de listeners de terminación en index.html ----------
-// 3 pagehide: draft flush (13760), _drexRecPersistNow (19519), y el estudio
-// En vivo termina el live al cerrar la página (82759, carril live/studio).
-ok('index.html: exactamente 3 addEventListener(pagehide)',
-  count(/addEventListener\(\s*['"]pagehide['"]/g, html) === 3);
+// 2 pagehide: draft flush y _drexRecPersistNow.
+// El tercero (el estudio En vivo terminaba el live al cerrar) se eliminó en Fase 3.
+ok('index.html: exactamente 2 addEventListener(pagehide)',
+  count(/addEventListener\(\s*['"]pagehide['"]/g, html) === 2);
 ok('index.html: pagehide -> drexFlushNoteDraftOnPageHide (por nombre)',
   /addEventListener\(\s*['"]pagehide['"]\s*,\s*drexFlushNoteDraftOnPageHide\s*\)/.test(html));
 ok('index.html: pagehide -> _drexRecPersistNow (recomendador)',
@@ -208,8 +208,9 @@ ok('onDisconnect arm() registra pagehide + visibilitychange con handle cancelabl
   && /cancel:\s*function\s*\(\s*\)[\s\S]{0,300}?removeEventListener\(\s*['"]pagehide['"]\s*,\s*handler\s*\)/.test(cloud));
 
 // ---------- 7. keepalive: inventario global (solo webhook de música) ----------
-ok('keepalive: 1 sola ocurrencia en index.html (webhook Discord de publishMusic)',
-  count(/keepalive/g, html) === 1);
+// (más un comentario sobre líneas SSE keepalive en el streaming de Baro, benigno)
+ok('keepalive: 1 sola opción fetch keepalive:true en index.html (webhook Discord de publishMusic)',
+  count(/keepalive:\s*true/g, html) === 1);
 ok('keepalive: 0 ocurrencias en drex-cloud.js', count(/keepalive/g, cloud) === 0);
 
 // ---------- 8. Cadencia de polling (candidata secundaria): ya blindada ----------

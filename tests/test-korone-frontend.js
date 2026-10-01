@@ -76,7 +76,7 @@ ok(K.isActive() === false, 'canceled -> inactivo aunque active=true (fail closed
 
 /* ---- 4. Matriz de funciones (9 grupos) ---- */
 K._setTestState({ active: true, plan: 'yearly', status: 'active' });
-const FEATURES = ['ads_free','badge_frame','profile_themes','studio_pro','live_boost','limits_boost','analytics','gifts','priority_support'];
+const FEATURES = ['ads_free','badge_frame','profile_themes','live_boost','limits_boost','analytics','gifts','priority_support'];
 for (const f of FEATURES) ok(K.hasAccess(f) === true, 'premium accede a ' + f);
 K._setTestState({ active: false, plan: 'none' });
 for (const f of FEATURES) ok(K.hasAccess(f) === false, 'no-premium bloqueado en ' + f);

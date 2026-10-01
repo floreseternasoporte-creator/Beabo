@@ -27,8 +27,6 @@ T = [
 ("Distintivo dorado Kor One y marco en tu foto.", "Gold Kor One badge and frame on your photo.", "金色 Kor One 徽章与头像框。", "Selo dourado Kor One e moldura na sua foto."),
 ("Temas de perfil premium", "Premium profile themes", "高级个人主页主题", "Temas de perfil premium"),
 ("Fondos exclusivos para tu portada.", "Exclusive covers for your profile.", "专属个人主页封面背景。", "Fundos exclusivos para sua capa."),
-("Drex Studio Pro", "Drex Studio Pro", "Drex Studio 专业版", "Drex Studio Pro"),
-("Plantillas y escenas profesionales en alta calidad.", "Pro templates and scenes in high quality.", "高质量专业模板与场景。", "Modelos e cenas profissionais em alta qualidade."),
 ("En vivos potenciados", "Boosted live streams", "强化直播", "Lives potencializadas"),
 ("Más duración, calidad HD y más en vivos programados.", "Longer duration, HD quality and more scheduled lives.", "更长时长、高清画质与更多预约直播。", "Mais duração, qualidade HD e mais lives agendadas."),
 ("Límites elevados", "Higher limits", "更高额度", "Limites maiores"),

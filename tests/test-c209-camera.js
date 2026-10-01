@@ -36,6 +36,9 @@ var sandbox = {
   window: {}
 };
 sandbox.globalThis = sandbox;
+// drexOrbitCamMaxSec vive fuera del bloque DREX-CAM (núcleo Orbit); se mockea
+// con el valor para no-suscriptores (60 s) que el producto usa por defecto.
+sandbox.drexOrbitCamMaxSec = function () { return 60; };
 vm.createContext(sandbox);
 vm.runInContext(code, sandbox, { filename: 'drex-cam.js' });
 
@@ -82,26 +85,13 @@ test('drexCamRingOffset: 0 -> C completa, 1 -> 0, 0.5 -> mitad', function () {
   assert.strictEqual(run('drexCamRingOffset(0.5, 200)'), 100);
 });
 
-/* ---------- Efectos: normalización y pipeline ---------- */
-test('drexCamNormalizeEffects: null/no-objeto -> []', function () {
-  // Nota: el array viene de otro realm (vm); se compara por longitud.
-  assert.strictEqual(run('drexCamNormalizeEffects(null).length'), 0);
-  assert.strictEqual(run('drexCamNormalizeEffects("x").length'), 0);
+/* ---------- Efectos ELIMINADOS en Fase 2: el bloque ya no los define ---------- */
+test('drexCamNormalizeEffects ausente (efectos eliminados en Fase 2)', function () {
+  assert.strictEqual(run('typeof drexCamNormalizeEffects'), 'undefined');
 });
 
-test('drexCamNormalizeEffects: snapshot del backend -> array con id/nombre', function () {
-  var out = run('drexCamNormalizeEffects({a:{name:"Neon"},b:{id:"custom",name:"Retro",filter:"sepia(.8)"}})');
-  assert.strictEqual(out.length, 2);
-  assert.strictEqual(out[0].id, 'a');
-  assert.strictEqual(out[0].name, 'Neon');
-  assert.strictEqual(out[1].id, 'custom', 'respeta id explícito');
-  assert.strictEqual(out[1].filter, 'sepia(.8)');
-});
-
-test('drexCamEffectToFilter: no-op documentado con catálogo vacío', function () {
-  assert.strictEqual(run('drexCamEffectToFilter(null)'), '');
-  assert.strictEqual(run('drexCamEffectToFilter({})'), '');
-  assert.strictEqual(run('drexCamEffectToFilter({filter:"  sepia(1)  "})'), 'sepia(1)');
+test('drexCamEffectToFilter ausente (efectos eliminados en Fase 2)', function () {
+  assert.strictEqual(run('typeof drexCamEffectToFilter'), 'undefined');
 });
 
 test('drexCamPickRecorderMime: prefiere mp4 cuando el navegador lo soporta', function () {
@@ -117,21 +107,23 @@ test('drexCamExtFor: mp4 -> .mp4, resto -> .webm', function () {
   assert.strictEqual(run('drexCamExtFor("")'), '.webm');
 });
 
-/* ---------- API global expuesta ---------- */
-test('window.drexCameraOpen y window.drexApplyEffect expuestos', function () {
+/* ---------- API global expuesta (sin efectos desde Fase 2) ---------- */
+test('window.drexCameraOpen expuesto; drexApplyEffect ausente', function () {
   assert.strictEqual(run('typeof drexCameraOpen'), 'function');
-  assert.strictEqual(run('typeof drexApplyEffect'), 'function');
+  assert.strictEqual(run('typeof drexApplyEffect'), 'undefined', 'efectos eliminados en Fase 2');
   assert.strictEqual(run('window.drexCameraOpen === drexCameraOpen'), true);
-  assert.strictEqual(run('window.drexApplyEffect === drexApplyEffect'), true);
 });
 
-test('todas las funciones de los onclick del modal existen', function () {
+test('todas las funciones de los onclick del modal existen (sin las de efectos)', function () {
   var fns = ['drexCameraOpen', 'drexCameraClose', 'drexCameraRetry',
     'drexCameraUploadFallback', 'drexCameraSwitchMode', 'drexCameraFlip',
-    'drexCameraCapture', 'drexCameraSelectEffect', 'drexCamRenderEffects', 'drexApplyEffect'];
+    'drexCameraCapture'];
   fns.forEach(function (f) {
     assert.strictEqual(run('typeof ' + f), 'function', f + ' no definida');
   });
+  assert.strictEqual(run('typeof drexCameraSelectEffect'), 'undefined', 'Fase 2 eliminó efectos');
+  assert.strictEqual(run('typeof drexCamRenderEffects'), 'undefined', 'Fase 2 eliminó efectos');
+  assert.strictEqual(run('typeof drexApplyEffect'), 'undefined', 'Fase 2 eliminó efectos');
   assert.strictEqual(run('typeof drexCameraToggleEffects'), 'undefined', 'C220 elimino el panel inferior');
   assert.strictEqual(run('typeof drexCameraCloseEffects'), 'undefined', 'C220 elimino el panel inferior');
 });
@@ -147,12 +139,11 @@ test('el icono de cámara abre drexCameraOpen(); foto/video intactos', function 
 });
 
 test('modal: IDs requeridos y preview playsinline+muted', function () {
-  var ids = ['drex-cam-modal', 'drex-cam-preview', 'drex-cam-effect-layer',
+  var ids = ['drex-cam-modal', 'drex-cam-preview',
     'drex-cam-error', 'drex-cam-retry', 'drex-cam-upload',
     'drex-cam-topbar', 'drex-cam-close', 'drex-cam-mode-photo', 'drex-cam-mode-video',
     'drex-cam-flip', 'drex-cam-progress-wrap', 'drex-cam-progress-fill',
     'drex-cam-countdown', 'drex-cam-countdown-num',
-    'drex-cam-fx-topbar', 'drex-cam-fx-list',
     'drex-cam-controls', 'drex-cam-capture',
     'drex-cam-ring-svg', 'drex-cam-ring-fg', 'drex-cam-capture-icon', 'drex-cam-capture-rec'];
   ids.forEach(function (id) {
@@ -173,13 +164,11 @@ test('getElementById estáticos del bloque resuelven a IDs del DOM', function ()
   assert(missing.length === 0, 'IDs sin elemento: ' + missing.join(', '));
 });
 
-test('efecto: tira superior circular con scroll-snap (C220, sin panel inferior)', function () {
-  assert(src.indexOf('id="drex-cam-fx-topbar"') !== -1, 'falta la barra superior de efectos');
-  assert(src.indexOf('id="drex-cam-fx-list"') !== -1, 'falta la lista de la tira');
-  assert(src.indexOf('scroll-snap-type: x proximity') !== -1, 'tira sin scroll-snap');
-  assert(src.indexOf('drex-cam-fx-tcircle') !== -1, 'tarjetas sin circulo');
+test('efectos: tira superior y panel eliminados en Fase 2', function () {
+  assert(src.indexOf('id="drex-cam-fx-topbar"') === -1, 'persiste la barra de efectos (Fase 2)');
+  assert(src.indexOf('id="drex-cam-fx-list"') === -1, 'persiste la lista de efectos (Fase 2)');
   assert(src.indexOf('id="drex-cam-effects-panel"') === -1, 'el panel inferior debe seguir eliminado');
-  assert(src.indexOf("drexCamTx('Sin efecto')") !== -1, 'la tira siempre ofrece "Sin efecto"');
+  assert(src.indexOf('id="drex-cam-effect-layer"') === -1, 'persiste la capa de efectos (Fase 2)');
 });
 
 /* ---------- i18n ES/EN/ZH/PT ---------- */
@@ -189,8 +178,11 @@ test('todo appT del bloque tiene clave en los 3 diccionarios', function () {
     var s0 = i18n.indexOf(varName);
     var s1 = i18n.indexOf(nextVar, s0);
     var sec = i18n.slice(s0, s1);
-    var close = sec.lastIndexOf('\n};');
-    var obj = new Function('return (' + sec.slice(sec.indexOf('{'), close + 2) + ');')();
+    // El cierre puede ir pegado a la última entrada (",};" en la misma línea),
+    // no necesariamente en línea propia. Se corta en '}' (sin el ';') porque
+    // el new Function ya agrega su propio ';'.
+    var close = sec.lastIndexOf('};');
+    var obj = new Function('return (' + sec.slice(sec.indexOf('{'), close + 1) + ');')();
     return obj;
   }
   var EN = dict('var APP_ENGLISH_TEXT = {', 'var APP_CHINESE_TEXT = {');

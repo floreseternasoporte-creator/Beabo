@@ -46,7 +46,7 @@ var ORBIT_PLANS = {
   monthly: { id: 'monthly', price: '$4.99', per: 'mes' },
   yearly:  { id: 'yearly',  price: '$49.99', per: 'año' }
 };
-var ORBIT_FEATURES = ['ads_free', 'badge_frame', 'profile_themes', 'studio_pro', 'live_boost', 'limits_boost', 'analytics', 'gifts', 'priority_support'];
+var ORBIT_FEATURES = ['ads_free', 'badge_frame', 'profile_themes', 'live_boost', 'limits_boost', 'analytics', 'gifts', 'priority_support'];
 
 var DrexOrbit = {
   _st: null,
@@ -322,7 +322,6 @@ function orbitBenefits() {
     { f: 'no_ads',           e: '🚫', title: t('Sin anuncios'),               desc: t('Navega Drex sin publicidad.') },
     { f: 'badge',            e: '👑', title: t('Insignia y marco exclusivos'), desc: t('Distintivo dorado Drex Orbit y marco en tu foto.') },
     { f: 'profile_themes',   e: '🎨', title: t('Temas de perfil Orbit'),    desc: t('Fondos exclusivos para tu portada.') },
-    { f: 'studio_pro',       e: '🎬', title: t('Drex Studio Pro'),             desc: t('Plantillas y escenas profesionales en alta calidad.') },
     { f: 'live_pro',         e: '📡', title: t('En vivos potenciados'),       desc: t('Más duración, calidad HD y más en vivos programados.') },
     { f: 'limits',           e: '🧩', title: t('Límites elevados'),           desc: t('Videos más largos, más fotos y publicaciones programadas.') },
     { f: 'analytics',        e: '📊', title: t('Analíticas de creador'),      desc: t('Estadísticas avanzadas de tu contenido.') },
@@ -473,7 +472,6 @@ async function orbitRestore() {
 /* ---------- paywall ---------- */
 function orbitPaywallCopy(feature) {
   var map = {
-    studio_pro:      { e: '🎬', title: t('Drex Studio Pro'),             desc: t('Plantillas y escenas profesionales en alta calidad.') },
     live_pro:        { e: '📡', title: t('En vivos potenciados'),        desc: t('Más duración, calidad HD y más en vivos programados.') },
     limits:          { e: '🧩', title: t('Límites elevados'),            desc: t('Videos más largos, más fotos y publicaciones programadas.') },
     analytics:       { e: '📊', title: t('Analíticas de creador'),       desc: t('Estadísticas avanzadas de tu contenido.') },

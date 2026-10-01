@@ -74,10 +74,11 @@ ok(K.isActive() === true, 'past_due con active=true sigue activo (lo decide el b
 K._setTestState({ active: true, plan: 'monthly', status: 'canceled' });
 ok(K.isActive() === false, 'canceled -> inactivo aunque active=true (fail closed)');
 
-/* ---- 4. Matriz de funciones (9 grupos) ---- */
+/* ---- 4. Matriz de funciones (8 grupos; studio_pro se eliminó en Fase 3 con Drex Studio) ---- */
 K._setTestState({ active: true, plan: 'yearly', status: 'active' });
-const FEATURES = ['no_ads','badge','profile_themes','studio_pro','live_pro','limits','analytics','exclusive_gifts','priority_support'];
+const FEATURES = ['no_ads','badge','profile_themes','live_pro','limits','analytics','exclusive_gifts','priority_support'];
 for (const f of FEATURES) ok(K.hasAccess(f) === true, 'orbit accede a ' + f);
+ok(K.hasAccess('studio_pro') === false, 'studio_pro eliminado: orbit ya no lo concede (Fase 3)');
 K._setTestState({ active: false, plan: 'none' });
 for (const f of FEATURES) ok(K.hasAccess(f) === false, 'no-orbit bloqueado en ' + f);
 // Desconocido aunque sea orbit
@@ -140,23 +141,9 @@ for (const k of korKeys) {
 }
 ok(missing.length === 0, 'paridad i18n Drex Orbit (faltantes: ' + missing.slice(0, 5).join(', ') + ')');
 
-/* ---- 10. Regalos: 6 Drex Orbit, tier orbit, PNG transparentes ---- */
-const giftIds = ['orbit_corona', 'orbit_nucleo', 'orbit_portal', 'orbit_cometa', 'orbit_cristal', 'orbit_fenix'];
-for (const id of giftIds) {
-  ok(html.includes(`id: '${id}'`), 'regalo en catálogo: ' + id);
-  ok(fs.existsSync(path.join(ROOT, 'assets/live-gifts', id + '.png')), 'PNG existe: ' + id);
-}
-ok(html.includes("tier: 'orbit'"), "tier 'orbit' presente");
-ok(html.includes("tierLabel('orbit')") || html.includes("'orbit'"), 'etiqueta de tier orbit');
-// Los PNG son realmente PNG con alfa
-const { execSync } = require('child_process');
-for (const id of giftIds) {
-  const info = execSync(`python3 -c "
-from PIL import Image
-im = Image.open('/home/hatch/workspace/beabo/assets/live-gifts/${id}.png')
-print(im.size, im.mode)"`, { encoding: 'utf8' }).trim();
-  ok(info.startsWith('(512, 512)') && info.includes('RGBA'), 'PNG 512x512 RGBA: ' + id + ' (' + info + ')');
-}
+/* ---- 10. Regalos Orbit: el catálogo de regalos de en vivo se eliminó en Fase 2/3 ---- */
+ok(html.includes("id: 'orbit_corona'") === false, 'catálogo de regalos orbit_corona eliminado con los en vivos');
+ok(fs.existsSync(path.join(ROOT, 'assets/live-gifts')) === false, 'assets/live-gifts eliminado en Fase 3');
 
 /* ---- 11. Sin simulación de estado ---- */
 ok(!html.includes('DrexOrbit._simulate') && !html.includes('simulateOrbit'), 'sin simulación de orbit');

@@ -236,27 +236,17 @@ async function main() {
   var valOk = pkgs.every(function (p, i) { return i === 0 || (p.usd / p.coins) < (pkgs[i - 1].usd / pkgs[i - 1].coins); });
   ok(valOk, 'USD por coin estrictamente decreciente (mejor valor al subir de tier)');
 
-  // 10) tasa de diamantes y precios de regalos
+  // 10) tasa de diamantes; los regalos de en vivo se eliminaron en Fase 2/3
   var rate = html.match(/var DREX_DIAMOND_RATE = (\d+);/);
   ok(rate && +rate[1] === 10, 'DREX_DIAMOND_RATE = 10');
-  var gm = html.match(/var DREX_LIVE_GIFTS = \[([\s\S]*?)\];/);
-  var gifts = [];
-  var gre = /\{ id: '([^']+)',\s*price: (\d+),/g, gm2;
-  while ((gm2 = gre.exec(gm[1]))) gifts.push({ id: gm2[1], price: +gm2[2] });
-  ok(gifts.length === 20, '20 regalos definidos');
-  ok(gifts.every(function (g) { return g.price > 0; }), 'ningun regalo con precio 0 o negativo');
-  ok(gifts.every(function (g) { return Math.floor(g.price / 10) >= 1; }), 'todo regalo genera >=1 diamante al host (floor(price/10))');
+  ok(html.indexOf('var DREX_LIVE_GIFTS') === -1, 'DREX_LIVE_GIFTS eliminado con los regalos de en vivo (Fase 2/3)');
 
   // 11) el comentario viejo "20" ya no existe; el codigo y la UI dicen 10
   ok(html.indexOf('por cada 20 Drex Coins') < 0, 'comentario obsoleto "cada 20" eliminado');
   ok(html.indexOf('por cada 10 Drex Coins recibidas en regalos') >= 0, 'schema + UI coinciden en 10');
 
-  console.log('-- flujo drexLiveSendGift (chequeo estatico del codigo nuevo) --');
-  var sg = html.slice(html.indexOf('window.drexLiveSendGift = async function'));
-  sg = sg.slice(0, sg.indexOf('/* B2:'));
-  ok(sg.indexOf('if (!sent)') >= 0 && sg.indexOf("type: 'gift_refund'") >= 0, 'reembolso cuando el regalo no se confirma enviado (incluye LS.core falsy)');
-  ok(/for \(var a = 0; a < 3 && !credited/.test(sg), 'reintento acotado (3) del credito de diamantes al host');
-  ok(sg.indexOf('idem: diaIdem') >= 0, 'el reintento de diamantes reusa la misma clave idempotente');
+  console.log('-- drexLiveSendGift eliminado con los regalos de en vivo (Fase 2/3) --');
+  ok(html.indexOf('window.drexLiveSendGift') === -1, 'drexLiveSendGift ya no existe');
 
   console.log(failures === 0 ? '\nVERDE: todo pasa' : '\nROJO: ' + failures + ' fallos');
   process.exit(failures === 0 ? 0 : 1);

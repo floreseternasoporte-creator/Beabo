@@ -46,7 +46,7 @@ var KORONE_PLANS = {
   monthly: { id: 'monthly', price: '$4.99', per: 'mes' },
   yearly:  { id: 'yearly',  price: '$49.99', per: 'año' }
 };
-var KORONE_FEATURES = ['ads_free', 'badge_frame', 'profile_themes', 'studio_pro', 'live_boost', 'limits_boost', 'analytics', 'gifts', 'priority_support'];
+var KORONE_FEATURES = ['ads_free', 'badge_frame', 'profile_themes', 'live_boost', 'limits_boost', 'analytics', 'gifts', 'priority_support'];
 
 var DrexKorOne = {
   _st: null,
@@ -305,7 +305,6 @@ function korOneBenefits() {
     { f: 'no_ads',           e: '🚫', title: t('Sin anuncios'),               desc: t('Navega Drex sin publicidad.') },
     { f: 'badge',            e: '👑', title: t('Insignia y marco exclusivos'), desc: t('Distintivo dorado Kor One y marco en tu foto.') },
     { f: 'profile_themes',   e: '🎨', title: t('Temas de perfil premium'),    desc: t('Fondos exclusivos para tu portada.') },
-    { f: 'studio_pro',       e: '🎬', title: t('Drex Studio Pro'),             desc: t('Plantillas y escenas profesionales en alta calidad.') },
     { f: 'live_pro',         e: '📡', title: t('En vivos potenciados'),       desc: t('Más duración, calidad HD y más en vivos programados.') },
     { f: 'limits',           e: '🧩', title: t('Límites elevados'),           desc: t('Videos más largos, más fotos y publicaciones programadas.') },
     { f: 'analytics',        e: '📊', title: t('Analíticas de creador'),      desc: t('Estadísticas avanzadas de tu contenido.') },
@@ -456,7 +455,6 @@ async function korOneRestore() {
 /* ---------- paywall ---------- */
 function korOnePaywallCopy(feature) {
   var map = {
-    studio_pro:      { e: '🎬', title: t('Drex Studio Pro'),             desc: t('Plantillas y escenas profesionales en alta calidad.') },
     live_pro:        { e: '📡', title: t('En vivos potenciados'),        desc: t('Más duración, calidad HD y más en vivos programados.') },
     limits:          { e: '🧩', title: t('Límites elevados'),            desc: t('Videos más largos, más fotos y publicaciones programadas.') },
     analytics:       { e: '📊', title: t('Analíticas de creador'),       desc: t('Estadísticas avanzadas de tu contenido.') },
