@@ -20,7 +20,7 @@
 // - fetch keepalive:true: 1 único hit (announceMusicOnDiscord → webhook de
 //   Discord, fire-and-forget con campos sanitizados safe() + URL https
 //   validada). Uso legítimo, sin leads.
-// - <a target="_blank"> ×7: TODOS con rel="noopener" (1 además noreferrer).
+// - <a target="_blank"> ×8: TODOS con rel="noopener" (1 además noreferrer; C220: +1 baroL1Link runtime).
 //   window.open(u,'_blank',...) ×4: TODOS con feature 'noopener'. Sin leads.
 // - Ceros documentados (familias de navegación nunca auditadas): ping=0,
 //   <object>/<embed>=0, window.opener=0, document.domain=0, <base>=0,
@@ -123,9 +123,9 @@ tcase('keepalive: 1 único hit (announceMusicOnDiscord, webhook Discord)', () =>
   /function announceMusicOnDiscord[\s\S]{0,2500}keepalive: true/.test(html));
 
 // ---- 4. target=_blank / window.open: sin tabnabbing ----
-tcase('target="_blank": 7 anclas, TODAS con rel noopener', () => {
+tcase('target="_blank": 8 anclas, TODAS con rel noopener (C220: +1 baroL1Link runtime, con noopener)', () => {
   const tags = html.match(/<a [^>]*target="_blank"[^>]*>/g) || [];
-  return tags.length === 7 && tags.every(t => /rel="[^"]*noopener/.test(t));
+  return tags.length === 8 && tags.every(t => /rel="[^"]*noopener/.test(t));
 });
 tcase("window.open(...,'_blank',...): 7, TODOS con feature 'noopener'", () => {
   const noopenerCalls = (html.match(/,'_blank','noopener'\)/g) || []).length;

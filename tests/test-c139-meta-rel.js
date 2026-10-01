@@ -16,8 +16,8 @@
 //    es un reporte estatico descargado, no hay estado que persistir ->
 //    uso legitimo, SIN CAMBIO.
 // 3. rel en enlaces (mas alla del noopener de C112/C134):
-//    - Inventario: 7 <a target="_blank"> en index.html; TODOS con noopener
-//      (C134 aserta el conteo); 0 target=_blank en child-safety/privacy/*.js.
+//    - Inventario: 8 <a target="_blank"> en index.html; TODOS con noopener
+//      (C134 aserta el conteo; C220: +1 baroL1Link, plantilla runtime con noopener); 0 target=_blank en child-safety/privacy/*.js.
 //      child-safety (cybertip/inhop) y privacy (aws) navegan en la misma
 //      pestana -> sin tabnabbing, sin rel necesario -> SIN CAMBIO.
 //    - LEADS (1): los 5 anchors con URLs GENERADAS POR USUARIOS no llevaban
@@ -99,9 +99,9 @@ tcase('<details>/<summary>: unico uso legitimo en drex-data-export.js (reporte d
 });
 
 // ---------- REL EN ENLACES ----------
-tcase('7 <a target="_blank">, TODOS con noopener', () => {
+tcase('8 <a target="_blank">, TODOS con noopener (C220: +1 baroL1Link runtime, con noopener)', () => {
   const tags = html.match(/<a[^>]*target="_blank"[^>]*>/g) || [];
-  return tags.length === 7 && tags.every(t => /rel="[^"]*noopener/.test(t));
+  return tags.length === 8 && tags.every(t => /rel="[^"]*noopener/.test(t));
 });
 
 tcase('token ugc en los 4 anchors UGC con noopener puro (C139)', () =>

@@ -33,8 +33,12 @@ HTML_PATH = 'index.html'
 # El gzip real (906 KB) refleja código de producto ordenado por el usuario
 # ("un agente que pueda hacer de todo"); la minificación con terser de estos
 # bloques queda como trabajo futuro para recuperar margen.
-BUDGET_RAW = 5_200_000       # 5.2 MB (C248: la app creció legítimamente — motor Baro, estudio, en vivo; subir el presupuesto de forma consciente según el docstring del checker)
-BUDGET_GZIP = 1_300_000      # 1300 KB
+BUDGET_RAW = 5_400_000       # 5.4 MB (2026-09-30 C220/C221/C222: +~140 KB legítimos —
+                               # Baro inteligencia [scoring con contexto, 5 intents, KB, ~105 claves i18n],
+                               # BaroFX [animaciones transform/opacity], productividad [paleta, chips,
+                               # borradores, 29 iconos]; bloques nuevos minificados con terser. Revisar
+                               # margen si otro carril suma peso.)
+BUDGET_GZIP = 1_350_000      # 1350 KB (2026-09-30: el gzip real viaja ~1323 KB; subir consciente)
 
 
 def main():

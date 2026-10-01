@@ -173,7 +173,7 @@ ok(/lLabel = l\.t \? escapeHtml\(l\.t\) : escapeHtml\(_shortLinkLabel\(l\.u\)\)/
 ok(/href="' \+ l\.u \+ '"/.test(html), 'S10a href propio desde l.u sanitizada');
 ok(/<a href="\$\{l\.u\}"/.test(html), 'S10b href ajeno desde l.u sanitizada');
 // C139: los anchors UGC llevan el token ugc; primera parte (Play/banner) queda con noopener puro.
-ok((html.match(/rel="noopener"/g) || []).length === 2, 'S11a rel=noopener puro solo en anchors de primera parte (banner Play + drp-btn)');
+ok((html.match(/rel="noopener"/g) || []).length === 3, 'S11a rel=noopener puro: primera parte (banner Play + drp-btn) + baroL1Link de Baro (C220, plantilla runtime con noopener)');
 ok((html.match(/rel="noopener ugc"/g) || []).length >= 4, 'S11b token ugc en los 4 anchors UGC (profile-link-anchor, escaparate propio, socialLinks, website)');
 ok((html.match(/rel="noopener noreferrer ugc"/g) || []).length === 1, 'S11c permalink UGC con noreferrer conserva ugc');
 ok(/<a href="' \+ l\.u \+ '" target="_blank"/.test(html), 'S12 target=_blank en filas del escaparate propio');
