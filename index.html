@@ -11682,6 +11682,9 @@ function saveNote() {
     profileNote.classList.remove('hidden');
     document.getElementById('note-text').textContent = noteText;
     document.getElementById('note-time').textContent = 'Expira en 12 horas';
+  }).catch(() => {
+    if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo guardar la nota. Intenta de nuevo.'));
+    else alert(appT('No se pudo guardar la nota. Intenta de nuevo.'));
   });
 }
 </script>
@@ -11724,6 +11727,17 @@ function saveNote() {
     <div id="orbit-analytics-content" class="flex-1 overflow-y-auto scrollbar-hide pb-6"></div>
   </div>
 
+  <!-- ============ Pagos: historial y suscripción ============ -->
+  <div id="payments-view" class="fixed inset-0 bg-[var(--theme-bg)] z-[120] hidden flex flex-col">
+    <div class="flex items-center gap-2 px-3 py-2 border-b border-[var(--theme-border)] bg-[var(--theme-header-bg)] shrink-0">
+      <button onclick="closePaymentsView()" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[var(--theme-text)] active:bg-[var(--theme-surface-subtle)] transition" aria-label="Volver">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h2 id="payments-view-title" class="text-base font-extrabold text-[var(--theme-text)]">Pagos</h2>
+    </div>
+    <div id="payments-view-content" class="flex-1 overflow-y-auto scrollbar-hide pb-6"></div>
+  </div>
+
   <div id="settings-view" class="fixed inset-0 bg-[var(--theme-bg)] z-[110] hidden flex flex-col">
     <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border)] bg-[var(--theme-surface)]" style="padding-top:max(1rem,env(safe-area-inset-top));">
       <button onclick="closeSettingsView()" class="tap44 relative text-[var(--theme-icon)] p-1" aria-label="Volver">
@@ -11751,6 +11765,19 @@ function saveNote() {
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-white/70 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
           </button>
         </div>
+        <div class="px-4 pt-3">
+          <button id="pagos-settings-card" onclick="openPaymentsView()" class="tap44 w-full text-left rounded-2xl p-4 flex items-center gap-4 active:opacity-80 transition bg-[var(--theme-surface)] border border-[var(--theme-border)]">
+            <span class="w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0" style="background:var(--drex-brand)">
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+            </span>
+            <span class="flex-1 min-w-0">
+              <span id="pagos-settings-title" class="block text-[var(--theme-text)] font-black text-[17px]">Pagos</span>
+              <span id="pagos-settings-preview" class="block text-[var(--theme-muted)] text-[13px] mt-0.5">Historial de pagos y compras</span>
+            </span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[var(--theme-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+
 <div>
 <div>
 <p class="px-4 pt-3 pb-1.5 text-[17px] font-semibold text-[var(--theme-text)]">Cuenta</p>
@@ -24053,7 +24080,12 @@ else { try { drexSnapInit(); } catch (_) {} }
 
     const newRef = ref.push();
     const folderData = { name, createdAt: Date.now() };
-    await newRef.set(folderData);
+    try {
+      await newRef.set(folderData);
+    } catch (err) {
+      showMiniToast(drexErrFriendly(err, appT('No se pudo crear la carpeta. Intenta de nuevo.')));
+      return;
+    }
     _userSavedFolders[newRef.key] = folderData;
     showMiniToast(appT('Carpeta creada'));
     renderSavedFoldersGrid();
@@ -24068,7 +24100,12 @@ else { try { drexSnapInit(); } catch (_) {} }
 
     const ref = _getSavedFoldersRef();
     if (!ref) return;
-    await ref.child(folderId).update({ name });
+    try {
+      await ref.child(folderId).update({ name });
+    } catch (err) {
+      showMiniToast(drexErrFriendly(err, appT('No se pudo renombrar la carpeta. Intenta de nuevo.')));
+      return;
+    }
     _userSavedFolders[folderId].name = name;
     showMiniToast(appT('Carpeta renombrada'));
     renderSavedFoldersGrid();
@@ -24114,7 +24151,12 @@ else { try { drexSnapInit(); } catch (_) {} }
     const ref = _getSavedPostsRef();
     if (!ref || !_userSavedPosts || !_userSavedPosts[noteId]) return;
     const targetFolderId = folderId || null;
-    await ref.child(noteId).update({ folderId: targetFolderId });
+    try {
+      await ref.child(noteId).update({ folderId: targetFolderId });
+    } catch (err) {
+      showMiniToast(drexErrFriendly(err, appT('No se pudo mover el guardado. Intenta de nuevo.')));
+      return;
+    }
     _userSavedPosts[noteId].folderId = targetFolderId;
     showMiniToast(targetFolderId ? appT('Movido a la carpeta') : appT('Movido a Sin carpeta'));
     closeSavedFolderPicker();
@@ -36872,6 +36914,8 @@ function clearChatConversationCache() {
 // Se llama desde la rama de logout de onAuthStateChanged: cubre logout
 // manual, cambio de cuenta y "agregar cuenta" (todos pasan por signOut()).
 function clearAccountScopedState() {
+  // Orbit: limpiar estado de suscripción verificado (sin fugas entre cuentas).
+  try { if (typeof DrexOrbit !== 'undefined' && typeof DrexOrbit.reset === 'function') DrexOrbit.reset(); } catch (_) {}
   // 1. Fiesta: teardown solo-local (sin escrituras a DB: ya no hay sesión).
   //    fiestaFullCleanup() para micrófono, peers WebRTC, listeners,
   //    intervalos y juegos; luego se resetean las variables de la sala.
@@ -37905,7 +37949,15 @@ let chatTypingListener = null;
     const label = document.getElementById('chat-search-results-count'); if (label) label.textContent = q ? `${count} resultado${count === 1 ? '' : 's'}` : '';
     if (q && count) container.querySelector('.chat-search-hit')?.scrollIntoView({ behavior:'smooth', block:'center' });
   }
-  async function markAllChatsReadAndRefresh() { if (typeof _markAllChatsRead === 'function') await _markAllChatsRead(); if (typeof loadChatConversations === 'function') loadChatConversations(); if (typeof showMiniToast === 'function') showMiniToast(appT('Conversaciones marcadas como leídas')); }
+  async function markAllChatsReadAndRefresh() {
+    try {
+      if (typeof _markAllChatsRead === 'function') await _markAllChatsRead();
+      if (typeof loadChatConversations === 'function') loadChatConversations();
+      if (typeof showMiniToast === 'function') showMiniToast(appT('Conversaciones marcadas como leídas'));
+    } catch (err) {
+      if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudieron marcar como leídas. Intenta de nuevo.'));
+    }
+  }
 
   /*
    ══════════════════════════════════════════════════════════════
@@ -48357,15 +48409,19 @@ function setSecurityToggle(id, value) {
 async function toggleSecurityPreference(key) {
   const user = DrexCloud.auth().currentUser;
   if (!user) return;
-  const ref = DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}/preferences/${key}`);
-  const current = (await ref.once('value')).val();
-  const value = current !== false ? false : true;
-  await ref.set(value);
-  const isDeviceAlerts = key === 'newDeviceAlerts';
-  setSecurityToggle(isDeviceAlerts ? 'security-new-device-toggle' : 'security-changes-toggle', value);
-  const label = isDeviceAlerts ? 'Avisos de nuevos dispositivos' : 'Avisos de cambios importantes';
-  await recordSecurityEvent('Preferencia de seguridad', `${label}: ${value ? 'activados' : 'desactivados'}.`);
-  securityToast(value ? 'Alerta de seguridad activada.' : 'Alerta de seguridad desactivada.');
+  try {
+    const ref = DrexCloud.database().ref(`${DREX_SECURITY_PATH}/${user.uid}/preferences/${key}`);
+    const current = (await ref.once('value')).val();
+    const value = current !== false ? false : true;
+    await ref.set(value);
+    const isDeviceAlerts = key === 'newDeviceAlerts';
+    setSecurityToggle(isDeviceAlerts ? 'security-new-device-toggle' : 'security-changes-toggle', value);
+    const label = isDeviceAlerts ? 'Avisos de nuevos dispositivos' : 'Avisos de cambios importantes';
+    await recordSecurityEvent('Preferencia de seguridad', `${label}: ${value ? 'activados' : 'desactivados'}.`);
+    securityToast(value ? 'Alerta de seguridad activada.' : 'Alerta de seguridad desactivada.');
+  } catch (err) {
+    securityToast('No se pudo guardar la preferencia. Intenta de nuevo.');
+  }
 }
 // [EVENTOS-SEGURIDAD-BLOCK-BEGIN]
 // [EVENTOS-SEGURIDAD] Ing. Eventos (2026-09-21): persistencia real de la
@@ -49014,7 +49070,7 @@ async function downloadMySecurityData() {
 DrexCloud.auth().onAuthStateChanged(user => {
   if (user) registerDrexSecuritySession(user).catch(() => {});
   else detachDrexSecuritySession(null);
-  try { if (user && typeof DrexOrbit !== 'undefined') setTimeout(function () { DrexOrbit.refresh(); }, 1500); } catch (_) {} /* Drex Orbit: refresh tras login */
+  try { if (user && typeof DrexOrbit !== 'undefined') { try { DrexOrbit.reset(); } catch (_) {} setTimeout(function () { DrexOrbit.refresh(); }, 1500); } } catch (_) {} /* Drex Orbit: reset + refresh tras login */
   // POSTS PROGRAMADOS: chequeo inicial al entrar + timer periódico liviano.
   try { if (typeof onDrexAuthForScheduledPosts === 'function') onDrexAuthForScheduledPosts(user); } catch (_) {}
 });
@@ -50368,7 +50424,7 @@ function drexInitRouteObserver() {
     var q = new URLSearchParams(location.search);
     var st = q.get('orbit');
     if (st !== 'success' && st !== 'cancelled') return;
-    try { var url = new URL(location.href); url.search = ''; history.replaceState(null, '', url.toString()); } catch (_) {}
+    try { var url = new URL(location.href); url.searchParams.delete('orbit'); history.replaceState(null, '', url.toString()); } catch (_) {}
     var show = function () {
       try {
         if (st === 'success') {
@@ -50379,6 +50435,19 @@ function drexInitRouteObserver() {
                 if (typeof openOrbitView === 'function') openOrbitView();
               } else {
                 orbitToast(t('Pago recibido. Tu suscripción se activará en unos segundos.'));
+                /* El webhook puede tardar: re-verificar solo a los 8 s, 20 s y 45 s. */
+                [8000, 20000, 45000].forEach(function (ms) {
+                  setTimeout(function () {
+                    try {
+                      DrexOrbit.refresh(true).then(function (s2) {
+                        if (s2 && s2.active) {
+                          orbitToast(t('¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.'));
+                          if (typeof openOrbitView === 'function') openOrbitView();
+                        }
+                      }).catch(function () {});
+                    } catch (_) {}
+                  }, ms);
+                });
               }
             } catch (_) {}
           });
@@ -51480,8 +51549,14 @@ async function joinFiestaFromFeed(fiestaId) {
   if (!isValidChatUid(fiestaId)) { showMiniToast(appT('Esta fiesta de voz ya terminó.')); return; }
   const user = DrexCloud.auth().currentUser;
   if (!user) { showMiniToast(appT('Inicia sesión para unirte.')); return; }
-  const snap = await DrexCloud.database().ref('fiestas/' + fiestaId).once('value');
-  const f = snap.val();
+  let f = null;
+  try {
+    const snap = await DrexCloud.database().ref('fiestas/' + fiestaId).once('value');
+    f = snap.val();
+  } catch (err) {
+    showMiniToast(appT('No se pudo conectar a la fiesta de voz. Revisa tu conexión.'));
+    return;
+  }
   if (!f || f.status === 'ended') { showMiniToast(appT('Esta fiesta de voz ya terminó.')); return; }
   joinFiesta(fiestaId, false);
 }
@@ -51995,8 +52070,13 @@ async function fiestaWantToSpeak() {
   if (speakers >= (fiestaCur.data.maxSpeakers || 6)) { showMiniToast(appT('La fiesta de voz está llena de hablantes.')); return; }
   const ok = await fiestaEnsureMic();
   if (!ok) return;
+  try {
+    await DrexCloud.database().ref('fiestaMembers/' + fiestaCur.id + '/' + fiestaMyUid).update({ role: 'speaker' });
+  } catch (err) {
+    showMiniToast(appT('No se pudo pedir la palabra. Revisa tu conexión.'));
+    return;
+  }
   fiestaMyRole = 'speaker';
-  await DrexCloud.database().ref('fiestaMembers/' + fiestaCur.id + '/' + fiestaMyUid).update({ role: 'speaker' });
   fiestaPaintControls();
   fiestaSyncPeers();
 }
@@ -93723,10 +93803,13 @@ async function drexStripeCheckout(pkg) {
  * producción hasta que exista una ruta de compra en vivo aprobada).
  * ============================================================ */
 var ORBIT_PLANS = {
-  monthly: { id: 'monthly', price: '$4.99', per: 'mes' },
-  yearly:  { id: 'yearly',  price: '$49.99', per: 'año' }
+  monthly:    { id: 'monthly',    price: '$4.99',  per: 'mes' },
+  quarterly:  { id: 'quarterly',  price: '$12.99', per: 'trimestre' },
+  semiannual: { id: 'semiannual', price: '$24.99', per: 'semestre' },
+  yearly:     { id: 'yearly',     price: '$49.99', per: 'año' }
 };
-var ORBIT_FEATURES = ['ads_free', 'badge_frame', 'profile_themes', 'studio_pro', 'live_boost', 'limits_boost', 'analytics', 'gifts', 'priority_support'];
+var ORBIT_PLAN_IDS = ['monthly', 'quarterly', 'semiannual', 'yearly'];
+var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'studio_pro', 'live_pro', 'limits', 'analytics', 'exclusive_gifts', 'priority_support'];
 
 var DrexOrbit = {
   _st: null,
@@ -93736,11 +93819,55 @@ var DrexOrbit = {
   },
   isConfigured: function () { return !!this._endpoint(); },
   enforced: function () {
-    try { return window.DREX_ORBIT_ENFORCE === true; } catch (_) { return false; }
+    try { return window.DREX_ORBIT_ENFORCE === true || this._serverConfigured === true; } catch (_) { return false; }
   },
   _idToken: async function () {
     try { if (typeof DrexCloud !== 'undefined' && DrexCloud.auth) return await DrexCloud.auth().getIdToken(); } catch (_) {}
     return null;
+  },
+  /* POST endurecido para movil (mismo patron que drexStripeCheckout, 2026-09-29):
+   * 1) Content-Type text/plain: la peticion es CORS "simple" y el navegador
+   *    NO envia preflight OPTIONS. En iOS los preflights fallan de forma
+   *    intermitente (bloqueadores de contenido / proxies del operador) y ese
+   *    fallo se ve como error de red aunque el servidor este sano. El backend
+   *    hace JSON.parse del cuerpo sin importar el Content-Type.
+   * 2) Hasta 4 intentos con backoff exponencial (1s/2s/4s) y timeout de 15s
+   *    por intento (AbortController): un POST colgado se reporta como
+   *    'timeout' con mensaje propio, no como fallo de red generico.
+   * Los errores HTTP del backend NO se reintentan (fail fast). */
+  _post: async function (path, fields) {
+    var endpoint = this._endpoint();
+    if (!endpoint) throw new Error('no-provider');
+    var idToken = await this._idToken();
+    if (!idToken) throw new Error('no-token');
+    var payload = fields || {};
+    payload.idToken = idToken;
+    var body = JSON.stringify(payload);
+    var ATTEMPTS = 4, TIMEOUT_MS = 15000, BACKOFF_MS = [1000, 2000, 4000];
+    var res = null, attempt = 0, netErr = null, timedOut = false;
+    while (attempt < ATTEMPTS && !res) {
+      attempt++;
+      var ctrl = null, timer = null;
+      try {
+        var init = { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: body };
+        if (typeof AbortController !== 'undefined') {
+          ctrl = new AbortController();
+          init.signal = ctrl.signal;
+          timer = setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, TIMEOUT_MS);
+        }
+        res = await fetch(endpoint + path, init);
+      } catch (fe) {
+        netErr = fe; res = null;
+        if (fe && fe.name === 'AbortError') timedOut = true;
+        if (attempt < ATTEMPTS) await new Promise(function (r) { setTimeout(r, BACKOFF_MS[attempt - 1] || 4000); });
+      } finally {
+        if (timer) { try { clearTimeout(timer); } catch (_) {} }
+      }
+    }
+    if (!res) { var nerr = new Error(timedOut ? 'timeout' : 'network'); nerr.cause = netErr; throw nerr; }
+    var data = null;
+    try { data = await res.json(); } catch (_) { data = null; }
+    return { res: res, data: data };
   },
   /* Lee el estado verificado del backend (caché 60 s). Cualquier fallo
    * -> no suscriptor (fail closed). */
@@ -93749,27 +93876,19 @@ var DrexOrbit = {
     if (!force && self._st && (Date.now() - self._ts) < 60000) return self._st;
     var fail = { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' };
     try {
-      var endpoint = self._endpoint();
-      if (!endpoint) throw new Error('no-endpoint');
-      var idToken = await self._idToken();
-      if (!idToken) throw new Error('no-token');
-      var res = await fetch(endpoint + '/subscription-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: idToken })
-      });
-      var data = null;
-      try { data = await res.json(); } catch (_) { data = null; }
+      var rr = await self._post('/subscription-status', {});
+      var res = rr.res, data = rr.data;
       if (!res.ok || !data || typeof data.active === 'undefined') throw new Error('bad-status');
       var cpe = data.currentPeriodEnd ? Number(data.currentPeriodEnd) : null;
       self._st = {
         active: data.active === true,
-        plan: (data.plan === 'monthly' || data.plan === 'yearly') ? data.plan : null,
+        plan: (typeof ORBIT_PLAN_IDS !== 'undefined' && ORBIT_PLAN_IDS.indexOf(data.plan) !== -1) ? data.plan : null,
         currentPeriodEnd: cpe,
         cancelAtPeriodEnd: !!data.cancelAtPeriodEnd,
         status: String(data.status || 'none')
       };
-    } catch (_) { self._st = fail; }
+      self._serverConfigured = (data.configured === true);
+    } catch (_) { self._st = fail; self._serverConfigured = false; }
     self._ts = Date.now();
     try { if (typeof window.drexOrbitApplyGates === 'function') window.drexOrbitApplyGates(); } catch (_) {}
     return self._st;
@@ -93796,7 +93915,7 @@ var DrexOrbit = {
       var cpe = st.currentPeriodEnd ? Number(st.currentPeriodEnd) : null;
       this._st = {
         active: st.status === 'canceled' ? false : st.active === true,
-        plan: (st.plan === 'monthly' || st.plan === 'yearly') ? st.plan : null,
+        plan: (typeof ORBIT_PLAN_IDS !== 'undefined' && ORBIT_PLAN_IDS.indexOf(st.plan) !== -1) ? st.plan : null,
         currentPeriodEnd: cpe,
         cancelAtPeriodEnd: !!st.cancelAtPeriodEnd,
         status: String(st.status || 'none')
@@ -93809,48 +93928,50 @@ var DrexOrbit = {
   status: function () { return this._st; },
   /* Inicia el Checkout de la suscripción en Stripe. */
   subscribe: async function (planId) {
-    var endpoint = this._endpoint();
-    if (!endpoint) throw new Error('no-provider');
-    if (planId !== 'monthly' && planId !== 'yearly') throw new Error('invalid_plan');
-    var idToken = await this._idToken();
-    if (!idToken) throw new Error('no-token');
+    if (typeof ORBIT_PLAN_IDS === 'undefined' || ORBIT_PLAN_IDS.indexOf(planId) === -1) throw new Error('invalid_plan');
     var returnUrl = '';
     try { returnUrl = location.origin + location.pathname; } catch (_) {}
-    var res = await fetch(endpoint + '/create-subscription-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: planId, idToken: idToken, returnUrl: returnUrl })
-    });
-    var data = null;
-    try { data = await res.json(); } catch (_) { data = null; }
+    var sr = await this._post('/create-subscription-session', { plan: planId, returnUrl: returnUrl });
+    var res = sr.res, data = sr.data;
     if (!res.ok || !data || !data.url) throw new Error(String((data && data.error) || ('http_' + res.status)));
     location.href = data.url;
     return { redirected: true };
   },
   /* Abre el portal de facturación de Stripe (gestionar/cancelar). */
   manage: async function () {
-    var endpoint = this._endpoint();
-    if (!endpoint) throw new Error('no-provider');
-    var idToken = await this._idToken();
-    if (!idToken) throw new Error('no-token');
     var returnUrl = '';
     try { returnUrl = location.origin + location.pathname; } catch (_) {}
-    var res = await fetch(endpoint + '/create-customer-portal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: idToken, returnUrl: returnUrl })
-    });
-    var data = null;
-    try { data = await res.json(); } catch (_) { data = null; }
+    var mr = await this._post('/create-customer-portal', { returnUrl: returnUrl });
+    var res = mr.res, data = mr.data;
     if (!res.ok || !data || !data.url) throw new Error(String((data && data.error) || ('http_' + res.status)));
     location.href = data.url;
     return { redirected: true };
   },
-  restore: async function () { return this.refresh(true); }
+  restore: async function () { return this.refresh(true); },
+  /* Limpia el estado verificado (logout / cambio de cuenta): evita que el
+   * estado premium de una cuenta se filtre a otra en este dispositivo. */
+  reset: function () {
+    this._st = null; this._ts = 0; this._serverConfigured = false;
+    try { if (typeof window.drexOrbitApplyGates === 'function') window.drexOrbitApplyGates(); } catch (_) {}
+    return this;
+  },
+  /* Historial real: compras de Drex Coins + pagos de Drex Orbit + estado
+   * de la suscripcion (endpoint /transactions de la Lambda). Peticion
+   * CORS simple (text/plain, sin preflight) como el checkout de monedas. */
+  transactions: async function () {
+    var tr = await this._post('/transactions', {});
+    var res = tr.res, data = tr.data;
+    if (!res.ok || !data) throw new Error(String((data && data.error) || ('http_' + res.status)));
+    if (!Array.isArray(data.transactions)) data.transactions = [];
+    return data;
+  },
 };
 
-/* Enforcement: las puertas Orbit solo actúan si este flag es true.
- * Permanece en false hasta que exista una ruta de suscripción en vivo válida. */
+/* Enforcement: las puertas Orbit solo actúan si enforced() es true.
+ * Se activa automáticamente cuando el backend reporta configured:true en
+ * /subscription-status (Price IDs de Stripe presentes en la Lambda).
+ * El flag manual queda como interruptor de emergencia. Fail-closed:
+ * sin verificación del backend no hay acceso premium. */
 window.DREX_ORBIT_ENFORCE = false;
 
 /* Puerta central: true = acceso permitido. Si las puertas están activas y
@@ -93900,6 +94021,7 @@ window.drexOrbitApplyGates = function () {
     });
   } catch (_) {}
   try { if (typeof renderOrbitSettingsPreview === 'function') renderOrbitSettingsPreview(); } catch (_) {}
+  try { if (typeof renderPagosSettingsPreview === 'function') renderPagosSettingsPreview(); } catch (_) {}
 };
 
 function orbitIconSVG(cls) {
@@ -93959,10 +94081,14 @@ async function refreshOrbitAuthorBadge(authorId) {
 
 /* ============ Drex Orbit: vista, paywall, temas, analíticas ============ */
 function orbitPlanName(plan) {
-  return plan === 'yearly' ? t('Anual') : t('Mensual');
+  if (plan === 'yearly') return t('Anual');
+  if (plan === 'quarterly') return t('Trimestral');
+  if (plan === 'semiannual') return t('Semestral');
+  return t('Mensual');
 }
 function orbitPlanPrice(plan) {
-  return (ORBIT_PLANS[plan] || ORBIT_PLANS.monthly).price + ' ' + t(plan === 'yearly' ? 'al año' : 'al mes');
+  var p = ORBIT_PLANS[plan] || ORBIT_PLANS.monthly;
+  return p.price + ' ' + t('al') + ' ' + t(p.per);
 }
 function orbitFmtDate(ms) {
   try {
@@ -93985,6 +94111,20 @@ function orbitBenefits() {
   ];
 }
 
+/* Tocar un beneficio: sin membresia abre el paywall de ese beneficio;
+ * con membresia navega al destino cuando existe uno directo. */
+function orbitBenefitTap(feature) {
+  var active = false;
+  try { active = (typeof DrexOrbit !== 'undefined') && DrexOrbit.isActive(); } catch (_) {}
+  if (!active) {
+    try { if (typeof openOrbitPaywall === 'function') openOrbitPaywall(feature); } catch (_) {}
+    return;
+  }
+  try {
+    if (feature === 'analytics' && typeof orbitOpenAnalytics === 'function') { orbitOpenAnalytics(); return; }
+    if (typeof orbitToast === 'function') orbitToast(t('Beneficio Drex Orbit activo.'));
+  } catch (_) {}
+}
 function openOrbitView() {
   var v = document.getElementById('orbit-view');
   if (!v) return;
@@ -94021,7 +94161,12 @@ async function renderOrbitView() {
   var titleEl = document.getElementById('orbit-view-title');
   if (titleEl) titleEl.textContent = 'Drex Orbit';
   var st = null;
-  try { st = await DrexOrbit.refresh(); } catch (_) { st = null; }
+  try {
+    st = await Promise.race([
+      DrexOrbit.refresh(),
+      new Promise(function (_, rej) { setTimeout(function () { rej(new Error('timeout')); }, 12000); })
+    ]);
+  } catch (_) { st = null; }
   var configured = DrexOrbit.isConfigured();
   var verified = !!(st && st.active);
   var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
@@ -94049,19 +94194,19 @@ async function renderOrbitView() {
     html += '<div class="px-5 mt-5"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Tus beneficios')) + '</h3>'
       + '<div class="grid grid-cols-1 gap-2 mt-2">'
       + orbitBenefits().map(function (b) {
-          return '<div class="flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3">'
+          return '<button type="button" onclick="orbitBenefitTap(\'' + b.f + '\')" class="tap44 w-full text-left flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 active:opacity-80 transition">'
             + '<span class="text-2xl">' + b.e + '</span>'
             + '<span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(b.title) + '</span>'
-            + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(b.desc) + '</span></span></div>';
+            + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(b.desc) + '</span></span></button>';
         }).join('')
       + '</div></div>';
   } else {
     html += '<div class="px-5 grid grid-cols-1 gap-2">'
       + orbitBenefits().map(function (b) {
-          return '<div class="flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3">'
+          return '<button type="button" onclick="orbitBenefitTap(\'' + b.f + '\')" class="tap44 w-full text-left flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 active:opacity-80 transition">'
             + '<span class="text-2xl">' + b.e + '</span>'
             + '<span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(b.title) + '</span>'
-            + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(b.desc) + '</span></span></div>';
+            + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(b.desc) + '</span></span></button>';
         }).join('')
       + '</div>';
     var card = function (planId, best) {
@@ -94091,6 +94236,7 @@ async function renderOrbitView() {
     + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(t('Tus números reales, actualizados al abrir.')) + '</span></span>'
     + '<span class="ml-auto text-[var(--theme-muted)]">›</span></button></div>';
 
+  html += '<p class="text-center text-[11px] text-[var(--theme-muted)] px-8 mt-2 mb-10">' + '<button type="button" onclick="openSubpageView(\'terminos\')" class="underline active:opacity-70">' + escFn(t('Términos')) + '</button>' + ' · ' + '<button type="button" onclick="openSubpageView(\'privacidad\')" class="underline active:opacity-70">' + escFn(t('Privacidad')) + '</button></p>';
   body.innerHTML = html;
   renderOrbitThemesRow();
 }
@@ -94107,7 +94253,12 @@ async function orbitSubscribe(planId) {
 }
 async function orbitManage() {
   orbitToast(t('Procesando…'));
-  try { await DrexOrbit.manage(); }
+  try {
+    var st = null;
+    try { st = await DrexOrbit.refresh(true); } catch (_) { st = null; }
+    if (!st || !st.active) throw new Error('no_subscription');
+    await DrexOrbit.manage();
+  }
   catch (e) {
     var m = String((e && e.message) || '');
     if (m === 'no_subscription') orbitToast(t('No tienes una suscripción activa.'));
@@ -94228,6 +94379,121 @@ async function applyOrbitProfileTheme() {
     });
   } catch (_) {}
 }
+
+function openPaymentsView() {
+  var v = document.getElementById('payments-view');
+  if (!v) return;
+  if (v.parentElement !== document.body) document.body.appendChild(v);
+  v.classList.remove('hidden');
+  try { if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard(); } catch (_) {}
+  renderPaymentsView();
+}
+function closePaymentsView() {
+  var v = document.getElementById('payments-view');
+  if (v) v.classList.add('hidden');
+}
+function renderPagosSettingsPreview() {
+  try {
+    var tEl = document.getElementById('pagos-settings-title');
+    if (tEl && typeof t === 'function') tEl.textContent = t('Pagos');
+    var sEl = document.getElementById('pagos-settings-preview');
+    if (sEl && typeof t === 'function') sEl.textContent = t('Historial de pagos y compras');
+  } catch (_) {}
+}
+try {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', renderPagosSettingsPreview);
+  else renderPagosSettingsPreview();
+} catch (_) {}
+function orbitTxStatusLabel(status) {
+  var k = String(status || '').toLowerCase();
+  if (!k) return '';
+  var map = {
+    completed: 'Completado', paid: 'Completado', succeeded: 'Completado',
+    open: 'Pendiente de pago', processing: 'Procesando', pending: 'Pendiente de pago',
+    requires_action: 'Requiere acción', requires_payment_method: 'Requiere acción',
+    requires_confirmation: 'Requiere acción', requires_capture: 'Requiere acción',
+    draft: 'Borrador', trialing: 'En prueba',
+    past_due: 'Pago vencido', uncollectible: 'No cobrado',
+    failed: 'Fallido', canceled: 'Cancelado', cancelled: 'Cancelado', void: 'Cancelado',
+    refunded: 'Reembolsado'
+  };
+  return t(map[k] || 'Desconocido');
+}
+function orbitTxAmount(tx) {
+  try {
+    if (tx.type === 'coins') {
+      if (tx.cents != null) return '$' + (tx.cents / 100).toFixed(2) + ' · ' + tx.amount + ' ' + t('monedas');
+      return tx.amount + ' ' + t('monedas');
+    }
+    var cur = String(tx.currency || 'usd').toUpperCase();
+    var sym = cur === 'USD' ? '$' : (cur + ' ');
+    return sym + (Number(tx.amount || 0) / 100).toFixed(2);
+  } catch (_) { return ''; }
+}
+async function renderPaymentsView() {
+  var body = document.getElementById('payments-view-content');
+  if (!body) return;
+  var titleEl = document.getElementById('payments-view-title');
+  if (titleEl) titleEl.textContent = t('Pagos');
+  var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
+  body.innerHTML = '<div class="px-5 py-10 text-center text-sm text-[var(--theme-muted)]">' + escFn(t('Cargando tu historial…')) + '</div>';
+
+  var data = null, err = null;
+  try { data = await DrexOrbit.transactions(); }
+  catch (e) { err = e; data = null; }
+
+  if (err || !data) {
+    body.innerHTML = '<div class="px-5 py-10 text-center">'
+      + '<p class="text-sm text-[var(--theme-muted)]">' + escFn(t('No pudimos cargar tu historial. Inténtalo de nuevo.')) + '</p>'
+      + '<button onclick="renderPaymentsView()" class="tap44 mt-4 min-h-[44px] px-6 rounded-2xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(t('Reintentar')) + '</button></div>';
+    return;
+  }
+
+  var html = '<div class="px-5 pt-4"><p class="text-[13px] text-[var(--theme-muted)]">' + escFn(t('Tus movimientos reales de Drex Coins y Drex Orbit.')) + '</p></div>';
+
+  /* Suscripción activa: plan, renovación y gestión vía portal de Stripe. */
+  var sub = data.subscription || {};
+  if (sub.active) {
+    var renewTxt = sub.currentPeriodEnd ? orbitFmtDate(sub.currentPeriodEnd * 1000) : '';
+    html += '<div class="mx-5 mt-4 rounded-2xl p-5 text-white" style="background:linear-gradient(135deg,#2F33B8,#6D28D9)">'
+      + '<div class="flex items-center gap-2 text-white/90">' + orbitIconSVG('w-5 h-5') + '<span class="font-black text-[16px]">' + escFn(t('Suscripción Drex Orbit')) + '</span></div>'
+      + '<div class="text-white/85 text-sm mt-1 font-semibold">' + escFn(t('Plan actual')) + ': ' + escFn(orbitPlanName(sub.plan)) + ' · ' + escFn(orbitPlanPrice(sub.plan)) + '</div>'
+      + (renewTxt ? '<div class="text-white/75 text-xs mt-1">' + escFn(sub.cancelAtPeriodEnd ? t('Se cancela al final del periodo') : (t('Se renueva el') + ' ' + renewTxt)) + '</div>' : '')
+      + '<button onclick="orbitManage()" class="tap44 w-full min-h-[44px] mt-4 rounded-xl bg-white text-[#2F33B8] font-extrabold text-sm active:opacity-80">' + escFn(t('Gestionar en el portal seguro de Stripe')) + '</button>'
+      + '<p class="text-white/60 text-[11px] mt-2 text-center">' + escFn(t('Cancelar suscripción')) + ' · ' + escFn(t('Cambiar de plan')) + ' · ' + escFn(t('Actualizar método de pago')) + '</p>'
+      + '</div>';
+  }
+
+  /* Historial de transacciones reales. */
+  html += '<div class="px-5 mt-6"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Historial de pagos y compras')) + '</h3>'
+    + '<p class="text-[11px] text-[var(--theme-muted)] mt-1 leading-relaxed">' + escFn(t('Los pagos pendientes se confirman solos cuando Stripe procesa el cobro.')) + '</p>';
+  var txs = data.transactions || [];
+  if (!txs.length) {
+    html += '<div class="mt-3 rounded-2xl border border-dashed border-[var(--theme-border)] p-8 text-center">'
+      + '<div class="mb-2 text-[var(--theme-muted)]">' + (typeof window.dxIcon === 'function' ? window.dxIcon('receipt', 'w-10 h-10') : '') + '</div>'
+      + '<p class="font-bold text-[var(--theme-text)] text-sm">' + escFn(t('Aún no tienes movimientos')) + '</p>'
+      + '<p class="text-xs text-[var(--theme-muted)] mt-1">' + escFn(t('Tus compras y pagos aparecerán aquí automáticamente.')) + '</p></div>';
+  } else {
+    html += '<div class="grid grid-cols-1 gap-2 mt-3">';
+    txs.forEach(function (tx) {
+      var icon = tx.type === 'coins' ? (typeof window.dxIcon === 'function' ? window.dxIcon('coin', 'w-6 h-6') : '') : (typeof window.dxIcon === 'function' ? window.dxIcon('planet', 'w-6 h-6') : '');
+      var label = tx.type === 'coins' ? t('Compra de Drex Coins') : t('Pago de Drex Orbit');
+      var dt = tx.ts ? orbitFmtDate(Number(tx.ts)) : '';
+      var stLbl = orbitTxStatusLabel(tx.status);
+      var stColor = tx.status === 'completed' ? 'text-green-600' : (tx.status === 'failed' ? 'text-red-500' : 'text-[var(--theme-muted)]');
+      html += '<div class="flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 bg-[var(--theme-surface)]">'
+        + '<span class="shrink-0 text-[var(--theme-muted)]">' + icon + '</span>'
+        + '<span class="flex-1 min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm truncate">' + escFn(label) + '</span>'
+        + '<span class="block text-xs text-[var(--theme-muted)] truncate">' + escFn(tx.label || '') + (dt ? ' · ' + escFn(dt) : '') + '</span></span>'
+        + '<span class="text-right shrink-0"><span class="block font-extrabold text-[var(--theme-text)] text-sm">' + escFn(orbitTxAmount(tx)) + '</span>'
+        + '<span class="block text-[11px] font-semibold ' + stColor + '">' + escFn(stLbl) + '</span></span></div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  body.innerHTML = html;
+}
+
 
 /* ---------- analíticas de creador ---------- */
 function orbitOpenAnalytics() {

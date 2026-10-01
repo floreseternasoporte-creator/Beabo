@@ -8,7 +8,7 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const ROOT = process.env.ORBIT_TEST_ROOT || '/home/hatch/workspace/beabo';
+const ROOT = process.env.ORBIT_TEST_ROOT || path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 let pass = 0, fail = 0;
 function ok(cond, name) {
@@ -43,7 +43,7 @@ ok(!!K, 'DrexOrbit definido');
 
 /* ---- 2. Fail closed: sin estado -> no activo ---- */
 ok(K.isActive() === false, 'fail-closed: isActive() false sin estado');
-ok(K.hasAccess('ads_free') === false, 'fail-closed: hasAccess(ads_free) false');
+ok(K.hasAccess('no_ads') === false, 'fail-closed: hasAccess(no_ads) false');
 ok(K.hasAccess('tema_x') === false, 'fail-closed: hasAccess(feature) false');
 ok(K.hasAccess('whatever') === false, 'fail-closed: hasAccess desconocido false');
 
@@ -52,7 +52,7 @@ sandbox.window.DREX_ORBIT_ENFORCE = false;
 K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
 ok(K.verifiedActive() === true, 'verificado: backend dice activo');
 ok(K.isActive() === false, 'enforcement OFF: isActive false aunque verificado');
-ok(K.hasAccess('ads_free') === false, 'enforcement OFF: sin acceso aunque verificado');
+ok(K.hasAccess('no_ads') === false, 'enforcement OFF: sin acceso aunque verificado');
 
 /* ---- 2c. Enforcement ON: la matriz de funciones aplica ---- */
 sandbox.window.DREX_ORBIT_ENFORCE = true;
@@ -60,8 +60,8 @@ sandbox.window.DREX_ORBIT_ENFORCE = true;
 /* ---- 3. Normalización del backend ---- */
 K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
 ok(K.isActive() === true, 'normaliza: active=true -> isActive true');
-ok(K.hasAccess('ads_free') === true, 'normaliza: orbit accede a ads_free');
-ok(K.hasAccess('gifts') === true, 'normaliza: orbit accede a gifts');
+ok(K.hasAccess('no_ads') === true, 'normaliza: orbit accede a no_ads');
+ok(K.hasAccess('exclusive_gifts') === true, 'normaliza: orbit accede a exclusive_gifts');
 K._setTestState({ active: false, plan: 'none' });
 ok(K.isActive() === false, 'normaliza: active=false -> isActive false');
 // estado malformado
@@ -76,7 +76,7 @@ ok(K.isActive() === false, 'canceled -> inactivo aunque active=true (fail closed
 
 /* ---- 4. Matriz de funciones (9 grupos) ---- */
 K._setTestState({ active: true, plan: 'yearly', status: 'active' });
-const FEATURES = ['ads_free','badge_frame','profile_themes','studio_pro','live_boost','limits_boost','analytics','gifts','priority_support'];
+const FEATURES = ['no_ads','badge','profile_themes','studio_pro','live_pro','limits','analytics','exclusive_gifts','priority_support'];
 for (const f of FEATURES) ok(K.hasAccess(f) === true, 'orbit accede a ' + f);
 K._setTestState({ active: false, plan: 'none' });
 for (const f of FEATURES) ok(K.hasAccess(f) === false, 'no-orbit bloqueado en ' + f);
@@ -180,6 +180,6 @@ ok(K.isActive() === false, 'fail-closed: configured false revoca acceso');
 ok(mCore[0].includes('text/plain;charset=UTF-8'), 'peticiones orbit CORS simple (text/plain)');
 ok(!mCore[0].includes("'Content-Type': 'application/json'"), 'sin application/json en el core orbit');
 ok(!mCore[0].includes("'Authorization': 'Bearer '"), 'sin header Authorization en el core orbit');
-ok(mCore[0].includes("endpoint + '/transactions'") && mCore[0].includes("method: 'POST'"), 'transactions por POST');
+ok(mCore[0].includes("this._post('/transactions'") && mCore[0].includes("method: 'POST'"), 'transactions por POST (via _post)');
 console.log(`\nDrex Orbit frontend: ${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);
