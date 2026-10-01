@@ -51493,6 +51493,142 @@ async function endFiesta() {
     });
   }
 </script>
+<script>
+/* DREX-UPDATER — actualización forzada de la app (2026-10-01).
+   Problema que resuelve: en iOS (Safari o PWA en pantalla de inicio) la página
+   puede revivir de la caché de memoria / bfcache o de un service worker viejo
+   al "reabrir" la app, mostrando una versión antigua sin ningún aviso.
+   Mecanismo:
+   - Cada deploy escribe el mismo sello en window.DREX_BUILD (aquí) y en
+     ./version.json (el SW nunca cachea version.json: siempre va a la red).
+   - Al cargar, al volver a primer plano (visibilitychange) y al restaurarse de
+     la bfcache (pageshow), se compara el sello local contra version.json.
+   - Si difieren, aparece un aviso visible con botón "Actualizar ahora" que
+     limpia cachés, pide al SW que se actualice y navega con ?drexv= para
+     romper la llave de caché HTTP/SW y garantizar HTML fresco.
+   REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
+window.DREX_BUILD = '2026-10-01T23:01:22Z';
+(function () {
+  'use strict';
+  var BUILD = window.DREX_BUILD || '';
+  var VERSION_URL = './version.json';
+  var MIN_INTERVAL_MS = 60000;
+  var lastCheck = 0;
+  var bannerShown = false;
+  var remoteBuild = '';
+
+  var STR = {
+    es: { t: 'Nueva versión disponible', b: 'Hay una actualización de Drex. Actualiza para ver la versión más reciente.', ok: 'Actualizar ahora' },
+    en: { t: 'New version available', b: 'There is a Drex update. Update to see the latest version.', ok: 'Update now' },
+    zh: { t: '有新版本可用', b: 'Drex 有可用更新。更新以查看最新版本。', ok: '立即更新' },
+    pt: { t: 'Nova versão disponível', b: 'Há uma atualização do Drex. Atualize para ver a versão mais recente.', ok: 'Atualizar agora' }
+  };
+  function pickLang() {
+    try {
+      if (typeof drexLang === 'function') {
+        var l = String(drexLang() || '').toLowerCase().slice(0, 2);
+        if (STR[l]) return l;
+      }
+    } catch (e) {}
+    try {
+      var n = String(navigator.language || 'es').toLowerCase().slice(0, 2);
+      if (STR[n]) return n;
+    } catch (e2) {}
+    return 'es';
+  }
+
+  function showBanner() {
+    if (bannerShown) return;
+    bannerShown = true;
+    var s = STR[pickLang()];
+    var el = document.createElement('div');
+    el.id = 'drex-update-banner';
+    el.setAttribute('role', 'alert');
+    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:99999;' +
+      'background:#1b1f3b;color:#fff;border:1px solid #4c51ff;border-radius:16px;padding:14px 16px;' +
+      'box-shadow:0 12px 40px rgba(0,0,0,.45);font-family:system-ui,-apple-system,sans-serif;';
+    var h = document.createElement('div');
+    h.style.cssText = 'font-weight:800;font-size:15px;margin-bottom:4px;';
+    h.textContent = s.t;
+    var p = document.createElement('p');
+    p.style.cssText = 'font-size:13px;opacity:.85;margin:0 0 10px;';
+    p.textContent = s.b;
+    var btn = document.createElement('button');
+    btn.style.cssText = 'width:100%;padding:12px;border:0;border-radius:12px;background:#4c51ff;color:#fff;' +
+      'font-weight:800;font-size:15px;cursor:pointer;';
+    btn.textContent = s.ok;
+    btn.addEventListener('click', function () { window.DrexForceUpdate(); });
+    el.appendChild(h); el.appendChild(p); el.appendChild(btn);
+    document.body.appendChild(el);
+  }
+
+  window.DrexForceUpdate = function () {
+    function go() {
+      try {
+        var u = new URL(location.href);
+        u.searchParams.set('drexv', remoteBuild || String(Date.now()));
+        location.href = u.toString();
+      } catch (e) { location.reload(); }
+    }
+    try {
+      var done = false;
+      function fin() { if (!done) { done = true; go(); } }
+      if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+        navigator.serviceWorker.getRegistrations().then(function (rs) {
+          rs.forEach(function (r) { try { r.update(); } catch (e) {} });
+        }).catch(function () {}).finally(fin);
+        setTimeout(fin, 2500);
+      } else { fin(); }
+      if (window.caches && caches.keys) {
+        caches.keys().then(function (keys) {
+          return Promise.all(keys.map(function (k) { return caches.delete(k).catch(function () {}); }));
+        }).catch(function () {});
+      }
+    } catch (e) { go(); }
+  };
+
+  function stripDrexvParam() {
+    try {
+      var u = new URL(location.href);
+      if (u.searchParams.has('drexv')) {
+        u.searchParams.delete('drexv');
+        history.replaceState(null, '', u.toString());
+      }
+    } catch (e) {}
+  }
+
+  function check() {
+    var now = Date.now();
+    if (now - lastCheck < MIN_INTERVAL_MS) return;
+    lastCheck = now;
+    if (!BUILD) return;
+    var url = VERSION_URL + '?t=' + now;
+    var p;
+    try {
+      p = fetch(url, { cache: 'no-store', credentials: 'omit' });
+    } catch (e) { return; }
+    p.then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.build) return;
+        if (String(d.build) !== String(BUILD)) {
+          remoteBuild = String(d.build);
+          showBanner();
+        }
+      })
+      .catch(function () { /* sin red: no se hace nada */ });
+  }
+
+  stripDrexvParam();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', check);
+  } else { check(); }
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) check();
+  });
+  window.addEventListener('pageshow', function () { check(); });
+  setInterval(check, 10 * 60 * 1000);
+})();
+</script>
 
 <!-- SECCIÓN DE PERFIL (a nivel de body: estas vistas también se abren fuera de Configuración) -->
   <div id="profile-config-view" class="fixed inset-0 bg-[var(--theme-surface)] z-[120] hidden flex flex-col sm:mx-auto sm:max-w-[430px]">
