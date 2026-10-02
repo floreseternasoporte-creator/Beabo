@@ -213,7 +213,7 @@ async function deleteOriginalForAll(conv, msgId) {
   assert.strictEqual(msgs[0].forwarded, true, 'S2: marca forwarded');
   assert(chunksLive('f2'), 'S2: los trozos siguen vivos');
   assert.strictEqual(dbGet('chatFiles/f2/refs'), 2, 'S2: refs=2 (original + reenvío)');
-  assert.strictEqual(dbGet('conversations/convB/lastMessage'), '📎 Archivo', 'S2: preview de la conversación');
+  assert.strictEqual(dbGet('conversations/convB/lastMessage'), '[Archivo]', 'S2: preview de la conversación (i18n, sin emojis)');
   assert.strictEqual(toasts.length, 0, 'S2: sin toasts en la ruta feliz');
   console.log('OK  S2 ruta feliz: reenvío creado, refs=2, trozos vivos, preview ok');
 

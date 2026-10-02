@@ -82,14 +82,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 529 ocurrencias en index.html (Fase 3 eliminó studio/live: -97; baro/C236+, tab Notas y presencia global + C221 BaroFX: +2 skeletons/render; C222 productividad: +4 paleta/borradores: features legítimos)', () => count(/\.innerHTML/g, html) === 529);
+tcase('innerHTML: 530 ocurrencias en index.html (auditoría UI: +1 composer publishBtn con appT/spinner interno, sin datos de usuario)', () => count(/\.innerHTML/g, html) === 530);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 529 &&
+  count(/\.innerHTML/g, copy) === 530 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);

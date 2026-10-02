@@ -122,8 +122,8 @@ test('orbitPaywallCopy(): mapa con ic del catálogo y fallback crown, sin emojis
     .forEach(function (name) {
       assert(r.indexOf("ic: '" + name + "'") !== -1, 'falta ic ' + name);
     });
-  assert(r.indexOf("{ ic: 'crown', title: 'Drex Orbit'") !== -1,
-    'el fallback debe ser { ic: \'crown\' }');
+  assert(/\{ ic: 'crown', title: t\('Drex Orbit'\)/.test(r),
+    'el fallback debe usar ic crown con título traducido');
   assert(!EMOJI.test(r), 'emoji en orbitPaywallCopy');
   assert(/\be:\s*['"]/.test(r) === false, 'orbitPaywallCopy aún usa el campo e (emoji)');
 });

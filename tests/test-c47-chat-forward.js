@@ -52,8 +52,8 @@ check('F2: doForwardMessage copia las metas de files',
   /payload\.files\s*=\s*fwdData\.files\.map/.test(dof) && /fileId:\s*f\.fileId/.test(dof));
 check('F2b: doForwardMessage copia type/sharedPost',
   /payload\.type\s*=\s*'sharedPost'/.test(dof) && /payload\.sharedPost\s*=\s*fwdData\.sharedPost/.test(dof));
-check('F2: preview de lastMessage para archivos y posts compartidos',
-  /'📎 Archivo'/.test(dof) && /'📌 Publicación'/.test(dof));
+check('F2: preview de lastMessage para archivos y posts compartidos (i18n, sin emojis)',
+  /appT\('\[Archivo\]'\)/.test(dof) && /appT\('\[Publicación\]'\)/.test(dof));
 check('F3: doForwardMessage captura el dato ANTES de cerrar el diálogo',
   /const fwdData = _fwdMsgData;/.test(dof));
 check('F3: doForwardMessage ya no lee _fwdMsgData después de closeChatForwardDialog()',
@@ -115,8 +115,8 @@ vm.runInContext('var _fwdMsgId=null,_fwdSrcConvId=null;\n' + trig + '\n' + dof, 
   check('F2 funcional: payload files NO duplica contenido (solo metas)',
     fw.length >= 1 && fw[0].payload.files && Object.keys(fw[0].payload.files[0]).sort().join(',') === 'chunks,fileId,mime,name,size');
   const upd = fw.find(w => w.update);
-  check('F2 funcional: lastMessage = 📎 Archivo',
-    !!(upd && upd.update.lastMessage === '📎 Archivo'));
+  check('F2 funcional: lastMessage = [Archivo] (i18n, sin emojis)',
+    !!(upd && upd.update.lastMessage === '[Archivo]'));
 
   // F2b funcional: reenvío de post compartido copia type/sharedPost
   vm.runInContext("_fwdMsgData = { text: '', type: 'sharedPost', sharedPost: { noteId: 'n1', kind: 'post', authorName: 'U', content: 'hola' } };", sandbox);

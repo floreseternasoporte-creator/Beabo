@@ -172,15 +172,15 @@ test('P3c - textos de fecha de chat en los 3 diccionarios', function () {
 });
 
 /* P4: orden visual de los elementos del mensaje -------------------- */
-test('P4a - en grupo: etiqueta del remitente ANTES de la burbuja', function () {
-  var i = src.indexOf('group-sender-label');
-  assert(i !== -1, 'no se encontró group-sender-label');
+test('P4a - en grupo: encabezado [avatar|nombre·hora] ANTES de la burbuja (orden clásico)', function () {
+  var i = src.indexOf('chat-msg-head');
+  assert(i !== -1, 'no se encontró chat-msg-head');
   var bloque = src.slice(i, i + 4000);
-  var labelPos = bloque.indexOf('group-sender-label');
+  var headPos = bloque.indexOf('chat-msg-head');
   var bubblePos = bloque.indexOf('msg-bubble');
   var timePos = bloque.indexOf('chat-msg-time');
-  assert(labelPos < bubblePos, 'la etiqueta del remitente debe ir ANTES de la burbuja');
-  assert(bubblePos < timePos, 'la hora debe ir DESPUÉS de la burbuja');
+  assert(headPos < bubblePos, 'el encabezado debe ir ANTES de la burbuja');
+  assert(timePos !== -1 && timePos < bubblePos, 'la hora va DENTRO del encabezado (antes de la burbuja)');
 });
 test('P4b - en DM: avatar junto a la burbuja, hora después', function () {
   var i = src.indexOf('dmAvatarHtml');

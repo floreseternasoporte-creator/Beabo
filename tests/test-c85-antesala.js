@@ -235,7 +235,7 @@ I18N_KEYS.forEach(k => {
 // T9 — Escapes en la fila de solicitud
 // ============================================================
 ok(html.includes('escapeInlineSingleQuote(item.otherUid)'), 'T9a otherUid escapado para onclick');
-ok(html.includes('escapeHtml(item.otherName || \'Usuario\')'), 'T9b otherName escapado para HTML');
+ok(html.includes("escapeHtml((typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(item.otherName) : item.otherName) || appT('Usuario'))"), 'T9b otherName sin emojis y escapado para HTML');
 ok(html.includes('escapeHtml(item.lastMessage)'), 'T9c lastMessage escapado en la fila');
 ok(html.includes('escapeHtml(appT(\'Solicitud\'))'), 'T9d la etiqueta pasa por escapeHtml');
 

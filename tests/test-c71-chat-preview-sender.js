@@ -72,6 +72,7 @@ function makeCtx(currentUid) {
   const sandbox = {
     console,
     Date,
+    appT: (k) => k,
     DrexCloud: {
       auth: () => ({ currentUser: currentUid ? { uid: currentUid } : null }),
       database: () => ({

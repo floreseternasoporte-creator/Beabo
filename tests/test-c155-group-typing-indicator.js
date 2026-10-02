@@ -95,6 +95,7 @@ function makeEnv(profileMap, profileFails) {
   const capture = {};
   const ref = { on: (ev, cb) => { capture.cb = cb; }, off: () => {} };
   const sandbox = {
+    appT: (k) => k,
     document: { getElementById: id => els[id] || null },
     DrexCloud: {
       auth: () => ({ currentUser: { uid: 'me' } }),

@@ -87,6 +87,7 @@ function makeRef(p) {
   const ivCbs = [];
   const ctx1 = {
     console, JSON, Object, Array, Promise, Date, Math, String, Number,
+    appT: (k) => k,
     setInterval: (cb) => { ivCbs.push(cb); return ivCbs.length; },
     clearInterval: () => {},
     setTimeout: () => 0,
@@ -123,6 +124,7 @@ function makeRef(p) {
   const toCbs = [];
   const fakeTrigger = { closest: () => ({ set innerHTML(v) {}, get innerHTML() { return ''; } }) };
   const ctx2 = {
+    appT: (k) => k,
     console, JSON, Object, Array, Promise, Date, Math, String, Number,
     setTimeout: (cb) => { toCbs.push(cb); return toCbs.length; },
     setInterval: () => 0, clearInterval: () => {},
