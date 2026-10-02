@@ -8297,7 +8297,7 @@ if (scrollArea) {
         class="w-full h-11 px-4 rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-surface-muted)] focus:outline-none focus:ring-2 focus:ring-[#cbd5e1] text-sm">
     </div>
     <div id="add-member-results" class="flex-1 overflow-y-auto p-4 space-y-2">
-      <p class="text-center text-sm text-[var(--theme-muted)] py-6">Escribe para buscar usuarios</p>
+      <p class="text-center text-sm text-[var(--theme-muted)] py-6">Escribe para buscar usuarios.</p>
     </div>
   </div>
 </div>
@@ -26160,21 +26160,25 @@ else { try { drexSnapInit(); } catch (_) {} }
   }
 
 
+  // UI-LANE2: el separador de fecha respeta el idioma de la app
+  // (antes: 'Hoy'/'Ayer' y locale es-ES fijos en todos los idiomas).
   function formatChatDateSeparator(timestamp) {
     if (!timestamp) return '';
     const date = new Date(timestamp);
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    
+
     const isToday = date.toDateString() === today.toDateString();
     const isYesterday = date.toDateString() === yesterday.toDateString();
-    
-    if (isToday) return 'Hoy';
-    if (isYesterday) return 'Ayer';
-    
+
+    if (isToday) return appT('Hoy');
+    if (isYesterday) return appT('Ayer');
+
+    const _dsl = (typeof getAppLanguage === 'function' ? getAppLanguage() : 'en');
+    const _dslLocale = _dsl === 'zh' ? 'zh-CN' : _dsl === 'pt' ? 'pt' : _dsl === 'en' ? 'en' : 'es';
     const options = { weekday: 'long', day: 'numeric', month: 'long' };
-    return date.toLocaleDateString('es-ES', options);
+    return date.toLocaleDateString([_dslLocale], options);
   }
 
   function formatRelativeTime(timestamp) {
@@ -37726,9 +37730,9 @@ let chatTypingListener = null;
     }
     if (toggleThumb) toggleThumb.style.transform = enabled ? 'translateX(22px)' : 'translateX(2px)';
     if (statusLabel) {
-      if (!enabled) { statusLabel.textContent = 'Desactivado'; return; }
-      const labels = { 3600000: '1 hora', 86400000: '24 horas', 604800000: '7 días' };
-      statusLabel.textContent = appT('Activo · ') + (labels[_disappearDurationMs] || '7 días');
+      if (!enabled) { statusLabel.textContent = appT('Desactivado'); return; }
+      const labels = { 3600000: appT('1 hora'), 86400000: appT('24 horas'), 604800000: appT('7 días') };
+      statusLabel.textContent = appT('Activo · ') + (labels[_disappearDurationMs] || appT('7 días'));
     }
     if (timerRow) timerRow.classList.toggle('hidden', !enabled);
     ['dtimer-1h','dtimer-1d','dtimer-7d'].forEach(id => {
@@ -37807,7 +37811,8 @@ let chatTypingListener = null;
 
   function _burstDoubleTapHeart(x, y) {
     const heart = document.createElement('div');
-    heart.textContent = '❤️';
+    // UI-LANE2: el corazon emoji se sustituye por el SVG del catalogo (cero emojis como iconos).
+    heart.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="#ef4444"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
     heart.style.cssText = `position:fixed;left:${x}px;top:${y}px;font-size:2.5rem;pointer-events:none;z-index:9999;transform:translate(-50%,-50%) scale(0);animation:dtHeartBurst 0.65s cubic-bezier(0.17,0.89,0.32,1.28) forwards;`;
     document.body.appendChild(heart);
     setTimeout(() => heart.remove(), 700);
@@ -37836,7 +37841,7 @@ let chatTypingListener = null;
       const dot = document.getElementById('chat-room-presence-dot');
       if (!data) { statusEl.classList.add('hidden'); dot?.classList.add('hidden'); return; }
       if (data.online) {
-        statusEl.textContent = 'Activo ahora';
+        statusEl.textContent = appT('Activo ahora');
         statusEl.className = 'text-[12px] truncate text-[#31A24C]';
         statusEl.classList.remove('hidden');
         dot?.classList.remove('hidden');
@@ -37920,7 +37925,7 @@ let chatTypingListener = null;
         updates['userConversations/' + uid + '/' + conversationId + '/isGroup'] = true;
         updates['userConversations/' + uid + '/' + conversationId + '/groupId'] = conversationId;
         updates['userConversations/' + uid + '/' + conversationId + '/updatedAt'] = updatedAt;
-        const prefix = uid === senderUid ? 'Tú' : (payload.senderName || 'Usuario');
+        const prefix = uid === senderUid ? appT('Tú') : (payload.senderName || appT('Usuario'));
         updates['userConversations/' + uid + '/' + conversationId + '/lastMessage'] = prefix + ': ' + lastMessage;
         // Degradación booleana (>50 miembros): hoja simple `u` en este mismo
         // update multi-path, sin transacción (ver bumpChatUnread). El remitente
@@ -37992,8 +37997,8 @@ let chatTypingListener = null;
       try {
         const snap = await DrexCloud.database().ref('users/' + user.uid).once('value');
         const d = snap.val() || {};
-        payload.senderName = d.username || d.displayName || 'Usuario';
-      } catch(_) { payload.senderName = 'Usuario'; }
+        payload.senderName = d.username || d.displayName || appT('Usuario');
+      } catch(_) { payload.senderName = appT('Usuario'); }
     }
     try {
       // C78-F1: pushAsync en vez de push()._writePromise (este nunca rechaza:
@@ -38157,7 +38162,7 @@ let chatTypingListener = null;
                 DrexCloud.database().ref('conversationPinned/' + convoId).remove().catch(() => {});
               }
             }).catch(() => {});
-            if (bubble) bubble.innerHTML = '<p class="text-xs italic opacity-50">Mensaje visto · eliminado</p>';
+            if (bubble) bubble.innerHTML = '<p class="text-xs italic opacity-50">' + appT('Mensaje visto · eliminado') + '</p>';
           }, 5000);
         }
       }
@@ -38195,7 +38200,7 @@ let chatTypingListener = null;
       const map = snap.val() || {};
       const entries = Object.keys(map);
       if (!entries.length) {
-        container.innerHTML = '<div class="bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-2xl p-5 text-center text-[var(--theme-muted)]">Aún no tienes chats. Toca el botón de escribir para iniciar uno.</div>';
+        container.innerHTML = '<div class="bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-2xl p-5 text-center text-[var(--theme-muted)]">' + escapeHtml(appT('Aún no tienes chats. Toca el botón de escribir para iniciar uno.')) + '</div>';
         chatConversationCache = { items: [], loadedAt: Date.now() };
         return;
       }
@@ -38204,14 +38209,14 @@ let chatTypingListener = null;
         const raw = map[convoId];
         const meta = (raw && typeof raw === 'object') ? raw : {};
         let updatedAt = Number(meta.updatedAt || 0);
-        let lastMessage = meta.lastMessage || 'Sin mensajes aún';
+        let lastMessage = meta.lastMessage || appT('Sin mensajes aún');
 
         if (meta.isGroup) {
           return {
             id: convoId,
             isGroup: true,
             groupId: meta.groupId || convoId,
-            groupName: meta.groupName || 'Grupo',
+            groupName: meta.groupName || appT('Grupo'),
             groupImage: meta.groupImage || '',
             updatedAt,
             pinnedAt: Number(meta.pinnedAt || 0),
@@ -38239,7 +38244,7 @@ let chatTypingListener = null;
           isGroup: false,
           isRequest: drexAntesalaCoreIsRequestMeta(meta), // ANTESALA (C85)
           otherUid,
-          otherName: other.name || 'Usuario',
+          otherName: other.name || appT('Usuario'),
           otherImage: other.image || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==',
           updatedAt,
           pinnedAt: Number(meta.pinnedAt || 0),
@@ -38271,11 +38276,17 @@ let chatTypingListener = null;
     const data = snap.val() || {};
     const profile = {
       uid,
-      name: data.username || data.displayName || data.email || 'Usuario',
+      name: data.username || data.displayName || data.email || appT('Usuario'),
       image: data.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='
     };
     chatUsersIndexCache.push(profile);
     return profile;
+  }
+
+  // UI-LANE2: subtítulo de grupo "N participantes" traducido (antes: ES hardcodeado).
+  function formatChatParticipantCount(n) {
+    n = Number(n) || 0;
+    return n === 1 ? appT('1 participante') : appT('{n} participantes').replace('{n}', String(n));
   }
 
   function formatConvTime(ts) {
@@ -38370,12 +38381,12 @@ let chatTypingListener = null;
       const isUnread = isChatConversationUnread(item);
       const isLast = idx === reqItems.length - 1;
       const hasRealPreview = !!(item.lastMessage && item.lastMessage !== 'Nueva conversación');
-      const preview = hasRealPreview ? escapeHtml(item.lastMessage) : '<span class="italic text-[var(--theme-muted)]">Nueva conversación</span>';
+      const preview = hasRealPreview ? escapeHtml(item.lastMessage) : '<span class="italic text-[var(--theme-muted)]">' + escapeHtml(appT('Nueva conversación')) + '</span>';
       const divider = isLast ? '' : '<div class="ml-[76px] h-px bg-[var(--theme-surface-muted)]"></div>';
       const nameCls = `truncate text-[16px] ${isUnread ? 'font-bold text-[var(--theme-text)]' : 'font-semibold text-[var(--theme-text)]'}`;
       const previewCls = `text-[14px] truncate mt-0.5 ${isUnread ? 'text-[var(--theme-text)] font-semibold' : 'text-[var(--theme-muted)]'}`;
       const safeUid = escapeInlineSingleQuote(item.otherUid);
-      const safeName = escapeHtml(item.otherName || 'Usuario');
+      const safeName = escapeHtml((typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(item.otherName) : item.otherName) || appT('Usuario'));
       // SEC C154: otherImage = users/<uid>/profileImage (auto-editable por el
       // dueño: forjable con escritura directa). Sin sanitizar rompía el
       // atributo src e inyectaba onerror (XSS almacenado, PoC en Chromium).
@@ -38423,8 +38434,8 @@ let chatTypingListener = null;
       container.innerHTML = _antesalaHtml + `
         <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
           <img src="drex-illus/drex-illus-chat.png" alt="" loading="lazy" class="drex-illus mb-4" style="width:104px;height:104px;">
-          <p class="font-black text-[var(--theme-text)] text-lg">Sin conversaciones aún</p>
-          <p class="text-sm text-[var(--theme-muted)] mt-1">Inicia un chat con alguien usando el botón de arriba.</p>
+          <p class="font-black text-[var(--theme-text)] text-lg">${appT('Sin conversaciones aún')}</p>
+          <p class="text-sm text-[var(--theme-muted)] mt-1">${appT('Inicia un chat con alguien usando el botón de arriba.')}</p>
         </div>`;
       return;
     }
@@ -38432,8 +38443,8 @@ let chatTypingListener = null;
       container.innerHTML = _antesalaHtml + `
         <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
           <img src="drex-illus/drex-illus-chat.png" alt="" loading="lazy" class="drex-illus mb-4" style="width:104px;height:104px;">
-          <p class="font-black text-[var(--theme-text)] text-lg">Sin resultados</p>
-          <p class="text-sm text-[var(--theme-muted)] mt-1">${items.length ? 'No hay conversaciones con ese filtro.' : 'Todavía no tienes chats. Toca el botón de escribir para iniciar uno.'}</p>
+          <p class="font-black text-[var(--theme-text)] text-lg">${appT('Sin resultados')}</p>
+          <p class="text-sm text-[var(--theme-muted)] mt-1">${items.length ? appT('No hay conversaciones con ese filtro.') : appT('Todavía no tienes chats. Toca el botón de escribir para iniciar uno.')}</p>
         </div>`;
       return;
     }
@@ -38447,7 +38458,7 @@ let chatTypingListener = null;
       const isPinned = Number(item.pinnedAt || 0) > 0;
       const isLast = idx === visibleItems.length - 1;
       const hasRealPreview = !!(item.lastMessage && item.lastMessage !== 'Nueva conversación');
-      const preview = hasRealPreview ? escapeHtml(item.lastMessage) : '<span class="italic text-[var(--theme-muted)]">Nueva conversación</span>';
+      const preview = hasRealPreview ? escapeHtml(item.lastMessage) : '<span class="italic text-[var(--theme-muted)]">' + escapeHtml(appT('Nueva conversación')) + '</span>';
       const divider = isLast ? '' : '<div class="ml-[76px] h-px bg-[var(--theme-surface-muted)]"></div>';
       const nameCls = `truncate text-[16px] ${isUnread ? 'font-bold text-[var(--theme-text)]' : 'font-semibold text-[var(--theme-text)]'}`;
       const timeCol = `
@@ -38459,8 +38470,9 @@ let chatTypingListener = null;
 
       if (item.isGroup) {
         const safeGroupId = escapeInlineSingleQuote(item.groupId);
-        const safeGroupName = escapeHtml(item.groupName);
-        const safeGroupNameJs = escapeInlineSingleQuote(item.groupName);
+        const _strip = (typeof fiestaStripEmoji === 'function') ? fiestaStripEmoji : (x => x);
+        const safeGroupName = escapeHtml(_strip(item.groupName));
+        const safeGroupNameJs = escapeInlineSingleQuote(_strip(item.groupName) || '');
         const groupAvatarHtml = item.groupImage
           ? `<img src="${escapeHtml(item.groupImage)}" class="w-14 h-14 rounded-full object-cover shrink-0" alt="${safeGroupName}" onerror="renderFallbackGroupAvatar(this)">`
           : `<div class="shrink-0 w-14 h-14 rounded-full flex items-center justify-center relative" style="background:linear-gradient(135deg,#e7ecf3 0%,#b6c0d1 100%)">
@@ -38479,7 +38491,7 @@ let chatTypingListener = null;
                 <div class="flex items-start justify-between gap-2">
                   <p class="${nameCls}">${safeGroupName}</p>
                   <div class="flex items-center gap-1.5 shrink-0">
-                    ${isPinned ? '<span class="text-[var(--brand-indigo-text)] text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--theme-surface-muted)] text-[var(--theme-icon)]">Fijado</span>' : ''}
+                    ${isPinned ? '<span class="text-[var(--brand-indigo-text)] text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--theme-surface-muted)] text-[var(--theme-icon)]">' + escapeHtml(appT('Fijado')) + '</span>' : ''}
                     ${timeCol}
                   </div>
                 </div>
@@ -38492,8 +38504,8 @@ let chatTypingListener = null;
       }
       const safeUid = escapeInlineSingleQuote(item.otherUid);
       const safeUidAttr = escapeHtml(item.otherUid);
-      const safeName = escapeHtml(item.otherName || 'Usuario');
-      const safeNameJs = escapeInlineSingleQuote(item.otherName || 'Usuario');
+      const safeName = escapeHtml((typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(item.otherName) : item.otherName) || appT('Usuario'));
+      const safeNameJs = escapeInlineSingleQuote(item.otherName || appT('Usuario'));
       // SEC C154: igual que la fila de Antesala (ver arriba): profileImage
       // forjable → getSafeMediaUrl valida esquema + escapa HTML.
       const safeImage = getSafeMediaUrl(item.otherImage, 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==');
@@ -38558,7 +38570,7 @@ let chatTypingListener = null;
   }
 
   function getConversationPinLabel(item) {
-    return Number(item?.pinnedAt || 0) > 0 ? 'Quitar fijado' : 'Fijar conversación';
+    return Number(item?.pinnedAt || 0) > 0 ? appT('Quitar fijado') : appT('Fijar conversación');
   }
 
   async function toggleConvPinAndClose() {
@@ -38611,6 +38623,8 @@ let chatTypingListener = null;
   function showConvOptions(type, id, name) {
     _convLongTarget = { type, id, name };
     const sheet = document.getElementById('conv-options-sheet');
+    // UI-LANE2: el título puede traer emojis de datos de usuario; se filtra.
+    try { if (typeof fiestaStripEmoji === 'function') name = fiestaStripEmoji(name) || name; } catch (_) {}
     const nameEl = document.getElementById('conv-opts-name');
     const avatarWrap = document.getElementById('conv-opts-avatar');
     if (nameEl) nameEl.textContent = name;
@@ -38685,7 +38699,7 @@ let chatTypingListener = null;
     }
     const list = document.getElementById('new-chat-results');
     if (list) {
-      list.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#6b7280]">Escribe para buscar usuarios.</div>';
+      list.innerHTML = '<div class="bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#6b7280]">' + escapeHtml(appT('Escribe para buscar usuarios.')) + '</div>';
     }
   }
 
@@ -38705,7 +38719,7 @@ let chatTypingListener = null;
     }
 
     if (!query) {
-      list.innerHTML = '<div class="bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-2xl p-5 text-center text-[var(--theme-muted)]">Escribe para buscar usuarios.</div>';
+      list.innerHTML = '<div class="bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-2xl p-5 text-center text-[var(--theme-muted)]">' + escapeHtml(appT('Escribe para buscar usuarios.')) + '</div>';
       return;
     }
 
@@ -38717,7 +38731,7 @@ let chatTypingListener = null;
       searchUserDirectoryByPrefix(query, 30).then(accounts => {
       const users = accounts.map(u => ({
         uid: u.uid,
-        name: u.username || u.displayName || 'Usuario',
+        name: u.username || u.displayName || appT('Usuario'),
         image: getSafeMediaUrl(u.profileImage) || ''
       }));
       if (!users.length) {
@@ -38858,7 +38872,7 @@ let chatTypingListener = null;
       currentGroupIsCreator = data.createdBy === user.uid;
       currentGroupIsAdmin = _isGroupAdminUid(user.uid, currentGroupAdmins);
       const nameEl = document.getElementById('chat-room-username');
-      if (nameEl) nameEl.textContent = data.name || 'Grupo';
+      if (nameEl) nameEl.textContent = (typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(data.name) : data.name) || appT('Grupo');
       const avatarImg = document.getElementById('chat-room-group-avatar-img');
       const avatarIcon = document.getElementById('chat-room-group-avatar-icon');
       if (data.image) {
@@ -38871,7 +38885,7 @@ let chatTypingListener = null;
       const memberUids = Object.keys(data.members || {});
       currentGroupMembers = memberUids;
       if (subtitle) {
-        subtitle.textContent = memberUids.length + ' participante' + (memberUids.length !== 1 ? 's' : '');
+        subtitle.textContent = formatChatParticipantCount(memberUids.length);
         subtitle.classList.remove('hidden');
       }
     });
@@ -39040,7 +39054,7 @@ let chatTypingListener = null;
       currentGroupMembers = memberUids;
       const subtitle = document.getElementById('chat-room-group-subtitle');
       if (subtitle && currentChatRoomId === groupId && currentChatIsGroup) {
-        subtitle.textContent = memberUids.length + ' participante' + (memberUids.length !== 1 ? 's' : '');
+        subtitle.textContent = formatChatParticipantCount(memberUids.length);
       }
     };
     ref.on('value', callback);
@@ -39064,16 +39078,16 @@ let chatTypingListener = null;
     const name = document.getElementById('chat-room-username');
     _setDmAvatars(_CHAT_DEFAULT_AVATAR);
     if (img) img.src = _CHAT_DEFAULT_AVATAR;
-    if (name) name.textContent = 'Cargando...';
+    if (name) name.textContent = appT('Cargando...');
     DrexCloud.database().ref('users/' + otherUid).once('value').then(snapshot => {
       if (myGen !== _chatRoomHeaderGen) return; // tardía: otro chat ya manda
       const data = snapshot.val() || {};
       _setDmAvatars(data.profileImage || _CHAT_DEFAULT_AVATAR);
       if (img) img.src = _currentChatOtherImage;
-      if (name) name.innerHTML = escapeHtml(data.username || data.displayName || data.email || 'Usuario') + getVerificationIconByAuthor(data.email || '', otherUid);
+      if (name) name.innerHTML = escapeHtml(((typeof fiestaStripEmoji === 'function') ? fiestaStripEmoji(data.username || data.displayName || data.email) : (data.username || data.displayName || data.email)) || appT('Usuario')) + getVerificationIconByAuthor(data.email || '', otherUid);
     }).catch(() => {
       if (myGen !== _chatRoomHeaderGen) return; // tardía: otro chat ya manda
-      if (name) name.textContent = 'Usuario';
+      if (name) name.textContent = appT('Usuario');
     });
   }
 
@@ -39200,7 +39214,7 @@ let chatTypingListener = null;
     const empty = document.createElement('div');
     empty.className = 'text-center text-[var(--theme-muted)] text-sm py-8';
     empty.id = 'chat-room-empty-state';
-    empty.textContent = appT('¡Di hola! 👋');
+    empty.textContent = appT('¡Di hola!');
     container.appendChild(empty);
 
     const formatMsgTime = ts => {
@@ -39255,7 +39269,7 @@ let chatTypingListener = null;
         del.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
         if (resolvedId) del.dataset.msgId = resolvedId;
         del.dataset.msgTs = '0';
-        del.innerHTML = `<div class="deleted-placeholder flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--theme-border)] text-[var(--theme-muted)] text-xs italic select-none" data-del-id="${escapeHtml(resolvedId)}"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-linecap="round"/></svg>${mine ? 'Eliminaste este mensaje' : 'Mensaje eliminado'}</div>`;
+        del.innerHTML = `<div class="deleted-placeholder flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--theme-border)] text-[var(--theme-muted)] text-xs italic select-none" data-del-id="${escapeHtml(resolvedId)}"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-linecap="round"/></svg>${mine ? appT('Eliminaste este mensaje') : appT('Mensaje eliminado')}</div>`;
         container.appendChild(del);
         container.scrollTop = container.scrollHeight;
         _lastChatMsgMeta = null;
@@ -39313,7 +39327,7 @@ let chatTypingListener = null;
         content = `<div class="relative">${innerContent}<div class="flex items-center gap-1 mt-1 opacity-70"><svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5" stroke-linecap="round"/></svg><span class="text-[10px] font-bold" id="timer-${escapeHtml(resolvedId)}">${label}</span></div></div>`;
         setTimeout(() => _startMsgCountdown(resolvedId, msg.autoDestroyAt, conversationId), 100);
       } else if (msg.autoDestroyAt && msg.autoDestroyAt <= Date.now()) {
-        content = `<p class="text-[13px] italic opacity-50">Mensaje eliminado</p>`;
+        content = `<p class="text-[13px] italic opacity-50">${appT('Mensaje eliminado')}</p>`;
         // C58-C1: este mensaje expiró sin que ningún cliente tuviera el chat
         // abierto (el countdown de _startMsgCountdown solo corre en la página
         // que lo renderizó vivo) → el borrado + la limpieza de pin,
@@ -39343,16 +39357,16 @@ let chatTypingListener = null;
             ${spThumb ? `<div class="relative rounded-xl overflow-hidden mb-1.5">${spThumb}</div>` : ''}
             <div class="flex items-center gap-1.5 mb-0.5">
               <img src="${escapeHtml(sp.authorImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==')}" class="w-4 h-4 rounded-full object-cover">
-              <span class="text-[11px] font-bold ${mine ? 'text-white/90' : 'text-[var(--theme-text)]'} truncate">${escapeHtml(sp.authorName || 'Usuario')}</span>
+              <span class="text-[11px] font-bold ${mine ? 'text-white/90' : 'text-[var(--theme-text)]'} truncate">${escapeHtml(sp.authorName || appT('Usuario'))}</span>
             </div>
             <p class="text-[12.5px] leading-snug break-words ${mine ? 'text-white/85' : 'text-[var(--theme-icon)]'}">${escapeHtml((sp.content || '').slice(0, 100))}</p>
           </div>`;
       } else if (msg.viewOnce) {
         const currentUserId2 = DrexCloud.auth().currentUser?.uid || '';
         if (mine) {
-          content = `<div class="flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-xs italic text-white/70">Ver una vez</span></div>`;
+          content = `<div class="flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-xs italic text-white/70">${appT('Ver una vez')}</span></div>`;
         } else {
-          content = `<div class="flex items-center gap-2 cursor-pointer select-none" onclick="openViewOnceMessage('${escapeInlineSingleQuote(resolvedId)}','${escapeInlineSingleQuote(conversationId)}',this)"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-sm font-bold">Ver (1 vez)</span></div>`;
+          content = `<div class="flex items-center gap-2 cursor-pointer select-none" onclick="openViewOnceMessage('${escapeInlineSingleQuote(resolvedId)}','${escapeInlineSingleQuote(conversationId)}',this)"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="text-sm font-bold">${appT('Ver (1 vez)')}</span></div>`;
         }
       } else {
         content = msgImages.length
@@ -39361,10 +39375,15 @@ let chatTypingListener = null;
       }
       const timeStr = formatMsgTime(msg.timestamp);
 
+      // UI-LANE2: cero emojis como iconos — se sustituyen por SVG del catalogo;
+      // el nombre del remitente citado se pinta sin emojis (datos de usuario).
+      const _replyIconCls = 'w-3.5 h-3.5 inline-block -mt-0.5 mr-1 align-middle';
+      const _replyFileIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="${_replyIconCls}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>`;
+      const _replyPhotoIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="${_replyIconCls}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="11" r="2.5"/><path d="M21 17l-5-5-7 7"/></svg>`;
       const replyBlock = msg.replyTo
         ? `<div class="mb-2 pl-2 border-l-2 ${mine ? 'border-white/40' : 'border-[color-mix(in_srgb,var(--drex-brand)_30%,transparent)]'} opacity-80">
-            <p class="text-[10px] font-bold mb-0.5 ${mine ? 'text-white/70' : 'text-[var(--theme-icon)]'}">${escapeHtml(msg.replyTo.senderName || 'Mensaje')}</p>
-            <p class="text-xs truncate ${mine ? 'text-white/60' : 'text-[var(--theme-muted)]'}">${msg.replyTo.files ? '📎 Archivo' : (msg.replyTo.image ? '📷 Foto' : escapeHtml(msg.replyTo.text || ''))}</p>
+            <p class="text-[10px] font-bold mb-0.5 ${mine ? 'text-white/70' : 'text-[var(--theme-icon)]'}">${escapeHtml(typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(msg.replyTo.senderName) || 'Mensaje' : (msg.replyTo.senderName || 'Mensaje'))}</p>
+            <p class="text-xs truncate ${mine ? 'text-white/60' : 'text-[var(--theme-muted)]'}">${msg.replyTo.files ? _replyFileIcon + escapeHtml(appT('Archivo')) : (msg.replyTo.image ? _replyPhotoIcon + escapeHtml(appT('Foto')) : escapeHtml(msg.replyTo.text || ''))}</p>
            </div>`
         : '';
 
@@ -39372,7 +39391,8 @@ let chatTypingListener = null;
 
       if (currentChatIsGroup && !mine) {
         const senderId = msg.senderId || '';
-        const senderName = msg.senderName || '...';
+        // UI-LANE2: el nombre del remitente viene de datos de usuario; sin emojis.
+        const senderName = (typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(msg.senderName) : msg.senderName) || '...';
         wrapper.className = 'w-full flex flex-col items-start';
         if (resolvedId) wrapper.dataset.msgId = resolvedId;
         wrapper.dataset.msgTs = String(msgTimestamp || 0);
@@ -39385,7 +39405,7 @@ let chatTypingListener = null;
                 ${replyBlock}${content}
               </div>
               <div id="reactions-${escapeHtml(resolvedId)}" class="flex flex-wrap gap-1 mt-0.5 justify-start px-1"></div>
-              ${timeStr ? `<span class="chat-msg-time text-xs text-[var(--theme-muted)] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">Editado</span>' : ''}</span>` : ''}
+              ${timeStr ? `<span class="chat-msg-time text-xs text-[var(--theme-muted)] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">' + appT('Editado') + '</span>' : ''}</span>` : ''}
             </div>
           </div>
         `;
@@ -39399,7 +39419,7 @@ let chatTypingListener = null;
           DrexCloud.database().ref('users/' + senderId).once('value').then(snap => {
             const d = snap.val() || {};
             const img = d.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
-            const uname = d.username || d.displayName || 'Usuario';
+            const uname = d.username || d.displayName || appT('Usuario');
             _groupMsgSenderCache.set(senderId, { image: img, name: uname, username: d.username || '' });
             applyAvatar(img);
           }).catch(() => {});
@@ -39419,7 +39439,7 @@ let chatTypingListener = null;
             ${replyBlock}${content}
           </div>
           <div id="reactions-${escapeHtml(resolvedId)}" class="flex flex-wrap gap-1 mt-0.5 ${mine ? 'justify-end' : 'justify-start'} px-1"></div>
-          ${timeStr ? `<span class="chat-msg-time text-xs text-[var(--theme-muted)] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">Editado</span>' : ''}</span>` : ''}
+          ${timeStr ? `<span class="chat-msg-time text-xs text-[var(--theme-muted)] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">' + appT('Editado') + '</span>' : ''}</span>` : ''}
         `;
         wrapper.className = `w-full flex flex-col ${mine ? 'items-end' : 'items-start'}`;
         if (resolvedId) wrapper.dataset.msgId = resolvedId;
@@ -39517,8 +39537,8 @@ let chatTypingListener = null;
                 const user = DrexCloud.auth().currentUser;
                 const isMe = msg.senderId === user?.uid;
                 let senderName = isMe
-                  ? 'Tú'
-                  : (currentChatIsGroup ? (msg.senderName || 'Usuario') : (document.getElementById('chat-room-username')?.textContent || 'Usuario'));
+                  ? appT('Tú')
+                  : (currentChatIsGroup ? (msg.senderName || appT('Usuario')) : (document.getElementById('chat-room-username')?.textContent || appT('Usuario')));
                 setChatReply({
                   msgId: resolvedId,
                   text: msg.text || '',
@@ -40309,7 +40329,7 @@ const _startChatListeners = () => {
       const empty = document.getElementById('chat-room-empty-state');
       if (empty) empty.remove();
       const replyHtml = payload.replyTo
-        ? `<div class="mb-2 pl-2 border-l-2 border-white/40 opacity-80"><p class="text-[10px] font-bold mb-0.5 text-white/70">${escapeHtml(payload.replyTo.senderName || 'Mensaje')}</p><p class="text-xs truncate text-white/60">${payload.replyTo.files ? '📎 Archivo' : (payload.replyTo.images ? '📷 Foto' : escapeHtml(payload.replyTo.text || ''))}</p></div>` : '';
+        ? `<div class="mb-2 pl-2 border-l-2 border-white/40 opacity-80"><p class="text-[10px] font-bold mb-0.5 text-white/70">${escapeHtml((typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(payload.replyTo.senderName) : payload.replyTo.senderName) || 'Mensaje')}</p><p class="text-xs truncate text-white/60">${payload.replyTo.files ? escapeHtml(appT('[Archivo]')) : (payload.replyTo.images ? escapeHtml(appT('[Foto]')) : escapeHtml(payload.replyTo.text || ''))}</p></div>` : '';
       let html = '';
       if (imageUrls.length === 1) {
         html = `<img src="${getSafeMediaUrl(imageUrls[0])}" loading="lazy" class="max-w-[240px] w-full rounded-2xl object-cover cursor-pointer" style="max-height:320px" alt="Foto" onclick="window.open('${getSafeMediaUrlInlineJs(imageUrls[0])}','_blank','noopener')">`;
@@ -40356,7 +40376,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       recipientId: currentChatRecipient,
       isGroup: currentChatIsGroup,
       groupMembers: Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) },
-      lastMessage: imageUrls.length ? '📷 Foto' : (fileMetas.length ? '📎 Archivo' : text),
+      lastMessage: imageUrls.length ? appT('[Foto]') : (fileMetas.length ? appT('[Archivo]') : text),
       viewOnceOn, timerSecs,
     };
   }
@@ -40414,8 +40434,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       try {
         const senderSnap = await DrexCloud.database().ref('users/' + user.uid).once('value');
         const senderData = senderSnap.val() || {};
-        payload.senderName = senderData.username || senderData.displayName || 'Usuario';
-      } catch (_) { payload.senderName = 'Usuario'; }
+        payload.senderName = senderData.username || senderData.displayName || appT('Usuario');
+      } catch (_) { payload.senderName = appT('Usuario'); }
     }
 
     let _chatSetOk = false;
@@ -40435,7 +40455,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
             const senderSnap = await DrexCloud.database().ref('users/' + user.uid).once('value');
             const senderData = senderSnap.val() || {};
             const senderName = senderData.username || senderData.displayName || 'Alguien';
-            const preview = imageUrls.length ? '📷 Foto' : (fileMetas.length ? '📎 Archivo' : (text.length > 60 ? text.slice(0, 60) + '…' : text));
+            const preview = imageUrls.length ? appT('[Foto]') : (fileMetas.length ? appT('[Archivo]') : (text.length > 60 ? text.slice(0, 60) + '…' : text));
             if (isGroup) {
               const memberIds = Array.isArray(groupMembers) ? groupMembers : Object.keys(groupMembers || {});
               memberIds.forEach(memberId => {
@@ -40565,20 +40585,21 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     }
     const toast = document.createElement('div');
     toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-[var(--drex-brand)] text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg z-[200] transition-opacity';
-    toast.textContent = 'Copiado';
+    toast.textContent = appT('Copiado');
     document.body.appendChild(toast);
     setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 1800);
   }
 
+  // UI-LANE2: la fecha del menú del mensaje respeta el idioma de la app
+  // (antes: abreviaturas de mes en español fijas, ej. "3 OCT, 4:05 P.M.").
   function formatChatMenuDate(ts) {
     if (!ts) return '';
     const d = new Date(Number(ts));
-    const MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-    let h = d.getHours();
-    const m = String(d.getMinutes()).padStart(2, '0');
-    const ampm = h >= 12 ? 'P.M.' : 'A.M.';
-    h = h % 12 || 12;
-    return d.getDate() + ' ' + MESES[d.getMonth()] + ', ' + h + ':' + m + ' ' + ampm;
+    const _ml = (typeof getAppLanguage === 'function' ? getAppLanguage() : 'en');
+    const _mLocale = _ml === 'zh' ? 'zh-CN' : _ml === 'pt' ? 'pt' : _ml === 'en' ? 'en' : 'es';
+    const datePart = d.toLocaleDateString([_mLocale], { day: 'numeric', month: 'short' }).replace(/[.]/g, '').toUpperCase();
+    const timePart = d.toLocaleTimeString([_mLocale], { hour: 'numeric', minute: '2-digit' });
+    return datePart + ', ' + timePart;
   }
 
   function showChatReactionPicker(msgId, rect, mine, ts) {
@@ -40690,8 +40711,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       const user = DrexCloud.auth().currentUser;
       const isMe = msg.senderId === user?.uid;
       let senderName = isMe
-        ? 'Tú'
-        : (currentChatIsGroup ? (msg.senderName || 'Usuario') : (document.getElementById('chat-room-username')?.textContent || 'Usuario'));
+        ? appT('Tú')
+        : (currentChatIsGroup ? (msg.senderName || appT('Usuario')) : (document.getElementById('chat-room-username')?.textContent || appT('Usuario')));
       setChatReply({
         msgId,
         text: msg.text || '',
@@ -40800,7 +40821,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       banner.classList.add('hidden');
       return;
     }
-    const preview = data.images ? '📷 Foto' : (data.text || 'Mensaje');
+    const preview = data.images ? appT('[Foto]') : (data.text || 'Mensaje');
     textEl.textContent = preview;
     banner.classList.remove('hidden');
   }
@@ -40822,7 +40843,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     DrexCloud.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).once('value').then(snap => {
       const msg = snap.val();
       if (!msg) return;
-      const senderName = msg.senderId === user.uid ? 'Tú' : (document.getElementById('chat-room-username')?.textContent || 'Usuario');
+      const senderName = msg.senderId === user.uid ? appT('Tú') : (document.getElementById('chat-room-username')?.textContent || appT('Usuario'));
       pinnedRef.set({
         msgId,
         text: msg.text || '',
@@ -40856,8 +40877,9 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     const nameEl = document.getElementById('chat-reply-name');
     const textEl = document.getElementById('chat-reply-text');
     if (!bar || !nameEl || !textEl) return;
-    nameEl.textContent = context.senderName || 'Mensaje';
-    textEl.textContent = context.files ? '📎 Archivo' : (context.image ? '📷 Foto' : (context.text || ''));
+    // UI-LANE2: sin emojis en la vista previa de respuesta; nombre sin emojis.
+    nameEl.textContent = ((typeof fiestaStripEmoji === 'function') ? fiestaStripEmoji(context.senderName) : context.senderName) || 'Mensaje';
+    textEl.textContent = context.files ? appT('[Archivo]') : (context.image ? appT('[Foto]') : (context.text || ''));
     bar.classList.remove('hidden');
     document.getElementById('chat-room-input')?.focus();
   }
@@ -40931,9 +40953,9 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   function renderForwardList(convs) {
     const list = document.getElementById('chat-forward-list');
     if (!list) return;
-    if (!convs.length) { list.innerHTML = '<p class="text-center text-[var(--theme-muted)] text-sm py-6">No hay conversaciones</p>'; return; }
+    if (!convs.length) { list.innerHTML = '<p class="text-center text-[var(--theme-muted)] text-sm py-6">' + escapeHTML(appT('Sin conversaciones')) + '</p>'; return; }
     list.innerHTML = convs.map(c => {
-      const name = c.displayName || c.username || 'Usuario';
+      const name = c.displayName || c.username || appT('Usuario');
       const avatar = c.photoURL ? `<img src="${getSafeMediaUrl(c.photoURL)}" class="text-[var(--brand-indigo-text)] w-11 h-11 rounded-full object-cover" alt="${escapeHTML(name)}">` : `<div class="w-11 h-11 rounded-full bg-[var(--theme-surface-subtle)] flex items-center justify-center text-lg font-bold text-[var(--theme-icon)]">${escapeHTML(name[0]?.toUpperCase() || '')}</div>`;
       return `<button onclick="doForwardMessage('${escapeInlineSingleQuote(c.convId)}','${escapeInlineSingleQuote(c.otherUid)}')" class="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-[var(--theme-surface-muted)] active:opacity-80 transition text-left">
         ${avatar}
@@ -41009,9 +41031,9 @@ ${getSpinnerMarkup('drex-spinner-inline')}
           ));
         }
       } catch (_) {}
-      const preview = (fwdData.type === 'sharedPost' && fwdData.sharedPost) ? '📌 Publicación' :
-        ((fwdData.files && fwdData.files.length) ? '📎 Archivo' :
-        ((fwdData.images || fwdData.image) ? '📷 Foto' : (fwdData.text || '')));
+      const preview = (fwdData.type === 'sharedPost' && fwdData.sharedPost) ? appT('[Publicación]') :
+        ((fwdData.files && fwdData.files.length) ? appT('[Archivo]') :
+        ((fwdData.images || fwdData.image) ? appT('[Foto]') : (fwdData.text || '')));
       await DrexCloud.database().ref('conversations/' + targetConvId).update({ lastMessage: preview, lastMessageTime: Date.now(), lastMessageSenderId: user.uid });
     } catch(e) { showMiniToast(appT('Error al reenviar. Intenta de nuevo.')); }
   }
@@ -41076,19 +41098,19 @@ ${getSpinnerMarkup('drex-spinner-inline')}
 
       if (currentChatIsGroup && othersTyping.length > 0) {
         Promise.all(othersTyping.map(([uid]) => getChatUserProfile(uid))).then(profiles => {
-          const names = profiles.map(p => (p.name || 'Alguien').split(' ')[0]);
+          const names = profiles.map(p => (p.name || appT('Alguien')).split(' ')[0]);
           let msg;
-          if (names.length === 1) msg = names[0] + ' está escribiendo...';
-          else if (names.length === 2) msg = names[0] + ' y ' + names[1] + ' están escribiendo...';
-          else msg = names[0] + ', ' + names[1] + ' y más están escribiendo...';
+          if (names.length === 1) msg = appT('{a} está escribiendo...').replace('{a}', names[0]);
+          else if (names.length === 2) msg = appT('{a} y {b} están escribiendo...').replace('{a}', names[0]).replace('{b}', names[1]);
+          else msg = appT('{a}, {b} y más están escribiendo...').replace('{a}', names[0]).replace('{b}', names[1]);
           if (textEl) textEl.textContent = msg;
           indicator.classList.remove('hidden');
         }).catch(() => {
-          if (textEl) textEl.textContent = 'Alguien está escribiendo...';
+          if (textEl) textEl.textContent = appT('Alguien está escribiendo...');
           indicator.classList.remove('hidden');
         });
       } else {
-        if (textEl) textEl.textContent = 'escribiendo...';
+        if (textEl) textEl.textContent = appT('escribiendo...');
         indicator.classList.remove('hidden');
       }
     };
@@ -41864,7 +41886,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     if (avatarStatic) avatarStatic.classList.remove('hidden');
     DrexCloud.database().ref('groupChats/' + currentChatRoomId).once('value').then(async snap => {
       const data = snap.val() || {};
-      if (nameEl) nameEl.textContent = data.name || 'Grupo';
+      if (nameEl) nameEl.textContent = (typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(data.name) : data.name) || appT('Grupo');
       if (data.image) {
         if (avatarImg) { avatarImg.src = data.image; avatarImg.classList.remove('hidden'); }
         if (avatarIcon) avatarIcon.classList.add('hidden');
@@ -41872,7 +41894,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       const memberUids = Object.keys(data.members || {});
       currentGroupMembers = memberUids;
       currentGroupAdmins = Object.keys(data.admins || {});
-      if (countEl) countEl.textContent = memberUids.length + ' participante' + (memberUids.length !== 1 ? 's' : '');
+      if (countEl) countEl.textContent = formatChatParticipantCount(memberUids.length);
       currentGroupCreatedBy = data.createdBy || null;
       const currentUser = DrexCloud.auth().currentUser;
       currentGroupIsCreator = !!currentUser && data.createdBy === currentUser.uid;
@@ -42035,7 +42057,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     }
     results.innerHTML = matches.slice(-40).reverse().map(m => `
       <div class="p-3 rounded-2xl bg-[#f0f4f9] border border-[#eef2f7]">
-        <p class="text-xs font-bold text-[#6b7280] mb-1">${escapeHtml(m.senderName || 'Usuario')}</p>
+        <p class="text-xs font-bold text-[#6b7280] mb-1">${escapeHtml(m.senderName || appT('Usuario'))}</p>
         <p class="text-sm text-[#1c2b4a]">${escapeHtml(m.text || '')}</p>
       </div>`).join('');
   }
@@ -42164,7 +42186,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     const makeAdminBtn = document.getElementById('group-member-make-admin-btn');
     const removeAdminBtn = document.getElementById('group-member-remove-admin-btn');
     const kickRow = document.getElementById('group-member-kick-row');
-    if (nameEl) nameEl.textContent = name || 'Usuario';
+    if (nameEl) nameEl.textContent = name || appT('Usuario');
     if (avatarEl) avatarEl.src = image || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
     // Solo el creador del grupo puede otorgar/quitar admin y expulsar a otros admins
     const canManageAdminRole = currentGroupIsCreator;
@@ -42402,7 +42424,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     const input = document.getElementById('add-member-search-input');
     if (input) { input.value = ''; input.focus(); }
     const results = document.getElementById('add-member-results');
-    if (results) results.innerHTML = '<p class="text-center text-sm text-[#6b7280] py-6">Escribe para buscar usuarios</p>';
+    if (results) results.innerHTML = '<p class="text-center text-sm text-[#6b7280] py-6">' + escapeHtml(appT('Escribe para buscar usuarios.')) + '</p>';
   }
 
   function closeAddMemberToGroup() {
@@ -42417,10 +42439,10 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     if (!results) return;
     if (_addMemberSearchTimer) clearTimeout(_addMemberSearchTimer);
     if (!query) {
-      results.innerHTML = '<p class="text-center text-sm text-[var(--theme-muted)] py-6">Escribe para buscar usuarios</p>';
+      results.innerHTML = '<p class="text-center text-sm text-[var(--theme-muted)] py-6">' + escapeHtml(appT('Escribe para buscar usuarios.')) + '</p>';
       return;
     }
-    results.innerHTML = '<p class="text-center text-sm text-[var(--theme-muted)] py-6">Buscando...</p>';
+    results.innerHTML = '<p class="text-center text-sm text-[var(--theme-muted)] py-6">' + escapeHtml(appT('Buscando...')) + '</p>';
     _addMemberSearchTimer = setTimeout(() => {
       const currentMembers = Array.isArray(currentGroupMembers)
         ? currentGroupMembers
@@ -42434,7 +42456,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
           if (currentMembers.includes(u.uid)) return;
           matches.push({
             uid: u.uid,
-            name: u.username || u.displayName || 'Usuario',
+            name: u.username || u.displayName || appT('Usuario'),
             image: getSafeMediaUrl(u.profileImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg=='
           });
         });
@@ -42464,7 +42486,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
     if (!(await verifyGroupAdminFresh(false))) { showMiniToast(appT('Solo un administrador puede agregar participantes')); return; }
-    if (btnEl) { btnEl.disabled = true; btnEl.querySelector('span:last-child').textContent = 'Agregando...'; }
+    if (btnEl) { btnEl.disabled = true; btnEl.querySelector('span:last-child').textContent = appT('Agregando...'); }
     try {
       const groupSnap = await DrexCloud.database().ref('groupChats/' + currentChatRoomId).once('value');
       const groupData = groupSnap.val() || {};
@@ -42511,7 +42533,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       openGroupInfoPanel();
     } catch (e) {
       showMiniToast(appT('No se pudo agregar al miembro'));
-      if (btnEl) { btnEl.disabled = false; btnEl.querySelector('span:last-child').textContent = 'Agregar'; }
+      if (btnEl) { btnEl.disabled = false; btnEl.querySelector('span:last-child').textContent = appT('Agregar'); }
     }
   }
 
@@ -42524,11 +42546,13 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     const avatarEl = document.getElementById('sender-profile-avatar');
     const nameEl = document.getElementById('sender-profile-name');
     const unameEl = document.getElementById('sender-profile-username');
-    if (nameEl) nameEl.textContent = 'Cargando...';
+    if (nameEl) nameEl.textContent = appT('Cargando...');
     if (unameEl) unameEl.textContent = '';
     if (avatarEl) avatarEl.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
     const apply = (img, name, username) => {
       if (avatarEl) avatarEl.src = img;
+      // UI-LANE2: el nombre puede traer emojis de datos de usuario; se filtra.
+      try { if (typeof fiestaStripEmoji === 'function') name = fiestaStripEmoji(name) || name; } catch (_) {}
       if (nameEl) nameEl.textContent = name;
       if (unameEl) unameEl.textContent = username ? '@' + username : '';
     };
@@ -42539,7 +42563,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     DrexCloud.database().ref('users/' + uid).once('value').then(snap => {
       const d = snap.val() || {};
       const img = d.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
-      const name = d.username || d.displayName || 'Usuario';
+      const name = d.username || d.displayName || appT('Usuario');
       const username = d.username || '';
       _groupMsgSenderCache.set(uid, { image: img, name, username });
       apply(img, name, username);
