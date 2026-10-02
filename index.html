@@ -288,7 +288,7 @@ button, a, select, [role="button"] {
 .orbit-badge svg{width:14px;height:14px}
 .orbit-theme-pick{position:relative;border-radius:14px;overflow:hidden;cursor:pointer;border:2px solid transparent;min-height:64px;display:flex;align-items:flex-end;padding:8px}
 .orbit-theme-pick.sel{border-color:var(--drex-brand)}
-.orbit-theme-lock{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:4px;background:rgba(0,0,0,.38);color:#fff;font-size:11px;font-weight:800}
+.orbit-theme-lock{position:absolute;top:6px;left:6px;right:6px;display:flex;align-items:center;justify-content:center;gap:3px;background:rgba(0,0,0,.55);color:#fff;font-size:9px;font-weight:800;letter-spacing:.02em;padding:3px 4px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* ============ Drex Orbit: escalera de planes (design system: acento único índigo #2F33B8) ============ */
 .orbit-plan-card{border:1px solid var(--theme-border);border-radius:16px;padding:16px;position:relative;background:var(--theme-surface)}
 .orbit-plan-card.best{border:2px solid var(--drex-brand)}
@@ -84705,6 +84705,7 @@ function orbitPlanPrice(plan) {
   var p = ORBIT_PLANS[plan] || ORBIT_PLANS.monthly;
   if (p.mode === 'one_time') return p.price + ' ' + t('pago único');
   if (plan === 'biennial') return p.price + ' ' + t('cada 2 años');
+  if (plan === 'weekly') return p.price + ' ' + t('a la semana');
   return p.price + ' ' + t('al') + ' ' + t(p.per);
 }
 /* Insignia de valor de cada plan en la escalera (null = sin insignia).
@@ -84870,10 +84871,16 @@ async function renderOrbitView() {
         sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('pago único')) + ' · ' + escFn(t('Sin renovaciones: tuyo para siempre.')) + '</span>';
       } else if (planId === 'biennial') {
         sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('cada 2 años')) + '</span>';
+      } else if (planId === 'weekly') {
+        /* "semana" es femenino: "a la semana", no "al semana". */
+        sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('a la semana')) + '</span>';
       } else {
         sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('al') + ' ' + t(p.per)) + '</span>';
       }
-      if (p.mode === 'recurring' && planId !== 'monthly') {
+      /* Coste mensual equivalente: ayuda a comparar quarterly/semiannual/
+       * yearly/biennial. En weekly se omite: "≈ $8.62 al mes" en el plan de
+       * $1.99 confunde (parece más caro que el mensual) y no aporta. */
+      if (p.mode === 'recurring' && planId !== 'monthly' && planId !== 'weekly') {
         var mo = orbitPlanMonthlyPrice(planId);
         if (mo) sub += ' <span class="text-xs text-[var(--theme-muted)]">· ≈ ' + escFn(mo) + ' ' + escFn(t('al mes')) + '</span>';
       }
@@ -84902,7 +84909,7 @@ async function renderOrbitView() {
     html += '<div class="px-5 mt-5"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px] mb-2">' + escFn(t('Elegir plan')) + '</h3>'
       + '<div class="grid grid-cols-1 gap-3">' + ladderHtml + '</div>'
       + '<p class="text-[11px] text-[var(--theme-muted)] text-center mt-3 leading-relaxed">'
-      + escFn(t('Pago 100% seguro con Stripe. Sin permanencia. Cancela cuando quieras.')) + '</p></div>';
+      + escFn(t('Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.')) + '</p></div>';
   }
 
   /* Tema de perfil */
@@ -85036,7 +85043,7 @@ async function renderOrbitThemesRow() {
   var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
   row.innerHTML = ORBIT_PROFILE_THEMES.map(function (th) {
     return '<div class="orbit-theme-pick' + (cur === th.id ? ' sel' : '') + '" style="background:' + th.css + '" onclick="setOrbitProfileTheme(\'' + th.id + '\')" role="button" tabindex="0">'
-      + (th.pro ? '<span class="orbit-theme-lock">' + (typeof window.dxIcon === 'function' ? window.dxIcon('crown', 'w-3.5 h-3.5') : '') + ' ' + escFn(t('Solo Drex Orbit')) + '</span>' : '')
+      + (th.pro ? '<span class="orbit-theme-lock">' + (typeof window.dxIcon === 'function' ? window.dxIcon('crown', 'w-3 h-3 shrink-0') : '') + escFn(t('Solo Drex Orbit')) + '</span>' : '')
       + '<span class="relative text-[11px] font-extrabold text-white drop-shadow">' + escFn(orbitThemeName(th.id)) + '</span></div>';
   }).join('');
 }
@@ -85107,9 +85114,13 @@ function orbitTxStatusLabel(status) {
 }
 function orbitTxAmount(tx) {
   try {
+    /* Monedas: solo el importe en la columna derecha. La cantidad de monedas
+     * ya va en la etiqueta de la fila ("Paquete 500 monedas"); repetirla
+     * aquí ("$4.99 · 500 monedas") ensanchaba la columna y truncaba el
+     * título a 390px ("Compra de Drex …"). */
     if (tx.type === 'coins') {
-      if (tx.cents != null) return '$' + (tx.cents / 100).toFixed(2) + ' · ' + tx.amount + ' ' + t('monedas');
-      return tx.amount + ' ' + t('monedas');
+      if (tx.cents != null) return '$' + (tx.cents / 100).toFixed(2);
+      return (tx.amount || '') + ' ' + t('monedas');
     }
     var cur = String(tx.currency || 'usd').toUpperCase();
     var sym = cur === 'USD' ? '$' : (cur + ' ');
@@ -85166,7 +85177,12 @@ async function renderPaymentsView() {
       var label = tx.type === 'coins' ? t('Compra de Drex Coins') : t('Pago de Drex Orbit');
       var dt = tx.ts ? orbitFmtDate(Number(tx.ts)) : '';
       var stLbl = orbitTxStatusLabel(tx.status);
-      var stColor = tx.status === 'completed' ? 'text-green-600' : (tx.status === 'failed' ? 'text-red-500' : 'text-[var(--theme-muted)]');
+      /* Verde: cobro confirmado (completed/paid/succeeded son el mismo estado
+       * en Stripe con distinto nombre). Rojo: requiere atención (fallido,
+       * vencido o no cobrado). El resto, discreto. */
+      var stKey = String(tx.status || '').toLowerCase();
+      var stColor = (stKey === 'completed' || stKey === 'paid' || stKey === 'succeeded') ? 'text-green-600'
+        : ((stKey === 'failed' || stKey === 'past_due' || stKey === 'uncollectible') ? 'text-red-500' : 'text-[var(--theme-muted)]');
       html += '<div class="flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 bg-[var(--theme-surface)]">'
         + '<span class="shrink-0 text-[var(--theme-muted)]">' + icon + '</span>'
         + '<span class="flex-1 min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm truncate">' + escFn(label) + '</span>'
@@ -85231,8 +85247,9 @@ async function renderOrbitAnalytics() {
     + cardStat(t('Seguidores'), followers)
     + cardStat(t('Siguiendo'), following)
     + '</div>'
-    + '<div class="mx-5 mt-4 rounded-2xl p-4 text-center text-xs text-[var(--theme-muted)] bg-[var(--theme-surface-subtle)]">'
-    + '🔜 ' + escFn(t('Próximamente: alcance, visitas al perfil y votos por publicación.')) + '</div>';
+    + '<div class="mx-5 mt-4 rounded-2xl p-4 text-xs text-[var(--theme-muted)] bg-[var(--theme-surface-subtle)] flex items-center justify-center gap-2 text-center">'
+    + '<span class="shrink-0">' + (typeof window.dxIcon === 'function' ? window.dxIcon('clock', 'w-4 h-4') : '') + '</span>'
+    + '<span>' + escFn(t('Próximamente: alcance, visitas al perfil y votos por publicación.')) + '</span></div>';
 }
 var DrexCoins = {
   _cache: {},

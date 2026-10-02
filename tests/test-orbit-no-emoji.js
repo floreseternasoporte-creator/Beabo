@@ -106,7 +106,9 @@ test('renderOrbitView(): filas de beneficios dibujan SVG, no emojis', function (
 });
 
 test('candado de temas pro usa SVG crown, no emoji', function () {
-  assert(src.indexOf("window.dxIcon('crown', 'w-3.5 h-3.5')") !== -1,
+  /* carril 4 (auditoría 390px): el candado pasó a píldora superior compacta
+   * (w-3 h-3); el contrato sigue siendo SVG crown del catálogo, sin emoji. */
+  assert(src.indexOf("window.dxIcon('crown', 'w-3 h-3 shrink-0')") !== -1,
     'candado de tema pro sin SVG crown');
   assert(src.indexOf('<span class="orbit-theme-lock">👑') === -1,
     'regresión: candado con emoji 👑');
