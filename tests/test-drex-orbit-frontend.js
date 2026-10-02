@@ -76,7 +76,7 @@ ok(K.isActive() === false, 'canceled -> inactivo aunque active=true (fail closed
 
 /* ---- 4. Matriz de funciones (8 grupos; studio_pro se eliminó en Fase 3 con Drex Studio) ---- */
 K._setTestState({ active: true, plan: 'yearly', status: 'active' });
-const FEATURES = ['no_ads','badge','profile_themes','live_pro','limits','analytics','exclusive_gifts','priority_support'];
+const FEATURES = ['no_ads','badge','profile_themes','fiesta_boost','limits','analytics','exclusive_gifts','priority_support'];
 for (const f of FEATURES) ok(K.hasAccess(f) === true, 'orbit accede a ' + f);
 ok(K.hasAccess('studio_pro') === false, 'studio_pro eliminado: orbit ya no lo concede (Fase 3)');
 K._setTestState({ active: false, plan: 'none' });

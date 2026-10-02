@@ -50,7 +50,7 @@ ok('createFiesta presente', /function createFiesta\b/.test(src));
 ok('fiesta-room-view presente', src.indexOf('fiesta-room-view') !== -1);
 ok('envivo-pane-voz presente', src.indexOf('envivo-pane-voz') !== -1);
 ok('drexCameraOpen presente (cámara propia)', /function drexCameraOpen\b/.test(src));
-ok('live_pro presente (carril Transmitir)', src.indexOf('live_pro') !== -1);
+ok('fiesta_boost presente (beneficio Orbit de fiestas de voz)', src.indexOf('fiesta_boost') !== -1);
 
 /* ---------- Assets ---------- */
 ok('sin referencia a assets/live-gifts', src.indexOf('live-gifts') === -1);

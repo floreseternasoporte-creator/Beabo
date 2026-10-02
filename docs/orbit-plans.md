@@ -37,32 +37,64 @@ permanencia. Documentado también en el comentario de `ORBIT_PLANS`.
 - La UI muestra "Comprar" (no "Suscribirme") y "Sin renovaciones: tuyo
   para siempre."
 
+## Estado de extremo a extremo (verificado 2026-10-01 contra la Lambda real)
+
+`POST /create-subscription-session` (endpoint `DREX_PAYMENTS_ENDPOINT`):
+
+| Plan (id)   | Precio   | Respuesta del backend hoy | UI del cliente (carril 3) |
+|-------------|----------|---------------------------|---------------------------|
+| `monthly`   | $4.99    | pasa validación → crea Checkout (requiere `STRIPE_PRICE_ORBIT_MONTHLY`) | Suscribirme activo |
+| `quarterly` | $12.99   | pasa validación → crea Checkout (price_data inline, sin env var) | Suscribirme activo |
+| `semiannual`| $24.99   | pasa validación → crea Checkout (price_data inline, sin env var) | Suscribirme activo |
+| `yearly`    | $49.99   | pasa validación → crea Checkout (requiere `STRIPE_PRICE_ORBIT_YEARLY`) | Suscribirme activo |
+| `weekly`    | $1.99    | **400 `invalid_plan`** (la Lambda no conoce este id) | tarjeta deshabilitada · `plan-coming-soon` · etiqueta `orbit_coming_soon` ("Próximamente") |
+| `biennial`  | $89.99   | **400 `invalid_plan`** ← causa raíz del error del usuario | igual que weekly |
+| `lifetime`  | $149.99  | **400 `invalid_plan`** (además requiere `mode:'payment'` en el backend) | igual que weekly |
+
+Causa raíz del error "Error al iniciar el pago. Inténtalo de nuevo." (usuario
+tocó $89.99/2 años): el cliente ofrecía "Suscribirme" para un plan que la
+Lambda `drex-payments` no conoce → 400 `invalid_plan` → el catch caía al
+mensaje genérico. Corregido en el cliente: `ORBIT_BACKEND_PLANS` (lista de
+lo que el backend acepta hoy), tarjetas `data-plan-id` + `plan-coming-soon`
++ `data-unavailable="true"` sin botón de pago, etiqueta i18n
+`orbit_coming_soon` ("Próximamente"/"Coming soon"/"即将上线"/"Em breve") y
+toasts específicos (red / servidor / plan no disponible). Verificación
+completa de compra (Stripe Checkout → webhook → entitlement) aún pendiente
+en iPhone del usuario; Stripe sigue en modo TEST por su orden.
+
 ## Price IDs de Stripe — configuración
 
 El frontend NO lleva price IDs (test `test-orbit-plans.js` lo verifica).
-Viven en env vars de la Lambda `drex-payments`:
+Viven en env vars de la Lambda `drex-payments`. Estado real:
 
-| Plan       | Env var (propuesta)              | Estado            |
-|------------|----------------------------------|-------------------|
-| weekly     | `STRIPE_PRICE_ORBIT_WEEKLY`      | pendiente         |
-| monthly    | `STRIPE_PRICE_ORBIT_MONTHLY`     | existente         |
-| quarterly  | `STRIPE_PRICE_ORBIT_QUARTERLY`   | pendiente         |
-| semiannual | `STRIPE_PRICE_ORBIT_SEMIANNUAL`  | pendiente         |
-| yearly     | `STRIPE_PRICE_ORBIT_YEARLY`      | existente         |
-| biennial   | `STRIPE_PRICE_ORBIT_BIENNIAL`    | pendiente         |
-| lifetime   | `STRIPE_PRICE_ORBIT_LIFETIME`    | pendiente         |
+| Plan       | Env var                                   | Estado hoy |
+|------------|-------------------------------------------|------------|
+| weekly     | `STRIPE_PRICE_ORBIT_WEEKLY`               | pendiente — y la Lambda ni siquiera conoce el id (400 `invalid_plan`) |
+| monthly    | `STRIPE_PRICE_ORBIT_MONTHLY`              | existente |
+| quarterly  | *(ninguna: usa `price_data` inline en la Lambda)* | funciona sin configurar |
+| semiannual | *(ninguna: usa `price_data` inline en la Lambda)* | funciona sin configurar |
+| yearly     | `STRIPE_PRICE_ORBIT_YEARLY`               | existente |
+| biennial   | `STRIPE_PRICE_ORBIT_BIENNIAL`             | pendiente — id desconocido por la Lambda |
+| lifetime   | `STRIPE_PRICE_ORBIT_LIFETIME`             | pendiente — id desconocido + falta rama `mode:'payment'` |
 
 ### ⏳ Paso pendiente (solo lo puede hacer el usuario)
-La clave TEST de Stripe **no es accesible desde este servidor** (sin
-`STRIPE_SECRET_KEY` en env ni archivos de config; verificado 2026-10-01),
-así que los productos/precios NO se crearon por API. Pasos:
-1. En el dashboard de Stripe (modo TEST): Products → crear un producto
-   "Drex Orbit" con 7 precios: $1.99/semana, $4.99/mes, $12.99 cada
-   3 meses, $24.99 cada 6 meses, $49.99/año, $89.99 cada 2 años
-   (recurrentes) y $149.99 pago único.
-2. Copiar cada `price_…` y pegarlo en las env vars de la Lambda
-   (`STRIPE_PRICE_ORBIT_*`), o pasarlo al desplegar con `deploy.sh`.
-3. Stripe sigue en modo TEST por orden del usuario: no activar live.
+1. En el dashboard de Stripe (**modo TEST**, no activar live): Products →
+   crear el producto "Drex Orbit" con los precios que falten:
+   - $1.99/semana (recurrente)
+   - $89.99 cada 2 años (recurrente; en Stripe: intervalo `year`, `interval_count: 2`)
+   - $149.99 pago único
+   (monthly $4.99, quarterly $12.99, semiannual $24.99 y yearly $49.99 ya
+   existen o no necesitan precio: quarterly/semiannual van con `price_data`
+   inline desde la Lambda.)
+2. Copiar cada `price_…` TEST y pegarlo en las env vars de la Lambda
+   (`STRIPE_PRICE_ORBIT_WEEKLY`, `STRIPE_PRICE_ORBIT_BIENNIAL`,
+   `STRIPE_PRICE_ORBIT_LIFETIME`) o pasarlo al desplegar con `deploy.sh`
+   (que hoy ni siquiera exporta las 7 vars — ver "Cambios requeridos").
+3. Pedir al carril backend que amplíe `lambda-drex-payments/index.js`
+   (sección "Cambios requeridos" abajo) y redesplegar; recién entonces
+   agregar los ids a `ORBIT_BACKEND_PLANS` en el frontend.
+4. QA en su iPhone: compra de prueba con tarjeta test
+   `4242 4242 4242 4242` para mensual y anual (pendiente).
 
 ## Cambios requeridos en la Lambda (carril backend — NO tocada aquí)
 
@@ -73,7 +105,7 @@ vendan de verdad:
    webhook `handleKoroneCheckoutCompleted` hoy rechaza todo plan que no
    sea `monthly`/`yearly` con `bad_metadata` — **hay que ampliar la
    validación a los 7 ids** o los cobros de `quarterly`/`semiannual`
-   (que el catálogo ya ofrece) nunca activarían el entitlement.
+   (que ya venden) nunca activarían el entitlement.
 2. `lifetime`: sesión Checkout `mode: 'payment'` + rama en el webhook
    para `checkout.session.completed` con `mode: 'payment'` y metadata
    `drex_orbit_plan: 'lifetime'` que escriba el estado permanente.
@@ -83,6 +115,12 @@ vendan de verdad:
    `_YEARLY` a la Lambda — agregar las 7 vars al
    `update-function-configuration`.
 5. `DEPLOY-CHECKLIST.md`: checklist de crear los 7 precios en Stripe.
+
+Contrato con el frontend (carril 3, 2026-10-01): el cliente solo muestra
+"Suscribirme" para los ids de `ORBIT_BACKEND_PLANS` en `index.html`
+(hoy: monthly, quarterly, semiannual, yearly). Cuando el backend acepte
+un id nuevo, agregarlo ahí en el mismo push que el redespliegue de la
+Lambda; si no, el plan queda en "Próximamente" por diseño.
 
 ## i18n
 Claves nuevas en `drex_orbit_i18n.py` (lista autoritativa) → `drex-i18n.js`
@@ -98,4 +136,11 @@ corrigió a `var APP_CHINESE_ATTRS = {` (el viejo abarcaba
   precios > 0, planes históricos intactos, intervalos coherentes, un solo
   `one_time`, escalera ascendente, UI renderiza los 7, paridad i18n,
   sin price IDs en frontend, fail-closed.
+- `tests/test-orbit-plans-availability.js` (nuevo, carril 3): planes sin
+  precio en el backend (weekly/biennial/lifetime) → tarjeta con
+  `data-plan-id` + clase `plan-coming-soon` + `data-unavailable="true"`,
+  sin botón `orbitSubscribe`, con la etiqueta `orbit_coming_soon`;
+  planes soportados → botón activo; `orbitSubscribe` rechaza planes no
+  disponibles sin tocar red; paridad i18n de las 4 claves nuevas en
+  ES/EN/ZH/PT; toasts específicos por tipo de fallo.
 - `tests/test-drex-orbit-frontend.js`: 62 ok (sin regresiones).

@@ -83,7 +83,7 @@ test('orbitBenefits(): 8 beneficios con ic del catálogo, sin emojis', function 
   var r = fnBlock(src, 'function orbitBenefits() {', 'orbitBenefits');
   var rows = r.match(/\{\s*f:\s*'[^']+',\s*ic:\s*'[^']+'/g) || [];
   assert(rows.length === 8, 'se esperaban 8 beneficios, hay ' + rows.length);
-  ['noads', 'crown', 'palette', 'signal', 'puzzle', 'chart', 'gift', 'headphones']
+  ['noads', 'crown', 'palette', 'mic', 'puzzle', 'chart', 'gift', 'headphones']
     .forEach(function (name) {
       assert(r.indexOf("ic: '" + name + "'") !== -1, 'falta ic ' + name);
     });
@@ -116,7 +116,7 @@ test('candado de temas pro usa SVG crown, no emoji', function () {
 
 test('orbitPaywallCopy(): mapa con ic del catálogo y fallback crown, sin emojis', function () {
   var r = fnBlock(src, 'function orbitPaywallCopy(feature) {', 'orbitPaywallCopy');
-  ['signal', 'puzzle', 'chart', 'gift', 'palette', 'noads', 'crown', 'headphones']
+  ['mic', 'puzzle', 'chart', 'gift', 'palette', 'noads', 'crown', 'headphones']
     .forEach(function (name) {
       assert(r.indexOf("ic: '" + name + "'") !== -1, 'falta ic ' + name);
     });

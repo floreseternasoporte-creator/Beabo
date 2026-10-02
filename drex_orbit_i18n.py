@@ -27,8 +27,8 @@ T = [
 ("Distintivo dorado Drex Orbit y marco en tu foto.", "Gold Drex Orbit badge and frame on your photo.", "金色 Drex Orbit 徽章与头像框。", "Selo dourado Drex Orbit e moldura na sua foto."),
 ("Temas de perfil Orbit", "Orbit profile themes", "Orbit 个人主页主题", "Temas de perfil Orbit"),
 ("Fondos exclusivos para tu portada.", "Exclusive covers for your profile.", "专属个人主页封面背景。", "Fundos exclusivos para sua capa."),
-("En vivos potenciados", "Boosted live streams", "强化直播", "Lives potencializadas"),
-("Más duración, calidad HD y más en vivos programados.", "Longer duration, HD quality and more scheduled lives.", "更长时长、高清画质与更多预约直播。", "Mais duração, qualidade HD e mais lives agendadas."),
+("Impulso en fiestas", "Fiesta boost", "派对助推", "Impulso em festas"),
+("Tus fiestas de voz destacan y llegan a más gente.", "Your voice fiestas stand out and reach more people.", "让你的语音派对更突出，触达更多人。", "Suas festas de voz ganham destaque e alcançam mais gente."),
 ("Límites elevados", "Higher limits", "更高额度", "Limites maiores"),
 ("Videos más largos, más fotos y publicaciones programadas.", "Longer videos, more photos and scheduled posts.", "更长视频、更多照片与定时发布。", "Vídeos mais longos, mais fotos e publicações agendadas."),
 ("Analíticas de creador", "Creator analytics", "创作者数据分析", "Análises de criador"),
@@ -95,6 +95,14 @@ T = [
 ("Inicia sesión para personalizar tu perfil.", "Sign in to customize your profile.", "登录后自定义个人主页。", "Entre para personalizar seu perfil."),
 ("El video puede durar hasta {s} segundos. Elige un clip más corto.", "Videos can be up to {s} seconds. Choose a shorter clip.", "视频最长可为 {s} 秒，请选择更短的片段。", "O vídeo pode ter até {s} segundos. Escolha um clipe mais curto."),
 ("Solo puedes subir un máximo de {n} fotos por publicación.", "You can upload up to {n} photos per post.", "每个帖子最多可上传 {n} 张照片。", "Você pode subir no máximo {n} fotos por publicação."),
+# --- Disponibilidad de planes + toasts de pago específicos (2026-10-01) ---
+# orbit_coming_soon es la ETIQUETA SEMÁNTICA ("Próximamente"/"Coming soon"/…).
+# Convención del app: t() usa el texto ES como clave, así que el código usa
+# el helper orbitComingSoonLabel() (ES directo, EN/ZH/PT vía esta clave).
+# (tupla orbit_coming_soon definida una sola vez más abajo, en el bloque de la escalera)
+("Este plan aún no está disponible. Estará listo muy pronto.", "This plan isn't available yet. It'll be ready very soon.", "此方案暂不可用，很快就会上线。", "Este plano ainda não está disponível. Estará pronto em breve."),
+("No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.", "We couldn't reach the payment server. Check your connection and try again.", "无法连接支付服务器，请检查网络后重试。", "Não foi possível conectar ao servidor de pagamentos. Verifique sua conexão e tente novamente."),
+("El servidor de pagos falló. Inténtalo de nuevo en unos minutos.", "The payment server failed. Try again in a few minutes.", "支付服务器出错，请几分钟后再试。", "O servidor de pagamentos falhou. Tente de novo em alguns minutos."),
 # --- Escalera de planes Drex Orbit (2026-10-01): semanal -> de por vida ---
 ("Semanal", "Weekly", "每周", "Semanal"),
 ("semana", "week", "周", "semana"),
@@ -114,6 +122,7 @@ T = [
 ("Para siempre", "Forever", "永久", "Para sempre"),
 ("Sin renovaciones: tuyo para siempre.", "No renewals: yours forever.", "无需续订，永久拥有。", "Sem renovações: seu para sempre."),
 ("Desde", "From", "起", "Desde"),
+("orbit_coming_soon", "Coming soon", "即将推出", "Em breve"),
 ]
 
 def esc(s):

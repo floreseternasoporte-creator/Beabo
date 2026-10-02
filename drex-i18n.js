@@ -9,101 +9,101 @@ var APP_ENGLISH_TEXT = {
 /* ITEM2-LIVEPUSH */
 
 "Rotar":"Rotate",
-"Ajustes de cámara":"Camera settings",
-"Alertas de regalos":"Gift alerts",
+
+
 "Animación":"Animation",
-"Archivo de imagen":"Image file",
-"Archivo de video":"Video file",
-"Atajos":"Shortcuts",
-"Añade al menos una fuente":"Add at least one source",
-"Añadir escena":"Add scene",
-"Calidad":"Quality",
-"Cambiar escena":"Switch scene",
+
+
+
+
+
+
+
 "Capa":"Layer",
 "Capas":"Layers",
 
-"Co-anfitrión":"Co-host",
+
 "Color":"Color",
-"Comparte el código del directo para invitar":"Share the live code to invite someone",
+
 "Conectando…":"Connecting…",
 "Confeti":"Confetti",
 "Controles":"Controls",
 "Corte":"Cut",
-"Crean una escena nueva lista para usar":"They create a new ready-to-use scene",
-"Cámara no disponible":"Camera unavailable",
-"Dejar de ser co-anfitrión":"Stop being a co-host",
-"Duplicar":"Duplicate",
+
+
+
+
 "Duración":"Duration",
 
 
-"Elegante":"Elegant",
+
 
 "Envía un mensaje…":"Send a message…",
-"Eres co-anfitrión":"You are a co-host",
+
 "Escena":"Scene",
-"Escena creada":"Scene created",
-"Escenas":"Scenes",
-"Espectadores":"Viewers",
+
+
+
 "Espejo":"Mirror",
-"Esperando invitado…":"Waiting for guest…",
-"Estudio":"Studio",
-"Fijo":"Static",
-"Flotar":"Float",
+
+
+
+
 "Fuego":"Fire",
-"Fuente web":"Web source",
+
 "Fuentes":"Sources",
 "Fundido":"Fade",
-"Gamer":"Gamer",
+
 "Gaming":"Gaming",
-"Gema":"Gem",
-"Giro":"Spin",
-"Guardar palabras":"Save words",
+
+
+
 "Horizontal":"Landscape",
 "Imagen":"Image",
 
-"Iniciar en 5 s":"Start in 5 s",
-"Invitado":"Guest",
-"La escena no tiene capas":"This scene has no layers",
-"La fuente web se ve en la vista previa del estudio. Para enviarla al en vivo, captura esa ventana con la fuente Pantalla.":"The web source shows in the studio preview. To send it live, capture that window with the Screen source.",
-"Los mensajes con estas palabras se ocultan y el usuario se silencia 10 min.":"Messages with these words are hidden and the user is muted for 10 min.",
-"Mantén esta pestaña visible durante la transmisión":"Keep this tab visible while live",
-"Marco":"Frame",
+
+
+
+
+
+
+
 "Me gusta":"Likes",
-"Mezclador":"Mixer",
+
 "Monitoreo":"Monitoring",
 "Nota":"Note",
 "Ocurrió un error":"Something went wrong",
-"Orientación":"Orientation",
-"Palabras guardadas":"Words saved",
-"Palabras prohibidas":"Banned words",
+
+
+
 "Pantalla":"Screen",
 "Permiso denegado":"Permission denied",
 "Plantillas":"Templates",
-"Preguntas y respuestas":"Q&A",
-"Probar cámara":"Test camera",
-"Probar micrófono":"Test microphone",
+
+
+
 "Reacción":"Reaction",
 "Rebote":"Bounce",
-"Rotar 90°":"Rotate 90°",
-"Salud del stream":"Stream health",
-"Se unió un co-anfitrión":"A co-host joined",
-"El co-anfitrión salió":"The co-host left",
-"Selecciona una capa para editarla":"Select a layer to edit it",
-"Seleccionar archivo":"Choose file",
-"Sin alertas todavía":"No alerts yet",
-"Sin marco":"No frame",
-"Solo charla":"Talk only",
-"Supr elimina la capa seleccionada":"Del removes the selected layer",
-"Supresión de ruido":"Noise suppression",
-"Tamaño":"Size",
-"Teclas 1-9 cambian de escena":"Keys 1-9 switch scenes",
+
+
+
+
+
+
+
+
+
+
+
+
+
 "Texto":"Text",
 
 "Transición":"Transition",
-"URL de la página":"Page URL",
-"Vertical":"Portrait",
-"Volumen":"Volume",
-"Vuelve a elegir el archivo":"Choose the file again",
+
+
+
+
 "Archivo no disponible":"File unavailable",
 "Ese enlace no es válido. Usa http:// o https://":"That link is not valid. Use http:// or https://",
 "No se pudieron cargar las fotos. Toca para reintentar.":"Couldn't load the photos. Tap to retry.",
@@ -896,6 +896,9 @@ var APP_ENGLISH_TEXT = {
 "Notas":"Notes",
 "Noticia":"News",
 "Nueva conversación":"New conversation",
+"Fijado":"Pinned",
+"No hay conversaciones con ese filtro.":"No conversations match that filter.",
+"Todavía no tienes chats. Toca el botón de escribir para iniciar uno.":"You don't have any chats yet. Tap the compose button to start one.",
 "Nuevo inicio de sesión":"New login",
 "Nuevo inicio de sesión detectado":"New sign-in detected",
 "Ocultar":"Hide",
@@ -929,7 +932,7 @@ var APP_ENGLISH_TEXT = {
 "Pregunta":"Question",
 "Puedes cambiarlo cuando quieras.":"You can change it anytime.",
 "Recibe un aviso al alcanzarlo":"Get notified when you reach it",
-"Reconectando audio...":"Reconnecting audio...","Reconectando…":"Reconnecting…","Más opciones":"More options",
+"Reconectando audio...":"Reconnecting audio...",
 "Recuperación solicitada":"Recovery requested",
 "Regular":"Fair",
 "Relájate y descansa":"Relax and rest",
@@ -1194,7 +1197,7 @@ var APP_ENGLISH_TEXT = {
 "Reproduciendo":"Now playing",
 "Letra":"Lyrics",
 "Anuncio":"Ad",
-"A continuación":"Up next",
+
 "· Mix Drex":"· Drex Mix",
 "Mix":"Mix",
 "Drex Música es gratis gracias a los anuncios":"Drex Music is free thanks to ads",
@@ -1884,7 +1887,7 @@ var APP_ENGLISH_TEXT = {
 "Correcciones de ejercicios":"Exercise corrections",
 "Crear, conectar y descansar":"Create, connect and rest",
 "Cuando alguien corrige tu ejercicio de idioma":"When someone corrects your language exercise",
-"Cuando alguien que sigues transmite en vivo":"When someone you follow goes live",
+
 "Cuenta desactivada":"Account deactivated",
 "Cuéntanos más":"Tell us more",
 "Cuéntanos por qué tu cuenta debería reactivarse. El equipo de moderación revisará tu caso.":"Tell us why your account should be reactivated. The moderation team will review your case.",
@@ -2014,7 +2017,7 @@ var APP_ENGLISH_TEXT = {
 
 "Probar":"Try",
 "Prueba con: amor, risa, hola, gracias, en vivo, gato…":"Try: love, laughter, hi, thanks, live, cat…",
-"Publica, conversa, escucha música, haz en vivos y practica idiomas. Todo en un mismo lugar, sin salir de la app.":"Post, chat, listen to music, go live and practice languages. All in one place, without leaving the app.",
+"Publica, conversa, escucha música, únete a fiestas de voz y practica idiomas. Todo en un mismo lugar, sin salir de la app.":"Post, chat, listen to music, join voice fiestas and practice languages. All in one place, without leaving the app.",
 "Publicaciones a las que hiciste eco en Drex":"Posts you echoed on Drex",
 "Publicación actualizada.":"Post updated.",
 "Publicación eliminada.":"Post deleted.",
@@ -2022,7 +2025,7 @@ var APP_ENGLISH_TEXT = {
 "Quiero hablar":"I want to talk",
 "Reaccionar":"React",
 "Recibe avisos aunque Drex esté cerrada. En iPhone necesitas tener Drex instalada en tu pantalla de inicio.":"Get alerts even when Drex is closed. On iPhone you need Drex installed on your Home Screen.",
-"Red social, chat, música, en vivos y práctica de idiomas conviviendo en la misma app. Menos apps, más vida.":"Social network, chat, music, live streams and language practice living in the same app. Fewer apps, more life.",
+"Red social, chat, música, fiestas de voz y práctica de idiomas conviviendo en la misma app. Menos apps, más vida.":"Social network, chat, music, voice fiestas and language practice living in the same app. Fewer apps, more life.",
 "Repetir al terminar":"Repeat when finished",
 "Respirar":"Breathe",
 "Revisa tu conexión.":"Check your connection.",
@@ -2310,24 +2313,6 @@ var APP_ENGLISH_TEXT = {
 "El destello se eliminó":"Glimmer deleted",
 "No se pudo eliminar el destello. Inténtalo de nuevo.":"Couldn't delete the glimmer. Try again.",
 "Los destellos desaparecen a las 5 horas":"Glimmers disappear after 5 hours",
-/* DREX-STUDIO web v1 */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 "quedan {h} h {m} min":'{h}h {m}m left'
 ,"{n} vistas":'{n} views'
 ,"1 vista":'1 view'
@@ -2698,13 +2683,13 @@ var APP_ENGLISH_TEXT = {
 "Ver transmisión":"Watch live stream",
 "Ver ahora":"Watch now",
 "En vivo ahora":"Live now",
-/* ITEM4-SCHEDREM */"{n} empieza en vivo en unos minutos":"{n} goes live in a few minutes",
-/* ITEM4-SCHEDREM */"Recordatorio enviado a tus seguidores":"Reminder sent to your followers",
-/* DREX-ORBIT */"Anual":"Annual","Mensual":"Monthly","al mes":"per month","al año":"per year","El plan Orbit de Drex":"Drex Orbit plan","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit isn't available right now. Try again later.","Tu suscripción":"Your subscription","Se cancela al final del periodo":"Cancels at the end of the period","Se renueva el":"Renews on","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"Your last payment failed. Update your payment method to keep Drex Orbit.","Gestionar suscripción":"Manage subscription","Restaurar compra":"Restore purchase","Tus beneficios":"Your benefits","Sin anuncios":"Ad-free","Navega Drex sin publicidad.":"Browse Drex with no ads.","Insignia y marco exclusivos":"Exclusive badge & frame","Distintivo dorado Drex Orbit y marco en tu foto.":"Gold Drex Orbit badge and frame on your photo.","Temas de perfil Orbit":"Orbit profile themes","Fondos exclusivos para tu portada.":"Exclusive covers for your profile.","En vivos potenciados":"Boosted live streams","Más duración, calidad HD y más en vivos programados.":"Longer duration, HD quality and more scheduled lives.","Límites elevados":"Higher limits","Videos más largos, más fotos y publicaciones programadas.":"Longer videos, more photos and scheduled posts.","Analíticas de creador":"Creator analytics","Estadísticas avanzadas de tu contenido.":"Advanced stats for your content.","Regalos exclusivos":"Exclusive gifts","Regalos originales solo para miembros Drex Orbit.":"Original gifts only for Drex Orbit members.","Soporte prioritario":"Priority support","Tus reportes se atienden primero.":"Your reports get answered first.","Elegir plan":"Choose a plan","Ahorra 2 meses":"Save 2 months","Suscribirme":"Subscribe","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"100% secure payment with Stripe. We accept cards and Link. No commitment. Cancel anytime.","Tema de perfil":"Profile theme","Elige el fondo de tu portada":"Choose your cover background","Tus números reales, actualizados al abrir.":"Your real numbers, updated on open.","Sin anuncios, insignia exclusiva y mucho más.":"Ad-free, exclusive badge and much more.","Miembro activo":"Active member","Procesando…":"Processing…","Error al iniciar el pago. Inténtalo de nuevo.":"Couldn't start the payment. Try again.","Inicia sesión para suscribirte a Drex Orbit.":"Sign in to subscribe to Drex Orbit.","No tienes una suscripción activa.":"You don't have an active subscription.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Couldn't open subscription management. Try again.","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"Welcome to Drex Orbit! Your subscription is now active.","No encontramos una suscripción activa en tu cuenta.":"We couldn't find an active subscription on your account.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Couldn't verify your subscription. Try again.","Pago recibido. Tu suscripción se activará en unos segundos.":"Payment received. Your subscription will activate in a few seconds.","Suscripción cancelada. No se realizó ningún cargo.":"Subscription cancelled. No charge was made.","Esta función es de Drex Orbit":"This feature is Drex Orbit","Suscríbete para desbloquearla y apoyar a Drex.":"Subscribe to unlock it and support Drex.","Ver planes":"View plans","Ahora no":"Not now","Sin permanencia. Cancela cuando quieras.":"No commitment. Cancel anytime.","Predeterminado":"Default","Índigo":"Indigo","Medianoche":"Midnight","Dorado":"Gold","Esmeralda":"Emerald","Solo Drex Orbit":"Drex Orbit only","Tema aplicado":"Theme applied","No se pudo guardar el tema. Inténtalo de nuevo.":"Couldn't save the theme. Try again.","Inicia sesión para personalizar tu perfil.":"Sign in to customize your profile.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"Videos can be up to {s} seconds. Choose a shorter clip.","Solo puedes subir un máximo de {n} fotos por publicación.":"You can upload up to {n} photos per post.",
+/* ITEM4-SCHEDREM */
+/* ITEM4-SCHEDREM */
+/* DREX-ORBIT */"Anual":"Annual","Mensual":"Monthly","al mes":"per month","al año":"per year","El plan Orbit de Drex":"Drex Orbit plan","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit isn't available right now. Try again later.","Tu suscripción":"Your subscription","Se cancela al final del periodo":"Cancels at the end of the period","Se renueva el":"Renews on","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"Your last payment failed. Update your payment method to keep Drex Orbit.","Gestionar suscripción":"Manage subscription","Restaurar compra":"Restore purchase","Tus beneficios":"Your benefits","Sin anuncios":"Ad-free","Navega Drex sin publicidad.":"Browse Drex with no ads.","Insignia y marco exclusivos":"Exclusive badge & frame","Distintivo dorado Drex Orbit y marco en tu foto.":"Gold Drex Orbit badge and frame on your photo.","Temas de perfil Orbit":"Orbit profile themes","Fondos exclusivos para tu portada.":"Exclusive covers for your profile.","Impulso en fiestas":"Fiesta boost","Tus fiestas de voz destacan y llegan a más gente.":"Your voice fiestas stand out and reach more people.","Límites elevados":"Higher limits","Videos más largos, más fotos y publicaciones programadas.":"Longer videos, more photos and scheduled posts.","Analíticas de creador":"Creator analytics","Estadísticas avanzadas de tu contenido.":"Advanced stats for your content.","Regalos exclusivos":"Exclusive gifts","Regalos originales solo para miembros Drex Orbit.":"Original gifts only for Drex Orbit members.","Soporte prioritario":"Priority support","Tus reportes se atienden primero.":"Your reports get answered first.","Elegir plan":"Choose a plan","Ahorra 2 meses":"Save 2 months","Suscribirme":"Subscribe","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"100% secure payment with Stripe. We accept cards and Link. No commitment. Cancel anytime.","Tema de perfil":"Profile theme","Elige el fondo de tu portada":"Choose your cover background","Tus números reales, actualizados al abrir.":"Your real numbers, updated on open.","Sin anuncios, insignia exclusiva y mucho más.":"Ad-free, exclusive badge and much more.","Miembro activo":"Active member","Procesando…":"Processing…","Error al iniciar el pago. Inténtalo de nuevo.":"Couldn't start the payment. Try again.","Inicia sesión para suscribirte a Drex Orbit.":"Sign in to subscribe to Drex Orbit.","No tienes una suscripción activa.":"You don't have an active subscription.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Couldn't open subscription management. Try again.","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"Welcome to Drex Orbit! Your subscription is now active.","No encontramos una suscripción activa en tu cuenta.":"We couldn't find an active subscription on your account.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Couldn't verify your subscription. Try again.","Pago recibido. Tu suscripción se activará en unos segundos.":"Payment received. Your subscription will activate in a few seconds.","Suscripción cancelada. No se realizó ningún cargo.":"Subscription cancelled. No charge was made.","Esta función es de Drex Orbit":"This feature is Drex Orbit","Suscríbete para desbloquearla y apoyar a Drex.":"Subscribe to unlock it and support Drex.","Ver planes":"View plans","Ahora no":"Not now","Sin permanencia. Cancela cuando quieras.":"No commitment. Cancel anytime.","Predeterminado":"Default","Índigo":"Indigo","Medianoche":"Midnight","Dorado":"Gold","Esmeralda":"Emerald","Solo Drex Orbit":"Drex Orbit only","Tema aplicado":"Theme applied","No se pudo guardar el tema. Inténtalo de nuevo.":"Couldn't save the theme. Try again.","Inicia sesión para personalizar tu perfil.":"Sign in to customize your profile.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"Videos can be up to {s} seconds. Choose a shorter clip.","Solo puedes subir un máximo de {n} fotos por publicación.":"You can upload up to {n} photos per post.",
 "Top":"Top",
-"Top regaladores":"Top gifters",
+
 "¡COMBO!":"COMBO!",
-"Aún no hay regalos en este live":"No gifts in this live yet",
+
 "1 voto":"1 vote",
 
 "Tu saldo: {n} coins":"Your balance: {n} coins",
@@ -2779,107 +2764,108 @@ var APP_ENGLISH_TEXT = {
 "💎 {n} ({p}) se unió":"💎 {n} ({p}) joined",
 /* KOR-ONE */"Pagos":"Payments","Historial de pagos y compras":"Payment & purchase history","Tus movimientos reales de Drex Coins y Drex Orbit.":"Your real Drex Coins and Drex Orbit transactions.","Aún no tienes movimientos":"No transactions yet","Tus compras y pagos aparecerán aquí automáticamente.":"Your purchases and payments will appear here automatically.","Suscripción Drex Orbit":"Drex Orbit subscription","Plan actual":"Current plan","Cancelar suscripción":"Cancel subscription","Cambiar de plan":"Change plan","Actualizar método de pago":"Update payment method","Gestionar en el portal seguro de Stripe":"Manage in Stripe's secure portal","Compra de Drex Coins":"Drex Coins purchase","Pago de Drex Orbit":"Drex Orbit payment","Completado":"Completed","Fallido":"Failed","Cargando tu historial…":"Loading your history…","No pudimos cargar tu historial. Inténtalo de nuevo.":"We couldn't load your history. Try again.","monedas":"coins",
 "Trimestral":"Quarterly","Semestral":"Semiannual","al trimestre":"per quarter","al semestre":"per 6 months","Destellos exclusivos":"Exclusive Destellos","Crea y mira destellos efímeros. Solo miembros Orbit.":"Create and watch ephemeral destellos. Orbit members only.","Más caracteres":"More characters","Escribe hasta 2,000 caracteres en tus publicaciones.":"Write up to 2,000 characters in your posts.","Prioridad en Destacados":"Priority in Highlights","Tus publicaciones suben en la sección Destacados.":"Your posts rank higher in the Highlights tab.","Pendiente de pago":"Pending payment","Procesando":"Processing","Requiere acción":"Action required","Cancelado":"Canceled","No cobrado":"Uncollectible","Reembolsado":"Refunded","Borrador":"Draft","En prueba":"Trialing","Pago vencido":"Past due","Desconocido":"Unknown","Los pagos pendientes se confirman solos cuando Stripe procesa el cobro.":"Pending payments confirm automatically when Stripe processes the charge.","Votos recibidos":"Votes received","Destellos publicados":"Destellos posted","Mejor publicación":"Top post","votos netos":"net votes","Destellos es exclusivo de Drex Orbit":"Destellos is exclusive to Drex Orbit","Solo Orbit":"Orbit only","Próximamente: alcance y visitas al perfil.":"Coming soon: reach and profile visits.",/* DREX-ORBIT-PLANS */"Semanal":"Weekly","semana":"week","mes":"month","trimestre":"quarter","semestre":"6 months","año":"year","al":"per","2 años":"2 years","cada 2 años":"every 2 years","De por vida":"Lifetime","pago único":"one-time payment","Recomendado":"Recommended","Ahorra 13%":"Save 13%","Ahorra 17%":"Save 17%","Ahorra 25%":"Save 25%","Para siempre":"Forever","Sin renovaciones: tuyo para siempre.":"No renewals: yours forever.","Desde":"From",
+/* DREX-ORBIT */"orbit_coming_soon":"Coming soon","Este plan aún no está disponible. Estará listo muy pronto.":"This plan isn't available yet. It'll be ready very soon.","No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.":"We couldn't reach the payment server. Check your connection and try again.","El servidor de pagos falló. Inténtalo de nuevo en unos minutos.":"The payment server failed. Try again in a few minutes.",
 };
 var APP_CHINESE_TEXT = {
 
 /* ITEM2-LIVEPUSH */
 
 "Rotar":"旋转",
-"Ajustes de cámara":"摄像头设置",
-"Alertas de regalos":"礼物提醒",
+
+
 "Animación":"动画",
-"Archivo de imagen":"图片文件",
-"Archivo de video":"视频文件",
-"Atajos":"快捷键",
-"Añade al menos una fuente":"至少添加一个来源",
-"Añadir escena":"添加场景",
-"Calidad":"画质",
-"Cambiar escena":"切换场景",
+
+
+
+
+
+
+
 "Capa":"图层",
 "Capas":"图层",
 
-"Co-anfitrión":"联合主播",
+
 "Color":"颜色",
-"Comparte el código del directo para invitar":"分享直播代码来邀请嘉宾",
+
 "Conectando…":"连接中…",
 "Confeti":"彩带纸屑",
 "Controles":"控制",
 "Corte":"切换",
-"Crean una escena nueva lista para usar":"创建一个即用型新场景",
-"Cámara no disponible":"摄像头不可用",
-"Dejar de ser co-anfitrión":"停止联合主播",
-"Duplicar":"复制",
+
+
+
+
 "Duración":"时长",
 
 
-"Elegante":"优雅",
+
 
 "Envía un mensaje…":"发送消息…",
-"Eres co-anfitrión":"你已成为联合主播",
+
 "Escena":"场景",
-"Escena creada":"场景已创建",
-"Escenas":"场景",
-"Espectadores":"观众",
+
+
+
 "Espejo":"镜像",
-"Esperando invitado…":"等待嘉宾…",
-"Estudio":"工作室",
-"Fijo":"静止",
-"Flotar":"漂浮",
+
+
+
+
 "Fuego":"火焰",
-"Fuente web":"网页来源",
+
 "Fuentes":"来源",
 "Fundido":"淡入淡出",
-"Gamer":"游戏玩家",
+
 "Gaming":"游戏",
-"Gema":"宝石",
-"Giro":"旋转",
-"Guardar palabras":"保存词语",
+
+
+
 "Horizontal":"横屏",
 "Imagen":"图片",
 
-"Iniciar en 5 s":"5秒后开始",
-"Invitado":"嘉宾",
-"La escena no tiene capas":"该场景没有图层",
-"La fuente web se ve en la vista previa del estudio. Para enviarla al en vivo, captura esa ventana con la fuente Pantalla.":"网页来源显示在工作室预览中。要发送到直播，请用屏幕来源捕获该窗口。",
-"Los mensajes con estas palabras se ocultan y el usuario se silencia 10 min.":"包含这些词语的消息将被隐藏，用户将被静音10分钟。",
-"Mantén esta pestaña visible durante la transmisión":"直播时请保持此标签页可见",
-"Marco":"边框",
+
+
+
+
+
+
+
 "Me gusta":"点赞",
-"Mezclador":"混音器",
+
 "Monitoreo":"监听",
 "Nota":"音符",
 "Ocurrió un error":"出错了",
-"Orientación":"方向",
-"Palabras guardadas":"词语已保存",
-"Palabras prohibidas":"违禁词",
+
+
+
 "Pantalla":"屏幕",
 "Permiso denegado":"权限被拒绝",
 "Plantillas":"模板",
-"Preguntas y respuestas":"问答",
-"Probar cámara":"测试摄像头",
-"Probar micrófono":"测试麦克风",
+
+
+
 "Reacción":"反应",
 "Rebote":"弹跳",
-"Rotar 90°":"旋转90°",
-"Salud del stream":"推流状态",
-"Se unió un co-anfitrión":"一位联合主播已加入",
-"El co-anfitrión salió":"联合主播已离开",
-"Selecciona una capa para editarla":"选择一个图层进行编辑",
-"Seleccionar archivo":"选择文件",
-"Sin alertas todavía":"暂无提醒",
-"Sin marco":"无边框",
-"Solo charla":"纯聊天",
-"Supr elimina la capa seleccionada":"Delete 键删除所选图层",
-"Supresión de ruido":"降噪",
-"Tamaño":"大小",
-"Teclas 1-9 cambian de escena":"数字键 1-9 切换场景",
+
+
+
+
+
+
+
+
+
+
+
+
+
 "Texto":"文本",
 
 "Transición":"转场",
-"URL de la página":"网页地址",
-"Vertical":"竖屏",
-"Volumen":"音量",
-"Vuelve a elegir el archivo":"重新选择文件",
+
+
+
+
 "Archivo no disponible":"文件不可用",
 "Ese enlace no es válido. Usa http:// o https://":"该链接无效。请使用 http:// 或 https://",
 "No se pudieron cargar las fotos. Toca para reintentar.":"照片加载失败，点击重试。",
@@ -3654,6 +3640,9 @@ var APP_CHINESE_TEXT = {
 "Notas":"备注",
 "Noticia":"新闻",
 "Nueva conversación":"新对话",
+"Fijado":"已置顶",
+"No hay conversaciones con ese filtro.":"没有符合该筛选条件的对话。",
+"Todavía no tienes chats. Toca el botón de escribir para iniciar uno.":"你还没有聊天，点击写消息按钮开始一个。",
 "Nuevo inicio de sesión":"新登录",
 "Nuevo inicio de sesión detectado":"检测到新的登录",
 "Ocultar":"隐藏",
@@ -3688,7 +3677,7 @@ var APP_CHINESE_TEXT = {
 "Pregunta":"问题",
 "Puedes cambiarlo cuando quieras.":"你可以随时更改。",
 "Recibe un aviso al alcanzarlo":"达到时接收提醒",
-"Reconectando audio...":"正在重新连接音频…","Reconectando…":"重新连接…","Más opciones":"更多选项",
+"Reconectando audio...":"正在重新连接音频…",
 "Recuperación solicitada":"已请求恢复",
 "Regular":"一般",
 "Relájate y descansa":"放松休息",
@@ -3985,7 +3974,7 @@ var APP_CHINESE_TEXT = {
 "Reproduciendo":"正在播放",
 "Letra":"歌词",
 "Anuncio":"广告",
-"A continuación":"接下来",
+
 "· Mix Drex":"· Drex 混音",
 "Mix":"混音",
 "Drex Música es gratis gracias a los anuncios":"Drex 音乐因广告而免费",
@@ -4661,7 +4650,7 @@ var APP_CHINESE_TEXT = {
 "Correcciones de ejercicios":"练习批改",
 "Crear, conectar y descansar":"创作、连接与休息",
 "Cuando alguien corrige tu ejercicio de idioma":"当有人批改你的语言练习时",
-"Cuando alguien que sigues transmite en vivo":"当你关注的人开始直播时",
+
 "Cuenta desactivada":"账号已停用",
 "Cuéntanos más":"告诉我们更多",
 "Cuéntanos por qué tu cuenta debería reactivarse. El equipo de moderación revisará tu caso.":"告诉我们你的账号为何应该恢复。审核团队会查看你的申诉。",
@@ -4791,7 +4780,7 @@ var APP_CHINESE_TEXT = {
 
 "Probar":"试试",
 "Prueba con: amor, risa, hola, gracias, en vivo, gato…":"试试搜索：爱、笑、你好、谢谢、直播、猫…",
-"Publica, conversa, escucha música, haz en vivos y practica idiomas. Todo en un mismo lugar, sin salir de la app.":"发布、聊天、听音乐、开直播、练语言。全都在一个地方，无需离开应用。",
+"Publica, conversa, escucha música, únete a fiestas de voz y practica idiomas. Todo en un mismo lugar, sin salir de la app.":"发布、聊天、听音乐、加入语音派对、练语言。全都在一个地方，无需离开应用。",
 "Publicaciones a las que hiciste eco en Drex":"你在 Drex 中转发过的帖子",
 "Publicación actualizada.":"帖子已更新。",
 "Publicación eliminada.":"帖子已删除。",
@@ -4799,7 +4788,7 @@ var APP_CHINESE_TEXT = {
 "Quiero hablar":"我想说话",
 "Reaccionar":"回应",
 "Recibe avisos aunque Drex esté cerrada. En iPhone necesitas tener Drex instalada en tu pantalla de inicio.":"即使 Drex 已关闭也能收到提醒。在 iPhone 上，你需要将 Drex 安装到主屏幕。",
-"Red social, chat, música, en vivos y práctica de idiomas conviviendo en la misma app. Menos apps, más vida.":"社交、聊天、音乐、直播和语言练习共存于同一个应用。更少的应用，更多的生活。",
+"Red social, chat, música, fiestas de voz y práctica de idiomas conviviendo en la misma app. Menos apps, más vida.":"社交、聊天、音乐、语音派对和语言练习共存于同一个应用。更少的应用，更多的生活。",
 "Repetir al terminar":"结束后重复播放",
 "Respirar":"呼吸",
 "Revisa tu conexión.":"请检查你的网络连接。",
@@ -5087,24 +5076,6 @@ var APP_CHINESE_TEXT = {
 "El destello se eliminó":"闪光已删除",
 "No se pudo eliminar el destello. Inténtalo de nuevo.":"闪光删除失败，请重试。",
 "Los destellos desaparecen a las 5 horas":"闪光将在 5 小时后消失",
-/* DREX-STUDIO web v1 */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 "quedan {h} h {m} min":'还剩 {h} 小时 {m} 分钟'
 ,"{n} vistas":'{n} 次浏览'
 ,"1 vista":'1 次浏览'
@@ -5475,13 +5446,13 @@ var APP_CHINESE_TEXT = {
 "Ver transmisión":"观看直播",
 "Ver ahora":"立即观看",
 "En vivo ahora":"正在直播",
-/* ITEM4-SCHEDREM */"{n} empieza en vivo en unos minutos":"{n} 将在几分钟后开始直播",
-/* ITEM4-SCHEDREM */"Recordatorio enviado a tus seguidores":"已向你的粉丝发送提醒",
-/* DREX-ORBIT */"Anual":"年度","Mensual":"月度","al mes":"每月","al año":"每年","El plan Orbit de Drex":"Drex Orbit 方案","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit 暂时不可用，请稍后再试。","Tu suscripción":"你的订阅","Se cancela al final del periodo":"将在周期结束时取消","Se renueva el":"续订于","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"你最近一次付款失败，请更新付款方式以保留 Drex Orbit。","Gestionar suscripción":"管理订阅","Restaurar compra":"恢复购买","Tus beneficios":"你的权益","Sin anuncios":"无广告","Navega Drex sin publicidad.":"畅享无广告的 Drex。","Insignia y marco exclusivos":"专属徽章和头像框","Distintivo dorado Drex Orbit y marco en tu foto.":"金色 Drex Orbit 徽章与头像框。","Temas de perfil Orbit":"Orbit 个人主页主题","Fondos exclusivos para tu portada.":"专属个人主页封面背景。","En vivos potenciados":"强化直播","Más duración, calidad HD y más en vivos programados.":"更长时长、高清画质与更多预约直播。","Límites elevados":"更高额度","Videos más largos, más fotos y publicaciones programadas.":"更长视频、更多照片与定时发布。","Analíticas de creador":"创作者数据分析","Estadísticas avanzadas de tu contenido.":"内容高级数据统计。","Regalos exclusivos":"专属礼物","Regalos originales solo para miembros Drex Orbit.":"仅限 Drex Orbit 会员的原创礼物。","Soporte prioritario":"优先客服","Tus reportes se atienden primero.":"你的反馈将优先处理。","Elegir plan":"选择方案","Ahorra 2 meses":"节省 2 个月","Suscribirme":"订阅","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"通过 Stripe 100% 安全支付。接受银行卡和 Link。无合约，随时取消。","Tema de perfil":"主页主题","Elige el fondo de tu portada":"选择封面背景","Tus números reales, actualizados al abrir.":"真实数据，每次打开自动更新。","Sin anuncios, insignia exclusiva y mucho más.":"无广告、专属徽章，还有更多。","Miembro activo":"在籍会员","Procesando…":"处理中…","Error al iniciar el pago. Inténtalo de nuevo.":"无法发起付款，请重试。","Inicia sesión para suscribirte a Drex Orbit.":"登录后订阅 Drex Orbit。","No tienes una suscripción activa.":"你没有有效订阅。","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"无法打开订阅管理，请重试。","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"欢迎加入 Drex Orbit！你的订阅已生效。","No encontramos una suscripción activa en tu cuenta.":"未在你的帐户中找到有效订阅。","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"无法验证你的订阅，请重试。","Pago recibido. Tu suscripción se activará en unos segundos.":"已收到付款，你的订阅将在几秒后生效。","Suscripción cancelada. No se realizó ningún cargo.":"订阅已取消，未产生任何扣费。","Esta función es de Drex Orbit":"此功能为 Drex Orbit 专属","Suscríbete para desbloquearla y apoyar a Drex.":"订阅即可解锁并支持 Drex。","Ver planes":"查看方案","Ahora no":"稍后再说","Sin permanencia. Cancela cuando quieras.":"无合约，随时取消。","Predeterminado":"默认","Índigo":"靛蓝","Medianoche":"午夜","Dorado":"金色","Esmeralda":"祖母绿","Solo Drex Orbit":"仅限 Drex Orbit","Tema aplicado":"主题已应用","No se pudo guardar el tema. Inténtalo de nuevo.":"无法保存主题，请重试。","Inicia sesión para personalizar tu perfil.":"登录后自定义个人主页。","El video puede durar hasta {s} segundos. Elige un clip más corto.":"视频最长可为 {s} 秒，请选择更短的片段。","Solo puedes subir un máximo de {n} fotos por publicación.":"每个帖子最多可上传 {n} 张照片。",
+/* ITEM4-SCHEDREM */
+/* ITEM4-SCHEDREM */
+/* DREX-ORBIT */"Anual":"年度","Mensual":"月度","al mes":"每月","al año":"每年","El plan Orbit de Drex":"Drex Orbit 方案","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit 暂时不可用，请稍后再试。","Tu suscripción":"你的订阅","Se cancela al final del periodo":"将在周期结束时取消","Se renueva el":"续订于","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"你最近一次付款失败，请更新付款方式以保留 Drex Orbit。","Gestionar suscripción":"管理订阅","Restaurar compra":"恢复购买","Tus beneficios":"你的权益","Sin anuncios":"无广告","Navega Drex sin publicidad.":"畅享无广告的 Drex。","Insignia y marco exclusivos":"专属徽章和头像框","Distintivo dorado Drex Orbit y marco en tu foto.":"金色 Drex Orbit 徽章与头像框。","Temas de perfil Orbit":"Orbit 个人主页主题","Fondos exclusivos para tu portada.":"专属个人主页封面背景。","Impulso en fiestas":"派对助推","Tus fiestas de voz destacan y llegan a más gente.":"让你的语音派对更突出，触达更多人。","Límites elevados":"更高额度","Videos más largos, más fotos y publicaciones programadas.":"更长视频、更多照片与定时发布。","Analíticas de creador":"创作者数据分析","Estadísticas avanzadas de tu contenido.":"内容高级数据统计。","Regalos exclusivos":"专属礼物","Regalos originales solo para miembros Drex Orbit.":"仅限 Drex Orbit 会员的原创礼物。","Soporte prioritario":"优先客服","Tus reportes se atienden primero.":"你的反馈将优先处理。","Elegir plan":"选择方案","Ahorra 2 meses":"节省 2 个月","Suscribirme":"订阅","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"通过 Stripe 100% 安全支付。接受银行卡和 Link。无合约，随时取消。","Tema de perfil":"主页主题","Elige el fondo de tu portada":"选择封面背景","Tus números reales, actualizados al abrir.":"真实数据，每次打开自动更新。","Sin anuncios, insignia exclusiva y mucho más.":"无广告、专属徽章，还有更多。","Miembro activo":"在籍会员","Procesando…":"处理中…","Error al iniciar el pago. Inténtalo de nuevo.":"无法发起付款，请重试。","Inicia sesión para suscribirte a Drex Orbit.":"登录后订阅 Drex Orbit。","No tienes una suscripción activa.":"你没有有效订阅。","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"无法打开订阅管理，请重试。","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"欢迎加入 Drex Orbit！你的订阅已生效。","No encontramos una suscripción activa en tu cuenta.":"未在你的帐户中找到有效订阅。","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"无法验证你的订阅，请重试。","Pago recibido. Tu suscripción se activará en unos segundos.":"已收到付款，你的订阅将在几秒后生效。","Suscripción cancelada. No se realizó ningún cargo.":"订阅已取消，未产生任何扣费。","Esta función es de Drex Orbit":"此功能为 Drex Orbit 专属","Suscríbete para desbloquearla y apoyar a Drex.":"订阅即可解锁并支持 Drex。","Ver planes":"查看方案","Ahora no":"稍后再说","Sin permanencia. Cancela cuando quieras.":"无合约，随时取消。","Predeterminado":"默认","Índigo":"靛蓝","Medianoche":"午夜","Dorado":"金色","Esmeralda":"祖母绿","Solo Drex Orbit":"仅限 Drex Orbit","Tema aplicado":"主题已应用","No se pudo guardar el tema. Inténtalo de nuevo.":"无法保存主题，请重试。","Inicia sesión para personalizar tu perfil.":"登录后自定义个人主页。","El video puede durar hasta {s} segundos. Elige un clip más corto.":"视频最长可为 {s} 秒，请选择更短的片段。","Solo puedes subir un máximo de {n} fotos por publicación.":"每个帖子最多可上传 {n} 张照片。",
 "Top":"榜单",
-"Top regaladores":"打赏榜",
+
 "¡COMBO!":"连击！",
-"Aún no hay regalos en este live":"这场直播还没有收到礼物",
+
 "1 voto":"1 票",
 
 "Tu saldo: {n} coins":"你的余额：{n} 金币",
@@ -5556,107 +5527,108 @@ var APP_CHINESE_TEXT = {
 "💎 {n} ({p}) se unió":"💎 {n}（{p}）加入了",
 /* DREX-ORBIT */"Pagos":"付款","Historial de pagos y compras":"付款与购买记录","Tus movimientos reales de Drex Coins y Drex Orbit.":"你的 Drex Coins 与 Drex Orbit 真实交易记录。","Aún no tienes movimientos":"暂无交易记录","Tus compras y pagos aparecerán aquí automáticamente.":"你的购买与付款将自动显示在这里。","Suscripción Drex Orbit":"Drex Orbit 订阅","Plan actual":"当前方案","Cancelar suscripción":"取消订阅","Cambiar de plan":"更改方案","Actualizar método de pago":"更新付款方式","Gestionar en el portal seguro de Stripe":"在 Stripe 安全门户中管理","Compra de Drex Coins":"购买 Drex Coins","Pago de Drex Orbit":"Drex Orbit 付款","Completado":"已完成","Fallido":"失败","Cargando tu historial…":"正在加载你的记录…","No pudimos cargar tu historial. Inténtalo de nuevo.":"无法加载你的记录，请重试。","monedas":"金币",
 "Trimestral":"季度","Semestral":"半年度","al trimestre":"每季度","al semestre":"每半年","Destellos exclusivos":"专属闪光","Crea y mira destellos efímeros. Solo miembros Orbit.":"创建和观看限时闪光。仅限 Orbit 会员。","Más caracteres":"更多字符","Escribe hasta 2,000 caracteres en tus publicaciones.":"在帖子中最多可写 2,000 个字符。","Prioridad en Destacados":"精选优先","Tus publicaciones suben en la sección Destacados.":"你的帖子在精选版块中排名更高。","Pendiente de pago":"待付款","Procesando":"处理中","Requiere acción":"需要操作","Cancelado":"已取消","No cobrado":"无法收取","Reembolsado":"已退款","Borrador":"草稿","En prueba":"试用中","Pago vencido":"逾期未付","Desconocido":"未知","Los pagos pendientes se confirman solos cuando Stripe procesa el cobro.":"待处理的付款会在 Stripe 处理扣款后自动确认。","Votos recibidos":"收到的投票","Destellos publicados":"已发布的闪光","Mejor publicación":"最佳帖子","votos netos":"净投票","Destellos es exclusivo de Drex Orbit":"闪光是 Drex Orbit 的专属功能","Solo Orbit":"仅限 Orbit","Próximamente: alcance y visitas al perfil.":"即将推出：覆盖人数和个人主页访问量。",/* DREX-ORBIT-PLANS */"Semanal":"每周","semana":"周","mes":"月","trimestre":"季度","semestre":"半年","año":"年","al":"每","2 años":"2年","cada 2 años":"每2年","De por vida":"终身","pago único":"一次性付款","Recomendado":"推荐","Ahorra 13%":"节省13%","Ahorra 17%":"节省17%","Ahorra 25%":"节省25%","Para siempre":"永久","Sin renovaciones: tuyo para siempre.":"无需续订，永久拥有。","Desde":"起",
+/* DREX-ORBIT */"orbit_coming_soon":"即将推出","Este plan aún no está disponible. Estará listo muy pronto.":"此方案暂不可用，很快就会上线。","No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.":"无法连接支付服务器，请检查网络后重试。","El servidor de pagos falló. Inténtalo de nuevo en unos minutos.":"支付服务器出错，请几分钟后再试。",
 };
 var APP_PORTUGUESE_TEXT = {
 
 /* ITEM2-LIVEPUSH */
 
 "Rotar":"Rotacionar",
-"Ajustes de cámara":"Ajustes de câmera",
-"Alertas de regalos":"Alertas de presentes",
+
+
 "Animación":"Animação",
-"Archivo de imagen":"Arquivo de imagem",
-"Archivo de video":"Arquivo de vídeo",
-"Atajos":"Atalhos",
-"Añade al menos una fuente":"Adicione pelo menos uma fonte",
-"Añadir escena":"Adicionar cena",
-"Calidad":"Qualidade",
-"Cambiar escena":"Trocar de cena",
+
+
+
+
+
+
+
 "Capa":"Camada",
 "Capas":"Camadas",
 
-"Co-anfitrión":"Co-apresentador",
+
 "Color":"Cor",
-"Comparte el código del directo para invitar":"Compartilhe o código da live para convidar",
+
 "Conectando…":"Conectando…",
 "Confeti":"Confete",
 "Controles":"Controles",
 "Corte":"Corte",
-"Crean una escena nueva lista para usar":"Criam uma nova cena pronta para usar",
-"Cámara no disponible":"Câmera indisponível",
-"Dejar de ser co-anfitrión":"Deixar de ser co-apresentador",
-"Duplicar":"Duplicar",
+
+
+
+
 "Duración":"Duração",
 
 
-"Elegante":"Elegante",
+
 
 "Envía un mensaje…":"Envie uma mensagem…",
-"Eres co-anfitrión":"Você é co-apresentador",
+
 "Escena":"Cena",
-"Escena creada":"Cena criada",
-"Escenas":"Cenas",
-"Espectadores":"Espectadores",
+
+
+
 "Espejo":"Espelho",
-"Esperando invitado…":"Aguardando convidado…",
-"Estudio":"Estúdio",
-"Fijo":"Fixo",
-"Flotar":"Flutuar",
+
+
+
+
 "Fuego":"Fogo",
-"Fuente web":"Fonte web",
+
 "Fuentes":"Fontes",
 "Fundido":"Fundido",
-"Gamer":"Gamer",
+
 "Gaming":"Gaming",
-"Gema":"Gema",
-"Giro":"Giro",
-"Guardar palabras":"Salvar palavras",
+
+
+
 "Horizontal":"Horizontal",
 "Imagen":"Imagem",
 
-"Iniciar en 5 s":"Começar em 5 s",
-"Invitado":"Convidado",
-"La escena no tiene capas":"Esta cena não tem camadas",
-"La fuente web se ve en la vista previa del estudio. Para enviarla al en vivo, captura esa ventana con la fuente Pantalla.":"A fonte web aparece na prévia do estúdio. Para enviá-la ao vivo, capture essa janela com a fonte Tela.",
-"Los mensajes con estas palabras se ocultan y el usuario se silencia 10 min.":"Mensagens com essas palavras são ocultadas e o usuário é silenciado por 10 min.",
-"Mantén esta pestaña visible durante la transmisión":"Mantenha esta aba visível durante a transmissão",
-"Marco":"Moldura",
+
+
+
+
+
+
+
 "Me gusta":"Curtidas",
-"Mezclador":"Mixer",
+
 "Monitoreo":"Monitoramento",
 "Nota":"Nota",
 "Ocurrió un error":"Ocorreu um erro",
-"Orientación":"Orientação",
-"Palabras guardadas":"Palavras salvas",
-"Palabras prohibidas":"Palavras proibidas",
+
+
+
 "Pantalla":"Tela",
 "Permiso denegado":"Permissão negada",
 "Plantillas":"Modelos",
-"Preguntas y respuestas":"Perguntas e respostas",
-"Probar cámara":"Testar câmera",
-"Probar micrófono":"Testar microfone",
+
+
+
 "Reacción":"Reação",
 "Rebote":"Quicar",
-"Rotar 90°":"Rotacionar 90°",
-"Salud del stream":"Saúde da transmissão",
-"Se unió un co-anfitrión":"Um co-apresentador entrou",
-"El co-anfitrión salió":"O co-apresentador saiu",
-"Selecciona una capa para editarla":"Selecione uma camada para editar",
-"Seleccionar archivo":"Escolher arquivo",
-"Sin alertas todavía":"Sem alertas ainda",
-"Sin marco":"Sem moldura",
-"Solo charla":"Só conversa",
-"Supr elimina la capa seleccionada":"Supr remove a camada selecionada",
-"Supresión de ruido":"Supressão de ruído",
-"Tamaño":"Tamanho",
-"Teclas 1-9 cambian de escena":"Teclas 1-9 trocam de cena",
+
+
+
+
+
+
+
+
+
+
+
+
+
 "Texto":"Texto",
 
 "Transición":"Transição",
-"URL de la página":"URL da página",
-"Vertical":"Vertical",
-"Volumen":"Volume",
-"Vuelve a elegir el archivo":"Escolha o arquivo novamente",
+
+
+
+
 "Archivo no disponible":"Arquivo indisponível",
 "Ese enlace no es válido. Usa http:// o https://":"Esse link não é válido. Use http:// ou https://",
 "No se pudieron cargar las fotos. Toca para reintentar.":"Não foi possível carregar as fotos. Toque para tentar de novo.",
@@ -5749,7 +5721,7 @@ var APP_PORTUGUESE_TEXT = {
 "9. Tus derechos y cómo ejercerlos":"9. Seus direitos e como exercê-los",
 "@nombre_usuario":"@nombre_usuario",
 "@usuario":"@usuario",
-"A continuación":"A seguir",
+
 "A partir de ahora te pediremos el código de tu app de autenticación al iniciar sesión.":"A partir de agora, vamos pedir o código do seu app de autenticação ao fazer login.",
 "A pesar de nuestros esfuerzos, ningún sistema es completamente seguro. Te recomendamos usar una contraseña segura y única, activar las funciones de seguridad disponibles (como la verificación en dos pasos) y no compartir tus credenciales con nadie.":"Apesar dos nossos esforços, nenhum sistema é totalmente seguro. Recomendamos usar uma senha forte e única, ativar os recursos de segurança disponíveis (como a verificação em duas etapas) e não compartilhar suas credenciais com ninguém.",
 "A – Z":"A – Z",
@@ -5993,7 +5965,7 @@ var APP_PORTUGUESE_TEXT = {
 "Cuando alguien corrige tu ejercicio de idioma":"Quando alguém corrige seu exercício de idioma",
 "Cuando alguien empieza a seguirte":"Quando alguém começa a te seguir",
 "Cuando alguien interactúe contigo, lo verás aquí.":"Quando alguém interagir com você, você verá aqui.",
-"Cuando alguien que sigues transmite en vivo":"Quando alguém que você segue entra ao vivo",
+
 "Cuando alguien que sigues publica":"Quando alguém que você segue publica",
 "Cuando alguien te menciona con @":"Quando alguém te menciona com @",
 "Cuando alguien vota tu publicación":"Quando alguém vota na sua publicação",
@@ -6795,7 +6767,7 @@ var APP_PORTUGUESE_TEXT = {
 "Próximamente: los códigos de respaldo aún no están disponibles.":"Em breve: os códigos de reserva ainda não estão disponíveis.",
 "Publica tus pensamientos, actualizaciones o anuncios. Haz que tu voz resuene.":"Publique seus pensamentos, atualizações ou anúncios. Faça sua voz ressoar.",
 "Publica y administra tus posts desde aquí":"Publique e gerencie seus posts daqui",
-"Publica, conversa, escucha música, haz en vivos y practica idiomas. Todo en un mismo lugar, sin salir de la app.":"Publique, converse, ouça música, faça lives e pratique idiomas. Tudo em um só lugar, sem sair do app.",
+"Publica, conversa, escucha música, únete a fiestas de voz y practica idiomas. Todo en un mismo lugar, sin salir de la app.":"Publique, converse, ouça música, participe de festas de voz e pratique idiomas. Tudo em um só lugar, sem sair do app.",
 "Publicaciones":"Publicações",
 "Publicaciones a las que hiciste eco en Drex":"Publicações das quais você fez eco na Drex",
 "Publicaciones de seguidos":"Publicações de seguidos",
@@ -6833,14 +6805,14 @@ var APP_PORTUGUESE_TEXT = {
 "Recibe un aviso al alcanzarlo":"Receba um aviso ao atingi-lo",
 "Recibimos información sobre ti de nuestros socios y proveedores de servicios. Por ejemplo, los proveedores de análisis nos ayudan a entender cómo se usan nuestros Productos, y los proveedores de pago nos confirman las transacciones. También podemos recibir información de terceros sobre tu actividad fuera de Drex cuando esos terceros usan nuestras herramientas de integración.":"Recebemos informações sobre você dos nossos parceiros e prestadores de serviços. Por exemplo, os fornecedores de análise nos ajudam a entender como nossos Produtos são usados, e os fornecedores de pagamento confirmam as transações. Também podemos receber informações de terceiros sobre sua atividade fora da Drex quando esses terceiros usam nossas ferramentas de integração.",
 "Recientes":"Recentes",
-"Reconectando audio...":"Reconectando áudio...","Reconectando…":"Reconectando…","Más opciones":"Mais opções",
+"Reconectando audio...":"Reconectando áudio...",
 "Recopilamos automáticamente información sobre el dispositivo y el software que utilizas para acceder a nuestros Productos, así como sobre tu actividad en ellos:":"Coletamos automaticamente informações sobre o dispositivo e o software que você usa para acessar nossos Produtos, bem como sobre sua atividade neles:",
 "Recopilamos información sobre las personas, cuentas, comunidades y grupos con los que estás conectado y sobre cómo interactúas con ellos en nuestros Productos, como las personas con las que más te comunicas o los grupos a los que perteneces. También recopilamos la información de contacto que nos proporcionas si decides sincronizar, subir o importar los contactos de tu dispositivo, la cual usamos para ayudarte a encontrar personas que quizá conozcas.":"Coletamos informações sobre as pessoas, contas, comunidades e grupos com os quais você está conectado e sobre como você interage com eles em nossos Produtos, como as pessoas com quem você mais se comunica ou os grupos aos quais pertence. Também coletamos as informações de contato que você nos fornece se decidir sincronizar, enviar ou importar os contatos do seu dispositivo, as quais usamos para ajudar você a encontrar pessoas que talvez conheça.",
 "Recopilamos información sobre tu ubicación cuando usas nuestros Productos, dependiendo de los permisos que nos otorgues y de tus ajustes:":"Coletamos informações sobre sua localização quando você usa nossos Produtos, dependendo das permissões que você nos conceder e das suas configurações:",
 "Recordatorio de descanso":"Lembrete de descanso",
 "Rectificación:":"Retificação:",
 "Recuperar cuenta":"Recuperar conta",
-"Red social, chat, música, en vivos y práctica de idiomas conviviendo en la misma app. Menos apps, más vida.":"Rede social, chat, música, lives e prática de idiomas convivendo no mesmo app. Menos apps, mais vida.",
+"Red social, chat, música, fiestas de voz y práctica de idiomas conviviendo en la misma app. Menos apps, más vida.":"Rede social, chat, música, festas de voz e prática de idiomas convivendo no mesmo app. Menos apps, mais vida.",
 "Reduce los datos que se conservan y compartes.":"Reduza os dados que são conservados e compartilhados.",
 "Reenviar":"Reenviar",
 "Reenviar código":"Reenviar código",
@@ -7618,6 +7590,9 @@ var APP_PORTUGUESE_TEXT = {
 "Norsk (Noruego)":"Norsk (Norueguês)",
 "Noticia":"Notícia",
 "Nueva conversación":"Nova conversa",
+"Fijado":"Fixado",
+"No hay conversaciones con ese filtro.":"Nenhuma conversa com esse filtro.",
+"Todavía no tienes chats. Toca el botón de escribir para iniciar uno.":"Você ainda não tem conversas. Toque no botão de escrever para iniciar uma.",
 "Ocultar":"Ocultar",
 "Océano":"Oceano",
 "Otras sesiones cerradas":"Outras sessões encerradas",
@@ -7855,24 +7830,6 @@ var APP_PORTUGUESE_TEXT = {
 "El destello se eliminó":"Lampejo excluído",
 "No se pudo eliminar el destello. Inténtalo de nuevo.":"Não foi possível excluir o lampejo. Tente novamente.",
 "Los destellos desaparecen a las 5 horas":"Os lampejos desaparecem após 5 horas",
-/* DREX-STUDIO web v1 */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 "quedan {h} h {m} min":'faltam {h} h {m} min'
 ,"{n} vistas":'{n} visualizações'
 ,"1 vista":'1 visualização'
@@ -8243,13 +8200,13 @@ var APP_PORTUGUESE_TEXT = {
 "Ver transmisión":"Ver transmissão",
 "Ver ahora":"Ver agora",
 "En vivo ahora":"Ao vivo agora",
-/* ITEM4-SCHEDREM */"{n} empieza en vivo en unos minutos":"{n} entra ao vivo em alguns minutos",
-/* ITEM4-SCHEDREM */"Recordatorio enviado a tus seguidores":"Lembrete enviado aos seus seguidores",
-/* DREX-ORBIT */"Anual":"Anual","Mensual":"Mensal","al mes":"por mês","al año":"por ano","El plan Orbit de Drex":"O plano Orbit do Drex","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit não está disponível no momento. Tente novamente mais tarde.","Tu suscripción":"Sua assinatura","Se cancela al final del periodo":"Será cancelada ao fim do período","Se renueva el":"Renova em","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"Seu último pagamento falhou. Atualize sua forma de pagamento para manter o Drex Orbit.","Gestionar suscripción":"Gerenciar assinatura","Restaurar compra":"Restaurar compra","Tus beneficios":"Seus benefícios","Sin anuncios":"Sem anúncios","Navega Drex sin publicidad.":"Navegue no Drex sem publicidade.","Insignia y marco exclusivos":"Selo e moldura exclusivos","Distintivo dorado Drex Orbit y marco en tu foto.":"Selo dourado Drex Orbit e moldura na sua foto.","Temas de perfil Orbit":"Temas de perfil Orbit","Fondos exclusivos para tu portada.":"Fundos exclusivos para sua capa.","En vivos potenciados":"Lives potencializadas","Más duración, calidad HD y más en vivos programados.":"Mais duração, qualidade HD e mais lives agendadas.","Límites elevados":"Limites maiores","Videos más largos, más fotos y publicaciones programadas.":"Vídeos mais longos, mais fotos e publicações agendadas.","Analíticas de creador":"Análises de criador","Estadísticas avanzadas de tu contenido.":"Estatísticas avançadas do seu conteúdo.","Regalos exclusivos":"Presentes exclusivos","Regalos originales solo para miembros Drex Orbit.":"Presentes originais só para membros Drex Orbit.","Soporte prioritario":"Suporte prioritário","Tus reportes se atienden primero.":"Suas denúncias são atendidas primeiro.","Elegir plan":"Escolher plano","Ahorra 2 meses":"Economize 2 meses","Suscribirme":"Assinar","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"Pagamento 100% seguro com Stripe. Aceitamos cartões e Link. Sem fidelidade. Cancele quando quiser.","Tema de perfil":"Tema de perfil","Elige el fondo de tu portada":"Escolha o fundo da sua capa","Tus números reales, actualizados al abrir.":"Seus números reais, atualizados ao abrir.","Sin anuncios, insignia exclusiva y mucho más.":"Sem anúncios, selo exclusivo e muito mais.","Miembro activo":"Membro ativo","Procesando…":"Processando…","Error al iniciar el pago. Inténtalo de nuevo.":"Não foi possível iniciar o pagamento. Tente de novo.","Inicia sesión para suscribirte a Drex Orbit.":"Entre para assinar o Drex Orbit.","No tienes una suscripción activa.":"Você não tem uma assinatura ativa.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Não foi possível abrir o gerenciamento da assinatura. Tente de novo.","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"Bem-vindo ao Drex Orbit! Sua assinatura já está ativa.","No encontramos una suscripción activa en tu cuenta.":"Não encontramos uma assinatura ativa na sua conta.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Não foi possível verificar sua assinatura. Tente de novo.","Pago recibido. Tu suscripción se activará en unos segundos.":"Pagamento recebido. Sua assinatura será ativada em alguns segundos.","Suscripción cancelada. No se realizó ningún cargo.":"Assinatura cancelada. Nenhuma cobrança foi feita.","Esta función es de Drex Orbit":"Este recurso é do Drex Orbit","Suscríbete para desbloquearla y apoyar a Drex.":"Assine para desbloquear e apoiar o Drex.","Ver planes":"Ver planos","Ahora no":"Agora não","Sin permanencia. Cancela cuando quieras.":"Sem fidelidade. Cancele quando quiser.","Predeterminado":"Padrão","Índigo":"Índigo","Medianoche":"Meia-noite","Dorado":"Dourado","Esmeralda":"Esmeralda","Solo Drex Orbit":"Somente Drex Orbit","Tema aplicado":"Tema aplicado","No se pudo guardar el tema. Inténtalo de nuevo.":"Não foi possível salvar o tema. Tente de novo.","Inicia sesión para personalizar tu perfil.":"Entre para personalizar seu perfil.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"O vídeo pode ter até {s} segundos. Escolha um clipe mais curto.","Solo puedes subir un máximo de {n} fotos por publicación.":"Você pode subir no máximo {n} fotos por publicação.",
+/* ITEM4-SCHEDREM */
+/* ITEM4-SCHEDREM */
+/* DREX-ORBIT */"Anual":"Anual","Mensual":"Mensal","al mes":"por mês","al año":"por ano","El plan Orbit de Drex":"O plano Orbit do Drex","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit não está disponível no momento. Tente novamente mais tarde.","Tu suscripción":"Sua assinatura","Se cancela al final del periodo":"Será cancelada ao fim do período","Se renueva el":"Renova em","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"Seu último pagamento falhou. Atualize sua forma de pagamento para manter o Drex Orbit.","Gestionar suscripción":"Gerenciar assinatura","Restaurar compra":"Restaurar compra","Tus beneficios":"Seus benefícios","Sin anuncios":"Sem anúncios","Navega Drex sin publicidad.":"Navegue no Drex sem publicidade.","Insignia y marco exclusivos":"Selo e moldura exclusivos","Distintivo dorado Drex Orbit y marco en tu foto.":"Selo dourado Drex Orbit e moldura na sua foto.","Temas de perfil Orbit":"Temas de perfil Orbit","Fondos exclusivos para tu portada.":"Fundos exclusivos para sua capa.","Impulso en fiestas":"Impulso em festas","Tus fiestas de voz destacan y llegan a más gente.":"Suas festas de voz ganham destaque e alcançam mais gente.","Límites elevados":"Limites maiores","Videos más largos, más fotos y publicaciones programadas.":"Vídeos mais longos, mais fotos e publicações agendadas.","Analíticas de creador":"Análises de criador","Estadísticas avanzadas de tu contenido.":"Estatísticas avançadas do seu conteúdo.","Regalos exclusivos":"Presentes exclusivos","Regalos originales solo para miembros Drex Orbit.":"Presentes originais só para membros Drex Orbit.","Soporte prioritario":"Suporte prioritário","Tus reportes se atienden primero.":"Suas denúncias são atendidas primeiro.","Elegir plan":"Escolher plano","Ahorra 2 meses":"Economize 2 meses","Suscribirme":"Assinar","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"Pagamento 100% seguro com Stripe. Aceitamos cartões e Link. Sem fidelidade. Cancele quando quiser.","Tema de perfil":"Tema de perfil","Elige el fondo de tu portada":"Escolha o fundo da sua capa","Tus números reales, actualizados al abrir.":"Seus números reais, atualizados ao abrir.","Sin anuncios, insignia exclusiva y mucho más.":"Sem anúncios, selo exclusivo e muito mais.","Miembro activo":"Membro ativo","Procesando…":"Processando…","Error al iniciar el pago. Inténtalo de nuevo.":"Não foi possível iniciar o pagamento. Tente de novo.","Inicia sesión para suscribirte a Drex Orbit.":"Entre para assinar o Drex Orbit.","No tienes una suscripción activa.":"Você não tem uma assinatura ativa.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Não foi possível abrir o gerenciamento da assinatura. Tente de novo.","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"Bem-vindo ao Drex Orbit! Sua assinatura já está ativa.","No encontramos una suscripción activa en tu cuenta.":"Não encontramos uma assinatura ativa na sua conta.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Não foi possível verificar sua assinatura. Tente de novo.","Pago recibido. Tu suscripción se activará en unos segundos.":"Pagamento recebido. Sua assinatura será ativada em alguns segundos.","Suscripción cancelada. No se realizó ningún cargo.":"Assinatura cancelada. Nenhuma cobrança foi feita.","Esta función es de Drex Orbit":"Este recurso é do Drex Orbit","Suscríbete para desbloquearla y apoyar a Drex.":"Assine para desbloquear e apoiar o Drex.","Ver planes":"Ver planos","Ahora no":"Agora não","Sin permanencia. Cancela cuando quieras.":"Sem fidelidade. Cancele quando quiser.","Predeterminado":"Padrão","Índigo":"Índigo","Medianoche":"Meia-noite","Dorado":"Dourado","Esmeralda":"Esmeralda","Solo Drex Orbit":"Somente Drex Orbit","Tema aplicado":"Tema aplicado","No se pudo guardar el tema. Inténtalo de nuevo.":"Não foi possível salvar o tema. Tente de novo.","Inicia sesión para personalizar tu perfil.":"Entre para personalizar seu perfil.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"O vídeo pode ter até {s} segundos. Escolha um clipe mais curto.","Solo puedes subir un máximo de {n} fotos por publicación.":"Você pode subir no máximo {n} fotos por publicação.",
 "Top":"Top",
-"Top regaladores":"Top de presentes",
+
 "¡COMBO!":"COMBO!",
-"Aún no hay regalos en este live":"Ainda não há presentes nesta live",
+
 "1 voto":"1 voto",
 
 "Tu saldo: {n} coins":"Seu saldo: {n} coins",
@@ -8324,6 +8281,7 @@ var APP_PORTUGUESE_TEXT = {
 "💎 {n} ({p}) se unió":"💎 {n} ({p}) entrou",
 /* KOR-ONE */"Pagos":"Pagamentos","Historial de pagos y compras":"Histórico de pagamentos e compras","Tus movimientos reales de Drex Coins y Drex Orbit.":"Suas transações reais de Drex Coins e Drex Orbit.","Aún no tienes movimientos":"Ainda não há transações","Tus compras y pagos aparecerán aquí automáticamente.":"Suas compras e pagamentos aparecerão aqui automaticamente.","Suscripción Drex Orbit":"Assinatura Drex Orbit","Plan actual":"Plano atual","Cancelar suscripción":"Cancelar assinatura","Cambiar de plan":"Mudar de plano","Actualizar método de pago":"Atualizar forma de pagamento","Gestionar en el portal seguro de Stripe":"Gerenciar no portal seguro do Stripe","Compra de Drex Coins":"Compra de Drex Coins","Pago de Drex Orbit":"Pagamento Drex Orbit","Completado":"Concluído","Fallido":"Falhou","Cargando tu historial…":"Carregando seu histórico…","No pudimos cargar tu historial. Inténtalo de nuevo.":"Não foi possível carregar seu histórico. Tente novamente.","monedas":"moedas",
 "Trimestral":"Trimestral","Semestral":"Semestral","al trimestre":"por trimestre","al semestre":"por semestre","Destellos exclusivos":"Destellos exclusivos","Crea y mira destellos efímeros. Solo miembros Orbit.":"Crie e veja destellos efêmeros. Somente membros Orbit.","Más caracteres":"Mais caracteres","Escribe hasta 2,000 caracteres en tus publicaciones.":"Escreva até 2.000 caracteres nas suas publicações.","Prioridad en Destacados":"Prioridade nos Destaques","Tus publicaciones suben en la sección Destacados.":"Suas publicações sobem na seção Destaques.","Pendiente de pago":"Pagamento pendente","Procesando":"Processando","Requiere acción":"Requer ação","Cancelado":"Cancelado","No cobrado":"Não cobrado","Reembolsado":"Reembolsado","Borrador":"Rascunho","En prueba":"Em teste","Pago vencido":"Pagamento vencido","Desconocido":"Desconhecido","Los pagos pendientes se confirman solos cuando Stripe procesa el cobro.":"Pagamentos pendentes são confirmados automaticamente quando a Stripe processa a cobrança.","Votos recibidos":"Votos recebidos","Destellos publicados":"Destellos publicados","Mejor publicación":"Melhor publicação","votos netos":"votos líquidos","Destellos es exclusivo de Drex Orbit":"Destellos é exclusivo do Drex Orbit","Solo Orbit":"Só Orbit","Próximamente: alcance y visitas al perfil.":"Em breve: alcance e visitas ao perfil.",/* DREX-ORBIT-PLANS */"Semanal":"Semanal","semana":"semana","mes":"mês","trimestre":"trimestre","semestre":"semestre","año":"ano","al":"por","2 años":"2 anos","cada 2 años":"a cada 2 anos","De por vida":"Vitalício","pago único":"pagamento único","Recomendado":"Recomendado","Ahorra 13%":"Economize 13%","Ahorra 17%":"Economize 17%","Ahorra 25%":"Economize 25%","Para siempre":"Para sempre","Sin renovaciones: tuyo para siempre.":"Sem renovações: seu para sempre.","Desde":"Desde",
+/* DREX-ORBIT */"orbit_coming_soon":"Em breve","Este plan aún no está disponible. Estará listo muy pronto.":"Este plano ainda não está disponível. Estará pronto em breve.","No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.":"Não foi possível conectar ao servidor de pagamentos. Verifique sua conexão e tente novamente.","El servidor de pagos falló. Inténtalo de nuevo en unos minutos.":"O servidor de pagamentos falhou. Tente de novo em alguns minutos.",
 };
 var APP_CHINESE_ATTRS = {
   "Explica los errores...":"解释错误…",
@@ -8626,18 +8584,18 @@ var APP_CHINESE_ATTRS = {
 "Avisar sobre cambios importantes":"重要变更时提醒",
 "Añade un comentario":"添加评论",
 "Billetera":"钱包",
-"Calidad":"画质",
+
 
 "Cambiar foto del grupo":"更改群组照片",
 "Cancelar":"取消",
 "Cerrar selector de emojis":"关闭表情选择器",
-"Co-anfitrión":"联合主播",
+
 "Compartir":"分享",
 "Confirmaciones de lectura":"已读回执",
 "Continuar con Facebook":"使用 Facebook 继续",
 "Cuenta verificada":"已验证账号",
 "Código de verificación de dos factores":"双重验证验证码",
-"Dejar de ser co-anfitrión":"停止联合主播",
+
 "Describe el problema…":"描述问题…",
 "Descubrir publicaciones":"发现帖子",
 "Destello":"闪光",
@@ -8650,8 +8608,8 @@ var APP_CHINESE_ATTRS = {
 "Escribe aquí tu apelación…":"在此处写下你的申诉…",
 "Escribe un mensaje":"写消息",
 "Escribirle a Baro":"给 Baro 发消息",
-"Escuchar el audio del programa en este dispositivo":"在此设备上监听节目音频",
-"Espectadores":"观众",
+
+
 "Filtrar destellos":"筛选闪光",
 "Flash":"闪光灯",
 
@@ -8669,7 +8627,7 @@ var APP_CHINESE_ATTRS = {
 "Ondas":"Ondas",
 "Opciones":"选项",
 "Orden del feed":"动态排序",
-"Orientación":"方向",
+
 "Pregúntale algo a Baro…":"问 Baro 点什么…",
 "Programar publicación":"定时发布",
 "Publicaciones":"帖子",
@@ -8727,18 +8685,18 @@ var APP_ENGLISH_ATTRS = { "Explica los errores...":"Explain the mistakes...", "E
 "Avisar sobre cambios importantes":"Notify about important changes",
 "Añade un comentario":"Add a comment",
 "Billetera":"Wallet",
-"Calidad":"Quality",
+
 
 "Cambiar foto del grupo":"Change group photo",
 "Cancelar":"Cancel",
 "Cerrar selector de emojis":"Close emoji picker",
-"Co-anfitrión":"Co-host",
+
 "Compartir":"Share",
 "Confirmaciones de lectura":"Read receipts",
 "Continuar con Facebook":"Continue with Facebook",
 "Cuenta verificada":"Verified account",
 "Código de verificación de dos factores":"Two-factor verification code",
-"Dejar de ser co-anfitrión":"Stop being a co-host",
+
 "Describe el problema…":"Describe the problem…",
 "Descubrir publicaciones":"Discover posts",
 "Destello":"Glimmer",
@@ -8751,8 +8709,8 @@ var APP_ENGLISH_ATTRS = { "Explica los errores...":"Explain the mistakes...", "E
 "Escribe aquí tu apelación…":"Write your appeal here…",
 "Escribe un mensaje":"Write a message",
 "Escribirle a Baro":"Message Baro",
-"Escuchar el audio del programa en este dispositivo":"Listen to the program audio on this device",
-"Espectadores":"Viewers",
+
+
 "Filtrar destellos":"Filter glimmers",
 "Flash":"Flash",
 
@@ -8770,7 +8728,7 @@ var APP_ENGLISH_ATTRS = { "Explica los errores...":"Explain the mistakes...", "E
 "Ondas":"Ondas",
 "Opciones":"Options",
 "Orden del feed":"Feed order",
-"Orientación":"Orientation",
+
 "Pregúntale algo a Baro…":"Ask Baro something…",
 "Programar publicación":"Schedule post",
 "Publicaciones":"Posts",
@@ -9114,18 +9072,18 @@ var APP_PORTUGUESE_ATTRS = {
 "Avisar sobre cambios importantes":"Avisar sobre mudanças importantes",
 "Añade un comentario":"Adicionar um comentário",
 "Billetera":"Carteira",
-"Calidad":"Qualidade",
+
 
 "Cambiar foto del grupo":"Trocar foto do grupo",
 "Cancelar":"Cancelar",
 "Cerrar selector de emojis":"Fechar seletor de emojis",
-"Co-anfitrión":"Co-apresentador",
+
 "Compartir":"Compartilhar",
 "Confirmaciones de lectura":"Confirmações de leitura",
 "Continuar con Facebook":"Continuar com o Facebook",
 "Cuenta verificada":"Conta verificada",
 "Código de verificación de dos factores":"Código de verificação de dois fatores",
-"Dejar de ser co-anfitrión":"Deixar de ser co-apresentador",
+
 "Describe el problema…":"Descreva o problema…",
 "Descubrir publicaciones":"Descobrir publicações",
 "Destello":"Lampejo",
@@ -9138,8 +9096,8 @@ var APP_PORTUGUESE_ATTRS = {
 "Escribe aquí tu apelación…":"Escreva aqui seu recurso…",
 "Escribe un mensaje":"Escrever mensagem",
 "Escribirle a Baro":"Escrever para o Baro",
-"Escuchar el audio del programa en este dispositivo":"Ouvir o áudio do programa neste dispositivo",
-"Espectadores":"Espectadores",
+
+
 "Filtrar destellos":"Filtrar lampejos",
 "Flash":"Flash",
 
@@ -9157,7 +9115,7 @@ var APP_PORTUGUESE_ATTRS = {
 "Ondas":"Ondas",
 "Opciones":"Opções",
 "Orden del feed":"Ordem do feed",
-"Orientación":"Orientação",
+
 "Pregúntale algo a Baro…":"Pergunte algo ao Baro…",
 "Programar publicación":"Agendar post",
 "Publicaciones":"Publicações",
