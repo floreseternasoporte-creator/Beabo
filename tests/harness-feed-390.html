@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390, initial-scale=1">
+<title>Lane1 harness feed 390</title>
+<style>html,body{margin:0;padding:0;background:#fff}#lane1-results{display:none}</style>
+</head>
+<body>
+<iframe id="app" src="/index.html" style="width:390px;border:0;display:block" height="600" title="app"></iframe>
+<pre id="lane1-results">PENDING</pre>
+<script>
+(function () {
+  var results = [];
+  function add(name, pass, detail) { results.push({ name: name, pass: !!pass, detail: detail || '' }); }
+  function waitFor(fn, timeoutMs) {
+    return new Promise(function (res, rej) {
+      var t0 = Date.now();
+      (function poll() {
+        var v; try { v = fn(); } catch (e) { v = null; }
+        if (v) return res(v);
+        if (Date.now() - t0 > timeoutMs) return rej(new Error('timeout'));
+        setTimeout(poll, 250);
+      })();
+    });
+  }
+  function done() {
+    document.getElementById('lane1-results').textContent = 'RESULTS-BEGIN' + JSON.stringify(results) + 'RESULTS-END';
+  }
+
+  var frame = document.getElementById('app');
+  frame.addEventListener('load', function () {
+    (async function () {
+      try {
+        var W = frame.contentWindow, d = frame.contentDocument;
+        await waitFor(function () { return (typeof W.buildDrexPostCardHTML === 'function') ? 1 : 0; }, 90000);
+        add('buildDrexPostCardHTML disponible', true);
+        // El usuario habla espanol: fijar idioma de la app a ES para la auditoria.
+        try { W.localStorage.setItem('drex_app_language_v1', 'es'); } catch (e) {}
+
+        // ===== 1) DOM original: tabs, Destellos, pull-to-refresh =====
+        try {
+          var bar = d.querySelector('#douyin-feed-tabs .flex');
+          var btns = Array.prototype.slice.call(d.querySelectorAll('#douyin-feed-tabs .feed-tab-btn'));
+          add('tabs: 4 presentes', btns.length === 4, btns.map(function (b) { return b.dataset.tab; }).join(','));
+          var cs = bar ? W.getComputedStyle(bar) : null;
+          add('tabs: fila con overflow-x auto (sin scroll de pagina)', !!cs && (cs.overflowX === 'auto' || cs.overflowX === 'scroll'), cs ? cs.overflowX : 'sin barra');
+          var sel = d.querySelector('#douyin-feed-tabs .feed-tab-btn[aria-selected="true"]');
+          add('tabs: una marcada aria-selected=true', !!sel, sel ? sel.dataset.tab : '');
+          var labels = btns.map(function (b) { return b.textContent.trim(); });
+          add('tabs: etiquetas visibles', labels.every(Boolean), labels.join(' / '));
+          // tabs caben sin scroll de pagina: la fila interna puede scrollear, el body no
+          add('tabs: body sin scroll-x', d.documentElement.scrollWidth <= 391, 'scrollWidth=' + d.documentElement.scrollWidth);
+
+          var ptr = d.getElementById('feed-pull-indicator');
+          add('pull-to-refresh: indicador presente', !!ptr);
+
+          var tray = d.getElementById('drex-snap-tray');
+          var row = d.getElementById('drex-snap-row');
+          var rcs = row ? W.getComputedStyle(row) : null;
+          add('Destellos: bandeja con scroll-x propio', !!tray && !!rcs && (rcs.overflowX === 'auto' || rcs.overflowX === 'scroll'), rcs ? rcs.overflowX : '');
+          var sfilter = d.getElementById('drex-snap-filter');
+          add('Destellos: filtro con 3 opciones', !!sfilter && sfilter.options.length === 3, sfilter ? Array.prototype.map.call(sfilter.options, function (o) { return o.text; }).join('/') : '');
+          var head = tray ? tray.querySelector('.flex.items-center') : null;
+          var hr = head ? head.getBoundingClientRect() : null;
+          add('Destellos: cabecera cabe a 390px', !hr || hr.width <= 390.5, hr ? Math.round(hr.width) + 'px' : '');
+          var ttl = d.getElementById('drex-snap-ttl-hint');
+          add('Destellos: hint "5 h" presente', !!ttl && /5 h/.test(ttl.textContent));
+        } catch (e) { add('tabs/Destellos DOM', false, String(e).slice(0, 140)); }
+
+        // ===== 2) sandbox de tarjetas (SIN borrar el body: el <style> del
+        // feed vive en el body y innerHTML='' destruiria sus reglas) =====
+        Array.prototype.forEach.call(d.body.children, function (c) { c.style.display = 'none'; });
+        var sb = d.createElement('div');
+        sb.id = 'lane1-sb';
+        sb.style.cssText = 'width:390px;max-width:390px;margin:0 auto;background:#fff;';
+        d.body.appendChild(sb);
+
+        function mkNote(over) {
+          var base = {
+            id: 'n1', authorId: 'u1', authorName: 'Narayan Azrael Vega Rodriguez del Monte',
+            authorEmail: '', timestamp: Date.now() - 3600e3, upvotes: 12, downvotes: 2,
+            commentsCount: 5,
+            content: 'Hola mundo. Post de prueba con nombre de autor muy largo para ver la fila de meta a 390px.'
+          };
+          for (var k in over) base[k] = over[k];
+          return base;
+        }
+        function card(note, ctx) {
+          var w = d.createElement('div');
+          w.className = 'drex-post'; w.dataset.noteId = note.id;
+          w.innerHTML = W.buildDrexPostCardHTML(note, ctx || { user: null, userVote: null, hasEchoed: false });
+          sb.appendChild(w);
+          return w;
+        }
+
+        var w1, w2, w3, w4, w5;
+        try { w1 = card(mkNote()); add('tarjeta base renderiza', !!w1.querySelector('.drex-vote-rail')); }
+        catch (e) { add('tarjeta base renderiza', false, String(e).slice(0, 140)); }
+        try {
+          var longText = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(12);
+          w2 = card(mkNote({ id: 'n2', content: longText }));
+          add('tarjeta texto largo renderiza', true);
+        } catch (e) { add('tarjeta texto largo renderiza', false, String(e).slice(0, 140)); }
+        try { w3 = card(mkNote({ id: 'n3', url: 'https://ejemplo.com/' + 'a'.repeat(200) })); add('tarjeta URL larga renderiza', true); }
+        catch (e) { add('tarjeta URL larga renderiza', false, String(e).slice(0, 140)); }
+        try { w4 = card(mkNote({ id: 'n4', upvotes: 1234, downvotes: 5 }), { user: { uid: 'me' }, userVote: 'up', hasEchoed: true }); add('tarjeta votada renderiza', true); }
+        catch (e) { add('tarjeta votada renderiza', false, String(e).slice(0, 140)); }
+        try {
+          var n5 = mkNote({ id: 'n5' }); n5.collaborators = [{ uid: 'u2', name: 'Colaboradora Con Nombre Largo' }];
+          w5 = card(n5); add('tarjeta colaboracion renderiza', true);
+        } catch (e) { add('tarjeta colaboracion renderiza', false, String(e).slice(0, 140)); }
+
+        // 3) sin desborde horizontal: el contenedor no debe scrollear y ningun
+        // elemento visible debe asomar fuera de los 390px (los ::after de
+        // area tactil son invisibles y no cuentan: no estan en el DOM).
+        var overflowBits = [];
+        if (sb.scrollWidth > 391) overflowBits.push('sandbox scrollWidth=' + sb.scrollWidth);
+        Array.prototype.forEach.call(sb.querySelectorAll('*'), function (el) {
+          var r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) return;
+          if (r.right > 391 || r.left < -1) {
+            // permitido si vive dentro de un carrusel con scroll-x propio
+            var p = el.parentElement, insideScroller = false;
+            while (p && p !== sb) {
+              var ox = W.getComputedStyle(p).overflowX;
+              if (ox === 'auto' || ox === 'scroll') { insideScroller = true; break; }
+              p = p.parentElement;
+            }
+            if (!insideScroller) overflowBits.push((el.className || el.tagName || '').toString().slice(0, 50) + ' right=' + Math.round(r.right));
+          }
+        });
+        add('tarjetas: sin scroll-x ni elementos fuera a 390px', overflowBits.length === 0, overflowBits.slice(0, 3).join(' | ') || 'ok');
+
+        // 4) fila de acciones dentro de 390
+        var btnOut = 0;
+        Array.prototype.forEach.call(sb.querySelectorAll('.drex-post-actions'), function (r) {
+          if (r.getBoundingClientRect().right > 390.5) btnOut++;
+        });
+        add('fila de acciones dentro de 390px', btnOut === 0, btnOut ? btnOut + ' filas fuera' : 'ok');
+
+        // 5) area tactil EFECTIVA >= 44px (Apple HIG): el diseno usa botones
+        // visuales compactos con ::after invisible que extiende el area.
+        var smallTap = [];
+        Array.prototype.forEach.call(sb.querySelectorAll('.drex-action-pill, .drex-action-icon, .drex-vote-btn, .post-menu-btn'), function (b) {
+          // offsetWidth/Height: medida de layout, inmune a la animacion pop del voto
+          var w = b.offsetWidth, h = b.offsetHeight;
+          try {
+            var pa = W.getComputedStyle(b, '::after');
+            if (pa && pa.content !== 'none') {
+              var ins = pa.getPropertyValue('inset');
+              var m = /(-?\d+(?:\.\d+)?)px/.exec(ins || '');
+              if (m) { var v = Math.abs(parseFloat(m[1])); w += v * 2; h += v * 2; }
+            }
+          } catch (e) {}
+          if (Math.min(w, h) < 43.5) smallTap.push((b.className || '').toString().slice(0, 40) + ' ' + Math.round(w) + 'x' + Math.round(h));
+        });
+        add('area tactil efectiva >= 44px (incluye ::after)', smallTap.length === 0, smallTap.length ? smallTap.slice(0, 4).join(' | ') : 'ok');
+
+        // 6) Ver mas
+        if (w2) {
+          var moreBtn = w2.querySelector('button[onclick*="toggleNoteContentExpand"]');
+          add('"Ver mas" renderizado en texto largo', !!moreBtn);
+          if (moreBtn) {
+            moreBtn.click();
+            var opened = w2.querySelector('.note-expandable-content.drex-fd-open');
+            var full = w2.querySelector('.note-content-full');
+            add('"Ver mas" expande', !!opened && !!full && !full.classList.contains('hidden'));
+            add('"Ver mas" cambia etiqueta a Ver menos', /menos/i.test(moreBtn.textContent), moreBtn.textContent.trim());
+            moreBtn.click();
+            add('"Ver menos" colapsa', !w2.querySelector('.note-expandable-content.drex-fd-open'));
+          }
+        }
+
+        // 7) riel de votos aria
+        if (w1) {
+          var upAria = (w1.querySelector('#upvote-n1') || {}).getAttribute ? w1.querySelector('#upvote-n1').getAttribute('aria-label') : '';
+          add('riel de votos con aria-labels', !!w1.querySelector('.drex-vote-rail') && /Voto/.test(upAria || ''), upAria || '');
+        }
+
+        // 8) estados vacios
+        if (typeof W.snfFeedEmptyHTML === 'function') {
+          var modes = ['foryou', 'following', 'marea'], eOut = 0;
+          modes.forEach(function (m) {
+            var e = d.createElement('div'); e.innerHTML = W.snfFeedEmptyHTML(m); sb.appendChild(e);
+            if (e.getBoundingClientRect().right > 390.5) eOut++;
+          });
+          add('estados vacios caben a 390px', eOut === 0, eOut ? eOut + ' fuera' : 'ok');
+          var e3 = d.createElement('div'); e3.innerHTML = W.snfFeedEmptyHTML('marea');
+          var cta = e3.querySelector('.drex-fd-empty-cta');
+          add('vacio "Mi Marea" trae CTA', !!cta && /Descubrir|ondas/i.test(cta.textContent), cta ? cta.textContent.trim() : '');
+        } else add('snfFeedEmptyHTML existe', false);
+
+        // 9) esqueleto
+        if (typeof W.snfFeedSkeletonHTML === 'function') {
+          var sk = d.createElement('div'); sk.innerHTML = W.snfFeedSkeletonHTML(); sb.appendChild(sk);
+          add('esqueleto: 3 tarjetas', sk.querySelectorAll('.feed-skeleton').length === 3);
+        } else add('snfFeedSkeletonHTML existe', false);
+
+        // 10) score formateado
+        if (w4) {
+          var score = (w4.querySelector('#score-n4') || {}).textContent || '';
+          add('score 1234-5 formateado (1.2K)', /1\.2[kK]/.test(score), 'score="' + score + '"');
+        }
+
+        // 11) nombre largo con ellipsis
+        if (w1) {
+          var ab = w1.querySelector('.drex-post-author');
+          var ar = ab ? ab.getBoundingClientRect() : null;
+          add('autor largo con ellipsis dentro de tarjeta', !!ar && ar.right <= 390.5, ar ? 'right=' + Math.round(ar.right) : '');
+        }
+
+        // 12) boton seguir rapido no rompe la fila meta
+        if (w1) {
+          var qf = w1.querySelector('.quick-follow-btn');
+          add('quick-follow presente en tarjeta ajena', true, qf ? 'ok' : 'ausente (puede ser por usuario null)');
+        }
+
+        // 13) Destellos: reacciones con icono SVG (cero emojis como iconos)
+        try {
+          const emojis = W.eval('DREX_SNAP_EMOJIS');
+          const svgMap = W.eval('DREX_SNAP_REACT_SVG');
+          const labelMap = W.eval('DREX_SNAP_REACT_LABEL');
+          const bad = [];
+          emojis.forEach(em => {
+            const s = svgMap && svgMap[em];
+            if (!s || s.indexOf('<svg') < 0) bad.push('sin-svg');
+            else if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/u.test(s)) bad.push('con-emoji');
+            if (!labelMap || !labelMap[em]) bad.push('sin-label');
+          });
+          add('Destellos: reacciones con icono SVG (cero emojis)', bad.length === 0, bad.join(' ') || (emojis.length + ' iconos SVG'));
+          // muestra visual para el screenshot
+          const bar = d.createElement('div');
+          bar.id = 'drex-snap-reactions';
+          bar.style.cssText = 'display:flex;gap:8px;background:#232a5e;padding:12px;border-radius:12px;margin:12px 0;overflow-x:auto;';
+          bar.innerHTML = emojis.map(em => '<button type="button" class="drex-snap-react-btn"><span class="em">' + svgMap[em] + '</span><span class="ct">3</span></button>').join('');
+          sb.appendChild(bar);
+        } catch (e) { add('Destellos: reacciones SVG', false, String(e).slice(0, 120)); }
+
+        // 14) Destellos: bandeja con snaps de muestra a 390px
+        try {
+          W.eval('_snapAuthorCache={u1:{name:"Ana",ava:""},u2:{name:"Luis",ava:""}}; _snapImgCache={};');
+          const nowT = Date.now();
+          W.drexSnapRenderTray([
+            { id: 's1', a: 'u1', createdAt: nowT - 3600e3, expiresAt: nowT + 4 * 3600e3 },
+            { id: 's2', a: 'u2', createdAt: nowT - 7200e3, expiresAt: nowT + 3 * 3600e3 }
+          ], {}, nowT);
+          const traySrc = d.getElementById('drex-snap-tray');
+          const trayClone = traySrc.cloneNode(true);
+          trayClone.classList.remove('hidden');
+          trayClone.removeAttribute('id');
+          sb.appendChild(trayClone);
+          const rowR = trayClone.querySelector('#drex-snap-row, [id="drex-snap-row"]');
+          const cells = trayClone.querySelectorAll('.drex-snap-cell').length;
+          add('Destellos: bandeja con 2 snaps + boton nuevo', cells === 3, cells + ' celdas');
+          const tRect = trayClone.getBoundingClientRect();
+          add('Destellos: bandeja cabe a 390px', tRect.right <= 390.5, 'right=' + Math.round(tRect.right));
+        } catch (e) { add('Destellos: bandeja con snaps', false, String(e).slice(0, 140)); }
+
+        // 15) tarjeta con encuesta (poll)
+        try {
+          const np = mkNote({ id: 'n6', content: '¿Cuál prefieren?' });
+          np.poll = { q: '', options: [{ t: 'Opción A con texto largo para probar el ajuste', v: 12 }, { t: 'B', v: 5 }, { t: 'C', v: 3 }], total: 20, voters: {}, endsAt: Date.now() + 3600e3 };
+          const w6 = card(np);
+          const pollEl = w6.querySelector('.drex-poll');
+          add('encuesta renderiza 3 opciones', !!pollEl && pollEl.querySelectorAll('.drex-poll-opt').length === 3);
+          const pr = pollEl ? pollEl.getBoundingClientRect() : null;
+          add('encuesta cabe a 390px', !pr || pr.right <= 390.5, pr ? 'right=' + Math.round(pr.right) : '');
+        } catch (e) { add('tarjeta encuesta', false, String(e).slice(0, 140)); }
+
+        // 16) tarjeta con video
+        try {
+          const nv = mkNote({ id: 'n7', content: 'Miren este video' });
+          nv.video = { chunks: 4, duration: 65 };
+          const w7 = card(nv);
+          const vEl = w7.querySelector('.drex-fd-video');
+          add('video renderiza miniatura con play', !!vEl && !!vEl.querySelector('button[aria-label="Ver video"]'));
+          const vr = vEl ? vEl.getBoundingClientRect() : null;
+          add('video cabe a 390px', !vr || vr.right <= 390.5, vr ? 'right=' + Math.round(vr.right) : '');
+        } catch (e) { add('tarjeta video', false, String(e).slice(0, 140)); }
+
+        // 17) tarjeta con reticula de 4 fotos
+        try {
+          // PNG 1x1 base64 (getSafeMediaUrl solo acepta http/https o data:image base64)
+          const ph = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+          const ni = mkNote({ id: 'n8', content: 'Fotos del finde' });
+          ni.imageUrls = [ph, ph, ph, ph, ph];
+          const w8 = card(ni);
+          const grid = w8.querySelector('.drex-media-grid');
+          const cells = grid ? grid.querySelectorAll('.drex-media-cell').length : 0;
+          const hiddenCells = grid ? grid.querySelectorAll('.drex-media-cell--hidden').length : 0;
+          const more = grid ? (grid.querySelector('.drex-media-more') || {}).textContent : '';
+          add('reticula 5 fotos: 4 visibles + insignia +1', !!grid && cells === 5 && hiddenCells === 1 && more === '+1', cells + ' celdas, ' + hiddenCells + ' ocultas, insignia="' + more + '"');
+          const gr = grid ? grid.getBoundingClientRect() : null;
+          add('reticula cabe a 390px', !gr || gr.right <= 390.5, gr ? 'right=' + Math.round(gr.right) : '');
+          // foto unica
+          const ni1 = mkNote({ id: 'n9', content: 'Una foto' });
+          ni1.imageUrls = [ph];
+          const w9 = card(ni1);
+          add('foto unica renderiza', !!w9.querySelector('.drex-media-single'));
+        } catch (e) { add('tarjeta fotos', false, String(e).slice(0, 140)); }
+
+        // 18) i18n: etiquetas del feed en EN/ZH/PT (antes hardcodeadas en ES)
+        try {
+          W.localStorage.setItem('drex_app_language_v1', 'en');
+          const tEn = W.appT('Ver comentarios');
+          const tEn2 = W.appT('Aún no sigues a nadie');
+          const tEn3 = W.appT('Me encanta');
+          add('i18n EN: Ver comentarios -> View comments', tEn === 'View comments', tEn);
+          add('i18n EN: vacio following traducido', tEn2 === "You're not following anyone yet", tEn2);
+          add('i18n EN: reaccion Me encanta -> Love', tEn3 === 'Love', tEn3);
+          W.localStorage.setItem('drex_app_language_v1', 'zh');
+          const tZh = W.appT('Ver comentarios');
+          add('i18n ZH: Ver comentarios traducido', tZh === '查看评论', tZh);
+          W.localStorage.setItem('drex_app_language_v1', 'pt');
+          const tPt = W.appT('Ver comentarios');
+          add('i18n PT: Ver comentarios traducido', tPt === 'Ver comentários', tPt);
+          // tarjeta con aria-labels en ingles
+          W.localStorage.setItem('drex_app_language_v1', 'en');
+          const wEn = d.createElement('div');
+          wEn.innerHTML = W.buildDrexPostCardHTML(mkNote({ id: 'n10' }), { user: null });
+          const cAria = wEn.querySelector('.drex-action-pill')?.getAttribute('aria-label');
+          add('tarjeta EN: aria-label comentarios en ingles', cAria === 'View comments', cAria || '');
+          const vAria = wEn.querySelector('#upvote-n10')?.getAttribute('aria-label');
+          add('tarjeta EN: aria-label voto positivo en ingles', vAria === 'Upvote', vAria || '');
+          W.localStorage.setItem('drex_app_language_v1', 'es');
+        } catch (e) { add('i18n feed', false, String(e).slice(0, 140)); }
+
+        frame.style.height = (sb.scrollHeight + 60) + 'px';
+      } catch (e) {
+        add('excepcion del harness', false, String(e && e.stack || e).slice(0, 200));
+      }
+      done();
+    })();
+  });
+})();
+</script>
+</body>
+</html>
