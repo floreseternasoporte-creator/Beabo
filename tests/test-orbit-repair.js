@@ -102,12 +102,14 @@ test('orbitBenefitTap existe y las filas son botones', function () {
   assert(taps >= 2, 'las filas de beneficios no tienen tap (encontrados: ' + taps + ')');
 });
 
-/* --- 5. Planes --- */
-test('se aceptan los 4 planes (cliente = servidor)', function () {
-  assert(src.indexOf("ORBIT_PLAN_IDS = ['monthly', 'quarterly', 'semiannual', 'yearly']") !== -1,
+/* --- 5. Planes (escalera completa: 7 planes desde 2026-10-01) --- */
+test('se aceptan los 7 planes (cliente = servidor)', function () {
+  assert(src.indexOf("ORBIT_PLAN_IDS = ['weekly', 'monthly', 'quarterly', 'semiannual', 'yearly', 'biennial', 'lifetime']") !== -1,
     'faltan planes en ORBIT_PLAN_IDS');
   assert(src.indexOf('Trimestral') !== -1 && src.indexOf('Semestral') !== -1,
     'faltan nombres de planes trimestral/semestral');
+  assert(src.indexOf("t('De por vida')") !== -1 && src.indexOf("t('Semanal')") !== -1,
+    'faltan nombres de planes semanal/de por vida');
 });
 
 /* --- 6. Timeouts y retorno --- */

@@ -17164,6 +17164,32 @@ let _snapTrayAnimated = false;    // C215: animación de entrada solo la primera
 let _snapTrayAnimateOnce = false; // C215: forzar animación (ej. tras publicar)
 let _snapTrayTimer = null;        // C215: tick del anillo de tiempo de la bandeja
 
+// ================== CARRIL 3 (2026-10-01): GATING DE DESTELLOS ==================
+// Destellos es EXCLUSIVO de suscriptores Drex Orbit (orden del usuario 2026-09-29).
+// Fail-closed: solo true con suscripción VERIFICADA por el backend (DrexOrbit.refresh).
+// No depende del interruptor global DREX_ORBIT_ENFORCE (las puertas generales pueden
+// estar apagadas mientras Destellos sigue siendo premium). No toca la lógica de
+// planes ni los iconos de Orbit: solo render/gating.
+function drexSnapCanView() {
+  try {
+    if (typeof DrexOrbit === 'undefined' || !DrexOrbit) return false;
+    return DrexOrbit.verifiedActive() === true;
+  } catch (_) { return false; }
+}
+// Re-aplica el gate cuando el estado verificado cambia (refresh tras login, retorno
+// de Stripe Checkout, logout). Se encadena con el hook previo si otro carril también
+// define window.drexOrbitApplyGates.
+(function drexSnapOrbitGateHook() {
+  try {
+    var prev = window.drexOrbitApplyGates;
+    window.drexOrbitApplyGates = function () {
+      try { if (typeof prev === 'function') prev(); } catch (_) {}
+      try { drexSnapLoadTray(); } catch (_) {}
+    };
+  } catch (_) {}
+})();
+// ================== FIN CARRIL 3 GATING ==================
+
 function drexSnapMe() {
   try {
     const u = DrexCloud.auth().currentUser;
@@ -17290,6 +17316,14 @@ function drexSnapFilterChange() {
 function drexSnapNew() {
   const me = drexSnapMe();
   if (!me) { try { showMiniToast(appT('Inicia sesión para compartir un destello.')); } catch (_) {} return; }
+  // CARRIL 3: crear destellos es exclusivo de Drex Orbit; sin suscripción -> paywall.
+  if (!drexSnapCanView()) {
+    try {
+      if (typeof openOrbitPaywall === 'function') { openOrbitPaywall('destellos'); return; }
+    } catch (_) {}
+    try { showMiniToast(appT('Los destellos son exclusivos de Drex Orbit.')); } catch (_) {}
+    return;
+  }
   try {
     if (typeof drexCameraOpen === 'function') {
       // Entrega one-shot: la cámara de Drex (C209) la consume en vez del composer.
@@ -17377,6 +17411,8 @@ async function drexSnapLoadTray() {
   if (!tray) return;
   const me = drexSnapMe();
   if (!me) { tray.classList.add('hidden'); return; }
+  // CARRIL 3: sin suscripción Orbit activa la sección NO se renderiza (fail-closed).
+  if (!drexSnapCanView()) { tray.classList.add('hidden'); return; }
   tray.classList.remove('hidden');
   drexSnapRenderStaticTexts();
   const filter = drexSnapGetFilter();
@@ -17583,6 +17619,9 @@ function drexSnapOpenAuthor(authorUid) {
   drexSnapOpenViewer();
 }
 function drexSnapOpenViewer() {
+  // CARRIL 3: ver destellos es exclusivo de Drex Orbit (defensa en profundidad;
+  // la bandeja ya está oculta para no-premium, esto cubre aperturas indirectas).
+  if (!drexSnapCanView()) return;
   const modal = document.getElementById('drex-snap-viewer');
   if (!modal) return;
   modal.classList.remove('hidden');
@@ -83938,6 +83977,56 @@ function drexReactionIcon(e) { return drexIcon(DREX_REACTION_ICONS[e] || 'heart'
 window.drexIcon = drexIcon;
 window.DREX_ICONS = DREX_ICONS;
 window.drexReactionIcon = drexReactionIcon;
+/* === Drex Orbit: iconos SVG ampliados (cero emojis como iconos) ===
+ * Registra iconos nuevos en el mapa existente DREX_ICONS y expone
+ * window.drexIcon / window.dxIcon para los modulos (live, pagos)
+ * que viven en otros scopes. Restaurado tras la regresion de 1fb41da
+ * (2026-10-01, carril orbit-icons). */
+(function () {
+  var extra = {
+    noads: '<circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/>',
+    palette: '<path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-.8 2-1.8 0-1.4-1.2-1.9-1.2-3 0-1 .8-1.7 1.9-1.7H17a4 4 0 0 0 4-4c0-4-4-7.5-9-7.5z"/><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="7.5" r="1.2" fill="currentColor" stroke="none"/>',
+    signal: '<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.8 5.8a9 9 0 0 0 0 12.4M18.2 5.8a9 9 0 0 1 0 12.4"/>',
+    puzzle: '<path d="M14 7V5a2 2 0 0 0-4 0v2H7a2 2 0 0 0-2 2v3h2a2 2 0 1 1 0 4H5v3a2 2 0 0 0 2 2h3v-2a2 2 0 1 1 4 0v2h3a2 2 0 0 0 2-2v-3h-2a2 2 0 1 1 0-4h2V9a2 2 0 0 0-2-2h-3z"/>',
+    headphones: '<path d="M4 15v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="13" width="4" height="7" rx="1.5"/><rect x="17" y="13" width="4" height="7" rx="1.5"/>',
+    chart: '<line x1="3" y1="21" x2="21" y2="21"/><rect x="5" y="12" width="4" height="7" rx="1"/><rect x="10.5" y="7" width="4" height="12" rx="1"/><rect x="16" y="14" width="4" height="5" rx="1"/>',
+    receipt: '<path d="M5 3h14v18l-2.4-1.6-2.4 1.6-2.2-1.6-2.4 1.6L7.2 19.4 5 21V3z"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/>',
+    planet: '<circle cx="12" cy="12" r="6"/><ellipse cx="12" cy="12" rx="10" ry="3.8" transform="rotate(-18 12 12)"/>',
+    star: '<polygon points="12 2.5 14.9 8.6 21.5 9.3 16.5 13.9 17.9 20.4 12 17 6.1 20.4 7.5 13.9 2.5 9.3 9.1 8.6 12 2.5"/>',
+    target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
+    clip: '<path d="M21 12l-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8L13 4.5a3.7 3.7 0 0 1 5.2 5.2l-8.2 8.2a1.85 1.85 0 0 1-2.6-2.6L14.5 8"/>',
+    camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.2"/>',
+    pin: '<path d="M9 4h6l-1 7 3 3v2H7v-2l3-3z"/><line x1="12" y1="16" x2="12" y2="21"/>',
+    music: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
+    vote: '<rect x="4" y="8" width="16" height="12" rx="2"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M9.5 13.5l2 2 3.5-4"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3c2.5 2.4 3.8 5.6 3.8 9s-1.3 6.6-3.8 9c-2.5-2.4-3.8-5.6-3.8-9S9.5 5.4 12 3z"/>',
+    lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><circle cx="12" cy="15.5" r="1.2" fill="currentColor" stroke="none"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.2 9a3 3 0 0 1 5.7 1c0 2-3 2.6-3 4.2"/><line x1="12" y1="17.2" x2="12.01" y2="17.2"/>',
+    smile: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2.5 4 2.5 4-2.5 4-2.5"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/>',
+    hand: '<path d="M8 12V6.5a1.5 1.5 0 0 1 3 0V11m0-6.5v-1a1.5 1.5 0 0 1 3 0V11m0-5.5a1.5 1.5 0 0 1 3 0V12m0-3a1.5 1.5 0 0 1 3 0v4a7 7 0 0 1-7 7h-1a7 7 0 0 1-6-3.3l-1.8-3a1.6 1.6 0 0 1 2.6-1.8L8 14"/>',
+    paw: '<circle cx="8" cy="9" r="1.6"/><circle cx="12" cy="7.5" r="1.6"/><circle cx="16" cy="9" r="1.6"/><path d="M12 11c-3 0-5.5 2.5-5.5 5 0 1.8 1.4 3 3 3 1 0 1.7-.5 2.5-.5s1.5.5 2.5.5c1.6 0 3-1.2 3-3 0-2.5-2.5-5-5.5-5z"/>',
+    apple: '<path d="M12 8c-4-3-9 0-9 5 0 4 4 9 6 9 1.2 0 2-.6 3-.6s1.8.6 3 .6c2 0 6-5 6-9 0-5-5-8-9-5z"/><path d="M12 8c0-3 2-5 4-6"/>',
+    plane: '<path d="M17.8 19.2 16 11l3.5-3.5c1-1 1-2.6 0-3.6s-2.6-1-3.6 0L12.4 7.4 4.2 5.6c-.5-.1-1 .1-1.2.6l-.3.6c-.2.5 0 1 .6 1.2L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.9 5.7c.2.6.7.8 1.2.6l.6-.3c.5-.2.7-.7.6-1.2z"/>',
+    trophy: '<path d="M8 21h8M12 17v4M7 4h10v6a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a1 1 0 0 0-1 1c0 2.5 2 4 4 4M17 6h3a1 1 0 0 1 1 1c0 2.5-2 4-4 4"/>',
+    cpu: '<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>',
+    book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+    news: '<path d="M4 5h13v14H6a2 2 0 0 1-2-2V5z"/><path d="M17 8h2a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4"/><line x1="7" y1="9" x2="14" y2="9"/><line x1="7" y1="13" x2="14" y2="13"/>',
+    leaf: '<path d="M5 19C5 9 13 5 20 4c-1 8-5 15-14 15"/><path d="M5 19c3-5 7-9 11-11"/>',
+    medal: '<circle cx="12" cy="15" r="5.5"/><path d="M9 10.5 6.5 3h3.6L12 7l1.9-4h3.6L15 10.5"/>',
+    bot: '<rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 4h8"/><circle cx="9" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1.3" fill="currentColor" stroke="none"/><path d="M9.5 17.5h5"/>',
+    brain: '<path d="M9.5 2a2.5 2.5 0 0 0-2.5 2.5A2.5 2.5 0 0 0 4.5 7a2.5 2.5 0 0 0-.5 5A2.5 2.5 0 0 0 6 16.5 2.5 2.5 0 0 0 9.5 19c.4 1.5 1.5 2 2.5 2V2c-1 0-2.1.5-2.5 2z"/><path d="M14.5 2a2.5 2.5 0 0 1 2.5 2.5A2.5 2.5 0 0 1 19.5 7a2.5 2.5 0 0 1 .5 5 2.5 2.5 0 0 1-2 4.5A2.5 2.5 0 0 1 14.5 19c-.4 1.5-1.5 2-2.5 2"/><path d="M12 2v19"/>',
+    refresh: '<polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-1.4-8.4L23 10"/>',
+    pointer: '<path d="M9 11.5V5.5a1.5 1.5 0 0 1 3 0v5m0-2a1.5 1.5 0 0 1 3 0v2m0-1a1.5 1.5 0 0 1 3 0v4c0 3.5-2.5 6.5-6 7.5-2.8.8-5.5-.5-7-3l-2.5-4.5a1.5 1.5 0 0 1 2.6-1.5L9 16"/>'
+  };
+  for (var k in extra) if (!DREX_ICONS[k]) DREX_ICONS[k] = extra[k];
+  window.DREX_ICONS = DREX_ICONS;
+  window.drexIcon = drexIcon;
+  window.dxIcon = function (name, cls) {
+    try { return window.drexIcon(name, cls || 'w-5 h-5'); } catch (_) {}
+    return '';
+  };
+})();
 
 
 
@@ -84093,7 +84182,7 @@ window.drexFiestaSwitchTab = function (tab) {
 
 /* C237: render de la hoja de regalos — secciones por tier, sin solapes */
 function drexTierLabel(tier) {
-  return { bronce: 'Bronce', plata: 'Plata', oro: 'Oro', leyenda: 'Leyenda', orbit: 'Drex Orbit 🪐' }[tier] || tier;
+  return { bronce: 'Bronce', plata: 'Plata', oro: 'Oro', leyenda: 'Leyenda', orbit: 'Drex Orbit' }[tier] || tier;
 }
 
 /* ============ C236-B3: DREX COINS (billetera, paquetes, libro) ============
@@ -84232,13 +84321,34 @@ async function drexStripeCheckout(pkg) {
  * Puertas: window.DREX_ORBIT_ENFORCE === true (apagado en
  * producción hasta que exista una ruta de compra en vivo aprobada).
  * ============================================================ */
+/* Catálogo canónico de planes Drex Orbit (escalera completa).
+ * El cliente SOLO valida el planId y muestra precios: el precio real lo
+ * aplica Stripe, vía la Lambda drex-payments (POST /create-subscription-session
+ * {plan}). Los price IDs de Stripe viven en las env vars de la Lambda, NUNCA
+ * en este frontend (ver docs/orbit-plans.md).
+ * - mode 'recurring': la Lambda crea Checkout mode:'subscription' con
+ *   recurring {interval: stripeInterval, interval_count: stripeIntervalCount}.
+ *   "2 años" es recurrente cada 2 años (interval year x2): se cancela como
+ *   cualquier suscripción; el ciclo largo es el descuento.
+ * - mode 'one_time' (solo 'lifetime'): la Lambda debe crear Checkout
+ *   mode:'payment' y el webhook debe activar el entitlement PERMANENTE
+ *   (status 'active', sin currentPeriodEnd). Hasta que el backend lo
+ *   soporte, /create-subscription-session responde 503 honesto para
+ *   'lifetime' (fail closed: nadie paga sin activación garantizada). */
 var ORBIT_PLANS = {
-  monthly:    { id: 'monthly',    price: '$4.99',  per: 'mes' },
-  quarterly:  { id: 'quarterly',  price: '$12.99', per: 'trimestre' },
-  semiannual: { id: 'semiannual', price: '$24.99', per: 'semestre' },
-  yearly:     { id: 'yearly',     price: '$49.99', per: 'año' }
+  weekly:     { id: 'weekly',     price: '$1.99',   cents: 199,   per: 'semana',    mode: 'recurring', stripeInterval: 'week',  stripeIntervalCount: 1 },
+  monthly:    { id: 'monthly',    price: '$4.99',   cents: 499,   per: 'mes',       mode: 'recurring', stripeInterval: 'month', stripeIntervalCount: 1 },
+  quarterly:  { id: 'quarterly',  price: '$12.99',  cents: 1299,  per: 'trimestre', mode: 'recurring', stripeInterval: 'month', stripeIntervalCount: 3 },
+  semiannual: { id: 'semiannual', price: '$24.99',  cents: 2499,  per: 'semestre',  mode: 'recurring', stripeInterval: 'month', stripeIntervalCount: 6 },
+  yearly:     { id: 'yearly',     price: '$49.99',  cents: 4999,  per: 'año',       mode: 'recurring', stripeInterval: 'year',  stripeIntervalCount: 1 },
+  biennial:   { id: 'biennial',   price: '$89.99',  cents: 8999,  per: '2 años',    mode: 'recurring', stripeInterval: 'year',  stripeIntervalCount: 2 },
+  lifetime:   { id: 'lifetime',   price: '$149.99', cents: 14999, per: 'pago único', mode: 'one_time' }
 };
-var ORBIT_PLAN_IDS = ['monthly', 'quarterly', 'semiannual', 'yearly'];
+var ORBIT_PLAN_IDS = ['weekly', 'monthly', 'quarterly', 'semiannual', 'yearly', 'biennial', 'lifetime'];
+/* Orden de la escalera en la UI: de menor a mayor compromiso. */
+var ORBIT_LADDER = ['weekly', 'monthly', 'quarterly', 'semiannual', 'yearly', 'biennial', 'lifetime'];
+/* Plan destacado en la escalera (mejor equilibrio ahorro/compromiso). */
+var ORBIT_RECOMMENDED_PLAN = 'yearly';
 var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'live_pro', 'limits', 'analytics', 'exclusive_gifts', 'priority_support'];
 
 var DrexOrbit = {
@@ -84442,17 +84552,22 @@ function drexOrbitLiveMaxMs() {
   return 0;
 }
 
-/* Aplica las puertas globales (anuncios, vista previa en ajustes). */
-window.drexOrbitApplyGates = function () {
-  try {
-    var on = (typeof DrexOrbit !== 'undefined') && DrexOrbit.isActive();
-    document.querySelectorAll('.drex-ad-slot').forEach(function (el) {
-      el.style.display = on ? 'none' : '';
-    });
-  } catch (_) {}
-  try { if (typeof renderOrbitSettingsPreview === 'function') renderOrbitSettingsPreview(); } catch (_) {}
-  try { if (typeof renderPagosSettingsPreview === 'function') renderPagosSettingsPreview(); } catch (_) {}
-};
+/* Aplica las puertas globales (anuncios, vista previa en ajustes). Se encadena con el
+   hook previo si otro módulo también define window.drexOrbitApplyGates. */
+window.drexOrbitApplyGates = (function () {
+  var prev = window.drexOrbitApplyGates;
+  return function () {
+    try { if (typeof prev === 'function') prev(); } catch (_) {}
+    try {
+      var on = (typeof DrexOrbit !== 'undefined') && DrexOrbit.isActive();
+      document.querySelectorAll('.drex-ad-slot').forEach(function (el) {
+        el.style.display = on ? 'none' : '';
+      });
+    } catch (_) {}
+    try { if (typeof renderOrbitSettingsPreview === 'function') renderOrbitSettingsPreview(); } catch (_) {}
+    try { if (typeof renderPagosSettingsPreview === 'function') renderPagosSettingsPreview(); } catch (_) {}
+  };
+})();
 
 function orbitIconSVG(cls) {
   return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 8.2 7.2 11 12 4.5 16.8 11 21 8.2 19.4 17.5H4.6L3 8.2zm.7 10.6h16.6v1.7H3.7v-1.7z"/></svg>';
@@ -84511,14 +84626,49 @@ async function refreshOrbitAuthorBadge(authorId) {
 
 /* ============ Drex Orbit: vista, paywall, temas, analíticas ============ */
 function orbitPlanName(plan) {
-  if (plan === 'yearly') return t('Anual');
+  if (plan === 'weekly') return t('Semanal');
   if (plan === 'quarterly') return t('Trimestral');
   if (plan === 'semiannual') return t('Semestral');
+  if (plan === 'yearly') return t('Anual');
+  if (plan === 'biennial') return t('2 años');
+  if (plan === 'lifetime') return t('De por vida');
   return t('Mensual');
 }
 function orbitPlanPrice(plan) {
   var p = ORBIT_PLANS[plan] || ORBIT_PLANS.monthly;
+  if (p.mode === 'one_time') return p.price + ' ' + t('pago único');
+  if (plan === 'biennial') return p.price + ' ' + t('cada 2 años');
   return p.price + ' ' + t('al') + ' ' + t(p.per);
+}
+/* Insignia de valor de cada plan en la escalera (null = sin insignia).
+ * Ahorros calculados contra el mensual ($4.99/mes):
+ * trimestral $4.33/mes (-13%), semestral $4.17/mes (-17%),
+ * anual $4.17/mes (-17% ~= 2 meses gratis), 2 años $3.75/mes (-25%). */
+function orbitPlanBadge(planId) {
+  if (planId === 'quarterly') return t('Ahorra 13%');
+  if (planId === 'semiannual') return t('Ahorra 17%');
+  if (planId === 'yearly') return t('Ahorra 2 meses');
+  if (planId === 'biennial') return t('Ahorra 25%');
+  if (planId === 'lifetime') return t('Para siempre');
+  return null;
+}
+/* Coste mensual equivalente (centavos) para planes recurrentes;
+ * null para pago único. Sirve para comparar la escalera. */
+function orbitPlanMonthlyCents(planId) {
+  var p = ORBIT_PLANS[planId];
+  if (!p || p.mode === 'one_time') return null;
+  var monthsPerCycle = 1;
+  if (p.stripeInterval === 'week') monthsPerCycle = 12 / 52;
+  else if (p.stripeInterval === 'month') monthsPerCycle = p.stripeIntervalCount || 1;
+  else if (p.stripeInterval === 'year') monthsPerCycle = 12 * (p.stripeIntervalCount || 1);
+  else return null;
+  if (!(monthsPerCycle > 0)) return null;
+  return Math.round(p.cents / monthsPerCycle);
+}
+function orbitPlanMonthlyPrice(planId) {
+  var c = orbitPlanMonthlyCents(planId);
+  if (c == null) return '';
+  return '$' + (c / 100).toFixed(2);
 }
 function orbitFmtDate(ms) {
   try {
@@ -84529,14 +84679,14 @@ function orbitFmtDate(ms) {
 }
 function orbitBenefits() {
   return [
-    { f: 'no_ads',           e: '🚫', title: t('Sin anuncios'),               desc: t('Navega Drex sin publicidad.') },
-    { f: 'badge',            e: '👑', title: t('Insignia y marco exclusivos'), desc: t('Distintivo dorado Drex Orbit y marco en tu foto.') },
-    { f: 'profile_themes',   e: '🎨', title: t('Temas de perfil Orbit'),    desc: t('Fondos exclusivos para tu portada.') },
-    { f: 'live_pro',         e: '📡', title: t('En vivos potenciados'),       desc: t('Más duración, calidad HD y más en vivos programados.') },
-    { f: 'limits',           e: '🧩', title: t('Límites elevados'),           desc: t('Videos más largos, más fotos y publicaciones programadas.') },
-    { f: 'analytics',        e: '📊', title: t('Analíticas de creador'),      desc: t('Estadísticas avanzadas de tu contenido.') },
-    { f: 'exclusive_gifts',  e: '🎁', title: t('Regalos exclusivos'),         desc: t('Regalos originales solo para miembros Drex Orbit.') },
-    { f: 'priority_support',  e: '🎧', title: t('Soporte prioritario'),        desc: t('Tus reportes se atienden primero.') }
+    { f: 'no_ads',           ic: 'noads',      title: t('Sin anuncios'),               desc: t('Navega Drex sin publicidad.') },
+    { f: 'badge',            ic: 'crown',      title: t('Insignia y marco exclusivos'), desc: t('Distintivo dorado Drex Orbit y marco en tu foto.') },
+    { f: 'profile_themes',   ic: 'palette',    title: t('Temas de perfil Orbit'),    desc: t('Fondos exclusivos para tu portada.') },
+    { f: 'live_pro',         ic: 'signal',     title: t('En vivos potenciados'),       desc: t('Más duración, calidad HD y más en vivos programados.') },
+    { f: 'limits',           ic: 'puzzle',     title: t('Límites elevados'),           desc: t('Videos más largos, más fotos y publicaciones programadas.') },
+    { f: 'analytics',        ic: 'chart',      title: t('Analíticas de creador'),      desc: t('Estadísticas avanzadas de tu contenido.') },
+    { f: 'exclusive_gifts',  ic: 'gift',       title: t('Regalos exclusivos'),         desc: t('Regalos originales solo para miembros Drex Orbit.') },
+    { f: 'priority_support',  ic: 'headphones', title: t('Soporte prioritario'),        desc: t('Tus reportes se atienden primero.') }
   ];
 }
 
@@ -84615,6 +84765,7 @@ async function renderOrbitView() {
       + '<div class="flex items-center gap-2 text-white/90">' + orbitIconSVG('w-5 h-5') + '<span class="font-black text-lg">' + escFn(t('Tu suscripción')) + '</span></div>'
       + '<div class="text-white/85 text-sm mt-1 font-semibold">' + escFn(orbitPlanName(st.plan)) + ' · ' + escFn(orbitPlanPrice(st.plan)) + '</div>'
       + (renewTxt ? '<div class="text-white/75 text-xs mt-1">' + escFn(st.cancelAtPeriodEnd ? t('Se cancela al final del periodo') : (t('Se renueva el') + ' ' + renewTxt)) + '</div>' : '')
+      + (st.plan === 'lifetime' ? '<div class="text-white/75 text-xs mt-1">' + escFn(t('Sin renovaciones: tuyo para siempre.')) + '</div>' : '')
       + (st.status === 'past_due' ? '<div class="mt-3 text-xs font-bold bg-yellow-400/20 rounded-xl px-3 py-2">' + escFn(t('Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.')) + '</div>' : '')
       + '<div class="flex gap-2 mt-4">'
       + '<button onclick="orbitManage()" class="tap44 flex-1 min-h-[44px] rounded-xl bg-white text-[#2F33B8] font-extrabold text-sm active:opacity-80">' + escFn(t('Gestionar suscripción')) + '</button>'
@@ -84624,7 +84775,7 @@ async function renderOrbitView() {
       + '<div class="grid grid-cols-1 gap-2 mt-2">'
       + orbitBenefits().map(function (b) {
           return '<button type="button" onclick="orbitBenefitTap(\'' + b.f + '\')" class="tap44 w-full text-left flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 active:opacity-80 transition">'
-            + '<span class="text-2xl">' + b.e + '</span>'
+            + '<span class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + (typeof window.dxIcon === 'function' ? window.dxIcon(b.ic, 'w-5 h-5') : '') + '</span>'
             + '<span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(b.title) + '</span>'
             + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(b.desc) + '</span></span></button>';
         }).join('')
@@ -84633,23 +84784,46 @@ async function renderOrbitView() {
     html += '<div class="px-5 grid grid-cols-1 gap-2">'
       + orbitBenefits().map(function (b) {
           return '<button type="button" onclick="orbitBenefitTap(\'' + b.f + '\')" class="tap44 w-full text-left flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 active:opacity-80 transition">'
-            + '<span class="text-2xl">' + b.e + '</span>'
+            + '<span class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + (typeof window.dxIcon === 'function' ? window.dxIcon(b.ic, 'w-5 h-5') : '') + '</span>'
             + '<span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(b.title) + '</span>'
             + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(b.desc) + '</span></span></button>';
         }).join('')
       + '</div>';
-    var card = function (planId, best) {
+    /* Escalera completa de planes: cada tarjeta muestra precio, periodo,
+     * coste mensual equivalente y su insignia de valor. El plan recomendado
+     * lleva la clase 'best' + insignia "Recomendado". */
+    var card = function (planId) {
       var p = ORBIT_PLANS[planId];
+      if (!p) return '';
+      var best = (planId === ORBIT_RECOMMENDED_PLAN);
+      var badge = orbitPlanBadge(planId);
+      var badges = '';
+      if (best) badges += '<span class="text-[11px] font-black text-white px-2.5 py-1 rounded-full" style="background:linear-gradient(135deg,#2F33B8,#6D28D9)">' + escFn(t('Recomendado')) + '</span>';
+      if (badge) badges += '<span class="text-[11px] font-black text-white px-2.5 py-1 rounded-full" style="background:linear-gradient(135deg,#9D4EDD,#6D28D9)">' + escFn(badge) + '</span>';
+      var sub = '';
+      if (p.mode === 'one_time') {
+        sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('pago único')) + ' · ' + escFn(t('Sin renovaciones: tuyo para siempre.')) + '</span>';
+      } else if (planId === 'biennial') {
+        sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('cada 2 años')) + '</span>';
+      } else {
+        sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('al') + ' ' + t(p.per)) + '</span>';
+      }
+      if (p.mode === 'recurring' && planId !== 'monthly') {
+        var mo = orbitPlanMonthlyPrice(planId);
+        if (mo) sub += ' <span class="text-xs text-[var(--theme-muted)]">· ≈ ' + escFn(mo) + ' ' + escFn(t('al mes')) + '</span>';
+      }
+      var btnLabel = (p.mode === 'one_time') ? t('Comprar') : t('Suscribirme');
       return '<div class="orbit-plan-card' + (best ? ' best' : '') + ' bg-[var(--theme-surface)]">'
-        + (best ? '<span class="absolute -top-3 left-4 text-[11px] font-black text-white px-2.5 py-1 rounded-full" style="background:linear-gradient(135deg,#9D4EDD,#6D28D9)">' + escFn(t('Ahorra 2 meses')) + '</span>' : '')
+        + (badges ? '<span class="absolute -top-3 left-4 flex gap-1.5">' + badges + '</span>' : '')
         + '<div class="font-extrabold text-[var(--theme-text)]">' + escFn(orbitPlanName(planId)) + '</div>'
-        + '<div class="mt-1"><span class="text-3xl font-black text-[var(--theme-text)]">' + escFn(p.price) + '</span>'
-        + '<span class="text-sm text-[var(--theme-muted)]"> ' + escFn(p.price + ' ' + t(planId === 'yearly' ? 'al año' : 'al mes')) + '</span></div>'
-        + '<button onclick="orbitSubscribe(\'' + planId + '\')" class="tap44 w-full min-h-[48px] mt-3 rounded-xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(t('Suscribirme')) + '</button>'
+        + '<div class="mt-1"><span class="text-3xl font-black text-[var(--theme-text)]">' + escFn(p.price) + '</span> ' + sub + '</div>'
+        + '<button onclick="orbitSubscribe(\'' + planId + '\')" class="tap44 w-full min-h-[48px] mt-3 rounded-xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(btnLabel) + '</button>'
         + '</div>';
     };
+    var ladderHtml = '';
+    for (var li = 0; li < ORBIT_LADDER.length; li++) ladderHtml += card(ORBIT_LADDER[li]);
     html += '<div class="px-5 mt-5"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px] mb-2">' + escFn(t('Elegir plan')) + '</h3>'
-      + '<div class="grid grid-cols-1 gap-3">' + card('monthly', false) + card('yearly', true) + '</div>'
+      + '<div class="grid grid-cols-1 gap-3">' + ladderHtml + '</div>'
       + '<p class="text-[11px] text-[var(--theme-muted)] text-center mt-3 leading-relaxed">'
       + escFn(t('Pago 100% seguro con Stripe. Sin permanencia. Cancela cuando quieras.')) + '</p></div>';
   }
@@ -84661,7 +84835,7 @@ async function renderOrbitView() {
 
   /* Analíticas */
   html += '<div class="px-5 mt-6 mb-10"><button onclick="orbitOpenAnalytics()" class="tap44 w-full min-h-[52px] rounded-2xl border border-[var(--theme-border)] flex items-center gap-3 px-4 active:opacity-70 text-left">'
-    + '<span class="text-2xl">📊</span><span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(t('Analíticas de creador')) + '</span>'
+    + '<span class="shrink-0 text-[var(--theme-muted)]">' + (typeof window.dxIcon === 'function' ? window.dxIcon('chart', 'w-6 h-6') : '') + '</span><span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(t('Analíticas de creador')) + '</span>'
     + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(t('Tus números reales, actualizados al abrir.')) + '</span></span>'
     + '<span class="ml-auto text-[var(--theme-muted)]">›</span></button></div>';
 
@@ -84707,16 +84881,16 @@ async function orbitRestore() {
 /* ---------- paywall ---------- */
 function orbitPaywallCopy(feature) {
   var map = {
-    live_pro:        { e: '📡', title: t('En vivos potenciados'),        desc: t('Más duración, calidad HD y más en vivos programados.') },
-    limits:          { e: '🧩', title: t('Límites elevados'),            desc: t('Videos más largos, más fotos y publicaciones programadas.') },
-    analytics:       { e: '📊', title: t('Analíticas de creador'),       desc: t('Estadísticas avanzadas de tu contenido.') },
-    exclusive_gifts: { e: '🎁', title: t('Regalos exclusivos'),          desc: t('Regalos originales solo para miembros Drex Orbit.') },
-    profile_themes:  { e: '🎨', title: t('Temas de perfil Orbit'),     desc: t('Fondos exclusivos para tu portada.') },
-    no_ads:          { e: '🚫', title: t('Sin anuncios'),                desc: t('Navega Drex sin publicidad.') },
-    badge:           { e: '👑', title: t('Insignia y marco exclusivos'), desc: t('Distintivo dorado Drex Orbit y marco en tu foto.') },
-    priority_support:{ e: '🎧', title: t('Soporte prioritario'),         desc: t('Tus reportes se atienden primero.') }
+    live_pro:        { ic: 'signal',     title: t('En vivos potenciados'),        desc: t('Más duración, calidad HD y más en vivos programados.') },
+    limits:          { ic: 'puzzle',     title: t('Límites elevados'),            desc: t('Videos más largos, más fotos y publicaciones programadas.') },
+    analytics:       { ic: 'chart',      title: t('Analíticas de creador'),       desc: t('Estadísticas avanzadas de tu contenido.') },
+    exclusive_gifts: { ic: 'gift',       title: t('Regalos exclusivos'),          desc: t('Regalos originales solo para miembros Drex Orbit.') },
+    profile_themes:  { ic: 'palette',    title: t('Temas de perfil Orbit'),     desc: t('Fondos exclusivos para tu portada.') },
+    no_ads:          { ic: 'noads',      title: t('Sin anuncios'),                desc: t('Navega Drex sin publicidad.') },
+    badge:           { ic: 'crown',      title: t('Insignia y marco exclusivos'), desc: t('Distintivo dorado Drex Orbit y marco en tu foto.') },
+    priority_support:{ ic: 'headphones', title: t('Soporte prioritario'),         desc: t('Tus reportes se atienden primero.') }
   };
-  return map[feature] || { e: '👑', title: 'Drex Orbit', desc: t('El plan Orbit de Drex') };
+  return map[feature] || { ic: 'crown', title: 'Drex Orbit', desc: t('El plan Orbit de Drex') };
 }
 function openOrbitPaywall(feature) {
   var sheet = document.getElementById('orbit-paywall');
@@ -84725,10 +84899,10 @@ function openOrbitPaywall(feature) {
   var c = orbitPaywallCopy(feature);
   var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
   card.innerHTML = '<div class="w-10 h-1.5 rounded-full bg-[var(--theme-border)] mx-auto mb-4"></div>'
-    + '<div class="text-center"><div class="text-5xl">' + c.e + '</div>'
+    + '<div class="text-center"><div class="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center text-white mb-1" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + (typeof window.dxIcon === 'function' ? window.dxIcon(c.ic, 'w-8 h-8') : '') + '</div>'
     + '<h3 class="text-xl font-black text-[var(--theme-text)] mt-3">' + escFn(t('Esta función es de Drex Orbit')) + '</h3>'
     + '<p class="text-sm text-[var(--theme-muted)] mt-1.5 leading-relaxed"><b class="text-[var(--theme-text)]">' + escFn(c.title) + '.</b> ' + escFn(c.desc) + '<br>' + escFn(t('Suscríbete para desbloquearla y apoyar a Drex.')) + '</p>'
-    + '<div class="mt-3 inline-flex items-center gap-2 rounded-full bg-[var(--theme-surface-subtle)] px-4 py-2 text-sm font-extrabold text-[var(--theme-text)]">$4.99 ' + escFn(t('al mes')) + ' · $49.99 ' + escFn(t('al año')) + '</div>'
+    + '<div class="mt-3 inline-flex items-center gap-2 rounded-full bg-[var(--theme-surface-subtle)] px-4 py-2 text-sm font-extrabold text-[var(--theme-text)]">' + escFn(t('Desde')) + ' $1.99</div>'
     + '<button onclick="closeOrbitPaywall();openOrbitView()" class="tap44 w-full min-h-[52px] mt-4 rounded-2xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(t('Ver planes')) + '</button>'
     + '<button onclick="closeOrbitPaywall()" class="tap44 w-full min-h-[44px] mt-1 rounded-2xl font-bold text-[var(--theme-muted)] active:opacity-70">' + escFn(t('Ahora no')) + '</button>'
     + '<p class="text-[11px] text-[var(--theme-muted)] mt-2">' + escFn(t('Sin permanencia. Cancela cuando quieras.')) + '</p></div>';
@@ -84778,7 +84952,7 @@ async function renderOrbitThemesRow() {
   var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
   row.innerHTML = ORBIT_PROFILE_THEMES.map(function (th) {
     return '<div class="orbit-theme-pick' + (cur === th.id ? ' sel' : '') + '" style="background:' + th.css + '" onclick="setOrbitProfileTheme(\'' + th.id + '\')" role="button" tabindex="0">'
-      + (th.pro ? '<span class="orbit-theme-lock">👑 ' + escFn(t('Solo Drex Orbit')) + '</span>' : '')
+      + (th.pro ? '<span class="orbit-theme-lock">' + (typeof window.dxIcon === 'function' ? window.dxIcon('crown', 'w-3.5 h-3.5') : '') + ' ' + escFn(t('Solo Drex Orbit')) + '</span>' : '')
       + '<span class="relative text-[11px] font-extrabold text-white drop-shadow">' + escFn(orbitThemeName(th.id)) + '</span></div>';
   }).join('');
 }

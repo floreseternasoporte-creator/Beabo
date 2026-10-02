@@ -95,6 +95,25 @@ T = [
 ("Inicia sesión para personalizar tu perfil.", "Sign in to customize your profile.", "登录后自定义个人主页。", "Entre para personalizar seu perfil."),
 ("El video puede durar hasta {s} segundos. Elige un clip más corto.", "Videos can be up to {s} seconds. Choose a shorter clip.", "视频最长可为 {s} 秒，请选择更短的片段。", "O vídeo pode ter até {s} segundos. Escolha um clipe mais curto."),
 ("Solo puedes subir un máximo de {n} fotos por publicación.", "You can upload up to {n} photos per post.", "每个帖子最多可上传 {n} 张照片。", "Você pode subir no máximo {n} fotos por publicação."),
+# --- Escalera de planes Drex Orbit (2026-10-01): semanal -> de por vida ---
+("Semanal", "Weekly", "每周", "Semanal"),
+("semana", "week", "周", "semana"),
+("mes", "month", "月", "mês"),
+("trimestre", "quarter", "季度", "trimestre"),
+("semestre", "6 months", "半年", "semestre"),
+("año", "year", "年", "ano"),
+("al", "per", "每", "por"),
+("2 años", "2 years", "2年", "2 anos"),
+("cada 2 años", "every 2 years", "每2年", "a cada 2 anos"),
+("De por vida", "Lifetime", "终身", "Vitalício"),
+("pago único", "one-time payment", "一次性付款", "pagamento único"),
+("Recomendado", "Recommended", "推荐", "Recomendado"),
+("Ahorra 13%", "Save 13%", "节省13%", "Economize 13%"),
+("Ahorra 17%", "Save 17%", "节省17%", "Economize 17%"),
+("Ahorra 25%", "Save 25%", "节省25%", "Economize 25%"),
+("Para siempre", "Forever", "永久", "Para sempre"),
+("Sin renovaciones: tuyo para siempre.", "No renewals: yours forever.", "无需续订，永久拥有。", "Sem renovações: seu para sempre."),
+("Desde", "From", "起", "Desde"),
 ]
 
 def esc(s):
@@ -109,7 +128,10 @@ def dict_range(src, start_marker, end_marker):
 DICTS = [
     ('var APP_ENGLISH_TEXT = {', 'var APP_CHINESE_TEXT = {'),
     ('var APP_CHINESE_TEXT = {', 'var APP_PORTUGUESE_TEXT = {'),
-    ('var APP_PORTUGUESE_TEXT = {', 'var APP_ENGLISH_ATTRS = {'),
+    # PT TEXT cierra antes de APP_CHINESE_ATTRS (2026-10-01): el marcador
+    # viejo ('var APP_ENGLISH_ATTRS = {') abarcaba también APP_CHINESE_ATTRS
+    # y las claves nuevas caían dentro del diccionario chino equivocado.
+    ('var APP_PORTUGUESE_TEXT = {', 'var APP_CHINESE_ATTRS = {'),
 ]
 
 added = [0, 0, 0]
