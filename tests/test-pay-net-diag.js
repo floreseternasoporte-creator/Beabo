@@ -58,6 +58,15 @@ test('drexPayNetDiag prueba App, Internet y Pagos', function () {
   assert(/mode:\s*'no-cors'/.test(src), 'debe usar no-cors para no contaminar con CORS');
 });
 
+/* 2b. v2: además hace un POST real al checkout (como el pago de verdad). */
+test('drexPayNetDiag v2 incluye prueba POST real al checkout', function () {
+  var src = diagFnSource();
+  assert(src.indexOf('postProbe') !== -1, 'falta postProbe');
+  assert(src.indexOf('/create-subscription-session') !== -1, 'el POST debe ir al endpoint de checkout');
+  assert(/method:\s*'POST'/.test(src), 'postProbe debe usar POST');
+  assert(/'Content-Type':\s*'text\/plain/.test(src), 'postProbe debe usar text/plain como el pago real');
+});
+
 /* 3. orbitSubscribe invoca el diagnóstico en fallos de red. */
 test('orbitSubscribe usa drexPayNetDiag en network/timeout', function () {
   var start = html.indexOf('async function orbitSubscribe(planId)');

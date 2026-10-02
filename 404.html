@@ -84996,13 +84996,14 @@ async function renderOrbitView() {
  * servidor de pagos) y mostramos el resultado para captura. Así se ve si el
  * bloqueo está en el teléfono/red del usuario o en el servidor. */
 function drexPayNetDiag() {
-  function probe(label, url) {
+  function probe(label, url, opts) {
     return new Promise(function (resolve) {
       var done = false;
+      var t0 = Date.now();
       var timer = setTimeout(function () { if (!done) { done = true; resolve(label + ':TIMEOUT'); } }, 9000);
       try {
-        fetch(url, { mode: 'no-cors', cache: 'no-store', credentials: 'omit' }).then(
-          function () { if (!done) { done = true; clearTimeout(timer); resolve(label + ':OK'); } },
+        fetch(url, opts || { mode: 'no-cors', cache: 'no-store', credentials: 'omit' }).then(
+          function (r) { if (!done) { done = true; clearTimeout(timer); resolve(label + ':OK(' + (r.status || '?') + ')'); } },
           function (e) { if (!done) { done = true; clearTimeout(timer); resolve(label + ':' + ((e && e.name) || 'ERR')); } }
         );
       } catch (e) { if (!done) { done = true; clearTimeout(timer); resolve(label + ':' + ((e && e.name) || 'ERR')); } }
@@ -85010,12 +85011,33 @@ function drexPayNetDiag() {
   }
   var ep = '';
   try { ep = (typeof DrexOrbit !== 'undefined' && DrexOrbit._endpoint) ? DrexOrbit._endpoint() : ''; } catch (_) {}
+  /* Prueba POST real al endpoint de checkout (igual que el pago de verdad,
+   * con el token real). Si el servidor tarda >12s o bloquea el POST, se ve. */
+  function postProbe() {
+    return new Promise(function (resolve) {
+      var done = false;
+      var t0 = Date.now();
+      var timer = setTimeout(function () { if (!done) { done = true; resolve('POST:TIMEOUT'); } }, 12000);
+      function fin(v) { if (!done) { done = true; clearTimeout(timer); resolve(v); } }
+      try {
+        var tokP = (typeof DrexOrbit !== 'undefined' && DrexOrbit._idToken) ? DrexOrbit._idToken() : Promise.resolve(null);
+        tokP.then(function (tok) {
+          if (done) return;
+          var body = JSON.stringify({ plan: 'yearly', returnUrl: location.origin + location.pathname, idToken: tok || 'diag-no-token', diag: true });
+          fetch(ep + '/create-subscription-session', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: body }).then(
+            function (r) { fin('POST:OK(' + r.status + ',' + Math.round((Date.now() - t0) / 100) / 10 + 's)'); },
+            function (e) { fin('POST:' + ((e && e.name) || 'ERR')); }
+          );
+        }, function () { fin('POST:TOKEN-ERR'); });
+      } catch (e) { fin('POST:ERR'); }
+    });
+  }
   var tests = [
     probe('App', location.origin + '/version.json'),
     probe('Internet', 'https://www.google.com/generate_204')
   ];
-  if (ep) tests.push(probe('Pagos', ep));
-  return Promise.all(tests).then(function (r) { return r.join(' · '); });
+  if (ep) { tests.push(probe('Pagos', ep)); tests.push(postProbe()); }
+  return Promise.all(tests).then(function (r) { return r.join(' \u00b7 '); });
 }
 
 async function orbitSubscribe(planId) {
