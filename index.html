@@ -7645,7 +7645,7 @@ if (scrollArea) {
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         </button>
         <div class="drex-pill-field flex-1 flex items-center gap-1 h-11 px-4 rounded-full bg-[var(--theme-surface-muted)]">
-          <input id="chat-room-input" type="text" enterkeyhint="send" placeholder="Mensaje..." class="flex-1 bg-transparent focus:outline-none text-[16px] text-[var(--theme-text)] placeholder-[var(--theme-muted)]" oninput="handleChatTyping(); saveChatDraft(); updateChatToolbarMode()" aria-label="Escribe un mensaje">
+          <input id="chat-room-input" type="text" enterkeyhint="send" placeholder="Mensaje..." data-drex-i18n-placeholder="Mensaje..." class="flex-1 bg-transparent focus:outline-none text-[16px] text-[var(--theme-text)] placeholder-[var(--theme-muted)]" oninput="handleChatTyping(); saveChatDraft(); updateChatToolbarMode()" aria-label="Escribe un mensaje">
         </div>
         <!-- Enviar (visible cuando hay texto o adjuntos listos): flecha ↑ moderna -->
         <button id="chat-send-btn" onclick="sendChatMessage()" class="hidden w-11 h-11 rounded-full bg-[var(--drex-brand)] text-white flex items-center justify-center active:opacity-80 transition shrink-0" aria-label="Enviar mensaje">
@@ -8083,7 +8083,10 @@ if (scrollArea) {
 </div>
 
 <!-- PANEL MORE OPTIONS -->
-<div id="chat-options-panel" class="fixed inset-0 bg-black/50 flex-col z-[74]" style="display:none" onclick="if(event.target===this)closeChatOptionsPanel()">
+<!-- CARRIL-2B: convención hidden (antes style="display:none" inline + clase
+     flex-col sin flex): el estilo inline ganaba a cualquier clase .hidden y el
+     overlay podía quedarse atascado visible (overlay roto con fondo negro). -->
+<div id="chat-options-panel" class="fixed inset-0 bg-black/50 hidden z-[74] flex flex-col" onclick="if(event.target===this)closeChatOptionsPanel()">
   <div class="w-full bg-[var(--theme-surface)] rounded-t-3xl shadow-2xl mt-auto" onclick="event.stopPropagation()">
     <div class="flex justify-center pt-3 pb-1"><div class="w-10 h-1 bg-[var(--theme-surface-subtle)] rounded-full"></div></div>
     <div class="px-5 pt-3 pb-8">
@@ -38872,7 +38875,8 @@ let chatTypingListener = null;
       currentGroupIsCreator = data.createdBy === user.uid;
       currentGroupIsAdmin = _isGroupAdminUid(user.uid, currentGroupAdmins);
       const nameEl = document.getElementById('chat-room-username');
-      if (nameEl) nameEl.textContent = (typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(data.name) : data.name) || appT('Grupo');
+      // Cero emojis en títulos (nombre de grupo viene de datos de usuario).
+      if (nameEl) nameEl.textContent = (typeof fiestaStripEmoji === 'function' ? fiestaStripEmoji(data.name || '') : String(data.name || '')) || appT('Grupo');
       const avatarImg = document.getElementById('chat-room-group-avatar-img');
       const avatarIcon = document.getElementById('chat-room-group-avatar-icon');
       if (data.image) {
@@ -39396,16 +39400,21 @@ let chatTypingListener = null;
         wrapper.className = 'w-full flex flex-col items-start';
         if (resolvedId) wrapper.dataset.msgId = resolvedId;
         wrapper.dataset.msgTs = String(msgTimestamp || 0);
+        // CARRIL-2B: orden clásico — UNA fila de encabezado [avatar | nombre · hora]
+        // arriba (.chat-msg-head) y el texto del mensaje debajo. El encabezado
+        // solo se pinta en el primer mensaje de un grupo; los agrupados lo
+        // traen oculto de fábrica (ver lógica de agrupación más abajo).
         wrapper.innerHTML = `
-          <p class="text-[11px] font-bold text-[var(--theme-muted)] mb-1 ml-11 px-1 cursor-pointer group-sender-label${_groupedWithPrev ? ' hidden' : ''}" data-uid="${escapeHtml(senderId)}">${escapeHtml(senderName)}</p>
+          <div class="chat-msg-head flex items-center gap-2 mb-1 max-w-[85%]${_groupedWithPrev ? ' hidden' : ''}">
+            <img class="group-sender-avatar w-6 h-6 rounded-full object-cover border border-[var(--theme-border)] shrink-0 cursor-pointer" loading="lazy" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==" data-uid="${escapeHtml(senderId)}" alt="${escapeHtml(senderName)}">
+            <p class="group-sender-label text-[11px] font-bold text-[var(--theme-muted)] truncate min-w-0 cursor-pointer" data-uid="${escapeHtml(senderId)}">${escapeHtml(senderName)}${timeStr ? ` <span class="chat-msg-time font-semibold opacity-70">· ${timeStr}${msg.editedAt ? ' · <span class="italic">Editado</span>' : ''}</span>` : ''}</p>
+          </div>
           <div class="flex items-end gap-2 max-w-[85%]">
-            <img class="group-sender-avatar w-8 h-8 rounded-full object-cover border border-[var(--theme-border)] shrink-0 cursor-pointer" loading="lazy" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==" data-uid="${escapeHtml(senderId)}" alt="${escapeHtml(senderName)}">
             <div class="flex flex-col items-start min-w-0">
               <div class="msg-bubble ${((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : 'bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-4 py-2.5'} rounded-3xl select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${escapeHtml(resolvedId)}">
                 ${replyBlock}${content}
               </div>
               <div id="reactions-${escapeHtml(resolvedId)}" class="flex flex-wrap gap-1 mt-0.5 justify-start px-1"></div>
-              ${timeStr ? `<span class="chat-msg-time text-xs text-[var(--theme-muted)] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">' + appT('Editado') + '</span>' : ''}</span>` : ''}
             </div>
           </div>
         `;
@@ -39570,14 +39579,19 @@ let chatTypingListener = null;
       }
 
       if (resolvedId) subscribeMsgReactions(conversationId, resolvedId);
-      // Agrupación: el mensaje anterior pierde avatar y hora; el nuevo conserva
-      // su avatar como cola visible del grupo y la etiqueta del primero queda.
+      // Agrupación (CARRIL-2B): con el orden clásico, el encabezado
+      // [avatar|nombre·hora] (.chat-msg-head) solo vive en el primer mensaje
+      // del grupo —los agrupados lo traen oculto de fábrica— así que el mensaje
+      // anterior conserva el suyo intacto (no se le quita ni la hora ni el
+      // avatar). La rama vieja solo aplica al 1:1 (dm-avatar).
       if (_groupedWithPrev && _lastChatMsgNode && _lastChatMsgNode.isConnected) {
         try {
-          _lastChatMsgNode.querySelector('.chat-msg-time')?.remove();
-          const _prevAv = _lastChatMsgNode.querySelector('.dm-avatar');
-          if (_prevAv) _prevAv.outerHTML = '<span class="w-9 shrink-0"></span>';
-          _lastChatMsgNode.querySelector('.group-sender-avatar')?.classList.add('invisible');
+          if (!_lastChatMsgNode.querySelector('.chat-msg-head')) {
+            _lastChatMsgNode.querySelector('.chat-msg-time')?.remove();
+            const _prevAv = _lastChatMsgNode.querySelector('.dm-avatar');
+            if (_prevAv) _prevAv.outerHTML = '<span class="w-9 shrink-0"></span>';
+            _lastChatMsgNode.querySelector('.group-sender-avatar')?.classList.add('invisible');
+          }
         } catch (_) {}
       }
       container.appendChild(wrapper);
@@ -41540,14 +41554,17 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       .then(() => closeChatMutePanel()).catch(() => {});
   }
 
+  // CARRIL-2B: convención hidden (antes p.style.display inline): el estilo
+  // inline tenía más especificidad que la clase .hidden, así que el overlay
+  // podía quedar atascado visible con su fondo negro (overlay roto).
   function openChatOptionsPanel() {
     const p = document.getElementById('chat-options-panel');
-    if (p) p.style.display = 'flex';
+    if (p) p.classList.remove('hidden');
   }
 
   function closeChatOptionsPanel() {
     const p = document.getElementById('chat-options-panel');
-    if (p) p.style.display = 'none';
+    if (p) p.classList.add('hidden');
   }
 
   function blockUserFromChat() {

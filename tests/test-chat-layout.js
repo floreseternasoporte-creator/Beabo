@@ -118,17 +118,28 @@ test('claves nuevas de la bandeja en ES/EN/ZH/PT', () => {
   }
 });
 
-// --- 5. Guardia del template DM/grupo (no era el reportado; solo orden) ---
-test('DM grupo: nombre -> avatar -> burbuja -> hora', () => {
-  const i = SRC.indexOf('group-sender-label');
-  assert(i !== -1, 'no se encontró el template de grupo');
-  const blk = SRC.slice(i - 200, i + 2200);
-  const iName = blk.indexOf('group-sender-label');
+// --- 5. Guardia del template de grupo (CARRIL-2B: orden clásico) ---
+// El grupo pinta UNA fila de encabezado [avatar | nombre · hora] (.chat-msg-head)
+// ARRIBA y el texto (.msg-bubble) DEBAJO; la hora vive DENTRO del encabezado.
+// (Reemplaza la guardia anterior "nombre -> avatar -> burbuja -> hora".)
+test('grupo: encabezado [avatar|nombre·hora] -> burbuja de texto', () => {
+  const i = SRC.indexOf('<div class="chat-msg-head');
+  assert(i !== -1, 'no se encontró el encabezado .chat-msg-head en el template de grupo');
+  const blk = SRC.slice(i, i + 2200);
   const iAvatar = blk.indexOf('group-sender-avatar');
-  const iBubble = blk.indexOf('msg-bubble');
+  const iName = blk.indexOf('group-sender-label');
   const iTime = blk.indexOf('chat-msg-time');
-  assert(iName !== -1 && iAvatar !== -1 && iBubble !== -1 && iTime !== -1, 'faltan piezas del template DM');
-  assert(iName < iAvatar && iAvatar < iBubble && iBubble < iTime, 'orden DM alterado');
+  const iBubble = blk.indexOf('msg-bubble');
+  assert(iAvatar !== -1 && iName !== -1 && iTime !== -1 && iBubble !== -1, 'faltan piezas del template de grupo');
+  assert(iAvatar < iName, 'el avatar debe ir ANTES del nombre en el encabezado');
+  assert(iName < iTime, 'la hora debe ir junto al nombre en el encabezado');
+  assert(iTime < iBubble, 'todo el encabezado (incluida la hora) debe ir ANTES del texto');
+});
+test('grupo: el encabezado se oculta en mensajes agrupados', () => {
+  mustContain(SRC, 'chat-msg-head flex items-center gap-2 mb-1 max-w-[85%]${_groupedWithPrev', 'toggle hidden del encabezado');
+});
+test('grupo: la agrupación no desarma el encabezado del mensaje anterior', () => {
+  mustContain(SRC, "if (!_lastChatMsgNode.querySelector('.chat-msg-head'))", 'guardia de agrupación para el orden clásico');
 });
 
 console.log(failed === 0 ? `\nRESULTADO: ${passed} ok, 0 fallos` : `\nRESULTADO: ${passed} ok, ${failed} FALLOS`);
