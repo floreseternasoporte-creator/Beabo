@@ -65,13 +65,16 @@ function orbitSubscribeCatch() {
   var end = html.indexOf('async function orbitManage()', start);
   return html.slice(start, end === -1 ? start + 3000 : end);
 }
-test("network/timeout -> mensaje accionable (no genérico)", function () {
+test("network/timeout -> diagnóstico de red (no genérico)", function () {
+  // 2026-10-02: el mensaje directo se reemplazó por drexPayNetDiag(), que
+  // prueba App/Internet/Pagos y muestra el resultado para captura.
   var body = orbitSubscribeCatch();
-  var m = body.match(/m\s*===\s*'network'\s*\|\|\s*m\s*===\s*'timeout'\)\s*orbitToast\(t\('([^']+)'\)\)/);
-  assert(m, 'no se encontró el mapeo network/timeout');
-  assert(m[1].indexOf('VPN') !== -1, 'el mensaje no menciona VPN: ' + m[1]);
-  assert(m[1] !== 'Error al iniciar el pago. Inténtalo de nuevo.',
-    'network/timeout cae al mensaje genérico');
+  assert(/m\s*===\s*'network'\s*\|\|\s*m\s*===\s*'timeout'/.test(body),
+    'no se encontró la rama network/timeout');
+  assert(body.indexOf('drexPayNetDiag()') !== -1,
+    'network/timeout debe invocar drexPayNetDiag()');
+  assert(body.indexOf('Mándanos captura de este mensaje para arreglarlo.') !== -1,
+    'network/timeout debe pedir captura del diagnóstico');
 });
 test('no-token -> mensaje de login', function () {
   var body = orbitSubscribeCatch();
