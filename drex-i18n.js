@@ -5,6 +5,14 @@
    El español es el idioma base y no necesita diccionario (appT devuelve el
    texto original). */
 var APP_ENGLISH_TEXT = {
+/* LANE5-COMPOSER (auditoría UI composer) */
+"Subiendo fotos…":"Uploading photos…",
+"Comprimiendo video…":"Compressing video…",
+"1 foto seleccionada (máximo {max})":"1 photo selected (max {max})",
+"{n} fotos seleccionadas (máximo {max})":"{n} photos selected (max {max})",
+"Video · {d} · {s} (máx. {secs} s y 12 MB)":"Video · {d} · {s} (max {secs}s, 12 MB)",
+"No se pudo guardar":"Couldn't save",
+
 
 /* ITEM2-LIVEPUSH */
 
@@ -2808,6 +2816,14 @@ var APP_ENGLISH_TEXT = {
 /* DREX-ORBIT */"orbit_coming_soon":"Coming soon","Este plan aún no está disponible. Estará listo muy pronto.":"This plan isn't available yet. It'll be ready very soon.","No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.":"We couldn't reach the payment server. Check your connection and try again.","El servidor de pagos falló. Inténtalo de nuevo en unos minutos.":"The payment server failed. Try again in a few minutes.",
 "Mensaje":"Message","Uso estimado: {s}":"Estimated usage: {s}",};
 var APP_CHINESE_TEXT = {
+/* LANE5-COMPOSER (auditoría UI composer) */
+"Subiendo fotos…":"正在上传照片…",
+"Comprimiendo video…":"正在压缩视频…",
+"1 foto seleccionada (máximo {max})":"已选择 1 张照片（最多 {max} 张）",
+"{n} fotos seleccionadas (máximo {max})":"已选择 {n} 张照片（最多 {max} 张）",
+"Video · {d} · {s} (máx. {secs} s y 12 MB)":"视频 · {d} · {s}（最长 {secs} 秒，12 MB）",
+"No se pudo guardar":"无法保存",
+
 
 /* ITEM2-LIVEPUSH */
 
@@ -5612,6 +5628,14 @@ var APP_CHINESE_TEXT = {
 /* DREX-ORBIT */"orbit_coming_soon":"即将推出","Este plan aún no está disponible. Estará listo muy pronto.":"此方案暂不可用，很快就会上线。","No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.":"无法连接支付服务器，请检查网络后重试。","El servidor de pagos falló. Inténtalo de nuevo en unos minutos.":"支付服务器出错，请几分钟后再试。",
 "Mensaje":"消息","Uso estimado: {s}":"预估用量：{s}",};
 var APP_PORTUGUESE_TEXT = {
+/* LANE5-COMPOSER (auditoría UI composer) */
+"Subiendo fotos…":"Enviando fotos…",
+"Comprimiendo video…":"Compactando vídeo…",
+"1 foto seleccionada (máximo {max})":"1 foto selecionada (máximo {max})",
+"{n} fotos seleccionadas (máximo {max})":"{n} fotos selecionadas (máximo {max})",
+"Video · {d} · {s} (máx. {secs} s y 12 MB)":"Vídeo · {d} · {s} (máx. {secs} s e 12 MB)",
+"No se pudo guardar":"Não foi possível salvar",
+
 
 /* ITEM2-LIVEPUSH */
 
