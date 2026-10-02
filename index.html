@@ -21464,9 +21464,27 @@ else { try { drexSnapInit(); } catch (_) {} }
     }
   }
 
+  // FIX fantasma (2026-10-01): notas vacías de la BD (sin texto, sin media,
+  // sin autor) se pintaban como tarjetas "Usuario" · "just now". Una nota sin
+  // nada que mostrar no se monta en el feed.
+  function drexNoteHasRenderableContent(note) {
+    if (!note) return false;
+    if (String(note.content || note.text || '').trim()) return true;
+    if (Number(note.imageCount || 0) > 0) return true;
+    if (Array.isArray(note.imageUrls) && note.imageUrls.length) return true;
+    if (note.imageUrl || note.gifUrl) return true;
+    if (note.video && note.video.chunks) return true;
+    if (note.poll && note.poll.options && note.poll.options.length) return true;
+    if (note.fiestaId) return true;
+    if (note.kind === 'music' && note.trackId) return true;
+    if (String(note.url || '').trim()) return true;
+    return false;
+  }
+
   function snfMountFeedPost(ctx, note, appendAtBottom = false) {
     try {
       if (!note || !note.id) return;
+      if (!drexNoteHasRenderableContent(note)) return;
       if (ctx.feedLoadedIds.has(note.id)) {
         // Ventana virtual: si la tarjeta está podada, solo se refrescan
         // sus datos guardados; si ya está montada, no se duplica.
@@ -83342,7 +83360,7 @@ var baroQuickActions=[{id:'resumir',icon:'resumir-hilo',labelKey:'baro.qa.resumi
 @keyframes drexCamRecBlink { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 .drex-cam-rec-dot { animation: drexCamRecBlink 1s infinite; }
 .drex-cam-chip-sel > span:first-child { outline: 2px solid #2F33B8; outline-offset: 2px; }
-
+</style>
 <div id="drex-cam-modal" class="fixed inset-0 z-[200] hidden bg-black" role="dialog" aria-modal="true" aria-label="Cámara">
   <video id="drex-cam-preview" class="absolute inset-0 w-full h-full object-cover" style="background:#000" playsinline muted autoplay></video>
 
@@ -83838,8 +83856,6 @@ window.drexCameraOpen = drexCameraOpen;
 .dlc-fine{margin-top:10px;font-size:11.5px;color:rgba(255,255,255,.45);line-height:1.5}
 button.drex-live-pill{cursor:pointer}
 </style>
-
-<style>
 <!-- C237: hoja de regalos (layout reescrito para móvil) -->
 
 
