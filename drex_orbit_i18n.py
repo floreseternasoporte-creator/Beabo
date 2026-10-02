@@ -101,7 +101,7 @@ T = [
 # el helper orbitComingSoonLabel() (ES directo, EN/ZH/PT vía esta clave).
 # (tupla orbit_coming_soon definida una sola vez más abajo, en el bloque de la escalera)
 ("Este plan aún no está disponible. Estará listo muy pronto.", "This plan isn't available yet. It'll be ready very soon.", "此方案暂不可用，很快就会上线。", "Este plano ainda não está disponível. Estará pronto em breve."),
-("No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.", "We couldn't reach the payment server. Check your connection and try again.", "无法连接支付服务器，请检查网络后重试。", "Não foi possível conectar ao servidor de pagamentos. Verifique sua conexão e tente novamente."),
+("No pudimos contactar el servidor de pagos desde tu conexión. Si usas VPN, bloqueador de anuncios o DNS privado, desactívalo e inténtalo de nuevo.", "We couldn't reach the payment server from your connection. If you use a VPN, ad blocker or private DNS, turn it off and try again.", "无法从您的网络连接到支付服务器。如果您正在使用VPN、广告拦截器或私有DNS，请关闭后重试。", "Não conseguimos alcançar o servidor de pagamentos a partir da sua conexão. Se você usa VPN, bloqueador de anúncios ou DNS privado, desative e tente novamente."),
 ("El servidor de pagos falló. Inténtalo de nuevo en unos minutos.", "The payment server failed. Try again in a few minutes.", "支付服务器出错，请几分钟后再试。", "O servidor de pagamentos falhou. Tente de novo em alguns minutos."),
 # --- Escalera de planes Drex Orbit (2026-10-01): semanal -> de por vida ---
 ("Semanal", "Weekly", "每周", "Semanal"),
