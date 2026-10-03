@@ -397,15 +397,34 @@ async function saveOrbitState({ userSub, status, plan, stripeCustomerId, stripeS
   return { saved: true, state: next };
 }
 
+/* Fin de periodo vigente de una suscripción. Desde la API 2025-03-31
+ * (Basil), Stripe quitó current_period_end del nivel superior de la
+ * suscripción y lo movió a cada ítem (items.data[].current_period_end);
+ * el SDK aquí instalado (stripe@22, API 2026-08-26.dahlia) ya devuelve
+ * esa forma nueva. Leer SOLO el campo superior dejaba currentPeriodEnd
+ * en null para siempre (sin fecha de renovación y sin caducidad por
+ * tiempo). Se lee el mayor fin de periodo entre los ítems, con el
+ * campo superior heredado como respaldo. */
+function subscriptionPeriodEnd(sub) {
+  if (sub && sub.current_period_end != null) return sub.current_period_end;
+  const items = (sub && sub.items && Array.isArray(sub.items.data)) ? sub.items.data : [];
+  let end = null;
+  for (const it of items) {
+    if (it && it.current_period_end != null) {
+      end = (end == null) ? it.current_period_end : Math.max(end, it.current_period_end);
+    }
+  }
+  return end;
+}
+
 function subscriptionStateFrom(sub, planHint) {
   const md = (sub && sub.metadata) || {};
-  const sid = sub && sub.subscription;
   return {
     status: mapSubscriptionStatus(sub && sub.status),
     plan: md.drex_orbit_plan || planHint || null,
     stripeCustomerId: (sub && sub.customer) || null,
     stripeSubscriptionId: (sub && sub.id) || null,
-    currentPeriodEnd: (sub && sub.current_period_end != null) ? sub.current_period_end : null,
+    currentPeriodEnd: subscriptionPeriodEnd(sub),
     cancelAtPeriodEnd: !!(sub && sub.cancel_at_period_end),
   };
 }
@@ -699,7 +718,11 @@ async function handleKoroneCheckoutCompleted(stripeEvent, session) {
   const md = session.metadata || {};
   const userSub = md.drex_user_sub || session.client_reference_id || null;
   const plan = md.drex_orbit_plan;
-  if (!userSub || (plan !== 'monthly' && plan !== 'yearly')) {
+  /* Todos los planes que /create-subscription-session acepta (ORBIT_PLANS)
+   * deben activar aquí. Antes solo entraban monthly/yearly y un pago
+   * quarterly/semiannual cobrado se ignoraba como "bad_metadata": el
+   * usuario pagaba y su suscripción nunca se activaba. */
+  if (!userSub || !ORBIT_PLANS[plan]) {
     console.error('orbit webhook missing/invalid metadata', { hasSub: !!userSub, plan });
     return wok({ received: true, ignored: 'bad_metadata' });
   }
@@ -760,7 +783,9 @@ async function handleKoroneSubscriptionEvent(stripeEvent, sub, type) {
 
 // invoice.payment_succeeded / invoice.payment_failed: renovaciones y fallos.
 async function handleKoroneInvoiceEvent(stripeEvent, invoice, type) {
-  const subRef = invoice.subscription;
+  const subRef = invoice.subscription
+    || (invoice.parent && invoice.parent.subscription_details && invoice.parent.subscription_details.subscription)
+    || null;
   const subId = typeof subRef === 'string' ? subRef : (subRef && subRef.id);
   if (!subId) return wok({ received: true, ignored: 'no_subscription' });
   let sub = null;
