@@ -11777,10 +11777,6 @@ var APP_CHINESE_ATTRS = { "Esperando que termine la subida":"等待上传完成"
 "Habla en grupo, practica idiomas y juega con tu gente.":"加入群聊、练习语言，和朋友一起玩。",
 "No se pudo conectar a la fiesta de voz. Revisa tu conexión.":"无法连接到语音派对，请检查网络。",
 "No se pudo pedir la palabra. Revisa tu conexión.":"无法申请发言，请检查网络。",
-"Debes iniciar sesión para practicar.":"Você precisa entrar para praticar.",
-"Habla en grupo, practica idiomas y juega con tu gente.":"Fale em grupo, pratique idiomas e jogue com sua gente.",
-"No se pudo conectar a la fiesta de voz. Revisa tu conexión.":"Não foi possível conectar à festa de voz. Verifique sua conexão.",
-"No se pudo pedir la palabra. Revisa tu conexión.":"Não foi possível pedir a palavra. Verifique sua conexão.",
 "Acciones rápidas":"快捷操作",
 "Practicar idiomas":"练习语言",
 "Tiempo en pantalla":"屏幕使用时间",
@@ -11887,6 +11883,10 @@ var APP_ENGLISH_ATTRS = { "Esperando que termine la subida":"Waiting for the upl
 "Acciones rápidas":"Quick actions",
 "Practicar idiomas":"Practice languages",
 "Tiempo en pantalla":"Screen time",
+"Debes iniciar sesión para practicar.":"You need to sign in to practice.",
+"Habla en grupo, practica idiomas y juega con tu gente.":"Talk in groups, practice languages and play with your people.",
+"No se pudo conectar a la fiesta de voz. Revisa tu conexión.":"Could not connect to the voice party. Check your connection.",
+"No se pudo pedir la palabra. Revisa tu conexión.":"Could not request the mic. Check your connection.",
 };
 var APP_PORTUGUESE_ATTRS = { "Esperando que termine la subida":"Aguardando o fim do envio",
   "Abrir ajustes":"Abrir configurações",
@@ -12277,6 +12277,10 @@ var APP_PORTUGUESE_ATTRS = { "Esperando que termine la subida":"Aguardando o fim
 "Acciones rápidas":"Ações rápidas",
 "Practicar idiomas":"Praticar idiomas",
 "Tiempo en pantalla":"Tempo de tela",
+"Debes iniciar sesión para practicar.":"Você precisa entrar para praticar.",
+"Habla en grupo, practica idiomas y juega con tu gente.":"Fale em grupo, pratique idiomas e jogue com sua gente.",
+"No se pudo conectar a la fiesta de voz. Revisa tu conexión.":"Não foi possível conectar à festa de voz. Verifique sua conexão.",
+"No se pudo pedir la palabra. Revisa tu conexión.":"Não foi possível pedir a palavra. Verifique sua conexão.",
 };
 /* ================================================================
  * Drex C228 — REDISEÑO DEL FEED: claves i18n nuevas (carril 3)
