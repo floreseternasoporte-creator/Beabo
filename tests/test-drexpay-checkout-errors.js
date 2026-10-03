@@ -129,7 +129,7 @@ async function test(name, fn) {
   await test('i18n: los 3 mensajes nuevos existen en EN/ZH/PT', function () {
     var src = fs.readFileSync(__dirname + '/../drex-i18n.js', 'utf8');
     var keys = [
-      'No se pudo conectar con el servidor de pagos. Revisa tu conexión a internet e inténtalo de nuevo.',
+      'No se pudo contactar el servidor de pagos.',
       'Tu sesión expiró. Cierra sesión y vuelve a entrar para comprar.',
       'Demasiados intentos. Espera un minuto e inténtalo de nuevo.',
       'El servidor de pagos está tardando demasiado en responder. Revisa tu conexión e inténtalo de nuevo.'

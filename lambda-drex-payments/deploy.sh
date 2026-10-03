@@ -27,6 +27,8 @@ ACCOUNT_ID=$(aws sts get-caller-identity --region "$REGION" --query Account --ou
 
 STRIPE_SK="$(read_secret STRIPE_SECRET_KEY stripe-secret-key.txt)"
 STRIPE_WS="$(read_secret STRIPE_WEBHOOK_SECRET stripe-webhook-secret.txt)"
+PRICE_MONTHLY="${STRIPE_PRICE_ORBIT_MONTHLY:-}"
+PRICE_YEARLY="${STRIPE_PRICE_ORBIT_YEARLY:-}"
 POOL_ID="${COGNITO_USER_POOL_ID:-us-east-1_kDSYEBsnY}"
 CLIENT_ID="${COGNITO_CLIENT_ID:-7cm12q14tm12u8b3bnn6ksjqni}"
 ALLOWED="${ALLOWED_ORIGINS:-https://floreseternasoporte-creator.github.io,https://drex.glamworksapps.workers.dev}"
@@ -45,34 +47,42 @@ if ! aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
   aws iam attach-role-policy --role-name "$ROLE_NAME" \
     --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
   aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name drex-kv-payments \
-    --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"dynamodb:GetItem\",\"dynamodb:UpdateItem\",\"dynamodb:TransactWriteItems\"],\"Resource\":\"arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${TABLE}\"}]}"
+    --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"dynamodb:GetItem\",\"dynamodb:Query\",\"dynamodb:UpdateItem\",\"dynamodb:TransactWriteItems\"],\"Resource\":[\"arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${TABLE}\"]}]}"
   echo "Rol creado, esperando propagación..."
   sleep 12
 else
-  echo "Rol ya existe."
+  echo "Rol ya existe; reaplicando la política inline (incluye dynamodb:Query)."
+  aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name drex-kv-payments \
+    --policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"dynamodb:GetItem\",\"dynamodb:Query\",\"dynamodb:UpdateItem\",\"dynamodb:TransactWriteItems\"],\"Resource\":[\"arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${TABLE}\"]}]}"
 fi
 ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
 
 echo "== 3/5 Empaquetando =="
 cd "$DIR"
 npm install --omit=dev >/dev/null 2>&1
-zip -qr "$DIR/drex-payments.zip" index.mjs package.json node_modules
+zip -qr "$DIR/drex-payments.zip" index.js package.json node_modules
 
 echo "== 4/5 Creando/actualizando función Lambda =="
+# OJO: update-function-configuration REEMPLAZA todas las variables. Los
+# price IDs de Drex Orbit se incluyen solo si vienen en el entorno, para
+# no borrar los ya configurados en la consola al redesplegar.
+ENVV="DREX_TABLE=${TABLE},STRIPE_SECRET_KEY=${STRIPE_SK},STRIPE_WEBHOOK_SECRET=${STRIPE_WS},COGNITO_USER_POOL_ID=${POOL_ID},COGNITO_CLIENT_ID=${CLIENT_ID},ALLOWED_ORIGINS=${ALLOWED},RL_MAX=${RL_MAX},RL_WINDOW_SEC=${RL_WIN}"
+if [ -n "$PRICE_MONTHLY" ]; then ENVV="${ENVV},STRIPE_PRICE_ORBIT_MONTHLY=${PRICE_MONTHLY}"; fi
+if [ -n "$PRICE_YEARLY" ]; then ENVV="${ENVV},STRIPE_PRICE_ORBIT_YEARLY=${PRICE_YEARLY}"; fi
 if aws lambda get-function --function-name "$FUNC" --region "$REGION" >/dev/null 2>&1; then
   aws lambda update-function-code --function-name "$FUNC" --region "$REGION" \
     --zip-file "fileb://$DIR/drex-payments.zip" --output text >/dev/null
   echo "Código actualizado."
   sleep 5
   aws lambda update-function-configuration --function-name "$FUNC" --region "$REGION" \
-    --environment "Variables={DREX_TABLE=${TABLE},STRIPE_SECRET_KEY=${STRIPE_SK},STRIPE_WEBHOOK_SECRET=${STRIPE_WS},COGNITO_USER_POOL_ID=${POOL_ID},COGNITO_CLIENT_ID=${CLIENT_ID},ALLOWED_ORIGINS=${ALLOWED},RL_MAX=${RL_MAX},RL_WINDOW_SEC=${RL_WIN}}" \
+    --environment "Variables={${ENVV}}" \
     --output text >/dev/null
   echo "Variables actualizadas."
 else
   aws lambda create-function --function-name "$FUNC" --region "$REGION" \
     --runtime nodejs20.x --role "$ROLE_ARN" --handler index.handler \
     --zip-file "fileb://$DIR/drex-payments.zip" --timeout 30 --memory-size 256 \
-    --environment "Variables={DREX_TABLE=${TABLE},STRIPE_SECRET_KEY=${STRIPE_SK},STRIPE_WEBHOOK_SECRET=${STRIPE_WS},COGNITO_USER_POOL_ID=${POOL_ID},COGNITO_CLIENT_ID=${CLIENT_ID},ALLOWED_ORIGINS=${ALLOWED},RL_MAX=${RL_MAX},RL_WINDOW_SEC=${RL_WIN}}" \
+    --environment "Variables={${ENVV}}" \
     --output text >/dev/null
   echo "Función creada."
 fi
@@ -95,6 +105,12 @@ echo "Smoke test: curl ${FUNC_URL}health"
 echo ""
 echo "SIGUIENTE: registra en Stripe (Developers > Webhooks) el endpoint"
 echo "  ${FUNC_URL}webhook"
-echo "con el evento checkout.session.completed, y pon su signing secret"
-echo "(whsec_...) como STRIPE_WEBHOOK_SECRET (re-ejecuta este script)."
+echo "con los eventos checkout.session.completed,"
+echo "customer.subscription.updated, customer.subscription.deleted,"
+echo "invoice.payment_succeeded e invoice.payment_failed (los necesita"
+echo "Drex Orbit para activarse, renovarse y cancelarse), y pon su"
+echo "signing secret (whsec_...) como STRIPE_WEBHOOK_SECRET."
+echo "Pon también STRIPE_PRICE_ORBIT_MONTHLY / STRIPE_PRICE_ORBIT_YEARLY"
+echo "si faltan: STRIPE_PRICE_ORBIT_MONTHLY=price_... \\"
+echo "STRIPE_PRICE_ORBIT_YEARLY=price_... ./deploy.sh"
 echo "Luego activa DREX_PAYMENTS_ENDPOINT en index.html con la Function URL."

@@ -144,12 +144,20 @@ for (const id of ['weekly', 'biennial', 'lifetime']) ok(avail(id) === false, id 
     return toasts[toasts.length - 1]; // el último: antes va 'Procesando…'
   };
   let msg = await withFetch(async () => { throw new Error('boom'); }, 'monthly');
-  ok(msg === 'No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.',
-     'fallo de red -> toast de red (no genérico)');
+  ok(toasts.includes('Revisando tu conexión…'),
+     'fallo de red -> aviso de diagnóstico (no genérico)');
+  await new Promise((r) => setImmediate(r));
+  msg = toasts[toasts.length - 1];
+  ok(/^No pudimos contactar el servidor de pagos\. \[.*\] Mándanos captura de este mensaje/.test(msg),
+     'fallo de red -> toast con diagnóstico (App/Internet/Pagos)');
   const abortErr = new Error('aborted'); abortErr.name = 'AbortError';
   msg = await withFetch(async () => { throw abortErr; }, 'monthly');
-  ok(msg === 'No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.',
-     'timeout -> toast de red (no genérico)');
+  ok(toasts.includes('Revisando tu conexión…'),
+     'timeout -> aviso de diagnóstico (no genérico)');
+  await new Promise((r) => setImmediate(r));
+  msg = toasts[toasts.length - 1];
+  ok(/^No pudimos contactar el servidor de pagos\. \[.*\] Mándanos captura de este mensaje/.test(msg),
+     'timeout -> toast con diagnóstico (App/Internet/Pagos)');
   msg = await withFetch(async () => ({ ok: false, status: 502, json: async () => ({ error: 'payment_provider_error' }) }), 'monthly');
   ok(msg === 'El servidor de pagos falló. Inténtalo de nuevo en unos minutos.',
      '502 del backend -> toast de servidor (no genérico)');
@@ -172,9 +180,9 @@ for (const id of ['weekly', 'biennial', 'lifetime']) ok(avail(id) === false, id 
     ['Este plan aún no está disponible. Estará listo muy pronto.',
      "This plan isn't available yet. It'll be ready very soon.",
      '此方案暂不可用，很快就会上线。', 'Este plano ainda não está disponível. Estará pronto em breve.'],
-    ['No pudimos conectar con el servidor de pagos. Revisa tu conexión e inténtalo de nuevo.',
-     "We couldn't reach the payment server. Check your connection and try again.",
-     '无法连接支付服务器，请检查网络后重试。', 'Não foi possível conectar ao servidor de pagamentos. Verifique sua conexão e tente novamente.'],
+    ['No pudimos contactar el servidor de pagos.',
+     "We couldn't reach the payment server.",
+     '无法连接到支付服务器。', 'Não conseguimos alcançar o servidor de pagamentos.'],
     ['El servidor de pagos falló. Inténtalo de nuevo en unos minutos.',
      'The payment server failed. Try again in a few minutes.',
      '支付服务器出错，请几分钟后再试。', 'O servidor de pagamentos falhou. Tente de novo em alguns minutos.'],
