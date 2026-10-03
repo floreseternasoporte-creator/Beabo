@@ -88,9 +88,11 @@ ok(segment('verifiedActive: function', 'isActive: function').includes('cancelAtP
 /* ================= B. Visitantes fuera de Ajustes ================= */
 console.log('-- B: quién vio tu perfil en el perfil propio --');
 ok(!html.includes('id="visitantes-settings-card"'), 'la entrada de visitantes YA NO está en Ajustes');
-ok(html.includes('id="profile-visitors-entry"'), 'la entrada vive en el perfil propio');
-ok(html.includes('id="profile-visitors-entry" onclick="openOrbitVisitors()"'), 'toca y abre la hoja (la puerta profile_visitors decide)');
-ok(html.includes('function renderOrbitVisitorsEntryPreview('), 'el preview se actualiza sobre la entrada del perfil');
+ok(html.includes('id="profile-visitors-entry-mount"') && html.includes('id="profile-visitors-entry-mount-desktop"'),
+  'C245: la entrada se monta en AMBOS layouts del perfil propio (móvil y escritorio)');
+ok(html.includes('function orbitVisitorsEntryHTML(') && html.includes('function mountOrbitVisitorsEntry('),
+  'C245: la entrada se RENDERIZA por JS (la evidencia de render vive en test-c245)');
+ok(html.includes('function renderOrbitVisitorsEntryPreview('), 'el preview (re)monta la entrada del perfil');
 ok(!html.includes('renderOrbitVisitorsSettingsPreview'), 'ya no queda el preview de Ajustes');
 
 /* ================= C. Ajustes reorganizado ================= */
