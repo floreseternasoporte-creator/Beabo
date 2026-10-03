@@ -46,7 +46,7 @@ function test(name, fn) {
 var EMOJI = /[\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2B00-\u2BFF\u2C00-\u2CFF]/u;
 function orbitZone() {
   var a = src.indexOf('var ORBIT_PLANS');
-  var b = src.indexOf('var DrexCoins = {');
+  var b = src.indexOf('/* ---------- C240: co-anfitrión');
   assert(a !== -1 && b !== -1 && b > a, 'zona Orbit no encontrada');
   return src.slice(a, b);
 }

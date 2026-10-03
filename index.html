@@ -286,6 +286,8 @@ button, a, select, [role="button"] {
 .orbit-avatar-frame{box-shadow:0 0 0 2px #fff,0 0 0 5px #c9a227,0 0 22px rgba(255,190,60,.65)!important}
 .orbit-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:9999px;font-size:12px;font-weight:800;color:#3a2b00;background:linear-gradient(135deg,#ffe9a8,#ffd257 45%,#f0b429);box-shadow:0 2px 10px rgba(240,180,41,.45);white-space:nowrap}
 .orbit-badge svg{width:14px;height:14px}
+.orbit-badge-mini{padding:1px 8px;font-size:10px;margin-left:6px;vertical-align:middle;box-shadow:none}
+.orbit-badge-mini svg{width:10px;height:10px}
 .orbit-theme-pick{position:relative;border-radius:14px;overflow:hidden;cursor:pointer;border:2px solid transparent;min-height:64px;display:flex;align-items:flex-end;padding:8px}
 .orbit-theme-pick.sel{border-color:var(--drex-brand)}
 .orbit-theme-lock{position:absolute;top:6px;left:6px;right:6px;display:flex;align-items:center;justify-content:center;gap:3px;background:rgba(0,0,0,.55);color:#fff;font-size:9px;font-weight:800;letter-spacing:.02em;padding:3px 4px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -305,6 +307,14 @@ button, a, select, [role="button"] {
 .orbit-plan-card.plan-coming-soon .orbit-plan-btn,.orbit-plan-card[data-unavailable="true"] .orbit-plan-btn{background:var(--theme-surface-subtle);color:var(--theme-muted);pointer-events:none;cursor:default}
 .orbit-plan-card.plan-coming-soon .orbit-plan-btn:active,.orbit-plan-card[data-unavailable="true"] .orbit-plan-btn:active{opacity:1}
 .orbit-plan-soon{display:inline-block;font-size:11px;font-weight:700;color:var(--theme-muted);background:var(--theme-surface);border:1px solid var(--theme-border);padding:4px 10px;border-radius:999px;white-space:nowrap}
+/* ============ C243: selector Meta + checklist + marco en posts ============ */
+.orbit-plan-card[role="radio"]{cursor:pointer}
+.orbit-plan-card.sel{border:2px solid var(--drex-brand);background:var(--theme-surface-subtle)}
+.orbit-plan-dot{display:inline-block;width:20px;height:20px;border-radius:9999px;border:2px solid var(--theme-border);flex-shrink:0}
+.orbit-plan-card.sel .orbit-plan-dot{background:var(--drex-brand);border-color:var(--drex-brand);box-shadow:inset 0 0 0 3px var(--theme-surface)}
+.orbit-subscribe-cta{margin-top:14px}
+.orbit-benefit-check{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:9999px;background:var(--drex-brand);color:#fff;flex-shrink:0;margin-left:auto}
+.orbit-avatar-frame{border-radius:9999px}
 .drex-ad-slot {
   margin: 12px 16px;
   padding: 10px 12px 12px;
@@ -9893,6 +9903,9 @@ function fiestaGameHTMLFinal() {
         <!-- GIF -->
         <button id="tool-gif" onclick="openNoteGifPicker()" class="tap44 w-11 h-11 flex-shrink-0 rounded-full bg-white shadow-sm flex items-center justify-center active:bg-[#e7ecf3] transition" aria-label="GIF"><span class="text-[11px] font-black tracking-tight text-[#5c6974] select-none">GIF</span></button>
 
+        <!-- HD (C243, Drex Orbit): subidas con menos compresión -->
+        <button id="tool-hd" onclick="toggleComposerHdUploads()" class="tap44 h-11 px-3.5 flex-shrink-0 rounded-full bg-white shadow-sm flex items-center justify-center active:bg-[#e7ecf3] transition" aria-label="HD"><span id="tool-hd-label" class="text-[11px] font-black tracking-tight text-[#5c6974] select-none">HD</span></button>
+
         
 
         <!-- Contador de caracteres al final -->
@@ -11438,9 +11451,39 @@ function saveNote() {
       <button onclick="closePaymentsView()" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[var(--theme-text)] active:bg-[var(--theme-surface-subtle)] transition" aria-label="Volver">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
-      <h2 id="payments-view-title" class="text-base font-extrabold text-[var(--theme-text)]">Pagos</h2>
+      <h2 id="payments-view-title" class="text-base font-extrabold text-[var(--theme-text)]">Transacciones</h2>
     </div>
     <div id="payments-view-content" class="flex-1 overflow-y-auto scrollbar-hide pb-6"></div>
+  </div>
+
+  <!-- C242: recibo propio de un movimiento (sin salir de Drex) -->
+  <div id="tx-receipt-sheet" class="fixed inset-0 z-[130] hidden">
+    <div class="absolute inset-0" style="background:rgba(0,0,0,.55)" onclick="drexTxCloseReceipt()"></div>
+    <div class="absolute inset-x-0 bottom-0 rounded-t-3xl bg-[var(--theme-bg)] px-5 pt-4 pb-7" style="max-height:86vh;overflow-y:auto">
+      <div class="flex items-center gap-2">
+        <h3 id="tx-receipt-title" class="text-base font-extrabold text-[var(--theme-text)]">Detalle del movimiento</h3>
+        <div class="flex-1"></div>
+        <button type="button" onclick="drexTxCloseReceipt()" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[var(--theme-text)] active:bg-[var(--theme-surface-subtle)] transition" aria-label="Cerrar">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="tx-receipt-content" class="mt-2"></div>
+    </div>
+  </div>
+
+  <div id="orbit-visitors-sheet" class="fixed inset-0 z-[130] hidden">
+    <div class="absolute inset-0" style="background:rgba(0,0,0,.55)" onclick="closeOrbitVisitors()"></div>
+    <div class="absolute inset-x-0 bottom-0 rounded-t-3xl bg-[var(--theme-bg)] px-5 pt-4 pb-7" style="max-height:86vh;overflow-y:auto">
+      <div class="flex items-center gap-2">
+        <h3 id="orbit-visitors-title" class="text-base font-extrabold text-[var(--theme-text)]">Quién vio tu perfil</h3>
+        <div class="flex-1"></div>
+        <button type="button" onclick="closeOrbitVisitors()" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[var(--theme-text)] active:bg-[var(--theme-surface-subtle)] transition" aria-label="Cerrar">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p id="orbit-visitors-note" class="text-xs text-[var(--theme-muted)] mt-1">Solo tú puedes ver esta lista.</p>
+      <div id="orbit-visitors-list" class="mt-3"></div>
+    </div>
   </div>
 
   <div id="settings-view" class="fixed inset-0 bg-[var(--theme-bg)] z-[110] hidden flex flex-col">
@@ -11474,8 +11517,20 @@ function saveNote() {
               <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
             </span>
             <span class="flex-1 min-w-0">
-              <span id="pagos-settings-title" class="block text-[var(--theme-text)] font-black text-[17px]">Pagos</span>
+              <span id="pagos-settings-title" class="block text-[var(--theme-text)] font-black text-[17px]">Pagos y transacciones</span>
               <span id="pagos-settings-preview" class="block text-[var(--theme-muted)] text-[13px] mt-0.5">Historial de pagos y compras</span>
+            </span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[var(--theme-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+        <div class="px-4 pt-3">
+          <button id="visitantes-settings-card" onclick="openOrbitVisitors()" class="tap44 w-full text-left rounded-2xl p-4 flex items-center gap-4 active:opacity-80 transition bg-[var(--theme-surface)] border border-[var(--theme-border)]">
+            <span class="w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0" style="background:var(--drex-brand)">
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </span>
+            <span class="flex-1 min-w-0">
+              <span id="visitantes-settings-title" class="block text-[var(--theme-text)] font-black text-[17px]">Quién vio tu perfil</span>
+              <span id="visitantes-settings-preview" class="block text-[var(--theme-muted)] text-[13px] mt-0.5">Mira quién entra a tu perfil</span>
             </span>
             <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-[var(--theme-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
           </button>
@@ -12761,6 +12816,7 @@ function saveNote() {
 
   function initDrexAds() {
     if (!drexAdsActive()) return;
+    if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return;
     if (document.querySelector('script[data-drex-ads]')) return;
     const s = document.createElement('script');
     s.setAttribute('data-drex-ads', '1');
@@ -12772,6 +12828,7 @@ function saveNote() {
 
   function getDrexAdSlotHTML() {
     if (!drexAdsActive()) return '';
+    if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return '';
     const client = String(DREX_ADS.publisherId).replace(/"/g, '');
     const slot = String(DREX_ADS.feedSlotId || '').replace(/"/g, '');
     const label = (typeof _al !== 'undefined' && _al === 'zh') ? '广告' : ((typeof _al !== 'undefined' && _al === 'en') ? 'Ad' : 'Anuncio');
@@ -12786,6 +12843,7 @@ function saveNote() {
 
   function pushDrexAdSlots(container) {
     if (!drexAdsActive()) return;
+    if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return;
     try {
       (window.adsbygoogle = window.adsbygoogle || []).push({});
     } catch (_) {}
@@ -13151,7 +13209,10 @@ function saveNote() {
       if (post && post.id && !seen.has(post.id)) { items.push(post); seen.add(post.id); }
     });
     // DESTACADOS (C87): los destacados del autor van primero (pinnedAt desc).
-    const featuredMap = await drexFeaturedGet(authorUid);
+    /* C243 (pin_post) al render: los destacados solo ordenan si el dueño
+     * tiene los beneficios Orbit activos (fail-closed: ni se lee el mapa). */
+    const pinsVisible = (typeof drexOrbitPinsVisible === 'function') ? await drexOrbitPinsVisible(authorUid) : true;
+    const featuredMap = pinsVisible ? await drexFeaturedGet(authorUid) : {};
     const orderedItems = drexFeaturedSortPosts(items, featuredMap);
 
     if (!orderedItems.length) {
@@ -13192,6 +13253,7 @@ function saveNote() {
       if (!container) continue;
       if (typeof hydrateSaveButtons === 'function') hydrateSaveButtons(container);
       if (typeof hydrateQuickFollowButtons === 'function') hydrateQuickFollowButtons(container);
+      if (typeof hydrateOrbitAvatarFrames === 'function') hydrateOrbitAvatarFrames(container);
     }
   }
 
@@ -14936,6 +14998,16 @@ function saveNote() {
     const list = getAllNoteDrafts();
     const idx = list.findIndex(d => d && d.id === draftId);
     if (idx < 0) { closeScheduleSheet(); return; }
+    /* C243 (limits): tope de la cola de programadas (25 Orbit / 3 sin
+     * suscripción con puertas activas; sin puertas no hay tope, como hoy).
+     * Vale para cualquier entrada a la hoja, no solo desde el composer. */
+    const schedMax = (typeof drexOrbitScheduledPostsMax === 'function') ? drexOrbitScheduledPostsMax() : Infinity;
+    const schedCount = list.filter(d => d && d.id !== draftId && typeof d.publishAt === 'number' && d.publishAt > Date.now()).length;
+    if (schedCount >= schedMax) {
+      if (typeof DrexOrbit !== 'undefined' && DrexOrbit.enforced() && !DrexOrbit.isActive() && typeof openOrbitPaywall === 'function') { closeScheduleSheet(); openOrbitPaywall('limits'); return; }
+      showMiniToast(appT('Alcanzaste el máximo de {n} publicaciones programadas.').replace('{n}', String(schedMax)));
+      return;
+    }
     list[idx] = Object.assign({}, list[idx], { publishAt: ts, scheduledPublishing: false, updatedAt: Date.now() });
     saveAllNoteDrafts(list);
     closeScheduleSheet();
@@ -15414,8 +15486,14 @@ function saveNote() {
     }
   }
 
+  /* C243 (beneficio longer_posts): 200 caracteres base; 2000 con Drex
+   * Orbit verificado. Único punto del límite del composer (anillo,
+   * contador y truncado ya leen de aquí). Fail-closed al límite base. */
+  function drexOrbitPostMaxChars() {
+    try { return (typeof DrexOrbit !== 'undefined' && DrexOrbit.isActive()) ? 2000 : 200; } catch (_) { return 200; }
+  }
   function getCurrentNoteMaxLength() {
-    return 200;
+    return drexOrbitPostMaxChars();
   }
 
   // Se llamaba desde el textarea principal ("oninput") pero nunca existía:
@@ -15590,6 +15668,20 @@ function saveNote() {
   // Imágenes SIN Cloudinary: se procesan en local y se guardan como data URL
   // directamente en la base de datos de AWS (DynamoDB). Se reduce el tamaño
   // por pasos hasta quedar bajo el límite de 400 KB por ítem.
+/* C243 (beneficio hd_uploads): escalera de compresión HD para miembros
+ * Orbit verificados (menos compresión, más detalle). El tope
+ * MAX_URL_LENGTH es una restricción real de almacenamiento (ítem de
+ * DynamoDB < 400 KB) y NO se toca: la escalera HD intenta primero
+ * resoluciones/calidades mayores y cae a la estándar si no caben.
+ * El chip HD del composer (window._drexHdUploads) puede apagarla.
+ * Fail-closed: sin acceso verificado, escalera estándar de siempre. */
+function drexOrbitHdUploadsOn() {
+  try {
+    if (typeof window !== 'undefined' && window._drexHdUploads === false) return false;
+    return (typeof DrexOrbit !== 'undefined') && DrexOrbit.hasAccess('hd_uploads');
+  } catch (_) { return false; }
+}
+
   function processImageFile(file) {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => reject(new Error('Tiempo de espera agotado al procesar imagen')), 60000);
@@ -15602,12 +15694,21 @@ function saveNote() {
 
       const compressAndResolve = (source, srcW, srcH) => {
         try {
-          const attempts = [
-            { maxSide: 1200, quality: 0.75 },
-            { maxSide: 1000, quality: 0.70 },
-            { maxSide: 800,  quality: 0.65 },
-            { maxSide: 640,  quality: 0.60 }
-          ];
+          const attempts = drexOrbitHdUploadsOn()
+            ? [
+              { maxSide: 2048, quality: 0.86 },
+              { maxSide: 1600, quality: 0.82 },
+              { maxSide: 1200, quality: 0.78 },
+              { maxSide: 1000, quality: 0.70 },
+              { maxSide: 800,  quality: 0.65 },
+              { maxSide: 640,  quality: 0.60 }
+            ]
+            : [
+              { maxSide: 1200, quality: 0.75 },
+              { maxSide: 1000, quality: 0.70 },
+              { maxSide: 800,  quality: 0.65 },
+              { maxSide: 640,  quality: 0.60 }
+            ];
           let dataUrl = '';
           for (const attempt of attempts) {
             const scale = Math.min(1, attempt.maxSide / Math.max(srcW, srcH));
@@ -16281,7 +16382,7 @@ function saveNote() {
       let mime = origMime || 'video/mp4';
       // Se comprime si supera el umbral directo (8 MB) o si es un formato
       // poco portable (p. ej. .mov de iPhone, que Chrome no reproduce).
-      if (file.size > VIDEO_POSTS_DIRECT_MAX_BYTES || !broadlyPlayable) {
+      if (file.size > ((typeof drexOrbitVideoDirectMaxBytes === 'function') ? drexOrbitVideoDirectMaxBytes() : VIDEO_POSTS_DIRECT_MAX_BYTES) || !broadlyPlayable) {
         // Ruta rápida por hardware (WebCodecs, 10-100x): usa el chip de video
         // del teléfono en vez de regrabar en tiempo real. Todo sigue siendo
         // local, sin servicios externos. Si falla o no está disponible, se usa
@@ -16473,7 +16574,7 @@ function saveNote() {
     notePostImageFiles = notePostImageFiles.concat(accepted);
     event.target.value = '';
     if (dropped > 0) {
-      showMiniToast(appT('Solo puedes subir un máximo de {n} fotos por publicación.').replace('{n}', drexOrbitPhotosMax()));
+      showMiniToast(appT('Solo puedes subir un máximo de {n} fotos por publicación.').replace('{n}', drexOrbitPhotosMax()) + ((typeof DrexOrbit !== 'undefined' && DrexOrbit.enforced && DrexOrbit.enforced() && !DrexOrbit.isActive()) ? ' ' + appT('Con Drex Orbit puedes subir hasta 40 fotos por publicación.') : ''));
     }
     renderNotePostPhotoPreviews();
   }
@@ -16570,7 +16671,7 @@ function saveNote() {
     probeVideoDuration(file).then(d => {
       if (!isFinite(d) || d <= 0) throw new Error('nodur');
       if (d > drexOrbitVideoPostMaxSec()) {
-        showMiniToast(appT('El video puede durar hasta {s} segundos. Elige un clip más corto.').replace('{s}', drexOrbitVideoPostMaxSec()));
+        showMiniToast(appT('El video puede durar hasta {s} segundos. Elige un clip más corto.').replace('{s}', drexOrbitVideoPostMaxSec()) + ((typeof DrexOrbit !== 'undefined' && DrexOrbit.enforced && DrexOrbit.enforced() && !DrexOrbit.isActive()) ? ' ' + appT('Con Drex Orbit puedes subir videos de hasta 180 segundos.') : ''));
         return;
       }
       // Exclusión mutua: el video reemplaza fotos y GIF.
@@ -16662,7 +16763,7 @@ function saveNote() {
   function publishNoteFromFullscreen() {
     warmNoteAudioContext(); // el tap de Publicar es gesto válido para arrancar el AudioContext
     let content = resolveCommentContent('note-content-fullscreen');
-    const imageFiles = notePostImageFiles.slice(0, 20);
+    const imageFiles = notePostImageFiles.slice(0, (typeof drexOrbitPhotosMax === 'function' ? drexOrbitPhotosMax() : 20));
     const gifUrl = selectedNotePostGif;
     const videoFile = notePostVideoFile; // VIDEO-POSTS
     // C145: una encuesta válida también es contenido publicable (post de
@@ -20386,7 +20487,10 @@ else { try { drexSnapInit(); } catch (_) {} }
           if (_drexRecHash(String(note.id || '') + '|' + day) % 100 < 18) personal += 5;
         }
       }
-      return recency + popularity + personal;
+      // C241: impulso Orbit — las fiestas en vivo de anfitriones suscriptores
+      // (marcadas al crearlas) suben en el ranking mientras sigan en vivo.
+      var fiestaBoost = (note.fiestaId && note.fiestaStatus === 'live' && note.fiestaOrbit === true) ? 25 : 0;
+      return recency + popularity + personal + fiestaBoost;
     } catch (_) { return 0; }
   }
 
@@ -21121,6 +21225,7 @@ else { try { drexSnapInit(); } catch (_) {} }
         const safeAuthorName = escapeHtml(note.authorName || 'Usuario');
         const safeId = escapeInlineSingleQuote(note.id || ''); // FIX XSS: id forjado vía DB
         const safeAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', safeAuthorId);
+        const safeAuthorOrbitBadge = (typeof drexOrbitAuthorBadgeHTML === 'function') ? drexOrbitAuthorBadgeHTML(safeAuthorId, user) : '';
         const authorAvatarId = `${(ctx && ctx.avatarIdPrefix) || 'post-author-'}${safeId}`;
         let safeAuthorImage = getSafeMediaUrl(note.authorImage, 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==');
 
@@ -21176,7 +21281,7 @@ else { try { drexSnapInit(); } catch (_) {} }
                 </button>
                 ${getQuickFollowButtonMarkup(note.authorId || '', user?.uid || '')}
               </div>`}
-                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}"><span data-author-name>${safeAuthorName}</span>${safeAuthorVerifiedIcon}${primaryCollab ? `<span class="font-normal text-[var(--theme-muted)]"> y </span>${escapeHtml(primaryCollab.name || 'Colaborador')}${getVerificationIconByAuthor('', primaryCollab.uid || '', 12)}` : ''}</button>
+                <button ${safeAuthorId ? `onclick="openAuthorProfile('${safeAuthorId}')"` : 'disabled'} class="drex-post-author text-left ${safeAuthorId ? 'cursor-pointer' : 'cursor-default'}"><span data-author-name>${safeAuthorName}</span>${safeAuthorVerifiedIcon}${safeAuthorOrbitBadge}${primaryCollab ? `<span class="font-normal text-[var(--theme-muted)]"> y </span>${escapeHtml(primaryCollab.name || 'Colaborador')}${getVerificationIconByAuthor('', primaryCollab.uid || '', 12)}` : ''}</button>
                 <span class="drex-post-time">· ${formatRelativeTime(safeTimestamp)}</span>
                 ${renderPostFlairPill(note)}
                 <span class="inline-flex items-center gap-1">${renderAuthorLanguageBadges(note, true)}</span>
@@ -21439,6 +21544,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       ph.replaceWith(el);
       hydrateQuickFollowButtons(el);
       hydrateSaveButtons(el);
+      try { if (typeof hydrateOrbitAvatarFrames === 'function') hydrateOrbitAvatarFrames(el); } catch (_) {}
       applyFeedTypeFilter();
       _enhancePostCard(el);
       try { drexRecObserveCard(el); } catch (_) {}
@@ -22669,6 +22775,11 @@ else { try { drexSnapInit(); } catch (_) {} }
         await DrexCloud.database().ref('users/' + user.uid + '/featuredPosts/' + nid).remove();
         showMiniToast(appT('Se quitó la publicación destacada.'));
       } else {
+        /* C243 (beneficio pin_post): fijar publicaciones es de Drex
+         * Orbit. Quitar un destacado siempre se permite (limpieza del
+         * perfil). Sin puertas activas, orbitGate deja pasar (es el
+         * comportamiento histórico de C87). */
+        if (typeof orbitGate === 'function' && !orbitGate('pin_post')) { closePostOptionsSheet(); return; }
         if (Object.keys(map).length >= DREX_FEATURED_MAX) {
           showMiniToast(appT('Solo puedes destacar 3 publicaciones.'));
           return;
@@ -26404,7 +26515,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       <div class="flex-1 min-w-0">
         ${o.pinnedBadgeHtml || ''}
         <div id="comment-textbox-${o.safeCommentPathAttr}" class="text-sm text-[var(--theme-text)] leading-snug break-words${isLongText ? ' comment-clamp' : ''}">
-          <button ${o.commentAuthorId ? `onclick="openAuthorProfileFromComments('${o.safeCommentAuthorId}')"` : 'disabled'} data-comment-author-id="${o.safeCommentAuthorIdAttr}" data-comment-author-name class="drex-post-author ${o.commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${o.safeAuthorName}</button>${o.commentVerifiedIcon}
+          <button ${o.commentAuthorId ? `onclick="openAuthorProfileFromComments('${o.safeCommentAuthorId}')"` : 'disabled'} data-comment-author-id="${o.safeCommentAuthorIdAttr}" data-comment-author-name class="drex-post-author ${o.commentAuthorId ? 'cursor-pointer' : 'cursor-default'}">${o.safeAuthorName}</button>${o.commentVerifiedIcon}${o.orbitBadge || ''}
           ${replyToHtml}<span id="comment-content-${o.safeCommentPathAttr}">${renderContentWithSticker(c.content, 'text-sm text-[var(--theme-text)] leading-snug')}</span>
         </div>
         ${isLongText ? `<button onclick="toggleCommentTextCollapse(this, '${o.safeCommentPath}')" class="tap44 mt-0.5 text-[13px] font-bold text-[var(--brand-indigo-text)] active:opacity-70 flex items-center">${appT('Ver más')}</button>` : ''}
@@ -26668,6 +26779,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       safePhotoUrl: getSafeMediaUrl(comment.photoUrl),
       safePhotoUrlJs: getSafeMediaUrlInlineJs(comment.photoUrl),
       commentVerifiedIcon: getVerificationIconByAuthor(comment.authorEmail || '', authorId),
+      orbitBadge: (function () { try { return (typeof drexOrbitAuthorBadgeHTML === 'function') ? drexOrbitAuthorBadgeHTML(authorId, (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null) : ''; } catch (_) { return ''; } })(),
       quickFollowHtml: getQuickFollowButtonMarkup(authorId, DrexCloud.auth().currentUser?.uid || ''),
       pinnedBadgeHtml: pinnedBadgeHtml || '',
       replyToName: '',
@@ -26747,6 +26859,7 @@ else { try { drexSnapInit(); } catch (_) {} }
 
     container.appendChild(commentDiv);
     hydrateQuickFollowButtons(commentDiv);
+    try { if (typeof hydrateOrbitAvatarFrames === 'function') hydrateOrbitAvatarFrames(commentDiv); } catch (_) {}
 
     hydrateIgVoteButtons(commentPath);
     flat.forEach(f => hydrateIgVoteButtons(f.path));
@@ -28321,6 +28434,7 @@ else { try { drexSnapInit(); } catch (_) {} }
      fallo se oculta limpiamente (el vignette no ocupa el bloque). */
   function drexTryMonetagFallback(slot, onFail) {
     try {
+      if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return false;
       if (!monetagActive()) return false;
       if (!window.__drexMonetagVignette || window.__drexMonetagVignetteFailed) {
         window.__drexMonetagVignette = true;
@@ -28429,6 +28543,7 @@ else { try { drexSnapInit(); } catch (_) {} }
   function drexLoadMonetagBannerInto(body, zone, slot) {
     try {
       if (!body || !zone) { drexAdSlotFail(slot); return false; }
+      if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) { try { if (slot) slot.style.display = 'none'; } catch (_) {} return false; }
       // NOTA: no se consulta drexAdsBlocked() aquí a propósito: esa sonda es
       // específica de Adsterra (highrevenueformat.com). Monetag usa otro dominio;
       // si su script falla, s.onerror y drexWatchAdBody ocultan el bloque.
@@ -28454,6 +28569,7 @@ else { try { drexSnapInit(); } catch (_) {} }
   var __drexIppLoaded = {};
   function drexLoadMonetagIPP(zone) {
     try {
+      if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return false;
       if (typeof MONETAG === 'undefined' || !MONETAG) return false;
       zone = String(zone || '').replace(/[^0-9]/g, '');
       var tagUrl = String(MONETAG.ippTagUrl || '');
@@ -28495,6 +28611,7 @@ else { try { drexSnapInit(); } catch (_) {} }
   function drexLoadAdsterraBannerInto(body, key, w, h, slot) {
     try {
       if (!body || !key) { drexAdSlotFail(slot); return false; }
+      if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) { try { if (slot) slot.style.display = 'none'; } catch (_) {} return false; }
       if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) { drexAdSlotFail(slot); return false; }
       body.innerHTML = '<div class="ad-shimmer"></div>';
       if (typeof adsterraWatchShimmer === 'function') { try { adsterraWatchShimmer(body); } catch (_) {} }
@@ -28533,6 +28650,7 @@ else { try { drexSnapInit(); } catch (_) {} }
      hayan cargado. Idempotente: cada bloque se carga una sola vez. */
   function drexLoadSectionAds(root) {
     try {
+      if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return;
       var scope = root || document;
       var slots = scope.querySelectorAll('[data-ad-slot]:not([data-ad-loaded])');
       for (var i = 0; i < slots.length; i++) {
@@ -28595,6 +28713,7 @@ else { try { drexSnapInit(); } catch (_) {} }
   // al cargar: se ejecuta dentro de initAdsterra(), solo con sesión.
 
   function adsterraInjectBanners() {
+    try { if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return; } catch (_) {}
     try { if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) return; } catch (_) {}
     const units = [];
     if (ADSTERRA.bannerKey2) units.push({ slotId: 'adsterra-menu-slot', key: ADSTERRA.bannerKey2, w: ADSTERRA.menuBannerW || 320, h: ADSTERRA.menuBannerH || 50 });
@@ -28655,6 +28774,7 @@ else { try { drexSnapInit(); } catch (_) {} }
   }
   function drexStickyAdLoad() {
     try {
+      if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return;
       if (drexStickyAdClosed()) return;
       if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.bannerKey) return;
       if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) return;
@@ -28740,6 +28860,7 @@ else { try { drexSnapInit(); } catch (_) {} }
   var adsterraLastInteract = Date.now();
   function adsterraMaybeInterstitial() {
     try {
+      if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return;
       if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.interstitialUrl) return;
       var now = Date.now();
       var minMs = Math.max(60, (ADSTERRA.interstitialMinSec | 0) || 180) * 1000;
@@ -28978,6 +29099,25 @@ else { try { drexSnapInit(); } catch (_) {} }
     } catch (_) {}
   }
   function initAdsterra() {
+    /* C241 (Drex Orbit, beneficio no_ads): con suscripción verificada no se
+       carga ninguna red publicitaria. Si el estado aún no se verificó en
+       este arranque y hay sesión, se espera al primer refresh antes de
+       inyectar scripts imposibles de retirar (popunder, social bar). */
+    try {
+      if (typeof DrexOrbit !== 'undefined' && DrexOrbit) {
+        if (typeof DrexOrbit.hasAccess === 'function' && DrexOrbit.hasAccess('no_ads')) return;
+        if (DrexOrbit._st === null && !window.__drexAdInitOrbitWait) {
+          var _oiu = null;
+          try { _oiu = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null; } catch (_) {}
+          if (_oiu) {
+            window.__drexAdInitOrbitWait = true;
+            var _oiRetry = function () { window.__drexAdInitOrbitWait = false; try { initAdsterra(); } catch (_) {} };
+            DrexOrbit.refresh().then(_oiRetry, _oiRetry);
+            return;
+          }
+        }
+      }
+    } catch (_) {}
     try { drexProbeAdblock(); } catch (_) {}
     adsterraPreload();
     try {
@@ -43446,6 +43586,9 @@ function renderAccountsList(accounts) {
       showBlockedUserScreen(authorId, 'profile');
       return;
     }
+    /* C243 (profile_visitors): registro mínimo de la visita (solo con
+     * sesión y solo en perfiles ajenos; drexRecordProfileVisit filtra). */
+    try { if (typeof drexRecordProfileVisit === 'function') drexRecordProfileVisit(authorId); } catch (_) {}
     setAuthorProfileVisibility(true);
     if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
 
@@ -44091,6 +44234,10 @@ function renderAccountsList(accounts) {
       }
 
       // DESTACADOS (C87): los destacados del autor van primero (pinnedAt desc).
+      /* C243 (pin_post) al render: sin beneficios activos del dueño, los
+       * destacados no ordenan (fail-closed). */
+      const pinsVisible = (typeof drexOrbitPinsVisible === 'function') ? await drexOrbitPinsVisible(authorId) : true;
+      if (!pinsVisible) featuredSnap = null;
       const orderedAuthorPosts = drexFeaturedSortPosts(posts, featuredSnap ? featuredSnap.val() : null);
 
       const voteMaps = await _getProfileVoteMaps();
@@ -44104,6 +44251,7 @@ function renderAccountsList(accounts) {
       });
       if (typeof hydrateSaveButtons === 'function') hydrateSaveButtons(container);
       if (typeof hydrateQuickFollowButtons === 'function') hydrateQuickFollowButtons(container);
+      if (typeof hydrateOrbitAvatarFrames === 'function') hydrateOrbitAvatarFrames(container);
     }).catch(error => {
       console.error("Error al cargar posts del autor:", error);
       container.innerHTML = `<div class="py-10 text-center text-[#dc2626]">Error al cargar las publicaciones.</div>`;
@@ -46326,7 +46474,7 @@ body.theme-dark #continueWithPhone:hover {
     <p class="mb-4 leading-relaxed">Si crees que algún contenido en Drex infringe tus derechos de autor, puedes enviarnos una notificación a zam.contact@yahoo.com con la información necesaria para identificar la obra y el material infractor. Actuaremos conforme a la ley aplicable.</p>
 
     <h2 class="text-xl font-bold mt-10 mb-4">6. Compras y pagos dentro de la aplicación</h2>
-    <p class="mb-4 leading-relaxed">Algunos Servicios pueden incluir funciones de pago (por ejemplo, suscripciones, regalos virtuales o promociones). Al realizar una compra aceptas:</p>
+    <p class="mb-4 leading-relaxed">Algunos Servicios pueden incluir funciones de pago (por ejemplo, suscripciones o promociones). Al realizar una compra aceptas:</p>
     <ul class="list-disc pl-6 mb-4 space-y-2 leading-relaxed">
       <li>Que los pagos se procesan a través de terceros (como las tiendas de aplicaciones o pasarelas de pago) sujetos a sus propios términos.</li>
       <li>Que los precios se muestran antes de confirmar la compra e incluyen los impuestos aplicables cuando corresponde.</li>
@@ -49013,6 +49161,12 @@ function closeSubpageView() {
       // Atrás pero no estaba registrado: Atrás/Esc no lo cerraban y el guard
       // se consumía sin cerrar nada (la ruta cambiaba con el paywall encima).
       ['orbit-paywall', () => typeof closeOrbitPaywall === 'function' && closeOrbitPaywall()],
+      // C242/C243: el recibo de transacciones y la hoja de visitantes de
+      // Orbit (z-[130]) empujan el guard de Atrás; sin registro, Atrás/Esc
+      // no los cerraban (el de visitantes es nuevo en C243; el del recibo
+      // arrastraba el hueco desde C242).
+      ['tx-receipt-sheet', () => typeof drexTxCloseReceipt === 'function' && drexTxCloseReceipt()],
+      ['orbit-visitors-sheet', () => typeof closeOrbitVisitors === 'function' && closeOrbitVisitors()],
       // El picker de GIF (z-121) flota sobre todo, incluso sobre los comentarios.
       ['gif-picker-sheet', () => typeof closeGifPicker === 'function' && closeGifPicker()],
       // El picker de stickers (z-121) también flota sobre todo.
@@ -49622,40 +49776,6 @@ function drexInitRouteObserver() {
       url.search = '';
       history.replaceState(null, '', url.toString());
     }
-  } catch (_) {}
-})();
-
-// Retorno de Stripe Checkout: ?coins=success | ?coins=cancelled (+session_id).
-// Las monedas las acredita el webhook en el servidor, nunca el cliente:
-// aquí solo se avisa, se invalida la caché del saldo y se limpia la URL
-// para no re-mostrar el aviso al recargar.
-(function capturePaymentReturn() {
-  try {
-    var q = new URLSearchParams(location.search);
-    var st = q.get('coins');
-    if (st !== 'success' && st !== 'cancelled') return;
-    try {
-      var url = new URL(location.href);
-      url.search = '';
-      history.replaceState(null, '', url.toString());
-    } catch (_) {}
-    var show = function () {
-      try {
-        if (st === 'success') {
-          if (typeof toast === 'function') toast(t('Pago recibido. Tus monedas se acreditarán en unos segundos.'));
-          /* DrexCoins es global (window.DrexCoins): refrescar saldo si expone el método. */
-          try {
-            if (window.DrexCoins && typeof window.DrexCoins.refreshCoinsBalance === 'function') {
-              window.DrexCoins.refreshCoinsBalance();
-            }
-          } catch (_) {}
-        } else if (typeof toast === 'function') {
-          toast(t('Pago cancelado. No se realizó ningún cargo.'));
-        }
-      } catch (_) {}
-    };
-    if (document.readyState === 'complete') setTimeout(show, 900);
-    else window.addEventListener('load', function () { setTimeout(show, 900); });
   } catch (_) {}
 })();
 
@@ -50711,6 +50831,10 @@ async function createFiesta() {
       fiestaStatus: 'live',
       fiestaMax: maxSpeakers
     };
+    // C241 (Drex Orbit, beneficio fiesta_boost): si el anfitrión tiene la
+    // suscripción verificada al crear la fiesta, el aviso nace marcado y el
+    // ranking "Para ti" (drexRecScore) lo impulsa mientras siga en vivo.
+    try { if (typeof DrexOrbit !== 'undefined' && DrexOrbit.isActive()) note.fiestaOrbit = true; } catch (_) {}
     // FIX 2026-09-21: pushAsync() rechaza si el aviso no se guarda de verdad.
     // Con push()+_writePromise el error se tragaba en silencio y la app mostraba
     // "Fiesta publicada en el feed" aunque la tarjeta nunca existía (nadie la
@@ -50768,6 +50892,7 @@ function renderFiestaCardHTML(note) {
       <div class="flex items-center gap-2 mb-2.5 flex-wrap">
         <span class="text-base leading-none">\uD83C\uDF89</span>
         <span class="text-[var(--brand-indigo-text)] bg-[color-mix(in_srgb,var(--drex-brand)_10%,transparent)] text-[10px] font-extrabold uppercase tracking-widest bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-3 py-1 rounded-full">Fiesta de voz</span>
+        ${note.fiestaOrbit ? '<span class="orbit-badge orbit-badge-mini">Drex Orbit</span>' : ''}
         ${lang ? `<span class="text-[var(--brand-indigo-text)] bg-[color-mix(in_srgb,var(--drex-brand)_10%,transparent)] text-[10px] font-extrabold uppercase tracking-widest bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-3 py-1 rounded-full">${lang}</span>` : ''}
       </div>
       <p class="font-extrabold text-[18px] leading-tight text-[var(--theme-text)]">${title}</p>
@@ -54920,6 +55045,7 @@ var musicAdBreakTimer = null;
 var musicAdBreakPending = null;
 function musicMaybeAdBreak(next) {
   try {
+    if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return false;
     var n = (typeof ADSTERRA !== 'undefined' && (ADSTERRA.musicAdEveryN | 0)) || 3;
     musicSongsSinceAd++;
     if (musicSongsSinceAd >= Math.max(1, n) && typeof ADSTERRA !== 'undefined' && ADSTERRA && ADSTERRA.bannerKey) {
@@ -55707,6 +55833,7 @@ function adsterraWatchShimmer(slot) {
 var musicAdBreakPreloaded = false;
 function musicPreloadAdBreak() {
   try {
+    if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return;
     if (musicAdBreakPreloaded) return;
     if (typeof ADSTERRA === 'undefined' || !ADSTERRA || !ADSTERRA.bannerKey) return;
     const pre = document.getElementById('music-adbreak-preload');
@@ -55733,6 +55860,7 @@ function musicPreloadAdBreak() {
 }
 /* ---------- Adsterra en el reproductor ---------- */
 function adsterraInjectMusicSlot() {
+  try { if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) { var _mc0 = document.getElementById('adsterra-music-card'); if (_mc0) _mc0.style.display = 'none'; return; } } catch (_) {}
   if (adsterraMusicInjected) return;
   const slot = document.getElementById('adsterra-music-slot');
   if (!slot) return;
@@ -55829,6 +55957,7 @@ function drexReportClose() {
   if (o) o.classList.add('hidden');
   _drexReportTarget = null;
   _drexReportReason = null;
+  try { window._drexReportLastPriority = false; } catch (_) {}
   if (typeof _restoreOverlayFocus === 'function') _restoreOverlayFocus();
   if (typeof setBottomNavVisibility === 'function') { try { setBottomNavVisibility(true); } catch (_) {} }
 }
@@ -55891,6 +56020,7 @@ function _drexReportRenderDone() {
       </div>
       <h2>¡Gracias por tu reporte!</h2>
       <p>Nuestro equipo de moderación lo revisará pronto.<br>Te avisaremos en tus notificaciones.</p>
+      ${(typeof window !== 'undefined' && window._drexReportLastPriority) ? '<p class="drex-report-anon">' + appT('Como miembro Drex Orbit, tu reporte tiene prioridad.') + '</p>' : ''}
       <button onclick="drexReportClose()" class="drex-report-send">Entendido</button>
     </div>`;
   body.scrollTop = 0;
@@ -56007,6 +56137,8 @@ async function drexReportSubmit() {
   const detailsEl = document.getElementById('drex-report-text');
   const details = detailsEl ? detailsEl.value.trim().slice(0, 500) : '';
   try {
+    const orbitPriority = (function () { try { return (typeof DrexOrbit !== 'undefined' && typeof DrexOrbit.hasAccess === 'function') ? !!DrexOrbit.hasAccess('priority_support') : false; } catch (_) { return false; } })();
+    try { window._drexReportLastPriority = orbitPriority; } catch (_) {}
     const db = DrexCloud.database();
     const ref = db.ref('reports').push();
     const targetId = t.type === 'post' ? t.noteId : (t.type === 'comment' ? (t.noteId + '::' + t.commentPath) : t.uid);
@@ -56024,6 +56156,7 @@ async function drexReportSubmit() {
       reasonLabel: r.label,
       details,
       status: 'pending',                 // pending | replied | dismissed | actioned
+      priority: orbitPriority,           // C241: Drex Orbit (priority_support): moderación atiende primero los priority:true
       actionTaken: '',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -84012,7 +84145,7 @@ window.drexCameraOpen = drexCameraOpen;
 
 
 <style>
-/* C232: estilos compartidos (iconbtn + sheet) usados por la billetera de Drex Coins */
+/* C232: estilos compartidos (iconbtn + sheet) */
 .drex-live-iconbtn{width:44px;height:44px;border-radius:9999px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.16);color:#fff;font-size:18px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:transform .15s ease}
 .drex-live-iconbtn:active{transform:scale(.92)}
 .drex-live-iconbtn.off{background:rgba(255,59,92,.25);border-color:rgba(255,59,92,.6)}
@@ -84030,49 +84163,7 @@ window.drexCameraOpen = drexCameraOpen;
 .drex-live-iconbtn svg{width:20px;height:20px}
 </style>
 
-<!-- C236-B3: hoja de billetera / tienda de Drex Coins -->
-<div id="drex-coins-sheet" class="fixed inset-0 hidden" style="z-index:95">
-  <div class="absolute inset-0" style="background:rgba(0,0,0,.55)" onclick="drexCoinsCloseSheet()"></div>
-  <div class="absolute inset-x-0 bottom-0 p-5 pb-7 drex-live-sheet" style="max-height:82vh;overflow-y:auto">
-    <div class="flex items-center gap-2">
-      <p id="drex-coins-title" class="text-white font-extrabold text-[15px]">Billetera</p>
-      <div class="flex-1"></div>
-      <button type="button" onclick="drexCoinsCloseSheet()" class="drex-live-iconbtn" aria-label="Cerrar"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>
-    <div id="drex-coins-body" class="mt-3"></div>
-  </div>
-</div>
 
-<style>
-/* C236-B3: billetera y tienda de Drex Coins */
-.dlc-hero{display:flex;align-items:center;justify-content:space-between;background:rgba(47,51,184,.18);border:1px solid rgba(47,51,184,.4);border-radius:18px;padding:14px 16px}
-.dlc-bal{display:flex;flex-direction:column;gap:8px}
-.dlc-bal-row{display:flex;align-items:center;gap:8px;color:#fff}
-.dlc-bal-row svg{color:#FFC93C}
-.dlc-bal-row b{font-size:20px}
-.dlc-bal-row span{font-size:12px;color:rgba(255,255,255,.6);font-weight:600}
-.dlc-how{margin-top:10px;color:#9AA3FF;font-size:12.5px;font-weight:700}
-.dlc-how-txt{margin-top:6px;color:rgba(255,255,255,.7);font-size:12.5px;line-height:1.5;background:rgba(255,255,255,.05);border-radius:12px;padding:10px 12px}
-.dlc-empty{color:rgba(255,255,255,.5);font-size:13px;margin-top:8px}
-.dlc-hist{display:flex;flex-direction:column;gap:6px;margin-top:4px}
-.dlc-tx{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.05);border-radius:12px;padding:9px 12px;color:#fff;font-size:13px}
-.dlc-tx svg{color:#FFC93C;flex:none}
-.dlc-tx-t{flex:1;font-weight:600;color:rgba(255,255,255,.8)}
-.dlc-tx-a{font-weight:800}
-.dlc-nopay{text-align:center;color:#fff;padding:18px 10px;background:rgba(255,201,60,.08);border:1px solid rgba(255,201,60,.35);border-radius:18px;margin-bottom:12px}
-.dlc-nopay svg{color:#FFC93C;margin:0 auto 8px}
-.dlc-nopay p{font-size:13px;color:rgba(255,255,255,.75);margin-top:6px;line-height:1.5}
-.dlc-packs{display:flex;flex-direction:column;gap:10px}
-.dlc-pack{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:12px 14px}
-.dlc-pack svg{color:#FFC93C;flex:none}
-.dlc-pack-info{flex:1;display:flex;flex-direction:column;color:#fff}
-.dlc-pack-info b{font-size:15px}
-.dlc-pack-info span{font-size:12.5px;color:rgba(255,255,255,.6)}
-.dlc-soon{background:rgba(255,255,255,.12);color:rgba(255,255,255,.55);font-size:12px;font-weight:800;padding:7px 14px;border-radius:999px}
-.dlc-fine{margin-top:10px;font-size:11.5px;color:rgba(255,255,255,.45);line-height:1.5}
-button.drex-live-pill{cursor:pointer}
-</style>
-<!-- C237: hoja de regalos (layout reescrito para móvil) -->
 
 
 
@@ -84091,7 +84182,6 @@ var LS = {
   listOff: null,
   evOffs: [],
   muted: false,
-  giftFor: 'viewer',
   lastTap: 0,
   ending: false,
   domInit: false
@@ -84110,7 +84200,7 @@ var LS = {
  *  party          -> banner informativo de Fiestas de voz (antes confeti)
  *  game           -> boton de juegos (antes mando emoji)
  *  users          -> estados vacios de juegos/oyentes (antes mascaras)
- *  gift, coin, diamond, wallet -> regalos y Drex Coins (B2/B3)
+ *  coin -> historial de Pagos
  *  share, x, send, chat, crown, zap, sparkles, check, bell -> UI del live
  */
 var DREX_ICONS = {
@@ -84124,10 +84214,7 @@ var DREX_ICONS = {
   radio: '<circle cx="12" cy="12" r="2"/><path d="M7.5 7.5a6.4 6.4 0 0 0 0 9M16.5 7.5a6.4 6.4 0 0 1 0 9M4.6 4.6a10.5 10.5 0 0 0 0 14.8M19.4 4.6a10.5 10.5 0 0 1 0 14.8"/>',
   game: '<path d="M17.3 5H6.7a4.7 4.7 0 0 0-4.6 5.6l1 4.6A3 3 0 0 0 6 17.7c.8 0 1.6-.3 2.1-.9L9.5 15h5l1.4 1.8c.5.6 1.3.9 2.1.9a3 3 0 0 0 2.9-2.5l1-4.6A4.7 4.7 0 0 0 17.3 5z"/><line x1="6.5" y1="11.5" x2="9.5" y2="11.5"/><line x1="8" y1="10" x2="8" y2="13"/><circle cx="15.2" cy="10.2" r="1" fill="currentColor" stroke="none"/><circle cx="17.2" cy="12.8" r="1" fill="currentColor" stroke="none"/>',
   users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
-  gift: '<polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>',
   coin: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5h2.6a2.9 2.9 0 0 1 0 5.8H10zM10 8.5v5.8"/>',
-  diamond: '<path d="M7 3h10l4 6-9 12-9-12 4-6z"/><path d="M3 9h18M12 21L8.5 9 12 3l3.5 6L12 21"/>',
-  wallet: '<path d="M19 7H5a2 2 0 0 1 0-4h13v4"/><path d="M19 7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5"/><circle cx="16.5" cy="14" r="1.2" fill="currentColor" stroke="none"/>',
   share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/>',
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
@@ -84277,34 +84364,9 @@ window.drexFiestaSwitchTab = function (tab) {
 
 
 
-/* C237: render de la hoja de regalos — secciones por tier, sin solapes */
-function drexTierLabel(tier) {
-  return { bronce: 'Bronce', plata: 'Plata', oro: 'Oro', leyenda: 'Leyenda', orbit: 'Drex Orbit' }[tier] || tier;
-}
 
-/* ============ C236-B3: DREX COINS (billetera, paquetes, libro) ============
- * Esquema DrexCloud (DynamoDB drex-kv):
- *   wallets/<uid>             = {coins, diamonds, updatedAt}
- *   transactions/<uid>/<txid> = {type, amount, currency, balance, ts, meta}
- *   config/coinPackages       = (opcional) override remoto de paquetes
- * Tipos: purchase | gift_sent | gift_received | gift_refund | diamond_redeem
- * Diamantes del host: 1 diamante por cada 10 Drex Coins recibidas en regalos.
- * El canje de diamantes a dinero real requiere proceso manual o proveedor;
- * aqui solo se registra en el libro (honesto: no se simula ningun pago).
- * Compras con dinero real: Lambda drex-payments + Stripe Checkout
- * (ver docs/pagos-drex-coins.md). Sin DREX_PAYMENTS_ENDPOINT configurado,
- * la tienda muestra "Proximamente" con honestidad.
- */
-var DREX_COIN_PACKAGES = [
-  { id: 'coins_100',   name: 'Paquete Inicial',  coins: 100,   base: 100,   bonus: 0,  usd: 0.99,  tag: null },
-  { id: 'coins_550',   name: 'Paquete Bronce',   coins: 550,   base: 500,   bonus: 10, usd: 4.99,  tag: null },
-  { id: 'coins_1200',  name: 'Paquete Plata',    coins: 1200,  base: 1000,  bonus: 20, usd: 9.99,  tag: 'Más popular' },
-  { id: 'coins_3250',  name: 'Paquete Oro',      coins: 3250,  base: 2500,  bonus: 30, usd: 24.99, tag: null },
-  { id: 'coins_7000',  name: 'Paquete Leyenda',  coins: 7000,  base: 5000,  bonus: 40, usd: 49.99, tag: null },
-  { id: 'coins_15000', name: 'Paquete Universo', coins: 15000, base: 10000, bonus: 50, usd: 99.99, tag: 'Mejor valor' }
-];
-var DREX_DIAMOND_RATE = 10;
-var DREX_DIAMOND_USD_RATE = 1000;
+
+
 
 /* Backend REAL de pagos (Lambda drex-payments + Stripe Checkout).
  * Configurado 2026-09-29 con la Function URL real de la Lambda drex-payments.
@@ -84313,99 +84375,7 @@ var DREX_DIAMOND_USD_RATE = 1000;
  */
 var DREX_PAYMENTS_ENDPOINT = 'https://fhbtjdgmt7vlpsmt75rtbnldzy0yqysv.lambda-url.us-east-1.on.aws/';
 
-/* Proveedor de pago REAL: Stripe Checkout vía la Lambda drex-payments.
- * Sin DREX_PAYMENTS_ENDPOINT configurado, isAvailable() es false y la UI
- * lo dice con honestidad (no se simula ninguna compra).
- * Flujo: Comprar -> POST /create-checkout-session (el backend crea la
- * sesión en Stripe) -> el navegador va a Stripe Checkout -> retorno a la
- * app con ?coins=success. Las monedas las acredita el webhook de Stripe en
- * el SERVIDOR (transaccional e idempotente); el cliente NUNCA se
- * auto-acredita monedas por una compra (sería falsificable).
- * Despliegue: lane-pay/DEPLOY-CHECKLIST.md y docs/pagos-drex-coins.md
- */
-var DrexPay = {
-  _provider: null,
-  configure: function (p) { this._provider = p || null; return this; },
-  providerName: function () { try { return (this._provider && this._provider.name) || null; } catch (_) { return null; } },
-  isAvailable: function () {
-    try { return !!(this._provider && typeof this._provider.isConfigured === 'function' && this._provider.isConfigured()); }
-    catch (_) { return false; }
-  },
-  buy: function (pkg) {
-    if (!this.isAvailable()) return Promise.reject(new Error('no-provider'));
-    try { return this._provider.buy(pkg); } catch (e) { return Promise.reject(e); }
-  },
-  creditsServerSide: function () {
-    try { return !!(this._provider && this._provider.creditsServerSide); } catch (_) { return false; }
-  }
-};
 
-/* Proveedor Stripe Checkout (configuración real). creditsServerSide = true:
- * drexCoinsBuy NO acredita monedas en el cliente; lo hace el webhook. */
-DrexPay.configure({
-  name: 'stripe',
-  creditsServerSide: true,
-  isConfigured: function () {
-    return typeof DREX_PAYMENTS_ENDPOINT === 'string' && DREX_PAYMENTS_ENDPOINT.replace(/\/+$/, '') !== '';
-  },
-  buy: function (pkg) { return drexStripeCheckout(pkg); }
-});
-
-/* Pide la Checkout Session al backend y redirige a Stripe. */
-async function drexStripeCheckout(pkg) {
-  var endpoint = String((typeof DREX_PAYMENTS_ENDPOINT !== 'undefined') ? DREX_PAYMENTS_ENDPOINT : '').replace(/\/+$/, '');
-  if (!endpoint) throw new Error('no-provider');
-  var idToken = null;
-  try {
-    if (typeof DrexCloud !== 'undefined' && DrexCloud.auth) idToken = await DrexCloud.auth().getIdToken();
-  } catch (_) { idToken = null; }
-  if (!idToken) throw new Error('no-token');
-  var returnUrl = '';
-  try { returnUrl = location.origin + location.pathname; } catch (_) {}
-  var body = JSON.stringify({ packageId: pkg.id, idToken: idToken, returnUrl: returnUrl });
-  /* Red endurecida para movil (2026-09-29):
-   * 1) Content-Type text/plain: la peticion es CORS "simple" y el navegador
-   *    NO envia preflight OPTIONS. En iOS los preflights fallan de forma
-   *    intermitente (bloqueadores de contenido / proxies del operador) y ese
-   *    fallo se ve como error de red aunque el servidor este sano. El backend
-   *    hace JSON.parse del cuerpo sin importar el Content-Type.
-   * 2) Hasta 4 intentos con backoff exponencial (1s/2s/4s) y timeout de 15s
-   *    por intento (AbortController): un POST colgado se reporta como
-   *    'timeout' con mensaje propio, no como fallo de red generico.
-   * Los errores HTTP del backend NO se reintentan (fail fast). */
-  var ATTEMPTS = 4, TIMEOUT_MS = 15000, BACKOFF_MS = [1000, 2000, 4000];
-  var res = null, attempt = 0, netErr = null, timedOut = false;
-  while (attempt < ATTEMPTS && !res) {
-    attempt++;
-    var ctrl = null, timer = null;
-    try {
-      var init = { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: body };
-      if (typeof AbortController !== 'undefined') {
-        ctrl = new AbortController();
-        init.signal = ctrl.signal;
-        timer = setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, TIMEOUT_MS);
-      }
-      res = await fetch(endpoint + '/create-checkout-session', init);
-    } catch (fe) {
-      netErr = fe; res = null;
-      if (fe && fe.name === 'AbortError') timedOut = true;
-      if (attempt < ATTEMPTS) await new Promise(function (r) { setTimeout(r, BACKOFF_MS[attempt - 1] || 4000); });
-    } finally {
-      if (timer) { try { clearTimeout(timer); } catch (_) {} }
-    }
-  }
-  if (!res) { var nerr = new Error(timedOut ? 'timeout' : 'network'); nerr.cause = netErr; throw nerr; }
-  var data = null;
-  try { data = await res.json(); } catch (_) { data = null; }
-  if (!res.ok || !data || !data.url) {
-    var code = (data && data.error) || ('http_' + res.status);
-    var herr = new Error('backend:' + String(code));
-    herr.status = res.status; herr.backendError = (data && data.error) || null;
-    throw herr;
-  }
-  location.href = data.url; /* Stripe Checkout; el retorno trae ?coins=success */
-  return { redirected: true };
-}
 
 /* ============================================================
  * DREX ORBIT — suscripción Orbit de Drex (un nivel: mensual/anual)
@@ -84479,7 +84449,10 @@ function orbitComingSoonLabel() {
   if (L === 'es') return 'Próximamente';
   return t('orbit_coming_soon');
 }
-var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'exclusive_gifts', 'priority_support'];
+/* C243: 4 privilegios nuevos (hd_uploads, longer_posts, pin_post,
+ * profile_visitors) sobre los 7 de C241. hasAccess rechaza cualquier id
+ * fuera de esta lista (fail-closed). */
+var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors'];
 
 var DrexOrbit = {
   _st: null,
@@ -84495,7 +84468,7 @@ var DrexOrbit = {
     try { if (typeof DrexCloud !== 'undefined' && DrexCloud.auth) return await DrexCloud.auth().getIdToken(); } catch (_) {}
     return null;
   },
-  /* POST endurecido para movil (mismo patron que drexStripeCheckout, 2026-09-29):
+  /* POST endurecido para movil (2026-09-29):
    * 1) Content-Type text/plain: la peticion es CORS "simple" y el navegador
    *    NO envia preflight OPTIONS. En iOS los preflights fallan de forma
    *    intermitente (bloqueadores de contenido / proxies del operador) y ese
@@ -84563,9 +84536,23 @@ var DrexOrbit = {
     try { if (typeof window.drexOrbitApplyGates === 'function') window.drexOrbitApplyGates(); } catch (_) {}
     return self._st;
   },
-  /* Suscripción verificada en el backend (para mostrar estado). */
+  /* Beneficios Orbit ACTIVOS según el estado verificado del backend.
+   * C243-D (regla del usuario): cancelar apaga los beneficios AL INSTANTE
+   * (cancelAtPeriodEnd), aunque el periodo pagado no haya terminado; lo
+   * mismo si el backend reporta past_due/canceled o si el periodo ya
+   * venció. Es el único punto de la regla: isActive(), hasAccess(),
+   * orbitGate() y Destellos (drexSnapCanView) cuelgan de aquí. El estado
+   * crudo (_st) NO se muta: la UI sigue mostrando "pagada hasta <fecha>".
+   * Fail-closed: cualquier duda -> false. */
   verifiedActive: function () {
-    try { return !!(this._st && this._st.active); } catch (_) { return false; }
+    try {
+      var st = this._st;
+      if (!st || st.active !== true) return false;
+      if (st.cancelAtPeriodEnd === true) return false;
+      if (st.status === 'canceled' || st.status === 'past_due') return false;
+      if (st.currentPeriodEnd && Number(st.currentPeriodEnd) * 1000 <= Date.now()) return false;
+      return true;
+    } catch (_) { return false; }
   },
   /* Acceso real: verificada Y puertas activas. */
   isActive: function () {
@@ -84625,9 +84612,9 @@ var DrexOrbit = {
     try { if (typeof window.drexOrbitApplyGates === 'function') window.drexOrbitApplyGates(); } catch (_) {}
     return this;
   },
-  /* Historial real: compras de Drex Coins + pagos de Drex Orbit + estado
-   * de la suscripcion (endpoint /transactions de la Lambda). Peticion
-   * CORS simple (text/plain, sin preflight) como el checkout de monedas. */
+  /* Historial real: pagos de Drex Orbit + estado de la suscripcion
+   * (endpoint /transactions de la Lambda). Peticion
+   * CORS simple (text/plain, sin preflight). */
   transactions: async function () {
     var tr = await this._post('/transactions', {});
     var res = tr.res, data = tr.data;
@@ -84656,6 +84643,38 @@ function orbitGate(feature) {
   } catch (_) { return true; }
 }
 
+/* ===== C243-D: detectores de ciclo de vida de la suscripción =====
+ * Revalidan el estado verificado contra el backend SIN esperar al TTL:
+ * DrexOrbit.refresh(true) salta la caché de 60 s siempre. Cubren: arranque
+ * y login (hook de sesión de C241 + captureOrbitReturn de ?orbit=success),
+ * volver a la app (visibilitychange/focus/pageshow — esto incluye el
+ * regreso del portal de Stripe: su returnUrl no puede llevar marcador
+ * porque la Lambda limpia el query con validReturnUrl) y un intervalo de
+ * 10 min con la app abierta. Peor caso de revocación con la app abierta,
+ * visible y sin eventos: ~10 min; en cualquier retorno a la app, inmediato. */
+var _orbitRevalidateLast = 0;
+function drexOrbitRevalidate() {
+  try {
+    if (typeof DrexOrbit === 'undefined') return;
+    var u = null;
+    try { u = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null; } catch (_) {}
+    if (!u) return;
+    var now = Date.now();
+    if (now - _orbitRevalidateLast < 20000) return;
+    _orbitRevalidateLast = now;
+    DrexOrbit.refresh(true).then(function () {
+      try {
+        var v = document.getElementById('orbit-view');
+        if (v && !v.classList.contains('hidden') && typeof renderOrbitView === 'function') renderOrbitView();
+      } catch (_) {}
+    }).catch(function () {});
+  } catch (_) {}
+}
+try { document.addEventListener('visibilitychange', function () { if (!document.hidden) drexOrbitRevalidate(); }); } catch (_) {}
+try { window.addEventListener('focus', drexOrbitRevalidate); } catch (_) {}
+try { window.addEventListener('pageshow', drexOrbitRevalidate); } catch (_) {}
+try { setInterval(drexOrbitRevalidate, 10 * 60 * 1000); } catch (_) {}
+
 function orbitToast(msg) {
   try {
     if (typeof toast === 'function') { toast(msg); return; }
@@ -84674,6 +84693,21 @@ function drexOrbitSchedLivesMax() {
   } catch (_) {}
   return Infinity;
 }
+/* C243 (limits): tope de la cola de publicaciones programadas. Sin
+ * puertas activas no cambia nada (Infinity, como hoy); con puertas:
+ * 25 Orbit / 3 sin suscripción. Se aplica en confirmSchedulePost. */
+function drexOrbitScheduledPostsMax() {
+  try {
+    if (typeof DrexOrbit === 'undefined' || !DrexOrbit.enforced()) return Infinity;
+    return DrexOrbit.isActive() ? 25 : 3;
+  } catch (_) { return Infinity; }
+}
+/* C243 (hd_uploads): con Orbit verificado, los videos de hasta 12 MB se
+ * suben sin recomprimir (calidad original). El tope absoluto tras
+ * comprimir (VIDEO_POSTS_ABS_MAX_BYTES) no cambia. */
+function drexOrbitVideoDirectMaxBytes() {
+  try { return DrexOrbit.hasAccess('hd_uploads') ? 12 * 1024 * 1024 : 8 * 1024 * 1024; } catch (_) { return 8 * 1024 * 1024; }
+}
 function drexOrbitLiveMaxMs() {
   try {
     if (DrexOrbit.isActive()) return 12 * 3600 * 1000;
@@ -84690,12 +84724,44 @@ window.drexOrbitApplyGates = (function () {
     try { if (typeof prev === 'function') prev(); } catch (_) {}
     try {
       var on = (typeof DrexOrbit !== 'undefined') && DrexOrbit.isActive();
+      /* C241 (no_ads): ocultar solo lo que el propio gate ocultó — al
+         vencer la suscripción se restaura lo cargado; los bloques que
+         nunca cargaron conservan su display:none original. */
       document.querySelectorAll('.drex-ad-slot').forEach(function (el) {
-        el.style.display = on ? 'none' : '';
+        try {
+          if (on) {
+            if (el.style.display !== 'none') el.setAttribute('data-orbit-ad-hidden', '1');
+            el.style.display = 'none';
+          } else if (el.getAttribute('data-orbit-ad-hidden') === '1') {
+            el.removeAttribute('data-orbit-ad-hidden');
+            if (el.getAttribute('data-ad-failed') !== '1') el.style.display = '';
+          }
+        } catch (_) {}
       });
+      /* Banner fijo inferior y tarjeta de anuncio del reproductor: no son
+         .drex-ad-slot; se ocultan aparte cuando Orbit está activo. */
+      try {
+        if (on) {
+          var stickyBar = document.getElementById('drex-sticky-ad');
+          if (stickyBar) stickyBar.style.display = 'none';
+          var musicCard = document.getElementById('adsterra-music-card');
+          if (musicCard) musicCard.style.display = 'none';
+          var abView = document.getElementById('music-adbreak-view');
+          if (abView && !abView.classList.contains('hidden') && typeof musicCloseAdBreak === 'function') musicCloseAdBreak();
+        }
+      } catch (_) {}
     } catch (_) {}
     try { if (typeof renderOrbitSettingsPreview === 'function') renderOrbitSettingsPreview(); } catch (_) {}
     try { if (typeof renderPagosSettingsPreview === 'function') renderPagosSettingsPreview(); } catch (_) {}
+    /* C243-D: al cambiar el estado verificado, insignia/marco propios, el
+       perfil de autor abierto y los marcos en posts/comentarios se
+       reaplican sin recargar (OFF los quita; ON los devuelve). */
+    try { if (typeof refreshOrbitProfileBadge === 'function') refreshOrbitProfileBadge(); } catch (_) {}
+    try { if (typeof refreshOrbitAuthorBadge === 'function' && typeof currentViewedAuthorId !== 'undefined' && currentViewedAuthorId) refreshOrbitAuthorBadge(currentViewedAuthorId); } catch (_) {}
+    try { if (typeof hydrateOrbitAvatarFrames === 'function') hydrateOrbitAvatarFrames(document); } catch (_) {}
+    try { if (typeof drexOrbitSyncHdChip === 'function') drexOrbitSyncHdChip(); } catch (_) {}
+    try { if (typeof renderOrbitVisitorsSettingsPreview === 'function') renderOrbitVisitorsSettingsPreview(); } catch (_) {}
+    try { var _c243ta = document.getElementById('note-content-fullscreen'); if (_c243ta && typeof getCurrentNoteMaxLength === 'function') _c243ta.maxLength = getCurrentNoteMaxLength(); } catch (_) {}
   };
 })();
 
@@ -84704,6 +84770,27 @@ function orbitIconSVG(cls) {
 }
 function orbitBadgeHTML() {
   return '<span class="orbit-badge">' + orbitIconSVG('') + '<span>Drex Orbit</span></span>';
+}
+
+/* C241 (beneficio badge): píldora Orbit compacta junto al nombre del autor
+ * en publicaciones y comentarios. Fail-closed: solo se renderiza para el
+ * propio usuario con suscripción VERIFICADA en este dispositivo; el estado
+ * de otros autores se resuelve en su perfil (refreshOrbitAuthorBadge). */
+function drexOrbitMiniBadgeHTML() {
+  return '<span class="orbit-badge orbit-badge-mini">' + orbitIconSVG('') + '<span>Drex Orbit</span></span>';
+}
+function drexOrbitAuthorBadgeHTML(authorId, user) {
+  try {
+    if (!authorId || !user || authorId !== user.uid) return '';
+    if (typeof DrexOrbit === 'undefined' || !DrexOrbit.isActive()) return '';
+    return drexOrbitMiniBadgeHTML();
+  } catch (_) { return ''; }
+}
+
+/* C241 (beneficio no_ads): true solo con acceso verificado. Todos los
+ * cargadores de anuncios lo consultan antes de inyectar cualquier red. */
+function drexOrbitNoAds() {
+  try { return (typeof DrexOrbit !== 'undefined') && DrexOrbit.hasAccess('no_ads'); } catch (_) { return false; }
 }
 
 /* Insignia + marco en el perfil propio. */
@@ -84738,7 +84825,7 @@ async function refreshOrbitAuthorBadge(authorId) {
         var st = null;
         if (v && typeof v === 'object') st = v;
         else if (typeof v === 'string' && v) { try { st = JSON.parse(v); } catch (_) {} }
-        var ok = !!(st && st.status === 'active');
+        var ok = !!(st && st.status === 'active' && st.cancelAtPeriodEnd !== true);
         if (ok && st.currentPeriodEnd) { try { ok = Number(st.currentPeriodEnd) * 1000 > Date.now(); } catch (_) {} }
         c = { active: ok, ts: Date.now() };
         cache[authorId] = c;
@@ -84753,6 +84840,77 @@ async function refreshOrbitAuthorBadge(authorId) {
   try { if (imgEl) imgEl.classList.toggle('orbit-avatar-frame', !!active); } catch (_) {}
 }
 
+
+/* C243-D (lectura pública): ¿tiene este autor los beneficios Orbit
+ * ACTIVOS? Misma hoja pública users/<uid>/orbit y misma caché de 5 min
+ * que la insignia del perfil, con la misma regla (cancelada/vencida =
+ * beneficios OFF; past_due ni siquiera llega como 'active'). Fail-closed:
+ * cualquier duda -> false. */
+async function drexOrbitPublicBenefitsOn(authorId) {
+  try {
+    if (!authorId || typeof DrexOrbit === 'undefined' || !DrexOrbit.enforced()) return false;
+    var cache = window._orbitBadgeCache || (window._orbitBadgeCache = {});
+    var c = cache[authorId];
+    if (!c || (Date.now() - c.ts) > 300000) {
+      var v = null;
+      try {
+        var snap = await DrexCloud.database().ref('users/' + authorId + '/orbit').once('value');
+        v = snap && snap.val();
+      } catch (_) { v = null; }
+      var st = null;
+      if (v && typeof v === 'object') st = v;
+      else if (typeof v === 'string' && v) { try { st = JSON.parse(v); } catch (_) {} }
+      var ok = !!(st && st.status === 'active' && st.cancelAtPeriodEnd !== true);
+      if (ok && st.currentPeriodEnd) { try { ok = Number(st.currentPeriodEnd) * 1000 > Date.now(); } catch (_) {} }
+      c = { active: ok, ts: Date.now() };
+      cache[authorId] = c;
+    }
+    return !!c.active;
+  } catch (_) { return false; }
+}
+
+/* C243 (pin_post) al render: los destacados (C87) de un perfil solo
+ * ordenan su lista si el dueño tiene los beneficios activos. Sin puertas
+ * activas se conserva el comportamiento histórico. Fail-closed con
+ * puertas: pins de no suscriptores se ignoran al pintar. */
+async function drexOrbitPinsVisible(ownerUid) {
+  try {
+    if (!ownerUid) return false;
+    if (typeof DrexOrbit === 'undefined') return true;
+    if (!DrexOrbit.enforced()) return true;
+    var me = null;
+    try { me = (typeof liveUser === 'function') ? liveUser() : null; } catch (_) {}
+    if (me && ownerUid === me.uid) return DrexOrbit.isActive();
+    return await drexOrbitPublicBenefitsOn(ownerUid);
+  } catch (_) { return false; }
+}
+
+/* C243 (badge/marco): aplica o QUITA el marco dorado en los avatares de
+ * publicaciones y comentarios ya pintados (img[data-author-avatar]).
+ * El propio usuario usa su estado verificado local; otros autores, la
+ * hoja pública cacheada. Fail-closed: sin verificar, no hay marco. */
+async function hydrateOrbitAvatarFrames(root) {
+  try {
+    if (typeof DrexOrbit === 'undefined' || !DrexOrbit.enforced()) return;
+    var scope = root || document;
+    if (!scope || !scope.querySelectorAll) return;
+    var imgs = scope.querySelectorAll('img[data-author-avatar]');
+    if (!imgs || !imgs.length) return;
+    var byAuthor = {};
+    for (var i = 0; i < imgs.length; i++) {
+      var aid = imgs[i].getAttribute('data-author-id');
+      if (aid) (byAuthor[aid] = byAuthor[aid] || []).push(imgs[i]);
+    }
+    var me = null;
+    try { me = (typeof liveUser === 'function') ? liveUser() : null; } catch (_) {}
+    var authors = Object.keys(byAuthor);
+    for (var j = 0; j < authors.length; j++) {
+      var auid = authors[j];
+      var on = (me && auid === me.uid) ? DrexOrbit.isActive() : await drexOrbitPublicBenefitsOn(auid);
+      byAuthor[auid].forEach(function (img) { try { img.classList.toggle('orbit-avatar-frame', !!on); } catch (_) {} });
+    }
+  } catch (_) {}
+}
 
 /* ============ Drex Orbit: vista, paywall, temas, analíticas ============ */
 function orbitPlanName(plan) {
@@ -84785,21 +84943,92 @@ function orbitPlanBadge(planId) {
 }
 /* Coste mensual equivalente (centavos) para planes recurrentes;
  * null para pago único. Sirve para comparar la escalera. */
-function orbitPlanMonthlyCents(planId) {
+function orbitPlanMonthsPerCycle(planId) {
   var p = ORBIT_PLANS[planId];
   if (!p || p.mode === 'one_time') return null;
-  var monthsPerCycle = 1;
-  if (p.stripeInterval === 'week') monthsPerCycle = 12 / 52;
-  else if (p.stripeInterval === 'month') monthsPerCycle = p.stripeIntervalCount || 1;
-  else if (p.stripeInterval === 'year') monthsPerCycle = 12 * (p.stripeIntervalCount || 1);
-  else return null;
-  if (!(monthsPerCycle > 0)) return null;
+  if (p.stripeInterval === 'week') return 12 / 52;
+  if (p.stripeInterval === 'month') return p.stripeIntervalCount || 1;
+  if (p.stripeInterval === 'year') return 12 * (p.stripeIntervalCount || 1);
+  return null;
+}
+function orbitPlanMonthlyCents(planId) {
+  var p = ORBIT_PLANS[planId];
+  var monthsPerCycle = orbitPlanMonthsPerCycle(planId);
+  if (!p || !(monthsPerCycle > 0)) return null;
   return Math.round(p.cents / monthsPerCycle);
 }
 function orbitPlanMonthlyPrice(planId) {
   var c = orbitPlanMonthlyCents(planId);
   if (c == null) return '';
   return '$' + (c / 100).toFixed(2);
+}
+/* Ahorro real frente a pagar mes a mes, CALCULADO desde los centavos del
+ * catálogo (nunca texto fijo): 0 si el plan no ahorra nada. */
+function orbitPlanSavingsPct(planId) {
+  var p = ORBIT_PLANS[planId];
+  var base = ORBIT_PLANS.monthly;
+  var months = orbitPlanMonthsPerCycle(planId);
+  if (!p || !base || !(months > 0)) return 0;
+  var pct = Math.round((1 - (p.cents / months) / base.cents) * 100);
+  return pct > 0 ? pct : 0;
+}
+/* ===== C243-A: selector de planes estilo Meta (Verified/One) =====
+ * Un solo nivel: todos los planes desbloquean TODOS los privilegios; solo
+ * cambia el periodo de facturación. Tocar una tarjeta SOLO selecciona
+ * (nunca concede nada); el botón único de suscripción llama a
+ * orbitSubscribe(plan) y DrexOrbit.subscribe solo acepta
+ * ORBIT_BACKEND_PLANS (fail-closed: "Próximamente" no es seleccionable). */
+var _orbitSelectedPlan = ORBIT_RECOMMENDED_PLAN;
+function orbitSelectedPlan() {
+  return orbitPlanAvailable(_orbitSelectedPlan) ? _orbitSelectedPlan : ORBIT_RECOMMENDED_PLAN;
+}
+function orbitSubscribeCtaLabel() {
+  var planId = orbitSelectedPlan();
+  var p = ORBIT_PLANS[planId] || ORBIT_PLANS.monthly;
+  var verb = (p.mode === 'one_time') ? t('Comprar') : t('Suscribirme');
+  return verb + ' · ' + orbitPlanName(planId) + ' · ' + p.price;
+}
+function orbitSelectPlan(planId) {
+  if (!orbitPlanAvailable(planId)) return;
+  _orbitSelectedPlan = planId;
+  try {
+    var cards = document.querySelectorAll('.orbit-plan-card[data-plan-id]');
+    for (var i = 0; i < cards.length; i++) {
+      var on = cards[i].getAttribute('data-plan-id') === planId;
+      cards[i].classList.toggle('sel', on);
+      cards[i].setAttribute('aria-checked', on ? 'true' : 'false');
+    }
+    var cta = document.getElementById('orbit-subscribe-cta');
+    if (cta) cta.textContent = orbitSubscribeCtaLabel();
+  } catch (_) {}
+}
+function orbitSubscribeSelected() {
+  orbitSubscribe(orbitSelectedPlan());
+}
+/* C243 (hd_uploads): chip HD del composer. Sin acceso verificado abre el
+ * paywall; con acceso, el usuario puede apagar las subidas HD. La calidad
+ * real la decide drexOrbitHdUploadsOn() junto a processImageFile, siempre
+ * fail-closed (el chip por sí solo nunca concede nada). */
+function toggleComposerHdUploads() {
+  try {
+    if (typeof DrexOrbit !== 'undefined' && DrexOrbit.enforced() && !DrexOrbit.hasAccess('hd_uploads')) {
+      if (typeof openOrbitPaywall === 'function') openOrbitPaywall('hd_uploads');
+      return;
+    }
+    window._drexHdUploads = (window._drexHdUploads === false) ? true : false;
+    if (typeof orbitToast === 'function') orbitToast(t(window._drexHdUploads ? 'Subidas en HD activadas' : 'Subidas en HD desactivadas'));
+  } catch (_) {}
+  try { if (typeof drexOrbitSyncHdChip === 'function') drexOrbitSyncHdChip(); } catch (_) {}
+}
+function drexOrbitSyncHdChip() {
+  try {
+    var chip = document.getElementById('tool-hd');
+    if (!chip) return;
+    var on = (typeof drexOrbitHdUploadsOn === 'function') ? drexOrbitHdUploadsOn() : false;
+    chip.style.opacity = on ? '1' : '.5';
+    var lbl = document.getElementById('tool-hd-label');
+    if (lbl) lbl.style.color = on ? 'var(--drex-brand)' : '';
+  } catch (_) {}
 }
 function orbitFmtDate(ms) {
   try {
@@ -84816,8 +85045,11 @@ function orbitBenefits() {
     { f: 'fiesta_boost',     ic: 'mic',        title: t('Impulso en fiestas'),          desc: t('Tus fiestas de voz destacan y llegan a más gente.') },
     { f: 'limits',           ic: 'puzzle',     title: t('Límites elevados'),           desc: t('Videos más largos, más fotos y publicaciones programadas.') },
     { f: 'analytics',        ic: 'chart',      title: t('Analíticas de creador'),      desc: t('Estadísticas avanzadas de tu contenido.') },
-    { f: 'exclusive_gifts',  ic: 'gift',       title: t('Regalos exclusivos'),         desc: t('Regalos originales solo para miembros Drex Orbit.') },
-    { f: 'priority_support',  ic: 'headphones', title: t('Soporte prioritario'),        desc: t('Tus reportes se atienden primero.') }
+    { f: 'priority_support',  ic: 'headphones', title: t('Soporte prioritario'),        desc: t('Tus reportes se atienden primero.') },
+    { f: 'hd_uploads',       ic: 'sparkles',   title: t('Fotos y videos en HD'),      desc: t('Sube tus fotos con menos compresión y más detalle.') },
+    { f: 'longer_posts',     ic: 'news',       title: t('Publicaciones más largas'),  desc: t('Escribe publicaciones de hasta 2000 caracteres.') },
+    { f: 'pin_post',         ic: 'pin',        title: t('Publicaciones fijadas'),     desc: t('Fija tus mejores publicaciones en la parte superior de tu perfil.') },
+    { f: 'profile_visitors', ic: 'eye',        title: t('Quién vio tu perfil'),       desc: t('Descubre quién visita tu perfil.') }
   ];
 }
 
@@ -84832,8 +85064,22 @@ function orbitBenefitTap(feature) {
   }
   try {
     if (feature === 'analytics' && typeof orbitOpenAnalytics === 'function') { orbitOpenAnalytics(); return; }
+    if (feature === 'profile_visitors' && typeof openOrbitVisitors === 'function') { openOrbitVisitors(); return; }
     if (typeof orbitToast === 'function') orbitToast(t('Beneficio Drex Orbit activo.'));
   } catch (_) {}
+}
+/* Checklist de privilegios estilo Meta (check en cada fila). Cada fila es
+ * tocable y pasa por orbitBenefitTap: paywall si no hay membresía
+ * verificada; destino real si la hay. */
+function orbitBenefitsListHTML() {
+  var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
+  return orbitBenefits().map(function (b) {
+    return '<button type="button" onclick="orbitBenefitTap(\'' + b.f + '\')" class="tap44 w-full text-left flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 active:opacity-80 transition">'
+      + '<span class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + (typeof window.dxIcon === 'function' ? window.dxIcon(b.ic, 'w-5 h-5') : '') + '</span>'
+      + '<span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(b.title) + '</span>'
+      + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(b.desc) + '</span></span>'
+      + '<span class="orbit-benefit-check">' + (typeof window.dxIcon === 'function' ? window.dxIcon('check', 'w-3.5 h-3.5') : '') + '</span></button>';
+  }).join('');
 }
 function openOrbitView() {
   var v = document.getElementById('orbit-view');
@@ -84889,6 +85135,27 @@ async function renderOrbitView() {
   if (!configured) {
     html += '<div class="mx-5 rounded-2xl p-5 text-center text-sm text-[var(--theme-muted)] bg-[var(--theme-surface-subtle)]">'
       + escFn(t('Drex Orbit no está disponible en este momento. Inténtalo más tarde.')) + '</div>';
+  } else if (verified && !DrexOrbit.verifiedActive()) {
+    /* ===== C243-D: pagada pero beneficios OFF (cancelada/past_due/vencida) =====
+     * El estado crudo sigue pagado, pero la regla de beneficios
+     * (verifiedActive) ya los apagó al instante. Se dice con honestidad y
+     * se ofrece reactivar (portal) o restaurar, sin vender otra suscripción. */
+    var offUntil = st.currentPeriodEnd ? orbitFmtDate(st.currentPeriodEnd * 1000) : '';
+    var offMsg = st.cancelAtPeriodEnd
+      ? (offUntil ? t('Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.').replace('{fecha}', offUntil) : t('Tu suscripción sigue pagada, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.'))
+      : (st.status === 'past_due'
+        ? t('Tu último pago falló: los beneficios Orbit están desactivados hasta que actualices tu método de pago.')
+        : t('Tu suscripción venció: los beneficios Orbit están desactivados.'));
+    html += '<div class="mx-5 rounded-2xl p-5 text-white" style="background:linear-gradient(135deg,#2F33B8,#6D28D9)">'
+      + '<div class="flex items-center gap-2 text-white/90">' + orbitIconSVG('w-5 h-5') + '<span class="font-black text-lg">' + escFn(t('Tus beneficios Orbit están desactivados')) + '</span></div>'
+      + '<div class="text-white/85 text-sm mt-1 font-semibold">' + escFn(orbitPlanName(st.plan)) + ' · ' + escFn(orbitPlanPrice(st.plan)) + '</div>'
+      + '<div class="text-white/80 text-xs mt-2 leading-relaxed">' + escFn(offMsg) + '</div>'
+      + '<div class="flex gap-2 mt-4">'
+      + '<button onclick="orbitManage()" class="tap44 flex-1 min-h-[44px] rounded-xl bg-white text-[#2F33B8] font-extrabold text-sm active:opacity-80">' + escFn(t('Reactivar suscripción')) + '</button>'
+      + '<button onclick="orbitRestore()" class="tap44 min-h-[44px] px-4 rounded-xl bg-white/15 text-white font-bold text-sm active:opacity-80">' + escFn(t('Restaurar compra')) + '</button>'
+      + '</div></div>';
+    html += '<div class="px-5 mt-5"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Todo lo que incluye')) + '</h3>'
+      + '<div class="grid grid-cols-1 gap-2 mt-2">' + orbitBenefitsListHTML() + '</div></div>';
   } else if (verified) {
     var renewTxt = st.currentPeriodEnd ? orbitFmtDate(st.currentPeriodEnd * 1000) : '';
     html += '<div class="mx-5 rounded-2xl p-5 text-white" style="background:linear-gradient(135deg,#2F33B8,#6D28D9)">'
@@ -84903,27 +85170,16 @@ async function renderOrbitView() {
       + '</div></div>';
     html += '<div class="px-5 mt-5"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Tus beneficios')) + '</h3>'
       + '<div class="grid grid-cols-1 gap-2 mt-2">'
-      + orbitBenefits().map(function (b) {
-          return '<button type="button" onclick="orbitBenefitTap(\'' + b.f + '\')" class="tap44 w-full text-left flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 active:opacity-80 transition">'
-            + '<span class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + (typeof window.dxIcon === 'function' ? window.dxIcon(b.ic, 'w-5 h-5') : '') + '</span>'
-            + '<span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(b.title) + '</span>'
-            + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(b.desc) + '</span></span></button>';
-        }).join('')
+      + orbitBenefitsListHTML()
       + '</div></div>';
   } else {
-    html += '<div class="px-5 grid grid-cols-1 gap-2">'
-      + orbitBenefits().map(function (b) {
-          return '<button type="button" onclick="orbitBenefitTap(\'' + b.f + '\')" class="tap44 w-full text-left flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 active:opacity-80 transition">'
-            + '<span class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + (typeof window.dxIcon === 'function' ? window.dxIcon(b.ic, 'w-5 h-5') : '') + '</span>'
-            + '<span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(b.title) + '</span>'
-            + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(b.desc) + '</span></span></button>';
-        }).join('')
-      + '</div>';
-    /* Escalera completa de planes: cada tarjeta muestra precio, periodo y
-     * coste mensual equivalente. Diseño sobrio (carril 5): acento único
-     * índigo, sin degradados ni píldoras multicolor; el ahorro va como texto
-     * discreto y el plan recomendado solo lleva borde índigo + etiqueta
-     * discreta. Cada tarjeta lleva data-plan-id (contrato con otro carril). */
+    /* ===== C243-A: selector de planes estilo Meta (Verified/One) =====
+     * Tarjetas tocables: tocar SOLO selecciona (nunca concede nada); un
+     * único botón de suscripción refleja el plan elegido (nombre + precio
+     * total) y llama a orbitSubscribe(plan). Los planes sin precio en el
+     * backend quedan "Próximamente" y NO son seleccionables. Todos los
+     * planes desbloquean los mismos privilegios; solo cambia el periodo
+     * de facturación. Debajo, la checklist completa de privilegios. */
     var card = function (planId) {
       var p = ORBIT_PLANS[planId];
       if (!p) return '';
@@ -84935,46 +85191,41 @@ async function renderOrbitView() {
       } else if (planId === 'biennial') {
         sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('cada 2 años')) + '</span>';
       } else if (planId === 'weekly') {
-        /* "semana" es femenino: "a la semana", no "al semana". */
         sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('a la semana')) + '</span>';
       } else {
         sub = '<span class="text-sm text-[var(--theme-muted)]">' + escFn(t('al') + ' ' + t(p.per)) + '</span>';
       }
-      /* Coste mensual equivalente: ayuda a comparar quarterly/semiannual/
-       * yearly/biennial. En weekly se omite: "≈ $8.62 al mes" en el plan de
-       * $1.99 confunde (parece más caro que el mensual) y no aporta. */
       if (p.mode === 'recurring' && planId !== 'monthly' && planId !== 'weekly') {
         var mo = orbitPlanMonthlyPrice(planId);
         if (mo) sub += ' <span class="text-xs text-[var(--theme-muted)]">· ≈ ' + escFn(mo) + ' ' + escFn(t('al mes')) + '</span>';
       }
-      var btnLabel = (p.mode === 'one_time') ? t('Comprar') : t('Suscribirme');
-      /* Disponibilidad real del backend: los planes sin precio configurado
-       * (fuera de ORBIT_BACKEND_PLANS) se renderizan deshabilitados, SIN
-       * botón de pago, solo con la etiqueta discreta orbit_coming_soon.
-       * Contrato: clase .plan-coming-soon + data-unavailable="true". */
-      var available = orbitPlanAvailable(planId);
-      var cta;
-      if (available) {
-        cta = '<button onclick="orbitSubscribe(\'' + planId + '\')" class="tap44 orbit-plan-btn">' + escFn(btnLabel) + '</button>';
-      } else {
-        cta = '<div class="w-full min-h-[48px] mt-3 flex items-center justify-center" aria-disabled="true"><span class="orbit-plan-soon">' + escFn(orbitComingSoonLabel()) + '</span></div>';
+      if (!orbitPlanAvailable(planId)) {
+        return '<div class="orbit-plan-card' + (best ? ' best' : '') + ' plan-coming-soon" data-plan-id="' + planId + '" data-unavailable="true">'
+          + '<div class="flex items-baseline justify-between gap-2"><div class="orbit-plan-name">' + escFn(orbitPlanName(planId)) + '</div>'
+          + (badge ? '<span class="orbit-plan-save">' + escFn(badge) + '</span>' : '') + '</div>'
+          + '<div class="mt-1"><span class="orbit-plan-price">' + escFn(p.price) + '</span> ' + sub + '</div>'
+          + '<div class="w-full min-h-[48px] mt-3 flex items-center justify-center" aria-disabled="true"><span class="orbit-plan-soon">' + escFn(orbitComingSoonLabel()) + '</span></div>'
+          + '</div>';
       }
-      return '<div class="orbit-plan-card' + (best ? ' best' : '') + (available ? '' : ' plan-coming-soon') + '" data-plan-id="' + planId + '"' + (available ? '' : ' data-unavailable="true"') + '">'
+      var sel = (typeof _orbitSelectedPlan !== 'undefined') && _orbitSelectedPlan === planId;
+      var pct = orbitPlanSavingsPct(planId);
+      return '<div class="orbit-plan-card' + (best ? ' best' : '') + (sel ? ' sel' : '') + '" data-plan-id="' + planId + '" role="radio" aria-checked="' + (sel ? 'true' : 'false') + '" tabindex="0" onclick="orbitSelectPlan(\'' + planId + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();orbitSelectPlan(\'' + planId + '\')}">'
         + (best ? '<span class="orbit-plan-tagwrap"><span class="orbit-plan-rec">' + escFn(t('Recomendado')) + '</span></span>' : '')
-        + '<div class="flex items-baseline justify-between gap-2"><div class="orbit-plan-name">' + escFn(orbitPlanName(planId)) + '</div>'
-        + (badge ? '<span class="orbit-plan-save">' + escFn(badge) + '</span>' : '') + '</div>'
+        + '<div class="flex items-center justify-between gap-2"><div class="orbit-plan-name">' + escFn(orbitPlanName(planId)) + '</div>'
+        + '<span class="flex items-center gap-2 shrink-0">' + (pct > 0 ? '<span class="orbit-plan-save">' + escFn(t('Ahorras {n}%').replace('{n}', pct)) + '</span>' : '') + '<span class="orbit-plan-dot"></span></span></div>'
         + '<div class="mt-1"><span class="orbit-plan-price">' + escFn(p.price) + '</span> ' + sub + '</div>'
-        + cta
         + '</div>';
     };
     var ladderHtml = '';
     for (var li = 0; li < ORBIT_LADDER.length; li++) ladderHtml += card(ORBIT_LADDER[li]);
     html += '<div class="px-5 mt-5"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px] mb-2">' + escFn(t('Elegir plan')) + '</h3>'
-      + '<div class="grid grid-cols-1 gap-3">' + ladderHtml + '</div>'
+      + '<div class="grid grid-cols-1 gap-3" role="radiogroup">' + ladderHtml + '</div>'
+      + '<button id="orbit-subscribe-cta" type="button" onclick="orbitSubscribeSelected()" class="tap44 orbit-plan-btn orbit-subscribe-cta">' + escFn(orbitSubscribeCtaLabel()) + '</button>'
       + '<p class="text-[11px] text-[var(--theme-muted)] text-center mt-3 leading-relaxed">'
       + escFn(t('Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.')) + '</p></div>';
+    html += '<div class="px-5 mt-6"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Todo lo que incluye')) + '</h3>'
+      + '<div class="grid grid-cols-1 gap-2 mt-2">' + orbitBenefitsListHTML() + '</div></div>';
   }
-
   /* Tema de perfil */
   html += '<div class="px-5 mt-6"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Tema de perfil')) + '</h3>'
     + '<p class="text-xs text-[var(--theme-muted)] mt-0.5">' + escFn(t('Elige el fondo de tu portada')) + '</p>'
@@ -84984,6 +85235,11 @@ async function renderOrbitView() {
   html += '<div class="px-5 mt-6 mb-10"><button onclick="orbitOpenAnalytics()" class="tap44 w-full min-h-[52px] rounded-2xl border border-[var(--theme-border)] flex items-center gap-3 px-4 active:opacity-70 text-left">'
     + '<span class="shrink-0 text-[var(--theme-muted)]">' + (typeof window.dxIcon === 'function' ? window.dxIcon('chart', 'w-6 h-6') : '') + '</span><span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(t('Analíticas de creador')) + '</span>'
     + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(t('Tus números reales, actualizados al abrir.')) + '</span></span>'
+    + '<span class="ml-auto text-[var(--theme-muted)]">›</span></button></div>';
+
+  html += '<div class="px-5 mt-6"><button onclick="openPaymentsView()" class="tap44 w-full min-h-[52px] rounded-2xl border border-[var(--theme-border)] flex items-center gap-3 px-4 active:opacity-70 text-left">'
+    + '<span class="shrink-0 text-[var(--theme-muted)]">' + (typeof window.dxIcon === 'function' ? window.dxIcon('receipt', 'w-6 h-6') : '') + '</span><span class="min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm">' + escFn(t('Ver mis transacciones')) + '</span>'
+    + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(t('Historial de pagos y compras')) + '</span></span>'
     + '<span class="ml-auto text-[var(--theme-muted)]">›</span></button></div>';
 
   html += '<p class="text-center text-[11px] text-[var(--theme-muted)] px-8 mt-2 mb-10">' + '<button type="button" onclick="openSubpageView(\'terminos\')" class="underline active:opacity-70">' + escFn(t('Términos')) + '</button>' + ' · ' + '<button type="button" onclick="openSubpageView(\'privacidad\')" class="underline active:opacity-70">' + escFn(t('Privacidad')) + '</button></p>';
@@ -85087,11 +85343,14 @@ function orbitPaywallCopy(feature) {
     fiesta_boost:    { ic: 'mic',        title: t('Impulso en fiestas'),          desc: t('Tus fiestas de voz destacan y llegan a más gente.') },
     limits:          { ic: 'puzzle',     title: t('Límites elevados'),            desc: t('Videos más largos, más fotos y publicaciones programadas.') },
     analytics:       { ic: 'chart',      title: t('Analíticas de creador'),       desc: t('Estadísticas avanzadas de tu contenido.') },
-    exclusive_gifts: { ic: 'gift',       title: t('Regalos exclusivos'),          desc: t('Regalos originales solo para miembros Drex Orbit.') },
     profile_themes:  { ic: 'palette',    title: t('Temas de perfil Orbit'),     desc: t('Fondos exclusivos para tu portada.') },
     no_ads:          { ic: 'noads',      title: t('Sin anuncios'),                desc: t('Navega Drex sin publicidad.') },
     badge:           { ic: 'crown',      title: t('Insignia y marco exclusivos'), desc: t('Distintivo dorado Drex Orbit y marco en tu foto.') },
-    priority_support:{ ic: 'headphones', title: t('Soporte prioritario'),         desc: t('Tus reportes se atienden primero.') }
+    priority_support:{ ic: 'headphones', title: t('Soporte prioritario'),         desc: t('Tus reportes se atienden primero.') },
+    hd_uploads:      { ic: 'sparkles',   title: t('Fotos y videos en HD'),      desc: t('Sube tus fotos con menos compresión y más detalle.') },
+    longer_posts:    { ic: 'news',       title: t('Publicaciones más largas'),  desc: t('Escribe publicaciones de hasta 2000 caracteres.') },
+    pin_post:        { ic: 'pin',        title: t('Publicaciones fijadas'),     desc: t('Fija tus mejores publicaciones en la parte superior de tu perfil.') },
+    profile_visitors:{ ic: 'eye',        title: t('Quién vio tu perfil'),       desc: t('Descubre quién visita tu perfil.') }
   };
   return map[feature] || { ic: 'crown', title: t('Drex Orbit'), desc: t('El plan Orbit de Drex') };
 }
@@ -85101,6 +85360,25 @@ function openOrbitPaywall(feature) {
   if (!sheet || !card) return;
   var c = orbitPaywallCopy(feature);
   var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
+  /* C243-D: suscripción pagada pero cancelada -> los beneficios ya están
+   * OFF. El paywall lo dice con honestidad (pagada hasta <fecha>) y ofrece
+   * reactivar en el portal, no vender otra suscripción. */
+  var stOff = null;
+  try { stOff = (typeof DrexOrbit !== 'undefined') ? DrexOrbit.status() : null; } catch (_) {}
+  if (stOff && stOff.active && stOff.cancelAtPeriodEnd) {
+    var untilTxt = stOff.currentPeriodEnd ? orbitFmtDate(stOff.currentPeriodEnd * 1000) : '';
+    card.innerHTML = '<div class="w-10 h-1.5 rounded-full bg-[var(--theme-border)] mx-auto mb-4"></div>'
+      + '<div class="text-center"><div class="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center text-white mb-1" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + (typeof window.dxIcon === 'function' ? window.dxIcon(c.ic, 'w-8 h-8') : '') + '</div>'
+      + '<h3 class="text-xl font-black text-[var(--theme-text)] mt-3">' + escFn(t('Tus beneficios Orbit están desactivados')) + '</h3>'
+      + '<p class="text-sm text-[var(--theme-muted)] mt-1.5 leading-relaxed"><b class="text-[var(--theme-text)]">' + escFn(c.title) + '.</b> '
+      + escFn(untilTxt ? t('Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación.').replace('{fecha}', untilTxt) : t('Tu suscripción sigue pagada, pero cancelaste la renovación.')) + '</p>'
+      + '<button onclick="closeOrbitPaywall();orbitManage()" class="tap44 w-full min-h-[52px] mt-4 rounded-2xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(t('Reactivar suscripción')) + '</button>'
+      + '<button onclick="closeOrbitPaywall()" class="tap44 w-full min-h-[44px] mt-1 rounded-2xl font-bold text-[var(--theme-muted)] active:opacity-70">' + escFn(t('Ahora no')) + '</button></div>';
+    if (sheet.parentElement !== document.body) document.body.appendChild(sheet);
+    sheet.classList.remove('hidden');
+    try { if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard(); } catch (_) {}
+    return;
+  }
   card.innerHTML = '<div class="w-10 h-1.5 rounded-full bg-[var(--theme-border)] mx-auto mb-4"></div>'
     + '<div class="text-center"><div class="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center text-white mb-1" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + (typeof window.dxIcon === 'function' ? window.dxIcon(c.ic, 'w-8 h-8') : '') + '</div>'
     + '<h3 class="text-xl font-black text-[var(--theme-text)] mt-3">' + escFn(t('Esta función es de Drex Orbit')) + '</h3>'
@@ -85116,6 +85394,88 @@ function openOrbitPaywall(feature) {
 function closeOrbitPaywall() {
   var sheet = document.getElementById('orbit-paywall');
   if (sheet) sheet.classList.add('hidden');
+}
+
+/* ===== C243 (profile_visitors): quién vio tu perfil =====
+ * Registro mínimo y honesto: cuando un usuario CON sesión abre el perfil
+ * de otra persona se guarda users/<dueño>/profileVisitors/<visitante> =
+ * timestamp (una entrada por visitante, con reciclaje de 30 min por
+ * sesión). Sin sesión no se registra nada; el dueño nunca se registra a
+ * sí mismo. La lista (30 más recientes) solo la abre el dueño y pasa por
+ * la puerta profile_visitors: sin beneficios activos, paywall. */
+async function drexRecordProfileVisit(ownerUid) {
+  try {
+    var me = (typeof liveUser === 'function') ? liveUser() : null;
+    if (!me || !me.uid || !ownerUid || me.uid === ownerUid) return;
+    var pings = window._orbitVisitPings || (window._orbitVisitPings = {});
+    var now = Date.now();
+    if (pings[ownerUid] && (now - pings[ownerUid]) < 30 * 60 * 1000) return;
+    pings[ownerUid] = now;
+    await DrexCloud.database().ref('users/' + ownerUid + '/profileVisitors/' + me.uid).set(now);
+  } catch (_) {}
+}
+function renderOrbitVisitorsSettingsPreview() {
+  var tEl = document.getElementById('visitantes-settings-title');
+  var pEl = document.getElementById('visitantes-settings-preview');
+  if (tEl && typeof t === 'function') tEl.textContent = t('Quién vio tu perfil');
+  if (pEl && typeof t === 'function') pEl.textContent = t('Mira quién entra a tu perfil');
+}
+function closeOrbitVisitors() {
+  var s = document.getElementById('orbit-visitors-sheet');
+  if (s) s.classList.add('hidden');
+}
+function openOrbitVisitorProfile(uid) {
+  closeOrbitVisitors();
+  try { if (typeof openAuthorProfile === 'function') openAuthorProfile(uid); } catch (_) {}
+}
+async function openOrbitVisitors() {
+  if (typeof orbitGate === 'function' && !orbitGate('profile_visitors')) return;
+  var sheet = document.getElementById('orbit-visitors-sheet');
+  var list = document.getElementById('orbit-visitors-list');
+  if (!sheet || !list) return;
+  var titleEl = document.getElementById('orbit-visitors-title');
+  if (titleEl) titleEl.textContent = t('Quién vio tu perfil');
+  var noteEl = document.getElementById('orbit-visitors-note');
+  if (noteEl) noteEl.textContent = t('Solo tú puedes ver esta lista.');
+  if (sheet.parentElement !== document.body) document.body.appendChild(sheet);
+  sheet.classList.remove('hidden');
+  try { if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard(); } catch (_) {}
+  var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
+  var me = null;
+  try { me = (typeof liveUser === 'function') ? liveUser() : null; } catch (_) {}
+  if (!me || !me.uid) {
+    list.innerHTML = '<div class="py-10 text-center text-sm text-[var(--theme-muted)]">' + escFn(t('Inicia sesión para ver tus visitantes.')) + '</div>';
+    return;
+  }
+  list.innerHTML = '<div class="py-10 text-center text-sm text-[var(--theme-muted)]">' + escFn(t('Cargando visitantes…')) + '</div>';
+  try {
+    var snap = await DrexCloud.database().ref('users/' + me.uid + '/profileVisitors').once('value');
+    var map = (snap && snap.val()) || {};
+    var entries = Object.keys(map).map(function (uid) { return { uid: uid, ts: Number(map[uid]) || 0 }; })
+      .filter(function (e) { return e.uid && e.uid !== me.uid && e.ts > 0; })
+      .sort(function (a, b) { return b.ts - a.ts; }).slice(0, 30);
+    if (!entries.length) {
+      list.innerHTML = '<div class="py-10 text-center text-sm text-[var(--theme-muted)]">' + escFn(t('Aún nadie ha visitado tu perfil.')) + '</div>';
+      return;
+    }
+    var profiles = (typeof _getCachedAuthorProfiles === 'function')
+      ? await _getCachedAuthorProfiles(entries.map(function (e) { return e.uid; }))
+      : new Map();
+    var escUid = (typeof escapeInlineSingleQuote === 'function') ? escapeInlineSingleQuote : function (s) { return String(s); };
+    list.innerHTML = entries.map(function (e) {
+      var p = profiles.get(e.uid) || {};
+      var name = p.username || 'Usuario';
+      var img = (typeof getSafeMediaUrl === 'function') ? (getSafeMediaUrl(p.profileImage) || '') : '';
+      var when = (typeof formatRelativeTime === 'function') ? formatRelativeTime(e.ts) : '';
+      return '<button type="button" onclick="openOrbitVisitorProfile(\'' + escUid(e.uid) + '\')" class="tap44 w-full text-left flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 mb-2 active:opacity-80 transition">'
+        + '<img src="' + escFn(img) + '" alt="" class="w-11 h-11 rounded-full object-cover shrink-0" onerror="this.style.visibility=\'hidden\'">'
+        + '<span class="min-w-0 flex-1"><span class="block font-bold text-[var(--theme-text)] text-sm truncate">' + escFn(name) + '</span>'
+        + '<span class="block text-xs text-[var(--theme-muted)]">' + escFn(when) + '</span></span></button>';
+    }).join('');
+  } catch (_) {
+    list.innerHTML = '<div class="py-8 text-center"><p class="text-sm text-[var(--theme-muted)]">' + escFn(t('No pudimos cargar tus visitantes. Inténtalo de nuevo.')) + '</p>'
+      + '<button type="button" onclick="openOrbitVisitors()" class="tap44 mt-3 px-5 min-h-[44px] rounded-full font-bold text-sm text-white" style="background:var(--drex-brand)">' + escFn(t('Reintentar')) + '</button></div>';
+  }
 }
 
 /* ---------- temas de perfil ---------- */
@@ -85200,7 +85560,7 @@ function closePaymentsView() {
 function renderPagosSettingsPreview() {
   try {
     var tEl = document.getElementById('pagos-settings-title');
-    if (tEl && typeof t === 'function') tEl.textContent = t('Pagos');
+    if (tEl && typeof t === 'function') tEl.textContent = t('Pagos y transacciones');
     var sEl = document.getElementById('pagos-settings-preview');
     if (sEl && typeof t === 'function') sEl.textContent = t('Historial de pagos y compras');
   } catch (_) {}
@@ -85209,6 +85569,15 @@ try {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', renderPagosSettingsPreview);
   else renderPagosSettingsPreview();
 } catch (_) {}
+/* ---------- C242: página propia de transacciones de Drex ----------
+ * Vista "Transacciones": tarjeta de suscripción + historial real del
+ * endpoint /transactions (misma fuente de verdad del backend, fail-closed)
+ * + recibo propio dentro de Drex. La economía retirada en C240 no tiene
+ * etiquetas ni ramas en esta vista: los movimientos
+ * históricos de tipo desconocido se muestran con una etiqueta genérica
+ * honesta ("Pago") y su importe crudo, sin inventar símbolos. */
+var _drexTxList = [];
+
 function orbitTxStatusLabel(status) {
   var k = String(status || '').toLowerCase();
   if (!k) return '';
@@ -85224,59 +85593,212 @@ function orbitTxStatusLabel(status) {
   };
   return t(map[k] || 'Desconocido');
 }
+/* Importe SOLO desde los campos del backend: cents (centavos ya cerrados
+ * por el servidor) o amount (unidades menores de la currency del registro).
+ * Nunca se recalcula dinero en el cliente. */
 function orbitTxAmount(tx) {
   try {
-    /* Monedas: solo el importe en la columna derecha. La cantidad de monedas
-     * ya va en la etiqueta de la fila ("Paquete 500 monedas"); repetirla
-     * aquí ("$4.99 · 500 monedas") ensanchaba la columna y truncaba el
-     * título a 390px ("Compra de Drex …"). */
-    if (tx.type === 'coins') {
-      if (tx.cents != null) return '$' + (tx.cents / 100).toFixed(2);
-      return (tx.amount || '') + ' ' + t('monedas');
+    if (tx.cents != null && isFinite(Number(tx.cents))) {
+      return '$' + (Number(tx.cents) / 100).toFixed(2);
     }
     var cur = String(tx.currency || 'usd').toUpperCase();
-    var sym = cur === 'USD' ? '$' : (cur + ' ');
-    return sym + (Number(tx.amount || 0) / 100).toFixed(2);
+    if (/^[A-Z]{3}$/.test(cur)) {
+      var sym = cur === 'USD' ? '$' : (cur + ' ');
+      return sym + (Number(tx.amount || 0) / 100).toFixed(2);
+    }
+    /* Registro histórico sin precio cerrado ni divisa ISO: cifra cruda,
+     * sin símbolo inventado. */
+    return String(Number(tx.amount || 0));
   } catch (_) { return ''; }
 }
+/* Fecha + hora localizada (orbitFmtDate solo da la fecha). */
+function drexTxFmtDateTime(ms) {
+  try {
+    var lang = (typeof getAppLanguage === 'function') ? getAppLanguage() : 'es';
+    var loc = lang === 'zh' ? 'zh-CN' : (lang === 'en' ? 'en-US' : (lang === 'pt' ? 'pt-BR' : 'es-ES'));
+    var d = new Date(ms);
+    return d.toLocaleDateString(loc, { day: 'numeric', month: 'long', year: 'numeric' })
+      + ' · ' + d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' });
+  } catch (_) { return ''; }
+}
+/* Título honesto de un movimiento: los de Orbit traen su descripción del
+ * backend ("Drex Orbit Mensual"); cualquier otro tipo (histórico) cae a la
+ * etiqueta genérica "Pago". */
+function drexTxTitle(tx) {
+  if (tx && tx.type === 'orbit') return String(tx.label || 'Drex Orbit');
+  return t('Pago');
+}
+/* Estado de la tarjeta de suscripción, fail-closed: ante cualquier duda
+ * se presenta "Sin suscripción", nunca un activo falso. */
+function drexTxSubStatus(sub) {
+  if (!sub || !sub.active) {
+    var st = String((sub && sub.status) || '');
+    if (st === 'canceled') return t('Cancelada');
+    if (st === 'past_due') return t('Vence pronto');
+    return t('Sin suscripción');
+  }
+  if (sub.currentPeriodEnd) {
+    var msLeft = Number(sub.currentPeriodEnd) * 1000 - Date.now();
+    if (msLeft > 0 && msLeft <= 7 * 24 * 3600 * 1000) return t('Vence pronto');
+  }
+  return t('Activa');
+}
+function drexTxSubCardHTML(sub, escFn) {
+  var active = !!(sub && sub.active);
+  var pill = drexTxSubStatus(sub || {});
+  var planLine;
+  if (sub && sub.plan) planLine = escFn(orbitPlanName(sub.plan)) + ' · ' + escFn(orbitPlanPrice(sub.plan));
+  else planLine = escFn(t('El plan Orbit de Drex'));
+  var dateLine = '';
+  if (active && sub.currentPeriodEnd) {
+    var dTxt = orbitFmtDate(Number(sub.currentPeriodEnd) * 1000);
+    if (dTxt) dateLine = sub.cancelAtPeriodEnd ? (t('Se cancela el') + ' ' + dTxt) : (t('Se renueva el') + ' ' + dTxt);
+  }
+  if (active && sub.plan === 'lifetime') dateLine = t('Sin renovaciones: tuyo para siempre.');
+  var warn = (sub && String(sub.status || '') === 'past_due')
+    ? '<div class="mt-3 text-xs font-bold bg-yellow-400/20 rounded-xl px-3 py-2">' + escFn(t('Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.')) + '</div>' : '';
+  var buttons;
+  if (active) {
+    buttons = '<button onclick="orbitManage()" class="tap44 flex-1 min-h-[44px] rounded-xl bg-white text-[#2F33B8] font-extrabold text-sm active:opacity-80">' + escFn(t('Gestionar suscripción')) + '</button>'
+      + '<button onclick="drexTxRestorePurchase()" class="tap44 min-h-[44px] px-4 rounded-xl bg-white/15 text-white font-bold text-sm active:opacity-80">' + escFn(t('Restaurar compra')) + '</button>';
+  } else {
+    buttons = '<button onclick="drexTxOpenPlans()" class="tap44 flex-1 min-h-[44px] rounded-xl bg-white text-[#2F33B8] font-extrabold text-sm active:opacity-80">' + escFn(t('Ver planes')) + '</button>'
+      + '<button onclick="drexTxRestorePurchase()" class="tap44 min-h-[44px] px-4 rounded-xl bg-white/15 text-white font-bold text-sm active:opacity-80">' + escFn(t('Restaurar compra')) + '</button>';
+  }
+  return '<div class="mx-5 mt-4 rounded-2xl p-5 text-white" style="background:linear-gradient(135deg,#2F33B8,#6D28D9)">'
+    + '<div class="flex items-center gap-2 text-white/90">' + orbitIconSVG('w-5 h-5') + '<span class="font-black text-[16px]">' + escFn(t('Suscripción Drex Orbit')) + '</span>'
+    + '<span class="ml-auto text-[11px] font-extrabold uppercase tracking-wide rounded-full bg-white/15 px-2.5 py-1">' + escFn(pill) + '</span></div>'
+    + '<div class="text-white/85 text-sm mt-1 font-semibold">' + escFn(t('Plan actual')) + ': ' + planLine + '</div>'
+    + (dateLine ? '<div class="text-white/75 text-xs mt-1">' + escFn(dateLine) + '</div>' : '')
+    + warn
+    + '<div class="flex gap-2 mt-4">' + buttons + '</div>'
+    + '</div>';
+}
+/* Restaurar compra y re-renderizar ESTA vista (orbitRestore repinta la de
+ * Orbit; aquí el usuario está en Transacciones). */
+async function drexTxRestorePurchase() {
+  orbitToast(t('Procesando…'));
+  try {
+    var s = await DrexOrbit.restore();
+    if (s && s.active) orbitToast(t('¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.'));
+    else orbitToast(t('No encontramos una suscripción activa en tu cuenta.'));
+  } catch (_) { orbitToast(t('No se pudo verificar tu suscripción. Inténtalo de nuevo.')); }
+  renderPaymentsView();
+}
+/* Sin suscripción: a ver planes en la vista de Orbit. */
+function drexTxOpenPlans() {
+  closePaymentsView();
+  try { if (typeof openOrbitView === 'function') openOrbitView(); } catch (_) {}
+}
+/* Sin sesión: cerrar y mostrar la puerta de acceso de la app. */
+function drexTxPromptLogin() {
+  closePaymentsView();
+  try { var af = document.getElementById('auth-form'); if (af) af.classList.remove('hidden'); } catch (_) {}
+}
+function drexTxShortId(id) {
+  var s = String(id || '');
+  return s.length > 14 ? (s.slice(0, 8) + '…' + s.slice(-4)) : s;
+}
+/* ---------- recibo propio (sin salir de Drex) ---------- */
+function drexTxOpenReceipt(i) {
+  var tx = _drexTxList[i];
+  if (!tx) return;
+  var sh = document.getElementById('tx-receipt-sheet');
+  if (!sh) return;
+  if (sh.parentElement !== document.body) document.body.appendChild(sh);
+  var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
+  var titleEl = document.getElementById('tx-receipt-title');
+  if (titleEl) titleEl.textContent = t('Detalle del movimiento');
+  var row = function (label, value) {
+    return '<div class="flex items-start justify-between gap-4 py-2.5 border-b border-[var(--theme-border)]">'
+      + '<span class="text-[13px] text-[var(--theme-muted)] shrink-0">' + escFn(label) + '</span>'
+      + '<span class="text-[13px] font-bold text-[var(--theme-text)] text-right break-words min-w-0">' + escFn(value) + '</span></div>';
+  };
+  var html = row(t('Concepto'), drexTxTitle(tx))
+    + row(t('Fecha y hora'), tx.ts ? drexTxFmtDateTime(Number(tx.ts)) : '')
+    + row(t('Monto'), orbitTxAmount(tx))
+    + row(t('Estado'), orbitTxStatusLabel(tx.status))
+    + row(t('Método de pago'), 'Stripe')
+    + '<div class="flex items-center justify-between gap-3 pt-3">'
+    + '<span class="min-w-0"><span class="block text-[13px] text-[var(--theme-muted)]">' + escFn(t('ID de transacción')) + '</span>'
+    + '<span class="block text-[13px] font-bold text-[var(--theme-text)] truncate">' + escFn(drexTxShortId(tx.id)) + '</span></span>'
+    + '<button type="button" onclick="drexTxCopyId(' + i + ')" class="tap44 shrink-0 min-h-[40px] px-4 rounded-xl font-extrabold text-[13px] text-white active:opacity-80" style="background:var(--drex-brand)">' + escFn(t('Copiar')) + '</button></div>';
+  var c = document.getElementById('tx-receipt-content');
+  if (c) c.innerHTML = html;
+  sh.classList.remove('hidden');
+  try { if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard(); } catch (_) {}
+}
+function drexTxCloseReceipt() {
+  var sh = document.getElementById('tx-receipt-sheet');
+  if (sh) sh.classList.add('hidden');
+}
+async function drexTxCopyId(i) {
+  var tx = _drexTxList[i];
+  if (!tx) return;
+  var v = String(tx.id || '');
+  var okCopy = false;
+  try { await navigator.clipboard.writeText(v); okCopy = true; }
+  catch (_) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = v;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      okCopy = document.execCommand('copy');
+      ta.remove();
+    } catch (__) {}
+  }
+  orbitToast(okCopy ? t('Copiado') : v);
+}
+
 async function renderPaymentsView() {
   var body = document.getElementById('payments-view-content');
   if (!body) return;
   var titleEl = document.getElementById('payments-view-title');
-  if (titleEl) titleEl.textContent = t('Pagos');
+  if (titleEl) titleEl.textContent = t('Transacciones');
   var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
-  body.innerHTML = '<div class="px-5 py-10 text-center text-sm text-[var(--theme-muted)]">' + escFn(t('Cargando tu historial…')) + '</div>';
+
+  /* Sin sesión: estado propio, sin pedir nada al backend. */
+  var me = null;
+  try { me = (typeof liveUser === 'function') ? liveUser() : null; } catch (_) { me = null; }
+  if (!me) { drexTxRenderSignedOut(body, escFn); return; }
+
+  /* Cargando: esqueleto con el shimmer estándar de la app. */
+  body.innerHTML = '<div class="px-5 pt-4" aria-hidden="true">'
+    + '<div class="feed-skeleton"><div class="sk" style="height:22px;width:55%"></div><div class="sk" style="height:14px;width:75%;margin-top:10px"></div><div class="sk" style="height:44px;width:100%;margin-top:14px"></div></div>'
+    + '<div class="feed-skeleton"><div class="sk" style="height:16px;width:70%"></div><div class="sk" style="height:12px;width:45%;margin-top:8px"></div></div>'
+    + '<div class="feed-skeleton"><div class="sk" style="height:16px;width:60%"></div><div class="sk" style="height:12px;width:40%;margin-top:8px"></div></div>'
+    + '</div>'
+    + '<p class="text-center text-sm text-[var(--theme-muted)] py-4">' + escFn(t('Cargando tu historial…')) + '</p>';
 
   var data = null, err = null;
   try { data = await DrexOrbit.transactions(); }
   catch (e) { err = e; data = null; }
 
+  if (err && String((err && err.message) || '') === 'no-token') { drexTxRenderSignedOut(body, escFn); return; }
   if (err || !data) {
+    /* Fail-closed: sin datos verificados no se pinta suscripción activa. */
     body.innerHTML = '<div class="px-5 py-10 text-center">'
       + '<p class="text-sm text-[var(--theme-muted)]">' + escFn(t('No pudimos cargar tu historial. Inténtalo de nuevo.')) + '</p>'
       + '<button onclick="renderPaymentsView()" class="tap44 mt-4 min-h-[44px] px-6 rounded-2xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(t('Reintentar')) + '</button></div>';
     return;
   }
 
-  var html = '<div class="px-5 pt-4"><p class="text-[13px] text-[var(--theme-muted)]">' + escFn(t('Tus movimientos reales de Drex Coins y Drex Orbit.')) + '</p></div>';
+  _drexTxList = Array.isArray(data.transactions) ? data.transactions : [];
+  var sub = data.subscription || { active: false, plan: null, status: 'none', currentPeriodEnd: null, cancelAtPeriodEnd: false };
 
-  /* Suscripción activa: plan, renovación y gestión vía portal de Stripe. */
-  var sub = data.subscription || {};
-  if (sub.active) {
-    var renewTxt = sub.currentPeriodEnd ? orbitFmtDate(sub.currentPeriodEnd * 1000) : '';
-    html += '<div class="mx-5 mt-4 rounded-2xl p-5 text-white" style="background:linear-gradient(135deg,#2F33B8,#6D28D9)">'
-      + '<div class="flex items-center gap-2 text-white/90">' + orbitIconSVG('w-5 h-5') + '<span class="font-black text-[16px]">' + escFn(t('Suscripción Drex Orbit')) + '</span></div>'
-      + '<div class="text-white/85 text-sm mt-1 font-semibold">' + escFn(t('Plan actual')) + ': ' + escFn(orbitPlanName(sub.plan)) + ' · ' + escFn(orbitPlanPrice(sub.plan)) + '</div>'
-      + (renewTxt ? '<div class="text-white/75 text-xs mt-1">' + escFn(sub.cancelAtPeriodEnd ? t('Se cancela al final del periodo') : (t('Se renueva el') + ' ' + renewTxt)) + '</div>' : '')
-      + '<button onclick="orbitManage()" class="tap44 w-full min-h-[44px] mt-4 rounded-xl bg-white text-[#2F33B8] font-extrabold text-sm active:opacity-80">' + escFn(t('Gestionar en el portal seguro de Stripe')) + '</button>'
-      + '<p class="text-white/60 text-[11px] mt-2 text-center">' + escFn(t('Cancelar suscripción')) + ' · ' + escFn(t('Cambiar de plan')) + ' · ' + escFn(t('Actualizar método de pago')) + '</p>'
-      + '</div>';
-  }
+  var html = '<div class="px-5 pt-4 flex items-center justify-between gap-3">'
+    + '<p class="text-[13px] text-[var(--theme-muted)]">' + escFn(t('Tus movimientos reales de Drex Orbit.')) + '</p>'
+    + '<button onclick="renderPaymentsView()" class="tap44 shrink-0 min-h-[40px] px-4 rounded-xl border border-[var(--theme-border)] font-bold text-[13px] text-[var(--theme-text)] active:opacity-80">' + escFn(t('Actualizar')) + '</button></div>';
 
-  /* Historial de transacciones reales. */
+  /* Tarjeta de suscripción (estado verificado del backend). */
+  html += drexTxSubCardHTML(sub, escFn);
+
+  /* Historial de movimientos reales. */
   html += '<div class="px-5 mt-6"><h3 class="font-extrabold text-[var(--theme-text)] text-[15px]">' + escFn(t('Historial de pagos y compras')) + '</h3>'
     + '<p class="text-[11px] text-[var(--theme-muted)] mt-1 leading-relaxed">' + escFn(t('Los pagos pendientes se confirman solos cuando Stripe procesa el cobro.')) + '</p>';
-  var txs = data.transactions || [];
+  var txs = _drexTxList;
   if (!txs.length) {
     html += '<div class="mt-3 rounded-2xl border border-dashed border-[var(--theme-border)] p-8 text-center">'
       + '<div class="mb-2 text-[var(--theme-muted)]">' + (typeof window.dxIcon === 'function' ? window.dxIcon('receipt', 'w-10 h-10') : '') + '</div>'
@@ -85284,9 +85806,10 @@ async function renderPaymentsView() {
       + '<p class="text-xs text-[var(--theme-muted)] mt-1">' + escFn(t('Tus compras y pagos aparecerán aquí automáticamente.')) + '</p></div>';
   } else {
     html += '<div class="grid grid-cols-1 gap-2 mt-3">';
-    txs.forEach(function (tx) {
-      var icon = tx.type === 'coins' ? (typeof window.dxIcon === 'function' ? window.dxIcon('coin', 'w-6 h-6') : '') : (typeof window.dxIcon === 'function' ? window.dxIcon('planet', 'w-6 h-6') : '');
-      var label = tx.type === 'coins' ? t('Compra de Drex Coins') : t('Pago de Drex Orbit');
+    txs.forEach(function (tx, i) {
+      var icon = tx.type === 'orbit'
+        ? (typeof window.dxIcon === 'function' ? window.dxIcon('planet', 'w-6 h-6') : '')
+        : (typeof window.dxIcon === 'function' ? window.dxIcon('coin', 'w-6 h-6') : '');
       var dt = tx.ts ? orbitFmtDate(Number(tx.ts)) : '';
       var stLbl = orbitTxStatusLabel(tx.status);
       /* Verde: cobro confirmado (completed/paid/succeeded son el mismo estado
@@ -85295,19 +85818,24 @@ async function renderPaymentsView() {
       var stKey = String(tx.status || '').toLowerCase();
       var stColor = (stKey === 'completed' || stKey === 'paid' || stKey === 'succeeded') ? 'text-green-600'
         : ((stKey === 'failed' || stKey === 'past_due' || stKey === 'uncollectible') ? 'text-red-500' : 'text-[var(--theme-muted)]');
-      html += '<div class="flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 bg-[var(--theme-surface)]">'
+      html += '<button type="button" onclick="drexTxOpenReceipt(' + i + ')" class="tap44 w-full text-left flex items-center gap-3 rounded-2xl border border-[var(--theme-border)] p-3 bg-[var(--theme-surface)] active:opacity-80">'
         + '<span class="shrink-0 text-[var(--theme-muted)]">' + icon + '</span>'
-        + '<span class="flex-1 min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm truncate">' + escFn(label) + '</span>'
-        + '<span class="block text-xs text-[var(--theme-muted)] truncate">' + escFn(tx.label || '') + (dt ? ' · ' + escFn(dt) : '') + '</span></span>'
+        + '<span class="flex-1 min-w-0"><span class="block font-bold text-[var(--theme-text)] text-sm truncate">' + escFn(drexTxTitle(tx)) + '</span>'
+        + '<span class="block text-xs text-[var(--theme-muted)] truncate">' + escFn(dt) + '</span></span>'
         + '<span class="text-right shrink-0"><span class="block font-extrabold text-[var(--theme-text)] text-sm">' + escFn(orbitTxAmount(tx)) + '</span>'
-        + '<span class="block text-[11px] font-semibold ' + stColor + '">' + escFn(stLbl) + '</span></span></div>';
+        + '<span class="block text-[11px] font-semibold ' + stColor + '">' + escFn(stLbl) + '</span></span></button>';
     });
     html += '</div>';
   }
   html += '</div>';
   body.innerHTML = html;
 }
-
+function drexTxRenderSignedOut(body, escFn) {
+  body.innerHTML = '<div class="px-5 py-12 text-center">'
+    + '<div class="mb-3 text-[var(--theme-muted)]">' + (typeof window.dxIcon === 'function' ? window.dxIcon('receipt', 'w-10 h-10') : '') + '</div>'
+    + '<p class="font-bold text-[var(--theme-text)] text-sm">' + escFn(t('Inicia sesión para ver tus pagos y transacciones.')) + '</p>'
+    + '<button onclick="drexTxPromptLogin()" class="tap44 mt-4 min-h-[44px] px-6 rounded-2xl font-extrabold text-white active:opacity-80" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">' + escFn(t('Iniciar sesión')) + '</button></div>';
+}
 
 /* ---------- analíticas de creador ---------- */
 function orbitOpenAnalytics() {
@@ -85363,255 +85891,6 @@ async function renderOrbitAnalytics() {
     + '<span class="shrink-0">' + (typeof window.dxIcon === 'function' ? window.dxIcon('clock', 'w-4 h-4') : '') + '</span>'
     + '<span>' + escFn(t('Próximamente: alcance, visitas al perfil y votos por publicación.')) + '</span></div>';
 }
-var DrexCoins = {
-  _cache: {},
-  _uid: function () { try { var u = (typeof liveUser === 'function') ? liveUser() : null; return (u && u.uid) || null; } catch (_) { return null; } },
-  balance: function () { var u = this._uid(); var w = u && this._cache[u]; return Math.max(0, (w && w.coins) | 0); },
-  diamonds: function () { var u = this._uid(); var w = u && this._cache[u]; return Math.max(0, (w && w.diamonds) | 0); },
-  load: async function (uid) {
-    uid = uid || this._uid();
-    if (!uid) return { coins: 0, diamonds: 0 };
-    if (this._cache[uid] && (Date.now() - (this._cache[uid]._ts || 0)) < 15000) return this._cache[uid];
-    try {
-      var snap = await DrexCloud.database().ref('wallets/' + uid).once('value');
-      var v = snap.val() || {};
-      this._cache[uid] = { coins: Math.max(0, v.coins | 0), diamonds: Math.max(0, v.diamonds | 0), _ts: Date.now() };
-    } catch (_) { this._cache[uid] = this._cache[uid] || { coins: 0, diamonds: 0, _ts: Date.now() }; }
-    return this._cache[uid];
-  },
-  _writeTx: async function (uid, type, amount, currency, balanceAfter, meta, idem) {
-    try {
-      var entry = {
-        type: type, amount: amount | 0, currency: currency,
-        balance: balanceAfter | 0, ts: Date.now(), meta: meta || {}
-      };
-      if (idem) {
-        /* Clave determinista: si el debito ya se asento y esto es un reintento,
-         * el set() sobrescribe el mismo nodo en vez de duplicar el asiento. */
-        entry.txid = 'tx_' + idem;
-        await DrexCloud.database().ref('transactions/' + uid + '/tx_' + idem).set(entry);
-      } else {
-        var ref = DrexCloud.database().ref('transactions/' + uid).push();
-        entry.txid = ref.key;
-        await ref.set(entry);
-      }
-    } catch (_) {}
-  },
-  _idem: function () {
-    return 'idem' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-  },
-  _apply: async function (uid, dCoins, dDiamonds, tx) {
-    // Aplica el delta con transaccion atomica y luego asienta en el libro.
-    // Idempotencia: cada intento lleva una clave unica que se guarda JUNTO al
-    // debito en la misma transaccion. Si el commit se aplica pero la respuesta
-    // se pierde (p. ej. falla el re-read post-commit de transaction()), la
-    // verificacion por clave evita declarar "no aplicado" un cobro real, y un
-    // reintento con la misma clave no vuelve a debitar (exactamente una vez).
-    var self = this;
-    var idem = (tx && tx.meta && tx.meta.idem) || self._idem();
-    idem = String(idem).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || self._idem();
-    var after = null;
-    try {
-      var r = await DrexCloud.database().ref('wallets/' + uid).transaction(function (cur) {
-        cur = cur || { coins: 0, diamonds: 0 };
-        if (!cur._idemKeys || typeof cur._idemKeys !== 'object') cur._idemKeys = {};
-        if (!cur._idemKeys[idem]) {
-          var nc = (cur.coins | 0) + dCoins, nd = (cur.diamonds | 0) + dDiamonds;
-          if (nc < 0 || nd < 0) return; // aborta: saldo insuficiente
-          cur.coins = nc; cur.diamonds = nd; cur.updatedAt = Date.now();
-          cur._idemKeys[idem] = Date.now();
-          /* Poda: la billetera no crece sin cota (ultimas 12 claves). */
-          var ks = Object.keys(cur._idemKeys);
-          if (ks.length > 12) {
-            ks.sort(function (a, b) { return cur._idemKeys[a] - cur._idemKeys[b]; });
-            for (var i = 0; i < ks.length - 12; i++) delete cur._idemKeys[ks[i]];
-          }
-        }
-        return cur;
-      });
-      if (!r || r.committed === false) return null;
-      after = r.snapshot ? r.snapshot.val() : null;
-    } catch (_) { after = null; }
-    if (!after) {
-      // El commit pudo aplicarse y fallar solo la lectura posterior: verificar
-      // por clave idempotente antes de declarar "no aplicado" (cobro fantasma).
-      after = await self._verifyIdem(uid, idem);
-      if (!after) return null;
-    }
-    if (self._cache[uid]) { self._cache[uid].coins = after.coins | 0; self._cache[uid].diamonds = after.diamonds | 0; self._cache[uid]._ts = Date.now(); }
-    if (tx) {
-      var cur2 = (tx.currency === 'diamonds') ? (after.diamonds | 0) : (after.coins | 0);
-      await self._writeTx(uid, tx.type, tx.amount, tx.currency, cur2, tx.meta, idem);
-    }
-    return after;
-  },
-  _verifyIdem: async function (uid, idem) {
-    // Relee la billetera: si la clave idempotente esta presente, el debito SI
-    // se aplico (aunque la transaccion haya reportado error). Una lectura buena
-    // sin la clave es decisiva: no se aplico.
-    for (var i = 0; i < 4; i++) {
-      try {
-        var snap = await DrexCloud.database().ref('wallets/' + uid).once('value');
-        var v = snap.val() || {};
-        if (v._idemKeys && v._idemKeys[idem]) return v;
-        return null;
-      } catch (_) { /* reintentar */ }
-      await new Promise(function (res) { setTimeout(res, 400 * (i + 1)); });
-    }
-    return null;
-  },
-  spend: async function (coins, meta) {
-    var uid = this._uid();
-    if (!uid || !(coins > 0)) return false;
-    await this.load(uid);
-    var after = await this._apply(uid, -(coins | 0), 0, { type: (meta && meta.type) || 'gift_sent', amount: -(coins | 0), currency: 'coins', meta: meta });
-    return !!after;
-  },
-  credit: async function (uid, coins, meta) {
-    if (!uid || !(coins > 0)) return false;
-    var after = await this._apply(uid, coins | 0, 0, { type: (meta && meta.type) || 'purchase', amount: coins | 0, currency: 'coins', meta: meta });
-    return !!after;
-  },
-  creditDiamonds: async function (uid, diamonds, meta) {
-    if (!uid || !(diamonds > 0)) return false;
-    var after = await this._apply(uid, 0, diamonds | 0, { type: (meta && meta.type) || 'gift_received', amount: diamonds | 0, currency: 'diamonds', meta: meta });
-    return !!after;
-  },
-  history: async function (uid, limit) {
-    uid = uid || this._uid();
-    if (!uid) return [];
-    try {
-      var snap = await DrexCloud.database().ref('transactions/' + uid).orderByChild('ts').limitToLast(limit || 20).once('value');
-      var out = [];
-      snap.forEach(function (ch) { out.push(ch.val()); });
-      out.sort(function (a, b) { return (b.ts | 0) - (a.ts | 0); });
-      return out;
-    } catch (_) { return []; }
-  }
-};
-
-function drexCoinsRefreshChips() {
-  try {
-    DrexCoins.load().then(function () {
-      var n = DrexCoins.balance();
-      ['drex-live-host-wallet-n', 'drex-live-viewer-wallet-n'].forEach(function (id) {
-        var el = document.getElementById(id);
-        if (el) el.textContent = String(n);
-      });
-    }).catch(function () {});
-  } catch (_) {}
-}
-
-/* ---- UI: hoja de billetera + tienda ---- */
-window.drexCoinsOpenWallet = async function () {
-  await DrexCoins.load();
-  var sh = document.getElementById('drex-coins-sheet');
-  var body = document.getElementById('drex-coins-body');
-  if (!sh || !body) return;
-  var hist = await DrexCoins.history(null, 15);
-  var h = '<div class="dlc-hero">' +
-    '<div class="dlc-bal"><div class="dlc-bal-row">' + drexIcon('coin', 'w-6 h-6') +
-    '<b id="dlc-coins-n">' + DrexCoins.balance() + '</b><span>' + esc(t('Drex Coins')) + '</span></div>' +
-    '<div class="dlc-bal-row">' + drexIcon('diamond', 'w-6 h-6') +
-    '<b>' + DrexCoins.diamonds() + '</b><span>' + esc(t('Diamantes')) + '</span></div></div>' +
-    '<button type="button" class="drex-live-gift-recharge" onclick="drexCoinsOpenShop()">' + esc(t('Recargar')) + '</button></div>' +
-    '<button type="button" class="dlc-how" onclick="var e=document.getElementById(\'dlc-how-txt\');if(e)e.classList.toggle(\'hidden\')">' +
-    esc(t('¿Cómo funcionan los diamantes?')) + '</button>' +
-    '<p id="dlc-how-txt" class="hidden dlc-how-txt">' + esc(t('Los anfitriones ganan 1 diamante por cada 10 Drex Coins recibidas en regalos. Los diamantes son un saldo de reconocimiento; canjearlos por dinero requiere un proceso manual y se anunciará cuando esté disponible.')) + '</p>' +
-    '<p class="drex-live-gift-tier">' + esc(t('Historial')) + '</p>';
-  if (!hist.length) {
-    h += '<p class="dlc-empty">' + esc(t('Sin movimientos todavía.')) + '</p>';
-  } else {
-    h += '<div class="dlc-hist">';
-    hist.forEach(function (tx) {
-      var sign = tx.amount >= 0 ? '+' : '−';
-      var ic = tx.currency === 'diamonds' ? 'diamond' : 'coin';
-      h += '<div class="dlc-tx">' + drexIcon(ic, 'w-4 h-4') +
-        '<span class="dlc-tx-t">' + esc(t(drexTxLabel(tx.type))) + '</span>' +
-        '<span class="dlc-tx-a">' + sign + Math.abs(tx.amount | 0) + '</span></div>';
-    });
-    h += '</div>';
-  }
-  body.innerHTML = h;
-  document.getElementById('drex-coins-title').textContent = t('Billetera');
-  sh.classList.remove('hidden');
-};
-function drexTxLabel(type) {
-  return { purchase: 'Compra de monedas', gift_sent: 'Regalo enviado', gift_received: 'Regalo recibido',
-    gift_refund: 'Reembolso de regalo', diamond_redeem: 'Canje de diamantes' }[type] || type;
-}
-window.drexCoinsCloseSheet = function () {
-  var sh = document.getElementById('drex-coins-sheet');
-  if (sh) sh.classList.add('hidden');
-};
-window.drexCoinsOpenShop = function () {
-  var sh = document.getElementById('drex-coins-sheet');
-  var body = document.getElementById('drex-coins-body');
-  if (!sh || !body) return;
-  var avail = DrexPay.isAvailable();
-  var h = '';
-  if (!avail) {
-    h += '<div class="dlc-nopay">' + drexIcon('wallet', 'w-8 h-8') +
-      '<p><b>' + esc(t('Pagos no disponibles todavía')) + '</b></p>' +
-      '<p>' + esc(t('Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.')) + '</p></div>';
-  }
-  h += '<div class="dlc-packs">';
-  DREX_COIN_PACKAGES.forEach(function (p) {
-    h += '<div class="dlc-pack">' + drexIcon('coin', 'w-9 h-9') +
-      '<div class="dlc-pack-info"><b>' + esc(t(p.name || '')) + '</b>' +
-      '<span>' + p.coins + ' ' + esc(t('Drex Coins')) +
-      (p.bonus ? ' · +' + p.bonus + '% ' + esc(t('Bono extra')) : '') + '</span>' +
-      '<span>$' + p.usd.toFixed(2) + ' USD' +
-      (p.tag ? ' · ' + esc(t(p.tag)) : '') + '</span></div>' +
-      (avail
-        ? '<button type="button" class="drex-live-gift-recharge" onclick="drexCoinsBuy(\'' + p.id + '\')">' + esc(t('Comprar')) + '</button>'
-        : '<button type="button" class="dlc-soon" disabled>' + esc(t('Próximamente')) + '</button>') +
-      '</div>';
-  });
-  h += '</div>';
-  h += '<p class="dlc-fine">' + (avail
-    ? esc(t('Pago seguro con Stripe')) + ' · ' + esc(t('Las Drex Coins no tienen valor en efectivo.'))
-    : esc(t('Las compras se activarán cuando se conecte un proveedor de pago real.'))) + '</p>';
-  body.innerHTML = h;
-  document.getElementById('drex-coins-title').textContent = t('Recargar monedas');
-  sh.classList.remove('hidden');
-};
-window.drexCoinsBuy = async function (pkgId) {
-  var pkg = null;
-  for (var i = 0; i < DREX_COIN_PACKAGES.length; i++) if (DREX_COIN_PACKAGES[i].id === pkgId) pkg = DREX_COIN_PACKAGES[i];
-  if (!pkg) return;
-  if (!DrexPay.isAvailable()) { toast(t('Los pagos con dinero real aún no están disponibles en Drex. Estamos conectando el proveedor de pagos.')); return; }
-  var uid = (typeof DrexCoins !== 'undefined') ? DrexCoins._uid() : null;
-  if (!uid) { toast(t('Inicia sesión para comprar monedas.')); return; }
-  try {
-    toast(t('Procesando pago…'));
-    await DrexPay.buy(pkg);
-    /* Con Stripe Checkout el navegador ya va camino a Stripe; las monedas
-     * las acredita el webhook en el servidor, nunca el cliente. */
-    if (DrexPay.creditsServerSide()) return;
-    var txId = 'pay_' + Date.now();
-    var ok = await DrexCoins.credit(uid, pkg.coins, { type: 'purchase', provider: DrexPay.providerName(), pkg: pkg.id, txId: txId });
-    if (ok) { toast(t('¡Monedas agregadas a tu billetera!')); drexCoinsRefreshChips(); window.drexCoinsOpenWallet(); }
-    else toast(t('No se pudo completar la compra.'));
-  } catch (e) {
-    var m = (e && e.message) || '';
-    var st = (e && e.status) || 0;
-    try { console.error('[DrexPay] no se pudo iniciar el pago:', m, 'status=' + st, (e && e.backendError) || ''); } catch (_) {}
-    try { DrexPay.lastError = { code: m, status: st, at: Date.now() }; } catch (_) {}
-    if (m === 'no-token') toast(t('Inicia sesión para comprar monedas.'));
-    else if (m === 'network' || m === 'timeout') { toast(t('Revisando tu conexión…')); drexPayNetDiag().then(function (diag) { toast(t('No se pudo contactar el servidor de pagos.') + ' [' + diag + '] ' + t('Mándanos captura de este mensaje para arreglarlo.')); }); }
-    else if (st === 401 || st === 403) toast(t('Tu sesión expiró. Cierra sesión y vuelve a entrar para comprar.'));
-    else if (st === 429) toast(t('Demasiados intentos. Espera un minuto e inténtalo de nuevo.'));
-    else toast(t('No se pudo iniciar el pago. Inténtalo de nuevo.'));
-  }
-};
-
-
-
-/* B2: alerta prominente al host al recibir un regalo (banner superior 3.5s). */
-
-
-
 /* ---------- C240: co-anfitrión — el espectador envía su cámara al estudio ---------- */
 
 
@@ -85631,6 +85910,12 @@ window.closePaymentsView = closePaymentsView;
 window.closeOrbitPaywall = closeOrbitPaywall;
 window.orbitCloseAnalytics = orbitCloseAnalytics;
 window.renderPaymentsView = renderPaymentsView;
+window.drexTxOpenReceipt = drexTxOpenReceipt;
+window.drexTxCloseReceipt = drexTxCloseReceipt;
+window.drexTxCopyId = drexTxCopyId;
+window.drexTxRestorePurchase = drexTxRestorePurchase;
+window.drexTxOpenPlans = drexTxOpenPlans;
+window.drexTxPromptLogin = drexTxPromptLogin;
 window.orbitManage = orbitManage;
 window.orbitSubscribe = orbitSubscribe;
 window.orbitRestore = orbitRestore;
@@ -85638,7 +85923,23 @@ window.orbitBenefitTap = orbitBenefitTap;
 window.orbitOpenAnalytics = orbitOpenAnalytics;
 window.setOrbitProfileTheme = setOrbitProfileTheme;
 window.DrexOrbit = DrexOrbit;
-window.DrexCoins = DrexCoins;
+window.drexOrbitNoAds = drexOrbitNoAds;
+/* C243: handlers del selector Meta, chip HD y visitantes. */
+window.orbitSelectPlan = orbitSelectPlan;
+window.orbitSubscribeSelected = orbitSubscribeSelected;
+window.toggleComposerHdUploads = toggleComposerHdUploads;
+window.openOrbitVisitors = openOrbitVisitors;
+window.closeOrbitVisitors = closeOrbitVisitors;
+window.openOrbitVisitorProfile = openOrbitVisitorProfile;
+/* C243: helpers consumidos desde OTROS bloques <script> (perfil, feed,
+ * comentarios, programadas, video). Sin export, el typeof guard de los
+ * llamadores los dejaba como no-ops silenciosos (clase de bug C233). */
+window.drexOrbitScheduledPostsMax = drexOrbitScheduledPostsMax;
+window.drexOrbitVideoDirectMaxBytes = drexOrbitVideoDirectMaxBytes;
+window.drexOrbitPinsVisible = drexOrbitPinsVisible;
+window.hydrateOrbitAvatarFrames = hydrateOrbitAvatarFrames;
+window.drexRecordProfileVisit = drexRecordProfileVisit;
+window.drexOrbitAuthorBadgeHTML = drexOrbitAuthorBadgeHTML;
 window.orbitGate = orbitGate;
 window.refreshOrbitAuthorBadge = refreshOrbitAuthorBadge;
 window.refreshOrbitProfileBadge = refreshOrbitProfileBadge;

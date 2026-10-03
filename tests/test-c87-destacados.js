@@ -187,7 +187,9 @@ tcase('T8', () => {
 // ================= T9: integración — grids de perfil =================
 tcase('T9', () => {
   ok(/loadUserPostsGrid\(postsSnapshot, collabPosts, userId\)/.test(html), 'T9a grid propio recibe authorUid');
-  ok(/const featuredMap = await drexFeaturedGet\(authorUid\);/.test(html), 'T9b grid propio lee el mapa de destacados');
+  /* C243 (pin_post): el grid propio solo lee el mapa si los beneficios
+   * Orbit del dueño están activos (fail-closed al render). */
+  ok(/const featuredMap = pinsVisible \? await drexFeaturedGet\(authorUid\) : \{\};/.test(html), 'T9b grid propio lee el mapa solo con beneficios activos');
   ok(/drexFeaturedSortPosts\(items, featuredMap\)/.test(html), 'T9c grid propio ordena con drexFeaturedSortPosts');
   ok(/orderedItems\.forEach\(post =>/.test(html), 'T9d grid propio renderiza el orden final');
   ok(/featuredPromise: DrexCloud\.database\(\)\.ref\('users\/' \+ authorId \+ '\/featuredPosts'\)/.test(html), 'T9e memo del autor incluye featuredPromise');

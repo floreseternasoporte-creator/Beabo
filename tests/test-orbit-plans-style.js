@@ -59,6 +59,7 @@ const sandbox = {
   orbitPlanName: (id) => ({ weekly: 'Semanal', monthly: 'Mensual', quarterly: 'Trimestral', semiannual: 'Semestral', yearly: 'Anual', biennial: '2 años', lifetime: 'De por vida' }[id] || id),
   orbitPlanBadge: (id) => ({ quarterly: 'Ahorra 13%', semiannual: 'Ahorra 17%', yearly: 'Ahorra 2 meses', biennial: 'Ahorra 25%', lifetime: 'Para siempre' }[id] || null),
   orbitPlanMonthlyPrice: (id) => (id === 'monthly' ? '' : '$4.17'),
+  orbitPlanSavingsPct: (id) => ({ quarterly: 13, semiannual: 17, yearly: 17, biennial: 25 }[id] || 0),
 };
 vm.createContext(sandbox);
 const card = vm.runInContext('(' + cardSrc + ')', sandbox);
@@ -87,9 +88,11 @@ ok(!PURPLE.test(cardSrc), 'template card(): sin morados');
 const AVAILABLE_IDS = ['monthly', 'quarterly', 'semiannual', 'yearly'];
 const SOON_IDS = ['weekly', 'biennial', 'lifetime'];
 for (const id of AVAILABLE_IDS) {
-  ok(/class="[^"]*\borbit-plan-btn\b/.test(cards[id]), id + ': botón con clase .orbit-plan-btn');
-  ok(/class="[^"]*\btap44\b/.test(cards[id]), id + ': botón táctil (tap44)');
-  ok(cards[id].indexOf("orbitSubscribe('" + id + "')") !== -1, id + ': handler orbitSubscribe intacto');
+  /* C243-A: la tarjeta ES el control: tocarla selecciona (role=radio) y el
+   * unico boton .orbit-plan-btn (tactil) vive bajo el selector. */
+  ok(cards[id].indexOf('role="radio"') !== -1, id + ': tarjeta seleccionable (role=radio)');
+  ok(cards[id].indexOf("orbitSelectPlan('" + id + "')") !== -1, id + ': tocarla selecciona con orbitSelectPlan');
+  ok(cards[id].indexOf('orbitSubscribe(') === -1, id + ': la tarjeta no cobra por su cuenta');
 }
 /* ---- 4b. Planes sin precio: sin botón de pago, estado Próximamente ---- */
 for (const id of SOON_IDS) {
@@ -119,8 +122,9 @@ ok(bestCss && !PURPLE.test(bestCss[0]), '.best: sin morados');
 ok(bestCss && /(var\(--drex-brand\)|#2F33B8)/i.test(bestCss[0]), '.best: borde índigo');
 /* El ahorro como texto discreto, no píldora multicolor */
 ok(cards.semiannual.indexOf('orbit-plan-save') !== -1, 'semiannual: ahorro como .orbit-plan-save (texto discreto)');
-ok(cards.semiannual.indexOf('Ahorra 17%') !== -1, 'semiannual: dato del ahorro conservado');
-ok(cards.yearly.indexOf('Ahorra 2 meses') !== -1, 'yearly: conserva "Ahorra 2 meses" como texto');
+/* C243: el ahorro se computa de los datos del plan (Ahorras {n}%). */
+ok(cards.semiannual.indexOf('Ahorras 17%') !== -1, 'semiannual: dato del ahorro conservado');
+ok(cards.yearly.indexOf('Ahorras 17%') !== -1, 'yearly: ahorro computado como texto (17%)');
 ok(cards.lifetime.indexOf('Para siempre') !== -1, 'lifetime: conserva "Para siempre" como texto');
 const saveCss = html.match(/\.orbit-plan-save\{[^}]*\}/);
 ok(!!saveCss && saveCss[0].indexOf('linear-gradient') === -1, '.orbit-plan-save: sin degradado (texto discreto)');

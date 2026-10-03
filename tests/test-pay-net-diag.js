@@ -12,9 +12,10 @@
  *     (endpoint de la Lambda), en paralelo y con timeout.
  *  3. La rama network/timeout de orbitSubscribe (Orbit) la invoca y muestra
  *     el resultado en el toast.
- *  4. La rama network/timeout del flujo de Drex Coins hace lo mismo.
- *  5. Las claves ES nuevas existen traducidas en EN/ZH/PT.
- *  6. La función parsea sin errores de sintaxis.
+ *  4. Las claves ES nuevas existen traducidas en EN/ZH/PT.
+ *  5. La función parsea sin errores de sintaxis.
+ *  (C240, 2026-10-03: el flujo de Drex Coins se eliminó por completo junto
+ *   con la función de regalos; su rama de diagnóstico ya no existe.)
  *
  * Uso: node tests/test-pay-net-diag.js   (código 0 = todo OK)
  */
@@ -77,16 +78,7 @@ test('orbitSubscribe usa drexPayNetDiag en network/timeout', function () {
     'no pide captura del diagnóstico');
 });
 
-/* 4. El flujo de Drex Coins también lo usa. */
-test('flujo Drex Coins usa drexPayNetDiag en network/timeout', function () {
-  var key = 'No se pudo contactar el servidor de pagos.';
-  var idx = html.indexOf("toast(t('" + key + "')");
-  assert(idx !== -1, 'no se encontró la rama de diagnóstico en coins');
-  var seg = html.slice(Math.max(0, idx - 400), idx + 200);
-  assert(seg.indexOf('drexPayNetDiag()') !== -1, 'coins no invoca el diagnóstico');
-});
-
-/* 5. Claves traducidas en EN/ZH/PT. */
+/* 4. Claves traducidas en EN/ZH/PT. */
 test('claves del diagnóstico traducidas en EN/ZH/PT', function () {
   var keys = [
     'Revisando tu conexión…',

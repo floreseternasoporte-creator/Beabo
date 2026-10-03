@@ -61,7 +61,7 @@ sandbox.window.DREX_ORBIT_ENFORCE = true;
 K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
 ok(K.isActive() === true, 'normaliza: active=true -> isActive true');
 ok(K.hasAccess('no_ads') === true, 'normaliza: orbit accede a no_ads');
-ok(K.hasAccess('exclusive_gifts') === true, 'normaliza: orbit accede a exclusive_gifts');
+ok(K.hasAccess('exclusive_gifts') === false, 'C240: exclusive_gifts eliminado, ya no se concede');
 K._setTestState({ active: false, plan: 'none' });
 ok(K.isActive() === false, 'normaliza: active=false -> isActive false');
 // estado malformado
@@ -70,13 +70,13 @@ ok(K.isActive() === false, 'fail-closed: estado malformado -> false');
 K._setTestState(null);
 ok(K.isActive() === false, 'fail-closed: null -> false');
 K._setTestState({ active: true, plan: 'monthly', status: 'past_due' });
-ok(K.isActive() === true, 'past_due con active=true sigue activo (lo decide el backend)');
+ok(K.isActive() === false, 'C243-D: past_due apaga beneficios al instante (el backend tambien lo marca inactive)');
 K._setTestState({ active: true, plan: 'monthly', status: 'canceled' });
 ok(K.isActive() === false, 'canceled -> inactivo aunque active=true (fail closed)');
 
-/* ---- 4. Matriz de funciones (8 grupos; studio_pro se eliminó en Fase 3 con Drex Studio) ---- */
+/* ---- 4. Matriz de funciones (7 grupos; studio_pro se eliminó en Fase 3 con Drex Studio y exclusive_gifts en C240 con la función de regalos) ---- */
 K._setTestState({ active: true, plan: 'yearly', status: 'active' });
-const FEATURES = ['no_ads','badge','profile_themes','fiesta_boost','limits','analytics','exclusive_gifts','priority_support'];
+const FEATURES = ['no_ads','badge','profile_themes','fiesta_boost','limits','analytics','priority_support'];
 for (const f of FEATURES) ok(K.hasAccess(f) === true, 'orbit accede a ' + f);
 ok(K.hasAccess('studio_pro') === false, 'studio_pro eliminado: orbit ya no lo concede (Fase 3)');
 K._setTestState({ active: false, plan: 'none' });

@@ -2734,7 +2734,7 @@ var APP_ENGLISH_TEXT = {
 "En vivo ahora":"Live now",
 /* ITEM4-SCHEDREM */
 /* ITEM4-SCHEDREM */
-/* DREX-ORBIT */"Anual":"Annual","Mensual":"Monthly","al mes":"per month","al año":"per year","El plan Orbit de Drex":"Drex Orbit plan","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit isn't available right now. Try again later.","Tu suscripción":"Your subscription","Se cancela al final del periodo":"Cancels at the end of the period","Se renueva el":"Renews on","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"Your last payment failed. Update your payment method to keep Drex Orbit.","Gestionar suscripción":"Manage subscription","Restaurar compra":"Restore purchase","Tus beneficios":"Your benefits","Sin anuncios":"Ad-free","Navega Drex sin publicidad.":"Browse Drex with no ads.","Insignia y marco exclusivos":"Exclusive badge & frame","Distintivo dorado Drex Orbit y marco en tu foto.":"Gold Drex Orbit badge and frame on your photo.","Temas de perfil Orbit":"Orbit profile themes","Fondos exclusivos para tu portada.":"Exclusive covers for your profile.","Impulso en fiestas":"Fiesta boost","Tus fiestas de voz destacan y llegan a más gente.":"Your voice fiestas stand out and reach more people.","Límites elevados":"Higher limits","Videos más largos, más fotos y publicaciones programadas.":"Longer videos, more photos and scheduled posts.","Analíticas de creador":"Creator analytics","Estadísticas avanzadas de tu contenido.":"Advanced stats for your content.","Regalos exclusivos":"Exclusive gifts","Regalos originales solo para miembros Drex Orbit.":"Original gifts only for Drex Orbit members.","Soporte prioritario":"Priority support","Tus reportes se atienden primero.":"Your reports get answered first.","Elegir plan":"Choose a plan","Ahorra 2 meses":"Save 2 months","Suscribirme":"Subscribe","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"100% secure payment with Stripe. We accept cards and Link. No commitment. Cancel anytime.","Tema de perfil":"Profile theme","Elige el fondo de tu portada":"Choose your cover background","Tus números reales, actualizados al abrir.":"Your real numbers, updated on open.","Sin anuncios, insignia exclusiva y mucho más.":"Ad-free, exclusive badge and much more.","Miembro activo":"Active member","Procesando…":"Processing…","Error al iniciar el pago. Inténtalo de nuevo.":"Couldn't start the payment. Try again.","Inicia sesión para suscribirte a Drex Orbit.":"Sign in to subscribe to Drex Orbit.","No tienes una suscripción activa.":"You don't have an active subscription.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Couldn't open subscription management. Try again.","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"Welcome to Drex Orbit! Your subscription is now active.","No encontramos una suscripción activa en tu cuenta.":"We couldn't find an active subscription on your account.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Couldn't verify your subscription. Try again.","Pago recibido. Tu suscripción se activará en unos segundos.":"Payment received. Your subscription will activate in a few seconds.","Suscripción cancelada. No se realizó ningún cargo.":"Subscription cancelled. No charge was made.","Esta función es de Drex Orbit":"This feature is Drex Orbit","Suscríbete para desbloquearla y apoyar a Drex.":"Subscribe to unlock it and support Drex.","Ver planes":"View plans","Ahora no":"Not now","Sin permanencia. Cancela cuando quieras.":"No commitment. Cancel anytime.","Predeterminado":"Default","Índigo":"Indigo","Medianoche":"Midnight","Dorado":"Gold","Esmeralda":"Emerald","Solo Drex Orbit":"Drex Orbit only","Tema aplicado":"Theme applied","No se pudo guardar el tema. Inténtalo de nuevo.":"Couldn't save the theme. Try again.","Inicia sesión para personalizar tu perfil.":"Sign in to customize your profile.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"Videos can be up to {s} seconds. Choose a shorter clip.","Solo puedes subir un máximo de {n} fotos por publicación.":"You can upload up to {n} photos per post.",/* LANE-4-ORBIT-390 */"Beneficio Drex Orbit activo.":"Drex Orbit benefit active.","Próximamente: alcance, visitas al perfil y votos por publicación.":"Coming soon: reach, profile visits and votes per post.","Términos":"Terms","a la semana":"per week",
+/* DREX-ORBIT */"Como miembro Drex Orbit, tu reporte tiene prioridad.":"As a Drex Orbit member, your report has priority.","Con Drex Orbit puedes subir videos de hasta 180 segundos.":"With Drex Orbit you can upload videos up to 180 seconds.","Con Drex Orbit puedes subir hasta 40 fotos por publicación.":"With Drex Orbit you can upload up to 40 photos per post.","Anual":"Annual","Mensual":"Monthly","al mes":"per month","al año":"per year","El plan Orbit de Drex":"Drex Orbit plan","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit isn't available right now. Try again later.","Tu suscripción":"Your subscription","Se cancela al final del periodo":"Cancels at the end of the period","Se renueva el":"Renews on","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"Your last payment failed. Update your payment method to keep Drex Orbit.","Gestionar suscripción":"Manage subscription","Restaurar compra":"Restore purchase","Tus beneficios":"Your benefits","Sin anuncios":"Ad-free","Navega Drex sin publicidad.":"Browse Drex with no ads.","Insignia y marco exclusivos":"Exclusive badge & frame","Distintivo dorado Drex Orbit y marco en tu foto.":"Gold Drex Orbit badge and frame on your photo.","Temas de perfil Orbit":"Orbit profile themes","Fondos exclusivos para tu portada.":"Exclusive covers for your profile.","Impulso en fiestas":"Fiesta boost","Tus fiestas de voz destacan y llegan a más gente.":"Your voice fiestas stand out and reach more people.","Límites elevados":"Higher limits","Videos más largos, más fotos y publicaciones programadas.":"Longer videos, more photos and scheduled posts.","Analíticas de creador":"Creator analytics","Estadísticas avanzadas de tu contenido.":"Advanced stats for your content.","Regalos exclusivos":"Exclusive gifts","Regalos originales solo para miembros Drex Orbit.":"Original gifts only for Drex Orbit members.","Soporte prioritario":"Priority support","Tus reportes se atienden primero.":"Your reports get answered first.","Elegir plan":"Choose a plan","Ahorra 2 meses":"Save 2 months","Suscribirme":"Subscribe","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"100% secure payment with Stripe. We accept cards and Link. No commitment. Cancel anytime.","Tema de perfil":"Profile theme","Elige el fondo de tu portada":"Choose your cover background","Tus números reales, actualizados al abrir.":"Your real numbers, updated on open.","Sin anuncios, insignia exclusiva y mucho más.":"Ad-free, exclusive badge and much more.","Miembro activo":"Active member","Procesando…":"Processing…","Error al iniciar el pago. Inténtalo de nuevo.":"Couldn't start the payment. Try again.","Inicia sesión para suscribirte a Drex Orbit.":"Sign in to subscribe to Drex Orbit.","No tienes una suscripción activa.":"You don't have an active subscription.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Couldn't open subscription management. Try again.","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"Welcome to Drex Orbit! Your subscription is now active.","No encontramos una suscripción activa en tu cuenta.":"We couldn't find an active subscription on your account.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Couldn't verify your subscription. Try again.","Pago recibido. Tu suscripción se activará en unos segundos.":"Payment received. Your subscription will activate in a few seconds.","Suscripción cancelada. No se realizó ningún cargo.":"Subscription cancelled. No charge was made.","Esta función es de Drex Orbit":"This feature is Drex Orbit","Suscríbete para desbloquearla y apoyar a Drex.":"Subscribe to unlock it and support Drex.","Ver planes":"View plans","Ahora no":"Not now","Sin permanencia. Cancela cuando quieras.":"No commitment. Cancel anytime.","Predeterminado":"Default","Índigo":"Indigo","Medianoche":"Midnight","Dorado":"Gold","Esmeralda":"Emerald","Solo Drex Orbit":"Drex Orbit only","Tema aplicado":"Theme applied","No se pudo guardar el tema. Inténtalo de nuevo.":"Couldn't save the theme. Try again.","Inicia sesión para personalizar tu perfil.":"Sign in to customize your profile.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"Videos can be up to {s} seconds. Choose a shorter clip.","Solo puedes subir un máximo de {n} fotos por publicación.":"You can upload up to {n} photos per post.",/* LANE-4-ORBIT-390 */"Beneficio Drex Orbit activo.":"Drex Orbit benefit active.","Próximamente: alcance, visitas al perfil y votos por publicación.":"Coming soon: reach, profile visits and votes per post.","Términos":"Terms","a la semana":"per week",
 "Top":"Top",
 
 "¡COMBO!":"COMBO!",
@@ -3798,6 +3798,35 @@ var APP_ENGLISH_TEXT = {
 "y toca":"and tap",
 "y toca el botón de crear. Elige el idioma, el tema guiado y escribe tu texto.":"and tap the create button. Choose the language, the guided topic and write your text.",
 "y toca el icono de lápiz para iniciar una conversación.":"and tap the pencil icon to start a conversation.",
+/* C243-ORBIT */
+"Ahorras {n}%":"You save {n}%",
+"Todo lo que incluye":"Everything that's included",
+"Fotos y videos en HD":"HD photos & videos",
+"Sube tus fotos con menos compresión y más detalle.":"Upload your photos with less compression and more detail.",
+"Publicaciones más largas":"Longer posts",
+"Escribe publicaciones de hasta 2000 caracteres.":"Write posts of up to 2,000 characters.",
+"Publicaciones fijadas":"Pinned posts",
+"Fija tus mejores publicaciones en la parte superior de tu perfil.":"Pin your best posts to the top of your profile.",
+"Quién vio tu perfil":"Who viewed your profile",
+"Descubre quién visita tu perfil.":"See who visits your profile.",
+"Mira quién entra a tu perfil":"See who drops by your profile",
+"Solo tú puedes ver esta lista.":"Only you can see this list.",
+"Aún nadie ha visitado tu perfil.":"No one has visited your profile yet.",
+"Cargando visitantes…":"Loading visitors…",
+"No pudimos cargar tus visitantes. Inténtalo de nuevo.":"We couldn't load your visitors. Try again.",
+"Inicia sesión para ver tus visitantes.":"Sign in to see your visitors.",
+"Subidas en HD activadas":"HD uploads turned on",
+"Subidas en HD desactivadas":"HD uploads turned off",
+"Alcanzaste el máximo de {n} publicaciones programadas.":"You've reached the maximum of {n} scheduled posts.",
+"Tus beneficios Orbit están desactivados":"Your Orbit benefits are turned off",
+"Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.":"Your subscription is still paid until {fecha}, but you cancelled renewal: your Orbit benefits are turned off starting now.",
+"Tu suscripción sigue pagada, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.":"Your subscription is still paid, but you cancelled renewal: your Orbit benefits are turned off starting now.",
+"Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación.":"Your subscription is still paid until {fecha}, but you cancelled renewal.",
+"Tu suscripción sigue pagada, pero cancelaste la renovación.":"Your subscription is still paid, but you cancelled renewal.",
+"Tu último pago falló: los beneficios Orbit están desactivados hasta que actualices tu método de pago.":"Your last payment failed: your Orbit benefits are turned off until you update your payment method.",
+"Tu suscripción venció: los beneficios Orbit están desactivados.":"Your subscription ended: your Orbit benefits are turned off.",
+"Reactivar suscripción":"Reactivate subscription",
+
 };
 var APP_CHINESE_TEXT = {
 /* LANE5-COMPOSER (auditoría UI composer) */
@@ -6530,7 +6559,7 @@ var APP_CHINESE_TEXT = {
 "En vivo ahora":"正在直播",
 /* ITEM4-SCHEDREM */
 /* ITEM4-SCHEDREM */
-/* DREX-ORBIT */"Anual":"年度","Mensual":"月度","al mes":"每月","al año":"每年","El plan Orbit de Drex":"Drex Orbit 方案","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit 暂时不可用，请稍后再试。","Tu suscripción":"你的订阅","Se cancela al final del periodo":"将在周期结束时取消","Se renueva el":"续订于","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"你最近一次付款失败，请更新付款方式以保留 Drex Orbit。","Gestionar suscripción":"管理订阅","Restaurar compra":"恢复购买","Tus beneficios":"你的权益","Sin anuncios":"无广告","Navega Drex sin publicidad.":"畅享无广告的 Drex。","Insignia y marco exclusivos":"专属徽章和头像框","Distintivo dorado Drex Orbit y marco en tu foto.":"金色 Drex Orbit 徽章与头像框。","Temas de perfil Orbit":"Orbit 个人主页主题","Fondos exclusivos para tu portada.":"专属个人主页封面背景。","Impulso en fiestas":"派对助推","Tus fiestas de voz destacan y llegan a más gente.":"让你的语音派对更突出，触达更多人。","Límites elevados":"更高额度","Videos más largos, más fotos y publicaciones programadas.":"更长视频、更多照片与定时发布。","Analíticas de creador":"创作者数据分析","Estadísticas avanzadas de tu contenido.":"内容高级数据统计。","Regalos exclusivos":"专属礼物","Regalos originales solo para miembros Drex Orbit.":"仅限 Drex Orbit 会员的原创礼物。","Soporte prioritario":"优先客服","Tus reportes se atienden primero.":"你的反馈将优先处理。","Elegir plan":"选择方案","Ahorra 2 meses":"节省 2 个月","Suscribirme":"订阅","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"通过 Stripe 100% 安全支付。接受银行卡和 Link。无合约，随时取消。","Tema de perfil":"主页主题","Elige el fondo de tu portada":"选择封面背景","Tus números reales, actualizados al abrir.":"真实数据，每次打开自动更新。","Sin anuncios, insignia exclusiva y mucho más.":"无广告、专属徽章，还有更多。","Miembro activo":"在籍会员","Procesando…":"处理中…","Error al iniciar el pago. Inténtalo de nuevo.":"无法发起付款，请重试。","Inicia sesión para suscribirte a Drex Orbit.":"登录后订阅 Drex Orbit。","No tienes una suscripción activa.":"你没有有效订阅。","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"无法打开订阅管理，请重试。","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"欢迎加入 Drex Orbit！你的订阅已生效。","No encontramos una suscripción activa en tu cuenta.":"未在你的帐户中找到有效订阅。","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"无法验证你的订阅，请重试。","Pago recibido. Tu suscripción se activará en unos segundos.":"已收到付款，你的订阅将在几秒后生效。","Suscripción cancelada. No se realizó ningún cargo.":"订阅已取消，未产生任何扣费。","Esta función es de Drex Orbit":"此功能为 Drex Orbit 专属","Suscríbete para desbloquearla y apoyar a Drex.":"订阅即可解锁并支持 Drex。","Ver planes":"查看方案","Ahora no":"稍后再说","Sin permanencia. Cancela cuando quieras.":"无合约，随时取消。","Predeterminado":"默认","Índigo":"靛蓝","Medianoche":"午夜","Dorado":"金色","Esmeralda":"祖母绿","Solo Drex Orbit":"仅限 Drex Orbit","Tema aplicado":"主题已应用","No se pudo guardar el tema. Inténtalo de nuevo.":"无法保存主题，请重试。","Inicia sesión para personalizar tu perfil.":"登录后自定义个人主页。","El video puede durar hasta {s} segundos. Elige un clip más corto.":"视频最长可为 {s} 秒，请选择更短的片段。","Solo puedes subir un máximo de {n} fotos por publicación.":"每个帖子最多可上传 {n} 张照片。",/* LANE-4-ORBIT-390 */"Beneficio Drex Orbit activo.":"Drex Orbit 权益已生效。","Próximamente: alcance, visitas al perfil y votos por publicación.":"即将推出：覆盖量、主页访问量与单帖投票数。","Términos":"条款","a la semana":"每周",
+/* DREX-ORBIT */"Como miembro Drex Orbit, tu reporte tiene prioridad.":"作为 Drex Orbit 会员，你的举报享有优先处理。","Con Drex Orbit puedes subir videos de hasta 180 segundos.":"使用 Drex Orbit 可上传最长 180 秒的视频。","Con Drex Orbit puedes subir hasta 40 fotos por publicación.":"使用 Drex Orbit 每个帖子最多可上传 40 张照片。","Anual":"年度","Mensual":"月度","al mes":"每月","al año":"每年","El plan Orbit de Drex":"Drex Orbit 方案","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit 暂时不可用，请稍后再试。","Tu suscripción":"你的订阅","Se cancela al final del periodo":"将在周期结束时取消","Se renueva el":"续订于","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"你最近一次付款失败，请更新付款方式以保留 Drex Orbit。","Gestionar suscripción":"管理订阅","Restaurar compra":"恢复购买","Tus beneficios":"你的权益","Sin anuncios":"无广告","Navega Drex sin publicidad.":"畅享无广告的 Drex。","Insignia y marco exclusivos":"专属徽章和头像框","Distintivo dorado Drex Orbit y marco en tu foto.":"金色 Drex Orbit 徽章与头像框。","Temas de perfil Orbit":"Orbit 个人主页主题","Fondos exclusivos para tu portada.":"专属个人主页封面背景。","Impulso en fiestas":"派对助推","Tus fiestas de voz destacan y llegan a más gente.":"让你的语音派对更突出，触达更多人。","Límites elevados":"更高额度","Videos más largos, más fotos y publicaciones programadas.":"更长视频、更多照片与定时发布。","Analíticas de creador":"创作者数据分析","Estadísticas avanzadas de tu contenido.":"内容高级数据统计。","Regalos exclusivos":"专属礼物","Regalos originales solo para miembros Drex Orbit.":"仅限 Drex Orbit 会员的原创礼物。","Soporte prioritario":"优先客服","Tus reportes se atienden primero.":"你的反馈将优先处理。","Elegir plan":"选择方案","Ahorra 2 meses":"节省 2 个月","Suscribirme":"订阅","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"通过 Stripe 100% 安全支付。接受银行卡和 Link。无合约，随时取消。","Tema de perfil":"主页主题","Elige el fondo de tu portada":"选择封面背景","Tus números reales, actualizados al abrir.":"真实数据，每次打开自动更新。","Sin anuncios, insignia exclusiva y mucho más.":"无广告、专属徽章，还有更多。","Miembro activo":"在籍会员","Procesando…":"处理中…","Error al iniciar el pago. Inténtalo de nuevo.":"无法发起付款，请重试。","Inicia sesión para suscribirte a Drex Orbit.":"登录后订阅 Drex Orbit。","No tienes una suscripción activa.":"你没有有效订阅。","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"无法打开订阅管理，请重试。","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"欢迎加入 Drex Orbit！你的订阅已生效。","No encontramos una suscripción activa en tu cuenta.":"未在你的帐户中找到有效订阅。","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"无法验证你的订阅，请重试。","Pago recibido. Tu suscripción se activará en unos segundos.":"已收到付款，你的订阅将在几秒后生效。","Suscripción cancelada. No se realizó ningún cargo.":"订阅已取消，未产生任何扣费。","Esta función es de Drex Orbit":"此功能为 Drex Orbit 专属","Suscríbete para desbloquearla y apoyar a Drex.":"订阅即可解锁并支持 Drex。","Ver planes":"查看方案","Ahora no":"稍后再说","Sin permanencia. Cancela cuando quieras.":"无合约，随时取消。","Predeterminado":"默认","Índigo":"靛蓝","Medianoche":"午夜","Dorado":"金色","Esmeralda":"祖母绿","Solo Drex Orbit":"仅限 Drex Orbit","Tema aplicado":"主题已应用","No se pudo guardar el tema. Inténtalo de nuevo.":"无法保存主题，请重试。","Inicia sesión para personalizar tu perfil.":"登录后自定义个人主页。","El video puede durar hasta {s} segundos. Elige un clip más corto.":"视频最长可为 {s} 秒，请选择更短的片段。","Solo puedes subir un máximo de {n} fotos por publicación.":"每个帖子最多可上传 {n} 张照片。",/* LANE-4-ORBIT-390 */"Beneficio Drex Orbit activo.":"Drex Orbit 权益已生效。","Próximamente: alcance, visitas al perfil y votos por publicación.":"即将推出：覆盖量、主页访问量与单帖投票数。","Términos":"条款","a la semana":"每周",
 "Top":"榜单",
 
 "¡COMBO!":"连击！",
@@ -7594,6 +7623,35 @@ var APP_CHINESE_TEXT = {
 "y toca":"并点击",
 "y toca el botón de crear. Elige el idioma, el tema guiado y escribe tu texto.":"并点击创建按钮。选择语言、引导主题并写下你的文本。",
 "y toca el icono de lápiz para iniciar una conversación.":"并点击铅笔图标开始对话。",
+/* C243-ORBIT */
+"Ahorras {n}%":"省 {n}%",
+"Todo lo que incluye":"全部包含的权益",
+"Fotos y videos en HD":"高清照片和视频",
+"Sube tus fotos con menos compresión y más detalle.":"以更少的压缩和更多的细节上传照片。",
+"Publicaciones más largas":"更长的帖子",
+"Escribe publicaciones de hasta 2000 caracteres.":"撰写最多 2000 个字符的帖子。",
+"Publicaciones fijadas":"置顶帖子",
+"Fija tus mejores publicaciones en la parte superior de tu perfil.":"将你最好的帖子置顶到个人主页顶部。",
+"Quién vio tu perfil":"谁看过你的主页",
+"Descubre quién visita tu perfil.":"看看谁访问了你的主页。",
+"Mira quién entra a tu perfil":"看看谁来过你的主页",
+"Solo tú puedes ver esta lista.":"只有你可以查看此列表。",
+"Aún nadie ha visitado tu perfil.":"还没有人访问过你的主页。",
+"Cargando visitantes…":"正在加载访客…",
+"No pudimos cargar tus visitantes. Inténtalo de nuevo.":"无法加载访客列表，请重试。",
+"Inicia sesión para ver tus visitantes.":"登录后查看访客。",
+"Subidas en HD activadas":"高清上传已开启",
+"Subidas en HD desactivadas":"高清上传已关闭",
+"Alcanzaste el máximo de {n} publicaciones programadas.":"已达到计划帖子上限 {n} 条。",
+"Tus beneficios Orbit están desactivados":"你的 Orbit 权益已停用",
+"Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.":"你的订阅已付费至 {fecha}，但你已取消续订：Orbit 权益即刻起停用。",
+"Tu suscripción sigue pagada, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.":"你的订阅仍在付费期内，但你已取消续订：Orbit 权益即刻起停用。",
+"Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación.":"你的订阅已付费至 {fecha}，但你已取消续订。",
+"Tu suscripción sigue pagada, pero cancelaste la renovación.":"你的订阅仍在付费期内，但你已取消续订。",
+"Tu último pago falló: los beneficios Orbit están desactivados hasta que actualices tu método de pago.":"你最近一次付款失败：在更新付款方式之前，Orbit 权益已停用。",
+"Tu suscripción venció: los beneficios Orbit están desactivados.":"你的订阅已到期：Orbit 权益已停用。",
+"Reactivar suscripción":"重新激活订阅",
+
 };
 var APP_PORTUGUESE_TEXT = {
 /* LANE5-COMPOSER (auditoría UI composer) */
@@ -10317,7 +10375,7 @@ var APP_PORTUGUESE_TEXT = {
 "En vivo ahora":"Ao vivo agora",
 /* ITEM4-SCHEDREM */
 /* ITEM4-SCHEDREM */
-/* DREX-ORBIT */"Anual":"Anual","Mensual":"Mensal","al mes":"por mês","al año":"por ano","El plan Orbit de Drex":"O plano Orbit do Drex","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit não está disponível no momento. Tente novamente mais tarde.","Tu suscripción":"Sua assinatura","Se cancela al final del periodo":"Será cancelada ao fim do período","Se renueva el":"Renova em","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"Seu último pagamento falhou. Atualize sua forma de pagamento para manter o Drex Orbit.","Gestionar suscripción":"Gerenciar assinatura","Restaurar compra":"Restaurar compra","Tus beneficios":"Seus benefícios","Sin anuncios":"Sem anúncios","Navega Drex sin publicidad.":"Navegue no Drex sem publicidade.","Insignia y marco exclusivos":"Selo e moldura exclusivos","Distintivo dorado Drex Orbit y marco en tu foto.":"Selo dourado Drex Orbit e moldura na sua foto.","Temas de perfil Orbit":"Temas de perfil Orbit","Fondos exclusivos para tu portada.":"Fundos exclusivos para sua capa.","Impulso en fiestas":"Impulso em festas","Tus fiestas de voz destacan y llegan a más gente.":"Suas festas de voz ganham destaque e alcançam mais gente.","Límites elevados":"Limites maiores","Videos más largos, más fotos y publicaciones programadas.":"Vídeos mais longos, mais fotos e publicações agendadas.","Analíticas de creador":"Análises de criador","Estadísticas avanzadas de tu contenido.":"Estatísticas avançadas do seu conteúdo.","Regalos exclusivos":"Presentes exclusivos","Regalos originales solo para miembros Drex Orbit.":"Presentes originais só para membros Drex Orbit.","Soporte prioritario":"Suporte prioritário","Tus reportes se atienden primero.":"Suas denúncias são atendidas primeiro.","Elegir plan":"Escolher plano","Ahorra 2 meses":"Economize 2 meses","Suscribirme":"Assinar","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"Pagamento 100% seguro com Stripe. Aceitamos cartões e Link. Sem fidelidade. Cancele quando quiser.","Tema de perfil":"Tema de perfil","Elige el fondo de tu portada":"Escolha o fundo da sua capa","Tus números reales, actualizados al abrir.":"Seus números reais, atualizados ao abrir.","Sin anuncios, insignia exclusiva y mucho más.":"Sem anúncios, selo exclusivo e muito mais.","Miembro activo":"Membro ativo","Procesando…":"Processando…","Error al iniciar el pago. Inténtalo de nuevo.":"Não foi possível iniciar o pagamento. Tente de novo.","Inicia sesión para suscribirte a Drex Orbit.":"Entre para assinar o Drex Orbit.","No tienes una suscripción activa.":"Você não tem uma assinatura ativa.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Não foi possível abrir o gerenciamento da assinatura. Tente de novo.","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"Bem-vindo ao Drex Orbit! Sua assinatura já está ativa.","No encontramos una suscripción activa en tu cuenta.":"Não encontramos uma assinatura ativa na sua conta.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Não foi possível verificar sua assinatura. Tente de novo.","Pago recibido. Tu suscripción se activará en unos segundos.":"Pagamento recebido. Sua assinatura será ativada em alguns segundos.","Suscripción cancelada. No se realizó ningún cargo.":"Assinatura cancelada. Nenhuma cobrança foi feita.","Esta función es de Drex Orbit":"Este recurso é do Drex Orbit","Suscríbete para desbloquearla y apoyar a Drex.":"Assine para desbloquear e apoiar o Drex.","Ver planes":"Ver planos","Ahora no":"Agora não","Sin permanencia. Cancela cuando quieras.":"Sem fidelidade. Cancele quando quiser.","Predeterminado":"Padrão","Índigo":"Índigo","Medianoche":"Meia-noite","Dorado":"Dourado","Esmeralda":"Esmeralda","Solo Drex Orbit":"Somente Drex Orbit","Tema aplicado":"Tema aplicado","No se pudo guardar el tema. Inténtalo de nuevo.":"Não foi possível salvar o tema. Tente de novo.","Inicia sesión para personalizar tu perfil.":"Entre para personalizar seu perfil.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"O vídeo pode ter até {s} segundos. Escolha um clipe mais curto.","Solo puedes subir un máximo de {n} fotos por publicación.":"Você pode subir no máximo {n} fotos por publicação.",/* LANE-4-ORBIT-390 */"Beneficio Drex Orbit activo.":"Benefício Drex Orbit ativo.","Próximamente: alcance, visitas al perfil y votos por publicación.":"Em breve: alcance, visitas ao perfil e votos por publicação.","Términos":"Termos","a la semana":"por semana",
+/* DREX-ORBIT */"Como miembro Drex Orbit, tu reporte tiene prioridad.":"Como membro Drex Orbit, sua denúncia tem prioridade.","Con Drex Orbit puedes subir videos de hasta 180 segundos.":"Com o Drex Orbit você pode enviar vídeos de até 180 segundos.","Con Drex Orbit puedes subir hasta 40 fotos por publicación.":"Com o Drex Orbit você pode enviar até 40 fotos por publicação.","Anual":"Anual","Mensual":"Mensal","al mes":"por mês","al año":"por ano","El plan Orbit de Drex":"O plano Orbit do Drex","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit não está disponível no momento. Tente novamente mais tarde.","Tu suscripción":"Sua assinatura","Se cancela al final del periodo":"Será cancelada ao fim do período","Se renueva el":"Renova em","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"Seu último pagamento falhou. Atualize sua forma de pagamento para manter o Drex Orbit.","Gestionar suscripción":"Gerenciar assinatura","Restaurar compra":"Restaurar compra","Tus beneficios":"Seus benefícios","Sin anuncios":"Sem anúncios","Navega Drex sin publicidad.":"Navegue no Drex sem publicidade.","Insignia y marco exclusivos":"Selo e moldura exclusivos","Distintivo dorado Drex Orbit y marco en tu foto.":"Selo dourado Drex Orbit e moldura na sua foto.","Temas de perfil Orbit":"Temas de perfil Orbit","Fondos exclusivos para tu portada.":"Fundos exclusivos para sua capa.","Impulso en fiestas":"Impulso em festas","Tus fiestas de voz destacan y llegan a más gente.":"Suas festas de voz ganham destaque e alcançam mais gente.","Límites elevados":"Limites maiores","Videos más largos, más fotos y publicaciones programadas.":"Vídeos mais longos, mais fotos e publicações agendadas.","Analíticas de creador":"Análises de criador","Estadísticas avanzadas de tu contenido.":"Estatísticas avançadas do seu conteúdo.","Regalos exclusivos":"Presentes exclusivos","Regalos originales solo para miembros Drex Orbit.":"Presentes originais só para membros Drex Orbit.","Soporte prioritario":"Suporte prioritário","Tus reportes se atienden primero.":"Suas denúncias são atendidas primeiro.","Elegir plan":"Escolher plano","Ahorra 2 meses":"Economize 2 meses","Suscribirme":"Assinar","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"Pagamento 100% seguro com Stripe. Aceitamos cartões e Link. Sem fidelidade. Cancele quando quiser.","Tema de perfil":"Tema de perfil","Elige el fondo de tu portada":"Escolha o fundo da sua capa","Tus números reales, actualizados al abrir.":"Seus números reais, atualizados ao abrir.","Sin anuncios, insignia exclusiva y mucho más.":"Sem anúncios, selo exclusivo e muito mais.","Miembro activo":"Membro ativo","Procesando…":"Processando…","Error al iniciar el pago. Inténtalo de nuevo.":"Não foi possível iniciar o pagamento. Tente de novo.","Inicia sesión para suscribirte a Drex Orbit.":"Entre para assinar o Drex Orbit.","No tienes una suscripción activa.":"Você não tem uma assinatura ativa.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Não foi possível abrir o gerenciamento da assinatura. Tente de novo.","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"Bem-vindo ao Drex Orbit! Sua assinatura já está ativa.","No encontramos una suscripción activa en tu cuenta.":"Não encontramos uma assinatura ativa na sua conta.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Não foi possível verificar sua assinatura. Tente de novo.","Pago recibido. Tu suscripción se activará en unos segundos.":"Pagamento recebido. Sua assinatura será ativada em alguns segundos.","Suscripción cancelada. No se realizó ningún cargo.":"Assinatura cancelada. Nenhuma cobrança foi feita.","Esta función es de Drex Orbit":"Este recurso é do Drex Orbit","Suscríbete para desbloquearla y apoyar a Drex.":"Assine para desbloquear e apoiar o Drex.","Ver planes":"Ver planos","Ahora no":"Agora não","Sin permanencia. Cancela cuando quieras.":"Sem fidelidade. Cancele quando quiser.","Predeterminado":"Padrão","Índigo":"Índigo","Medianoche":"Meia-noite","Dorado":"Dourado","Esmeralda":"Esmeralda","Solo Drex Orbit":"Somente Drex Orbit","Tema aplicado":"Tema aplicado","No se pudo guardar el tema. Inténtalo de nuevo.":"Não foi possível salvar o tema. Tente de novo.","Inicia sesión para personalizar tu perfil.":"Entre para personalizar seu perfil.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"O vídeo pode ter até {s} segundos. Escolha um clipe mais curto.","Solo puedes subir un máximo de {n} fotos por publicación.":"Você pode subir no máximo {n} fotos por publicação.",/* LANE-4-ORBIT-390 */"Beneficio Drex Orbit activo.":"Benefício Drex Orbit ativo.","Próximamente: alcance, visitas al perfil y votos por publicación.":"Em breve: alcance, visitas ao perfil e votos por publicação.","Términos":"Termos","a la semana":"por semana",
 "Top":"Top",
 
 "¡COMBO!":"COMBO!",
@@ -11381,6 +11439,35 @@ var APP_PORTUGUESE_TEXT = {
 "y toca":"e toque",
 "y toca el botón de crear. Elige el idioma, el tema guiado y escribe tu texto.":"e toque no botão de criar. Escolha o idioma, o tema guiado e escreva seu texto.",
 "y toca el icono de lápiz para iniciar una conversación.":"e toque no ícone de lápis para iniciar uma conversa.",
+/* C243-ORBIT */
+"Ahorras {n}%":"Você economiza {n}%",
+"Todo lo que incluye":"Tudo o que está incluído",
+"Fotos y videos en HD":"Fotos e vídeos em HD",
+"Sube tus fotos con menos compresión y más detalle.":"Envie suas fotos com menos compressão e mais detalhes.",
+"Publicaciones más largas":"Publicações mais longas",
+"Escribe publicaciones de hasta 2000 caracteres.":"Escreva publicações de até 2000 caracteres.",
+"Publicaciones fijadas":"Publicações fixadas",
+"Fija tus mejores publicaciones en la parte superior de tu perfil.":"Fixe suas melhores publicações no topo do seu perfil.",
+"Quién vio tu perfil":"Quem viu seu perfil",
+"Descubre quién visita tu perfil.":"Descubra quem visita seu perfil.",
+"Mira quién entra a tu perfil":"Veja quem passa pelo seu perfil",
+"Solo tú puedes ver esta lista.":"Só você pode ver esta lista.",
+"Aún nadie ha visitado tu perfil.":"Ninguém visitou seu perfil ainda.",
+"Cargando visitantes…":"Carregando visitantes…",
+"No pudimos cargar tus visitantes. Inténtalo de nuevo.":"Não foi possível carregar seus visitantes. Tente novamente.",
+"Inicia sesión para ver tus visitantes.":"Entre para ver seus visitantes.",
+"Subidas en HD activadas":"Envios em HD ativados",
+"Subidas en HD desactivadas":"Envios em HD desativados",
+"Alcanzaste el máximo de {n} publicaciones programadas.":"Você atingiu o máximo de {n} publicações programadas.",
+"Tus beneficios Orbit están desactivados":"Seus benefícios Orbit estão desativados",
+"Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.":"Sua assinatura segue paga até {fecha}, mas você cancelou a renovação: seus benefícios Orbit estão desativados a partir de agora.",
+"Tu suscripción sigue pagada, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.":"Sua assinatura segue paga, mas você cancelou a renovação: seus benefícios Orbit estão desativados a partir de agora.",
+"Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación.":"Sua assinatura segue paga até {fecha}, mas você cancelou a renovação.",
+"Tu suscripción sigue pagada, pero cancelaste la renovación.":"Sua assinatura segue paga, mas você cancelou a renovação.",
+"Tu último pago falló: los beneficios Orbit están desactivados hasta que actualices tu método de pago.":"Seu último pagamento falhou: seus benefícios Orbit estão desativados até você atualizar sua forma de pagamento.",
+"Tu suscripción venció: los beneficios Orbit están desactivados.":"Sua assinatura terminou: seus benefícios Orbit estão desativados.",
+"Reactivar suscripción":"Reativar assinatura",
+
 };
 var APP_CHINESE_ATTRS = { "Esperando que termine la subida":"等待上传完成",
   "Explica los errores...":"解释错误…",
@@ -12337,4 +12424,67 @@ Object.assign(APP_PORTUGUESE_TEXT, {
 "Todo tranquilo por aquí":"Tudo tranquilo por aqui",
 "Aún no hay posts. Sé la primera persona en publicar.":"Ainda não há posts. Seja a primeira pessoa a publicar.",
 "Todavía no sigues a nadie que haya publicado. Explora perfiles y sigue a alguien para ver sus posts aquí.":"Você ainda não segue ninguém que tenha publicado. Explore os perfis e siga alguém para ver os posts aqui."
+});
+
+/* C242: página propia de transacciones (tarjeta de suscripción, historial,
+ * recibo y estados). */
+Object.assign(APP_ENGLISH_TEXT, {
+"Pagos y transacciones":"Payments and transactions",
+"Transacciones":"Transactions",
+"Ver mis transacciones":"View my transactions",
+"Tus movimientos reales de Drex Orbit.":"Your real Drex Orbit payments and renewals.",
+"Activa":"Active",
+"Vence pronto":"Expiring soon",
+"Cancelada":"Canceled",
+"Sin suscripción":"No subscription",
+"Se cancela el":"Cancels on",
+"Pago":"Payment",
+"Detalle del movimiento":"Transaction details",
+"Concepto":"Description",
+"Monto":"Amount",
+"Estado":"Status",
+"Método de pago":"Payment method",
+"ID de transacción":"Transaction ID",
+"Inicia sesión para ver tus pagos y transacciones.":"Log in to see your payments and transactions.",
+"Copiar":"Copy"
+});
+Object.assign(APP_CHINESE_TEXT, {
+"Pagos y transacciones":"付款与交易",
+"Transacciones":"交易记录",
+"Ver mis transacciones":"查看我的交易记录",
+"Tus movimientos reales de Drex Orbit.":"你的 Drex Orbit 真实付款与续订记录。",
+"Activa":"已激活",
+"Vence pronto":"即将到期",
+"Cancelada":"已取消",
+"Sin suscripción":"无订阅",
+"Se cancela el":"取消日期：",
+"Pago":"付款",
+"Detalle del movimiento":"交易详情",
+"Concepto":"项目",
+"Monto":"金额",
+"Estado":"状态",
+"Método de pago":"支付方式",
+"ID de transacción":"交易 ID",
+"Inicia sesión para ver tus pagos y transacciones.":"登录以查看你的付款与交易记录。",
+"Copiar":"复制"
+});
+Object.assign(APP_PORTUGUESE_TEXT, {
+"Pagos y transacciones":"Pagamentos e transações",
+"Transacciones":"Transações",
+"Ver mis transacciones":"Ver minhas transações",
+"Tus movimientos reales de Drex Orbit.":"Seus pagamentos e renovações reais do Drex Orbit.",
+"Activa":"Ativa",
+"Vence pronto":"Vence em breve",
+"Cancelada":"Cancelada",
+"Sin suscripción":"Sem assinatura",
+"Se cancela el":"Cancela em",
+"Pago":"Pagamento",
+"Detalle del movimiento":"Detalhes da transação",
+"Concepto":"Conceito",
+"Monto":"Valor",
+"Estado":"Estado",
+"Método de pago":"Método de pagamento",
+"ID de transacción":"ID da transação",
+"Inicia sesión para ver tus pagos y transacciones.":"Entre para ver seus pagamentos e transações.",
+"Copiar":"Copiar"
 });

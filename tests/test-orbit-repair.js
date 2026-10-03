@@ -99,7 +99,10 @@ test('ninguna llamada Orbit usa application/json', function () {
 test('orbitBenefitTap existe y las filas son botones', function () {
   assert(/function orbitBenefitTap\(feature\)/.test(src), 'falta orbitBenefitTap');
   var taps = (src.match(/onclick="orbitBenefitTap\(\\''/g) || []).length;
-  assert(taps >= 2, 'las filas de beneficios no tienen tap (encontrados: ' + taps + ')');
+  /* C243: las listas comparten el helper orbitBenefitsListHTML() (una sola
+   * fuente de filas-boton); se exige el tap en el helper y su uso en la vista. */
+  assert(taps >= 1, 'las filas de beneficios no tienen tap (encontrados: ' + taps + ')');
+  assert(src.indexOf('orbitBenefitsListHTML()') !== -1, 'la vista no usa el helper de beneficios');
 });
 
 /* --- 5. Planes (escalera completa: 7 planes desde 2026-10-01) --- */

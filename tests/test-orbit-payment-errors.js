@@ -1,4 +1,6 @@
-/* Pruebas de regresión: errores de pago de Drex Orbit / Drex Coins.
+/* Pruebas de regresión: errores de pago de Drex Orbit.
+ * (C240, 2026-10-03: el checkout de Drex Coins se eliminó por completo
+ *  junto con la función de regalos; este archivo cubre solo Orbit.)
  *
  * Historia (2026-10-02): el usuario tocó "Suscribirme" (plan Anual $49.99) y
  * recibió "We couldn't reach the payment server". Investigación:
@@ -50,12 +52,6 @@ test('DrexOrbit._post usa Content-Type text/plain', function () {
   var m = html.match(/_post:\s*async function\s*\(path,\s*fields\)[\s\S]{0,2500}?headers:\s*\{\s*'Content-Type':\s*'([^']+)'/);
   assert(m, 'no se encontró el Content-Type de DrexOrbit._post');
   assert(m[1].indexOf('text/plain') === 0, 'Content-Type inesperado: ' + m[1]);
-});
-test('drexStripeCheckout (coins) usa Content-Type text/plain', function () {
-  var start = html.indexOf('async function drexStripeCheckout(pkg)');
-  assert(start !== -1, 'no se encontró drexStripeCheckout');
-  var seg = html.slice(start, start + 4000);
-  assert(/'Content-Type':\s*'text\/plain/.test(seg), 'coins no usa text/plain');
 });
 
 /* 3. Mapeo de errores -> mensajes específicos en orbitSubscribe. */

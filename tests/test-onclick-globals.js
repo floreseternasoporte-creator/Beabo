@@ -312,7 +312,7 @@ test('handlers de Orbit/Pagos exportados a window', function () {
   ['openOrbitView', 'openPaymentsView', 'closeOrbitView', 'closePaymentsView',
    'closeOrbitPaywall', 'renderPaymentsView', 'orbitManage', 'orbitSubscribe',
    'orbitRestore', 'orbitBenefitTap', 'orbitOpenAnalytics', 'DrexOrbit',
-   'DrexCoins', 'orbitGate'
+   'orbitGate'
   ].forEach(function (n) {
     assert(isGlobal(n), n + ' no es global');
   });

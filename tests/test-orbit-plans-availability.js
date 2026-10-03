@@ -110,13 +110,27 @@ for (const id of ['weekly', 'biennial', 'lifetime']) ok(avail(id) === false, id 
     ok(c.includes('data-unavailable="true"'), id + ': tarjeta lleva data-unavailable="true"');
     ok(!c.includes("orbitSubscribe('" + id + "')"), id + ': SIN botón Suscribirme');
     ok(c.includes('Próximamente'), id + ': muestra la etiqueta orbit_coming_soon');
+    /* C243-A: tampoco seleccionable. */
+    ok(!c.includes("orbitSelectPlan('" + id + "')"), id + ': NO seleccionable (C243)');
+    ok(!c.includes('role="radio"'), id + ': sin role=radio (C243)');
   }
   for (const id of AVAIL) {
     const c = cardFor(id);
     ok(c.includes('data-plan-id="' + id + '"'), id + ': tarjeta lleva data-plan-id');
     ok(!c.includes('plan-coming-soon'), id + ': tarjeta NO marcada coming-soon');
     ok(!c.includes('data-unavailable="true"'), id + ': tarjeta NO marcada unavailable');
-    ok(c.includes("orbitSubscribe('" + id + "')"), id + ': botón Suscribirme activo');
+    /* C243-A: la tarjeta se selecciona; un solo CTA cobra (Meta). */
+    ok(c.includes("orbitSelectPlan('" + id + "')"), id + ': tocarla selecciona el plan');
+    ok(c.includes('role="radio"'), id + ': tarjeta role=radio');
+    ok(!c.includes("orbitSubscribe('" + id + "')"), id + ': la tarjeta no cobra por su cuenta');
+  }
+  /* C243-A: un único botón de suscripción bajo el selector. */
+  {
+    const ctas = html.match(/id="orbit-subscribe-cta"/g) || [];
+    ok(ctas.length === 1, 'exactamente un boton de suscripcion, hay ' + ctas.length);
+    ok(html.includes('onclick="orbitSubscribeSelected()"'), 'el CTA cobra el plan seleccionado');
+    ok(capturedHtml.includes('id="orbit-subscribe-cta"'), 'el CTA se renderiza en la vista');
+    ok(capturedHtml.includes('$49.99'), 'el CTA muestra el precio del recomendado por defecto (Anual $49.99)');
   }
   ok(sandbox.orbitCheapestAvailablePrice() === '$4.99', '"Desde" del paywall = $4.99 (weekly en Próximamente no cuenta)');
 

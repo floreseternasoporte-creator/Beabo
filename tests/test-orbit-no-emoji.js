@@ -14,7 +14,8 @@
  *   - renderOrbitView() dibuja las filas de beneficios con dxIcon(b.ic)
  *     y la fila de Analíticas con dxIcon('chart')
  *   - el candado "Solo Drex Orbit" usa el SVG crown del catálogo
- *   - drexTierLabel() no tiene emoji en la etiqueta del tier orbit
+ *   - (C240, 2026-10-03: drexTierLabel y la hoja de regalos se eliminaron
+ *     por completo junto con Drex Coins; este archivo ya no los fija)
  *   - el IIFE "iconos SVG ampliados" registra el catálogo y expone
  *     window.dxIcon
  *   - 404.html sigue siendo copia exacta de index.html
@@ -79,11 +80,12 @@ test('catálogo incluye los iconos que usa Orbit', function () {
 
 /* ---------- 2. lista de beneficios ---------- */
 
-test('orbitBenefits(): 8 beneficios con ic del catálogo, sin emojis', function () {
+test('orbitBenefits(): 11 beneficios con ic del catálogo, sin emojis', function () {
   var r = fnBlock(src, 'function orbitBenefits() {', 'orbitBenefits');
   var rows = r.match(/\{\s*f:\s*'[^']+',\s*ic:\s*'[^']+'/g) || [];
-  assert(rows.length === 8, 'se esperaban 8 beneficios, hay ' + rows.length);
-  ['noads', 'crown', 'palette', 'mic', 'puzzle', 'chart', 'gift', 'headphones']
+  /* C243: 7 de C241 + hd_uploads/longer_posts/pin_post/profile_visitors. */
+  assert(rows.length === 11, 'se esperaban 11 beneficios, hay ' + rows.length);
+  ['noads', 'crown', 'palette', 'mic', 'puzzle', 'chart', 'headphones']
     .forEach(function (name) {
       assert(r.indexOf("ic: '" + name + "'") !== -1, 'falta ic ' + name);
     });
@@ -96,8 +98,11 @@ test('orbitBenefits(): 8 beneficios con ic del catálogo, sin emojis', function 
 test('renderOrbitView(): filas de beneficios dibujan SVG, no emojis', function () {
   var r = blockBetween(src, 'async function renderOrbitView() {',
     'async function orbitSubscribe(planId) {', 'renderOrbitView');
-  var rows = r.split("window.dxIcon(b.ic, 'w-5 h-5')");
-  assert(rows.length === 3, 'las 2 listas de beneficios deben usar dxIcon(b.ic)');
+  /* C243: ambas listas se dibujan con el helper compartido
+   * orbitBenefitsListHTML(), que sigue usando dxIcon(b.ic). */
+  assert(r.indexOf('orbitBenefitsListHTML()') !== -1, 'las listas de beneficios usan el helper compartido');
+  var helper = fnBlock(src, 'function orbitBenefitsListHTML() {', 'orbitBenefitsListHTML');
+  assert(helper.indexOf("window.dxIcon(b.ic, 'w-5 h-5')") !== -1, 'el helper dibuja los iconos con dxIcon(b.ic)');
   assert(r.indexOf("'<span class=\"text-2xl\">' + b.e") === -1,
     'regresión: fila de beneficio con emoji (text-2xl + b.e)');
   assert(r.indexOf("window.dxIcon('chart', 'w-6 h-6')") !== -1,
@@ -118,7 +123,7 @@ test('candado de temas pro usa SVG crown, no emoji', function () {
 
 test('orbitPaywallCopy(): mapa con ic del catálogo y fallback crown, sin emojis', function () {
   var r = fnBlock(src, 'function orbitPaywallCopy(feature) {', 'orbitPaywallCopy');
-  ['mic', 'puzzle', 'chart', 'gift', 'palette', 'noads', 'crown', 'headphones']
+  ['mic', 'puzzle', 'chart', 'palette', 'noads', 'crown', 'headphones']
     .forEach(function (name) {
       assert(r.indexOf("ic: '" + name + "'") !== -1, 'falta ic ' + name);
     });
@@ -138,12 +143,6 @@ test('openOrbitPaywall(): chip SVG grande en vez del emoji gigante', function ()
 });
 
 /* ---------- 5. etiquetas y tarjeta de Ajustes ---------- */
-
-test('drexTierLabel(): etiqueta del tier orbit sin emoji', function () {
-  var r = fnBlock(src, 'function drexTierLabel(tier) {', 'drexTierLabel');
-  assert(r.indexOf("orbit: 'Drex Orbit'") !== -1, 'etiqueta del tier orbit cambiada');
-  assert(!EMOJI.test(r), 'emoji en drexTierLabel');
-});
 
 test('tarjeta de Ajustes de Orbit usa SVG, no emoji', function () {
   var i = src.indexOf('id="orbit-settings-card"');
