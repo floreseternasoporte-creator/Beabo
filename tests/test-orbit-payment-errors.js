@@ -54,11 +54,13 @@ test('DrexOrbit._post usa Content-Type text/plain', function () {
   assert(m[1].indexOf('text/plain') === 0, 'Content-Type inesperado: ' + m[1]);
 });
 
-/* 3. Mapeo de errores -> mensajes específicos en orbitSubscribe. */
+/* 3. Mapeo de errores -> mensajes específicos.
+ * (C244, 2026-10-03: el mapeo vive ahora en openOrbitCheckout — la hoja de
+ * pago embebida — en vez de en el desaparecido redirect a Checkout.) */
 function orbitSubscribeCatch() {
-  var start = html.indexOf('async function orbitSubscribe(planId)');
-  assert(start !== -1, 'no se encontró orbitSubscribe');
-  var end = html.indexOf('async function orbitManage()', start);
+  var start = html.indexOf('/* ============ C244: pago embebido');
+  assert(start !== -1, 'no se encontró el bloque C244');
+  var end = html.indexOf('function orbitSubscribeCtaLabelFor(', start);
   return html.slice(start, end === -1 ? start + 3000 : end);
 }
 test("network/timeout -> diagnóstico de red (no genérico)", function () {
@@ -74,12 +76,15 @@ test("network/timeout -> diagnóstico de red (no genérico)", function () {
 });
 test('no-token -> mensaje de login', function () {
   var body = orbitSubscribeCatch();
-  assert(/'no-token'\)\s*orbitToast\(t\('Inicia sesión para suscribirte/.test(body),
+  assert(/m === 'no-token'/.test(body) &&
+    body.indexOf('Inicia sesión para suscribirte a Drex Orbit.') !== -1,
     "no-token no mapea a 'Inicia sesión para suscribirte'");
 });
 test('invalid_plan -> mensaje de plan no disponible', function () {
   var body = orbitSubscribeCatch();
-  assert(/invalid_plan/.test(body), 'invalid_plan no está mapeado');
+  assert(/orbitPlanAvailable\(planId\)/.test(body) &&
+    body.indexOf('Este plan aún no está disponible. Estará listo muy pronto.') !== -1,
+    'el guard de plan no está mapeado');
 });
 test('http_503/subscription_not_configured -> mensaje de no disponible', function () {
   var body = orbitSubscribeCatch();

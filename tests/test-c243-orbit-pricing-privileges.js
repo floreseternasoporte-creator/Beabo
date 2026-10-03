@@ -200,7 +200,8 @@ ok(html.includes("'/profileVisitors/'"), 'se registra la visita en users/<dueño
 ok(html.includes('drexRecordProfileVisit(authorId)'), 'la visita se registra al abrir un perfil ajeno');
 ok(html.includes('me.uid === ownerUid') || html.includes('me.uid===ownerUid'), 'nadie se registra a sí mismo');
 ok(html.includes('id="orbit-visitors-sheet"'), 'hoja de visitantes presente');
-ok(html.includes('id="visitantes-settings-card"'), 'entrada de visitantes en Ajustes');
+ok(!html.includes('id="visitantes-settings-card"'), 'C244: la entrada de visitantes ya NO está en Ajustes');
+ok(html.includes('id="profile-visitors-entry"'), 'C244: la entrada de visitantes vive en el perfil propio');
 ok(segment('async function openOrbitVisitors', '\nasync function ').includes("orbitGate('profile_visitors')"), 'la lista pasa por orbitGate(profile_visitors)');
 
 /* (f) programadas: tope extendido por el beneficio limits */

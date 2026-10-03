@@ -151,42 +151,19 @@ for (const id of ['weekly', 'biennial', 'lifetime']) ok(avail(id) === false, id 
   await sandbox.orbitSubscribe('weekly');
   ok(fetchCalls === 0, 'weekly: orbitSubscribe no hace fetch');
 
-  /* ---- 4. Toasts específicos por tipo de fallo ---- */
-  const withFetch = async (impl, plan) => {
-    fetchImpl = impl; fetchCalls = 0; toasts.length = 0;
-    await sandbox.orbitSubscribe(plan);
-    return toasts[toasts.length - 1]; // el último: antes va 'Procesando…'
-  };
-  let msg = await withFetch(async () => { throw new Error('boom'); }, 'monthly');
-  ok(toasts.includes('Revisando tu conexión…'),
-     'fallo de red -> aviso de diagnóstico (no genérico)');
-  await new Promise((r) => setImmediate(r));
-  msg = toasts[toasts.length - 1];
-  ok(/^No pudimos contactar el servidor de pagos\. \[.*\] Mándanos captura de este mensaje/.test(msg),
-     'fallo de red -> toast con diagnóstico (App/Internet/Pagos)');
-  const abortErr = new Error('aborted'); abortErr.name = 'AbortError';
-  msg = await withFetch(async () => { throw abortErr; }, 'monthly');
-  ok(toasts.includes('Revisando tu conexión…'),
-     'timeout -> aviso de diagnóstico (no genérico)');
-  await new Promise((r) => setImmediate(r));
-  msg = toasts[toasts.length - 1];
-  ok(/^No pudimos contactar el servidor de pagos\. \[.*\] Mándanos captura de este mensaje/.test(msg),
-     'timeout -> toast con diagnóstico (App/Internet/Pagos)');
-  msg = await withFetch(async () => ({ ok: false, status: 502, json: async () => ({ error: 'payment_provider_error' }) }), 'monthly');
-  ok(msg === 'El servidor de pagos falló. Inténtalo de nuevo en unos minutos.',
-     '502 del backend -> toast de servidor (no genérico)');
-  msg = await withFetch(async () => ({ ok: false, status: 400, json: async () => ({ error: 'invalid_plan' }) }), 'monthly');
-  ok(msg === 'Este plan aún no está disponible. Estará listo muy pronto.',
-     'invalid_plan del backend -> toast de plan no disponible');
-  msg = await withFetch(async () => ({ ok: true, status: 200, json: async () => ({ url: 'https://checkout.stripe.test/x' }) }), 'monthly');
-  ok(sandbox.location.href === 'https://checkout.stripe.test/x', 'checkout OK redirige a la URL de Stripe');
-  /* no-token (sin sesión): */
-  sandbox.DrexCloud = { auth: () => ({ currentUser: null }) };
-  fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({}) });
+  /* ---- 4. C244: orbitSubscribe enruta a la hoja de pago del propio Drex ----
+   * El mapeo de errores vive ahora dentro de la hoja (openOrbitCheckout):
+   * lo fijan test-orbit-payment-errors (fuente) y test-c244 (vm). Aquí solo
+   * se fija el enrutado: plan válido -> hoja embebida; sin fetch ni redirect. */
+  const openedPlans = [];
+  sandbox.openOrbitCheckout = (planId) => { openedPlans.push(planId); };
   fetchCalls = 0; toasts.length = 0;
   await sandbox.orbitSubscribe('monthly');
-  ok(toasts[toasts.length - 1] === 'Inicia sesión para suscribirte a Drex Orbit.', 'sin token -> toast de iniciar sesión');
-  ok(fetchCalls === 0, 'sin token: no se hace fetch');
+  ok(openedPlans[openedPlans.length - 1] === 'monthly',
+     'plan válido -> abre la hoja de pago embebida de Drex');
+  ok(fetchCalls === 0, 'orbitSubscribe ya no crea sesiones de Checkout hospedado');
+  ok(!String(sandbox.location.href || '').includes('checkout'),
+     'sin redirect a checkout.stripe.com');
 
   /* ---- 5. Paridad i18n ES/EN/ZH/PT ---- */
   const NEW_KEYS = [

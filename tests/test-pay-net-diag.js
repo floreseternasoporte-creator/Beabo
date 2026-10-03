@@ -37,8 +37,9 @@ function test(name, fn) {
 function diagFnSource() {
   var start = html.indexOf('function drexPayNetDiag()');
   assert(start !== -1, 'no se encontró function drexPayNetDiag()');
-  // Cortar hasta el cierre del bloque: buscar "}\n\nasync function orbitSubscribe"
-  var end = html.indexOf('async function orbitSubscribe(planId)', start);
+  // Cortar hasta el cierre del bloque: buscar "}\n\nfunction orbitSubscribe"
+  // (C244: orbitSubscribe dejó de ser async; ahora abre la hoja embebida).
+  var end = html.indexOf('function orbitSubscribe(planId)', start);
   assert(end !== -1, 'no se encontró el fin de drexPayNetDiag');
   return html.slice(start, end);
 }
@@ -68,12 +69,14 @@ test('drexPayNetDiag v2 incluye prueba POST real al checkout', function () {
   assert(/'Content-Type':\s*'text\/plain/.test(src), 'postProbe debe usar text/plain como el pago real');
 });
 
-/* 3. orbitSubscribe invoca el diagnóstico en fallos de red. */
-test('orbitSubscribe usa drexPayNetDiag en network/timeout', function () {
-  var start = html.indexOf('async function orbitSubscribe(planId)');
-  assert(start !== -1, 'no se encontró orbitSubscribe');
-  var seg = html.slice(start, start + 2200);
-  assert(seg.indexOf('drexPayNetDiag()') !== -1, 'orbitSubscribe no invoca el diagnóstico');
+/* 3. El pago embebido (C244) invoca el diagnóstico en fallos de red. */
+test('openOrbitCheckout usa drexPayNetDiag en network/timeout', function () {
+  var start = html.indexOf('async function openOrbitCheckout(');
+  assert(start !== -1, 'no se encontró openOrbitCheckout');
+  var end = html.indexOf('function orbitSubscribeCtaLabelFor(', start);
+  assert(end !== -1, 'no se encontró el fin de openOrbitCheckout');
+  var seg = html.slice(start, end);
+  assert(seg.indexOf('drexPayNetDiag()') !== -1, 'openOrbitCheckout no invoca el diagnóstico');
   assert(seg.indexOf('Mándanos captura de este mensaje para arreglarlo.') !== -1,
     'no pide captura del diagnóstico');
 });

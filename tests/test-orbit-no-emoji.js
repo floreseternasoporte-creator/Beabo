@@ -97,7 +97,7 @@ test('orbitBenefits(): 11 beneficios con ic del catálogo, sin emojis', function
 
 test('renderOrbitView(): filas de beneficios dibujan SVG, no emojis', function () {
   var r = blockBetween(src, 'async function renderOrbitView() {',
-    'async function orbitSubscribe(planId) {', 'renderOrbitView');
+    'function orbitSubscribe(planId) {', 'renderOrbitView');
   /* C243: ambas listas se dibujan con el helper compartido
    * orbitBenefitsListHTML(), que sigue usando dxIcon(b.ic). */
   assert(r.indexOf('orbitBenefitsListHTML()') !== -1, 'las listas de beneficios usan el helper compartido');
@@ -161,7 +161,7 @@ test('index.html y 404.html son idénticos', function () {
 
 test('404.html también está libre de emojis en Orbit', function () {
   var r = blockBetween(src404, 'async function renderOrbitView() {',
-    'async function orbitSubscribe(planId) {', 'renderOrbitView@404');
+    'function orbitSubscribe(planId) {', 'renderOrbitView@404');
   assert(!EMOJI.test(r), 'emoji en Orbit de 404.html');
 });
 
