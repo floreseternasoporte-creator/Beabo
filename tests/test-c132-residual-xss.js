@@ -82,14 +82,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 536 ocurrencias en index.html (auditoría UI: +6 de C243 — paywall cancelado y 5 estados de la lista de visitantes, todo dato de usuario escapado con escapeHtml/escapeInlineSingleQuote)', () => count(/\.innerHTML/g, html) === 536);
+tcase('innerHTML: 556 ocurrencias en index.html (auditoría UI: +6 de C243 — paywall cancelado y 5 estados de la lista de visitantes, todo dato de usuario escapado con escapeHtml/escapeInlineSingleQuote; C246 2026-10-03: +20 neto de C241–C245 — Orbit/checkout/transacciones/Pulso/visitas — auditados sink a sink: todo dato de usuario pasa por orbitEscText/escFn/escapeHTML/baroLLMEsc, el resto es markup estático o limpieza)', () => count(/\.innerHTML/g, html) === 556);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 536 &&
+  count(/\.innerHTML/g, copy) === 556 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);

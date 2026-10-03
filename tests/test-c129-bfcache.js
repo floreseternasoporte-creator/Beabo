@@ -12,8 +12,12 @@
 //  4. Nada bloquea la elegibilidad de bfcache: sin listeners `unload`, sin
 //     WebSocket (drex-cloud.js usa polling), y el `beforeunload` de tiempo de
 //     pantalla no toca `returnValue`/`preventDefault`.
-//  5. No existe ningún listener `pageshow`: no hay nada que re-inicializar al
-//     restaurar (cero intencional, documentado aquí para no re-descubrirlo).
+//  5. Hay exactamente DOS listeners `pageshow`, ambos intencionales y
+//     documentados: el chequeo de versión DREX-UPDATER (2026-10-01) y el
+//     detector Orbit C243 (revalidar beneficios al restaurar de bfcache).
+//     C246 (2026-10-03): el "cero listeners pageshow" era el diseño previo
+//     a esos dos mecanismos; re-inicializar en pageshow es ahora correcto
+//     (bfcache no re-ejecuta scripts, y ambos handlers son idempotentes).
 //
 // Este test fija esos invariantes: estáticos contra index.html/drex-cloud.js y
 // conductuales en sandbox vm (entrada a bfcache simulada con persisted=true).
@@ -77,8 +81,10 @@ ok('pagehide -> drexFlushNoteDraftOnPageHide registrado una sola vez',
 ok('pagehide -> persistencia del recomendador registrada',
   /window\.addEventListener\s*\(\s*['"]pagehide['"]/.test(html)
   && /_drexRecPersistNow\s*\(\s*\)/.test(html));
-ok('cero listeners pageshow (restaurar no re-ejecuta scripts; nada que re-init)',
-  !/pageshow/.test(html));
+ok('exactamente 2 listeners pageshow, ambos conocidos (DREX-UPDATER 2026-10-01 + detector Orbit C243)',
+  (html.match(/addEventListener\('pageshow'/g) || []).length === 2 &&
+  /window\.addEventListener\('pageshow', drexOrbitRevalidate\)/.test(html) &&
+  /window\.addEventListener\('pageshow', function \(\) \{ check\(\); \}\)/.test(html));
 
 // ---------- 3. Sesiones sobreviven a bfcache vía visibilitychange ----------
 ok('visibilitychange hidden detiene tiempo de pantalla',
@@ -96,8 +102,12 @@ ok('getUserMedia: inventario estable (5 hits: Fiestas mic + Drex Cam)',
 // Vocabulario legítimo: "voice room"/"sala de voz" (C236), instrucción del juego
 // del mentiroso ("by voice"), palabra inglesa "voices" en texto de opiniones,
 // y "Baro voice"/BaroVoice (guía de personalidad del asistente Baro, no salas).
+// C246 (2026-10-03): + "voice fiesta(s)" — texto de ayuda del KB de Baro
+// (BARO_KB multilingüe, verificado en C239), uso legítimo de Fiestas de voz.
+// + "invoice" (eventos Stripe del webhook, comentario C244): el scan original
+// detectaba "voice" dentro de "invoice" como huérfano; no es vocabulario.
 ok('sin strings "voice" huérfanos fuera del vocabulario legítimo',
-  !/["'][^"'<>]*voice[^"'<>]*["']/i.test(html.replace(/voiceover/gi, '').replace(/voice room/gi, '').replace(/sala de voz/gi, '').replace(/by voice/gi, '').replace(/critical voices/gi, '').replace(/baro[_ ]?voice/gi, '').replace(/__v3voicewrapped/gi, '').replace(/__v3voiceextended/gi, '').replace(/barobrain/gi, '').replace(/__v3brain\.voice/gi, '').replace(/voice-contract/gi, '')));
+  !/["'][^"'<>]*voice[^"'<>]*["']/i.test(html.replace(/voiceover/gi, '').replace(/voice room/gi, '').replace(/sala de voz/gi, '').replace(/by voice/gi, '').replace(/critical voices/gi, '').replace(/baro[_ ]?voice/gi, '').replace(/__v3voicewrapped/gi, '').replace(/__v3voiceextended/gi, '').replace(/barobrain/gi, '').replace(/__v3brain\.voice/gi, '').replace(/voice-contract/gi, '').replace(/voice fiestas?/gi, '').replace(/invoice/gi, '')));
 
 // ---------- 5. Conductuales en sandbox ----------
 const flushBody = extractFnBody(html, 'drexFlushNoteDraftOnPageHide');

@@ -58,8 +58,11 @@ check('delete: verifica musicCurrentUid() ANTES de la primera mutación',
   srcDelete.indexOf('musicCurrentUid()') < srcDelete.indexOf('.remove('));
 check('delete: falla cerrado si falta el uid del dueño',
   /if\s*\(\s*!d\.uid\s*\|\|\s*d\.uid\s*!==\s*musicCurrentUid\(\)\s*\)/.test(srcDelete));
+// C246 (2026-10-03): el fallback de nombre pasó de 'Playlist' a 'Lista de
+// reproducción' (fix i18n de e086cec, conservado); el contrato real es que
+// el caché guarde el uid del dueño, no el literal de la etiqueta.
 check('detalle: el caché guarda el uid del dueño (pl.uid)',
-  html.includes("musicPlaylistDetailCache = { id, name: pl.name || 'Lista de reproducción', uid: pl.uid || null, tracks };"));
+  /musicPlaylistDetailCache = \{ id, name: pl\.name \|\| '[^']*', uid: pl\.uid \|\| null, tracks \}/.test(html));
 check('vista: el botón eliminar tiene id para ocultarse en playlists ajenas',
   html.includes('id="music-playlist-delete-btn" onclick="musicDeletePlaylist()"'));
 check('vista: musicOpenPlaylist oculta el botón eliminar si no es el dueño',

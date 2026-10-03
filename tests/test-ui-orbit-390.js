@@ -98,11 +98,15 @@ test('.orbit-theme-lock es píldora superior compacta', function () {
 });
 
 /* 4. Importe de monedas: solo dinero. */
-test('orbitTxAmount (monedas) no repite la cantidad de monedas', function () {
+test('orbitTxAmount: histórico sin cents ni divisa ISO muestra la cifra cruda (C242)', function () {
+  // C246 (2026-10-03): el fallback `t('monedas')` era de la era Drex Coins
+  // (eliminada en C240). El contrato C242 vigente: nunca inventar símbolo;
+  // sin cents ni divisa ISO se muestra la cifra cruda.
   var i = src.indexOf('function orbitTxAmount(tx)');
   assert(i !== -1, 'orbitTxAmount no encontrada');
   var body = src.slice(i, src.indexOf('\n}\n', i));
-  assert(body.indexOf("t('monedas')") !== -1, 'se perdió el fallback sin cents');
+  assert(body.indexOf("t('monedas')") === -1, 'volvió el fallback de monedas (C240 lo eliminó)');
+  assert(body.indexOf('return String(Number(tx.amount || 0));') !== -1, 'se perdió la cifra cruda sin símbolo');
   assert(body.indexOf("' · ' + tx.amount") === -1, 'sigue concatenando "· N monedas" al importe');
 });
 

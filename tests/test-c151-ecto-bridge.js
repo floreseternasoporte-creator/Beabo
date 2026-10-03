@@ -103,13 +103,13 @@ tcase('C1 el comentario que seguía al bloque sigue presente',
 tcase('C2 el único listener message restante es el del service worker (legítimo)',
   count(html, "addEventListener('message'") + count(html, 'addEventListener("message"') === 1 &&
   html.indexOf("navigator.serviceWorker.addEventListener('message'") !== -1);
-tcase('C3: los <script> sin cierre son solo literales en comentarios JS (inventario 59/48/17/42; C224: +1 script BaroFX2 y +1 literal <script> en su comentario de ancla)', () => {
+tcase('C3: los <script> sin cierre son solo literales en comentarios JS (inventario 55/40/19/36; C246 2026-10-03: salieron bloques de Studio/directo/economía en Fase 3+C240 y entraron C242–C245; la sanidad real la verifica el parser de test-structure-style-script)', () => {
   var totalOpens = (html.match(/<script/gi) || []).length;
   var totalCloses = (html.match(/<\/script/gi) || []).length;
   var noJsComments = html.replace(/\/\*[\s\S]*?\*\//g, '');
   var opensReal = (noJsComments.match(/<script/gi) || []).length;
   var inComments = totalOpens - opensReal;
-  return totalOpens === 59 && totalCloses === 48 && inComments === 17 && opensReal === 42;
+  return totalOpens === 55 && totalCloses === 40 && inComments === 19 && opensReal === 36;
 }),
 
 console.log(failures === 0 ? '\nTODOS LOS TESTS PASARON' : '\nFALLARON ' + failures + ' TESTS');

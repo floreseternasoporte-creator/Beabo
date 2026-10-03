@@ -217,11 +217,14 @@ tcase('musicPaintTrackUI engancha musicSyncMediaSession(t)', () => {
 tcase('musicEnsureAudio engancha musicWireMediaSessionHandlers()', () => {
   return html.includes('musicWireMediaSessionHandlers(); } catch (_) {}');
 });
-tcase('re-verify C140: invariante `.download =` ↔ blob: intacta (6 sitios en 3 archivos)', () => {
+// C246 (2026-10-03): 6→5 sitios — la pantalla de descarga de Drex Studio PC
+// (su `.download =`) se eliminó con Studio; la invariante blob↔download se
+// mantiene en los 5 sitios restantes.
+tcase('re-verify C140: invariante `.download =` ↔ blob: intacta (5 sitios en 3 archivos)', () => {
   const dataExportJs = fs.readFileSync(path.join(ROOT, 'drex-data-export.js'), 'utf8');
   const recoveryJs = fs.readFileSync(path.join(ROOT, 'recovery-codes.js'), 'utf8');
   const hits = count(/\.download\s*=/g, html) + count(/\.download\s*=/g, dataExportJs) + count(/\.download\s*=/g, recoveryJs);
-  return hits === 6;
+  return hits === 5;
 });
 
 if (failures) { console.log('\nC141: ' + failures + ' FALLO(S)'); process.exit(1); }

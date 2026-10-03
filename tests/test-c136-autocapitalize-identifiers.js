@@ -116,12 +116,13 @@ tcase('teclado movil consistente: todos los OTP conservan inputmode=numeric', ()
   });
 });
 
-// ---- 4. textarea: inventario x14, ninguno con inputmode (sin leads) ----
-tcase('textarea: 16 ocurrencias y ninguna declara inputmode', () => {
+// ---- 4. textarea: inventario x15, ninguno con inputmode (sin leads) ----
+// C246 (2026-10-03): 16→15 (salió un textarea del estudio/directo en Fase 3).
+tcase('textarea: 15 ocurrencias y ninguna declara inputmode', () => {
   const n = count(/<textarea/g, html);
-  if (n !== 16) return false;
+  if (n !== 15) return false;
   const tags = html.match(/<textarea[\s\S]*?>/g) || [];
-  return tags.length === 16 && tags.every(t => t.indexOf('inputmode=') < 0);
+  return tags.length === 15 && tags.every(t => t.indexOf('inputmode=') < 0);
 });
 tcase('textarea: chat-edit-input conserva enterkeyhint=done + onkeydown honesto', () => {
   const t = tagOf(html, 'chat-edit-input');
@@ -131,10 +132,12 @@ tcase('textarea: chat-edit-input conserva enterkeyhint=done + onkeydown honesto'
 
 // C240-L2 (2026-09-29): +1 <select> nativo (#dl2-poll-dur, duracion de la
 // encuesta: 1h/1d/3d/1sem; uso consistente con el resto de la app).
-// Nuevo inventario: 18.
+// C246 (2026-10-03): 18→13 — salieron los selects de Drex Studio/directo/
+// economía (Fase 3 + C240); los 13 restantes son filtros/idioma/fiestas/
+// música/audiencia vigentes.
 // ---- 5. select nativos: inventario x13, uso consistente ----
-tcase('select: 18 <select nativos (inventario cerrado)', () =>
-  count(/<select[\s>]/g, html) === 18);
+tcase('select: 13 <select nativos (inventario cerrado)', () =>
+  count(/<select[\s>]/g, html) === 13);
 
 // ---- 6. falla-en-base: contra HEAD los 4 leads carecen del trio ----
 tcase('base: en HEAD (sin el fix) los 4 leads NO tienen el trio', () => {

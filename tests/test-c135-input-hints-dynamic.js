@@ -73,18 +73,20 @@ function attrOf(src, id, attr) {
 }
 
 // ---- 1. createElement('input')/('textarea'): inventario y contexto ----
-tcase('createElement input: 3 ocurrencias en index.html (2 portapapeles + 1 slider volumen del mezclador)', () =>
-  count(/createElement\(['"]input['"]\)/g, html) === 3);
-tcase('createElement input: 2 en fallbacks de portapapeles, 1 slider de volumen (type=range)', () => {
+// C246 (2026-10-03): 3→2 — el slider de volumen del mezclador salió con la
+// reimplementación de música; quedan los 2 fallbacks de portapapeles.
+tcase('createElement input: 2 ocurrencias en index.html (2 portapapeles)', () =>
+  count(/createElement\(['"]input['"]\)/g, html) === 2);
+tcase('createElement input: 2 en fallbacks de portapapeles, 0 sliders de volumen', () => {
   const lines = html.split('\n');
   const idxs = [];
   lines.forEach((l, i) => { if (/createElement\(['"]input['"]\)/.test(l)) idxs.push(i); });
-  if (idxs.length !== 3) return false;
+  if (idxs.length !== 2) return false;
   const wins = idxs.map(i => lines.slice(Math.max(0, i - 14), i + 8).join('\n'));
   const clip = wins.filter(w =>
     /execCommand\(['"]copy['"]\)/.test(w) && /removeChild/.test(w) && /\.select\(\)/.test(w)).length;
   const slider = wins.filter(w => /\.type\s*=\s*['"]range['"]/.test(w)).length;
-  return clip === 2 && slider === 1;
+  return clip === 2 && slider === 0;
 });
 tcase('createElement textarea: 1 ocurrencia (recovery-codes.js legacyCopy)', () =>
   count(/createElement\(['"]textarea['"]\)/g, rc) === 1);
@@ -136,15 +138,17 @@ tcase('twofactor-challenge-input (C134) sigue intacto', () =>
 // C240-L3 (2026-09-29): +1 type="number" (#dl3-goal-input, meta del host en
 // diamantes: min=1 max=1000000 step=1 + inputmode=numeric). Campo numerico
 // legitimo (monto), no identidad/OTP. Nuevo inventario: 7.
+// C246 (2026-10-03): 7→3 — salieron #dl3-goal-input (economía C240 fuera),
+// dswov-* y dswpro-crop-* (Drex Studio/overlays eliminados en Fase 3).
+// Quedan: cupo de fiesta y el temporizador de Destellos (C215).
 // ---- 4. type="number": inventario cerrado ----
-tcase('type="number": exactamente 7 (6 base + dl3-goal-input C240-L3)', () => {
+tcase('type="number": exactamente 3 (fiesta-max, timer-hours, timer-minutes)', () => {
   const tags = html.match(/<input[^>]*type="number"[^>]*>/g) || [];
-  if (tags.length !== 7) return false;
+  if (tags.length !== 3) return false;
   const ids = tags.map(t => /id="([^"]*)"/.exec(t)[1]).sort();
   const ok = ids.every(id =>
-    ['dswov-goal', 'dswov-timer-min', 'fiesta-max', 'timer-hours', 'timer-minutes', 'dl3-goal-input'].includes(id) ||
-    /^dswpro-crop-/.test(id));
-  return ok && ids.some(id => /^dswpro-crop-/.test(id));
+    ['fiesta-max', 'timer-hours', 'timer-minutes'].includes(id));
+  return ok;
 });
 tcase('type="number": ninguno en identidad/OTP (esos usan inputmode=numeric)', () => {
   const tags = html.match(/<input[^>]*type="number"[^>]*>/g) || [];

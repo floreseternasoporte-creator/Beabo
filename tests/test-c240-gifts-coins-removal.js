@@ -112,6 +112,28 @@ ok('ORBIT_FEATURES tiene 7 funciones y ninguna es exclusive_gifts', function () 
   assert(seg.indexOf('exclusive_gifts') === -1, 'exclusive_gifts sigue en ORBIT_FEATURES');
 });
 
+/* ---------- C246: el hub de crear tampoco vende monedas ---------- */
+
+ok('el hub de crear (#creator-hub-view) no contiene ninguna loseta de monedas', function () {
+  // QA en vivo (2026-10-03) reportó una loseta "Gana Drex Coins" en el hub;
+  // el código publicado no la contiene (probable service worker viejo).
+  // Este guardia fija que ninguna loseta del hub hable de monedas/diamantes.
+  var a = html.indexOf('id="creator-hub-view"');
+  assert(a !== -1, 'creator-hub-view no encontrado');
+  // El hub termina donde empieza el editor a pantalla completa.
+  var hub = html.slice(a, html.indexOf('id="note-creation-fullscreen"', a));
+  assert(!/coins|diamantes|diamonds/i.test(hub), 'el hub menciona monedas/diamantes');
+  assert(hub.indexOf('Gana') === -1 || hub.indexOf('Coins') === -1,
+    'loseta "Gana Drex Coins" en el hub');
+});
+
+ok('cero superficies de monedas alcanzables por el usuario en toda la app', function () {
+  ['Gana Drex Coins', 'Drex Coins', 'drexCoins', 'DREX_COIN_PACKAGES',
+   'drex-coins-sheet', 'exclusive_gifts'].forEach(function (s) {
+    assert(html.indexOf(s) === -1, 'sigue presente: ' + s);
+  });
+});
+
 /* ---------- coherencia de los dos archivos ---------- */
 
 ok('404.html es copia exacta de index.html', function () {

@@ -128,13 +128,15 @@ tcase('address-level2 x1: settings-city', () =>
 tcase('email x2: recoveryEmailInput (previo) + regEmail (lead C137)', () =>
   count(/autocomplete="email"/g, html) === 2 &&
   hasAttr(inputTag('recoveryEmailInput'), 'autocomplete', 'email'));
-tcase('off x13 en buscadores/chats/stream (inventario cerrado)', () => {
+// C246 (2026-10-03): 13→8 — los 5 campos del estudio/directo eliminado
+// (dswout-rtmp, dswout-rtmpkey, drex-live-video-url, host/viewer chat)
+// salieron en Fase 3; quedan buscadores y chats.
+tcase('off x8 en buscadores/chats/stream (inventario cerrado)', () => {
   const ids = ['fiesta-chat-input', 'fiesta-games-search', 'gif-search-input',
     'onb-country-search', 'settings-country-search', 'settings-search-input', 'sticker-search',
-    'baro-input', 'dswout-rtmp', 'dswout-rtmpkey', 'drex-live-video-url',
-    'drex-live-host-chat-input', 'drex-live-viewer-chat-input'];
+    'baro-input'];
   return ids.every(id => hasAttr(inputTag(id), 'autocomplete', 'off')) &&
-    count(/autocomplete="off"/g, html) === 13;
+    count(/autocomplete="off"/g, html) === 8;
 });
 
 // ---- 3. name attributes: solo los 4 campos de identidad ----
@@ -161,9 +163,10 @@ tcase('pickers de cumpleanos readonly x6: sin autocomplete', () => {
   });
 });
 
-// ---- 5. enterkeyhint en <textarea>: inventario x14, solo chat-edit-input honesto ----
-tcase('textarea x16 (regex multiline, igual que C136)', () =>
-  count(/<textarea[\s\S]*?>/g, html) === 16);
+// ---- 5. enterkeyhint en <textarea>: inventario x15, solo chat-edit-input honesto ----
+// C246 (2026-10-03): 16→15, mismo ajuste que C136 (textarea de Fase 3 fuera).
+tcase('textarea x15 (regex multiline, igual que C136)', () =>
+  count(/<textarea[\s\S]*?>/g, html) === 15);
 tcase('textarea: solo chat-edit-input tiene enterkeyhint (done, honesto con onkeydown)', () => {
   const tags = html.match(/<textarea[\s\S]*?>/g) || [];
   const withHint = tags.filter(t => t.indexOf('enterkeyhint=') >= 0);

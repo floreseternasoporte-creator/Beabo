@@ -57,19 +57,16 @@ function tcase(name, fn) {
 function assert(cond, msg) { if (!cond) throw new Error(msg || 'assert'); }
 
 // Familia NUEVA: Permissions API — cero repo-wide.
-tcase('navigator.permissions: solo en dswoutPermCheck (chequeo cam/mic antes de salir en vivo)', () => {
-  assert(countAll(/navigator\.permissions/g) === 6, 'conteo inesperado');
-  var ls = html.split('\n');
-  var fns = -1;
-  for (var k = 0; k < ls.length; k++) { if (ls[k].indexOf('function dswoutPermCheck') >= 0) { fns = k; break; } }
-  var hits = [];
-  for (var j = 0; j < ls.length; j++) { if (ls[j].indexOf('navigator.permissions') >= 0) hits.push(j); }
-  assert(fns > 0 && hits.length === 2, 'hits fuera de index.html');
-  assert(hits.every(function(h){ return h > fns && h < fns + 25; }), 'hit fuera de dswoutPermCheck');
-  assert(/dswoutGumCheck/.test(ls.slice(fns, fns + 25).join('\n')), 'sin fallback a getUserMedia');
+// Familia NUEVA: Permissions API — cero repo-wide.
+// C246 (2026-10-03): dswoutPermCheck salió con el estudio de directo (Fase 3).
+// El contrato histórico era "permissions solo dentro de dswoutPermCheck"; hoy
+// es más fuerte: CERO usos de la Permissions API en toda la app. Si algún
+// día se reintroduce, este test obliga a re-auditar la familia completa.
+tcase('navigator.permissions: cero usos (dswoutPermCheck eliminado con el directo)', () => {
+  assert(countAll(/navigator\.permissions/g) === 0, 'conteo inesperado');
 });
-tcase('permissions.query: solo en dswoutPermCheck (2 por archivo, index+404)', () => {
-  assert(countAll(/permissions\.(query|revoke)/g) === 4, 'hay permissions.query/revoke fuera de lugar');
+tcase('permissions.query: cero usos (index+404)', () => {
+  assert(countAll(/permissions\.(query|revoke)/g) === 0, 'hay permissions.query/revoke fuera de lugar');
 });
 tcase('PermissionStatus / permission onchange: 0 hits', () => {
   assert(countAll(/PermissionStatus/g) === 0, 'hay PermissionStatus');

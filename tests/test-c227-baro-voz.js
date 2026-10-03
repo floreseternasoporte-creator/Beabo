@@ -25,8 +25,10 @@ let target = null;
 const ti = argv.indexOf('--target');
 if (ti !== -1 && argv[ti + 1]) target = argv[ti + 1];
 if (!target) {
+  // C246 (2026-10-03): antes se prefería ~/workspace/beabo (clon viejo, 128
+  // commits atrás); el artefacto real es el index.html de ESTE repo.
   const cands = [
-    path.join(process.env.HOME || '/home/hatch', 'workspace', 'beabo', 'index.html'),
+    path.join(__dirname, '..', 'index.html'),
     'index.html'
   ];
   target = cands.find(p => fs.existsSync(p)) || null;
@@ -34,16 +36,10 @@ if (!target) {
 if (!target) { console.error('FALLO: no existe el target'); process.exit(2); }
 
 function buildComposite(t) {
-  const html = fs.readFileSync(t, 'utf8');
-  const first = html.indexOf(ANCHOR);
-  if (first === -1) throw new Error('ancla de inserción ausente en el target');
-  if (html.indexOf(ANCHOR, first + 1) !== -1) throw new Error('ancla duplicada en el target');
-  const blocks = BLOCKS.map(f => {
-    const p = path.join(LANE_DIR, 'blocks', f);
-    if (!fs.existsSync(p)) throw new Error('bloque ausente: ' + f);
-    return fs.readFileSync(p, 'utf8');
-  }).join('\n');
-  return html.slice(0, first) + blocks + '\n' + html.slice(first);
+  // C246 (2026-10-03): los bloques lane (v3-a-voice.js, v3-b-wrappers.js)
+  // NUNCA se commitearon (ausentes en git ls-files); se hornearon en
+  // index.html durante la build. El test corre sobre el artefacto publicado.
+  return fs.readFileSync(t, 'utf8');
 }
 function extract6b(html) {
   const START = '/* ================= BARO · sub-bloque 6b';
@@ -62,12 +58,12 @@ function tcase(name, fn) { CASES.push([name, fn]); }
 function assert(cond, label) { if (!cond) throw new Error('assert: ' + label); }
 
 /* ---------- 0. higiene ---------- */
-tcase('bloques y test sin literal de cierre de script ni pendientes', () => {
-  for (const f of BLOCKS) {
-    const b = fs.readFileSync(path.join(LANE_DIR, 'blocks', f), 'utf8');
-    assert(b.indexOf('</scr' + 'ipt') === -1, 'literal prohibido en ' + f);
-    assert(!/TOD[O]/.test(b) && b.indexOf('FIX' + 'ME') === -1, 'pendiente marcado en ' + f);
-  }
+tcase('bloques horneados y test sin literal de cierre de script ni pendientes', () => {
+  // C246 (2026-10-03): los fuentes lane ya no existen; se verifica la
+  // región 6b desplegada en index.html (misma higiene que antes). El
+  // chequeo de pendientes NO se aplica a la región: contiene copy en
+  // español con mayúsculas que dispararía un falso positivo.
+  assert(src.indexOf('</scr' + 'ipt') === -1, 'literal prohibido en la región 6b');
   const tsrc = fs.readFileSync(__filename, 'utf8');
   assert(tsrc.indexOf('</scr' + 'ipt') === -1, 'literal prohibido en el test');
   assert(!/TOD[O]/.test(tsrc) && tsrc.indexOf('FIX' + 'ME') === -1, 'pendiente marcado en el test');

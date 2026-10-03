@@ -58,15 +58,17 @@ function attrOf(id, attr) {
 
 // C240-L3 (2026-09-29): +1 inputmode="numeric" en #dl3-goal-input (meta del
 // host, campo de diamantes: type=number min=1 max=1000000; semantica correcta).
-// Nuevo inventario: 17, todos con valor valido.
+// C246 (2026-10-03): el bloque de vivos dl1/dl2/dl3 y Drex Studio se eliminaron
+// (Fase 3 / C240) → el inventario bajó de 17 a 15. Mismos valores válidos.
+// Nuevo inventario: 15, todos con valor valido.
 // ---- 1. inputmode: inventario completo (15 hits) ----
-tcase('inputmode: 17 ocurrencias en index.html', () =>
-  count(/inputmode/g, html) === 17);
+tcase('inputmode: 15 ocurrencias en index.html', () =>
+  count(/inputmode/g, html) === 15);
 tcase('inputmode válidos: solo email|numeric|text|url (estáticos + setAttribute)', () => {
   const dq = (html.match(/inputmode="([^"]*)"/g) || []).map(s => s.slice(11, -1));
   const sq = (html.match(/setAttribute\('inputmode', '([^']*)'\)/g) || []).map(s => s.slice(27, -2));
   const vals = dq.concat(sq);
-  return vals.length === 17 && vals.every(v => ['email', 'numeric', 'text', 'url'].includes(v));
+  return vals.length === 15 && vals.every(v => ['email', 'numeric', 'text', 'url'].includes(v));
 });
 tcase('emailInput: inputmode=email', () => attrOf('emailInput', 'inputmode') === 'email');
 tcase('recoveryCodeInput: inputmode=numeric (one-time-code)', () =>
@@ -103,11 +105,14 @@ tcase('LEAD 3: regUsername autocomplete=username (era off)', () =>
   attrOf('regUsername', 'autocomplete') === 'username');
 tcase('regPassword: autocomplete=new-password (pareja de regUsername)', () =>
   attrOf('regPassword', 'autocomplete') === 'new-password');
-tcase('autocomplete="off" residual: 13, todos en search/chat/stream (nada de identidad)', () => {
+// C246 (2026-10-03): 13→8 — los 5 "off" de Drex Studio/directo
+// (dswout-rtmp, dswout-rtmpkey, drex-live-video-url, host/viewer chat) se
+// fueron con la eliminación de Fase 3; quedan solo buscadores y chats.
+tcase('autocomplete="off" residual: 8, todos en search/chat/stream (nada de identidad)', () => {
   const tags = html.match(/<[^>]*autocomplete="off"[^>]*>/g) || [];
-  if (tags.length !== 13) return false;
+  if (tags.length !== 8) return false;
   return tags.every(t =>
-    /enterkeyhint="search"|fiesta-chat-input|fiesta-games-search|baro-input|gif-search-input|sticker-search|settings-search-input|onb-country-search|settings-country-search|dswout-rtmp|dswout-rtmpkey|drex-live-video-url|drex-live-host-chat-input|drex-live-viewer-chat-input/.test(t) &&
+    /enterkeyhint="search"|fiesta-chat-input|fiesta-games-search|baro-input|gif-search-input|sticker-search|settings-search-input|onb-country-search|settings-country-search/.test(t) &&
     !/regUsername|regPassword|emailInput|recoveryCodeInput|twofactor/i.test(t));
 });
 tcase('new-password: 7 en flujos de creación/cambio (C112 intacto)', () =>
@@ -147,10 +152,14 @@ tcase('window.opener: 0 (sin lectura inversa de tabnabbing)', () => count(/windo
 tcase('document.domain: 0', () => count(/document\.domain/g, html) === 0);
 tcase('<base: 0', () => count(/<base[\s>]/g, html) === 0);
 tcase('meta http-equiv: 0', () => count(/http-equiv/g, html) === 0);
-tcase("fetch credentials:: 0 (default same-origin en todo el árbol)", () =>
-  count(/credentials:\s*['"]/, html) === 0);
-tcase("mode:'no-cors': 1 (sonda anti-adblock intencional a favicon)", () =>
-  count(/mode: 'no-cors'/g, html) === 1 &&
+// C246 (2026-10-03): el contrato ya no es "cero credentials:", sino "ningún
+// fetch envía credenciales": los 2 únicos usos son credentials:'omit'
+// deliberados (version.json del updater y la sonda de pagos drexPayNetDiag).
+tcase("fetch credentials:: nunca 'include'; los únicos 2 son 'omit' deliberados", () =>
+  count(/credentials:\s*'include'/g, html) === 0 &&
+  count(/credentials:\s*'omit'/g, html) === 2);
+tcase("mode:'no-cors': 2 (sonda anti-adblock a favicon + sonda de pagos C244)", () =>
+  count(/mode: 'no-cors'/g, html) === 2 &&
   /highrevenueformat\.com\/favicon\.ico/.test(html));
 tcase('<form: 2 (authForm + baro-form, ambas sin action + preventDefault)', () =>
   count(/<form/g, html) === 2 &&

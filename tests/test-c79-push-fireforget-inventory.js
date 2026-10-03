@@ -116,7 +116,7 @@ for (const s of sites) {
 }
 
 const EXPECTED = {
-  'signaling-ephemeral': 1, // liveSignals/ de DrexLiveCore._sendSignal (C232)
+  'signaling-ephemeral': 0, // C246 (2026-10-03): liveSignals/ de DrexLiveCore._sendSignal (C232) salió con el directo WebRTC (2026-10-01); el clasificador se conserva para que un sitio futuro cuente y falle aquí a propósito
   'decorative-c75': 10, // 9 preexistentes + mensaje system de chat_grupo_crear (Baro v4 oleada 1)
   'cosmetic-broadcast': 2,
   'cosmetic-ephemeral': 1,

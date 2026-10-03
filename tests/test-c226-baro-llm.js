@@ -25,8 +25,10 @@ let target = null;
 const ti = argv.indexOf('--target');
 if (ti !== -1 && argv[ti + 1]) target = argv[ti + 1];
 if (!target) {
+  // C246 (2026-10-03): antes se prefería ~/workspace/beabo (clon viejo, 128
+  // commits atrás); el artefacto real es el index.html de ESTE repo.
   const cands = [
-    path.join(process.env.HOME || '/home/hatch', 'workspace', 'beabo', 'index.html'),
+    path.join(__dirname, '..', 'index.html'),
     'index.html'
   ];
   target = cands.find(p => fs.existsSync(p)) || null;
@@ -34,15 +36,11 @@ if (!target) {
 if (!target) { console.error('FALLO: no existe el target'); process.exit(2); }
 
 function buildComposite(t) {
-  const html = fs.readFileSync(t, 'utf8');
-  const ai = html.indexOf(ANCHOR);
-  if (ai === -1) throw new Error('ancla de inserción ausente en el target');
-  const blocks = BLOCKS.map(f => {
-    const p = path.join(LANE_DIR, 'blocks', f);
-    if (!fs.existsSync(p)) throw new Error('bloque ausente: ' + f);
-    return fs.readFileSync(p, 'utf8');
-  }).join('\n');
-  return html.slice(0, ai) + blocks + '\n' + html.slice(ai);
+  // C246 (2026-10-03): los bloques lane (baro-llm-*.js) NUNCA se
+  // commitearon (ausentes en git ls-files); se hornearon en index.html
+  // durante la build. El artefacto desplegado ya los contiene, así que
+  // el test corre sobre el index.html publicado tal cual.
+  return fs.readFileSync(t, 'utf8');
 }
 function extract6b(html) {
   const START = '/* ================= BARO · sub-bloque 6b';
@@ -65,11 +63,10 @@ function eqJ(actual, expected, label) {
 }
 
 /* ---------- 0. sin literal de cierre de script ---------- */
-tcase('bloques y test sin literal de cierre de script', () => {
-  for (const f of BLOCKS) {
-    const b = fs.readFileSync(path.join(LANE_DIR, 'blocks', f), 'utf8');
-    assert(b.indexOf('</scr' + 'ipt') === -1, 'literal prohibido en ' + f);
-  }
+tcase('bloques horneados y test sin literal de cierre de script', () => {
+  // C246 (2026-10-03): los fuentes lane ya no existen; se verifica la
+  // región 6b desplegada en index.html (misma higiene que antes).
+  assert(src.indexOf('</scr' + 'ipt') === -1, 'literal prohibido en la región 6b');
   const tsrc = fs.readFileSync(__filename, 'utf8');
   assert(tsrc.indexOf('</scr' + 'ipt') === -1, 'literal prohibido en el test');
 });

@@ -2,9 +2,12 @@
  * Tests: mecanismo de actualización (C220/C220a → C241)
  * version.json existe con build; sw.js excluye version.json de la
  * caché (network-only, nunca se cachea ni se sirve de caché).
- * El banner fijo de actualización fue ELIMINADO el 2026-09-28 a
- * petición del usuario (estorbaba la UI): estos tests fijan su
- * ausencia para que no reaparezca por accidente.
+ * C246 (2026-10-03): este test esperaba la consolidación "sin banner ni
+ * DREX_BUILD" que NUNCA se publicó. El mecanismo real desplegado es el
+ * DREX-UPDATER (2026-10-01, conservado a petición del usuario): sello
+ * ISO idéntico en version.json y window.DREX_BUILD, chequeo en
+ * carga/visibility/pageshow y banner creado por JS SOLO si difieren
+ * (no existe markup estático). Los tests fijan ESE contrato.
  * Ejecutar: node tests/test-c220a-update.js [--target <dir-repo>]
  * Sin dependencias externas — solo Node.js.
  * ================================================================ */
@@ -30,8 +33,11 @@ var vj = JSON.parse(vjRaw);
 test('version.json existe y es JSON válido', function () {
   assert(vj, 'no parseó');
 });
-test('version.json tiene build con formato YYYYMMDDHHMM', function () {
-  assert(typeof vj.build === 'string' && /^\d{12}$/.test(vj.build), 'build=' + JSON.stringify(vj.build));
+test('version.json: build es el sello ISO del deploy y coincide con window.DREX_BUILD', function () {
+  var m = /window\.DREX_BUILD = '([^']*)'/.exec(read('index.html'));
+  assert(m, 'sin window.DREX_BUILD');
+  assert(typeof vj.build === 'string' && vj.build.length > 0, 'build vacío');
+  assert(vj.build === m[1], 'build de version.json (' + vj.build + ') != DREX_BUILD (' + m[1] + ')');
 });
 test('version.json tiene campo at ISO', function () {
   assert(typeof vj.at === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(vj.at), 'at=' + JSON.stringify(vj.at));
@@ -69,15 +75,16 @@ test('la exclusión está ANTES de la rama HTML dentro del fetch handler', funct
     'orden incorrecto (excl=' + idxExcl + ', html=' + idxHtml + ')');
 });
 
-// ---- 4. banner ELIMINADO (2026-09-28, petición del usuario) ----
-test('banner de actualización eliminado del DOM', function () {
-  assert(html.indexOf('drex-update-banner') === -1, 'queda #drex-update-banner');
-  assert(html.indexOf('Hay una nueva versión de Drex') === -1, 'queda texto del banner');
+// ---- 4. DREX-UPDATER (2026-10-01): banner solo por JS ante desync ----
+test('sin banner estático: #drex-update-banner no existe en el markup (lo crea el JS solo si difieren los sellos)', function () {
+  assert(!/<[^>]*id="drex-update-banner"/.test(html), 'hay markup estático del banner');
+  assert(/el\.id = 'drex-update-banner'/.test(html), 'el JS ya no crea el banner');
 });
-test('window.DREX_BUILD y el chequeador fueron retirados', function () {
-  assert(html.indexOf('DREX_BUILD') === -1, 'queda window.DREX_BUILD');
-  assert(html.indexOf('checkUpdate') === -1, 'queda el chequeador');
-  assert(html.indexOf('?drexb=') === -1, 'queda la recarga con ?drexb=');
+test('window.DREX_BUILD y el chequeador existen y recargan con ?drexv=', function () {
+  assert(/window\.DREX_BUILD = '[^']+'/.test(html), 'falta window.DREX_BUILD');
+  assert(/function check\(\)/.test(html) && /DrexForceUpdate/.test(html), 'falta el chequeador/actualizador');
+  assert(html.indexOf("searchParams.set('drexv'") !== -1, 'falta la recarga con ?drexv=');
+  assert(html.indexOf('?drexb=') === -1, 'queda la recarga vieja con ?drexb=');
 });
 
 // ---- 5. todos los <script> inline de index.html compilan ----

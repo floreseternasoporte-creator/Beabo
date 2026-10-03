@@ -39,6 +39,10 @@ for (const name of EXPORTS) {
   ok(new RegExp('window\\.' + name + '\\s*=\\s*' + name + '\\s*;').test(html),
      'window.' + name + ' exportado desde el IIFE');
 }
+// C246 (2026-10-03): openProfile() llamaba mountOrbitVisitorsEntry con
+// typeof-guard y el export no existía (el guard fallaba en silencio).
+ok(/window\.mountOrbitVisitorsEntry\s*=\s*mountOrbitVisitorsEntry\s*;/.test(html),
+   'window.mountOrbitVisitorsEntry exportado desde el IIFE (C246)');
 
 /* ---- 2. Handlers del composer fuera de IIFEs ---- */
 // Localiza bloques <script> inline y marca los que son IIFE.
@@ -100,9 +104,15 @@ if (iife) {
   const defined = new Set([...blk.matchAll(/^\s*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)].map(m => m[1]));
   const exported = new Set([...blk.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=/g)].map(m => m[1]));
   const GLOBAL_OK = new Set(['t', '$', 'esc', 'toast']);
+  // C246 (2026-10-03): FALSO POSITIVO histórico "probe". El probe() del
+  // diagnóstico de pagos vive dentro del IIFE y nadie lo llama desde fuera;
+  // los hits externos son `const probe = new Audio()` de Música (54383) y
+  // un comentario HTML. Una colisión de identificador NO es una función
+  // atrapada. Si otro nombre colisiona así, se documenta aquí con prueba.
+  const NAME_COLLISIONS = new Set(['probe']);
   let trapped = [];
   for (const name of defined) {
-    if (exported.has(name) || GLOBAL_OK.has(name)) continue;
+    if (exported.has(name) || GLOBAL_OK.has(name) || NAME_COLLISIONS.has(name)) continue;
     // ¿definido también fuera del IIFE?
     const outDef = new RegExp('^\\s*(?:async\\s+)?function\\s+' + name + '\\s*\\(', 'm').test(rest);
     if (outDef) continue;

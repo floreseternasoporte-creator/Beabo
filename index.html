@@ -12894,6 +12894,12 @@ function saveNote() {
 
   function maybeInsertFeedAd(feedFragment, postIndex) {
     try { if (typeof drexAdsBlocked === 'function' && drexAdsBlocked()) return; } catch (_) {}
+    // C246 (2026-10-03): no crear el contenedor con etiqueta "ANUNCIO" si el
+    // usuario tiene Orbit activo (sin anuncios). Antes el contenedor se creaba
+    // SIEMPRE y solo se ocultaba al cargar el banner (perezoso): un miembro
+    // verificado veía cajas de anuncio vacías en el feed. Mismo estándar que
+    // pushDrexAdSlots: con Orbit verificado no nace ningún slot.
+    try { if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return; } catch (_) {}
     // Anuncios Monetag intercalados en el feed (formato Banner, slot):
     // el primero aparece tras inFeedFirstAt posts y luego uno cada N posts,
     // con carga diferida (el banner se pide solo cuando el bloque se acerca
@@ -28554,6 +28560,9 @@ else { try { drexSnapInit(); } catch (_) {} }
     check = function () {
       try {
         if (!slot || slot.dataset.adFailed === '1') return;
+        // C246 (2026-10-03): si el usuario es Orbit verificado (sin anuncios)
+        // ningún camino debe revelar el slot; se oculta y se detiene el vigilante.
+        try { if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) { slot.style.display = 'none'; return; } } catch (_) {}
         tries++;
         var hiddenByAncestor = false;
         try {
@@ -28670,6 +28679,8 @@ else { try { drexSnapInit(); } catch (_) {} }
           var settled = false;
           var done = function (ok) {
             if (settled) return; settled = true;
+            // C246 (2026-10-03): Orbit verificado nunca ve el slot (sin anuncios).
+            try { if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) { slot.style.display = 'none'; release(); return; } } catch (_) {}
             if (ok) { try { slot.style.display = ''; } catch (_) {} }
             else drexAdSlotFail(slot);
             release();
@@ -51918,7 +51929,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-02T05:58:00Z';
+window.DREX_BUILD = '2026-10-03T08:58:38Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -86441,6 +86452,11 @@ window.toggleComposerHdUploads = toggleComposerHdUploads;
 window.openOrbitVisitors = openOrbitVisitors;
 window.closeOrbitVisitors = closeOrbitVisitors;
 window.openOrbitVisitorProfile = openOrbitVisitorProfile;
+window.mountOrbitVisitorsEntry = mountOrbitVisitorsEntry;
+/* C246 (2026-10-03): openProfile() (fuera del IIFE Orbit) llama a
+ * mountOrbitVisitorsEntry con typeof-guard; sin este export el guard
+ * fallaba en silencio y el render dependía de un efecto lateral de
+ * drexOrbitApplyGates. */
 /* C244: pago embebido y gestión propia (hojas dentro de Drex). */
 window.openOrbitCheckout = openOrbitCheckout;
 window.closeOrbitCheckout = closeOrbitCheckout;

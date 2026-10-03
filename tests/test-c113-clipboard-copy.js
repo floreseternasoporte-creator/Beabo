@@ -94,9 +94,9 @@ tcasesync('familia: 9 guardas clipboard en todo el archivo (BARO-1: -1 Series; B
   const n = (html.match(/navigator\.clipboard && navigator\.clipboard\.writeText/g) || []).length;
   if (n !== 9) throw new Error('guardas: ' + n + ' (esperado 9)');
 });
-tcasesync('familia: 12 call sites de writeText (BARO v2: +1 copiar respuesta; +1 eco share; +1 fallback; C222: +1 baroCopyToClipboard copiar borrador)', () => {
+tcasesync('familia: 13 call sites de writeText (BARO v2: +1 copiar respuesta; +1 eco share; +1 fallback; C222: +1 baroCopyToClipboard copiar borrador; C246 2026-10-03: +1 drexTxCopyId, recibo C242 copia el ID con la misma guarda)', () => {
   const n = (html.match(/navigator\.clipboard\.writeText\(/g) || []).length;
-  if (n !== 12) throw new Error('call sites: ' + n + ' (esperado 12)');
+  if (n !== 13) throw new Error('call sites: ' + n + ' (esperado 13)');
 });
 
 // ---------- conductuales en vm ----------

@@ -101,11 +101,12 @@ test('</style> cierra el CSS de DREX-CAM antes del modal', function () {
     '</style> debe ir antes del HTML del modal');
 });
 
-test('sin <style> huérfano antes del comentario C237', function () {
-  var i = src.indexOf('<!-- C237: hoja de regalos');
-  assert(i !== -1, 'comentario C237 no encontrado');
-  var seg = src.slice(Math.max(0, i - 60), i);
-  assert(seg.indexOf('<style>') === -1, 'hay un <style> huérfano antes del comentario C237');
+test('bloque C237 de regalos eliminado por C240 (sin <style> ni markup huérfanos)', function () {
+  // C246 (2026-10-03): el ancla original era el comentario C237 de la hoja de
+  // regalos; C240 eliminó hoja+comentario. El riesgo real sigue cubierto por
+  // el test de parser de arriba; aquí se fija la ausencia del bloque.
+  assert(src.indexOf('<!-- C237: hoja de regalos') === -1, 'comentario C237 sigue presente');
+  assert(src.indexOf('drex-coins-sheet') === -1, 'markup de la hoja de monedas sigue presente');
 });
 
 test('drexNoteHasRenderableContent existe y filtra notas vacías', function () {
