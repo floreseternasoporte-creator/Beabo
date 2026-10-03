@@ -59,7 +59,7 @@ check('delete: verifica musicCurrentUid() ANTES de la primera mutación',
 check('delete: falla cerrado si falta el uid del dueño',
   /if\s*\(\s*!d\.uid\s*\|\|\s*d\.uid\s*!==\s*musicCurrentUid\(\)\s*\)/.test(srcDelete));
 check('detalle: el caché guarda el uid del dueño (pl.uid)',
-  html.includes("musicPlaylistDetailCache = { id, name: pl.name || 'Playlist', uid: pl.uid || null, tracks };"));
+  html.includes("musicPlaylistDetailCache = { id, name: pl.name || 'Lista de reproducción', uid: pl.uid || null, tracks };"));
 check('vista: el botón eliminar tiene id para ocultarse en playlists ajenas',
   html.includes('id="music-playlist-delete-btn" onclick="musicDeletePlaylist()"'));
 check('vista: musicOpenPlaylist oculta el botón eliminar si no es el dueño',
