@@ -61,8 +61,10 @@ check('delete: falla cerrado si falta el uid del dueño',
 // C246 (2026-10-03): el fallback de nombre pasó de 'Playlist' a 'Lista de
 // reproducción' (fix i18n de e086cec, conservado); el contrato real es que
 // el caché guarde el uid del dueño, no el literal de la etiqueta.
+// C247-FIX (2026-10-03): C247 envolvió el fallback en appT('Lista de
+// reproducción') — test-c247 lo exige; el contrato (uid del dueño) no cambia.
 check('detalle: el caché guarda el uid del dueño (pl.uid)',
-  /musicPlaylistDetailCache = \{ id, name: pl\.name \|\| '[^']*', uid: pl\.uid \|\| null, tracks \}/.test(html));
+  /musicPlaylistDetailCache = \{ id, name: pl\.name \|\| appT\('[^']*'\)[\s\S]{0,60}?uid: pl\.uid \|\| null, tracks \}/.test(html));
 check('vista: el botón eliminar tiene id para ocultarse en playlists ajenas',
   html.includes('id="music-playlist-delete-btn" onclick="musicDeletePlaylist()"'));
 check('vista: musicOpenPlaylist oculta el botón eliminar si no es el dueño',

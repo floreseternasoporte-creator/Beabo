@@ -62,8 +62,8 @@ ABSENT.forEach(function (needle) {
 
 const PRESENT = [
   'var DrexOrbit = {',            // cliente de suscripción
-  '/create-subscription-session', // checkout de suscripción Orbit
-  '/create-customer-portal',      // portal de Stripe para gestionar
+  '/subscribe-embedded',          // C247: suscripción Orbit embebida (C244; antes checkout hospedado)
+  '/subscription-cancel',         // C247: gestión propia sin portal de Stripe (C244)
   'renderPaymentsView',           // vista Pagos (historial)
   'drexFiestaSwitchTab',          // fiestas de voz intactas
   'DREX_ORBIT_ENFORCE',           // gates de enforcement

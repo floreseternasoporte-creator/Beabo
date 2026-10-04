@@ -43,12 +43,15 @@ ok(!/#6[Dd]28[Dd]9|#9[Dd]4[Ee][Dd][Dd]|linear-gradient/.test(cardHtml),
    'la tarjeta de ajustes ya no usa degradado morado');
 
 /* ---- 3. Cabecera de la vista Orbit usa la imagen 3D ---- */
-const heroIdx = html.indexOf('El plan Orbit de Drex');
-ok(heroIdx !== -1, 'cabecera de la vista Orbit presente');
-const heroSlice = heroIdx !== -1 ? html.slice(Math.max(0, heroIdx - 600), heroIdx) : '';
-ok(heroSlice.indexOf(IMG) !== -1, 'la cabecera Orbit referencia la imagen 3D');
-ok(!/linear-gradient\(135deg,#2F33B8,#9D4EDD\)/.test(heroSlice),
-   'la cabecera Orbit ya no usa el medallón con degradado morado');
+/* C249 (2026-10-03): C248 rehízo la cabecera según la referencia del
+ * usuario: la imagen 3D es la pieza central del abanico de la tarjeta
+ * hero (orbit-fan-center), ya no un medallón junto al título. El plan
+ * Orbit de Drex sigue presente como subtítulo del estado suscrito. */
+ok(html.indexOf('El plan Orbit de Drex') !== -1, 'cabecera de la vista Orbit presente');
+const fanIdx = html.indexOf('class="orbit-fan-img orbit-fan-center"');
+ok(fanIdx !== -1, 'abanico hero de la vista Orbit presente (C248)');
+const fanSlice = fanIdx !== -1 ? html.slice(Math.max(0, fanIdx - 300), fanIdx + 300) : '';
+ok(fanSlice.indexOf(IMG) !== -1 && fanSlice.indexOf('<img') !== -1, 'la cabecera Orbit referencia la imagen 3D');
 
 console.log(`\nOrbit 3D icon (carril 4): ${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);

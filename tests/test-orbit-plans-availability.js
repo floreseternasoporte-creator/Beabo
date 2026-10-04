@@ -99,7 +99,15 @@ for (const id of ['weekly', 'biennial', 'lifetime']) ok(avail(id) === false, id 
   ok(starts.length === 7, 'se renderizan las 7 tarjetas de la escalera');
   const cardFor = (id) => {
     const i = starts.findIndex((s) => capturedHtml.slice(s, s + 300).includes('data-plan-id="' + id + '"'));
-    return i === -1 ? '' : capturedHtml.slice(starts[i], starts[i + 1] || capturedHtml.length);
+    if (i === -1) return '';
+    /* C249 (2026-10-03): la última tarjeta (lifetime) ya no llega hasta el
+     * fin del HTML capturado: C248 agregó la barra fija inferior con su
+     * toggle Mensual/Anual (role=radio legítimo). La tarjeta termina en
+     * la siguiente tarjeta o en la barra fija, lo primero que aparezca. */
+    let end = starts[i + 1] || capturedHtml.length;
+    const stickyIdx = capturedHtml.indexOf('orbit-sticky', starts[i]);
+    if (stickyIdx !== -1 && stickyIdx < end) end = stickyIdx;
+    return capturedHtml.slice(starts[i], end);
   };
   const UNAVAIL = ['weekly', 'biennial', 'lifetime'];
   const AVAIL = ['monthly', 'quarterly', 'semiannual', 'yearly'];

@@ -189,6 +189,11 @@ test('data-nav-index de la barra inferior es 0,1,2,3', function () {
 });
 
 /* ---------- H. botón atrás en todas las vistas de la zona ---------- */
+/* C249 (2026-10-03): orbit-view ya no lleva chevron atrás: por orden del
+ * usuario su cabecera sigue la referencia Grok (X circular flotante que
+ * llama closeOrbitView). Se acepta la X como control de salida válido;
+ * el resto de vistas conserva el chevron. */
+var ORBIT_CLOSE_RE = /orbit-x-btn[^>]*onclick="closeOrbitView\(\)"|onclick="closeOrbitView\(\)"/;
 test('todas las vistas de la zona tienen botón atrás', function () {
   var views = ['settings-view', 'account-config-view', 'profile-config-view', 'profile-view',
     'security-center-view', 'notification-settings-view', 'theme-config-view', 'cache-config-view',
@@ -205,7 +210,9 @@ test('todas las vistas de la zona tienen botón atrás', function () {
   views.forEach(function (v) {
     var r;
     try { r = viewRegion(v); } catch (e) { missing.push(v + ' (sin DOM)'); return; }
-    if (!chev.test(r.slice(0, 5000))) missing.push(v);
+    var head = r.slice(0, 5000);
+    if (v === 'orbit-view') { if (!ORBIT_CLOSE_RE.test(head)) missing.push(v); return; }
+    if (!chev.test(head)) missing.push(v);
   });
   assert(missing.length === 0, 'sin botón atrás: ' + missing.join(', '));
 });

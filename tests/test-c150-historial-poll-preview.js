@@ -85,9 +85,11 @@ if (cardBody) {
 const ecosBody = extractFnBody(html, 'loadHistorialEcos');
 tcase('A8 loadHistorialEcos existe', ecosBody !== null);
 if (ecosBody) {
+  // C247-FIX (2026-10-03): C247 envolvió el fallback en appT('Publicación sin
+  // texto') — test-c247 lo exige; el comportamiento (avance > fallback) no cambia.
   tcase('A9 el eco de solo-encuesta usa el avance en vez de "Publicación sin texto"',
     ecosBody.indexOf('drexHistorialPollPreview(post.poll)') !== -1 &&
-    ecosBody.indexOf("text: _c150EcoText || 'Publicación sin texto'") !== -1);
+    ecosBody.indexOf("text: _c150EcoText || appT('Publicación sin texto')") !== -1);
   tcase('A10 el meta del eco marca la votación',
     ecosBody.indexOf("appT('Votación')") !== -1);
 }

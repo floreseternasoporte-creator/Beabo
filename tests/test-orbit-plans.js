@@ -133,9 +133,16 @@ ok(!html.includes("card('monthly', false) + card('yearly', true)"), 'sin tarjeta
 ok(html.includes("t('Recomendado')"), 'insignia "Recomendado" en la UI');
 ok(html.includes("t('Comprar')"), 'botón "Comprar" para pago único');
 
-/* ---- 11. El checkout manda {plan} al mismo endpoint (mismo gating) ---- */
-ok(mCore[0].includes("this._post('/create-subscription-session', { plan: planId, returnUrl: returnUrl })"),
-   'subscribe envía {plan, returnUrl} a /create-subscription-session');
+/* ---- 11. La suscripción embebida manda {plan} a /subscribe-embedded ---- */
+/* C247 (2026-10-03): el redirect LEGADO (DrexOrbit.subscribe ->
+ * /create-subscription-session con returnUrl) se eliminó; el contrato
+ * vivo es subscribeEmbedded (C244): {plan} a /subscribe-embedded. */
+ok(mCore[0].includes("this._postData('/subscribe-embedded', { plan: planId })"),
+   'subscribeEmbedded envía {plan} a /subscribe-embedded (sin redirect)');
+ok(!mCore[0].includes('/create-subscription-session') && !mCore[0].includes('/create-customer-portal'),
+   'C247 (2026-10-03): el core ya no conoce los endpoints LEGADO de redirect');
+ok(!mCore[0].includes('subscribe: async function') && !mCore[0].includes('manage: async function'),
+   'C247 (2026-10-03): DrexOrbit.subscribe/manage eliminados');
 ok(!html.includes('STRIPE_PRICE_'), 'sin price IDs de Stripe en el frontend');
 
 /* ---- 12. Fail-closed con los planes nuevos ---- */
@@ -148,24 +155,35 @@ K._setTestState({ active: true, plan: 'plan_inexistente', status: 'active' });
 ok(K.plan() === null, 'fail-closed: plan desconocido -> null');
 
 async function main() {
-  /* subscribe con plan inválido rechaza sin tocar la red */
+  /* C247 (2026-10-03): DrexOrbit.subscribe/manage (redirect LEGADO) ya no
+   * existen; el contrato vivo es subscribeEmbedded (C244): valida el plan,
+   * postea {plan} a /subscribe-embedded y devuelve el clientSecret SIN
+   * salir de Drex (cero redirects, cero returnUrl). */
+  ok(typeof K.subscribe === 'undefined' && typeof K.manage === 'undefined',
+     'C247 (2026-10-03): DrexOrbit.subscribe/manage eliminados (métodos LEGADO fuera)');
+  /* subscribeEmbedded con plan inválido rechaza sin tocar la red */
   let threw = false;
-  try { await K.subscribe('plan_inexistente'); } catch (e) { threw = String(e && e.message) === 'invalid_plan'; }
-  ok(threw, 'subscribe(plan inválido) -> invalid_plan (fail fast)');
-  /* subscribe con plan válido de la escalera llega al checkout (red simulada) */
+  try { await K.subscribeEmbedded('plan_inexistente'); } catch (e) { threw = String(e && e.message) === 'invalid_plan'; }
+  ok(threw, 'subscribeEmbedded(plan inválido) -> invalid_plan (fail fast)');
+  /* plan válido de la escalera llega a la Lambda embebida (red simulada) */
   sandbox.DREX_PAYMENTS_ENDPOINT = 'https://pay.test';
+  let postedBody = null;
   sandbox.fetch = async (url, init) => {
     const body = JSON.parse(init.body);
-    if (url.endsWith('/create-subscription-session') && EXPECTED_IDS.indexOf(body.plan) !== -1) {
-      return { ok: true, json: async () => ({ url: 'https://checkout.stripe.test/s/' + body.plan }) };
+    postedBody = body;
+    if (url.endsWith('/subscribe-embedded') && EXPECTED_IDS.indexOf(body.plan) !== -1) {
+      return { ok: true, json: async () => ({ clientSecret: 'cs_test_' + body.plan }) };
     }
     throw new Error('unexpected-fetch ' + url);
   };
   sandbox.DrexCloud = { auth: () => ({ getIdToken: async () => 'tok' }) };
   let redir = null;
   sandbox.location = new Proxy(sandbox.location, { set(t, k, v) { if (k === 'href') redir = v; t[k] = v; return true; } });
-  try { await K.subscribe('biennial'); } catch (e) { ok(false, 'subscribe(biennial) no debe fallar: ' + (e && e.message)); }
-  ok(redir === 'https://checkout.stripe.test/s/biennial', 'subscribe(biennial) redirige al checkout con el plan');
+  let emb = null;
+  try { emb = await K.subscribeEmbedded('biennial'); } catch (e) { ok(false, 'subscribeEmbedded(biennial) no debe fallar: ' + (e && e.message)); }
+  ok(emb && emb.clientSecret === 'cs_test_biennial', 'subscribeEmbedded(biennial) devuelve el clientSecret de la Lambda');
+  ok(postedBody && postedBody.plan === 'biennial' && !('returnUrl' in postedBody), 'subscribeEmbedded envía {plan} sin returnUrl (nada de redirect)');
+  ok(redir === null, 'C247 (2026-10-03): la suscripción embebida NUNCA redirige fuera de Drex');
 
   /* ---- 13. Paridad i18n de las claves nuevas de planes ---- */
   const pySrc = fs.readFileSync(path.join(ROOT, 'drex_orbit_i18n.py'), 'utf8');

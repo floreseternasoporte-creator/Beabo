@@ -100,9 +100,12 @@ ok(html.includes('STRIPE_PRICE_ORBIT_MONTHLY') === false, 'sin price IDs en fron
 ok(html.includes("orbit=success") || html.includes("'orbit'"), 'manejo de ?orbit= presente');
 ok(html.includes('captureOrbitReturn'), 'captureOrbitReturn definido');
 
-/* ---- 8. Checkout/portal usan el backend ---- */
-ok(html.includes('/create-subscription-session'), 'checkout usa /create-subscription-session');
-ok(html.includes('/create-customer-portal'), 'portal usa /create-customer-portal');
+/* ---- 8. Suscripción embebida + gestión propia usan el backend ---- */
+/* C247 (2026-10-03): DrexOrbit.subscribe/manage (redirect a Checkout/portal)
+ * se eliminaron; el contrato vivo es la hoja embebida de C244. */
+ok(html.includes('/subscribe-embedded'), 'suscripción embebida usa /subscribe-embedded');
+ok(html.includes('/subscription-cancel') && html.includes('/subscription-reactivate') && html.includes('/subscription-setup'), 'gestión propia usa /subscription-cancel|reactivate|setup');
+ok(!html.includes('/create-subscription-session') && !html.includes('/create-customer-portal'), 'C247 (2026-10-03): sin endpoints LEGADO de redirect');
 ok(html.includes('orbitSubscribe'), 'orbitSubscribe definido');
 
 /* ---- 9. i18n: paridad ES/EN/ZH/PT ---- */

@@ -75,17 +75,23 @@ test('DrexOrbit.reset() existe y se usa al cambiar de cuenta', function () {
 });
 
 /* --- 3. Red endurecida --- */
-test('las 4 llamadas Orbit pasan por _post (text/plain, timeout, reintentos)', function () {
+test('las llamadas Orbit pasan por _post/_postData (text/plain, timeout, reintentos)', function () {
   var i = src.indexOf('_post: async function');
   assert(i !== -1, 'falta DrexOrbit._post');
   var seg = src.slice(i, i + 2200);
   assert(seg.indexOf('text/plain;charset=UTF-8') !== -1, '_post no usa text/plain');
   assert(seg.indexOf('AbortController') !== -1, '_post no tiene timeout');
   assert(seg.indexOf('BACKOFF_MS') !== -1, '_post no tiene reintentos');
-  ['/subscription-status', '/create-subscription-session',
-   '/create-customer-portal', '/transactions'].forEach(function (p) {
+  /* C247 (2026-10-03): /create-subscription-session y /create-customer-portal
+   * (redirect LEGADO) retirados con DrexOrbit.subscribe/manage; el contrato
+   * vivo es el embebido de C244 (forEach de _postData más abajo). */
+  ['/subscription-status', '/transactions'].forEach(function (p) {
     assert(src.indexOf("this._post('" + p + "'") !== -1 && src.indexOf('self._post(\'' + p + '\'') !== -1 ||
            src.indexOf("_post('" + p + "'") !== -1, 'llamada a ' + p + ' no usa _post');
+  });
+  ['/subscribe-embedded', '/subscription-cancel',
+   '/subscription-reactivate', '/subscription-setup'].forEach(function (p) {
+    assert(src.indexOf("_postData('" + p + "'") !== -1, 'llamada a ' + p + ' no usa _postData');
   });
 });
 test('ninguna llamada Orbit usa application/json', function () {
