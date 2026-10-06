@@ -6,7 +6,7 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v20'; // v20: ignora la caché anterior y sirve la versión C266 (2026-10-06)
+const DREX_SW_VERSION = 'drex-v21'; // v21: ignora la caché anterior y sirve la versión C267 (2026-10-06)
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',

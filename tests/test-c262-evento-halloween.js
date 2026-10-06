@@ -40,6 +40,8 @@ ok(/id="halloween-banner"[^>]*onclick="openHalloweenEvent\(\)"/.test(html), 'ban
 ok(html.indexOf('id="halloween-banner"') < html.indexOf('id="drex-sort-bar"'), 'el banner va ARRIBA del feed (antes de las pestañas)');
 ok(html.includes('assets/halloween-event-2026.jpg'), 'usa la imagen de referencia subida por el usuario');
 ok(html.includes('id="halloween-event-view"'), 'sección propia del evento');
+ok(Number(((/id="halloween-event-view" class="[^"]*?z-\[(\d+)\]/).exec(html) || [])[1] || 0) > 100,
+   'C267: la vista del evento (z>100) cubre la barra inferior y sus iconos, no flotan sobre ella');
 for (const id of ['hw-state-visitor', 'hw-state-registered', 'hw-state-active', 'hw-state-ended', 'hw-register-btn']) {
   ok(html.includes('id="' + id + '"'), 'estado presente: #' + id);
 }
