@@ -36,6 +36,19 @@ for (const p of ['video', 'image']) {
   ok(html.includes('id="' + p + '-modal-action-comments"'), p + ': botón comentarios');
   ok(html.includes('id="' + p + '-modal-action-share"'), p + ': botón compartir');
 }
+
+console.log('== C272: centradas, puntitos abajo y rotar ELIMINADO ==');
+ok(html.includes('id="video-modal-actions" class="flex items-center justify-center'),
+  'video: acciones centradas, no a la esquina');
+ok(/id="image-modal-actions"[\s\S]{0,400}relative flex items-center justify-center/.test(html),
+  'fotos: acciones centradas, no a la esquina');
+ok(html.includes('style="bottom:4.5rem"') && html.includes('id="image-modal-dots"'),
+  'fotos: los puntitos viven abajo, pegados a las acciones');
+ok(!html.includes('image-modal-rotate'), 'rotar: fuera el botón');
+ok(!html.includes('_feedImageModalRotate'), 'rotar: fuera la función');
+ok(!html.includes('_feedImageModalRotation'), 'rotar: fuera el estado');
+ok(!html.includes('_feedImageModalRotSuffix'), 'rotar: fuera el sufijo de transform');
+ok(!html.includes("e.key === 'r'"), 'rotar: fuera la tecla R');
 ok(html.includes("onclick=\"_viewerRowVote('video','up')\""), 'la fila usa votePost vía _viewerRowVote');
 ok(html.includes("onclick=\"_viewerRowComments('image')\""), 'comentarios de fotos abren desde la fila');
 ok(html.includes('_paintViewerActionRow(\'video\', noteId);'), 'el video pinta sus acciones al abrir');

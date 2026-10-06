@@ -37,7 +37,7 @@
 //    autofill inerte), pickers de cumpleanos readonly x6 (regBdDay/Month/Year,
 //    settings-account-birthday-day/month/year), resto de inputs sin token son
 //    busquedas, chats, titulos/contenido o file inputs (no identidad).
-// 5. enterkeyhint en <textarea>: 14 textareas (regex multiline, igual que C136).
+// 5. enterkeyhint en <textarea>: inventario cerrado (regex multiline, igual que C136).
 //    Solo chat-edit-input tiene accion de Enter (onkeydown Enter->save) y ya
 //    declara enterkeyhint="done" (honesto, C135/C136). Los otros 13 son texto
 //    libre multiline (Enter = salto de linea): agregar enterkeyhint seria UI
@@ -163,10 +163,11 @@ tcase('pickers de cumpleanos readonly x6: sin autocomplete', () => {
   });
 });
 
-// ---- 5. enterkeyhint en <textarea>: inventario x15, solo chat-edit-input honesto ----
+// ---- 5. enterkeyhint en <textarea>: inventario x13, solo chat-edit-input honesto ----
 // C246 (2026-10-03): 16→15, mismo ajuste que C136 (textarea de Fase 3 fuera).
-tcase('textarea x15 (regex multiline, igual que C136)', () =>
-  count(/<textarea[\s\S]*?>/g, html) === 15);
+// C272 (2026-10-06): 15→13, mismo ajuste que C136 (Practicar fuera).
+tcase('textarea x13 (regex multiline, igual que C136)', () =>
+  count(/<textarea[\s\S]*?>/g, html) === 13);
 tcase('textarea: solo chat-edit-input tiene enterkeyhint (done, honesto con onkeydown)', () => {
   const tags = html.match(/<textarea[\s\S]*?>/g) || [];
   const withHint = tags.filter(t => t.indexOf('enterkeyhint=') >= 0);

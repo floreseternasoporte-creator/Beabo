@@ -4,9 +4,7 @@
 // Instancias REALES corregidas (antes: XSS almacenado / SyntaxError con claves forjadas):
 //  1. openGroupPostsView: item.id (= child.key de communityNotes) crudo en
 //     onclick="... openPostPermalink('${item.id}')" -> escapeInlineSingleQuote.
-//  2. practicarCardHTML: x.id (= ch.key de languageExercises) crudo en
-//     onclick="openExerciseDetail('"+x.id+"')" -> escapeInlineSingleQuote.
-//  3. renderPostsList: authorAvatarId (= `search-post-author-${post.id}`, post.id =
+//  2. renderPostsList: authorAvatarId (= `search-post-author-${post.id}`, post.id =
 //     child.key) crudo en id="..." y post.authorId crudo en data-author-id (x2)
 //     -> escapeHtml en el sitio de interpolacion.
 //  4-8. Selectores JS construidos con ids derivados de claves forjables:
@@ -61,11 +59,6 @@ check('grupo: openPostPermalink con escapeInlineSingleQuote',
   html.includes("openPostPermalink('${escapeInlineSingleQuote(item.id)}')"));
 check('grupo: forma cruda eliminada', !html.includes("openPostPermalink('${item.id}')"));
 
-check('practicar: openExerciseDetail con escapeInlineSingleQuote',
-  html.includes("openExerciseDetail(\\'' + escapeInlineSingleQuote(x.id) + '\\')"));
-check('practicar: forma cruda eliminada',
-  !html.includes("openExerciseDetail(\\'' + x.id + '\\')"));
-
 check('busqueda: id con escapeHtml(authorAvatarId)',
   html.includes('<img id="${escapeHtml(authorAvatarId)}"'));
 checkCount('busqueda: data-author-id con escapeHtml(post.authorId)',
@@ -115,11 +108,11 @@ const LEGIT = '-Nxyz_abc123';
 // Propiedad real: toda comilla simple del valor escapado va precedida de backslash,
 // asi que el literal JS '...' nunca se termina antes de tiempo.
 const escForged = escapeInlineSingleQuote(FORGED_KEY);
-const lit = "openExerciseDetail('" + escForged + "')";
+const lit = "openPostPermalink('" + escForged + "')";
 const unescapedQuote = /(?<!\\)'/.test(escForged);
 check('onclick: sin comilla sin escapar en valor forjado', !unescapedQuote);
 check('onclick: el literal completo no se rompe',
-  lit === "openExerciseDetail('x\\');window.__pwned=\\'YES\\';//')");
+  lit === "openPostPermalink('x\\');window.__pwned=\\'YES\\';//')");
 check('onclick: id legitimo intacto',
   escapeInlineSingleQuote(LEGIT) === LEGIT);
 

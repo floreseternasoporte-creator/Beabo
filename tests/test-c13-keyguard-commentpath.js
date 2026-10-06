@@ -39,15 +39,7 @@ for (const n of ['upvote', 'score', 'downvote', 'textbox', 'content', 'edited'])
 check('id="ig-replies-label-..." escapado', html.includes('id="ig-replies-label-${escapeHTML(commentPath)}"'));
 check('id="replies-..." escapado', html.includes('id="replies-${escapeHTML(commentPath)}"'));
 
-// ---------- 2. Estaticos: onclick de correcciones escapado ----------
-check('toggleCorrectionHelpful escapa pxDetailExercise.id',
-  html.includes("escapeInlineSingleQuote(pxDetailExercise.id)"));
-check('toggleCorrectionHelpful escapa c.id',
-  html.includes("escapeInlineSingleQuote(c.id)"));
-check('no queda onclick con id crudo en correcciones',
-  !html.includes("toggleCorrectionHelpful(\\'' + pxDetailExercise.id"));
-
-// ---------- 3. Funcionales con escapers reales ----------
+// ---------- 2. Funcionales con escapers reales ----------
 // eslint-disable-next-line no-eval
 const escapeHTML = eval('(' + extractFn('escapeHTML') + ')');
 const escapeSingleQuote = eval('(' + extractFn('escapeSingleQuote') + ')');
@@ -64,12 +56,12 @@ check('id legitimo intacto tras escapeHTML', escapeHTML(LEGIT) === LEGIT);
 
 // 3b. onclick '...' con escapeInlineSingleQuote: sin breakout de literal ni de atributo
 const forgedCorr = "x');alert(1);//";
-const lit = "toggleCorrectionHelpful('" + escapeInlineSingleQuote('-Nex1') + "', '" +
+const lit = "toggleVote('" + escapeInlineSingleQuote('-Nex1') + "', '" +
   escapeInlineSingleQuote(forgedCorr) + "', this)";
 // escapeInlineSingleQuote("x');alert(1);//") === "x\\');alert(1);//": la comilla
 // queda escapada con backslash, sin breakout del literal ni del atributo.
 check("escapeInlineSingleQuote neutraliza ' en literal JS",
-  lit === "toggleCorrectionHelpful('-Nex1', 'x\\');alert(1);//', this)");
+  lit === "toggleVote('-Nex1', 'x\\');alert(1);//', this)");
 const withQuote = escapeInlineSingleQuote('a"b');
 check('escapeInlineSingleQuote escapa " como &quot;', withQuote === 'a&quot;b');
 

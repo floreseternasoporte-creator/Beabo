@@ -118,11 +118,13 @@ tcase('teclado movil consistente: todos los OTP conservan inputmode=numeric', ()
 
 // ---- 4. textarea: inventario x15, ninguno con inputmode (sin leads) ----
 // C246 (2026-10-03): 16→15 (salió un textarea del estudio/directo en Fase 3).
-tcase('textarea: 15 ocurrencias y ninguna declara inputmode', () => {
+// C272 (2026-10-06): 15→13 (salieron los 2 textarea de Practicar idiomas:
+// el compositor de ejercicios y el de correcciones; función eliminada).
+tcase('textarea: 13 ocurrencias y ninguna declara inputmode', () => {
   const n = count(/<textarea/g, html);
-  if (n !== 15) return false;
+  if (n !== 13) return false;
   const tags = html.match(/<textarea[\s\S]*?>/g) || [];
-  return tags.length === 15 && tags.every(t => t.indexOf('inputmode=') < 0);
+  return tags.length === 13 && tags.every(t => t.indexOf('inputmode=') < 0);
 });
 tcase('textarea: chat-edit-input conserva enterkeyhint=done + onkeydown honesto', () => {
   const t = tagOf(html, 'chat-edit-input');
@@ -135,9 +137,11 @@ tcase('textarea: chat-edit-input conserva enterkeyhint=done + onkeydown honesto'
 // C246 (2026-10-03): 18→13 — salieron los selects de Drex Studio/directo/
 // economía (Fase 3 + C240); los 13 restantes son filtros/idioma/fiestas/
 // música/audiencia vigentes.
-// ---- 5. select nativos: inventario x13, uso consistente ----
-tcase('select: 13 <select nativos (inventario cerrado)', () =>
-  count(/<select[\s>]/g, html) === 13);
+// C272 (2026-10-06): 13→10 — salieron los 3 selects de idioma de la
+// función Practicar (eliminada); quedan filtros/fiestas/música/audiencia.
+// ---- 5. select nativos: inventario x10, uso consistente ----
+tcase('select: 10 <select nativos (inventario cerrado)', () =>
+  count(/<select[\s>]/g, html) === 10);
 
 // ---- 6. falla-en-base: contra HEAD los 4 leads carecen del trio ----
 tcase('base: en HEAD (sin el fix) los 4 leads NO tienen el trio', () => {

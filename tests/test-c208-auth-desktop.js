@@ -138,7 +138,7 @@ var I18N_KEYS = [
   'Publica fotos, videos y votaciones',
   'Vota y haz eco de lo que te gusta',
   'Conecta con personas de todo el mundo',
-  'Salas de voz en vivo para practicar idiomas y conocer gente.'
+  'Publica, conversa y crea tu comunidad.'
 ];
 function extractDict(file, varName, nextVarName) {
   var s = file.indexOf(varName);

@@ -84,10 +84,10 @@ test('dismiss drag: dy<=0 no toca nada y devuelve false', function () {
   assert.strictEqual(run('__img2.style.transform'), 'scale(2)', 'transform intacto');
 });
 
-test('dismiss drag: respeta el sufijo extra (rotación de fotos)', function () {
+test('dismiss drag: baja el medio con el factor 0.85', function () {
   run('var __img3 = ({ style: {} });');
-  run("drexViewerDismissDrag(__img3, null, 100, ' rotate(90deg)')");
-  assert.strictEqual(run('__img3.style.transform'), 'translateY(85.0px) rotate(90deg)');
+  run('drexViewerDismissDrag(__img3, null, 100)');
+  assert.strictEqual(run('__img3.style.transform'), 'translateY(85.0px)');
 });
 
 /* ---------- drexViewerDismissSnapBack ---------- */

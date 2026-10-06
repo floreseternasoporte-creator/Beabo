@@ -16,7 +16,7 @@
  *     los tres diccionarios; refreshCacheUsageUI usa appT (no ES
  *     hardcodeado).
  *  F. El perfil ajeno tiene Seguir + Mensaje + Bloquear.
- *  G. data-nav-index de la barra inferior es secuencial (0,1,2,3).
+ *  G. data-nav-index de la barra inferior es secuencial (0,1,2,3,4,5).
  *  H. Todas las vistas de la zona tienen botón atrás (chevron).
  * ================================================================ */
 var assert = require('assert');
@@ -75,7 +75,6 @@ var SETTINGS_CARDS = [
   ['openNotificationSettings', 'notification-settings-view'],
   ['openThemeConfig', 'theme-config-view'],
   ['openAppLanguageSettings', 'app-language-settings-view'],
-  ['openLearningLanguageSettings', 'learning-language-settings-view'],
   ['openTranslationsConfig', 'translations-config-view'],
   ['openCacheConfigView', 'cache-config-view'],
   ['openScreenTimeView', 'screentime-view'],
@@ -181,11 +180,11 @@ test('perfil ajeno tiene Seguir, Mensaje y Bloquear', function () {
 });
 
 /* ---------- G. data-nav-index secuencial ---------- */
-test('data-nav-index de la barra inferior es 0,1,2,3', function () {
+test('data-nav-index de la barra inferior es 0,1,2,3,4,5', function () {
   var idx = [];
   var re = /id="nav-btn[^"]*" data-nav-index="(\d)"/g, m;
   while ((m = re.exec(src)) !== null) idx.push(m[1]);
-  assert.deepStrictEqual(idx, ['0', '1', '2', '3'], 'índices: ' + JSON.stringify(idx));
+  assert.deepStrictEqual(idx, ['0', '1', '2', '3', '4', '5'], 'índices: ' + JSON.stringify(idx));
 });
 
 /* ---------- H. botón atrás en todas las vistas de la zona ---------- */
@@ -197,7 +196,7 @@ var ORBIT_CLOSE_RE = /orbit-x-btn[^>]*onclick="closeOrbitView\(\)"|onclick="clos
 test('todas las vistas de la zona tienen botón atrás', function () {
   var views = ['settings-view', 'account-config-view', 'profile-config-view', 'profile-view',
     'security-center-view', 'notification-settings-view', 'theme-config-view', 'cache-config-view',
-    'chat-privacy-settings-view', 'app-language-settings-view', 'learning-language-settings-view',
+    'chat-privacy-settings-view', 'app-language-settings-view',
     'translations-config-view', 'screentime-view', 'sleepmode-view', 'terms-view', 'privacy-view',
     'orbit-view', 'payments-view', 'blocked-accounts-view', 'follow-requests-view', 'twofactor-view',
     'recovery-codes-view', 'changepassword-view', 'deactivate-delete-account-view',

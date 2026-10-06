@@ -32,6 +32,12 @@
 // live — titulo, nombre, avatar, viewers — pasa por esc(), y los textos por
 // t(); cero interpolacion cruda de datos de usuario/BD). Nuevo inventario:
 // .innerHTML 579, .outerHTML 3, insertAdjacentHTML 8.
+// C272 2026-10-06: 579 -> 562 (-17, SOLO borrados, cero sinks nuevos):
+// eliminadas la función Practicar idiomas (motor de ejercicios/correcciones
+// con sus tarjetas y listas) y el subsistema "Idioma que estoy aprendiendo"
+// (renderLearningLanguageSettings + selectLearningLanguageFromSettings);
+// cada sink retirado pintaba markup propio o datos ya escapados y su
+// desaparición no deja interpolaciones nuevas.
 //  - drex-rec-engine.js / sw.js: 0 sinks cada uno (0 hits en los 4 patrones).
 //  - scrollIntoView({behavior:'smooth'}): 6 hits (9252, 23762, 23773, 33930,
 //    37151 + BARO v2: scroll del feed de actividad al pie); scroll-behavior:smooth real: 1 (#empresa-view); la media query
@@ -82,14 +88,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 579 ocurrencias en index.html (C269 2026-10-06: +13 — pestañas de perfil (respuestas/multimedia/ecos): contenido y autores con escapeHtml, URLs con getSafeMediaUrl, ids con escapeInlineSingleQuote en onclick; C268 2026-10-06: +4 — panel de stickers del chat (paquetes, rejilla y carrusel): todo nombre de sticker pasa por escapeHtml y el arte SVG/PNG es contenido propio del catálogo drex-stickers.js, cero datos de usuario sin escapar; auditoría UI: +6 de C243 — paywall cancelado y 5 estados de la lista de visitantes, todo dato de usuario escapado con escapeHtml/escapeInlineSingleQuote; C246 2026-10-03: +20 neto de C241–C245 — Orbit/checkout/transacciones/Pulso/visitas — auditados sink a sink: todo dato de usuario pasa por orbitEscText/escFn/escapeHTML/baroLLMEsc, el resto es markup estático o limpieza; C253 2026-10-06: +1 — el aviso de activación de vistas de perfil interpola SOLO escFn(t(clave estática)), sin datos de usuario; C264 2026-10-06: +5 — pie fijo de compra de Orbit y repintado de la matriz de beneficios: markup propio con escFn/t() y precios de constantes ORBIT_PLANS, cero datos de usuario sin escapar)', () => count(/\.innerHTML/g, html) === 579);
+tcase('innerHTML: 562 ocurrencias en index.html (C272 2026-10-06: −17 SOLO por borrados — fuera Practicar idiomas y el subsistema "Idioma que estoy aprendiendo", cero sinks nuevos; C269 2026-10-06: +13 — pestañas de perfil (respuestas/multimedia/ecos): contenido y autores con escapeHtml, URLs con getSafeMediaUrl, ids con escapeInlineSingleQuote en onclick; C268 2026-10-06: +4 — panel de stickers del chat (paquetes, rejilla y carrusel): todo nombre de sticker pasa por escapeHtml y el arte SVG/PNG es contenido propio del catálogo drex-stickers.js, cero datos de usuario sin escapar; auditoría UI: +6 de C243 — paywall cancelado y 5 estados de la lista de visitantes, todo dato de usuario escapado con escapeHtml/escapeInlineSingleQuote; C246 2026-10-03: +20 neto de C241–C245 — Orbit/checkout/transacciones/Pulso/visitas — auditados sink a sink: todo dato de usuario pasa por orbitEscText/escFn/escapeHTML/baroLLMEsc, el resto es markup estático o limpieza; C253 2026-10-06: +1 — el aviso de activación de vistas de perfil interpola SOLO escFn(t(clave estática)), sin datos de usuario; C264 2026-10-06: +5 — pie fijo de compra de Orbit y repintado de la matriz de beneficios: markup propio con escFn/t() y precios de constantes ORBIT_PLANS, cero datos de usuario sin escapar)', () => count(/\.innerHTML/g, html) === 562);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 579 &&
+  count(/\.innerHTML/g, copy) === 562 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);

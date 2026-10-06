@@ -5,7 +5,7 @@
  * Hallazgos que corrige (auditoría tools/audit-i18n-en.js sobre main):
  *  - 14 literales appT() sin clave EN (errores de sticker/GIF/video,
  *    fiesta de voz, carpetas, "Los destellos son exclusivos de Drex
- *    Orbit", "Debes iniciar sesión para practicar.").
+ *    Orbit", "Publica, conversa y crea tu comunidad.").
  *  - 826 textos dinámicos de UI (toasts, estados vacíos, títulos de
  *    vistas nuevas: Practicar, Orbit/Kor One, supervisión, música)
  *    sin traducción en EN/ZH/PT.
@@ -51,12 +51,11 @@ ok('cobertura appT/drexFxT total', () => {
 });
 
 const spots = [
-  'Debes iniciar sesión para practicar.',
   'Los destellos son exclusivos de Drex Orbit.',
   'No se pudo conectar a la fiesta de voz. Revisa tu conexión.',
   'Dejar de seguir', 'Solicitud de seguimiento enviada',
   'En revisión', 'Rechazado', 'Publicado', 'Aprobar',
-  'Practicar idiomas', 'Salas de voz en vivo para practicar idiomas y conocer gente.',
+  'Publica, conversa y crea tu comunidad.',
   'Inicia sesión para ver tus menciones.',
   '⚠️ Algo salió mal procesando tu mensaje. Inténtalo de nuevo.'
 ];
