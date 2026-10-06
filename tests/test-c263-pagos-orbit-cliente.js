@@ -42,8 +42,8 @@ ok(html.includes('.orbit-seg-btn{flex:1;min-height:40px;border-radius:9999px;fon
   'los 4 segmentos caben a 390px (13px)');
 
 // ---------- 3: safe-area ----------
-ok(html.includes('.orbit-sticky{position:sticky;bottom:max(12px, env(safe-area-inset-bottom))'),
-  'la barra de precio respeta el safe-area');
+ok(html.includes('.orbit-footer{background:var(--theme-surface);border-top:1px solid var(--theme-border);padding:16px;padding-bottom:max(16px, env(safe-area-inset-bottom))'),
+  'C264: el pie fijo de compra respeta el safe-area');
 ok((html.match(/padding-bottom:max\(1\.75rem,env\(safe-area-inset-bottom\)\)/g) || []).length >= 2,
   'hojas de pago y de gestión respetan el safe-area');
 

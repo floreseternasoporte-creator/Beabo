@@ -108,11 +108,15 @@ for (const id of EXPECTED_IDS) {
 /* ---- 8. Escalera ordenada por precio ascendente ---- */
 ok(Array.isArray(LADDER) && LADDER.length === EXPECTED_IDS.length &&
    EXPECTED_IDS.every((id) => LADDER.indexOf(id) !== -1), 'ORBIT_LADDER contiene los 7 planes');
+/* C264: la escalera muestra primero los 4 vendibles (precio ascendente)
+ * y al final los "Próximamente" (weekly/biennial/lifetime). */
 let asc = true;
-for (let i = 1; i < LADDER.length; i++) {
-  if (!(PLANS[LADDER[i]].cents > PLANS[LADDER[i - 1]].cents)) asc = false;
+const SELLABLE = ['monthly', 'quarterly', 'semiannual', 'yearly'];
+for (let i = 1; i < SELLABLE.length; i++) {
+  if (!(PLANS[SELLABLE[i]].cents > PLANS[SELLABLE[i - 1]].cents)) asc = false;
 }
-ok(asc, 'escalera en precio ascendente');
+ok(asc && LADDER.slice(0, 4).join(',') === SELLABLE.join(','), 'vendibles primero, en precio ascendente');
+ok(LADDER.slice(4).join(',') === 'weekly,biennial,lifetime', 'los Próximamente cierran la escalera');
 ok(sandbox.ORBIT_RECOMMENDED_PLAN === 'yearly' && PLANS[sandbox.ORBIT_RECOMMENDED_PLAN], 'plan recomendado = yearly (existe)');
 
 /* ---- 9. Nombres/precios/badges para los 7 (sin lanzar) ---- */

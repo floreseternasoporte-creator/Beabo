@@ -80,12 +80,12 @@ test('catálogo incluye los iconos que usa Orbit', function () {
 
 /* ---------- 2. lista de beneficios ---------- */
 
-test('orbitBenefits(): 11 beneficios con ic del catálogo, sin emojis', function () {
+test('orbitBenefits(): 16 beneficios con ic del catálogo, sin emojis', function () {
   var r = fnBlock(src, 'function orbitBenefits() {', 'orbitBenefits');
   var rows = r.match(/\{\s*f:\s*'[^']+',\s*ic:\s*'[^']+'/g) || [];
-  /* C243: 7 de C241 + hd_uploads/longer_posts/pin_post/profile_visitors. */
-  assert(rows.length === 11, 'se esperaban 11 beneficios, hay ' + rows.length);
-  ['noads', 'crown', 'palette', 'mic', 'puzzle', 'chart', 'headphones']
+  /* C243: 11 base. C264: + photo_downloads/chat_themes/instant_username/long_polls/big_parties. */
+  assert(rows.length === 16, 'se esperaban 16 beneficios, hay ' + rows.length);
+  ['noads', 'crown', 'palette', 'mic', 'puzzle', 'chart', 'headphones', 'download', 'zap', 'vote', 'users']
     .forEach(function (name) {
       assert(r.indexOf("ic: '" + name + "'") !== -1, 'falta ic ' + name);
     });
@@ -98,11 +98,12 @@ test('orbitBenefits(): 11 beneficios con ic del catálogo, sin emojis', function
 test('renderOrbitView(): filas de beneficios dibujan SVG, no emojis', function () {
   var r = blockBetween(src, 'async function renderOrbitView() {',
     'function orbitSubscribe(planId) {', 'renderOrbitView');
-  /* C243: ambas listas se dibujan con el helper compartido
-   * orbitBenefitsListHTML(), que sigue usando dxIcon(b.ic). */
-  assert(r.indexOf('orbitBenefitsListHTML()') !== -1, 'las listas de beneficios usan el helper compartido');
-  var helper = fnBlock(src, 'function orbitBenefitsListHTML() {', 'orbitBenefitsListHTML');
-  assert(helper.indexOf("window.dxIcon(b.ic, 'w-5 h-5')") !== -1, 'el helper dibuja los iconos con dxIcon(b.ic)');
+  /* C264: una sola matriz por nivel (orbitBenefitsMatrixRows), que
+   * sigue dibujando cada beneficio con dxIcon(b.ic) y candado SVG. */
+  assert(r.indexOf('orbitBenefitsMatrixHTML(') !== -1, 'la vista usa la matriz única de beneficios');
+  var helper = fnBlock(src, 'function orbitBenefitsMatrixRows(planId) {', 'orbitBenefitsMatrixRows');
+  assert(helper.indexOf("window.dxIcon(b.ic, 'w-5 h-5')") !== -1, 'la matriz dibuja los iconos con dxIcon(b.ic)');
+  assert(helper.indexOf("window.dxIcon('lock', 'w-3 h-3')") !== -1, 'lo no incluido lleva candado SVG, no emoji');
   assert(r.indexOf("'<span class=\"text-2xl\">' + b.e") === -1,
     'regresión: fila de beneficio con emoji (text-2xl + b.e)');
   assert(r.indexOf("window.dxIcon('chart', 'w-6 h-6')") !== -1,

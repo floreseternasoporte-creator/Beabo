@@ -155,7 +155,7 @@ ok(i18n.indexOf('"orbit_coming_soon":"即将推出"') !== -1, 'i18n ZH: "即将�
 ok(i18n.indexOf('"orbit_coming_soon":"Em breve"') !== -1, 'i18n PT: "Em breve"');
 
 /* ---- 8. Sanidad a 390px (inspección estática del markup/CSS) ---- */
-ok(html.indexOf("'<div class=\"px-5 mt-5\"><h3") !== -1, 'sección de planes dentro de contenedor px-5');
+ok(html.indexOf("'<div class=\"px-4 mt-5\"><h3") !== -1, 'sección de planes dentro de contenedor px-4 (C264)');
 ok(/grid grid-cols-1 gap-3/.test(html), 'escalera en una sola columna (grid-cols-1)');
 for (const id of PLAN_IDS) {
   ok(!/width:\s*\d{3,}px/.test(cards[id]), id + ': sin anchos fijos en la tarjeta');

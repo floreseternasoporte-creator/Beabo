@@ -37,7 +37,7 @@ const cardStart = html.indexOf('id="orbit-settings-card"');
 ok(cardStart !== -1, '#orbit-settings-card presente');
 const cardEnd = html.indexOf('</button>', cardStart);
 const cardHtml = cardStart !== -1 && cardEnd !== -1 ? html.slice(cardStart, cardEnd) : '';
-ok(cardHtml.indexOf(IMG) !== -1, 'la tarjeta de ajustes referencia la imagen 3D');
+ok(cardHtml.indexOf('assets/img/drex-orbit-3d-320.png') !== -1, 'la tarjeta de ajustes referencia la imagen 3D (versión ligera C264)');
 ok(cardHtml.indexOf('<img') !== -1, 'la tarjeta de ajustes usa <img> (no icono genérico)');
 ok(!/#6[Dd]28[Dd]9|#9[Dd]4[Ee][Dd][Dd]|linear-gradient/.test(cardHtml),
    'la tarjeta de ajustes ya no usa degradado morado');
@@ -48,10 +48,13 @@ ok(!/#6[Dd]28[Dd]9|#9[Dd]4[Ee][Dd][Dd]|linear-gradient/.test(cardHtml),
  * hero (orbit-fan-center), ya no un medallón junto al título. El plan
  * Orbit de Drex sigue presente como subtítulo del estado suscrito. */
 ok(html.indexOf('El plan Orbit de Drex') !== -1, 'cabecera de la vista Orbit presente');
-const fanIdx = html.indexOf('class="orbit-fan-img orbit-fan-center"');
-ok(fanIdx !== -1, 'abanico hero de la vista Orbit presente (C248)');
+/* C264: el abanico se retiró (piezas vacías con degradados ajenos); la
+ * hero es compacta y usa la imagen ligera drex-orbit-3d-320.png. */
+const fanIdx = html.indexOf('class="orbit-hero-img"');
+ok(fanIdx !== -1, 'hero compacto de la vista Orbit presente (C264, sin abanico)');
+ok(html.indexOf('orbit-fan-center') === -1, 'el abanico ya no existe en la vista');
 const fanSlice = fanIdx !== -1 ? html.slice(Math.max(0, fanIdx - 300), fanIdx + 300) : '';
-ok(fanSlice.indexOf(IMG) !== -1 && fanSlice.indexOf('<img') !== -1, 'la cabecera Orbit referencia la imagen 3D');
+ok(fanSlice.indexOf('assets/img/drex-orbit-3d-320.png') !== -1 && fanSlice.indexOf('<img') !== -1, 'la cabecera Orbit referencia la imagen 3D ligera');
 
 console.log(`\nOrbit 3D icon (carril 4): ${pass} ok, ${fail} fallos`);
 process.exit(fail ? 1 : 0);

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /* =====================================================================
  * C248 — Orbit estilo referencia (layout tipo Grok) con piel Drex:
- * X circular, titulo centrado, segmentado Mensual/Trimestral/Anual,
- * tarjeta hero con abanico + 5 destacados, barra inferior fija con
- * precio grande + toggle Mensual/Anual + CTA unico degradado Drex.
- * Contratos C243 intactos: 7 tarjetas, CTA unico, checklist de 11.
+ * X circular, titulo centrado, segmentado Mensual/Trimestral/Semestral/Anual.
+ * C264: hero compacto SIN abanico, matriz única de beneficios por nivel
+ * y barra de compra en PIE FIJO fuera del scroll (sin toggle duplicado).
+ * Contratos C243 intactos: 7 tarjetas, CTA unico, matriz de beneficios.
  * Seleccionar solo pinta estado (fail-closed, nunca concede nada).
  * Uso: node tests/test-c248-orbit-grok-layout.js
  * ===================================================================== */
@@ -72,7 +72,7 @@ function buildSandbox() {
 (async () => {
   console.log('-- C248.1: fuente (CSS + header X) --');
   eq(html404, html, '404.html byte-idéntico a index.html');
-  for (const cls of ['orbit-x-btn', 'orbit-grok-title', 'orbit-seg-btn', 'orbit-hero-card', 'orbit-fan-center', 'orbit-feat-row', 'orbit-sticky-price', 'orbit-toggle-btn', 'orbit-cta']) {
+  for (const cls of ['orbit-x-btn', 'orbit-grok-title', 'orbit-seg-btn', 'orbit-hero-card', 'orbit-hero-img', 'orbit-sticky-price', 'orbit-footer', 'orbit-cta']) {
     ok(html.includes('.' + cls), 'CSS presente: .' + cls);
   }
   ok(html.includes('class="orbit-x-btn tap44"'), 'header Orbit usa botón X circular');
@@ -82,31 +82,31 @@ function buildSandbox() {
   console.log('-- C248.2: render sin sesión (layout referencia) --');
   const { sandbox, els } = buildSandbox();
   await sandbox.renderOrbitView();
-  const r = els['orbit-view-content'].innerHTML;
+  const r = els['orbit-view-content'].innerHTML + '\n' + (els['orbit-view-footer'] ? els['orbit-view-footer'].innerHTML : '');
   ok(r.includes('orbit-grok-title'), 'título centrado estilo referencia');
   ok(r.includes('Crea más con Drex Orbit'), 'titular Drex presente');
   ok(r.includes('Elige el plan ideal para ti'), 'subtítulo presente');
-  eq((r.match(/data-orbit-seg="monthly"/g) || []).length, 2, 'Mensual en segmentado + toggle');
+  eq((r.match(/data-orbit-seg="monthly"/g) || []).length, 1, 'Mensual solo en el segmentado (sin toggle duplicado)');
   ok(r.includes('data-orbit-seg="quarterly"'), 'Trimestral en el segmentado superior');
   ok(r.includes('data-orbit-seg="yearly"'), 'Anual presente');
   ok(r.includes('orbit-hero-card'), 'tarjeta hero presente');
-  ok(r.includes('orbit-fan-center'), 'abanico con imagen central Orbit');
-  ok(r.includes('assets/img/drex-orbit-3d.png'), 'abanico usa el arte Orbit de Drex');
+  ok(!r.includes('orbit-fan-center'), 'C264: el abanico ya no existe');
+  ok(r.includes('orbit-hero-img'), 'hero compacto con imagen Orbit optimizada');
+  ok(r.includes('assets/img/drex-orbit-3d-320.png'), 'hero usa el arte Orbit ligero de Drex');
   ok(r.includes('Todo Drex, sin límites'), 'titular de la hero presente');
-  ok(r.includes('También incluye:'), 'etiqueta "También incluye:" presente');
-  eq((r.match(/orbit-feat-row/g) || []).length, 5, 'hero con 5 privilegios destacados');
-  for (const f of ['no_ads', 'badge', 'hd_uploads', 'longer_posts', 'profile_visitors']) {
-    ok(r.includes("orbitBenefitTap('" + f + "')"), 'destacado tocable: ' + f);
+  ok(r.includes('Todo lo que incluye'), 'la matriz única sustituye a la etiqueta "También incluye:"');
+  for (const f of ['no_ads', 'badge', 'hd_uploads', 'longer_posts', 'profile_visitors', 'photo_downloads', 'long_polls', 'big_parties']) {
+    ok(r.includes("orbitBenefitTap('" + f + "')"), 'beneficio tocable en la matriz: ' + f);
   }
   ok(r.includes('id="orbit-sticky-price"'), 'barra inferior con precio grande');
   ok(r.includes('id="orbit-sticky-billed"'), 'barra inferior con facturación');
   ok(r.includes('id="orbit-subscribe-cta"'), 'CTA único en la barra inferior');
   eq((r.match(/id="orbit-subscribe-cta"/g) || []).length, 1, 'un solo CTA de suscripción');
-  ok(r.includes('orbitRestore()'), 'barra inferior enlaza Restaurar compra');
+  ok(r.includes('orbitRestore()'), 'el pie fijo enlaza Restaurar compra');
   eq((r.match(/orbit-plan-card/g) || []).length, 7, 'escalera completa: 7 tarjetas (C243 intacto)');
-  eq((r.match(/orbit-benefit-check/g) || []).length, 11, 'checklist completa: 11 privilegios (C243 intacto)');
+  eq((r.match(/orbit-benefit-check/g) || []).length, 16, 'matriz completa: 16 privilegios incluidos en el plan elegido (Anual)');
 
-  console.log('-- C248.3: selección sincroniza precio/toggle (sin conceder) --');
+  console.log('-- C248.3: selección sincroniza precio del pie fijo (sin conceder) --');
   sandbox.orbitSelectPlan('monthly');
   eq(els['orbit-sticky-price'].textContent, '$4.99', 'precio grande refleja Mensual');
   ok(String(els['orbit-sticky-billed'].textContent).includes('$4.99'), 'facturación refleja Mensual');
@@ -121,7 +121,7 @@ function buildSandbox() {
   vm.runInContext(i18nJs, sb);
   eq(Object.keys(sb.APP_ENGLISH_TEXT).length, Object.keys(sb.APP_CHINESE_TEXT).length, 'paridad EN=ZH');
   eq(Object.keys(sb.APP_ENGLISH_TEXT).length, Object.keys(sb.APP_PORTUGUESE_TEXT).length, 'paridad EN=PT');
-  for (const k of ['Crea más con Drex Orbit', 'Elige el plan ideal para ti', 'Todo Drex, sin límites', 'También incluye:']) {
+  for (const k of ['Crea más con Drex Orbit', 'Elige el plan ideal para ti', 'Todo Drex, sin límites', 'Todo lo que incluye']) {
     ok(!!sb.APP_ENGLISH_TEXT[k], 'EN tiene: ' + k);
     ok(!!sb.APP_CHINESE_TEXT[k], 'ZH tiene: ' + k);
     ok(!!sb.APP_PORTUGUESE_TEXT[k], 'PT tiene: ' + k);

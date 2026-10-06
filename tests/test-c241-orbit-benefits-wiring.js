@@ -41,7 +41,7 @@ function count(s) { return html.split(s).length - 1; }
 /* ---------- base: beneficios vigentes y el núcleo fail-closed ---------- */
 
 ok('ORBIT_FEATURES sigue siendo la lista de 7 beneficios', () => {
-  assert(has("var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors'];"));
+  assert(has("var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors', 'photo_downloads', 'chat_themes', 'instant_username', 'long_polls', 'big_parties'];"));
 });
 
 ok('hasAccess rechaza funciones desconocidas (fail-closed)', () => {
@@ -196,7 +196,7 @@ ok('aplicar un tema pro pasa por orbitGate(profile_themes)', () => {
 });
 
 ok('un tema pro guardado se repliega al base si Orbit no está activo', () => {
-  assert(has('if (th.pro && !((typeof DrexOrbit !== \'undefined\') && DrexOrbit.isActive())) th = ORBIT_PROFILE_THEMES[0];'));
+  assert(has('if (th.pro && !((typeof DrexOrbit !== \'undefined\') && DrexOrbit.hasAccess(\'profile_themes\'))) th = ORBIT_PROFILE_THEMES[0];'));
 });
 
 /* ---------- limits ---------- */
@@ -223,7 +223,7 @@ ok('la cámara graba con drexOrbitCamMaxSec (tick + corte duro)', () => {
 ok('los bloqueos de límite sugieren Orbit solo a quien no lo tiene', () => {
   assert(has("appT('Con Drex Orbit puedes subir videos de hasta 180 segundos.')"));
   assert(has("appT('Con Drex Orbit puedes subir hasta 40 fotos por publicación.')"));
-  assert(count('DrexOrbit.enforced() && !DrexOrbit.isActive()') >= 2);
+  assert(count("DrexOrbit.enforced() && !DrexOrbit.hasAccess('limits')") >= 2);
 });
 
 ok('programar publicaciones pasa por orbitGate(limits)', () => {
@@ -243,7 +243,7 @@ ok('las analíticas de creador pasan por orbitGate(analytics)', () => {
 /* ---------- fiesta_boost ---------- */
 
 ok('la fiesta de un anfitrión Orbit nace marcada (fiestaOrbit)', () => {
-  assert(has("if (typeof DrexOrbit !== 'undefined' && DrexOrbit.isActive()) note.fiestaOrbit = true;"));
+  assert(has("if (typeof DrexOrbit !== 'undefined' && DrexOrbit.hasAccess('fiesta_boost')) note.fiestaOrbit = true;"));
 });
 
 ok('el ranking "Para ti" impulsa las fiestas Orbit en vivo', () => {

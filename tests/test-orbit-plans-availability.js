@@ -42,6 +42,13 @@ Object.defineProperty(viewEl, 'innerHTML', {
   set(v) { capturedHtml = String(v); },
   get() { return capturedHtml; },
 });
+/* C264: la barra de compra vive en el pie fijo #orbit-view-footer. */
+let footHtml = '';
+const footEl = { classList: { add() {}, remove() {} }, style: {} };
+Object.defineProperty(footEl, 'innerHTML', {
+  set(v) { footHtml = String(v); },
+  get() { return footHtml; },
+});
 
 const toasts = [];
 let fetchCalls = 0;
@@ -56,7 +63,7 @@ const sandbox = {
   location: { origin: 'https://x.test', pathname: '/Beabo/', href: 'https://x.test/Beabo/', search: '' },
   document: {
     readyState: 'complete', addEventListener() {},
-    getElementById(id) { return id === 'orbit-view-content' ? viewEl : null; },
+    getElementById(id) { return id === 'orbit-view-content' ? viewEl : (id === 'orbit-view-footer' ? footEl : null); },
     querySelector() { return null; }, querySelectorAll() { return []; },
   },
   window: {},
@@ -137,7 +144,7 @@ for (const id of ['weekly', 'biennial', 'lifetime']) ok(avail(id) === false, id 
     const ctas = html.match(/id="orbit-subscribe-cta"/g) || [];
     ok(ctas.length === 1, 'exactamente un boton de suscripcion, hay ' + ctas.length);
     ok(html.includes('onclick="orbitSubscribeSelected()"'), 'el CTA cobra el plan seleccionado');
-    ok(capturedHtml.includes('id="orbit-subscribe-cta"'), 'el CTA se renderiza en la vista');
+    ok((capturedHtml + footHtml).includes('id="orbit-subscribe-cta"'), 'el CTA se renderiza en el pie fijo de la vista');
     ok(capturedHtml.includes('$49.99'), 'el CTA muestra el precio del recomendado por defecto (Anual $49.99)');
   }
   ok(sandbox.orbitCheapestAvailablePrice() === '$4.99', '"Desde" del paywall = $4.99 (weekly en Próximamente no cuenta)');

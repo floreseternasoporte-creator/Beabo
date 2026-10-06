@@ -75,8 +75,8 @@ const openViewerSrc = extractFn(html, 'function drexSnapOpenViewer()');
 
 ok('estático: existe drexSnapCanView (fail-closed)',
   canViewSrc.startsWith('function drexSnapCanView()'));
-ok('estático: drexSnapCanView delega en DrexOrbit.verifiedActive() (suscripción verificada por backend)',
-  /DrexOrbit\.verifiedActive\(\)/.test(canViewSrc));
+ok('estático: drexSnapCanView delega en el plan efectivo (C264: pagado verificado o prueba del evento)',
+  /DrexOrbit\.effectivePlan\(\) != null/.test(canViewSrc));
 ok('estático: drexSnapCanView NO usa isActive() ni hasAccess() (no depende del interruptor global ENFORCE)',
   !/isActive\(\)/.test(canViewSrc) && !/hasAccess\(/.test(canViewSrc));
 ok('estático: drexSnapCanView es fail-closed ante DrexOrbit ausente',
@@ -115,7 +115,7 @@ function runCanView(drexOrbitValue, defineIt) {
   vm.runInContext(canViewSrc, sandbox, { filename: 'drexSnapCanView.js' });
   return vm.runInContext('drexSnapCanView()', sandbox);
 }
-const realShape = (st) => ({ verifiedActive: function () { try { return !!(st && st.active === true); } catch (_) { return false; } } });
+const realShape = (st) => ({ effectivePlan: function () { try { return (st && st.active === true) ? (st.plan || 'monthly') : null; } catch (_) { return null; } } });
 
 tcase('conductual: sin DrexOrbit -> false (fail-closed)', () =>
   runCanView(undefined, false) === false || Promise.reject(new Error('esperaba false')));
@@ -125,10 +125,10 @@ tcase('conductual: sin estado verificado (refresh pendiente) -> false', () =>
   runCanView(realShape(null), true) === false || Promise.reject(new Error('esperaba false')));
 tcase('conductual: verificación fallida / sin suscripción -> false', () =>
   runCanView(realShape({ active: false, status: 'none' }), true) === false || Promise.reject(new Error('esperaba false')));
-tcase('conductual: suscripción verificada activa -> true', () =>
+tcase('conductual: plan efectivo activo (pagado o de prueba) -> true', () =>
   runCanView(realShape({ active: true, status: 'active' }), true) === true || Promise.reject(new Error('esperaba true')));
-tcase('conductual: verifiedActive lanza -> false (fail-closed)', () =>
-  runCanView({ verifiedActive: () => { throw new Error('boom'); } }, true) === false || Promise.reject(new Error('esperaba false')));
+tcase('conductual: effectivePlan lanza -> false (fail-closed)', () =>
+  runCanView({ effectivePlan: () => { throw new Error('boom'); } }, true) === false || Promise.reject(new Error('esperaba false')));
 
 // ---------- conductuales: drexSnapLoadTray ----------
 function makeTrayCtx(canView) {

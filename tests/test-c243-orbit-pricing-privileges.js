@@ -112,7 +112,7 @@ eq(sandbox.orbitPlanSavingsPct('yearly'), 17, 'anual ahorra 17% vs mensual');
 eq(sandbox.orbitPlanMonthlyPrice('quarterly'), '$4.33', 'trimestral ≈ $4.33/mes');
 
 await sandbox.renderOrbitView();
-const r = els['orbit-view-content'].innerHTML;
+const r = els['orbit-view-content'].innerHTML + '\n' + (els['orbit-view-footer'] ? els['orbit-view-footer'].innerHTML : '');
 ok(r.length > 500, 'la vista Orbit se renderiza sin sesión');
 eq((r.match(/orbit-plan-card/g) || []).length, 7, 'se renderizan las 7 tarjetas');
 for (const id of ['monthly', 'quarterly', 'semiannual', 'yearly']) {
@@ -131,11 +131,11 @@ ok(r.includes('Recomendado'), 'el anual lleva la etiqueta Recomendado');
 ok(r.includes('Ahorras 17%'), 'el anual muestra el ahorro calculado (17%)');
 ok(r.includes('$4.99') && r.includes('$12.99') && r.includes('$24.99'), 'precios visibles sin sesión');
 
-/* checklist de privilegios (Meta): las 11 filas, tocables */
-const FEATS11 = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors'];
+/* checklist de privilegios: matriz única por nivel (C264), tocable */
+const FEATS16 = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors', 'photo_downloads', 'chat_themes', 'instant_username', 'long_polls', 'big_parties'];
 ok(r.includes('Todo lo que incluye'), 'sección checklist presente');
-for (const f of FEATS11) ok(r.includes("orbitBenefitTap('" + f + "')"), 'checklist incluye ' + f);
-eq((r.match(/orbit-benefit-check/g) || []).length, 11, 'checklist con 11 checks');
+for (const f of FEATS16) ok(r.includes("orbitBenefitTap('" + f + "')"), 'checklist incluye ' + f);
+eq((r.match(/orbit-benefit-check/g) || []).length, 16, 'con el plan Anual elegido, la matriz marca los 16 incluidos');
 
 /* selección: comportamiento Meta + fail-closed */
 sandbox.orbitSelectPlan('monthly');
@@ -153,11 +153,20 @@ eq(K.hasAccess('hd_uploads'), false, 'fail-closed: seleccionar no concede privil
 
 /* ================= B. Privilegios nuevos ================= */
 console.log('-- B: privilegios nuevos --');
-ok(html.includes("var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors'];"), 'ORBIT_FEATURES tiene los 11 privilegios');
+ok(html.includes("var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors', 'photo_downloads', 'chat_themes', 'instant_username', 'long_polls', 'big_parties'];"), 'ORBIT_FEATURES tiene los 16 privilegios (C264)');
 sandbox.window.DREX_ORBIT_ENFORCE = true;
 const FUTURE = Math.floor(Date.now() / 1000) + 30 * 86400;
 K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
-for (const f of FEATS11) eq(K.hasAccess(f), true, 'miembro activo: hasAccess(' + f + ')');
+for (const f of ['no_ads', 'badge', 'limits', 'hd_uploads', 'photo_downloads', 'chat_themes', 'instant_username']) eq(K.hasAccess(f), true, 'Mensual (N1): hasAccess(' + f + ')');
+for (const f of ['longer_posts', 'profile_themes', 'long_polls', 'pin_post', 'fiesta_boost', 'big_parties', 'analytics', 'priority_support', 'profile_visitors']) eq(K.hasAccess(f), false, 'Mensual (N1) sin niveles superiores: ' + f);
+K._setTestState({ active: true, plan: 'quarterly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
+for (const f of ['longer_posts', 'profile_themes', 'long_polls']) eq(K.hasAccess(f), true, 'Trimestral (N2): hasAccess(' + f + ')');
+eq(K.hasAccess('pin_post'), false, 'Trimestral (N2) aún sin pin_post (N3)');
+K._setTestState({ active: true, plan: 'semiannual', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
+for (const f of ['pin_post', 'fiesta_boost', 'big_parties']) eq(K.hasAccess(f), true, 'Semestral (N3): hasAccess(' + f + ')');
+eq(K.hasAccess('analytics'), false, 'Semestral (N3) aún sin analytics (N4)');
+K._setTestState({ active: true, plan: 'yearly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
+for (const f of FEATS16) eq(K.hasAccess(f), true, 'Anual (N4): hasAccess(' + f + ')');
 eq(K.hasAccess('exclusive_gifts'), false, 'exclusive_gifts sigue eliminado (C240)');
 
 /* (a) HD: escalera mayor solo con acceso verificado; tope de storage intacto */
@@ -179,8 +188,8 @@ ok(html.includes('file.size > ((typeof drexOrbitVideoDirectMaxBytes'), 'la decis
 
 /* (b) publicaciones más largas: único punto del límite */
 const charsSeg = segment('function drexOrbitPostMaxChars', 'function onNoteFormatChange');
-eq(evalWith(charsSeg, { DrexOrbit: { isActive: () => true } }).getCurrentNoteMaxLength(), 2000, 'Orbit: 2000 caracteres');
-eq(evalWith(charsSeg, { DrexOrbit: { isActive: () => false } }).getCurrentNoteMaxLength(), 200, 'sin Orbit: 200 caracteres');
+eq(evalWith(charsSeg, { DrexOrbit: { hasAccess: (f) => f === 'longer_posts' } }).getCurrentNoteMaxLength(), 2000, 'con longer_posts (N2+): 2000 caracteres');
+eq(evalWith(charsSeg, { DrexOrbit: { hasAccess: () => false } }).getCurrentNoteMaxLength(), 200, 'sin longer_posts: 200 caracteres');
 
 /* (c) marco Orbit en avatares (feed/posts/comentarios/perfil) */
 ok(html.includes('.orbit-avatar-frame'), 'CSS del marco Orbit');
@@ -208,9 +217,9 @@ ok(segment('async function openOrbitVisitors', '\nasync function ').includes("or
 const schedSeg = segment('function confirmSchedulePost', '\n}\n');
 ok(schedSeg.includes('drexOrbitScheduledPostsMax'), 'confirmar programa respeta el tope de la cola');
 const schedSrc = extractFn('drexOrbitScheduledPostsMax');
-eq(evalWith(schedSrc, { DrexOrbit: { enforced: () => false, isActive: () => false } }).drexOrbitScheduledPostsMax(), Infinity, 'sin puertas: sin tope (como hoy)');
-eq(evalWith(schedSrc, { DrexOrbit: { enforced: () => true, isActive: () => false } }).drexOrbitScheduledPostsMax(), 3, 'sin Orbit: 3 programadas');
-eq(evalWith(schedSrc, { DrexOrbit: { enforced: () => true, isActive: () => true } }).drexOrbitScheduledPostsMax(), 25, 'con Orbit: 25 programadas');
+eq(evalWith(schedSrc, { DrexOrbit: { enforced: () => false, hasAccess: () => false } }).drexOrbitScheduledPostsMax(), Infinity, 'sin puertas: sin tope (como hoy)');
+eq(evalWith(schedSrc, { DrexOrbit: { enforced: () => true, hasAccess: () => false } }).drexOrbitScheduledPostsMax(), 3, 'sin limits: 3 programadas');
+eq(evalWith(schedSrc, { DrexOrbit: { enforced: () => true, hasAccess: (f) => f === 'limits' } }).drexOrbitScheduledPostsMax(), 25, 'con limits (N1): 25 programadas');
 
 /* paywall: copia para los 4 privilegios nuevos */
 const copySrc = segment('function orbitPaywallCopy', 'function openOrbitPaywall');

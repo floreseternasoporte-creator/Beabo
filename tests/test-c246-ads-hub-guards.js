@@ -119,9 +119,11 @@ ok(runWatchAdBody(false) === '',
 (function () {
   const i = html.indexOf('function drexLoadAdsterraBannerInto');
   const seg = html.slice(i, i + 2600);
-  // C263/C262: en done() la guardia es la condición combinada
-  // (Orbit || pase sin anuncios del evento de Halloween).
-  const guardAt = seg.indexOf("drexOrbitNoAds()) || (typeof drexHalloweenPassActive === 'function' && drexHalloweenPassActive())");
+  // C264: en done() la guardia es SOLO el plan efectivo (drexOrbitNoAds
+  // -> hasAccess('no_ads')); el premio de Halloween ya es un plan Orbit
+  // de prueba, no un pase suelto que los anuncios consulten aparte.
+  const guardAt = seg.indexOf("drexOrbitNoAds === 'function' && drexOrbitNoAds())");
+  ok(!seg.includes('drexHalloweenPassActive'), 'done() ya no consulta el pase suelto de Halloween');
   const revealAt = seg.indexOf("if (ok) { try { slot.style.display = ''; }");
   ok(guardAt !== -1 && revealAt !== -1 && guardAt < revealAt,
     'done() de Adsterra: la guardia Orbit corre antes de revelar el slot');

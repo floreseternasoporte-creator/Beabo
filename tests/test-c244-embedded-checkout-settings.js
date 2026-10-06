@@ -82,7 +82,7 @@ for (const fn of ['openOrbitCheckout', 'closeOrbitCheckout', 'orbitCheckoutConfi
 }
 
 /* fail-closed intacto (no se debilitó nada de C241/C243) */
-ok(html.includes("var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors'];"), 'ORBIT_FEATURES intacto (11)');
+ok(html.includes("var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors', 'photo_downloads', 'chat_themes', 'instant_username', 'long_polls', 'big_parties'];"), 'ORBIT_FEATURES intacto (16, C264)');
 ok(segment('verifiedActive: function', 'isActive: function').includes('cancelAtPeriodEnd'), 'verifiedActive sigue apagando beneficios al cancelar');
 
 /* ================= B. Visitantes fuera de Ajustes ================= */

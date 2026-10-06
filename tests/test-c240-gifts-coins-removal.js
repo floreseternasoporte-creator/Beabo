@@ -108,7 +108,7 @@ ok('ORBIT_FEATURES tiene 7 funciones y ninguna es exclusive_gifts', function () 
   assert(a !== -1, 'ORBIT_FEATURES no encontrado');
   var seg = html.slice(a, html.indexOf('];', a));
   var feats = seg.split(',').filter(function (x) { return x.indexOf("'") !== -1; });
-  assert(feats.length === 11, 'se esperaban 11 funciones (7 de C241 + 4 de C243), hay ' + feats.length);
+  assert(feats.length === 16, 'se esperaban 16 funciones (11 de C241/C243 + 5 de C264), hay ' + feats.length);
   assert(seg.indexOf('exclusive_gifts') === -1, 'exclusive_gifts sigue en ORBIT_FEATURES');
 });
 

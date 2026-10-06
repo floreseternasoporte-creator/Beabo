@@ -1,8 +1,9 @@
 'use strict';
 /* C262 — Evento de Halloween: banner esquina a esquina sobre el feed,
  * sección propia, registro guardado en la BD, aceptación solo para los
- * elegidos (mensaje de Drex Creators a la bandeja + notificación) y pase
- * de 2 semanas sin anuncios integrado a la misma compuerta que Orbit.
+ * elegidos (mensaje de Drex Creators a la bandeja + notificación).
+ * C264: el premio ya no es un pase suelto: es un plan Drex Orbit de
+ * prueba por 2 semanas y sus beneficios salen del nivel de ese plan.
  * Ejecutar: node tests/test-c262-evento-halloween.js
  */
 const fs = require('fs');
@@ -47,8 +48,12 @@ ok(html.includes("ref('eventRegistrations/' + DREX_HALLOWEEN_KEY + '/' + uid)"),
 ok(html.includes("type: 'event', timestamp") === false && html.includes("'halloween_event'"), 'la aceptación notifica dentro de la app');
 ok(html.includes("ref('usernames/drexcreators')"), 'el mensaje llega firmado por Drex Creators');
 ok(html.includes('conversationMessages/'), 'el mensaje entra a la bandeja de mensajería');
-ok(/drexHalloweenPassActive\(\)\) return;/.test(html), 'compuerta de anuncios: el pase apaga los bloques');
-ok((html.match(/drexHalloweenPassActive === 'function' && drexHalloweenPassActive\(\)/g) || []).length >= 2, 'el pase se consulta también al confirmar cada slot');
+ok(html.includes("ref('users/' + uid + '/eventGrants/' + DREX_HALLOWEEN_KEY)"), 'el grant del equipo vive bajo el usuario');
+ok(html.includes('function drexHalloweenTrialPlan()'), 'existe el plan de prueba del evento');
+ok(html.includes('plan: plan'), 'la caché local guarda el plan otorgado junto a freeUntil');
+ok(html.includes("'quarterly'"), 'sin plan escrito por el equipo, el otorgado es quarterly');
+ok(!html.includes("typeof drexHalloweenPassActive === 'function' && drexHalloweenPassActive()"), 'los anuncios ya NO consultan un pase suelto');
+ok(html.includes("DrexOrbit.hasAccess('no_ads')"), 'sin anuncios sale del plan efectivo (pagado o de prueba)');
 ok(html.includes('drexHalloweenOnLogin(user.uid)'), 'al iniciar sesión se revisa la aceptación');
 ok(fs.existsSync(path.join(__dirname, '..', 'assets', 'halloween-event-2026.jpg')), 'la imagen del evento está en el repo');
 
