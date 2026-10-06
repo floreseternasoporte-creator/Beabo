@@ -72,7 +72,12 @@ const titleOnly = clean([{ t: 'Solo título', u: '' }]);
 ok(titleOnly.links.length === 0, 'título sin URL no se guarda (como antes)');
 
 console.log('== Contrato en el código fuente ==');
-ok(html.includes("child('showcaseLinks').set(links.length ? links : null)"), 'el guardado reemplaza el nodo completo (set)');
+// Enmienda C270 (auditoría): la escritura sigue reemplazando el nodo completo
+// del escaparate, pero ahora es UN update() multitrayecto que además borra
+// el campo heredado `website` — ese campo resucitaba los enlaces quitados
+// (el editor se sembraba desde ahí al quedar la lista vacía).
+ok(html.includes("update({ showcaseLinks: links.length ? links : null, website: null })"), 'el guardado reemplaza el escaparate y borra el website heredado');
+ok(!html.includes("child('showcaseLinks').set(links.length ? links : null)"), 'fuera la escritura vieja que dejaba vivo el website heredado');
 ok(!html.includes('Ese enlace no es válido. Usa http://'), 'fuera el bloqueo duro de Guardar');
 ok(html.includes('Se quitó un enlace que no era válido'), 'aviso suave único tras guardar');
 ok(html.includes('Puedes guardar sin ningún enlace'), 'el texto dice que guardar vacío está bien');
