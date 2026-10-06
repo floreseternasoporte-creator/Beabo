@@ -5,6 +5,14 @@
    El español es el idioma base y no necesita diccionario (appT devuelve el
    texto original). */
 var APP_ENGLISH_TEXT = {
+/* C269-PERFIL-TABS */
+"Respuestas":"Replies",
+"En la publicación de":"On the post by",
+"Aún no ha comentado publicaciones.":"No comments on posts yet.",
+"No se pudieron cargar las respuestas.":"Couldn't load replies.",
+"Aún no hay fotos ni videos aquí.":"No photos or videos here yet.",
+"No se pudo cargar la multimedia.":"Couldn't load media.",
+"Comentario sin texto":"Comment without text",
 
 /* C268-STICKERS */
 "Stickers":"Stickers",
@@ -3935,6 +3943,14 @@ var APP_ENGLISH_TEXT = {
 "{n} ecos":"{n} echoes",
 };
 var APP_CHINESE_TEXT = {
+/* C269-PERFIL-TABS */
+"Respuestas":"回复",
+"En la publicación de":"在以下帖子中",
+"Aún no ha comentado publicaciones.":"还没有评论过帖子。",
+"No se pudieron cargar las respuestas.":"无法加载回复。",
+"Aún no hay fotos ni videos aquí.":"这里还没有照片或视频。",
+"No se pudo cargar la multimedia.":"无法加载媒体。",
+"Comentario sin texto":"无文字评论",
 
 /* C268-STICKERS */
 "Stickers":"贴纸",
@@ -7866,6 +7882,14 @@ var APP_CHINESE_TEXT = {
 "{n} ecos":"{n} 次回响",
 };
 var APP_PORTUGUESE_TEXT = {
+/* C269-PERFIL-TABS */
+"Respuestas":"Respostas",
+"En la publicación de":"Na publicação de",
+"Aún no ha comentado publicaciones.":"Ainda não comentou publicações.",
+"No se pudieron cargar las respuestas.":"Não foi possível carregar as respostas.",
+"Aún no hay fotos ni videos aquí.":"Ainda não há fotos nem vídeos aqui.",
+"No se pudo cargar la multimedia.":"Não foi possível carregar a mídia.",
+"Comentario sin texto":"Comentário sem texto",
 
 /* C268-STICKERS */
 "Stickers":"Adesivos",
