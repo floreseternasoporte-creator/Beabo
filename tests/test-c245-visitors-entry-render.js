@@ -23,6 +23,14 @@
  *  - el título sale de t() (i18n), el onclick queda cableado
  *
  * Uso: node tests/test-c245-visitors-entry-render.js
+ *
+ * ENMIENDA C253 (2026-10-06, orden del usuario con capturas): la entrada
+ * ya no es la píldora completa bajo Pulso — ese era el estorbo reportado.
+ * Ahora es un chip compacto de ojo + contador pegado a la FOTO (estilo
+ * TikTok) en ambos layouts, su onclick abre el router de activación
+ * openProfileVisitorsEntry() (Ajustes › Privacidad) y la etiqueta "Orbit"
+ * salió del chip (la puerta orbitGate sigue intacta en openOrbitVisitors).
+ * Las aserciones tocadas por ese rediseño llevan comentario C253.
  * ===================================================================== */
 'use strict';
 const fs = require('fs');
@@ -57,9 +65,14 @@ ok(iMountMob !== -1, 'montaje móvil presente dentro de #profile-view');
 ok(iMountDesk !== -1, 'montaje de escritorio presente dentro de #profile-view');
 ok(iMob < iMountMob && iMountMob < iDesk && iDesk < iMountDesk,
   'cada montaje vive dentro de su propio layout (excluyentes por breakpoint: nunca se ven dos entradas)');
-ok(profileSeg.indexOf('openPulsoView()') < iMountMob, 'el montaje móvil va tras la acción Pulso (como C244)');
-ok(profileSeg.indexOf('id="profile-followers-desktop"') < iMountDesk,
-  'el montaje de escritorio va tras las stats/acciones del encabezado');
+/* C253: los montajes ya NO van bajo Pulso (ese era el estorbo): el móvil
+   vive junto al avatar, ANTES del botón Pulso; el de escritorio junto a
+   la foto de escritorio, antes del nombre de escritorio. */
+ok(iMountMob < profileSeg.indexOf('openPulsoView()'), 'C253: el montaje móvil ya no está bajo Pulso');
+ok(profileSeg.indexOf('id="profile-image"') < iMountMob && iMountMob < profileSeg.indexOf('id="profile-username"'),
+  'C253: el montaje móvil vive en el bloque del avatar (foto → chip → nombre)');
+ok(profileSeg.indexOf('id="profile-image-desktop"') < iMountDesk && iMountDesk < profileSeg.indexOf('id="profile-username-desktop"'),
+  'C253: el montaje de escritorio vive junto a la foto de escritorio');
 ok(!profileSeg.includes('id="profile-visitors-entry"'),
   'el botón estático C244 ya NO está en el markup (lo sustituye el render JS)');
 ok(!authorSeg.includes('profile-visitors-entry'),
@@ -104,11 +117,15 @@ eq(own.sandbox.mountOrbitVisitorsEntry(), 2, 'perfil propio: se montan las 2 var
 for (const id of ['profile-visitors-entry-mount', 'profile-visitors-entry-mount-desktop']) {
   const h = own.els[id].innerHTML;
   ok(h.includes('id="profile-visitors-entry"'), id + ': botón renderizado');
-  ok(h.includes('onclick="openOrbitVisitors()"'), id + ': onclick cableado a openOrbitVisitors()');
+  /* C253: el chip abre el router de activación (no la lista directa). */
+  ok(h.includes('onclick="openProfileVisitorsEntry()"'), id + ': onclick cableado al router C253');
   ok(h.includes('Quién vio tu perfil'), id + ': título visible');
   ok(h.includes('M1 12s4-8 11-8'), id + ': icono de ojo');
-  ok(h.includes('linear-gradient(135deg,#2F33B8,#9D4EDD)'), id + ': etiqueta con degradado');
-  ok(h.includes('>Orbit<'), id + ': etiqueta "Orbit"');
+  ok(h.includes('linear-gradient(135deg,#2F33B8,#9D4EDD)'), id + ': contador con degradado Drex');
+  /* C253: la etiqueta "Orbit" salió del chip compacto; queda el contador. */
+  ok(h.includes('pv-count'), id + ': insignia contador pv-count');
+  ok(!h.includes('>Orbit<'), id + ': sin etiqueta Orbit en el chip compacto');
+  ok(!h.includes('w-full max-w-xs'), id + ': ya no es la píldora completa de fila entera');
   eq(h.split('id="profile-visitors-entry"').length - 1, 1, id + ': exactamente UNA entrada por montaje');
 }
 /* el preview (refresco Orbit / cambio de idioma) remonta sin duplicar */

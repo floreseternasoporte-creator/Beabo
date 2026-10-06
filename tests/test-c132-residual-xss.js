@@ -82,14 +82,14 @@ function tcase(name, fn) {
 function count(re, src) { return (src.match(re) || []).length; }
 
 // ---- 1. Inventario de sinks en index.html (post-C106) ----
-tcase('innerHTML: 556 ocurrencias en index.html (auditoría UI: +6 de C243 — paywall cancelado y 5 estados de la lista de visitantes, todo dato de usuario escapado con escapeHtml/escapeInlineSingleQuote; C246 2026-10-03: +20 neto de C241–C245 — Orbit/checkout/transacciones/Pulso/visitas — auditados sink a sink: todo dato de usuario pasa por orbitEscText/escFn/escapeHTML/baroLLMEsc, el resto es markup estático o limpieza)', () => count(/\.innerHTML/g, html) === 556);
+tcase('innerHTML: 557 ocurrencias en index.html (auditoría UI: +6 de C243 — paywall cancelado y 5 estados de la lista de visitantes, todo dato de usuario escapado con escapeHtml/escapeInlineSingleQuote; C246 2026-10-03: +20 neto de C241–C245 — Orbit/checkout/transacciones/Pulso/visitas — auditados sink a sink: todo dato de usuario pasa por orbitEscText/escFn/escapeHTML/baroLLMEsc, el resto es markup estático o limpieza; C253 2026-10-06: +1 — el aviso de activación de vistas de perfil interpola SOLO escFn(t(clave estática)), sin datos de usuario)', () => count(/\.innerHTML/g, html) === 557);
 tcase('outerHTML: 3 ocurrencias en index.html', () => count(/\.outerHTML/g, html) === 3);
 tcase('insertAdjacentHTML: 8 ocurrencias en index.html', () => count(/insertAdjacentHTML/g, html) === 8);
 tcase('document.write: 0 en index.html', () => count(/document\.write/g, html) === 0);
 
 // ---- 2. Paridad 404.html ----
 tcase('404.html: mismos conteos de sinks que index.html', () =>
-  count(/\.innerHTML/g, copy) === 556 &&
+  count(/\.innerHTML/g, copy) === 557 &&
   count(/\.outerHTML/g, copy) === 3 &&
   count(/insertAdjacentHTML/g, copy) === 8 &&
   count(/document\.write/g, copy) === 0);
