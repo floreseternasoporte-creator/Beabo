@@ -5,6 +5,17 @@
    El español es el idioma base y no necesita diccionario (appT devuelve el
    texto original). */
 var APP_ENGLISH_TEXT = {
+
+/* C268-STICKERS */
+"Stickers":"Stickers",
+"Buscar stickers":"Search stickers",
+"Caras":"Faces",
+"Animales":"Animals",
+"Amor":"Love",
+"Comida":"Food",
+"Populares":"Popular",
+"Sin stickers por aquí":"No stickers here",
+"No se pudo enviar el sticker. Inténtalo de nuevo.":"Couldn't send the sticker. Try again.",
 /* LANE5-COMPOSER (auditoría UI composer) */
 "Subiendo fotos…":"Uploading photos…",
 "Comprimiendo video…":"Compressing video…",
@@ -3924,6 +3935,17 @@ var APP_ENGLISH_TEXT = {
 "{n} ecos":"{n} echoes",
 };
 var APP_CHINESE_TEXT = {
+
+/* C268-STICKERS */
+"Stickers":"贴纸",
+"Buscar stickers":"搜索贴纸",
+"Caras":"表情",
+"Animales":"动物",
+"Amor":"爱心",
+"Comida":"美食",
+"Populares":"热门",
+"Sin stickers por aquí":"这里没有贴纸",
+"No se pudo enviar el sticker. Inténtalo de nuevo.":"贴纸发送失败，请重试。",
 /* LANE5-COMPOSER (auditoría UI composer) */
 "Subiendo fotos…":"正在上传照片…",
 "Comprimiendo video…":"正在压缩视频…",
@@ -7844,6 +7866,17 @@ var APP_CHINESE_TEXT = {
 "{n} ecos":"{n} 次回响",
 };
 var APP_PORTUGUESE_TEXT = {
+
+/* C268-STICKERS */
+"Stickers":"Adesivos",
+"Buscar stickers":"Buscar adesivos",
+"Caras":"Caras",
+"Animales":"Animais",
+"Amor":"Amor",
+"Comida":"Comida",
+"Populares":"Populares",
+"Sin stickers por aquí":"Nenhum adesivo por aqui",
+"No se pudo enviar el sticker. Inténtalo de nuevo.":"Não foi possível enviar o adesivo. Tente de novo.",
 /* LANE5-COMPOSER (auditoría UI composer) */
 "Subiendo fotos…":"Enviando fotos…",
 "Comprimiendo video…":"Compactando vídeo…",

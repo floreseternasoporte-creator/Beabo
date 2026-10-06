@@ -145,7 +145,7 @@ const EXPECTED_IDS = [
   'regFirstName', 'regEmail', 'regPassword', 'regPasswordConfirm', 'regUsername',
   'onb-country-search', 'chat-search-input', 'new-chat-search-input',
   'group-chat-search-input', 'chat-message-search-input', 'chat-room-input',
-  'chat-edit-input', 'chat-forward-search', 'group-search-input',
+  'chat-edit-input', 'chat-sticker-search', 'chat-forward-search', 'group-search-input',
   'add-member-search-input', 'share-post-search-input',
   'fiesta-chat-input', 'fiesta-games-search', 'gif-search-input',
   'sticker-search', 'search-input', 'settings-search-input',
@@ -167,24 +167,24 @@ function inventory() {
   }
   return out;
 }
-tcase('inventario cerrado: 30 enterkeyhint en index.html, ids exactos', () => {
+tcase('inventario cerrado: 31 enterkeyhint en index.html, ids exactos (C268 2026-10-06: +chat-sticker-search, el buscador del panel de stickers con filtrado en vivo)', () => {
   if (isBase) return true; // en base el inventario es 27 (se evalua aparte)
   const inv = inventory();
-  if (inv.length !== 30) return false;
+  if (inv.length !== 31) return false;
   const ids = inv.map(x => x.id).sort();
   return JSON.stringify(ids) === JSON.stringify(EXPECTED_IDS.slice().sort());
 });
-tcase('honestidad hit por hit: los 30 hints tienen accion real de Enter', () => {
+tcase('honestidad hit por hit: los 31 hints tienen accion real de Enter', () => {
   if (isBase) return true; // en base hay 4 mentirosos (se demuestra en seccion 4)
   const bad = inventory().filter(x => !isHonest(x.id, x.hint, x.tag, x.pos));
   if (bad.length) console.error('   mentirosos: ' + bad.map(x => x.id).join(', '));
   return bad.length === 0;
 });
-tcase('distribucion de hints: next x5, go x4, search x17, send x3, done x1', () => {
+tcase('distribucion de hints: next x5, go x4, search x18, send x3, done x1', () => {
   if (isBase) return true;
   return count(/enterkeyhint="next"/g, html) === 5 &&
     count(/enterkeyhint="go"/g, html) === 4 &&
-    count(/enterkeyhint="search"/g, html) === 17 &&
+    count(/enterkeyhint="search"/g, html) === 18 &&
     count(/enterkeyhint="send"/g, html) === 3 &&
     count(/enterkeyhint="done"/g, html) === 1;
 });
