@@ -43,10 +43,12 @@ const iMountMob = profileSeg.indexOf('id="profile-visitors-entry-mount"');
 const iMountDesk = profileSeg.indexOf('id="profile-visitors-entry-mount-desktop"');
 ok(iMountMob !== -1 && iMountDesk !== -1, 'los dos montajes siguen existiendo');
 ok(iMountMob < profileSeg.indexOf('onclick="openPulsoView()"'), 'móvil: el chip ya NO está bajo Pulso');
-ok(profileSeg.indexOf('id="profile-image"') < iMountMob && iMountMob < profileSeg.indexOf('id="profile-username"'),
-  'móvil: montaje dentro del bloque del avatar');
-ok(profileSeg.indexOf('id="profile-image-desktop"') < iMountDesk && iMountDesk < profileSeg.indexOf('id="profile-username-desktop"'),
-  'escritorio: montaje junto a la foto de escritorio');
+/* C254 (corrección del usuario): esquina superior del encabezado, como
+   TikTok — nada sobre la foto grande. */
+ok(profileSeg.indexOf('onclick="openAccountSwitcher()"') < iMountMob && iMountMob < profileSeg.indexOf('onclick="openProfileSettings()"'),
+  'C254 móvil: esquina superior del encabezado, antes del engranaje');
+ok(iMountDesk < profileSeg.indexOf('id="profile-image-desktop"'),
+  'C254 escritorio: barra superior, antes de la foto');
 eq((profileSeg.match(/id="profile-visitors-entry-mount"/g) || []).length, 1, 'exactamente un montaje móvil');
 eq((profileSeg.match(/id="profile-visitors-entry-mount-desktop"/g) || []).length, 1, 'exactamente un montaje de escritorio');
 
@@ -198,6 +200,9 @@ vm.runInContext(src, sandbox);
   ok(chip.includes('onclick="openProfileVisitorsEntry()"'), 'chip abre el router C253');
   ok(chip.includes('pv-count'), 'chip trae la insignia contador');
   ok(!chip.includes('w-full max-w-xs'), 'chip NO es la píldora de fila entera');
+  /* C254: como TikTok — mini foto + contador, ningún icono de ojo. */
+  ok(chip.includes('pv-mini-photo'), 'C254: chip con mini foto de perfil');
+  ok(!chip.includes('M1 12s4-8'), 'C254: chip sin icono de ojo');
   eq(sandbox.mountOrbitVisitorsEntry(), 2, 'montaje en los dos layouts');
   ok(els['profile-visitors-entry-mount'].innerHTML.includes('profile-visitors-entry'), 'montaje móvil relleno');
   ok(els['profile-visitors-entry-mount-desktop'].innerHTML.includes('profile-visitors-entry'), 'montaje escritorio relleno');

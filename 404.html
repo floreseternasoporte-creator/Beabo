@@ -10959,6 +10959,9 @@ function fiestaGameHTMLFinal() {
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
         </svg>
       </button>
+      <!-- C254: "Quién vio tu perfil" como TikTok: mini foto de perfil +
+           contador en la esquina superior del encabezado (montaje JS). -->
+      <div id="profile-visitors-entry-mount" class="shrink-0 mr-1"></div>
       <button onclick="openProfileSettings()" class="tap44 w-10 h-10 flex items-center justify-center rounded-full text-[var(--theme-text)] active:bg-[var(--theme-surface-subtle)] transition" aria-label="Abrir ajustes">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -10986,10 +10989,6 @@ function fiestaGameHTMLFinal() {
           <button onclick="openEditProfile()" class="tap44 absolute bottom-0 right-0 w-8 h-8 rounded-full bg-[var(--drex-brand)] text-white border-[3px] border-white flex items-center justify-center active:opacity-80 transition" title="Editar foto y perfil" aria-label="Editar foto y perfil">
             <i class="fa-solid fa-pen text-[11px]"></i>
           </button>
-          <!-- C253: contador compacto de vistas de perfil pegado a la foto
-               (lo monta mountOrbitVisitorsEntry; antes una píldora completa
-               bajo Pulso estorbaba en el perfil — orden del usuario). -->
-          <div id="profile-visitors-entry-mount" class="absolute bottom-0 left-0 z-10"></div>
         </div>
         <!-- Nombre -->
         <h2 id="profile-username" class="mt-3 text-xl font-extrabold text-[var(--theme-text)] leading-tight">@nombre_usuario</h2>
@@ -11079,6 +11078,9 @@ function fiestaGameHTMLFinal() {
         </button>
 
         <div class="flex items-center space-x-3">
+          <!-- C254: "Quién vio tu perfil" como TikTok: mini foto +
+               contador en la esquina superior (montaje JS). -->
+          <div id="profile-visitors-entry-mount-desktop" class="shrink-0"></div>
           <button onclick="openProfileSettings()" class="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition-all" title="Abrir ajustes" aria-label="Abrir ajustes">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
@@ -11097,9 +11099,6 @@ function fiestaGameHTMLFinal() {
               <button onclick="openEditProfile()" class="border-[var(--drex-brand)] text-[var(--brand-indigo-text)] tap44 absolute right-[-10px] top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-[var(--theme-surface)] text-[var(--theme-text)] border-2 border-[var(--theme-border)] flex items-center justify-center hover:scale-105 active:opacity-80 transition" title="Editar foto y perfil" aria-label="Editar foto y perfil">
                 <i class="fa-solid fa-pen text-xs"></i>
               </button>
-              <!-- C253: contador compacto de vistas de perfil junto a la
-                   foto (espejo del lápiz de editar; lo monta JS). -->
-              <div id="profile-visitors-entry-mount-desktop" class="absolute left-[-10px] top-1/2 -translate-y-1/2 z-10"></div>
               <div id="profile-avatar-badges-desktop" class="profile-identity-badges profile-avatar-badges"></div>
             </div>
           </div>
@@ -51995,7 +51994,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-06T13:27:13Z';
+window.DREX_BUILD = '2026-10-06T13:48:09Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -86103,6 +86102,22 @@ async function refreshProfileVisitorsChip() {
     if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
     var chips = document.querySelectorAll('.profile-visitors-chip');
     if (!chips.length) return;
+    /* C254: la mini foto del chip refleja siempre la foto de perfil. */
+    try {
+      var imgSrc = '';
+      var pi = document.getElementById('profile-image');
+      if (pi && pi.src && pi.src.indexOf('data:image/svg') !== 0) imgSrc = pi.src;
+      if (!imgSrc) {
+        var pid = document.getElementById('profile-image-desktop');
+        if (pid && pid.src && pid.src.indexOf('data:image/svg') !== 0) imgSrc = pid.src;
+      }
+      if (imgSrc) {
+        chips.forEach(function (chip) {
+          var im = chip.querySelector('.pv-mini-photo');
+          if (im && im.getAttribute('src') !== imgSrc) im.src = imgSrc;
+        });
+      }
+    } catch (_) {}
     var on = await drexProfileViewsEnabled();
     var count = null;
     if (on) {
@@ -86126,11 +86141,14 @@ async function refreshProfileVisitorsChip() {
   } catch (_) {}
 }
 function orbitVisitorsEntryHTML() {
+  /* C254 (corrección del usuario): como TikTok — SIN icono: solo la mini
+     foto de perfil y, al lado, el contador de visitas. En la esquina
+     superior del encabezado, no sobre la foto grande. */
   var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
   var title = (typeof t === 'function') ? t('Quién vio tu perfil') : 'Quién vio tu perfil';
-  return '<button id="profile-visitors-entry" onclick="openProfileVisitorsEntry()" class="profile-visitors-chip tap44 relative w-9 h-9 rounded-full bg-[var(--theme-surface)] border-2 border-white shadow-md flex items-center justify-center text-[var(--drex-brand)] active:scale-95 transition" title="' + escFn(title) + '" aria-label="' + escFn(title) + '">'
-    + '<svg xmlns="http://www.w3.org/2000/svg" class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
-    + '<span class="pv-count hidden absolute -top-1.5 -right-2.5 min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-extrabold text-center leading-[18px] shadow" style="background:linear-gradient(135deg,#2F33B8,#9D4EDD)">0</span>'
+  return '<button id="profile-visitors-entry" onclick="openProfileVisitorsEntry()" class="profile-visitors-chip tap44 relative flex items-center gap-1.5 rounded-full bg-[var(--theme-surface)] border border-[var(--theme-border)] shadow-sm py-1 pl-1 pr-2.5 active:scale-95 transition" title="' + escFn(title) + '" aria-label="' + escFn(title) + '">'
+    + '<img class="pv-mini-photo w-7 h-7 rounded-full object-cover bg-[var(--theme-surface-muted)]" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==" alt="">'
+    + '<span class="pv-count hidden text-[13px] font-extrabold leading-none text-[var(--theme-text)]">0</span>'
     + '</button>';
 }
 async function openProfileVisitorsEntry() {

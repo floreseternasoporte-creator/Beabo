@@ -65,14 +65,16 @@ ok(iMountMob !== -1, 'montaje móvil presente dentro de #profile-view');
 ok(iMountDesk !== -1, 'montaje de escritorio presente dentro de #profile-view');
 ok(iMob < iMountMob && iMountMob < iDesk && iDesk < iMountDesk,
   'cada montaje vive dentro de su propio layout (excluyentes por breakpoint: nunca se ven dos entradas)');
-/* C253: los montajes ya NO van bajo Pulso (ese era el estorbo): el móvil
-   vive junto al avatar, ANTES del botón Pulso; el de escritorio junto a
-   la foto de escritorio, antes del nombre de escritorio. */
-ok(iMountMob < profileSeg.indexOf('openPulsoView()'), 'C253: el montaje móvil ya no está bajo Pulso');
-ok(profileSeg.indexOf('id="profile-image"') < iMountMob && iMountMob < profileSeg.indexOf('id="profile-username"'),
-  'C253: el montaje móvil vive en el bloque del avatar (foto → chip → nombre)');
-ok(profileSeg.indexOf('id="profile-image-desktop"') < iMountDesk && iMountDesk < profileSeg.indexOf('id="profile-username-desktop"'),
-  'C253: el montaje de escritorio vive junto a la foto de escritorio');
+/* C253: los montajes salieron de bajo de Pulso (ese era el estorbo).
+   C254 (corrección del usuario con la captura de TikTok señalada): los
+   montajes viven en el ENCABEZADO SUPERIOR — móvil entre el nombre de
+   cuenta y el engranaje; escritorio en la barra superior — y el chip ya
+   no lleva icono de ojo: mini foto de perfil + contador, como TikTok. */
+ok(iMountMob < profileSeg.indexOf('openPulsoView()'), 'el montaje móvil sigue lejos de Pulso');
+ok(profileSeg.indexOf('onclick="openAccountSwitcher()"') < iMountMob && iMountMob < profileSeg.indexOf('onclick="openProfileSettings()"'),
+  'C254: móvil — la entrada vive en la esquina superior, antes del engranaje');
+ok(iMountDesk < profileSeg.indexOf('id="profile-image-desktop"'),
+  'C254: escritorio — la entrada vive en la barra superior, antes de la foto');
 ok(!profileSeg.includes('id="profile-visitors-entry"'),
   'el botón estático C244 ya NO está en el markup (lo sustituye el render JS)');
 ok(!authorSeg.includes('profile-visitors-entry'),
@@ -120,9 +122,9 @@ for (const id of ['profile-visitors-entry-mount', 'profile-visitors-entry-mount-
   /* C253: el chip abre el router de activación (no la lista directa). */
   ok(h.includes('onclick="openProfileVisitorsEntry()"'), id + ': onclick cableado al router C253');
   ok(h.includes('Quién vio tu perfil'), id + ': título visible');
-  ok(h.includes('M1 12s4-8 11-8'), id + ': icono de ojo');
-  ok(h.includes('linear-gradient(135deg,#2F33B8,#9D4EDD)'), id + ': contador con degradado Drex');
-  /* C253: la etiqueta "Orbit" salió del chip compacto; queda el contador. */
+  /* C254: como TikTok — sin icono de ojo; mini foto de perfil + contador. */
+  ok(!h.includes('M1 12s4-8'), id + ': C254 sin icono de ojo');
+  ok(h.includes('pv-mini-photo'), id + ': C254 mini foto de perfil');
   ok(h.includes('pv-count'), id + ': insignia contador pv-count');
   ok(!h.includes('>Orbit<'), id + ': sin etiqueta Orbit en el chip compacto');
   ok(!h.includes('w-full max-w-xs'), id + ': ya no es la píldora completa de fila entera');
