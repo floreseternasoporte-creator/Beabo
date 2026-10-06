@@ -16,7 +16,7 @@
  *     los tres diccionarios; refreshCacheUsageUI usa appT (no ES
  *     hardcodeado).
  *  F. El perfil ajeno tiene Seguir + Mensaje + Bloquear.
- *  G. data-nav-index de la barra inferior es secuencial (0,1,2,3,4,5).
+ *  G. data-nav-index de la barra inferior es secuencial (0,1,2,3,4).
  *  H. Todas las vistas de la zona tienen botón atrás (chevron).
  * ================================================================ */
 var assert = require('assert');
@@ -180,11 +180,11 @@ test('perfil ajeno tiene Seguir, Mensaje y Bloquear', function () {
 });
 
 /* ---------- G. data-nav-index secuencial ---------- */
-test('data-nav-index de la barra inferior es 0,1,2,3,4,5', function () {
+test('data-nav-index de la barra inferior es 0,1,2,3,4', function () {
   var idx = [];
   var re = /id="nav-btn[^"]*" data-nav-index="(\d)"/g, m;
   while ((m = re.exec(src)) !== null) idx.push(m[1]);
-  assert.deepStrictEqual(idx, ['0', '1', '2', '3', '4', '5'], 'índices: ' + JSON.stringify(idx));
+  assert.deepStrictEqual(idx, ['0', '1', '2', '3', '4'], 'índices: ' + JSON.stringify(idx));
 });
 
 /* ---------- H. botón atrás en todas las vistas de la zona ---------- */
