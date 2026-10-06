@@ -78,53 +78,24 @@ const orbitRecord = (sub = 'user-abc') => {
   return it ? JSON.parse(it.v) : null;
 };
 
-// ---------- /create-subscription-session ----------
+// ---------- C263: rutas que salían de Drex retiradas ----------
 
-test('Orbit: sesión mensual -> Checkout mode subscription con el price de env', async () => {
+test('C263: /create-subscription-session ya no existe -> 404 honesto', async () => {
   const res = await handler(authed('/create-subscription-session', { plan: 'monthly' }));
-  assert.equal(res.statusCode, 200);
-  const data = JSON.parse(res.body);
-  assert.ok(data.url);
-  assert.equal(data.plan, 'monthly');
-  const p = stripeStub.lastSessionParams;
-  assert.equal(p.mode, 'subscription');
-  assert.deepEqual(p.line_items, [{ price: 'price_monthly_test', quantity: 1 }]);
-  assert.equal(p.metadata.drex_user_sub, 'user-abc');
-  assert.equal(p.metadata.drex_orbit_plan, 'monthly');
-  assert.equal(p.subscription_data.metadata.drex_orbit_plan, 'monthly');
-  assert.ok(p.success_url.includes('?orbit=success'));
+  assert.equal(res.statusCode, 404);
+  assert.equal(JSON.parse(res.body).error, 'not_found');
 });
 
-test('Orbit: sesión anual usa el price anual', async () => {
-  const res = await handler(authed('/create-subscription-session', { plan: 'yearly' }));
-  assert.equal(res.statusCode, 200);
-  assert.equal(stripeStub.lastSessionParams.line_items[0].price, 'price_yearly_test');
+test('C263: /create-checkout-session (Coins) ya no existe -> 404 honesto', async () => {
+  const res = await handler(authed('/create-checkout-session', { packageId: 'coins_100' }));
+  assert.equal(res.statusCode, 404);
+  assert.equal(JSON.parse(res.body).error, 'not_found');
 });
 
-test('Orbit: plan inválido -> 400', async () => {
-  const res = await handler(authed('/create-subscription-session', { plan: 'lifetime' }));
-  assert.equal(res.statusCode, 400);
-  assert.equal(JSON.parse(res.body).error, 'invalid_plan');
-});
-
-test('Orbit: sin token -> 401', async () => {
-  const res = await handler(httpEvent({ path: '/create-subscription-session', body: { plan: 'monthly', returnUrl: 'https://app.test/' } }));
-  assert.equal(res.statusCode, 401);
-});
-
-test('Orbit: sin price configurado -> 503 honesto (no inventa precio)', async () => {
-  // index.js lee las env vars al cargar el módulo: importar una instancia
-  // fresca con la variable ausente para cubrir la rama 503 de verdad.
-  const saved = process.env.STRIPE_PRICE_ORBIT_MONTHLY;
-  delete process.env.STRIPE_PRICE_ORBIT_MONTHLY;
-  try {
-    const fresh = await import('../index.js?orbit_noprice=' + Date.now());
-    const res = await fresh.handler(authed('/create-subscription-session', { plan: 'monthly' }));
-    assert.equal(res.statusCode, 503);
-    assert.equal(JSON.parse(res.body).error, 'subscription_not_configured');
-  } finally {
-    process.env.STRIPE_PRICE_ORBIT_MONTHLY = saved;
-  }
+test('C263: /create-customer-portal ya no existe -> 404 honesto', async () => {
+  const res = await handler(authed('/create-customer-portal'));
+  assert.equal(res.statusCode, 404);
+  assert.equal(JSON.parse(res.body).error, 'not_found');
 });
 
 // ---------- /subscription-status (fail closed) ----------
@@ -177,26 +148,6 @@ test('Transactions: POST con idToken en el cuerpo -> 200 (sin preflight)', async
 test('Transactions: POST sin token -> 401', async () => {
   const res = await handler(httpEvent({ method: 'POST', path: '/transactions', body: {} }));
   assert.equal(res.statusCode, 401);
-});
-
-// ---------- /create-customer-portal ----------
-
-test('Orbit: portal sin suscripción -> 404 honesto', async () => {
-  const res = await handler(authed('/create-customer-portal'));
-  assert.equal(res.statusCode, 404);
-  assert.equal(JSON.parse(res.body).error, 'no_subscription');
-});
-
-test('Orbit: portal con customer -> url del portal', async () => {
-  ddbStub.__stubStore.set('users|user-abc/orbit', {
-    pk: 'users', sk: 'user-abc/orbit',
-    v: JSON.stringify({ status: 'active', plan: 'monthly', stripeCustomerId: 'cus_test_1', stripeSubscriptionId: 'sub_1', currentPeriodEnd: nowSec() + 99999, cancelAtPeriodEnd: false, updatedAt: Date.now() }),
-  });
-  const res = await handler(authed('/create-customer-portal'));
-  assert.equal(res.statusCode, 200);
-  const data = JSON.parse(res.body);
-  assert.ok(data.url.includes('billing.stripe.com'));
-  assert.equal(stripeStub.lastPortalParams.customer, 'cus_test_1');
 });
 
 // ---------- webhook: activación ----------

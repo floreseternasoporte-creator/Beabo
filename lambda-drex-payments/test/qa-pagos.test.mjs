@@ -89,14 +89,13 @@ const orbitRecord = (sub = 'user-abc') => {
   return it ? JSON.parse(it.v) : null;
 };
 
-test('QA Coins $0.99: sesión -> webhook firmado -> 100 monedas, recibo e idempotencia', async () => {
+test('QA Coins $0.99: la ruta de Checkout salió de Drex (C263) y el webhook firmado sigue acreditando', async () => {
   const s = await handler(httpEvent({
     path: '/create-checkout-session',
     body: { packageId: 'coins_100', idToken: validToken(), returnUrl: 'https://app.test/Beabo/' },
   }));
-  assert.equal(s.statusCode, 200);
-  const created = JSON.parse(s.body);
-  assert.match(created.url, /checkout\.stripe\.com/);
+  assert.equal(s.statusCode, 404);
+  assert.equal(JSON.parse(s.body).error, 'not_found');
 
   const session = {
     id: 'cs_test_qa_1', mode: 'payment', payment_status: 'paid',

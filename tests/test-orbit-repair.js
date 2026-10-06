@@ -62,8 +62,9 @@ test('enforced() lee _serverConfigured (no solo el flag manual)', function () {
 test('refresh() guarda data.configured en _serverConfigured', function () {
   assert(src.indexOf('self._serverConfigured = (data.configured === true)') !== -1,
     'refresh no lee data.configured');
-  assert(src.indexOf('self._st = fail; self._serverConfigured = false') !== -1,
-    'refresh no limpia _serverConfigured en fallo');
+  // C263: refresh NO limpia _serverConfigured en fallo (evita orbitGate abierto).
+  assert(src.indexOf('self._st = fail; self._serverConfigured = false') === -1,
+    'refresh limpia _serverConfigured en fallo (regresión C263)');
 });
 test('DrexOrbit.reset() existe y se usa al cambiar de cuenta', function () {
   assert(/reset: function \(\) \{/.test(src), 'falta DrexOrbit.reset');

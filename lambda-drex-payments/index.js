@@ -6,6 +6,14 @@
 //                                     (Stripe Checkout mode:'subscription', planes Drex Orbit)
 //   POST /create-customer-portal      {idToken, returnUrl?} -> {url}
 //                                     (portal de facturación de Stripe)
+//   POST /subscribe-embedded          {plan, idToken} -> {subscriptionId, clientSecret} | {alreadySubscribed:true}
+//                                     (C244: pago SIN salir de la app — Payment Element;
+//                                      suscripción default_incomplete, el webhook activa)
+//   POST /subscription-cancel         {idToken} -> {ok, cancelAtPeriodEnd:true, currentPeriodEnd, status}
+//   POST /subscription-reactivate     {idToken} -> {ok, cancelAtPeriodEnd:false, currentPeriodEnd, status}
+//   POST /subscription-setup          {idToken} -> {clientSecret}
+//                                     {idToken, paymentMethodId} -> {ok:true, updated:true}
+//                                     (C244: Setup Element para cambiar la tarjeta)
 //   POST /subscription-status         {idToken} -> {active, plan, currentPeriodEnd, cancelAtPeriodEnd, status}
 //   GET  /transactions                Authorization: Bearer <idToken> -> {transactions[], subscription{}}
 //                                     (fail closed: sin registro -> active:false)
@@ -429,92 +437,117 @@ function subscriptionStateFrom(sub, planHint) {
   };
 }
 
-// ---------- Orbit: creación compartida de sesión Checkout ----------
-async function createOrbitCheckoutSession(plan, userSub, returnUrl) {
-  const lineItem = orbitLineItem(plan);
-  if (!lineItem) {
-    const e = new Error('subscription_not_configured');
-    e.status = 503;
-    throw e;
+// ---------- C263: rutas que sacaban al usuario de Drex retiradas ----------
+// /create-subscription-session (Stripe Checkout hospedado) y
+// /create-customer-portal (portal de Stripe) se eliminaron: el cliente
+// ya no los invoca y todo el pago vive dentro de la app.
+
+// ---------- C244: pago embebido y gestión sin salir de la app ----------
+// El Checkout hospedado obligaba a salir de Drex para pagar y el portal
+// de Stripe para gestionar. Estos endpoints dejan todo dentro de la app:
+// la app monta el Payment Element con el clientSecret de la suscripción
+// (default_incomplete) y la activación llega por los mismos webhooks de
+// siempre (customer.subscription.updated / invoice.*), que identifican al
+// usuario por el metadata drex_user_sub de la suscripción — por eso TODA
+// suscripción creada aquí lleva ese metadata, igual que el flujo Checkout
+// (subscription_data.metadata). Sin checkout.session.completed no pasa
+// nada: la activación nunca dependió solo de él.
+
+/* PaymentIntent confirmable de una factura de suscripción. Desde la API
+ * 2025-03-31 (Basil), Invoice.payment_intent dejó de existir: el intent
+ * vive en invoice.payments.data[].payment.payment_intent (type
+ * 'payment_intent'). El campo legado solo se acepta como respaldo para
+ * respuestas de cuentas fijadas a una API anterior. */
+function invoicePaymentIntent(inv) {
+  if (!inv || typeof inv !== 'object') return null;
+  const pagos = (inv.payments && Array.isArray(inv.payments.data)) ? inv.payments.data : [];
+  for (const p of pagos) {
+    const pay = p && p.payment;
+    if (!pay || (pay.type && pay.type !== 'payment_intent')) continue;
+    const pi = pay.payment_intent;
+    if (pi && typeof pi === 'object') return pi;
   }
-  const session = await stripe().checkout.sessions.create({
-    mode: 'subscription',
-    line_items: [lineItem],
-    metadata: {
-      drex_user_sub: userSub,
-      drex_orbit_plan: plan,
-    },
-    // El metadata se copia a la suscripción para que los webhooks
-    // posteriores (subscription.updated/deleted, invoice.*) puedan
-    // identificar al usuario sin depender solo del customer id.
-    subscription_data: {
-      metadata: { drex_user_sub: userSub, drex_orbit_plan: plan },
-    },
-    client_reference_id: userSub,
-    success_url: `${returnUrl}/?orbit=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${returnUrl}/?orbit=cancelled`,
-  });
-  console.log('orbit checkout session created', session.id, 'plan', plan);
-  return session;
+  const legacy = inv.payment_intent;
+  if (legacy && typeof legacy === 'object') return legacy;
+  return null;
 }
 
-// ---------- POST /create-subscription-session ----------
+/* Resuelve el customer de Stripe del usuario sin duplicarlo: primero el
+ * registro Orbit local; si aún no hay registro (ningún webhook ha
+ * escrito), busca por metadata drex_user_sub — cubre clientes creados
+ * por un intento embebido anterior cuyo pago nunca se completó. */
+async function findOrbitCustomerId(userSub, rec) {
+  if (rec && rec.stripeCustomerId) return rec.stripeCustomerId;
+  try {
+    const safeSub = String(userSub || '').replace(/['\\]/g, '');
+    if (!safeSub) return null;
+    const found = await stripe().customers.search({
+      query: `metadata['drex_user_sub']:'${safeSub}'`,
+      limit: 1,
+    });
+    if (found && Array.isArray(found.data) && found.data[0] && found.data[0].id) return found.data[0].id;
+  } catch (e) {
+    console.error('orbit customer search failed:', e && e.message);
+  }
+  return null;
+}
 
-async function handleCreateSubscriptionSession(event) {
-  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+/* Suscripción viva del usuario en Stripe (para gestión): la del registro
+ * local o, si el registro aún no existe, la que el propio Stripe lista
+ * para su customer con nuestro metadata. Nunca adivina por otro camino. */
+async function resolveOrbitSubscriptionId(userSub, rec) {
+  if (rec && rec.stripeSubscriptionId) return rec.stripeSubscriptionId;
+  const customerId = await findOrbitCustomerId(userSub, rec);
+  if (!customerId) return null;
+  try {
+    const subs = await stripe().subscriptions.list({ customer: customerId, status: 'all', limit: 10 });
+    const mine = ((subs && subs.data) || []).find(
+      (s) => s && s.metadata && s.metadata.drex_user_sub === userSub && s.status !== 'canceled',
+    );
+    return mine ? mine.id : null;
+  } catch (e) {
+    console.error('orbit subscription list failed:', e && e.message);
+    return null;
+  }
+}
+
+/* Lee y valida el cuerpo + token de los endpoints Orbit autenticados.
+ * Devuelve {body, userSub} o {response} con el error ya construido. */
+async function orbitAuthedBody(event, origin) {
   let body;
   try {
     body = JSON.parse(rawBody(event) || '{}');
   } catch (_) {
-    return json(400, { error: 'bad_json' }, origin);
+    return { response: json(400, { error: 'bad_json' }, origin) };
   }
   const ip = clientIp(event);
-  if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
+  if (!(await checkRateLimit(ip))) return { response: json(429, { error: 'rate_limited' }, origin) };
+  try {
+    const userSub = await verifyIdToken(body.idToken);
+    return { body, userSub };
+  } catch (e) {
+    const status = (e && e.status) || 401;
+    return { response: json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin) };
+  }
+}
+
+// ---------- POST /subscribe-embedded ----------
+// Crea (o reutiliza) la suscripción en default_incomplete y devuelve el
+// clientSecret del PaymentIntent de la primera factura para montar el
+// Payment Element DENTRO de la app. Idempotente frente a reintentos:
+// activa/trialing -> alreadySubscribed; incomplete -> el mismo secreto;
+// incomplete sin intent útil -> se cancela antes de crear otra (nunca
+// dos suscripciones cobrables vivas para el mismo usuario).
+async function handleSubscribeEmbedded(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  const auth = await orbitAuthedBody(event, origin);
+  if (auth.response) return auth.response;
+  const { body, userSub } = auth;
 
   const plan = body.plan;
   if (!ORBIT_PLANS[plan]) return json(400, { error: 'invalid_plan' }, origin);
-  const returnUrl = validReturnUrl(body.returnUrl);
-  if (!returnUrl) return json(400, { error: 'invalid_return_url' }, origin);
-
-  let userSub;
-  try {
-    userSub = await verifyIdToken(body.idToken);
-  } catch (e) {
-    const status = (e && e.status) || 401;
-    return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
-  }
-
-  try {
-    const session = await createOrbitCheckoutSession(plan, userSub, returnUrl);
-    return json(200, { url: session.url, plan }, origin);
-  } catch (e) {
-    // Honesto: el producto/precio aún no está configurado en Stripe.
-    if (e && e.status === 503) return json(503, { error: 'subscription_not_configured' }, origin);
-    console.error('orbit session create failed:', e && e.message);
-    return json(502, { error: 'payment_provider_error' }, origin);
-  }
-}
-
-// ---------- POST /create-customer-portal ----------
-
-async function handleCustomerPortal(event) {
-  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
-  let body;
-  try {
-    body = JSON.parse(rawBody(event) || '{}');
-  } catch (_) {
-    return json(400, { error: 'bad_json' }, origin);
-  }
-  const ip = clientIp(event);
-  if (!(await checkRateLimit(ip))) return json(429, { error: 'rate_limited' }, origin);
-
-  let userSub;
-  try {
-    userSub = await verifyIdToken(body.idToken);
-  } catch (e) {
-    const status = (e && e.status) || 401;
-    return json(status, { error: status === 503 ? 'server_not_configured' : 'unauthorized' }, origin);
-  }
+  const lineItem = orbitLineItem(plan);
+  if (!lineItem) return json(503, { error: 'subscription_not_configured' }, origin);
 
   let rec = null;
   try {
@@ -522,22 +555,210 @@ async function handleCustomerPortal(event) {
   } catch (e) {
     return json(500, { error: 'db_read_failed' }, origin);
   }
-  const customerId = rec && rec.stripeCustomerId;
-  if (!customerId) return json(404, { error: 'no_subscription' }, origin);
 
-  const returnUrl = validReturnUrl(body.returnUrl) || (ALLOWED_ORIGINS[0] || '');
-  if (!returnUrl) return json(400, { error: 'invalid_return_url' }, origin);
-
-  let ps;
   try {
-    // Requiere que el portal de facturación esté activado en el dashboard
-    // de Stripe (Settings > Billing > Customer portal).
-    ps = await stripe().billingPortal.sessions.create({ customer: customerId, return_url: returnUrl });
+    let customerId = await findOrbitCustomerId(userSub, rec);
+    if (customerId) {
+      const subs = await stripe().subscriptions.list({ customer: customerId, status: 'all', limit: 10 });
+      const mine = ((subs && subs.data) || []).filter(
+        (s) => s && s.metadata && s.metadata.drex_user_sub === userSub,
+      );
+      const live = mine.find((s) => s.status === 'active' || s.status === 'trialing');
+      if (live) {
+        return json(200, {
+          alreadySubscribed: true,
+          subscriptionId: live.id,
+          plan: (live.metadata && live.metadata.drex_orbit_plan) || plan,
+        }, origin);
+      }
+      const open = mine.find((s) => s.status === 'incomplete' || s.status === 'past_due');
+      if (open) {
+        if (open.status === 'past_due') {
+          // Suscripción real con deuda: no se duplica; la app ofrece
+          // actualizar el método de pago (/subscription-setup).
+          return json(200, {
+            alreadySubscribed: true,
+            subscriptionId: open.id,
+            plan: (open.metadata && open.metadata.drex_orbit_plan) || plan,
+            needsPaymentUpdate: true,
+          }, origin);
+        }
+        const full = await stripe().subscriptions.retrieve(open.id, { expand: ['latest_invoice.payments'] });
+        const pi = invoicePaymentIntent(full && full.latest_invoice);
+        const secret = pi ? pi.client_secret : null;
+        if (secret) {
+          return json(200, { subscriptionId: open.id, clientSecret: secret, reused: true }, origin);
+        }
+        // Incomplete sin intent utilizable (expirado): se cancela para no
+        // dejar dos suscripciones vivas y se crea una nueva abajo.
+        try { await stripe().subscriptions.cancel(open.id); } catch (_) {}
+      }
+    }
+    if (!customerId) {
+      // Un solo customer por usuario en Stripe: la clave de idempotencia
+      // estable evita duplicados si la búsqueda aún no lo ve y la app
+      // reintenta.
+      const cust = await stripe().customers.create(
+        { metadata: { drex_user_sub: userSub } },
+        { idempotencyKey: 'drex_cust_' + userSub },
+      );
+      customerId = cust.id;
+    }
+    const sub = await stripe().subscriptions.create({
+      customer: customerId,
+      items: [lineItem],
+      payment_behavior: 'default_incomplete',
+      payment_settings: { save_default_payment_method: 'on_subscription' },
+      metadata: { drex_user_sub: userSub, drex_orbit_plan: plan },
+      expand: ['latest_invoice.payments'],
+    }, {
+      // Reintentos de red/app dentro de la misma hora no crean una segunda
+      // suscripción: Stripe devuelve la primera respuesta. La ventana de
+      // una hora no bloquea un intento genuinamente nuevo más tarde.
+      idempotencyKey: 'drex_sub_' + userSub + '_' + plan + '_' + Math.floor(Date.now() / 3600000),
+    });
+    const pi = invoicePaymentIntent(sub && sub.latest_invoice);
+    const secret = pi ? pi.client_secret : null;
+    if (!secret) return json(502, { error: 'payment_provider_error' }, origin);
+    console.log('orbit embedded subscription created', sub.id, 'plan', plan);
+    return json(200, { subscriptionId: sub.id, clientSecret: secret }, origin);
   } catch (e) {
-    console.error('orbit portal create failed:', e && e.message);
+    console.error('orbit embedded subscribe failed:', e && e.message);
     return json(502, { error: 'payment_provider_error' }, origin);
   }
-  return json(200, { url: ps.url }, origin);
+}
+
+/* Refleja cancelAtPeriodEnd en el registro local al instante, sin esperar
+ * al webhook customer.subscription.updated (que escribirá el mismo valor:
+ * idempotente). Solo toca ese flag: status/plan/periodo quedan como los
+ * dejó el último evento firmado. Sin registro previo no escribe nada —
+ * el webhook creará el registro con el valor correcto. */
+async function mergeOrbitCancelFlag(userSub, flag) {
+  try {
+    const prev = await readOrbit(userSub);
+    if (!prev) return;
+    const next = { ...prev, cancelAtPeriodEnd: !!flag, updatedAt: Date.now() };
+    await ddb.send(new UpdateCommand({
+      TableName: TABLE,
+      Key: { pk: 'users', sk: userSub + '/orbit' },
+      UpdateExpression: 'SET v = :v',
+      ExpressionAttributeValues: { ':v': JSON.stringify(next) },
+    }));
+  } catch (e) {
+    console.error('orbit cancel flag merge failed:', e && e.message);
+  }
+}
+
+// ---------- POST /subscription-cancel | /subscription-reactivate ----------
+// Cancelar = cancel_at_period_end:true en Stripe (no cobra más; el
+// periodo pagado corre hasta su fin y los beneficios se apagan en la app
+// por la regla verifiedActive de C243). Reactivar lo deshace.
+async function handleSubscriptionCancelFlag(event, cancelAtPeriodEnd) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  const auth = await orbitAuthedBody(event, origin);
+  if (auth.response) return auth.response;
+  const { userSub } = auth;
+
+  let rec = null;
+  try {
+    rec = await readOrbit(userSub);
+  } catch (e) {
+    return json(500, { error: 'db_read_failed' }, origin);
+  }
+  const subId = await resolveOrbitSubscriptionId(userSub, rec);
+  if (!subId) return json(404, { error: 'no_subscription' }, origin);
+
+  let sub;
+  try {
+    /* C263: si ya está cancelada, responder 200 con ese estado — Stripe
+     * rechaza actualizar suscripciones canceladas y la app recibía un
+     * 502 en vez del estado real del usuario. */
+    const cur = await stripe().subscriptions.retrieve(subId);
+    if (cur && cur.status === 'canceled') {
+      return json(200, {
+        ok: true,
+        cancelAtPeriodEnd: typeof cur.cancel_at_period_end === 'boolean' ? cur.cancel_at_period_end : cancelAtPeriodEnd,
+        currentPeriodEnd: subscriptionPeriodEnd(cur),
+        status: mapSubscriptionStatus(cur.status),
+      }, origin);
+    }
+    sub = await stripe().subscriptions.update(subId, { cancel_at_period_end: cancelAtPeriodEnd });
+  } catch (e) {
+    console.error('orbit subscription update failed:', e && e.message);
+    return json(502, { error: 'payment_provider_error' }, origin);
+  }
+  await mergeOrbitCancelFlag(userSub, cancelAtPeriodEnd);
+  return json(200, {
+    ok: true,
+    cancelAtPeriodEnd: typeof (sub && sub.cancel_at_period_end) === 'boolean' ? sub.cancel_at_period_end : cancelAtPeriodEnd,
+    currentPeriodEnd: subscriptionPeriodEnd(sub),
+    status: mapSubscriptionStatus(sub && sub.status),
+  }, origin);
+}
+async function handleSubscriptionCancel(event) {
+  return handleSubscriptionCancelFlag(event, true);
+}
+async function handleSubscriptionReactivate(event) {
+  return handleSubscriptionCancelFlag(event, false);
+}
+
+// ---------- POST /subscription-setup ----------
+// Dos pasos del mismo endpoint:
+//  - sin paymentMethodId: crea el SetupIntent (Setup Element en la app).
+//  - con paymentMethodId (tras confirmSetup): la tarjeta queda como
+//    método predeterminado del cliente y de la suscripción, para que el
+//    próximo cobro la use sin salir de Drex.
+async function handleSubscriptionSetup(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  const auth = await orbitAuthedBody(event, origin);
+  if (auth.response) return auth.response;
+  const { body, userSub } = auth;
+
+  let rec = null;
+  try {
+    rec = await readOrbit(userSub);
+  } catch (e) {
+    return json(500, { error: 'db_read_failed' }, origin);
+  }
+  // Actualizar la tarjeta es cosa de suscriptores: sin suscripción
+  // resoluble (registro local o lista de Stripe) es 404 honesto, igual
+  // que cancelar/reactivar.
+  const subId = await resolveOrbitSubscriptionId(userSub, rec);
+  if (!subId) return json(404, { error: 'no_subscription' }, origin);
+  const customerId = await findOrbitCustomerId(userSub, rec);
+  if (!customerId) return json(404, { error: 'no_subscription' }, origin);
+
+  try {
+    const pmId = typeof body.paymentMethodId === 'string' && body.paymentMethodId ? body.paymentMethodId : null;
+    if (pmId) {
+      try {
+        await stripe().paymentMethods.attach(pmId, { customer: customerId });
+      } catch (e) {
+        // Ya adjunto a este cliente (confirmSetup lo adjunta): se sigue.
+        console.error('orbit payment method attach note:', e && e.message);
+      }
+      await stripe().customers.update(customerId, {
+        invoice_settings: { default_payment_method: pmId },
+      });
+      try {
+        await stripe().subscriptions.update(subId, { default_payment_method: pmId });
+      } catch (e) {
+        console.error('orbit subscription default pm update failed:', e && e.message);
+      }
+      return json(200, { ok: true, updated: true }, origin);
+    }
+    const si = await stripe().setupIntents.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      usage: 'off_session',
+      metadata: { drex_user_sub: userSub },
+    });
+    if (!si || !si.client_secret) return json(502, { error: 'payment_provider_error' }, origin);
+    return json(200, { clientSecret: si.client_secret }, origin);
+  } catch (e) {
+    console.error('orbit setup failed:', e && e.message);
+    return json(502, { error: 'payment_provider_error' }, origin);
+  }
 }
 
 // ---------- POST /subscription-status ----------
@@ -973,6 +1194,14 @@ async function handleWebhook(event) {
     return handleCoinsCheckoutCompleted(stripeEvent, obj);
   }
   if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') {
+    // C244 (auditoría): con el pago embebido NO hay
+    // checkout.session.completed, y no hace falta: este handler y el de
+    // invoice.* ya guardan el mismo registro Orbit completo
+    // (subscriptionStateFrom: status, plan, customer, subscription,
+    // currentPeriodEnd vía items y cancelAtPeriodEnd) identificando al
+    // usuario por el metadata drex_user_sub de la suscripción, que tanto
+    // el flujo Checkout (subscription_data) como /subscribe-embedded
+    // fijan al crearla. La activación embebida llega por aquí.
     return handleKoroneSubscriptionEvent(stripeEvent, obj, type);
   }
   if (type === 'invoice.payment_succeeded' || type === 'invoice.payment_failed') {
@@ -996,14 +1225,21 @@ export const handler = async (event) => {
   if (method === 'GET' && (path === '/health' || path === '' || path === '/')) {
     return json(200, { ok: true, service: 'drex-payments', time: new Date().toISOString() }, origin);
   }
-  if (method === 'POST' && path === '/create-checkout-session') {
-    return handleCreateSession(event);
+  /* C263: create-checkout-session / create-subscription-session /
+   * create-customer-portal retirados — sacaban al usuario de Drex
+   * (Stripe Checkout / portal hospedado) y el cliente ya no los usa.
+   * Todo el pago ocurre dentro de la app (endpoints embebidos). */
+  if (method === 'POST' && path === '/subscribe-embedded') {
+    return handleSubscribeEmbedded(event);
   }
-  if (method === 'POST' && path === '/create-subscription-session') {
-    return handleCreateSubscriptionSession(event);
+  if (method === 'POST' && path === '/subscription-cancel') {
+    return handleSubscriptionCancel(event);
   }
-  if (method === 'POST' && path === '/create-customer-portal') {
-    return handleCustomerPortal(event);
+  if (method === 'POST' && path === '/subscription-reactivate') {
+    return handleSubscriptionReactivate(event);
+  }
+  if (method === 'POST' && path === '/subscription-setup') {
+    return handleSubscriptionSetup(event);
   }
   if (method === 'POST' && path === '/subscription-status') {
     return handleSubscriptionStatus(event);

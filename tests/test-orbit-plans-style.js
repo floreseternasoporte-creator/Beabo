@@ -101,12 +101,16 @@ for (const id of SOON_IDS) {
   ok(cards[id].indexOf('data-unavailable="true"') !== -1, id + ': tarjeta con data-unavailable="true"');
   ok(cards[id].indexOf('Próximamente') !== -1, id + ': etiqueta Próximamente visible');
 }
-const btnCss = html.match(/\.orbit-plan-btn\{[^}]*\}/);
-ok(!!btnCss, 'regla CSS .orbit-plan-btn presente');
-ok(btnCss && /background:\s*var\(--drex-brand\)/.test(btnCss[0]), '.orbit-plan-btn: fondo índigo sólido (patrón primario)');
-ok(btnCss && btnCss[0].indexOf('linear-gradient') === -1, '.orbit-plan-btn: sin degradado');
-ok(btnCss && /color:\s*#fff/.test(btnCss[0]), '.orbit-plan-btn: texto blanco');
-ok(btnCss && /min-height:\s*48px/.test(btnCss[0]), '.orbit-plan-btn: alto táctil 48px');
+/* C248: el botón por tarjeta (.orbit-plan-btn) murió con el CTA único de
+ * la barra fija; C263 eliminó su CSS legado. El contrato vivo es el CTA
+ * único #orbit-subscribe-cta (clase .orbit-cta) y la píldora Próximamente. */
+const ctaN = (html.match(/id="orbit-subscribe-cta"/g) || []).length;
+ok(ctaN >= 1, 'CTA único #orbit-subscribe-cta presente (forma C248)');
+ok(html.indexOf('.orbit-plan-btn{') === -1, 'CSS legado .orbit-plan-btn eliminado (C263)');
+ok(html.indexOf('.orbit-subscribe-cta{') === -1, 'CSS legado .orbit-subscribe-cta eliminado (C263)');
+const ctaCss = html.match(/\.orbit-cta\{[^}]*\}/);
+ok(!!ctaCss, 'regla CSS .orbit-cta presente');
+ok(ctaCss && /min-height:/.test(ctaCss[0]), '.orbit-cta: alto táctil');
 
 /* ---- 5. Plan recomendado: borde índigo + etiqueta discreta ---- */
 ok(cards.yearly.indexOf('orbit-plan-card best') !== -1, 'yearly: clase best');
@@ -134,10 +138,7 @@ ok(html.indexOf('.orbit-plan-card.plan-coming-soon') !== -1, 'CSS: selector .pla
 ok(html.indexOf('[data-unavailable="true"]') !== -1, 'CSS: selector [data-unavailable="true"] presente');
 const soonCardCss = html.match(/\.orbit-plan-card\.plan-coming-soon,[^}]*\}/);
 ok(!!soonCardCss && /opacity:\s*\.55/.test(soonCardCss[0]), 'coming-soon: tarjeta atenuada (opacity .55)');
-const soonBtnCss = html.match(/\.orbit-plan-card\.plan-coming-soon \.orbit-plan-btn,[^}]*\}/);
-ok(!!soonBtnCss, 'coming-soon: estilo de botón deshabilitado presente');
-ok(soonBtnCss && /pointer-events:\s*none/.test(soonBtnCss[0]), 'coming-soon: botón sin interacción (pointer-events:none)');
-ok(soonBtnCss && !PURPLE.test(soonBtnCss[0]), 'coming-soon: botón sin morados');
+ok(html.indexOf('.orbit-plan-soon{') !== -1, 'coming-soon: píldora .orbit-plan-soon presente (C248+)');
 ok(/\.orbit-plan-soon\{[^}]*\}/.test(html), 'CSS: clase .orbit-plan-soon para la etiqueta discreta');
 ok(!/\.orbit-plan-soon\{[^}]*linear-gradient/.test(html), '.orbit-plan-soon: sin degradado');
 

@@ -73,7 +73,8 @@ ok(EN && ZH && PT, 'diccionarios cargados');
 eq(Object.keys(EN).length, Object.keys(ZH).length, 'paridad EN=ZH');
 eq(Object.keys(EN).length, Object.keys(PT).length, 'paridad EN=PT');
 const C247_KEYS = [
-  '¿Qué opinas?', 'Activar micrófono', 'Silenciar micrófono', 'Mi Marea',
+  '¿Qué opinas?', 'Activar micrófono', 'Silenciar micrófono',
+  'Se quitó un enlace que no era válido',
   'No se pudo activar. Revisa tu conexión e inténtalo de nuevo.',
   'No hay publicaciones de tipo "{tipo}" todavía.',
   'hace {n} min', 'hace {n} h', 'hace {n} día', 'hace {n} días', 'hace {n} semana', 'hace {n} semanas',
@@ -168,10 +169,11 @@ ok(!!mCore, 'bloque core DrexOrbit extraíble');
 
 /* ============ 5. Census: pestañas del feed en el idioma de la app ============ */
 console.log('-- C247.5: feed tabs (censo en vivo) --');
-for (const [tab, es] of [['foryou', 'Descubre'], ['following', 'Mi gente'], ['popular', 'Destacados'], ['marea', 'Mi Marea']]) {
+for (const [tab, es] of [['foryou', 'Descubre'], ['following', 'Mi gente'], ['popular', 'Destacados']]) {
   ok(html.includes('data-tab="' + tab + '"'), 'pestaña presente: ' + tab);
   ok(html.includes('<span>' + es + '</span>'), 'etiqueta ES fuente presente: ' + es);
 }
+ok(!html.includes('data-tab="marea"'), 'C261: la cuarta pestaña se eliminó');
 ok(html.includes('function syncFeedTabsI18n()'), 'syncFeedTabsI18n definida');
 ok(html.includes('syncAppLanguageUI(lang); syncFeedTabsI18n(); startAppLanguageObserver();'), 'applyAppLanguage fija las pestañas en cada cambio de idioma');
 {
@@ -182,7 +184,7 @@ ok(html.includes('syncAppLanguageUI(lang); syncFeedTabsI18n(); startAppLanguageO
   ok(i0 !== -1 && i1 > i0, 'bloque i18n extraíble');
   const sb = makeLangSandbox();
   const spans = {};
-  const ES0 = { foryou: 'Descubre', following: 'Mi gente', popular: 'Destacados', marea: 'Mi Marea' };
+  const ES0 = { foryou: 'Descubre', following: 'Mi gente', popular: 'Destacados' };
   sb.document = {
     querySelector(sel) {
       const mm = /data-tab="(\w+)"/.exec(sel);
@@ -195,9 +197,9 @@ ok(html.includes('syncAppLanguageUI(lang); syncFeedTabsI18n(); startAppLanguageO
   vm.runInContext(html.slice(i0, i1), sb, { filename: 'i18n-block.js' });
   eq(typeof sb.syncFeedTabsI18n, 'function', 'syncFeedTabsI18n ejecutable en VM');
   const expected = {
-    en: { foryou: 'Discover', following: 'My people', popular: 'Featured', marea: 'My Marea' },
-    zh: { foryou: '发现', following: '我的圈子', popular: '精选', marea: '我的 Marea' },
-    pt: { foryou: 'Descubra', following: 'Minha gente', popular: 'Destaques', marea: 'Minha Marea' },
+    en: { foryou: 'Discover', following: 'My people', popular: 'Featured' },
+    zh: { foryou: '发现', following: '我的圈子', popular: '精选' },
+    pt: { foryou: 'Descubra', following: 'Minha gente', popular: 'Destaques' },
     es: ES0,
   };
   for (const lang of ['en', 'zh', 'pt', 'es']) {

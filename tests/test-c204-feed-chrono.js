@@ -76,12 +76,10 @@ test('DrexRecEngine.resortForYou procede cuando el flag es false', function () {
   mustContain(body, 'window.DREX_FORYOU_CHRONO !== false', 'guarda del modo');
 });
 
-/* ---------- P3: popular y marea conservan su ranking ---------- */
-test('"Destacados" y "Mi Marea" conservan su orden por puntaje', function () {
-  var start = src.indexOf('function snfMountInitialBatch(ctx)');
-  var body = src.slice(start, start + 2600);
-  mustContain(body, "if (ctx.feedMode === 'marea')", 'rama marea intacta');
-  mustContain(body, 'drexMareaSortBatch(ctx, ctx._initialBatch)', 'ranking de marea intacto');
+/* ---------- P3: "Destacados" conserva su ranking (C261: la cuarta pestaña se eliminó) ---------- */
+test('"Destacados" conserva su orden por puntaje; la cuarta pestaña ya no existe', function () {
+  assert(src.indexOf("feedMode === 'marea'") === -1, 'no queda ninguna rama marea');
+  assert(src.indexOf('data-tab="marea"') === -1, 'no queda la pestaña');
   mustContain(src, 'dataset.feedScore', 'ranking de popular intacto');
 });
 

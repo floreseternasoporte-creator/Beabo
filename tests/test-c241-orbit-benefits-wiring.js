@@ -49,7 +49,10 @@ ok('hasAccess rechaza funciones desconocidas (fail-closed)', () => {
 });
 
 ok('refresh ante cualquier fallo deja estado inactivo (fail-closed)', () => {
-  assert(has('self._st = fail; self._serverConfigured = false;'));
+  // C263: un fallo transitorio ya NO desconfigura el servidor (orbitGate
+  // permanecía abierto durante la caída); solo reset()/logout lo limpian.
+  assert(has('self._st = fail; }'));
+  assert(!has('self._st = fail; self._serverConfigured = false;'));
   assert(has("var fail = { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' };"));
 });
 

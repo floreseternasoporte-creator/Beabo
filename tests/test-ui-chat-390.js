@@ -182,15 +182,19 @@ test('P4a - en grupo: encabezado [avatar|nombre·hora] ANTES de la burbuja (orde
   assert(headPos < bubblePos, 'el encabezado debe ir ANTES de la burbuja');
   assert(timePos !== -1 && timePos < bubblePos, 'la hora va DENTRO del encabezado (antes de la burbuja)');
 });
-test('P4b - en DM: avatar junto a la burbuja, hora después', function () {
+test('P4b - en DM: avatar junto a la burbuja, hora bajo la fila (C260)', function () {
   var i = src.indexOf('dmAvatarHtml');
   assert(i !== -1, 'no se encontró dmAvatarHtml');
   var bloque = src.slice(i, i + 6000);
   var avatarPos = bloque.indexOf('dm-avatar');
   var bubblePos = bloque.indexOf('msg-bubble');
-  var timePos = bloque.indexOf('chat-msg-time');
   assert(avatarPos !== -1 && avatarPos < bubblePos, 'el avatar debe ir ANTES/junto a la burbuja');
-  assert(bubblePos < timePos, 'la hora debe ir DESPUÉS de la burbuja');
+  /* C260: con foto, la hora va en línea propia BAJO la fila foto+burbuja
+   * (antes vivía dentro de la columna y empujaba el avatar fuera). */
+  var rowPos = src.indexOf('${dmAvatarHtml}<div class="flex flex-col');
+  var timeLinePos = src.indexOf('pl-[44px] mt-1');
+  assert(rowPos !== -1 && timeLinePos !== -1 && rowPos < timeLinePos,
+    'la hora debe ir en su línea (pl-[44px]) DESPUÉS de la fila foto+burbuja');
 });
 test('P4c - la cita de respuesta va DENTRO y ANTES del contenido', function () {
   assert(src.includes('${replyBlock}${content}'), 'replyBlock debe preceder al contenido dentro de la burbuja');

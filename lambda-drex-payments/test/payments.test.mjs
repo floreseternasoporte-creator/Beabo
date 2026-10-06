@@ -83,63 +83,19 @@ test('GET /health responde ok', async () => {
   assert.equal(parse(res).ok, true);
 });
 
-// ---------- create-checkout-session ----------
-test('sin token -> 401', async () => {
+// ---------- C263: /create-checkout-session retirado (todo pago dentro de Drex) ----------
+test('C263: create-checkout-session ya no existe (sin token -> 404, no 401)', async () => {
   const res = await handler(httpEvent({ method: 'POST', path: '/create-checkout-session',
     body: { packageId: 'coins_100', returnUrl: 'https://app.test/' }, ip: '1.1.1.1' }));
-  assert.equal(res.statusCode, 401);
+  assert.equal(res.statusCode, 404);
+  assert.equal(parse(res).error, 'not_found');
 });
 
-test('token expirado -> 401', async () => {
-  const res = await handler(httpEvent({ method: 'POST', path: '/create-checkout-session',
-    body: { packageId: 'coins_100', idToken: validToken('user-abc', { exp: nowSec() - 10 }), returnUrl: 'https://app.test/' }, ip: '1.1.1.2' }));
-  assert.equal(res.statusCode, 401);
-});
-
-test('token con aud incorrecto -> 401', async () => {
-  const res = await handler(httpEvent({ method: 'POST', path: '/create-checkout-session',
-    body: { packageId: 'coins_100', idToken: validToken('user-abc', { aud: 'otro-cliente' }), returnUrl: 'https://app.test/' }, ip: '1.1.1.3' }));
-  assert.equal(res.statusCode, 401);
-});
-
-test('paquete inválido -> 400', async () => {
-  const res = await handler(httpEvent({ method: 'POST', path: '/create-checkout-session',
-    body: { packageId: 'coins_666', idToken: validToken(), returnUrl: 'https://app.test/' }, ip: '1.1.1.4' }));
-  assert.equal(res.statusCode, 400);
-  assert.equal(parse(res).error, 'invalid_package');
-});
-
-test('returnUrl fuera de la allowlist -> 400', async () => {
-  const res = await handler(httpEvent({ method: 'POST', path: '/create-checkout-session',
-    body: { packageId: 'coins_100', idToken: validToken(), returnUrl: 'https://evil.com/' }, ip: '1.1.1.5' }));
-  assert.equal(res.statusCode, 400);
-  assert.equal(parse(res).error, 'invalid_return_url');
-});
-
-test('sesión válida -> 200 con url y metadata correcta', async () => {
+test('C263: create-checkout-session ya no existe (con token válido -> 404)', async () => {
   const res = await handler(httpEvent({ method: 'POST', path: '/create-checkout-session',
     body: { packageId: 'coins_550', idToken: validToken('user-abc'), returnUrl: 'https://app.test/tienda' }, ip: '1.1.1.6' }));
-  assert.equal(res.statusCode, 200);
-  const data = parse(res);
-  assert.match(data.url, /^https:\/\/checkout\.stripe\.com/);
-  const p = stripeStub.lastSessionParams;
-  assert.equal(p.mode, 'payment');
-  assert.equal(p.line_items[0].price_data.unit_amount, 499); // $4.99 canónico
-  assert.equal(p.metadata.drex_user_sub, 'user-abc');
-  assert.equal(p.metadata.drex_package_id, 'coins_550');
-  assert.match(p.success_url, /^https:\/\/app\.test\/tienda\/\?coins=success&session_id=\{CHECKOUT_SESSION_ID\}/);
-  assert.match(p.cancel_url, /^https:\/\/app\.test\/tienda\/\?coins=cancelled/);
-  assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://app.test');
-});
-
-test('rate limiting: 3ra petición desde la misma IP -> 429', async () => {
-  const mk = () => handler(httpEvent({ method: 'POST', path: '/create-checkout-session',
-    body: { packageId: 'coins_100', idToken: validToken(), returnUrl: 'https://app.test/' }, ip: '2.2.2.2' }));
-  assert.equal((await mk()).statusCode, 200);
-  assert.equal((await mk()).statusCode, 200);
-  const r3 = await mk();
-  assert.equal(r3.statusCode, 429);
-  assert.equal(parse(r3).error, 'rate_limited');
+  assert.equal(res.statusCode, 404);
+  assert.equal(parse(res).error, 'not_found');
 });
 
 // ---------- webhook ----------

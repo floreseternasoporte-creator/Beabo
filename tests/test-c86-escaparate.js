@@ -161,7 +161,7 @@ for (let i = 0; i < 3; i++) {
   ok(html.includes('id="settings-showcase-u-' + i + '"'), 'S3b input URL ' + i);
 }
 ok(!html.includes('id="settings-website"'), 'S4 input legacy settings-website eliminado');
-ok(/saveProfileField\(\{\s*showcaseLinks:/.test(html), 'S5 guardado vía saveProfileField({ showcaseLinks: … })');
+ok(/child\('showcaseLinks'\)\.set\(links\.length \? links : null\)/.test(html), 'S5 guardado por reemplazo completo del nodo (set); Guardar jamás se bloquea (C259)');
 ok(/hasOwnProperty\.call\(updates,\s*'showcaseLinks'\)/.test(html), 'S6 hook de re-render en saveProfileField para showcaseLinks');
 ok(/renderOwnProfileShowcase\(data\.website \|\| '', data\.showcaseLinks\)/.test(html), 'S7 perfil propio llama renderOwnProfileShowcase');
 // Precedencia: escaparate gana; website legacy solo como fallback.
@@ -179,19 +179,21 @@ ok((html.match(/rel="noopener noreferrer ugc"/g) || []).length === 1, 'S11c perm
 ok(/<a href="' \+ l\.u \+ '" target="_blank"/.test(html), 'S12 target=_blank en filas del escaparate propio');
 ok(/body\.theme-dark #profile-links-list a/.test(html), 'S13 regla de contraste en tema oscuro');
 ok(/slice\(0,\s*300\)/.test(html), 'S14 URLs recortadas a 300 chars al leer el editor');
-// Superficie de BD: showcaseLinks solo se escribe vía saveProfileField (update
-// en users/<uid>), nunca con .set/.push directos.
+// Superficie de BD: showcaseLinks solo se escribe en saveLinkConfig, como
+// reemplazo completo del nodo (C259: update() dejaba índices viejos y el
+// enlace quitado reaparecía; el antiguo contrato "vía saveProfileField"
+// quedó sustituido por esta única vía de escritura).
 {
-  const writes = [...html.matchAll(/showcaseLinks\s*:/g)].map(m => m.index);
-  const viaSave = /saveProfileField\(\{\s*showcaseLinks:/.exec(html);
-  ok(viaSave !== null && writes.length >= 1, 'S15a escritura de showcaseLinks presente vía saveProfileField');
-  const directSets = [...html.matchAll(/\.set\(\s*\{[^}]*showcaseLinks|\.push\([^)]*showcaseLinks/g)];
-  ok(directSets.length === 0, 'S15b sin .set/.push directos de showcaseLinks');
+  const writers = [...html.matchAll(/child\('showcaseLinks'\)\.set\(/g)];
+  ok(writers.length === 1, 'S15a una sola escritura de showcaseLinks: child(...).set(...) en saveLinkConfig');
+  const pushes = [...html.matchAll(/\.push\([^)]*showcaseLinks/g)];
+  ok(pushes.length === 0, 'S15b sin .push de showcaseLinks');
 // Normalización al abrir el editor: website legacy migra a la fila 1.
 ok(/if\s*\(!links\.length && d\.website\)/.test(html), 'S16 editor pre-llena fila 1 con website legacy');
 }
-// El editor valida cada URL antes de guardar (toast con la clave existente).
-ok(/function saveLinkConfig\(\)[\s\S]{0,600}Ese enlace no es válido/.test(html), 'S17 saveLinkConfig valida URLs con la clave existente');
+// C259: Guardar nunca se bloquea por una URL inválida; la fila se quita y
+// se avisa una sola vez al terminar de guardar.
+ok(/function saveLinkConfig\(\)[\s\S]{0,1400}Se quitó un enlace que no era válido/.test(html), 'S17 saveLinkConfig quita la URL inválida y avisa suave, sin bloquear');
 
 console.log('\nC86 escaparate: ' + pass + ' OK / ' + fail + ' FAIL (' + target + ')');
 if (failures.length) {
