@@ -6893,9 +6893,6 @@ document.addEventListener("DOMContentLoaded", function() {
     /* Badge de notificaciones: posicionamiento determinista sin depender de Tailwind Play CDN. */
     .notif-avatar-wrap { position: relative; flex-shrink: 0; }
     .notif-badge { position: absolute; bottom: -4px; right: -4px; }
-    /* C255: en el encabezado de escritorio (sobre el degradado oscuro) el
-       contador de visitas va en blanco; en móvil hereda el texto del tema. */
-    #profile-visitors-entry-mount-desktop .pv-count { color: #fff; }
     .tap44::after {
       content: '';
       position: absolute;
@@ -52027,7 +52024,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-06T14:23:39Z';
+window.DREX_BUILD = '2026-10-06T14:57:27Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -86124,19 +86121,12 @@ async function toggleProfileViewsEnabled() {
   try { securityToast(tFn(next ? 'Vistas de perfil activadas.' : 'Vistas de perfil desactivadas.')); } catch (_) {}
   try { refreshProfileVisitorsChip(); } catch (_) {}
 }
-function _pvCompactCount(n) {
-  n = Number(n) || 0;
-  if (n < 1000) return String(n);
-  var k = n / 1000;
-  return (k >= 100 ? String(Math.round(k)) : String(Math.round(k * 10) / 10)) + 'K';
-}
 async function refreshProfileVisitorsChip() {
   try {
     if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
     var chips = document.querySelectorAll('.profile-visitors-chip');
     if (!chips.length) return;
     var on = await drexProfileViewsEnabled();
-    var count = null;
     var latestUid = null, latestTs = -1;
     if (on) {
       var me = (typeof liveUser === 'function') ? liveUser() : null;
@@ -86145,7 +86135,6 @@ async function refreshProfileVisitorsChip() {
           var snap = await DrexCloud.database().ref('users/' + me.uid + '/profileVisitors').once('value');
           var map = (snap && snap.val()) || {};
           var keys = Object.keys(map).filter(function (u) { return u && u !== me.uid; });
-          count = keys.length;
           keys.forEach(function (u) { var ts = Number(map[u]) || 0; if (ts > latestTs) { latestTs = ts; latestUid = u; } });
         } catch (_) {}
       }
@@ -86167,11 +86156,6 @@ async function refreshProfileVisitorsChip() {
         var want = (on && visitorSrc) ? visitorSrc : (im.getAttribute('data-default-src') || '');
         if (want && im.getAttribute('src') !== want) im.src = want;
       }
-      var badge = chip.querySelector('.pv-count');
-      if (badge) {
-        if (on && count !== null) { badge.textContent = _pvCompactCount(count); badge.classList.remove('hidden'); }
-        else badge.classList.add('hidden');
-      }
     });
   } catch (_) {}
 }
@@ -86181,14 +86165,15 @@ function orbitVisitorsEntryHTML() {
      encabezado, no sobre la foto grande.
      C255 (segunda corrección, con su comparativa lado a lado): la mini
      foto NO es la del dueño — es la del ÚLTIMO visitante (la huella de
-     TikTok) y va limpia junto al contador, sin píldora de fondo. Sin
-     visitas (o sin activar) se ve la silueta genérica de reserva. */
+     TikTok) y va limpia, sin píldora de fondo. Sin visitas (o sin
+     activar) se ve la silueta genérica de reserva.
+     C257 (tercera corrección del usuario): SIN número junto a la foto.
+     Solo la foto; el total vive dentro de la lista de visitantes. */
   var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
   var title = (typeof t === 'function') ? t('Quién vio tu perfil') : 'Quién vio tu perfil';
   var ph = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
   return '<button id="profile-visitors-entry" onclick="openProfileVisitorsEntry()" class="profile-visitors-chip tap44 relative flex items-center gap-1.5 px-1 active:scale-95 transition" title="' + escFn(title) + '" aria-label="' + escFn(title) + '">'
     + '<img class="pv-mini-photo w-8 h-8 rounded-full object-cover bg-[var(--theme-surface-muted)]" src="' + ph + '" data-default-src="' + ph + '" alt="">'
-    + '<span class="pv-count hidden text-[15px] font-extrabold leading-none">0</span>'
     + '</button>';
 }
 async function openProfileVisitorsEntry() {
@@ -86266,6 +86251,8 @@ async function openOrbitVisitors() {
       list.innerHTML = '<div class="py-10 text-center text-sm text-[var(--theme-muted)]">' + escFn(t('Aún nadie ha visitado tu perfil.')) + '</div>';
       return;
     }
+    /* C257: el total vive aquí dentro, no junto a la huella del encabezado. */
+    if (noteEl) noteEl.textContent = entries.length + ' · ' + t('Solo tú puedes ver esta lista.');
     var profiles = (typeof _getCachedAuthorProfiles === 'function')
       ? await _getCachedAuthorProfiles(entries.map(function (e) { return e.uid; }))
       : new Map();

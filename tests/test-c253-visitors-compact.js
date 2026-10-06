@@ -157,7 +157,6 @@ vm.runInContext(src, sandbox);
   sandbox.mountOrbitVisitorsEntry();
   await sandbox.refreshProfileVisitorsChip();
   ok(chips[0].classList.contains('opacity-50'), 'chip apagado: atenuado');
-  ok(chips[0].querySelector('.pv-count').classList.contains('hidden'), 'chip apagado: sin contador');
   ok(chips[0].querySelector('.pv-mini-photo').src === undefined, 'C255 chip apagado: ninguna foto de visitante');
 
   /* B. Activar desde Ajustes: escribe el flag, pinta switch y avisa */
@@ -175,17 +174,11 @@ vm.runInContext(src, sandbox);
   await sandbox.drexRecordProfileVisit('me1');
   eq(writes.filter((w) => w[0] === 'users/me1/profileVisitors/me1').length, 0, 'auto-visita jamás se registra');
 
-  /* D. Contador: cuenta visitantes sin contarse a sí mismo */
+  /* D. Huella: la mini foto es la del ÚLTIMO visitante, nunca la mía */
   db['users/me1/profileVisitors'] = { a: 111, b: 222, me1: 333 };
   await sandbox.refreshProfileVisitorsChip();
-  eq(chips[0].querySelector('.pv-count').textContent, '2', 'contador = 2 (sin auto-visita)');
-  /* C255: la mini foto es la del ÚLTIMO visitante (b, ts mayor), nunca la mía */
   eq(chips[0].querySelector('.pv-mini-photo').src, 'foto-b', 'C255: mini foto = último visitante');
-  ok(!chips[0].querySelector('.pv-count').classList.contains('hidden'), 'contador visible encendido');
   ok(!chips[0].classList.contains('opacity-50'), 'chip encendido sin atenuar');
-  eq(sandbox._pvCompactCount(999), '999', 'formato 999');
-  eq(sandbox._pvCompactCount(1500), '1.5K', 'formato 1.5K');
-  eq(sandbox._pvCompactCount(127700), '128K', 'formato 128K');
 
   /* E. Router del chip: encendido → lista; apagado → aviso a Ajustes */
   await sandbox.openProfileVisitorsEntry();
@@ -200,13 +193,13 @@ vm.runInContext(src, sandbox);
   ok(els['orbit-visitors-list'].innerHTML.includes('closeOrbitVisitors(); openPrivacyConfigView()'),
     'el botón lleva directo a Ajustes › Privacidad');
 
-  /* F. Chip renderizado: compacto y con contador (no píldora) */
+  /* F. Chip renderizado: solo la foto, sin píldora ni número */
   const chip = sandbox.orbitVisitorsEntryHTML();
   ok(chip.includes('profile-visitors-chip'), 'chip con clase profile-visitors-chip');
   ok(chip.includes('onclick="openProfileVisitorsEntry()"'), 'chip abre el router C253');
-  ok(chip.includes('pv-count'), 'chip trae la insignia contador');
+  ok(!chip.includes('pv-count'), 'C257: chip SIN número junto a la foto');
   ok(!chip.includes('w-full max-w-xs'), 'chip NO es la píldora de fila entera');
-  /* C254: como TikTok — mini foto + contador, ningún icono de ojo. */
+  /* C254: como TikTok — mini foto, ningún icono de ojo. */
   ok(chip.includes('pv-mini-photo'), 'C254: chip con mini foto de perfil');
   ok(!chip.includes('M1 12s4-8'), 'C254: chip sin icono de ojo');
   /* C255: la huella va limpia, sin píldora de fondo, con su foto de reserva */

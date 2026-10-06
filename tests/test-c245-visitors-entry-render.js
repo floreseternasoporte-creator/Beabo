@@ -122,10 +122,10 @@ for (const id of ['profile-visitors-entry-mount', 'profile-visitors-entry-mount-
   /* C253: el chip abre el router de activación (no la lista directa). */
   ok(h.includes('onclick="openProfileVisitorsEntry()"'), id + ': onclick cableado al router C253');
   ok(h.includes('Quién vio tu perfil'), id + ': título visible');
-  /* C254: como TikTok — sin icono de ojo; mini foto de perfil + contador. */
+  /* C254/C257: como TikTok — sin icono de ojo, sin número; solo la mini foto. */
   ok(!h.includes('M1 12s4-8'), id + ': C254 sin icono de ojo');
   ok(h.includes('pv-mini-photo'), id + ': C254 mini foto de perfil');
-  ok(h.includes('pv-count'), id + ': insignia contador pv-count');
+  ok(!h.includes('pv-count'), id + ': C257 sin número junto a la foto');
   ok(!h.includes('>Orbit<'), id + ': sin etiqueta Orbit en el chip compacto');
   ok(!h.includes('w-full max-w-xs'), id + ': ya no es la píldora completa de fila entera');
   eq(h.split('id="profile-visitors-entry"').length - 1, 1, id + ': exactamente UNA entrada por montaje');
