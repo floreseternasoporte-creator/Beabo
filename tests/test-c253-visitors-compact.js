@@ -132,6 +132,9 @@ const sandbox = {
     setItem: (k, v) => store.set(k, String(v)),
   },
   securityToast: (m) => toasts.push(m),
+  /* C255: perfiles de visitantes para la mini foto del último visitante */
+  _getCachedAuthorProfiles: async (uids) => new Map(uids.map((u) => [u, { profileImage: 'foto-' + u }])),
+  getSafeMediaUrl: (s) => s || '',
   openOrbitVisitors: () => { listOpens++; },
   openPrivacyConfigView: () => { privOpens++; },
   document: {
@@ -155,6 +158,7 @@ vm.runInContext(src, sandbox);
   await sandbox.refreshProfileVisitorsChip();
   ok(chips[0].classList.contains('opacity-50'), 'chip apagado: atenuado');
   ok(chips[0].querySelector('.pv-count').classList.contains('hidden'), 'chip apagado: sin contador');
+  ok(chips[0].querySelector('.pv-mini-photo').src === undefined, 'C255 chip apagado: ninguna foto de visitante');
 
   /* B. Activar desde Ajustes: escribe el flag, pinta switch y avisa */
   await sandbox.toggleProfileViewsEnabled();
@@ -175,6 +179,8 @@ vm.runInContext(src, sandbox);
   db['users/me1/profileVisitors'] = { a: 111, b: 222, me1: 333 };
   await sandbox.refreshProfileVisitorsChip();
   eq(chips[0].querySelector('.pv-count').textContent, '2', 'contador = 2 (sin auto-visita)');
+  /* C255: la mini foto es la del ÚLTIMO visitante (b, ts mayor), nunca la mía */
+  eq(chips[0].querySelector('.pv-mini-photo').src, 'foto-b', 'C255: mini foto = último visitante');
   ok(!chips[0].querySelector('.pv-count').classList.contains('hidden'), 'contador visible encendido');
   ok(!chips[0].classList.contains('opacity-50'), 'chip encendido sin atenuar');
   eq(sandbox._pvCompactCount(999), '999', 'formato 999');
@@ -203,6 +209,9 @@ vm.runInContext(src, sandbox);
   /* C254: como TikTok — mini foto + contador, ningún icono de ojo. */
   ok(chip.includes('pv-mini-photo'), 'C254: chip con mini foto de perfil');
   ok(!chip.includes('M1 12s4-8'), 'C254: chip sin icono de ojo');
+  /* C255: la huella va limpia, sin píldora de fondo, con su foto de reserva */
+  ok(!chip.includes('shadow-sm'), 'C255: chip sin píldora (sin fondo ni sombra)');
+  ok(chip.includes('data-default-src'), 'C255: silueta genérica de reserva presente');
   eq(sandbox.mountOrbitVisitorsEntry(), 2, 'montaje en los dos layouts');
   ok(els['profile-visitors-entry-mount'].innerHTML.includes('profile-visitors-entry'), 'montaje móvil relleno');
   ok(els['profile-visitors-entry-mount-desktop'].innerHTML.includes('profile-visitors-entry'), 'montaje escritorio relleno');

@@ -6893,6 +6893,9 @@ document.addEventListener("DOMContentLoaded", function() {
     /* Badge de notificaciones: posicionamiento determinista sin depender de Tailwind Play CDN. */
     .notif-avatar-wrap { position: relative; flex-shrink: 0; }
     .notif-badge { position: absolute; bottom: -4px; right: -4px; }
+    /* C255: en el encabezado de escritorio (sobre el degradado oscuro) el
+       contador de visitas va en blanco; en móvil hereda el texto del tema. */
+    #profile-visitors-entry-mount-desktop .pv-count { color: #fff; }
     .tap44::after {
       content: '';
       position: absolute;
@@ -29789,12 +29792,27 @@ else { try { drexSnapInit(); } catch (_) {} }
   }
 
   function saveLocalNotifications(userId, notifications) {
+    const key = `drex_notifications_${userId}`;
     try {
-      const key = `drex_notifications_${userId}`;
       // Limitar a las últimas 100 notificaciones para no saturar localStorage
       const limited = notifications.slice(0, 100);
       localStorage.setItem(key, JSON.stringify(limited));
     } catch (e) {
+      // C256: si el almacenamiento está lleno o bloqueado (p. ej. iPhone),
+      // este fallo era silencioso y PERMANENTE: Actividad se pinta solo de
+      // localStorage, así que quedaba vacía para siempre mientras el badge
+      // sí avisaba ("llegó una notificación" pero no se veía ninguna).
+      // Reintento aligerado: sin fotos de actor (lo pesado; se rehidratan
+      // al pintar cada fila) y tope 50, para volver a persistir.
+      try {
+        const slim = notifications.slice(0, 50).map(n => {
+          if (!n || typeof n !== 'object') return n;
+          const c = Object.assign({}, n);
+          delete c.actorImage;
+          return c;
+        });
+        localStorage.setItem(key, JSON.stringify(slim));
+      } catch (_) {}
       console.error("Error al guardar notificaciones locales:", e);
     }
   }
@@ -29887,15 +29905,21 @@ else { try { drexSnapInit(); } catch (_) {} }
   // sinceTs: avisa (sistema+sonido) de notificaciones no leídas con
   // timestamp >= sinceTs (null = sin avisos, p. ej. hidratación del modal).
   function mergeNotificationsSnapshot(userId, snapshot, sinceTs) {
-    if (!snapshot || !snapshot.exists || !snapshot.exists()) return;
+    if (!snapshot || !snapshot.exists || !snapshot.exists()) return null;
     let localNotes = getLocalNotifications(userId);
     const localById = new Map();
     for (const ln of localNotes) {
       if (ln && ln.notificationId && !localById.has(ln.notificationId)) localById.set(ln.notificationId, ln);
     }
     snapshot.forEach(child => {
-      const n = child.val();
-      if (n && n.notificationId) {
+      const raw = child.val();
+      if (!raw || typeof raw !== 'object') return;
+      // C256: la identidad de la notificación es su clave. Filas escritas
+      // sin la hoja notificationId (clientes viejos) se descartaban EN
+      // SILENCIO: el aviso llegaba pero la fila nunca aparecía en
+      // Actividad. Se rescatan con la clave como notificationId.
+      const n = raw.notificationId ? raw : Object.assign({}, raw, { notificationId: child.key });
+      {
         const existing = localById.get(n.notificationId);
         if (!existing) {
           localNotes.unshift(n);
@@ -29917,6 +29941,10 @@ else { try { drexSnapInit(); } catch (_) {} }
     });
     localNotes.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     saveLocalNotifications(userId, localNotes);
+    // C256: devolver la lista fusionada. Quien hidrata (el modal) pinta de
+    // AQUÍ, no solo de localStorage: si el guardado local falla (cuota),
+    // la fusión vive en memoria y Actividad igual muestra lo que llegó.
+    return localNotes;
   }
 
   // El agregado solo dice "cuántas", no "cuál": cuando c crece, la notificación
@@ -29991,8 +30019,10 @@ else { try { drexSnapInit(); } catch (_) {} }
         .then(snap => {
           const me = DrexCloud.auth().currentUser;
           if (!me || me.uid !== userId) return; // la sesión cambió mientras tanto
-          mergeNotificationsSnapshot(userId, snap, null);
-          renderNotificationsList(userId);
+          const merged = mergeNotificationsSnapshot(userId, snap, null);
+          // C256: pintar desde la fusión en memoria; localStorage es solo
+          // la persistencia. Si su guardado falla, la lista igual se ve.
+          renderNotificationsList(userId, Array.isArray(merged) ? merged : undefined);
         }).catch(() => {
           try { renderNotificationsList(userId); } catch (_) {}
         });
@@ -30031,8 +30061,9 @@ else { try { drexSnapInit(); } catch (_) {} }
         .then(snap => {
           const me = DrexCloud.auth().currentUser;
           if (!me || me.uid !== userId) return; // la sesión cambió mientras tanto
-          mergeNotificationsSnapshot(userId, snap, null);
-          const unread = getLocalNotifications(userId).filter(n => n && !n.read).length;
+          const mergedLegacy = mergeNotificationsSnapshot(userId, snap, null);
+          const unreadSrc = Array.isArray(mergedLegacy) ? mergedLegacy : getLocalNotifications(userId);
+          const unread = unreadSrc.filter(n => n && !n.read).length;
           paintNotifUnreadBadge(unread);
         }).catch(() => {});
     } catch (_) {}
@@ -30585,11 +30616,13 @@ else { try { drexSnapInit(); } catch (_) {} }
     } catch (_) {}
   }
 
-  function renderNotificationsList(userId) {
+  function renderNotificationsList(userId, itemsOverride) {
     const notificationsList = document.getElementById('notifications-list');
     if (!notificationsList) return;
 
-    const items = getLocalNotifications(userId).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    // C256: itemsOverride = la fusión recién traída del servidor (memoria).
+    // Sin override se lee el caché local, como siempre.
+    const items = (Array.isArray(itemsOverride) ? itemsOverride.slice() : getLocalNotifications(userId).slice()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     notificationsList.innerHTML = "";
 
     if (items.length === 0) {
@@ -51994,7 +52027,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-06T13:48:09Z';
+window.DREX_BUILD = '2026-10-06T14:23:39Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -86102,36 +86135,38 @@ async function refreshProfileVisitorsChip() {
     if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
     var chips = document.querySelectorAll('.profile-visitors-chip');
     if (!chips.length) return;
-    /* C254: la mini foto del chip refleja siempre la foto de perfil. */
-    try {
-      var imgSrc = '';
-      var pi = document.getElementById('profile-image');
-      if (pi && pi.src && pi.src.indexOf('data:image/svg') !== 0) imgSrc = pi.src;
-      if (!imgSrc) {
-        var pid = document.getElementById('profile-image-desktop');
-        if (pid && pid.src && pid.src.indexOf('data:image/svg') !== 0) imgSrc = pid.src;
-      }
-      if (imgSrc) {
-        chips.forEach(function (chip) {
-          var im = chip.querySelector('.pv-mini-photo');
-          if (im && im.getAttribute('src') !== imgSrc) im.src = imgSrc;
-        });
-      }
-    } catch (_) {}
     var on = await drexProfileViewsEnabled();
     var count = null;
+    var latestUid = null, latestTs = -1;
     if (on) {
       var me = (typeof liveUser === 'function') ? liveUser() : null;
       if (me && me.uid) {
         try {
           var snap = await DrexCloud.database().ref('users/' + me.uid + '/profileVisitors').once('value');
           var map = (snap && snap.val()) || {};
-          count = Object.keys(map).filter(function (u) { return u && u !== me.uid; }).length;
+          var keys = Object.keys(map).filter(function (u) { return u && u !== me.uid; });
+          count = keys.length;
+          keys.forEach(function (u) { var ts = Number(map[u]) || 0; if (ts > latestTs) { latestTs = ts; latestUid = u; } });
         } catch (_) {}
       }
     }
+    /* C255: la mini foto es la del ÚLTIMO visitante (la huella estilo
+       TikTok); sin visitas o sin activar vuelve la silueta genérica. */
+    var visitorSrc = '';
+    if (on && latestUid && typeof _getCachedAuthorProfiles === 'function') {
+      try {
+        var profs = await _getCachedAuthorProfiles([latestUid]);
+        var lp = (profs && profs.get) ? profs.get(latestUid) : null;
+        if (lp && lp.profileImage && typeof getSafeMediaUrl === 'function') visitorSrc = getSafeMediaUrl(lp.profileImage) || '';
+      } catch (_) {}
+    }
     chips.forEach(function (chip) {
       chip.classList.toggle('opacity-50', !on);
+      var im = chip.querySelector('.pv-mini-photo');
+      if (im) {
+        var want = (on && visitorSrc) ? visitorSrc : (im.getAttribute('data-default-src') || '');
+        if (want && im.getAttribute('src') !== want) im.src = want;
+      }
       var badge = chip.querySelector('.pv-count');
       if (badge) {
         if (on && count !== null) { badge.textContent = _pvCompactCount(count); badge.classList.remove('hidden'); }
@@ -86141,14 +86176,19 @@ async function refreshProfileVisitorsChip() {
   } catch (_) {}
 }
 function orbitVisitorsEntryHTML() {
-  /* C254 (corrección del usuario): como TikTok — SIN icono: solo la mini
-     foto de perfil y, al lado, el contador de visitas. En la esquina
-     superior del encabezado, no sobre la foto grande. */
+  /* C254 (corrección del usuario): como TikTok — SIN icono: solo una mini
+     foto y, al lado, el contador de visitas, en la esquina superior del
+     encabezado, no sobre la foto grande.
+     C255 (segunda corrección, con su comparativa lado a lado): la mini
+     foto NO es la del dueño — es la del ÚLTIMO visitante (la huella de
+     TikTok) y va limpia junto al contador, sin píldora de fondo. Sin
+     visitas (o sin activar) se ve la silueta genérica de reserva. */
   var escFn = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s == null ? '' : s); };
   var title = (typeof t === 'function') ? t('Quién vio tu perfil') : 'Quién vio tu perfil';
-  return '<button id="profile-visitors-entry" onclick="openProfileVisitorsEntry()" class="profile-visitors-chip tap44 relative flex items-center gap-1.5 rounded-full bg-[var(--theme-surface)] border border-[var(--theme-border)] shadow-sm py-1 pl-1 pr-2.5 active:scale-95 transition" title="' + escFn(title) + '" aria-label="' + escFn(title) + '">'
-    + '<img class="pv-mini-photo w-7 h-7 rounded-full object-cover bg-[var(--theme-surface-muted)]" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==" alt="">'
-    + '<span class="pv-count hidden text-[13px] font-extrabold leading-none text-[var(--theme-text)]">0</span>'
+  var ph = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+  return '<button id="profile-visitors-entry" onclick="openProfileVisitorsEntry()" class="profile-visitors-chip tap44 relative flex items-center gap-1.5 px-1 active:scale-95 transition" title="' + escFn(title) + '" aria-label="' + escFn(title) + '">'
+    + '<img class="pv-mini-photo w-8 h-8 rounded-full object-cover bg-[var(--theme-surface-muted)]" src="' + ph + '" data-default-src="' + ph + '" alt="">'
+    + '<span class="pv-count hidden text-[15px] font-extrabold leading-none">0</span>'
     + '</button>';
 }
 async function openProfileVisitorsEntry() {
