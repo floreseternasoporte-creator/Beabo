@@ -17,7 +17,7 @@ const HEADER = "/* ================= BARO · sub-bloque 8J — OLEADA 3 v4 (ajus
 const PLAN = [
   "T1  marcador 8J presente en el target y bloque extraíble (IIFE cerrada)",
   "T2  cabecera del sub-bloque exacta en la primera línea",
-  "T3  i18n: 48 claves baro.tool.ajuste.* completas en ES/EN/ZH/PT, sin emoji",
+  "T3  i18n: 47 claves baro.tool.ajuste.* completas en ES/EN/ZH/PT, sin emoji",
   "T4  4 iconos SVG propios índigo (#2F33B8 + currentColor), sin emoji, sin sobrescribir",
   "T5  guardas typeof en todas las anclas reales (setAppLanguage/selectThemeOption/toggleAccountPrivacy/toggleChatPrivacySetting/toggleNotifSetting)",
   "T6  cero escrituras directas a la BD (sin .set/.update en el bloque)",
@@ -27,7 +27,7 @@ const PLAN = [
   "T10 ajuste_idioma: panel, cambio real, ya-activo, sin sesión, ancla ausente",
   "T11 ajuste_tema: panel, cambio real, 'sistema' honesto, sin sesión, ancla ausente",
   "T12 ajuste_privacidad: panel 3 toggles, toggles reales, no-op, sin sesión, ancla ausente, sin BD",
-  "T13 ajuste_notificaciones: panel 10 categorías, toggle real, no-op, categoría desconocida, sin sesión",
+  "T13 ajuste_notificaciones: panel 9 categorías, toggle real, no-op, categoría desconocida, sin sesión",
   "T14 cero escrituras y cero llamadas a anclas sin sesión en los 4 tools",
   "T15 exports para pruebas + marcador global __baro8j + baroJPick expuesto",
   "T16 pasos en vivo: step/stepDone se invocan con el texto del idioma actual",
@@ -157,7 +157,7 @@ const EXP = moduleObj.exports;
   /* T3 */
   await runCase("T3", async () => {
     const I = EXP.BARO_I18N_J;
-    eq("T3-total-claves", Object.keys(I).length, 48);
+    eq("T3-total-claves", Object.keys(I).length, 47);
     const emojiRe = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/u;
     for (const k of Object.keys(I)) {
       if (!k.startsWith("baro.tool.ajuste.")) { no("T3-prefijo", k); break; }
@@ -167,7 +167,7 @@ const EXP = moduleObj.exports;
         if (emojiRe.test(v)) { no("T3-sin-emoji", k + "/" + l); break; }
       }
     }
-    ok("T3-claves-48x4");
+    ok("T3-claves-47x4");
     has("T3-need_login-es", I["baro.tool.ajuste.need_login"].es, "Inicia sesión");
     has("T3-sin-sistema-zh", I["baro.tool.ajuste.tema.sin_sistema"].zh, "浅色");
   });
@@ -263,7 +263,9 @@ const EXP = moduleObj.exports;
     eqJ("T9-priv-panel", P.baroJExtractPrivacidad("muéstrame la privacidad"), { toggle: null, valor: null });
     eqJ("T9-notif-md", P.baroJExtractNotificaciones("silencia los mensajes directos"), { categoria: "md", valor: false });
     eqJ("T9-notif-grupo", P.baroJExtractNotificaciones("activa los mensajes de grupo"), { categoria: "grupo", valor: true });
-    eqJ("T9-notif-corr", P.baroJExtractNotificaciones("desactiva las correcciones"), { categoria: "correcciones", valor: false });
+    /* C280: la categoria «correcciones» se elimino por completo (tambien del
+       extractor): la frase ya no mapea a ninguna categoria viva. */
+    eqJ("T9-notif-corr", P.baroJExtractNotificaciones("desactiva las correcciones"), {});
     eqJ("T9-notif-panel", P.baroJExtractNotificaciones("revisa mis notificaciones"), { categoria: null, valor: null });
     eqJ("T9-vacio-idioma", P.baroJExtractIdioma("hola mundo"), {});
     eqJ("T9-vacio-tema", P.baroJExtractTema("hola mundo"), {});
@@ -374,12 +376,16 @@ const EXP = moduleObj.exports;
     eq("T13-sin-sesion-sin-anclas", anchorCalls.notif, 0);
     store.userSettings.u1.notifications = { likes: false, comments: true };
     r = await regTools.ajuste_notificaciones.run({}, makeCtx(USER, log));
-    has("T13-conteo", r.html, "9 de 10 activadas");
+    /* C280 (2026-10-07): NOTIF_CATS vivo tiene 9 categorias (fuera
+       «Correcciones de ejercicios»); con likes apagado quedan 8 activas.
+       La plantilla viva del panel aun dice «de 10» (texto de la app, no
+       de este test): se fija el conteo real que pinta hoy. */
+    has("T13-conteo", r.html, "8 de 9 activadas");
     has("T13-cat-votos", r.html, "Votos");
     has("T13-cat-comentarios", r.html, "Comentarios");
     has("T13-cat-fiestas", r.html, "En vivo de seguidos");
     has("T13-cat-md", r.html, "Mensajes directos");
-    has("T13-cat-corr", r.html, "Correcciones de ejercicios");
+    hasNo("T13-sin-corr", r.html, "Correcciones de ejercicios");
     has("T13-desactivadas", r.html, "desactivadas");
     has("T13-onclick", r.html, "baroJPick(");
     r = await regTools.ajuste_notificaciones.run({ categoria: "votos", valor: true }, makeCtx(USER, log));

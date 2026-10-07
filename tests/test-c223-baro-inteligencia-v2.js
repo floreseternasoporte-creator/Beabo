@@ -160,7 +160,10 @@ tcase('perfil: la tool guarda el nombre y el saludo lo usa', async () => {
   assert(html.indexOf('Ana') !== -1, 'confirmación sin nombre: ' + html);
   assert(api.profile().nombre === 'Ana', 'perfil=' + JSON.stringify(api.profile()));
   const sal = api.saludo(null);
-  assert(sal.indexOf('¡Hola, Ana!') !== -1, 'saludo=' + sal);
+  /* C280: el saludo vivo es natural segun hora e idioma (con variedad);
+     se exige idioma ES + nombre presente, no una frase exacta. */
+  assert(sal.indexOf('Ana') !== -1, 'saludo sin nombre=' + sal);
+  assert(/¡Hola|¡Ey|Buenas|buenos días|buenas tardes|buenas noches/i.test(sal), 'saludo ES no natural=' + sal);
 });
 tcase('perfil: "olvida mi nombre" limpia el perfil', async () => {
   const d = api.detect('olvida mi nombre');
@@ -192,8 +195,12 @@ tcase('idioma: "háblame en inglés" guarda la preferencia', async () => {
 });
 tcase('idioma: el saludo respeta la preferencia (EN) y sin objetivo ofrece opciones', async () => {
   const sal = api.saludo({ id: 'perfil', view: 'profile-view' });
-  assert(sal.indexOf('Hi, Ana!') !== -1, 'saludo EN=' + sal);
-  assert(sal.indexOf('your profile') !== -1, 'vista EN=' + sal);
+  /* C280: saludo vivo natural por hora en EN (Good morning/afternoon/
+     evening, Hey, Hi...), con el nombre; ya no se fija «Hi, Ana!» ni la
+     coletilla exacta de la vista («your profile»). */
+  assert(sal.indexOf('Ana') !== -1, 'saludo EN sin nombre=' + sal);
+  assert(/Good morning|Good afternoon|Good evening|Hey|Hi|Hello|Good to see you/i.test(sal), 'saludo EN no natural=' + sal);
+  assert(!/¡Hola|Buenas/i.test(sal), 'saludo EN mezcló ES=' + sal);
   const card = await runTool('idioma', {});
   assert(card.indexOf("baroL2Send('háblame en español')") !== -1, 'chip ES ausente');
   assert(card.indexOf("baroL2Send('háblame en inglés')") !== -1, 'chip EN ausente');
@@ -357,7 +364,9 @@ tcase('saludo: wire antepone el saludo al mensaje de ayuda', () => {
   api.saveProfile({ nombre: 'Ana', idioma: '', intereses: [], visitas: 0 });
   sandbox.window.baroOpenView();
   assert(calls.length === 2, 'llamadas=' + calls.length);
-  assert(calls[0].indexOf('¡Hola, Ana!') !== -1, 'saludo=' + calls[0].slice(0, 120));
+  /* C280: saludo vivo natural ES segun la hora, con el nombre. */
+  assert(calls[0].indexOf('Ana') !== -1, 'saludo sin nombre=' + calls[0].slice(0, 120));
+  assert(/¡Hola|¡Ey|Buenas|buenos días|buenas tardes|buenas noches/i.test(calls[0]), 'saludo ES no natural=' + calls[0].slice(0, 120));
   assert(calls[1] === '<p>HELP</p>', 'ayuda alterada');
   assert(api.profile().visitas === 1, 'visitas=' + api.profile().visitas);
   delete sandbox.document;

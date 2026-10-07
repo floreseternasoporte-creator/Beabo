@@ -193,7 +193,7 @@ tcase('T9', () => {
   ok(/drexFeaturedSortPosts\(items, featuredMap\)/.test(html), 'T9c grid propio ordena con drexFeaturedSortPosts');
   ok(/orderedItems\.forEach\(post =>/.test(html), 'T9d grid propio renderiza el orden final');
   ok(/featuredPromise: DrexCloud\.database\(\)\.ref\('users\/' \+ authorId \+ '\/featuredPosts'\)/.test(html), 'T9e memo del autor incluye featuredPromise');
-  ok(/drexFeaturedSortPosts\(posts, featuredSnap \? featuredSnap\.val\(\) : null\)/.test(html), 'T9f grid ajeno ordena con drexFeaturedSortPosts');
+  ok(/drexFeaturedSortPosts\(visiblePosts, featuredSnap \? featuredSnap\.val\(\) : null\)/.test(html), 'T9f grid ajeno ordena con drexFeaturedSortPosts');
   ok(!/posts\.sort\(\(a, b\) => \(b\.timestamp \|\| 0\) - \(a\.timestamp \|\| 0\)\);[\s\S]{0,60}const voteMaps = await _getProfileVoteMaps\(\);\s+posts\.forEach/.test(html),
     'T9g ningún grid conserva el sort plano sin destacados');
 });

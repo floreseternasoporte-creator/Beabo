@@ -131,14 +131,18 @@ test('KB de Baro sin transmisiones de video', function () {
 test('landing (empresa-view) sin "haz en vivos"', function () {
   assert(src.indexOf('haz en vivos') === -1, 'la landing aún dice "haz en vivos"');
   assert(src.indexOf('música, en vivos y práctica') === -1, 'la landing aún lista "en vivos"');
-  assert(src.indexOf('fiestas de voz y práctica de idiomas') !== -1,
-    'la landing debe mencionar las fiestas de voz');
+  /* C280: hero vivo «Publica, conversa, escucha música y únete a fiestas
+     de voz» (ya sin «práctica de idiomas», función eliminada). */
+  assert(src.indexOf('únete a fiestas de voz') !== -1,
+    'la landing debe mencionar las Fiestas de voz');
+  assert(src.indexOf('Fiestas de voz') !== -1,
+    'la landing debe titular «Fiestas de voz»');
   assert(i18n.indexOf('haz en vivos y practica idiomas') === -1,
     'drex-i18n.js aún tiene la traducción vieja del hero');
   assert(i18n.indexOf('música, en vivos y práctica de idiomas') === -1,
     'drex-i18n.js aún tiene la traducción vieja de la tarjeta');
-  assert(i18n.indexOf('únete a fiestas de voz y practica idiomas') !== -1,
-    'drex-i18n.js debe tener el hero nuevo');
+  assert(i18n.indexOf('Publica, conversa, escucha música y únete a fiestas de voz') !== -1,
+    'drex-i18n.js debe tener el hero nuevo de fiestas de voz');
 });
 
 /* ---------- 7. lo que debe sobrevivir ---------- */
@@ -146,7 +150,10 @@ test('fiestas de voz intactas', function () {
   assert(/function createFiesta\b/.test(src), 'falta createFiesta');
   assert(src.indexOf('fiesta-room-view') !== -1, 'falta fiesta-room-view');
   assert(src.indexOf('envivo-pane-voz') !== -1, 'falta envivo-pane-voz');
-  assert(src.indexOf('Salas de voz en vivo') !== -1, 'falta el texto "Salas de voz en vivo"');
+  /* C280: textos vivos «Fiestas de voz» y baldosa «En vivo» con
+     «llamada grupal en vivo para hablar con otros usuarios». */
+  assert(src.indexOf('Fiestas de voz') !== -1, 'falta el texto "Fiestas de voz"');
+  assert(src.indexOf('llamada grupal en vivo para hablar con otros usuarios') !== -1, 'falta la descripción viva de la baldosa En vivo');
 });
 test('Destellos intactos', function () {
   assert(i18n.indexOf('"Destellos":"Glimmers"') !== -1, 'falta la clave i18n de Destellos');

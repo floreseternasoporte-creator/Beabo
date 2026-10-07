@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /* C222: ilustraciones 3D sin fondo en estados vacios.
-   Verifica que los 7 PNG existan con canal alfa, que index.html los
-   referencie en los 7 estados vacios, que los placeholders viejos hayan
-   desaparecido y que el CSS .drex-illus exista. */
+   Verifica que los 6 PNG vivos existan con canal alfa, que index.html los
+   referencie en los estados vacios, que los placeholders viejos hayan
+   desaparecido y que el CSS .drex-illus exista.
+   C280 (2026-10-07): la ilustracion `fx` y drexFxRenderList se eliminaron
+   junto con los efectos; ya no se exige ni su PNG ni su referencia (el
+   archivo drex-illus-fx.png puede quedar huerfano en disco, sin uso). */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -14,7 +17,7 @@ function ok(cond, name) {
   else { fail++; console.log('  FAIL ' + name); }
 }
 
-const PNGS = ['notif', 'chat', 'fx', 'search', 'diamond', 'saved', 'oops'];
+const PNGS = ['notif', 'chat', 'search', 'diamond', 'saved', 'oops'];
 const html = fs.readFileSync(path.join(REPO, 'index.html'), 'utf8');
 
 // 1. Archivos PNG existen y tienen canal alfa (firma PNG + chunk IHDR color type 6/4)
@@ -57,7 +60,7 @@ function near(img, text) {
 }
 ok(near('drex-illus-notif.png', 'Sin actividad por ahora'), 'notif: ilustracion junto a "Sin actividad por ahora"');
 ok(near('drex-illus-chat.png', 'Sin conversaciones'), 'inbox: ilustracion junto a "Sin conversaciones"');
-ok(near('drex-illus-fx.png', 'drexFxEscapeHtml(emptyTitle)'), 'fx: ilustracion en drexFxRenderList');
+ok(!html.includes('drexFxRenderList') && !html.includes('drex-illus-fx'), 'fx: sin resto de efectos ni de su ilustracion');
 ok(near('drex-illus-search.png', 'Sin resultados para'), 'search: ilustracion junto a "Sin resultados para"');
 ok(near('drex-illus-diamond.png', 'Sin destellos'), 'snap: ilustracion junto a "Sin destellos"');
 ok(near('drex-illus-saved.png', 'Todav\u00eda no guardaste nada'), 'saved: ilustracion junto a "Todav\u00eda no guardaste nada"');
@@ -65,7 +68,7 @@ ok(near('drex-illus-oops.png', 'No se pudo cargar tu Pulso'), 'oops: ilustracion
 
 // 6. Atributos de accesibilidad/rendimiento
 const imgs = html.match(/<img[^>]*drex-illus[^>]*>/g) || [];
-ok(imgs.length >= 8, 'al menos 8 <img> drex-illus (' + imgs.length + ')');
+ok(imgs.length >= 7, 'al menos 7 <img> drex-illus (6 vivas, chat x2) (' + imgs.length + ')');
 ok(imgs.every(t => t.includes('loading="lazy"')), 'todas con loading="lazy"');
 ok(imgs.every(t => t.includes('alt=""')), 'todas con alt vacio (decorativas)');
 
