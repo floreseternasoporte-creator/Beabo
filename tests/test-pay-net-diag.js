@@ -60,16 +60,15 @@ test('drexPayNetDiag prueba App, Internet y Pagos', function () {
   assert(/mode:\s*'no-cors'/.test(src), 'debe usar no-cors para no contaminar con CORS');
 });
 
-/* 2b. v2: además hace un POST real al endpoint de suscripción (como el pago de verdad). */
-test('drexPayNetDiag v2 incluye prueba POST real al checkout', function () {
+/* 2b. C279 (2026-10-07): el diagnóstico ya NO hace un POST real de
+ * suscripción. La Lambda no conoce ningún modo diag y cada POST creaba
+ * una suscripción anual incompleta con la cuenta real del usuario.
+ * Quedan solo las sondas de alcance (GET) de la prueba 2. */
+test('drexPayNetDiag no crea suscripciones de diagnóstico', function () {
   var src = diagFnSource();
-  assert(src.indexOf('postProbe') !== -1, 'falta postProbe');
-  /* C247 (2026-10-03): la sonda POST apunta al endpoint vivo de la
-   * suscripción embebida; el checkout hospedado se retiró del frontend. */
-  assert(src.indexOf("/subscribe-embedded") !== -1, 'el POST debe ir al endpoint de suscripción embebida');
-  assert(src.indexOf('/create-subscription-session') === -1, 'C247 (2026-10-03): sin endpoint LEGADO de checkout en el diagnóstico');
-  assert(/method:\s*'POST'/.test(src), 'postProbe debe usar POST');
-  assert(/'Content-Type':\s*'text\/plain/.test(src), 'postProbe debe usar text/plain como el pago real');
+  assert(src.indexOf('postProbe') === -1, 'postProbe debe estar retirado');
+  assert(src.indexOf('/subscribe-embedded') === -1, 'el diagnóstico no debe tocar el endpoint de suscripción');
+  assert(!/method:\s*'POST'/.test(src), 'el diagnóstico no debe hacer POST');
 });
 
 /* 3. El pago embebido (C244) invoca el diagnóstico en fallos de red. */

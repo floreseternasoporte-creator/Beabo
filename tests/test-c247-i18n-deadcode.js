@@ -140,7 +140,7 @@ for (const ep of ['/subscription-cancel', '/subscription-reactivate', '/subscrip
 }
 ok(/function orbitSubscribe\(planId\)[\s\S]{0,500}?openOrbitCheckout\(planId\)/.test(html), 'orbitSubscribe abre la hoja embebida');
 ok(/async function orbitManage\(\)[\s\S]{0,300}?openOrbitManage\(\)/.test(html), 'orbitManage abre la hoja propia');
-ok(html.includes("fetch(ep + '/subscribe-embedded'"), 'drexPayNetDiag sonda el endpoint embebido');
+ok(!html.includes("fetch(ep + '/subscribe-embedded'"), 'C279: drexPayNetDiag ya no crea suscripciones de diagnóstico');
 
 /* VM: el core real ya no trae los métodos muertos */
 const mCore = html.match(/\/\* =+\n \* DREX ORBIT — suscripción Orbit de Drex[\s\S]*?window\.DREX_ORBIT_ENFORCE = false;/);
@@ -250,7 +250,7 @@ ok(hub.includes('onclick="openNoteCreation()"') && fnDefined('openNoteCreation')
   vm.runInContext(html.slice(i0, i1), sb, { filename: 'i18n-block.js' });
   const hubTexts = [
     'Crear contenido', 'Nuevo Post', 'Publica tus pensamientos, actualizaciones o anuncios. Haz que tu voz resuene.',
-    'En vivo', 'Crea una llamada grupal en vivo para practicar idiomas hablando con otros usuarios.',
+    'En vivo', 'Crea una llamada grupal en vivo para hablar con otros usuarios.',
     'Música', 'Sube tu música, crea tu nombre de artista y deja que todos la escuchen.',
   ];
   for (const txt of hubTexts) {

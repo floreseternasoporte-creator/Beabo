@@ -9436,14 +9436,15 @@ function fiestaGameStartTick() {
   fiestaGameStopTick();
   fiestaGameTickInt = setInterval(function () {
     if (typeof fiestaGameCheckHostGone === 'function') fiestaGameCheckHostGone();
-    var el = document.getElementById('fg-countdown');
-    if (!el || !fiestaGame) return;
+    var els = document.querySelectorAll('#fg-countdown');
+    if (!els.length || !fiestaGame) return;
     var now = Date.now(), target = 0;
     if (fiestaGame.status === 'describe') target = fiestaGame.turnEndsAt || 0;
     else if (fiestaGame.status === 'vote') target = fiestaGame.voteEndsAt || 0;
     else if (fiestaGame.status === 'deal') target = fiestaGame.dealEndsAt || 0;
     else if (fiestaGame.status === 'reveal') target = fiestaGame.revealEndsAt || 0;
-    el.textContent = Math.max(0, Math.ceil((target - now) / 1000));
+    var secs = Math.max(0, Math.ceil((target - now) / 1000));
+    els.forEach(function (el) { el.textContent = secs; });
   }, 500);
 }
 function fiestaGameStopTick() {
@@ -25871,7 +25872,24 @@ else { try { drexSnapInit(); } catch (_) {} }
     commentsOriginView = 'main';
     const originalPostBlock = document.getElementById('original-post');
     if (originalPostBlock) originalPostBlock.classList.remove('hidden');
-    if (commentsView) commentsView.style.zIndex = '';
+    if (commentsView) {
+      commentsView.style.zIndex = '';
+      // Desde la sala de chat (una publicación compartida) o desde el
+      // permalink, los comentarios deben abrir ENCIMA de esa vista
+      // (z 66 / z 210): detrás quedan invisibles y el toque parece
+      // no hacer nada. Los visores suben un poco más para seguir
+      // abriéndose sobre los comentarios.
+      const _overChatRoom = !document.getElementById('chat-room-view')?.classList.contains('hidden');
+      const _overPermalink = !document.getElementById('post-permalink-view')?.classList.contains('hidden');
+      if (_overChatRoom || _overPermalink) {
+        window._commentsFromViewer = true; // al cerrar se restaura el z
+        commentsView.style.zIndex = '220';
+        const _im = document.getElementById('image-modal');
+        if (_im) _im.style.zIndex = '225';
+        const _vm = document.getElementById('video-modal');
+        if (_vm) _vm.style.zIndex = '226';
+      }
+    }
 
     document.getElementById('original-post').innerHTML = `
     <div class="animate-pulse">
@@ -25975,6 +25993,10 @@ else { try { drexSnapInit(); } catch (_) {} }
       window._commentsFromViewer = false;
       const _cv = document.getElementById('comments-view');
       if (_cv) _cv.style.zIndex = '';
+      const _im2 = document.getElementById('image-modal');
+      if (_im2) _im2.style.zIndex = '';
+      const _vm2 = document.getElementById('video-modal');
+      if (_vm2) _vm2.style.zIndex = '';
     }
     if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
     document.body.classList.remove('comments-view-open');
@@ -27377,7 +27399,7 @@ else { try { drexSnapInit(); } catch (_) {} }
             const userData = userSnap.val() || {};
             const voterName = userData.username || user.displayName || user.email || 'Alguien';
             const targetType = isReplyVote ? 'respuesta' : 'comentario';
-            addNotification(updatedComment.authorId, `A ${voterName} le dio un voto a tu ${targetType}.`, 'vote');
+            addNotification(updatedComment.authorId, `A ${voterName} le dio un voto a tu ${targetType}.`, 'vote', { actionType: 'post', actionId: noteId });
           });
         }
 
@@ -37953,7 +37975,6 @@ let chatTypingListener = null;
     loadChatInboxHeader();
     renderChatInboxFilters();
     loadChatConversations();
-    _markAllChatsRead();
     try { if (typeof drexLoadSectionAds === 'function') drexLoadSectionAds(document.getElementById('chat-inbox-view')); } catch (_) {}
   }
 
@@ -38283,33 +38304,76 @@ let chatTypingListener = null;
       showMiniToast(appT('Acepta la solicitud para responder'));
       return;
     }
-    const conversationId = currentChatRoomId;
-    const recipientId = currentChatRecipient;
-    const isGroup = currentChatIsGroup;
-    const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
-    const payload = {
-      senderId: user.uid,
-      type: 'sticker',
-      stickerId: sticker.id,
-      text: '',
-      timestamp: DrexCloud.database.ServerValue.TIMESTAMP
-    };
-    if (isGroup) {
-      try {
-        const snap = await DrexCloud.database().ref('users/' + user.uid).once('value');
-        const d = snap.val() || {};
-        payload.senderName = d.username || d.displayName || appT('Usuario');
-      } catch(_) { payload.senderName = appT('Usuario'); }
-    }
-    drexStickerPushRecent(sticker.id);
-    renderChatStickerCarousel();
+    // Los stickers cumplen las MISMAS reglas que el texto: candado
+    // anti-doble-envío, bloqueos en ambas direcciones, permiso de DM
+    // y aviso al destinatario al entregar.
+    if (window._drexChatSending) return;
+    window._drexChatSending = true;
     try {
+      const conversationId = currentChatRoomId;
+      const recipientId = currentChatRecipient;
+      const isGroup = currentChatIsGroup;
+      if (!isGroup && recipientId) {
+        const [iBlockedThem, theyBlockedMe, recipSnap] = await Promise.all([
+          DrexCloud.database().ref('blocks/' + user.uid + '/' + recipientId).once('value'),
+          DrexCloud.database().ref('blocks/' + recipientId + '/' + user.uid).once('value'),
+          DrexCloud.database().ref('users/' + recipientId).once('value')
+        ]);
+        if (iBlockedThem.exists()) { showMiniToast(appT('Has bloqueado a este usuario. Desbloquéalo para poder enviarle mensajes.')); return; }
+        if (theyBlockedMe.exists()) { showMiniToast(appT('No puedes enviar mensajes a este usuario.')); return; }
+        const dmPermission = (recipSnap.val() || {}).dmPermission || 'all';
+        if (dmPermission === 'none') { showMiniToast(appT('Esta persona no tiene los permisos de mensaje activado.')); return; }
+        if (dmPermission === 'friends') {
+          const [following, followedBy] = await Promise.all([
+            DrexCloud.database().ref('followers/' + recipientId + '/' + user.uid).once('value'),
+            DrexCloud.database().ref('followers/' + user.uid + '/' + recipientId).once('value')
+          ]);
+          if (!(following.exists() && followedBy.exists())) { showMiniToast(appT('Solo los amigos pueden escribir a esta persona.')); return; }
+        }
+      }
+      const groupMembers = Array.isArray(currentGroupMembers) ? currentGroupMembers.slice() : { ...(currentGroupMembers || {}) };
+      const payload = {
+        senderId: user.uid,
+        type: 'sticker',
+        stickerId: sticker.id,
+        text: '',
+        timestamp: DrexCloud.database.ServerValue.TIMESTAMP
+      };
+      if (isGroup) {
+        try {
+          const snap = await DrexCloud.database().ref('users/' + user.uid).once('value');
+          const d = snap.val() || {};
+          payload.senderName = d.username || d.displayName || appT('Usuario');
+        } catch(_) { payload.senderName = appT('Usuario'); }
+      }
+      drexStickerPushRecent(sticker.id);
+      renderChatStickerCarousel();
       await DrexCloud.database().ref('conversationMessages/' + conversationId).pushAsync(payload);
       await updateChatConversationPreview(appT('Sticker'), payload, { conversationId, recipientId, isGroup, groupMembers, senderUid: user.uid });
+      if (typeof addNotification === 'function') {
+        try {
+          const senderSnap = await DrexCloud.database().ref('users/' + user.uid).once('value');
+          const senderData = senderSnap.val() || {};
+          const senderName = senderData.username || senderData.displayName || 'Alguien';
+          if (isGroup) {
+            const memberIds = Array.isArray(groupMembers) ? groupMembers : Object.keys(groupMembers || {});
+            memberIds.forEach(memberId => {
+              if (memberId && memberId !== user.uid) {
+                addNotification(memberId, `${senderName} en el grupo: ${appT('Sticker')}`, 'message', { actionType: 'chat', actionId: conversationId, isGroupChat: true });
+              }
+            });
+          } else if (recipientId) {
+            addNotification(recipientId, `${senderName} te envió un mensaje: ${appT('Sticker')}`, 'message', { actionType: 'chat', actionId: user.uid });
+          }
+        } catch (_) {}
+      }
     } catch (_) {
       showMiniToast(appT('No se pudo enviar el sticker. Inténtalo de nuevo.'));
+    } finally {
+      window._drexChatSending = false;
     }
   }
+
 
   /* ══════════════════════════════════════════════════════════════
      LLAMADAS DE AUDIO / VIDEO
@@ -50217,6 +50281,59 @@ function drexInitRouteObserver() {
   } catch (_) {}
 })();
 
+// Retorno tras verificar el pago en la web del banco (Stripe con
+// redirect: 'if_required'): Drex vuelve con ?payment_intent=...&
+// redirect_status=... en la URL y antes nadie lo recogía: sin aviso,
+// sin refresco y con los parámetros sucios en la dirección. Se limpia
+// la URL, se refresca el estado verificado de Orbit y se avisa,
+// igual que el retorno ?orbit=success.
+(function captureStripeRedirectReturn() {
+  try {
+    var q = new URLSearchParams(location.search);
+    var rs = q.get('redirect_status');
+    if (!rs && !q.get('payment_intent')) return;
+    try {
+      var url = new URL(location.href);
+      ['payment_intent', 'payment_intent_client_secret', 'redirect_status'].forEach(function (k) { url.searchParams.delete(k); });
+      history.replaceState(null, '', url.toString());
+    } catch (_) {}
+    var show = function () {
+      try {
+        if (rs === 'failed') {
+          orbitToast(t('El pago no se completó. No se realizó ningún cargo.'));
+          return;
+        }
+        if ((rs === 'succeeded' || rs === 'processing' || !rs) && typeof DrexOrbit !== 'undefined') {
+          DrexOrbit.refresh(true).then(function (st) {
+            try {
+              if (st && st.active) {
+                orbitToast(t('¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.'));
+                if (typeof openOrbitView === 'function') openOrbitView();
+              } else {
+                orbitToast(t('Pago recibido. Tu suscripción se activará en unos segundos.'));
+                [8000, 20000, 45000].forEach(function (ms) {
+                  setTimeout(function () {
+                    try {
+                      DrexOrbit.refresh(true).then(function (s2) {
+                        if (s2 && s2.active) {
+                          orbitToast(t('¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.'));
+                          if (typeof openOrbitView === 'function') openOrbitView();
+                        }
+                      }).catch(function () {});
+                    } catch (_) {}
+                  }, ms);
+                });
+              }
+            } catch (_) {}
+          }).catch(function () {});
+        }
+      } catch (_) {}
+    };
+    if (document.readyState === 'complete') setTimeout(show, 900);
+    else window.addEventListener('load', function () { setTimeout(show, 900); });
+  } catch (_) {}
+})();
+
 // C46-G1: unirse a un grupo desde su enlace de invitacion (?joinGroup=<id>).
 // Antes el enlace era un callejon sin salida para no-miembros: solo abria la
 // sala si ya eras miembro; si no, mostraba un toast sin forma de unirse,
@@ -51657,7 +51774,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-07T07:07:13Z';
+window.DREX_BUILD = '2026-10-07T22:03:29Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -85065,12 +85182,15 @@ function orbitBenefitsMatrixHTML(planId) {
 /* Al cambiar de plan elegido se repinta SOLO la matriz (checks/candados). */
 function orbitRefreshBenefitsMatrix() {
   try {
-    var m = document.getElementById('orbit-benefits-matrix');
-    if (!m) return;
+    // Puede haber dos copias vivas (la vista Orbit y la hoja de pago):
+    // se repintan TODAS, no solo la primera que encuentre el DOM.
+    var list = document.querySelectorAll('#orbit-benefits-matrix');
+    if (!list.length) return;
     var tmp = document.createElement('div');
     tmp.innerHTML = orbitBenefitsMatrixHTML(orbitSelectedPlan());
     var fresh = tmp.querySelector('#orbit-benefits-matrix');
-    if (fresh) m.innerHTML = fresh.innerHTML;
+    if (!fresh) return;
+    list.forEach(function (m) { m.innerHTML = fresh.innerHTML; });
   } catch (_) {}
 }
 /* C264: continuar tras la prueba con el mismo plan (sin corte). */
@@ -85346,33 +85466,11 @@ function drexPayNetDiag() {
   }
   var ep = '';
   try { ep = (typeof DrexOrbit !== 'undefined' && DrexOrbit._endpoint) ? DrexOrbit._endpoint() : ''; } catch (_) {}
-  /* C247: prueba POST real al endpoint de suscripción embebida (el pago
-   * real desde C244; antes apuntaba al checkout hospedado, ya retirado),
-   * con el token real. Si el servidor tarda >12s o bloquea el POST, se ve. */
-  function postProbe() {
-    return new Promise(function (resolve) {
-      var done = false;
-      var t0 = Date.now();
-      var timer = setTimeout(function () { if (!done) { done = true; resolve('POST:TIMEOUT'); } }, 12000);
-      function fin(v) { if (!done) { done = true; clearTimeout(timer); resolve(v); } }
-      try {
-        var tokP = (typeof DrexOrbit !== 'undefined' && DrexOrbit._idToken) ? DrexOrbit._idToken() : Promise.resolve(null);
-        tokP.then(function (tok) {
-          if (done) return;
-          var body = JSON.stringify({ plan: 'yearly', idToken: tok || 'diag-no-token', diag: true });
-          fetch(ep + '/subscribe-embedded', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: body }).then(
-            function (r) { fin('POST:OK(' + r.status + ',' + Math.round((Date.now() - t0) / 100) / 10 + 's)'); },
-            function (e) { fin('POST:' + ((e && e.name) || 'ERR')); }
-          );
-        }, function () { fin('POST:TOKEN-ERR'); });
-      } catch (e) { fin('POST:ERR'); }
-    });
-  }
   var tests = [
     probe('App', location.origin + '/version.json'),
     probe('Internet', 'https://www.google.com/generate_204')
   ];
-  if (ep) { tests.push(probe('Pagos', ep)); tests.push(postProbe()); }
+  if (ep) { tests.push(probe('Pagos', ep)); }
   return Promise.all(tests).then(function (r) { return r.join(' \u00b7 '); });
 }
 
