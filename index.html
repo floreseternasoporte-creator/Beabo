@@ -14649,6 +14649,9 @@ function saveNote() {
     try {
       if (typeof selectedGroupForPost !== 'undefined') {
         selectedGroupForPost = draft.groupId ? { id: draft.groupId, name: draft.groupName || 'Grupo' } : null;
+        // C284: el <select> refleja el grupo restaurado (las opciones
+        // pueden cargarse después; loadGroupsForNotePost re-sincroniza).
+        if (typeof _syncNoteGroupSelector === 'function') _syncNoteGroupSelector();
       }
       if (typeof selectedNoteFlair !== 'undefined') selectedNoteFlair = draft.flair || null;
       if (typeof notePostIsSensitive !== 'undefined') notePostIsSensitive = !!draft.sensitive;
@@ -17265,6 +17268,9 @@ function drexOrbitHdUploadsOn() {
 
         const fullscreenModal = document.getElementById('note-creation-fullscreen');
         if (fullscreenModal && !fullscreenModal.classList.contains('hidden')) {
+          // C284: tras PUBLICAR se va al feed a ver el post (volver al
+          // Creator Hub era cosa del botón Atrás, no de publicar).
+          noteCreationCameFromHub = false;
           closeNoteCreationFullscreen();
           const mainAppEl = document.getElementById('main-app');
           if (mainAppEl) mainAppEl.classList.remove('hidden');
@@ -24593,11 +24599,13 @@ else { try { drexSnapInit(); } catch (_) {} }
   }
 
   async function shareEco(note, ecoUserName = appT('Alguien')) {
-    const rawContent = (note?.content || '').trim() || 'Mira este post.';
-    // FIX C111: vista previa acotada — el contenido completo (hasta 4000
-    // chars del composer) se pasaba sin truncar a navigator.share y al
-    // portapapeles. 220 chars es suficiente como avance del eco.
-    const ecoPreview = rawContent.length > 220 ? rawContent.slice(0, 220).trimEnd() + '…' : rawContent;
+    // C284: un post velado (spoiler o contenido fuerte) no filtra su
+    // texto al compartir fuera de Drex: el eco lleva solo el aviso.
+    const _veiled = !!(note && (note.spoiler || note.sensitive));
+    const rawContent = _veiled ? '' : (note?.content || '').trim();
+    const ecoPreview = _veiled
+      ? appT('Mira este post en Drex.')
+      : ((rawContent || 'Mira este post.').length > 220 ? rawContent.slice(0, 220).trimEnd() + '…' : (rawContent || 'Mira este post.'));
     const shareText = `🔊 ${ecoUserName} hizo eco en Drex\n\n${ecoPreview}`;
     const shareUrl = `${location.origin}${location.pathname}#post-${note?.id || ''}`;
     if (navigator.share) {
@@ -25098,7 +25106,9 @@ else { try { drexSnapInit(); } catch (_) {} }
 
   function extractMentionUsernames(text) {
     if (!text) return [];
-    const regex = /@([\p{L}\p{N}_-]+)/gu;
+    // C284: los usuarios pueden llevar puntos (@maria.paz): el patrón
+    // los acepta dentro del nombre, no al principio ni al final.
+    const regex = /@([\p{L}\p{N}_-]+(?:\.[\p{L}\p{N}_-]+)*)/gu;
     const mentions = new Set();
     let match;
 
@@ -25116,7 +25126,7 @@ else { try { drexSnapInit(); } catch (_) {} }
     // el regex corriera sobre el texto ya escapado, casaría '#039' dentro de
     // la entidad &#039; y los apóstrofes se pintarían como enlaces rotos.
     const parts = [];
-    const tokenRe = /(@[\p{L}\p{N}_-]+|#[\p{L}\p{N}_]+)/gu;
+    const tokenRe = /(@[\p{L}\p{N}_-]+(?:\.[\p{L}\p{N}_-]+)*|#[\p{L}\p{N}_]+)/gu;
     let lastIndex = 0;
     let match;
     while ((match = tokenRe.exec(text)) !== null) {
@@ -25599,6 +25609,12 @@ else { try { drexSnapInit(); } catch (_) {} }
       if (typeof isAccountBlockedForCurrentUser === 'function' && Array.isArray(posts)) {
         list = posts.filter(p => !isAccountBlockedForCurrentUser(p && (p.authorId || p.userId || '')));
       }
+      // C284: el índice no ofrece ondas de posts que el usuario no
+      // puede ver (de grupo o descartados por visibilidad/audiencia).
+      if (Array.isArray(list)) {
+        list = list.filter(p => p && !p.groupId &&
+          !(typeof shouldHideNoteForCurrentUser === 'function' && shouldHideNoteForCurrentUser(p.id, p)));
+      }
       ondaIndex.feed(list);
       ondaIndex.persist(true);
       ondaSyncOndasEntry();
@@ -25611,6 +25627,9 @@ else { try { drexSnapInit(); } catch (_) {} }
         const aid = (note && (note.authorId || note.userId)) || '';
         if (aid && isAccountBlockedForCurrentUser(aid)) return;
       }
+      // C284: mismo filtro de visibilidad para la indexación individual.
+      if (note && note.groupId) return;
+      if (note && typeof shouldHideNoteForCurrentUser === 'function' && shouldHideNoteForCurrentUser(noteId || note.id, note)) return;
       if (ondaIndex.feedOne(note, noteId)) { ondaIndex.persist(false); ondaSyncOndasEntry(); }
     } catch (_) {}
   }
@@ -25690,8 +25709,20 @@ else { try { drexSnapInit(); } catch (_) {} }
         seen.add(uid);
         const message = `${fromUserName} te mencionó en ${article} ${context}.`;
         // Meta de navegación: la pestaña de menciones abre el post directamente.
-        const mentionMeta = { actionType: 'post', actionId: extraMeta.postId || null };
-        jobs.push(addNotification(uid, message, 'mention', mentionMeta));
+        const mentionMeta = { actionType: 'post', actionId: extraMeta.postId || null, actorId: fromUserId || '' };
+        // C284: las menciones respetan los bloqueos en ambos sentidos
+        // (antes quien bloqueaste te seguía notificando).
+        jobs.push((async () => {
+          try {
+            const _db = DrexCloud.database();
+            const [_a, _b] = await Promise.all([
+              _db.ref('blocks/' + fromUserId + '/' + uid).once('value').catch(() => null),
+              _db.ref('blocks/' + uid + '/' + fromUserId).once('value').catch(() => null)
+            ]);
+            if ((_a && _a.val()) || (_b && _b.val())) return;
+          } catch (_) {}
+          return addNotification(uid, message, 'mention', mentionMeta);
+        })());
       });
 
       return Promise.all(jobs);
@@ -26323,11 +26354,11 @@ else { try { drexSnapInit(); } catch (_) {} }
         commentsHasMore = true;
         commentsLastKey = allEntries[1][0];
         const toShow = allEntries.slice(1);
-        commentsLoadedEntries = toShow.filter(([, c]) => !isAccountBlockedForCurrentUser(c?.authorId || ''));
+        commentsLoadedEntries = toShow.filter(([, c]) => !(c && c.deactivated === true) && !isAccountBlockedForCurrentUser(c?.authorId || ''));
       } else {
         commentsHasMore = false;
         commentsLastKey = allEntries.length > 0 ? allEntries[0][0] : null;
-        commentsLoadedEntries = allEntries.filter(([, c]) => !isAccountBlockedForCurrentUser(c?.authorId || ''));
+        commentsLoadedEntries = allEntries.filter(([, c]) => !(c && c.deactivated === true) && !isAccountBlockedForCurrentUser(c?.authorId || ''));
       }
 
       _renderLoadedComments(noteId, { preserveScroll: false });
@@ -26478,7 +26509,7 @@ else { try { drexSnapInit(); } catch (_) {} }
         newEntries = allEntries;
       }
 
-      const filtered = newEntries.filter(([, c]) => !isAccountBlockedForCurrentUser(c?.authorId || ''));
+      const filtered = newEntries.filter(([, c]) => !(c && c.deactivated === true) && !isAccountBlockedForCurrentUser(c?.authorId || ''));
       commentsLoadedEntries = [...commentsLoadedEntries, ...filtered];
 
       _renderLoadedComments(noteId);
@@ -31220,7 +31251,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       case 'auth/invalid-credential':    return 'Correo o contraseña incorrectos.';
       case 'auth/email-already-in-use':  return 'Este correo ya está registrado en otra cuenta.';
       case 'auth/operation-not-allowed': return 'El inicio de sesión no está habilitado.';
-      case 'auth/weak-password':         return 'La contraseña es demasiado débil. Usa al menos 6 caracteres.';
+      case 'auth/weak-password':         return 'La contraseña es demasiado débil. Usa al menos 8 caracteres.';
       case 'auth/network-request-failed':return 'Error de conexión. Revisa tu internet.';
       case 'auth/too-many-requests':     return 'Demasiados intentos fallidos. Inténtalo más tarde.';
       case 'auth/needs-confirmation':       return 'Tu correo aún no está verificado. Te enviamos un código.';
@@ -31720,7 +31751,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     const err      = document.getElementById('regCredError');
 
     if (!email) { err.textContent = 'Ingresa tu correo electrónico.'; err.classList.remove('hidden'); return; }
-    if (!password || password.length < 6) { err.textContent = 'La contraseña debe tener al menos 6 caracteres.'; err.classList.remove('hidden'); return; }
+    if (!password || password.length < 8) { err.textContent = 'La contraseña debe tener al menos 8 caracteres.'; err.classList.remove('hidden'); return; }
     if (COMMON_WEAK_PASSWORDS.has(password.toLowerCase())) {
       err.textContent = 'Esa contraseña es muy común y fácil de adivinar. Elige una más segura.';
       err.classList.remove('hidden');
@@ -32097,6 +32128,16 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       }
       regData.username = username;
 
+      // C284: en modo completar-registro de una cuenta EXISTENTE, los
+      // ajustes ya elegidos se conservan. Antes se reescribían en
+      // silencio: isPrivate volvía a público, founder se perdía y la
+      // fecha de registro se reiniciaba.
+      let _existingUserData = {};
+      try {
+        const _exSnap = await DrexCloud.database().ref('users/' + user.uid).once('value');
+        _existingUserData = _exSnap.val() || {};
+      } catch (_) {}
+
       const updates = {};
       // Si cambió el nombre tras ir atrás, liberar la reserva anterior para no
       // dejar el índice huérfano.
@@ -32140,12 +32181,16 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       updates['usernameByUid/' + user.uid] = username;
       updates[p + 'birthday'] = regData.birthDate || '';
       updates[p + 'accountTier'] = regData.accountTier || 'standard';
-      updates[p + 'isPrivate'] = isMinorRestricted ? true : false;
-      updates[p + 'dmPermission'] = isMinorRestricted ? 'friends' : 'all';
-      updates[p + 'registrationTimestamp'] = Date.now();
+      // C284: si la cuenta ya existía y tenía valores, se respetan (los
+      // menores conservan su protección siempre).
+      updates[p + 'isPrivate'] = isMinorRestricted ? true
+        : (typeof _existingUserData.isPrivate === 'boolean' ? _existingUserData.isPrivate : false);
+      updates[p + 'dmPermission'] = isMinorRestricted ? 'friends'
+        : (_existingUserData.dmPermission || 'all');
+      updates[p + 'registrationTimestamp'] = _existingUserData.registrationTimestamp || Date.now();
       updates[p + 'profileDegraded'] = null;
       updates[p + 'usernameIsFallback'] = null;
-      updates[p + 'founder'] = false;
+      updates[p + 'founder'] = _existingUserData.founder === true;
       if (firstClaim) {
         updates[p + 'bio'] = '';
         updates[p + 'profileImage'] = '';
@@ -32197,7 +32242,12 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     if (regData.photoFile) {
       processImageFile(regData.photoFile).then(cloudUrl => {
         return DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
-      }).then(() => done()).catch(() => done());
+      }).then(() => done()).catch(() => {
+        // C284: antes el fallo de la foto era invisible y la pantalla
+        // celebraba igual con el perfil sin foto.
+        done();
+        setTimeout(() => { if (typeof showMiniToast === 'function') showMiniToast(appT('Tu cuenta se creó, pero la foto no se pudo subir. Puedes agregarla desde tu perfil.')); }, 700);
+      });
     } else {
       done();
     }
@@ -33261,9 +33311,12 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     btn.disabled = true;
     DrexCloud.auth().sendPasswordResetEmail(recoveryEmail).then(() => {
       startRecoveryCooldown();
+      if (typeof showMiniToast === 'function') showMiniToast(appT('Código reenviado. Revisa tu correo.'));
     }).catch(() => {
+      // C284: el fallo al reenviar ya no es mudo.
       btn.disabled = false;
       recoveryCooldown = false;
+      if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo reenviar el código. Revisa tu conexión e inténtalo de nuevo.'));
     });
   });
 
@@ -36675,8 +36728,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       setSavingButtonState(actionButton, false);
       return;
     }
-    if (nextPassword.length < 6) {
-      showMiniToast(appT("La contraseña debe tener al menos 6 caracteres."));
+    if (nextPassword.length < 8) {
+      showMiniToast(appT("La contraseña debe tener al menos 8 caracteres."));
       setSavingButtonState(actionButton, false);
       return;
     }
@@ -43769,6 +43822,20 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     if (!user) return;
     if (!(await verifyGroupAdminFresh(false))) { showMiniToast(appT('Solo un administrador puede agregar participantes')); return; }
     if (btnEl) { btnEl.disabled = true; btnEl.querySelector('span:last-child').textContent = appT('Agregando...'); }
+    // C284: no se mete a nadie en un grupo con bloqueos en cualquier
+    // dirección (ni conmigo ni entre quien agrega y el agregado).
+    try {
+      const _db = DrexCloud.database();
+      const [_b1, _b2] = await Promise.all([
+        _db.ref('blocks/' + user.uid + '/' + uid).once('value').catch(() => null),
+        _db.ref('blocks/' + uid + '/' + user.uid).once('value').catch(() => null)
+      ]);
+      if ((_b1 && _b1.val()) || (_b2 && _b2.val())) {
+        showMiniToast(appT('No puedes agregar a este usuario a un grupo contigo.'));
+        if (btnEl) { btnEl.disabled = false; const _sp = btnEl.querySelector('span:last-child'); if (_sp) _sp.textContent = appT('Agregar'); }
+        return;
+      }
+    } catch (_) {}
     try {
       const groupSnap = await DrexCloud.database().ref('groupChats/' + currentChatRoomId).once('value');
       const groupData = groupSnap.val() || {};
@@ -43903,6 +43970,20 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   // Selector de grupo clásico: carga los grupos en el <select> nativo.
   let noteGroupsLoadedForComposer = false;
 
+  // C284: el selector visual refleja el grupo restaurado/en memoria
+  // (antes un borrador con grupo reabría mostrando "Sin grupo").
+  function _syncNoteGroupSelector() {
+    const sel = document.getElementById('note-group-selector');
+    if (!sel) return;
+    const want = (typeof selectedGroupForPost !== 'undefined' && selectedGroupForPost && selectedGroupForPost.id) ? selectedGroupForPost.id : '';
+    if (want) {
+      const has = Array.from(sel.options || []).some(o => o.value === want);
+      if (has) sel.value = want;
+    } else {
+      sel.value = '';
+    }
+  }
+
   function loadGroupsForNotePost() {
     const sel = document.getElementById('note-group-selector');
     if (!sel || noteGroupsLoadedForComposer) return;
@@ -43919,6 +44000,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
         `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`
       ).join('');
       if (current) sel.value = current;
+      // C284: tras cargar las opciones se aplica el grupo restaurado.
+      _syncNoteGroupSelector();
       noteGroupsLoadedForComposer = true;
     }).catch(() => {});
   }
@@ -44441,8 +44524,12 @@ function performRealTimeSearch() {
       const canView = await canCurrentUserViewPrivateAccount(authorId);
       if (!canView) hiddenPrivateSearchAuthors.add(authorId);
     }));
-    const visiblePosts = posts.filter(p => !hiddenPrivateSearchAuthors.has(p.authorId || p.userId));
-    const visiblePhotos = photos.filter(ph => !hiddenPrivateSearchAuthors.has(ph.authorId));
+    // C284: los posts de grupo también quedan fuera del texto libre
+    // (el feed y los chips ya los excluyen; aquí se colaban con el
+    // adelanto de texto visible).
+    const _groupPostIds = new Set(posts.filter(p => p.groupId).map(p => p.id));
+    const visiblePosts = posts.filter(p => !p.groupId && !hiddenPrivateSearchAuthors.has(p.authorId || p.userId));
+    const visiblePhotos = photos.filter(ph => !hiddenPrivateSearchAuthors.has(ph.authorId) && !_groupPostIds.has(ph.postId));
 
     return { posts: visiblePosts.slice(0, 100), photos: visiblePhotos.slice(0, 90) };
   });
@@ -50073,7 +50160,7 @@ function openGroupPostsView(groupId, groupName) {
       <button onclick="closeGroupPostsView(); openPostPermalink('${escapeInlineSingleQuote(item.id)}')" class="w-full text-left bg-white border-b border-[#eef2f7] px-4 py-3 active:bg-[#f7fafc]">
         <span class="text-sm font-extrabold text-[#1c2b4a]">${escapeHtml(item.authorName || 'Usuario')}</span>
         <span class="text-xs text-[#9aa4ae] ml-2">${typeof formatRelativeTime === 'function' ? formatRelativeTime(Number(item.timestamp) || Date.now()) : ''}</span>
-        <p class="text-sm text-[#1c2b4a] mt-1 line-clamp-3">${escapeHtml(String(item.text || '').slice(0, 280))}</p>
+        <p class="text-sm text-[#1c2b4a] mt-1 line-clamp-3">${escapeHtml(String(item.content || item.text || '').slice(0, 280))}</p>
       </button>`).join('');
   }).catch(() => {
     if (myReq !== _groupPostsSeq) return;
@@ -52435,7 +52522,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-08T01:01:15Z';
+window.DREX_BUILD = '2026-10-08T02:10:29Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -52881,7 +52968,7 @@ window.DREX_BUILD = '2026-10-08T01:01:15Z';
       <div class="px-4 pt-5 space-y-5">
         <label class="block mb-1.5 text-[15px] font-semibold text-[var(--theme-text)]">Nueva contraseña</label>
         <div class="relative">
-          <input id="settings-account-password" type="password" autocomplete="new-password" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 pr-12 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="Mínimo 6 caracteres">
+          <input id="settings-account-password" type="password" autocomplete="new-password" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 pr-12 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="Mínimo 8 caracteres">
           <button type="button" onclick="toggleSettingsPwd('settings-account-password', this)" class="tap44 absolute right-2 top-1/2 -translate-y-1/2 text-[var(--theme-muted)] p-2" aria-label="Mostrar contraseña"><svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></button>
         </div>
         <div>

@@ -47,7 +47,7 @@ function extractFn(name) {
 ok('shareEco: usa vista previa acotada (ecoPreview)',
   /async function shareEco[\s\S]{0,600}ecoPreview/.test(html));
 ok('shareEco: trunca a 220 chars con elipsis',
-  /rawContent\.length > 220 \? rawContent\.slice\(0, 220\)\.trimEnd\(\) \+ '…'/.test(html));
+  /rawContent\.slice\(0, 220\)\.trimEnd\(\) \+ '…'/.test(html)); // C284: la expresión se reestructuró para posts velados
 ok('shareEco: ya no interpola note.content sin truncar en shareText',
   !/shareText = `[^`]*\$\{\(note\?\.content \|\| ''\)\.trim\(\)/.test(html));
 
