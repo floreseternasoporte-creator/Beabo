@@ -17732,7 +17732,10 @@ async function drexSnapLoadTray() {
   drexSnapRenderSkeleton();
   try {
     const db = drexSnapDb();
-    const snap = await db.ref('snapshots').orderByChild('createdAt').limitToLast(DREX_SNAP_TRAY_LIMIT).once('value');
+    // C283: con filtro Siguiendo/Amigos se lee una ventana mayor: el
+    // corte global de 60 dejaba fuera destellos de tus seguidos.
+    const _snapLimit = (filter === 'following' || filter === 'friends') ? 200 : DREX_SNAP_TRAY_LIMIT;
+    const snap = await db.ref('snapshots').orderByChild('createdAt').limitToLast(_snapLimit).once('value');
     const now = Date.now();
     const expired = [];
     let list = [];
@@ -17753,6 +17756,24 @@ async function drexSnapLoadTray() {
       _snapMutedCache = (await db.ref('snapMuted/' + me).once('value')).val() || {};
     } catch (_) { _snapMutedCache = {}; }
     list = drexSnapApplyMute(list, _snapMutedCache);
+    // C283: los Destellos respetan la privacidad de la CUENTA del autor
+    // y el bloqueo inverso (antes solo se miraban mis bloqueos y mudos:
+    // el destello de una cuenta privada se veía sin seguirla).
+    try {
+      const _snapAuthors = [...new Set(list.map(s => s.a))].filter(a => a && a !== me);
+      const _snapHidden = {};
+      await Promise.all(_snapAuthors.map(async a => {
+        try {
+          const rb = await db.ref('blocks/' + a + '/' + me).once('value');
+          if (rb.exists()) { _snapHidden[a] = 1; return; }
+        } catch (_) {}
+        try {
+          if (typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function'
+              && await isAccountPrivate(a) && !(await canCurrentUserViewPrivateAccount(a))) _snapHidden[a] = 1;
+        } catch (_) {}
+      }));
+      if (Object.keys(_snapHidden).length) list = list.filter(s => !_snapHidden[s.a]);
+    } catch (_) {}
     if (filter === 'following' || filter === 'friends') {
       let following = {};
       try { following = (await db.ref('following/' + me).once('value')).val() || {}; } catch (_) {}
@@ -24367,6 +24388,9 @@ else { try { drexSnapInit(); } catch (_) {} }
       return;
     }
     renderSavedFoldersGrid();
+    // C283: sección de comentarios guardados (se guardaban y no se
+    // veían en ningún lado).
+    try { renderSavedCommentsSection(); } catch (_) {}
     try { if (typeof drexLoadSectionAds === 'function') drexLoadSectionAds(document.getElementById('saved-posts-view')); } catch (_) {}
   }
 
@@ -27822,6 +27846,45 @@ else { try { drexSnapInit(); } catch (_) {} }
     const snap = await ref.once('value');
     _userSavedComments = snap.val() || {};
     return _userSavedComments;
+  }
+
+  // C283: los comentarios guardados se listan en Guardados (antes el
+  // dato se guardaba y no aparecía en ninguna vista).
+  async function renderSavedCommentsSection() {
+    const gridEl = document.getElementById('saved-folders-grid');
+    if (!gridEl) return;
+    try { if (_userSavedComments === null) await _loadUserSavedComments(); } catch (_) {}
+    const entries = Object.entries(_userSavedComments || {})
+      .map(([key, v]) => Object.assign({ key: key }, v || {}))
+      .filter(e => e && e.noteId)
+      .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+    if (!entries.length) return;
+    const sec = document.createElement('div');
+    sec.className = 'px-4 pt-2 pb-4';
+    sec.innerHTML = '<h4 class="font-bold text-[#1c2b4a] text-sm mb-2">' + escapeHtml(appT('Comentarios guardados')) + '</h4>'
+      + entries.slice(0, 30).map(e => {
+        const txt = escapeHtml(String(e.commentText || '').slice(0, 220));
+        const author = escapeHtml(e.authorName || 'Usuario');
+        return '<div class="bg-white border border-[#e7ecf3] rounded-2xl p-3 mb-2">'
+          + '<p class="text-xs font-bold text-[#1c2b4a]">' + author + '</p>'
+          + '<p class="text-sm text-[#5c6974] mt-0.5 leading-relaxed">' + txt + '</p>'
+          + '<div class="flex gap-2 mt-2">'
+          + '<button onclick="openCommentsView(\'' + escapeInlineSingleQuote(e.noteId) + '\')" class="tap44 text-xs text-[#6b7280] px-2 py-1 rounded-full bg-[#f0f4f9]">' + escapeHtml(appT('Ver post')) + '</button>'
+          + '<button onclick="removeSavedCommentByKey(\'' + escapeInlineSingleQuote(e.key) + '\', this)" class="tap44 text-xs text-[#c0392b] px-2 py-1 rounded-full bg-red-50">' + escapeHtml(appT('Eliminar')) + '</button>'
+          + '</div></div>';
+      }).join('');
+    gridEl.appendChild(sec);
+  }
+
+  async function removeSavedCommentByKey(saveKey, btnEl) {
+    const ref = _getSavedCommentsRef();
+    if (!ref || !saveKey) return;
+    try { await ref.child(saveKey).remove(); }
+    catch (_) { showMiniToast(appT('No se pudo eliminar el guardado. Intenta de nuevo.')); return; }
+    if (_userSavedComments) delete _userSavedComments[saveKey];
+    const card = btnEl && btnEl.closest ? btnEl.closest('div') : null;
+    if (card) card.remove();
+    showMiniToast(appT('Eliminado de guardados'));
   }
 
   function _getCommentSaveKey(noteId, commentPath) {
@@ -35365,7 +35428,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     const currentPhoto = document.getElementById('profile-image')?.src || '';
     const preview = document.getElementById('new-profile-preview');
     const icon = document.getElementById('new-profile-preview-icon');
-    const hasPhoto = currentPhoto && !currentPhoto.includes('placeholder') && !currentPhoto.endsWith('/');
+    // C283: la silueta gris es un SVG data URI — no es "tener foto"
+    // (antes se mostraba como si fuera tu foto actual).
+    const hasPhoto = currentPhoto && !currentPhoto.startsWith('data:image/svg+xml') && !currentPhoto.includes('placeholder') && !currentPhoto.endsWith('/');
     if (preview) {
       if (hasPhoto) {
         preview.src = currentPhoto;
@@ -35604,6 +35669,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     if (view.parentElement !== document.body) document.body.appendChild(view);
     view.classList.remove('hidden');
     view.style.display = 'flex';
+    // C283: la vista se registra en el sistema central de capas y
+    // empuja el guard de Atrás (Atrás/Escape no la cerraban).
+    if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
+    try { drexHalloweenBannerGate(); } catch (_) {}
     drexHalloweenPaint(drexHalloweenPassActive() ? 'active' : 'visitor', null);
     drexHalloweenFetch(uid).then(function (st) {
       drexHalloweenCachePass(uid, st.grant);
@@ -35620,6 +35689,13 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
   async function registerHalloweenEvent() {
     var uid = drexHalloweenMyUid();
     if (!uid) { showMiniToast(appT('Inicia sesión para participar en el evento')); return; }
+    // C283: el registro se cierra cuando el evento termina (la vista
+    // lo seguía ofreciendo el 1 de noviembre y confirmaba el registro).
+    if (Date.now() > DREX_HALLOWEEN_ENDS) {
+      showMiniToast(appT('El evento ya terminó.'));
+      try { drexHalloweenBannerGate(); } catch (_) {}
+      return;
+    }
     var btn = document.getElementById('hw-register-btn');
     setSavingButtonState(btn, true);
     try {
@@ -35643,10 +35719,16 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       var aPlan = (typeof ORBIT_PLAN_IDS !== 'undefined' && ORBIT_PLAN_IDS.indexOf(grant.plan) !== -1 && typeof orbitPlanAvailable === 'function' && orbitPlanAvailable(grant.plan)) ? grant.plan : 'quarterly';
       var planTxt = (typeof orbitPlanName === 'function') ? orbitPlanName(aPlan) : aPlan;
       var dateTxt = (typeof orbitFmtDate === 'function') ? orbitFmtDate(Number(grant.freeUntil)) : new Date(Number(grant.freeUntil)).toLocaleDateString();
-      await drexHalloweenRefs(uid).grant.child('notifiedAt').set(now);
+      // C283: se marca "avisado" SOLO si la notificación se creó: antes
+      // la marca iba primero y un fallo de red perdía el aviso para
+      // siempre (el ganador nunca se enteraba).
+      var _announced = false;
       try {
         await addNotification(uid, appT('Evento de Halloween: fuiste elegido. Tu {plan} gratis está activo hasta el {fecha}.').replace('{plan}', planTxt).replace('{fecha}', dateTxt), 'halloween_event', { actionType: 'halloween_event' });
+        _announced = true;
       } catch (_) {}
+      if (!_announced) return;
+      await drexHalloweenRefs(uid).grant.child('notifiedAt').set(now);
       try {
         var snap = await DrexCloud.database().ref('usernames/drexcreators').once('value');
         var creatorsUid = snap.val();
@@ -36400,7 +36482,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
   function openDeactivateConfirmationView() {
     const user = DrexCloud.auth().currentUser;
     if (user) {
-      document.getElementById('deactivate-username-display').textContent = '@' + (user.displayName || user.email);
+      // C283: se muestra tu @usuario real, no "@Nombre Apellido".
+      DrexCloud.database().ref('users/' + user.uid + '/username').once('value').then(s => {
+        const el = document.getElementById('deactivate-username-display');
+        if (el) el.textContent = '@' + (s.val() || user.displayName || 'usuario');
+      }).catch(() => {});
     }
     document.getElementById('deactivate-delete-account-view').classList.add('hidden');
     const dacv = document.getElementById('deactivate-confirmation-view');
@@ -36453,7 +36539,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     selectedDeleteReason = reason;
     const user = DrexCloud.auth().currentUser;
     if (user) {
-      document.getElementById('delete-username-display').textContent = '@' + (user.displayName || user.email);
+      // C283: tu @usuario real en la confirmación de eliminar.
+      DrexCloud.database().ref('users/' + user.uid + '/username').once('value').then(s => {
+        const el = document.getElementById('delete-username-display');
+        if (el) el.textContent = '@' + (s.val() || user.displayName || 'usuario');
+      }).catch(() => {});
     }
     document.getElementById('delete-reason-view').classList.add('hidden');
     const dcv = document.getElementById('delete-confirmation-view');
@@ -36481,6 +36571,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       showMiniToast(appT('Tu solicitud de eliminación ha sido registrada. Tu cuenta se eliminará en 30 días. Si cambias de opinión, inicia sesión para cancelar la solicitud.'));
       document.getElementById('delete-confirmation-view').classList.add('hidden');
       closeSettingsView();
+      // C283: pedir la eliminación también cierra la sesión (el aviso
+      // ya habla de "inicia sesión para cancelar"; antes te dejaba
+      // dentro usando la app como si nada).
+      try { sessionStorage.setItem('drex_just_deletion_requested', '1'); } catch (_) {}
+      DrexCloud.auth().signOut();
     }).catch(error => {
       console.error('Error al solicitar eliminación:', error);
       showMiniToast(appT('Hubo un error al procesar tu solicitud. Inténtalo de nuevo.'));
@@ -36711,10 +36806,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
             showMiniToast(appT("Ese nombre de usuario ya está en uso. Prueba otro."));
             return false;
           }
-          // Liberar la reserva anterior para no dejar el índice huérfano.
-          if (userData.username && userData.username !== nextUsername) {
-            await DrexCloud.database().ref('usernames/' + String(userData.username).toLowerCase()).remove().catch(() => {});
-          }
+          // C283: la reserva anterior se libera DESPUÉS de guardar el
+          // perfil (en el éxito), no aquí — ver el bloque de éxito.
         }
       }
 
@@ -36750,10 +36843,35 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         if (Object.prototype.hasOwnProperty.call(updates, 'showcaseLinks')) {
           try { renderOwnProfileShowcase(userData.website || '', updates.showcaseLinks); } catch (_) {}
         }
+        // C283: la bio guardada se refleja al momento en el perfil (antes
+        // solo se pintaba al cargar la sesión y parecía no guardarse).
+        if (Object.prototype.hasOwnProperty.call(updates, 'bio')) {
+          const bioEl = document.getElementById('profile-bio-display');
+          if (bioEl) {
+            bioEl.textContent = updates.bio || '';
+            bioEl.classList.toggle('hidden', !updates.bio);
+          }
+        }
+        // C283/C9: liberar la reserva del nombre anterior SOLO tras
+        // guardar el perfil (antes se liberaba antes y un fallo dejaba
+        // el índice cruzado: nuevo reservado, viejo libre, perfil viejo).
+        if (validateUsername && userData.username && updates.username
+            && String(userData.username).toLowerCase() !== String(updates.username).toLowerCase()) {
+          DrexCloud.database().ref('usernames/' + String(userData.username).toLowerCase()).remove().catch(() => {});
+        }
             showMiniToast(appT("Perfil actualizado"));
         return true;
       }).catch(error => {
         console.error("Error al guardar cambios del perfil:", error);
+        // C283: deshacer la reserva del nombre nuevo si el guardado
+        // falló (no dejarla huérfana) y avisar: antes el fallo era mudo.
+        if (validateUsername && updates.username && userData.username
+            && String(userData.username).toLowerCase() !== String(updates.username).toLowerCase()) {
+          DrexCloud.database().ref('usernames/' + String(updates.username).toLowerCase()).once('value').then(s => {
+            if (s.val() === user.uid) DrexCloud.database().ref('usernames/' + String(updates.username).toLowerCase()).remove().catch(() => {});
+          }).catch(() => {});
+        }
+        showMiniToast(appT('No se pudieron guardar los cambios. Revisa tu conexión e inténtalo de nuevo.'));
         return false;
       });
     });
@@ -36799,6 +36917,12 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       document.getElementById('profile-image').src = cloudUrl;
       const desktopImg = document.getElementById('profile-image-desktop');
       if (desktopImg) desktopImg.src = cloudUrl;
+      // C283: la foto de la barra inferior también se actualiza (los
+      // avatares de tus propios posts se leen de ahí) y el input se
+      // limpia para no re-subir la misma foto al guardar de nuevo.
+      const headerImg = document.getElementById('header-profile-image');
+      if (headerImg) headerImg.src = cloudUrl;
+      try { fileInput.value = ''; } catch (_) {}
       // Propagar la foto nueva a los posts viejos que quedaron con placeholder.
       backfillAuthorImageOnPosts(user.uid, cloudUrl).catch(() => {});
 
@@ -36833,7 +36957,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     const currentCover = document.getElementById('my-profile-cover-img')?.src || '';
     const preview = document.getElementById('new-cover-preview');
     const icon = document.getElementById('new-cover-preview-icon');
-    const hasCover = currentCover && !currentCover.includes('data:') && currentCover !== window.location.href;
+    // C283: la portada real es una data URL; solo el SVG gris no cuenta.
+    const hasCover = currentCover && !currentCover.startsWith('data:image/svg+xml') && currentCover !== window.location.href;
     if (preview) {
       if (hasCover) {
         preview.src = currentCover;
@@ -36910,7 +37035,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
   }
 
   function openCoverFullscreen(src) {
-    if (!src || src.includes('data:') || src === window.location.href) return;
+    // C283: las portadas se guardan como data URL — rechazar 'data:'
+    // hacía que tocar la portada no hiciera NADA nunca. Solo se
+    // bloquea el marcador SVG gris (sin portada real).
+    if (!src || src === window.location.href || src.startsWith('data:image/svg+xml')) return;
     const view = document.getElementById('cover-fullscreen-view');
     const img = document.getElementById('cover-fullscreen-img');
     if (!view || !img) return;
@@ -50149,6 +50277,9 @@ function closeSubpageView() {
       // Lane-6 (2026-10-01): vistas completas de Orbit/Pagos (z-120) con guard
       // de Atrás pero sin registro: Atrás/Esc las ignoraban.
       ['orbit-view', () => typeof closeOrbitView === 'function' && closeOrbitView()],
+      // C283: la vista del evento de Halloween (z-110) no estaba
+      // registrada: Atrás/Escape no la cerraban.
+      ['halloween-event-view', () => typeof closeHalloweenEvent === 'function' && closeHalloweenEvent()],
       ['payments-view', () => typeof closePaymentsView === 'function' && closePaymentsView()],
       ['orbit-analytics-view', () => typeof orbitCloseAnalytics === 'function' && orbitCloseAnalytics()],
       // El panel lateral (drawer z-121, overlay z-120): Atrás/Esc lo cierran.
@@ -52304,7 +52435,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-08T00:47:13Z';
+window.DREX_BUILD = '2026-10-08T01:01:15Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -53653,7 +53784,7 @@ function musicTrackRowHTML(t, i, ctx, withActions) {
     ${musicCoverHTML(t)}
     <div class="min-w-0 flex-1">
       <p class="text-[14px] font-extrabold text-[var(--theme-text)] truncate leading-tight">${musicEsc(t.title || 'Sin título')}</p>
-      <p class="text-[12px] text-[var(--theme-muted)] font-semibold truncate">${musicEsc(t.artistName || t.authorName || 'Artista')} ${badge}${t.duration ? ' · ' + musicFmtTime(t.duration) : ''}${ctx === 'mine' ? ' · ▶ ' + musicFmtNum((t.plays | 0) || 0) + ' · ▲ ' + (((t.upvotes | 0) || 0) - (((t.downvotes | 0) || 0))) : ''}</p>
+      <p class="text-[12px] text-[var(--theme-muted)] font-semibold truncate">${musicEsc(t.artistName || t.authorName || 'Artista')} ${badge}${t.duration ? ' · ' + musicFmtTime(t.duration) : ''}${t.genre ? ' · ' + musicEsc(t.genre) : ''}${ctx === 'mine' ? ' · ▶ ' + musicFmtNum((t.plays | 0) || 0) + ' · ▲ ' + (((t.upvotes | 0) || 0) - (((t.downvotes | 0) || 0))) : ''}</p>
     </div>
     ${playing ? '<span class="music-eq" aria-hidden="true"><span></span><span></span><span></span></span>' : ''}
     <button data-fav-btn="${musicEsc(t.id)}" onclick="event.stopPropagation();musicToggleFavorite('${ctx}', ${i})" class="tap44 w-10 h-10 flex items-center justify-center rounded-full shrink-0 active:opacity-80 ${musicIsFav(t.id) ? 'text-[var(--brand-indigo-text)]' : 'text-[var(--theme-muted)]'}" aria-label="Guardar canción">${musicFavIcon(musicIsFav(t.id))}</button>
@@ -53683,7 +53814,13 @@ function loadExploreMusic() {
     const arr = [];
     snap.forEach(ch => arr.push({ ...(ch.val() || {}), id: ch.key }));
     arr.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
-    musicExploreCache = arr;
+    // C283: Explorar también excluye a los autores que bloqueé (Buscar
+    // ya lo hacía; Explorar y el Top semanal mostraban sus canciones).
+    if (typeof isAccountBlockedForCurrentUser === 'function') {
+      musicExploreCache = arr.filter(x => !isAccountBlockedForCurrentUser(x.authorId || x.userId || ''));
+    } else {
+      musicExploreCache = arr;
+    }
     renderExploreMusic();
   }).catch(() => {
     list.innerHTML = musicEmptyHTML('No se pudo cargar la música. Inténtalo de nuevo.');
@@ -53755,16 +53892,27 @@ function renderMusicTop() {
   if (q) { sec.classList.add('hidden'); return; }
   const arr = musicExploreCache || [];
   const wid = musicWeekId();
+  // C283: el Top semanal se releía de la base en CADA play/pausa
+  // (musicSyncPlayUI repinta las listas). Caché de 30 s por semana.
+  const paintTop = function (weekly) {
+    const scored = arr.map(t => {
+      const w = weekly[t.id] || {};
+      const plays = ((w.plays | 0) || 0), up = ((w.up | 0) || 0), down = ((w.down | 0) || 0);
+      return { t, score: (up - down) * 10 + plays };
+    }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
+    if (scored.length) musicPaintTopList(scored, 'Lo más votado de la semana');
+    else musicPaintTopList(musicGlobalTop(arr), 'Lo más votado · histórico');
+  };
   try {
+    if (window._musicTopWeeklyCache && window._musicTopWeeklyCache.wid === wid
+        && (Date.now() - window._musicTopWeeklyCache.ts) < 30000 && window._musicTopWeeklyCache.data) {
+      paintTop(window._musicTopWeeklyCache.data);
+      return;
+    }
     musicDb().ref('musicWeekly/' + wid).once('value').then(snap => {
       const weekly = snap.val() || {};
-      const scored = arr.map(t => {
-        const w = weekly[t.id] || {};
-        const plays = ((w.plays | 0) || 0), up = ((w.up | 0) || 0), down = ((w.down | 0) || 0);
-        return { t, score: (up - down) * 10 + plays };
-      }).filter(x => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
-      if (scored.length) musicPaintTopList(scored, 'Lo más votado de la semana');
-      else musicPaintTopList(musicGlobalTop(arr), 'Lo más votado · histórico');
+      window._musicTopWeeklyCache = { wid: wid, ts: Date.now(), data: weekly };
+      paintTop(weekly);
     }).catch(() => {
       musicPaintTopList(musicGlobalTop(arr), 'Lo más votado · histórico');
     });
@@ -54048,24 +54196,32 @@ window.musicShareTrack = function () {
   }, 500);
 })();
 /* ---------- Seguir artistas ---------- */
-function musicPaintFollowBtn(following) {
+function musicPaintFollowBtn(state) {
   const btn = document.getElementById('music-follow-artist-btn');
   if (!btn) return;
   const base = 'px-4 h-8 rounded-full text-[12px] font-extrabold active:opacity-80 shrink-0';
-  if (following) {
+  if (state === true || state === 'following') {
     btn.textContent = 'Siguiendo';
+    btn.className = base + ' bg-[var(--theme-surface)] border border-[var(--theme-border)] text-[var(--theme-muted)]';
+  } else if (state === 'requested') {
+    // C283: solicitud pendiente a cuenta privada — antes el botón
+    // seguía diciendo "Seguir" y retocarlo solo avisaba.
+    btn.textContent = 'Solicitado';
     btn.className = base + ' bg-[var(--theme-surface)] border border-[var(--theme-border)] text-[var(--theme-muted)]';
   } else {
     btn.textContent = 'Seguir';
     btn.className = base + ' bg-[var(--drex-brand)] text-white';
   }
 }
-function musicPaintArtistFollowBtn(following) {
+function musicPaintArtistFollowBtn(state) {
   const btn = document.getElementById('music-artist-follow-btn');
   if (!btn) return;
   const base = 'px-5 h-10 rounded-full text-[13px] font-extrabold active:opacity-80 shrink-0';
-  if (following) {
+  if (state === true || state === 'following') {
     btn.textContent = 'Siguiendo';
+    btn.className = base + ' bg-[var(--theme-surface)] border border-[var(--theme-border)] text-[var(--theme-muted)]';
+  } else if (state === 'requested') {
+    btn.textContent = 'Solicitado';
     btn.className = base + ' bg-[var(--theme-surface)] border border-[var(--theme-border)] text-[var(--theme-muted)]';
   } else {
     btn.textContent = 'Seguir';
@@ -54089,7 +54245,12 @@ function musicLoadFollowState() {
   try {
     DrexCloud.database().ref('followers/' + artistId + '/' + me.uid).once('value').then(snap => {
       if (t !== musicQueue[musicQueueIdx]) return;
-      musicPaintFollowBtn(snap.exists());
+      if (snap.exists()) { musicPaintFollowBtn(true); return; }
+      // C283: también se pinta "Solicitado" si hay solicitud pendiente.
+      DrexCloud.database().ref('followRequests/' + artistId + '/' + me.uid).once('value').then(rs => {
+        if (t !== musicQueue[musicQueueIdx]) return;
+        musicPaintFollowBtn(rs.exists() ? 'requested' : false);
+      }).catch(() => musicPaintFollowBtn(false));
     }).catch(() => {});
   } catch (_) {}
 }
@@ -54131,6 +54292,8 @@ window.musicToggleFollowArtist = async function (artistId) {
       if (isPriv) {
         await db.ref('followRequests/' + artistId + '/' + me.uid).set({ requestedAt: Date.now(), requesterName: myName, requesterImage: meData.profileImage || '' });
         if (typeof addNotification === 'function') addNotification(artistId, `${myName} quiere seguirte`, 'follow_request', { actionType: 'profile', actionId: me.uid });
+        // C283: el botón se repinta "Solicitado" (antes seguía "Seguir").
+        musicPaintFollowButtons('requested');
         if (typeof showMiniToast === 'function') showMiniToast(appT('Solicitud enviada'));
       } else {
         await fRef.set({ followedAt: Date.now() });
@@ -54150,6 +54313,36 @@ window.musicToggleFollowArtist = async function (artistId) {
 var musicArtistCache = [];
 var musicArtistUid = null;
 window.musicOpenArtistProfile = function (authorId) {
+  const t0 = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
+  const uid = authorId || (t0 && t0.authorId);
+  if (!uid) return;
+  // C283: la página de artista respeta la privacidad de la cuenta
+  // (enseñaba y reproducía todo el catálogo de cuentas privadas).
+  let me0 = null;
+  try { me0 = DrexCloud.auth().currentUser; } catch (_) {}
+  if (!(me0 && me0.uid === uid) && typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function') {
+    isAccountPrivate(uid).then(async priv => {
+      if (priv && !(await canCurrentUserViewPrivateAccount(uid))) {
+        try { minimizeMusicPlayer(); } catch (_) {}
+        musicArtistUid = uid;
+        const view = document.getElementById('music-artist-view');
+        if (view) view.classList.remove('hidden');
+        if (typeof drexPushDynamicRoute === 'function') drexPushDynamicRoute('musica/artista/' + uid, 'music-artist-view');
+        const metaEl = document.getElementById('music-artist-meta');
+        const listEl = document.getElementById('music-artist-list');
+        const fBtn = document.getElementById('music-artist-follow-btn');
+        if (metaEl) metaEl.textContent = '';
+        if (listEl) listEl.innerHTML = musicEmptyHTML('Esta cuenta es privada. Sigue a esta persona para ver su música.');
+        if (fBtn) { fBtn.classList.remove('hidden'); musicPaintArtistFollowBtn(false); }
+        return;
+      }
+      _musicOpenArtistProfileImpl(authorId);
+    }).catch(() => _musicOpenArtistProfileImpl(authorId));
+    return;
+  }
+  _musicOpenArtistProfileImpl(authorId);
+};
+function _musicOpenArtistProfileImpl(authorId) {
   const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
   const uid = authorId || (t && t.authorId);
   if (!uid) return;
@@ -54222,9 +54415,31 @@ window.musicOpenArtistProfile = function (authorId) {
       if (listEl) listEl.innerHTML = musicEmptyHTML('No se pudo cargar.');
     });
   } catch (_) {}
-};
+}
 /* ---------- Seguidores del artista ---------- */
 window.musicOpenFollowers = function () {
+  const uid = musicArtistUid;
+  if (!uid) return;
+  // C283: la lista de seguidores del artista pasa por la misma puerta
+  // de privacidad que el resto de listas.
+  let meF = null;
+  try { meF = DrexCloud.auth().currentUser; } catch (_) {}
+  if (!(meF && meF.uid === uid) && typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function') {
+    isAccountPrivate(uid).then(async priv => {
+      if (priv && !(await canCurrentUserViewPrivateAccount(uid))) {
+        const view = document.getElementById('music-followers-view');
+        const list = document.getElementById('music-followers-list');
+        if (view) view.classList.remove('hidden');
+        if (list) list.innerHTML = musicEmptyHTML('Esta cuenta es privada.');
+        return;
+      }
+      _musicOpenFollowersImpl();
+    }).catch(() => _musicOpenFollowersImpl());
+    return;
+  }
+  _musicOpenFollowersImpl();
+};
+function _musicOpenFollowersImpl() {
   const uid = musicArtistUid;
   if (!uid) return;
   const view = document.getElementById('music-followers-view');
@@ -54259,7 +54474,7 @@ window.musicOpenFollowers = function () {
       });
     }).catch(() => { if (list) list.innerHTML = musicEmptyHTML('No se pudo cargar.'); });
   } catch (_) {}
-};
+}
 window.musicCloseFollowers = function () {
   const view = document.getElementById('music-followers-view');
   if (view) view.classList.add('hidden');
@@ -54747,10 +54962,17 @@ window.musicSearchTracks = function (query, nonce) {
     });
     tracks.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     const top = tracks.slice(0, 50);
+    // C283: además de la portada se hidratan letra, anuncio, duración y
+    // género — reproducir desde Buscar abría un reproductor a medias
+    // (sin Letra ni Comentarios).
     return Promise.all(top.map(t =>
-      musicDb().ref('musicTracks/' + t.id + '/coverImage').once('value')
-        .then(s => { t.coverImage = s.val() || ''; })
-        .catch(() => {})
+      Promise.all([
+        musicDb().ref('musicTracks/' + t.id + '/coverImage').once('value').then(s => { t.coverImage = s.val() || ''; }).catch(() => {}),
+        musicDb().ref('musicTracks/' + t.id + '/lyrics').once('value').then(s => { t.lyrics = s.val() || ''; }).catch(() => {}),
+        musicDb().ref('musicTracks/' + t.id + '/announceNoteId').once('value').then(s => { t.announceNoteId = s.val() || ''; }).catch(() => {}),
+        musicDb().ref('musicTracks/' + t.id + '/duration').once('value').then(s => { t.duration = s.val() || 0; }).catch(() => {}),
+        musicDb().ref('musicTracks/' + t.id + '/genre').once('value').then(s => { t.genre = s.val() || ''; }).catch(() => {})
+      ])
     )).then(() => top);
   }).catch(() => []);
 };
@@ -54840,18 +55062,37 @@ window.handleMusicAudioSelect = function (event) {
     // Duración real del audio
     const probe = new Audio();
     probe.preload = 'metadata';
-    probe.onloadedmetadata = function () {
+    let _durDone = false;
+    const _durFinish = function (durSec) {
+      if (_durDone) return;
+      _durDone = true;
       musicUploadState.audioFile = file;
       musicUploadState.audioDataUrl = dataUrl;
       musicUploadState.audioName = file.name;
-      musicUploadState.duration = Math.round(probe.duration || 0);
+      musicUploadState.duration = durSec;
       const info = document.getElementById('music-audio-info');
       if (info) { info.classList.remove('hidden'); info.classList.add('flex'); }
       const nm = document.getElementById('music-audio-name'); if (nm) nm.textContent = file.name;
       const mt = document.getElementById('music-audio-meta'); if (mt) mt.textContent = musicFmtTime(musicUploadState.duration) + ' · ' + (file.size / 1048576).toFixed(1) + ' MB';
       const titleInput = document.getElementById('music-title');
       if (titleInput && !titleInput.value) titleInput.value = file.name.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim().slice(0, 80);
-      URL.revokeObjectURL(probe.src);
+      try { URL.revokeObjectURL(probe.src); } catch (_) {}
+    };
+    probe.onloadedmetadata = function () {
+      if (isFinite(probe.duration) && probe.duration > 0) { _durFinish(Math.round(probe.duration)); return; }
+      // C283: algunos .opus/.webm y MP3 de bitrate variable reportan
+      // Infinity en este instante y la canción no se podía publicar
+      // NUNCA (la duración inválida tumbaba la publicación). Se fuerza
+      // el cálculo saltando casi al final y leyendo la duración real.
+      const onDur = function () {
+        if (isFinite(probe.duration) && probe.duration > 0) {
+          probe.removeEventListener('durationchange', onDur);
+          _durFinish(Math.round(probe.duration));
+        }
+      };
+      probe.addEventListener('durationchange', onDur);
+      try { probe.currentTime = 1e7; } catch (_) {}
+      setTimeout(function () { probe.removeEventListener('durationchange', onDur); _durFinish(0); }, 5000);
     };
     probe.onerror = function () { try { URL.revokeObjectURL(probe.src); } catch (_) {} if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo leer ese archivo de audio')); };
     probe.src = URL.createObjectURL(file);
@@ -55276,9 +55517,26 @@ window.musicPlayFromList = function (ctx, idx) {
   musicStartTrack(musicQueue[musicQueueIdx]);
 };
 window.openMusicTrackFromFeed = function (trackId) {
-  musicDb().ref('musicTracks/' + trackId).once('value').then(snap => {
+  musicDb().ref('musicTracks/' + trackId).once('value').then(async snap => {
     const t = snap.val();
     if (!t) { if (typeof showMiniToast === 'function') showMiniToast(appT('Esta canción ya no está disponible.')); return; }
+    // C283: el enlace de canción respeta bloqueos y la privacidad de la
+    // cuenta (el permalink de posts ya lo hacía; el de canciones no).
+    const _aid = t.authorId || t.userId || '';
+    if (_aid && typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(_aid)) {
+      if (typeof showMiniToast === 'function') showMiniToast(appT('Esta canción no está disponible.'));
+      return;
+    }
+    try {
+      let me = null;
+      try { me = DrexCloud.auth().currentUser; } catch (_) {}
+      if (_aid && !(me && me.uid === _aid)
+          && typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function'
+          && await isAccountPrivate(_aid) && !(await canCurrentUserViewPrivateAccount(_aid))) {
+        if (typeof showMiniToast === 'function') showMiniToast(appT('Esta cuenta es privada.'));
+        return;
+      }
+    } catch (_) {}
     musicQueue = [{ ...t, id: trackId }];
     musicQueueIdx = 0;
     musicMixActive = false;
@@ -55329,6 +55587,15 @@ function musicStartTrack(t) {
   if (!t || !t.id) return;
   try { musicCancelCrossfade(); } catch (_) {}
   const audio = musicEnsureAudio();
+  // C283: tocar la fila de la canción que YA suena no la reinicia ni
+  // suma otra reproducción: solo la reanuda si estaba en pausa.
+  try {
+    if (typeof musicCurrentTrackId === 'function' && musicCurrentTrackId() === t.id && audio && audio.src) {
+      musicPaintTrackUI(t);
+      if (audio.paused) audio.play().catch(() => {});
+      return;
+    }
+  } catch (_) {}
   musicPaintTrackUI(t);
   // Cargar y reproducir
   const playBtn = document.getElementById('music-play-btn');
@@ -55337,9 +55604,16 @@ function musicStartTrack(t) {
     if (musicCurrentTrackId() !== t.id) return; // el usuario ya cambió de canción
     audio.src = url;
     audio.play().catch(() => {});
-    // Contar reproducción (global + semanal para el Top Drex)
-    try { musicDb().ref('musicTracks/' + t.id + '/plays').transactionBlind(c => (c || 0) + 1); } catch (_) {}
-    try { musicDb().ref('musicWeekly/' + musicWeekId() + '/' + t.id + '/plays').transactionBlind(c => ((c | 0) || 0) + 1); } catch (_) {}
+    // C283: la reproducción se cuenta cuando el audio SUENA de verdad
+    // ('playing'), una sola vez por carga — antes se sumaba al empezar
+    // a cargar y los conteos se inflaban con toques repetidos.
+    var _countedPlay = function () {
+      audio.removeEventListener('playing', _countedPlay);
+      if (musicCurrentTrackId() !== t.id) return;
+      try { musicDb().ref('musicTracks/' + t.id + '/plays').transactionBlind(c => (c || 0) + 1); } catch (_) {}
+      try { musicDb().ref('musicWeekly/' + musicWeekId() + '/' + t.id + '/plays').transactionBlind(c => ((c | 0) || 0) + 1); } catch (_) {}
+    };
+    audio.addEventListener('playing', _countedPlay);
   }).catch(() => {
     if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo cargar el audio.'));
     musicSyncPlayUI();
@@ -55685,6 +55959,11 @@ function musicHistoryRecord(t) {
     musicHistoryCache.unshift({
       id: t.id, title: t.title || 'Sin título',
       artistName: t.artistName || t.authorName || '',
+      // C283: la instantánea conserva autor, letra y anuncio para que
+      // reproducir desde Historial/Guardadas abra el reproductor
+      // completo (seguir al artista, Letra y Comentarios).
+      authorId: t.authorId || '', lyrics: t.lyrics || '',
+      announceNoteId: t.announceNoteId || '', genre: t.genre || '',
       coverImage: t.coverImage || '', duration: t.duration || 0,
       playedAt: Date.now()
     });
@@ -55744,6 +56023,10 @@ function musicTrackSnapshot(t) {
   return {
     trackId: t.id, title: t.title || 'Sin título',
     artistName: t.artistName || t.authorName || '',
+    // C283: autor, letra y anuncio viajan en la guardada (reproducir
+    // desde Guardadas debe abrir el reproductor completo).
+    authorId: t.authorId || '', lyrics: t.lyrics || '',
+    announceNoteId: t.announceNoteId || '',
     coverImage: t.coverImage || '', genre: t.genre || '',
     duration: t.duration || 0, savedAt: Date.now()
   };
