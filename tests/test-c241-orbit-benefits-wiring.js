@@ -51,7 +51,7 @@ ok('hasAccess rechaza funciones desconocidas (fail-closed)', () => {
 ok('refresh ante cualquier fallo deja estado inactivo (fail-closed)', () => {
   // C263: un fallo transitorio ya NO desconfigura el servidor (orbitGate
   // permanecía abierto durante la caída); solo reset()/logout lo limpian.
-  assert(has('self._st = fail; }'));
+  assert(has('if (!(self._st && self._st.active === true)) self._st = fail;')); // C281: un bache de red no des-suscribe en pantalla a un miembro verificado
   assert(!has('self._st = fail; self._serverConfigured = false;'));
   assert(has("var fail = { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' };"));
 });
@@ -68,7 +68,7 @@ ok('el núcleo DrexOrbit no usa flags locales (localStorage) para activarse', ()
 
 ok('refresh() reaplica las puertas (beneficios sin recargar)', () => {
   const start = html.indexOf('refresh: async function (force)');
-  const seg = html.slice(start, start + 1600);
+  const seg = html.slice(start, start + 2400); // C281: el bloque de fallo de red creció (conserva el estado verificado)
   assert(seg.includes('window.drexOrbitApplyGates'), 'refresh debe llamar drexOrbitApplyGates');
 });
 

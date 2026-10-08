@@ -38,7 +38,7 @@ function extractFn(src, marker) {
 
 // ---------- estático ----------
 const tallySrc = extractFn(html, 'function fiestaGameHostTally(ref, g, votes)');
-const elimSrc = extractFn(html, 'function fiestaGameHostEliminate(ref, g, uid, word, isLiar, liars, pair)');
+const elimSrc = extractFn(html, 'function fiestaGameHostEliminate(ref, g, uid, word, isLiar, liars, pair, pairIdx, revPi)');
 check('F2: los updates terminales del tally rearman fiestaGameHostBusy al fallar',
   (tallySrc.match(/fiestaGameHostBusy = false/g) || []).length >= 3 &&
   (elimSrc.match(/fiestaGameHostBusy = false/g) || []).length >= 2);

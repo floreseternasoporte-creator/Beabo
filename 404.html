@@ -8980,6 +8980,38 @@ function fiestaGamePickPair() {
   if (!bank || !bank.length) bank = FIESTA_GAME_WORDS_FALLBACK;
   return bank[Math.floor(Math.random() * bank.length)];
 }
+function fiestaGamePickPairIdx() {
+  var lang = fiestaGameLang();
+  var full = (typeof window !== 'undefined' && window.FIESTA_GAME_WORDS) || null;
+  var bank = (full && full[lang]) || FIESTA_GAME_WORDS_FALLBACK;
+  if (!bank || !bank.length) bank = FIESTA_GAME_WORDS_FALLBACK;
+  var idx = Math.floor(Math.random() * bank.length);
+  return { pair: bank[idx], idx: (full && bank === full[lang]) ? idx : null };
+}
+// C281: la palabra secreta llegaba en el idioma del anfitrión. El banco
+// está alineado por índice en ES/EN/ZH, así que el secreto también guarda
+// el índice del par y cada cliente pinta la palabra en SU idioma. La
+// palabra original sigue como respaldo (partidas viejas o banco local).
+function fiestaGameWordLocal(w, liar, pi) {
+  try {
+    if (typeof pi === 'number' && window.FIESTA_GAME_WORDS) {
+      var bank = window.FIESTA_GAME_WORDS[fiestaGameLang()] || window.FIESTA_GAME_WORDS.es;
+      var entry = bank && bank[pi];
+      if (entry && entry.length) return liar ? entry[1] : entry[0];
+    }
+  } catch (_) {}
+  return w || '';
+}
+function fiestaGamePairLocal(pair, pi) {
+  try {
+    if (typeof pi === 'number' && window.FIESTA_GAME_WORDS) {
+      var bank = window.FIESTA_GAME_WORDS[fiestaGameLang()] || window.FIESTA_GAME_WORDS.es;
+      var entry = bank && bank[pi];
+      if (entry && entry.length) return entry;
+    }
+  } catch (_) {}
+  return pair || [];
+}
 function fiestaGameMember(uid) {
   return (typeof fiestaMembers !== 'undefined' && fiestaMembers && fiestaMembers[uid]) || {};
 }
@@ -9108,7 +9140,8 @@ function fiestaGameStartNow() {
   }
   var liarCount = uids.length >= 8 ? 2 : 1;
   var liars = uids.slice(0, liarCount);
-  var pair = fiestaGamePickPair();
+  var picked = fiestaGamePickPairIdx();
+  var pair = picked.pair;
   var db = DrexCloud.database();
   var sid = fiestaCur.id;
   fiestaGameStarting = true;
@@ -9122,7 +9155,9 @@ function fiestaGameStartNow() {
   try {
     secretWrites = uids.map(function (u) {
       var isLiar = liars.indexOf(u) !== -1;
-      return db.ref('fiestaGameSecrets/' + sid + '/' + u).set({ w: isLiar ? pair[1] : pair[0], liar: isLiar });
+      var sec = { w: isLiar ? pair[1] : pair[0], liar: isLiar };
+      if (picked.idx != null) sec.pi = picked.idx; // C281: índice para el idioma de cada jugador
+      return db.ref('fiestaGameSecrets/' + sid + '/' + u).set(sec);
     });
   } catch (e) {
     fiestaGameStarting = false;
@@ -9341,16 +9376,17 @@ function fiestaGameHostReadSecrets(sid, uids) {
   return Promise.all((uids || []).map(function (u) {
     return db.ref('fiestaGameSecrets/' + sid + '/' + u).once('value').then(function (snap) {
       var v = snap.val() || {};
-      return { u: u, w: v.w || '', liar: !!v.liar };
-    }).catch(function () { return { u: u, w: '', liar: false }; });
+      return { u: u, w: v.w || '', liar: !!v.liar, pi: (typeof v.pi === 'number') ? v.pi : null };
+    }).catch(function () { return { u: u, w: '', liar: false, pi: null }; });
   })).then(function (rows) {
-    var liars = [], civW = '', liarW = '', byUid = {};
+    var liars = [], civW = '', liarW = '', byUid = {}, pairIdx = null;
     rows.forEach(function (r) {
       byUid[r.u] = r;
+      if (pairIdx === null && typeof r.pi === 'number') pairIdx = r.pi;
       if (r.liar) { liars.push(r.u); if (!liarW && r.w) liarW = r.w; }
       else if (!civW && r.w) civW = r.w;
     });
-    return { liars: liars, pair: (civW && liarW) ? [civW, liarW] : null, byUid: byUid };
+    return { liars: liars, pair: (civW && liarW) ? [civW, liarW] : null, byUid: byUid, pairIdx: pairIdx };
   });
 }
 function fiestaGameHostReadVotes(sid) {
@@ -9392,7 +9428,7 @@ function fiestaGameHostTally(ref, g, votes) {
         // reconectar: lecturas OK, escrituras no), liberar el guarda para que
         // el próximo tick reintente; sin esto el juego quedaba congelado en
         // 'vote' (fiestaGameHostBusy nunca se rearmaba).
-        ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: sec.pair, liars: sec.liars, endedAt: now })
+        ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: sec.pair, pairIdx: (typeof sec.pairIdx === 'number') ? sec.pairIdx : null, liars: sec.liars, endedAt: now })
           .catch(function () { fiestaGameHostBusy = false; });
       }).catch(function () {
         ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], endedAt: now })
@@ -9408,10 +9444,10 @@ function fiestaGameHostTally(ref, g, votes) {
   // Secretos del eliminado (palabra para el revelado) + lista de mentirosos
   // y par de palabras en una sola lectura (ya no viajan en el doc compartido).
   fiestaGameHostReadSecrets(sid, g.players || []).then(function (sec) {
-    var info = sec.byUid[best] || { w: '', liar: false };
-    fiestaGameHostEliminate(ref, g, best, info.w, info.liar, sec.liars, sec.pair);
+    var info = sec.byUid[best] || { w: '', liar: false, pi: null };
+    fiestaGameHostEliminate(ref, g, best, info.w, info.liar, sec.liars, sec.pair, sec.pairIdx, info.pi);
   }).catch(function () {
-    fiestaGameHostEliminate(ref, g, best, '', false, [], null);
+    fiestaGameHostEliminate(ref, g, best, '', false, [], null, null, null);
   });
 }
 // C62: el deadline del revelado se ancla al momento de PUBLICARLO, no al
@@ -9419,17 +9455,17 @@ function fiestaGameHostTally(ref, g, votes) {
 // de secretos: con latencia de red el revelado quedaba acortado, y con
 // latencia >= 9 s `revealEndsAt` nacía vencido y el host loop saltaba la
 // fase de revelado (los jugadores no veían quién salió ni su palabra).
-function fiestaGameHostEliminate(ref, g, uid, word, isLiar, liars, pair) {
+function fiestaGameHostEliminate(ref, g, uid, word, isLiar, liars, pair, pairIdx, revPi) {
   var out = (g.out || []).concat([uid]);
   var liarsLeft = (liars || []).filter(function (l) { return out.indexOf(l) === -1; });
   var t = Date.now();
   if (liarsLeft.length === 0) {
     // C80-F2: liberar el guarda si la escritura falla (ver arriba).
-    ref.update({ status: 'final', winner: 'civiles', out: out, pair: pair, liars: liars, endedAt: t })
+    ref.update({ status: 'final', winner: 'civiles', out: out, pair: pair, pairIdx: (typeof pairIdx === 'number') ? pairIdx : null, liars: liars, endedAt: t })
       .catch(function () { fiestaGameHostBusy = false; });
   } else {
     ref.update({ status: 'reveal', out: out,
-      revealed: { uid: uid, liar: isLiar, word: word },
+      revealed: { uid: uid, liar: isLiar, word: word, pi: (typeof revPi === 'number') ? revPi : null },
       revealEndsAt: t + 9000, round: g.round || 1 })
       .catch(function () { fiestaGameHostBusy = false; }); // C80-F2
   }
@@ -9440,7 +9476,7 @@ function fiestaGameHostAfterReveal(ref, g) {
     // C21: pair/liars solo se publican al terminar (pantalla final), nunca
     // durante el juego. Se derivan de los secretos, no del doc compartido.
     fiestaGameHostReadSecrets(fiestaCur.id, g.players || []).then(function (sec) {
-      ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: sec.pair, liars: sec.liars, endedAt: now });
+      ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], pair: sec.pair, pairIdx: (typeof sec.pairIdx === 'number') ? sec.pairIdx : null, liars: sec.liars, endedAt: now });
     }).catch(function () {
       ref.update({ status: 'final', winner: 'mentirosos', out: g.out || [], endedAt: now });
     });
@@ -9565,7 +9601,7 @@ function fiestaGameHTMLDeal() {
   if (fiestaGameMySecret && fiestaGameMySecret.w) {
     card = '<div class="mx-auto mt-5 max-w-xs bg-[#17171d] border border-[color-mix(in_srgb,var(--drex-brand)_40%,transparent)] rounded-[28px] p-6 text-center" style="box-shadow:0 10px 40px -12px color-mix(in srgb, var(--drex-brand) 55%, transparent);">'
       + '<div class="text-white/50 text-xs font-bold uppercase tracking-widest mb-2">' + appT('Tu palabra secreta') + '</div>'
-      + '<div class="text-3xl font-extrabold text-white mb-3">' + fiestaGameEsc(fiestaGameMySecret.w) + '</div>'
+      + '<div class="text-3xl font-extrabold text-white mb-3">' + fiestaGameEsc(fiestaGameWordLocal(fiestaGameMySecret.w, fiestaGameMySecret.liar, fiestaGameMySecret.pi)) + '</div>'
       + '<div class="text-sm text-[#9AA3FF] font-bold">' + appT('¡No la muestres a nadie!') + '</div></div>';
   } else {
     card = '<div class="text-center text-white/60 mt-16"><div class="animate-pulse text-lg font-bold">' + appT('Repartiendo roles…') + '</div></div>';
@@ -9651,13 +9687,13 @@ function fiestaGameHTMLReveal() {
     + '<div class="text-white/50 text-sm mt-1">' + appT('Eliminado') + '</div>'
     + '<div class="mt-5 inline-block bg-[#141419] border border-white/10 rounded-3xl px-8 py-4" style="box-shadow:0 8px 30px -12px rgba(0,0,0,.6);">'
     + '<div class="text-xs text-white/40 uppercase tracking-widest font-bold">' + appT('Su palabra era') + '</div>'
-    + '<div class="text-2xl font-extrabold mt-1">' + fiestaGameEsc(r.word || '—') + '</div></div>'
+    + '<div class="text-2xl font-extrabold mt-1">' + fiestaGameEsc(fiestaGameWordLocal(r.word, r.liar, r.pi) || '—') + '</div></div>'
     + '<div class="mt-3 font-bold ' + roleCls + '">' + fiestaGameEsc(fiestaGameName(r.uid)) + ' ' + roleTxt + '</div></div>';
 }
 function fiestaGameHTMLFinal() {
   var g = fiestaGame;
   var civWin = g.winner === 'civiles';
-  var pair = g.pair || [];
+  var pair = fiestaGamePairLocal(g.pair || [], (typeof g.pairIdx === 'number') ? g.pairIdx : null);
   var badge = civWin
     ? '<div class="mx-auto w-20 h-20 rounded-full bg-[var(--drex-brand)] flex items-center justify-center shadow-lg shadow-[color-mix(in_srgb,var(--drex-brand)_40%,transparent)]"><svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div>'
     : '<div class="mx-auto w-20 h-20 rounded-full bg-[#1c1c22] border border-white/15 flex items-center justify-center"><svg class="w-10 h-10 text-white/85" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18a1 1 0 0 1 1 1v1a5 5 0 0 1-5 5h-1.3a4 4 0 0 1-3.1-1.5L12 13.7l-1.6 1.8A4 4 0 0 1 7.3 17H6a5 5 0 0 1-5-5v-1a1 1 0 0 1 1-1z"/><circle cx="8.5" cy="13" r="1" fill="currentColor"/><circle cx="15.5" cy="13" r="1" fill="currentColor"/></svg></div>';
@@ -18341,6 +18377,22 @@ else { try { drexSnapInit(); } catch (_) {} }
 // ---- Visor de video a pantalla completa (reproductor propio) ----
   let _videoModalNoteId = null;
   let _videoModalCache = {};   // noteId -> dataUrl (solo en memoria, por sesión)
+  // C281: tope FIFO — cada video puede pesar ~16 MB en base64; sin límite,
+  // ver varios videos seguidos llenaba la memoria y el iPhone recargaba la app.
+  const _VIDEO_MODAL_CACHE_MAX = 5;
+  let _videoModalCacheOrder = [];
+  function _videoModalCachePut(nid, du) {
+    if (!_videoModalCache[nid]) _videoModalCacheOrder.push(nid);
+    _videoModalCache[nid] = du;
+    while (_videoModalCacheOrder.length > _VIDEO_MODAL_CACHE_MAX) {
+      const old = _videoModalCacheOrder.shift();
+      if (old && old !== nid) delete _videoModalCache[old];
+    }
+  }
+  function _videoModalCacheDel(nid) {
+    delete _videoModalCache[nid];
+    _videoModalCacheOrder = _videoModalCacheOrder.filter(id => id !== nid);
+  }
   let _videoModalChrome = true;
   let _videoModalWired = false;
   // 2026-09-27: reproducir por Blob/Object URL en vez de data URL gigante
@@ -18416,7 +18468,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       // Se cachea la data URL original (el player ahora usa Blob/Object URL).
       const nid = _videoModalNoteId;
       const du = _videoModalPendingDataUrl;
-      if (nid && du && du.indexOf('data:video') === 0) _videoModalCache[nid] = du;
+      if (nid && du && du.indexOf('data:video') === 0) _videoModalCachePut(nid, du);
       _videoModalPendingDataUrl = null;
     });
     player.addEventListener('timeupdate', () => {
@@ -18433,7 +18485,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       if (!nid) return; // error espurio por src vacío al abrir/cerrar
       const src = player.getAttribute('src') || player.src || '';
       if (!src) return;
-      delete _videoModalCache[nid]; // no reintentar con datos corruptos cacheados
+      _videoModalCacheDel(nid); // no reintentar con datos corruptos cacheados
       _videoModalLoading(false);
       showMiniToast(appT('No se pudo reproducir el video.'));
       closeVideoModal(); // no dejar el modal clavado en un video que no reproduce
@@ -35366,6 +35418,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       var g = JSON.parse(raw);
       if (!g || Number(g.freeUntil || 0) <= Date.now()) return null;
       var plan = (typeof ORBIT_PLAN_IDS !== 'undefined' && ORBIT_PLAN_IDS.indexOf(g.plan) !== -1) ? g.plan : 'quarterly';
+      // C281: el mismo filtro que aplica la sincronización con el grant
+      // real — un plan retirado de la caché local no concede beneficios.
+      if (typeof orbitPlanAvailable === 'function' && !orbitPlanAvailable(plan)) return null;
       return { plan: plan, freeUntil: Number(g.freeUntil) };
     } catch (_) { return null; }
   }
@@ -39234,6 +39289,22 @@ let chatTypingListener = null;
       </div>`;
   }
 
+  // C281: presencia con caché de 60 s y dedup en vuelo. El buscador de
+  // chats re-pinta la lista por cada tecla y releía la presencia de cada
+  // conversación 1:1 en cada pintada (decenas de lecturas por búsqueda).
+  const _presenceCache = {};   // uid -> { online, at, promise }
+  function drexPresenceOnline(uid) {
+    if (!uid) return Promise.resolve(false);
+    const hit = _presenceCache[uid];
+    if (hit && hit.promise) return hit.promise;
+    if (hit && (Date.now() - hit.at) < 60000) return Promise.resolve(hit.online);
+    const promise = DrexCloud.database().ref('userPresence/' + uid + '/online').once('value')
+      .then(snap => { const online = snap.val() === true; _presenceCache[uid] = { online, at: Date.now() }; return online; })
+      .catch(() => { delete _presenceCache[uid]; return false; });
+    _presenceCache[uid] = { online: false, at: 0, promise };
+    return promise;
+  }
+
   function renderChatConversations(items) {
     const container = document.getElementById('chat-conversations-list');
     if (!container) return;
@@ -39347,12 +39418,12 @@ let chatTypingListener = null;
     container.innerHTML = _antesalaHtml + container.innerHTML;
     // Presencia online DMs (solo chats: las filas de solicitud no tienen dot)
     visibleItems.filter(i => !i.isGroup).forEach(item => {
-      DrexCloud.database().ref('userPresence/' + item.otherUid + '/online').once('value').then(snap => {
-        if (snap.val() === true) {
+      drexPresenceOnline(item.otherUid).then(online => {
+        if (online) {
           const dot = document.getElementById('presence-dot-' + item.otherUid);
           if (dot) dot.classList.remove('hidden');
         }
-      }).catch(() => {});
+      });
     });
   }
 
@@ -51423,7 +51494,7 @@ function renderFiestaRoom() {
       </div>
       <p class="text-[11px] font-semibold truncate max-w-[72px] ${m.muted ? 'text-white/45' : 'text-white/90'}">${esc(m.name)}${uid === fiestaMyUid ? ' · ' + appT('tú') : ''}</p>
       ${(fiestaAmHost && uid !== fiestaMyUid) ? `<div class="flex flex-col gap-1 w-full max-w-[84px]">
-        <button onclick="fiestaMuteMember('${escUidJs}')" class="text-[10px] font-bold px-2 py-1.5 rounded-full bg-white/[.08] text-white/70">${appT('Silenciar')}</button>
+        <button onclick="fiestaMuteMember('${escUidJs}')" class="text-[10px] font-bold px-2 py-1.5 rounded-full bg-white/[.08] text-white/70">${m.mutedByHost ? appT('Quitar silencio') : appT('Silenciar')}</button>
         <button onclick="fiestaKickMember('${escUidJs}')" class="text-[10px] font-bold px-2 py-1.5 rounded-full bg-[#e11d48]/85 text-white">${appT('Expulsar')}</button>
       </div>` : ''}
     </div>`;
@@ -51458,6 +51529,7 @@ function renderFiestaRoom() {
     <div class="flex items-center gap-3 px-2 py-2.5 rounded-2xl active:bg-white/[.05] transition">
       <img src="${esc(m.photo) || PLACEHOLDER}" class="w-10 h-10 rounded-full object-cover">
       <span class="text-[14px] font-semibold truncate text-white/85 flex-1">${esc(m.name)}${uid === fiestaMyUid ? ' · ' + appT('tú') : ''}</span>
+      ${(fiestaAmHost && uid !== fiestaMyUid) ? `<button onclick="fiestaKickMember('${escapeInlineSingleQuote(uid)}')" class="text-[10px] font-bold px-2 py-1.5 rounded-full bg-[#e11d48]/85 text-white shrink-0">${appT('Expulsar')}</button>` : ''}
     </div>`).join('') || `<div class="w-full flex items-center justify-center py-8"><p class="text-[13px] font-semibold text-white/40">${appT('Sé el primero en escuchar')}</p></div>`;
 }
 
@@ -51684,8 +51756,13 @@ async function fiestaKickMember(uid) {
 }
 async function fiestaMuteMember(uid) {
   if (!fiestaCur || !fiestaAmHost || !uid || uid === fiestaMyUid) return;
-  await DrexCloud.database().ref('fiestaMembers/' + fiestaCur.id + '/' + uid).update({ muted: true, mutedByHost: true }).catch(() => {});
-  showMiniToast(appT('Participante silenciado.'));
+  // C281: el silencio del anfitrión ahora alterna. Antes solo se podía
+  // silenciar y el participante quedaba mudo hasta salirse de la sala.
+  const rec = (typeof fiestaMembers !== 'undefined' && fiestaMembers && fiestaMembers[uid]) || {};
+  const silenced = !!(rec.muted && rec.mutedByHost);
+  await DrexCloud.database().ref('fiestaMembers/' + fiestaCur.id + '/' + uid)
+    .update(silenced ? { muted: false, mutedByHost: false } : { muted: true, mutedByHost: true }).catch(() => {});
+  showMiniToast(silenced ? appT('Silencio retirado.') : appT('Participante silenciado.'));
 }
 
 async function fiestaToggleMute() {
@@ -52046,7 +52123,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-07T23:22:28Z';
+window.DREX_BUILD = '2026-10-08T00:03:10Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -84836,9 +84913,17 @@ var DrexOrbit = {
       self._serverConfigured = (data.configured === true);
     /* C263: un fallo transitorio de red NO desconfigura el servidor. Si ya
      * sabíamos que está configurado, enforced() sigue true y orbitGate
-     * permanece fail-closed; solo reset()/logout limpian el flag. */
-    } catch (_) { self._st = fail; }
-    self._ts = Date.now();
+     * permanece fail-closed; solo reset()/logout limpian el flag.
+     * C281: tampoco debe "des-suscribir" en pantalla a quien ya pagó: si
+     * el último estado verificado era de miembro, se conserva tal cual y
+     * NO se mueve el sello de tiempo, así la próxima revalidación
+     * reintenta al momento en vez de cachear el fallo por 60 s. */
+    } catch (_) {
+      if (!(self._st && self._st.active === true)) self._st = fail;
+      else self._keptStale = true;
+    }
+    if (!self._keptStale) self._ts = Date.now();
+    self._keptStale = false;
     try { if (typeof window.drexOrbitApplyGates === 'function') window.drexOrbitApplyGates(); } catch (_) {}
     return self._st;
   },
@@ -86212,10 +86297,17 @@ async function orbitManageSaveCard() {
     return;
   }
   var pmId = result && result.setupIntent ? result.setupIntent.payment_method : null;
+  // C281: antes se anunciaba "Método de pago actualizado" aunque el
+  // adjunto al backend hubiera fallado o no llegara método de pago.
+  var attached = false;
   try {
-    if (pmId) await DrexOrbit.subscriptionSetup({ paymentMethodId: pmId });
+    if (pmId) { await DrexOrbit.subscriptionSetup({ paymentMethodId: pmId }); attached = true; }
   } catch (_) {}
   st.busy = false;
+  if (!attached) {
+    orbitManageErr(t('No se pudo guardar la tarjeta. Inténtalo de nuevo.'));
+    return;
+  }
   orbitToast(t('Método de pago actualizado'));
   var nst = null;
   try { nst = await DrexOrbit.refresh(true); } catch (_) {}
@@ -86681,9 +86773,12 @@ function drexTxSubStatus(sub) {
   if (!sub || !sub.active) {
     var st = String((sub && sub.status) || '');
     if (st === 'canceled') return t('Cancelada');
-    if (st === 'past_due') return t('Vence pronto');
+    if (st === 'past_due') return t('Pago pendiente');
     return t('Sin suscripción');
   }
+  // C281: con un pago fallido la etiqueta debe decir lo mismo que el
+  // aviso amarillo de la tarjeta, no "Activa"/"Vence pronto".
+  if (String(sub.status || '') === 'past_due') return t('Pago pendiente');
   if (sub.currentPeriodEnd) {
     var msLeft = Number(sub.currentPeriodEnd) * 1000 - Date.now();
     if (msLeft > 0 && msLeft <= 7 * 24 * 3600 * 1000) return t('Vence pronto');
