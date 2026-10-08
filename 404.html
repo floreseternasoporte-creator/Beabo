@@ -14505,6 +14505,18 @@ function saveNote() {
         draft.poll = _pp;
       }
     } catch (_) {}
+    // C282: el grupo, la etiqueta y los velos también forman parte del
+    // borrador. Sin esto, un post programado para un grupo salía en el
+    // feed público y uno marcado "contenido fuerte" quedaba al descubierto.
+    try {
+      if (typeof selectedGroupForPost !== 'undefined' && selectedGroupForPost && selectedGroupForPost.id) {
+        draft.groupId = selectedGroupForPost.id;
+        draft.groupName = selectedGroupForPost.name || 'Grupo';
+      }
+      if (typeof selectedNoteFlair !== 'undefined' && selectedNoteFlair) draft.flair = selectedNoteFlair;
+      if (typeof notePostIsSensitive !== 'undefined' && notePostIsSensitive) draft.sensitive = true;
+      if (typeof notePostIsSpoiler !== 'undefined' && notePostIsSpoiler) draft.spoiler = true;
+    } catch (_) {}
     return draft;
   }
 
@@ -14629,6 +14641,19 @@ function saveNote() {
         if (typeof renderNoteFlairRow === 'function') renderNoteFlairRow();
         if (typeof renderNotePollEditor === 'function') renderNotePollEditor();
       }
+    } catch (_) {}
+
+    // C282: el editor también recupera el grupo, la etiqueta y los velos
+    // del borrador: editarlo no debe despojarlo de su destino ni de sus
+    // protecciones.
+    try {
+      if (typeof selectedGroupForPost !== 'undefined') {
+        selectedGroupForPost = draft.groupId ? { id: draft.groupId, name: draft.groupName || 'Grupo' } : null;
+      }
+      if (typeof selectedNoteFlair !== 'undefined') selectedNoteFlair = draft.flair || null;
+      if (typeof notePostIsSensitive !== 'undefined') notePostIsSensitive = !!draft.sensitive;
+      if (typeof notePostIsSpoiler !== 'undefined') notePostIsSpoiler = !!draft.spoiler;
+      if (typeof renderNoteFlairRow === 'function') renderNoteFlairRow();
     } catch (_) {}
 
 
@@ -14853,6 +14878,12 @@ function saveNote() {
       const _pp = drexDraftPollForPublish(draft.poll, Date.now(), null);
       if (_pp) _note.poll = _pp;
     } catch (_) {}
+    // C282: grupo, etiqueta y velos del borrador viajan con el post
+    // programado, igual que en la publicación directa.
+    if (draft.groupId) { _note.groupId = draft.groupId; _note.groupName = draft.groupName || 'Grupo'; }
+    if (draft.flair) _note.flair = draft.flair;
+    if (draft.sensitive) _note.sensitive = true;
+    if (draft.spoiler) _note.spoiler = true;
     return _note;
   }
 
@@ -15088,6 +15119,10 @@ function saveNote() {
       if (editor && !editor.classList.contains('hidden') && typeof closeNoteCreationFullscreen === 'function') {
         const ta = document.getElementById('note-content-fullscreen');
         if (ta) ta.value = '';
+        // C282: también se vacía la encuesta del editor — el cierre guarda
+        // el borrador automáticamente y una encuesta viva lo recreaba como
+        // un duplicado fantasma sin programar.
+        try { if (typeof notePostPoll !== 'undefined') notePostPoll = { options: [], hours: 24 }; } catch (_) {}
         currentEditingDraftId = null;
         setNoteDraftStatus('', 'idle');
         closeNoteCreationFullscreen();
@@ -15693,6 +15728,18 @@ function saveNote() {
   }
 
   function closeNoteCreationFullscreen() {
+    // C282: los borradores guardan solo texto y encuesta. Si el editor
+    // traía fotos, un video o un GIF, se avisa al salir en vez de
+    // perderlos en silencio.
+    try {
+      const hasMedia = (typeof notePostImageFiles !== 'undefined' && notePostImageFiles && notePostImageFiles.length > 0)
+        || (typeof notePostVideoFile !== 'undefined' && !!notePostVideoFile)
+        || (typeof selectedNotePostGif !== 'undefined' && !!selectedNotePostGif);
+      const taVal = (document.getElementById('note-content-fullscreen')?.value || '').trim();
+      if (hasMedia && taVal && typeof showMiniToast === 'function') {
+        showMiniToast(appT('El borrador guarda solo el texto: las fotos y el video no se incluyen.'));
+      }
+    } catch (_) {}
     saveCurrentNoteDraft(false);
     const panel = document.getElementById('note-creation-fullscreen');
     panel.classList.remove('active');
@@ -20361,6 +20408,20 @@ else { try { drexSnapInit(); } catch (_) {} }
     });
   }
 
+  // C282: seguir/dejar de seguir desde el PERFIL o la hoja de acciones
+  // debe refrescar también los botones rápidos (+/✓) de las tarjetas:
+  // su caché de sesión solo la escribía la propia superficie rápida y
+  // un "dejé de seguir" dejaba botones ✓ muertos que ya no seguían.
+  function _syncQuickFollowButtonsAfterProfileToggle(targetUserId, state) {
+    try {
+      if (!targetUserId) return;
+      _quickFollowStateCache.set(targetUserId, state);
+      document.querySelectorAll('.quick-follow-btn').forEach(function (b) {
+        if (b.dataset && b.dataset.followUserId === targetUserId) updateQuickFollowButtonState(b, state, false);
+      });
+    } catch (_) {}
+  }
+
   function updateQuickFollowButtonState(button, state, animate = true) {
     if (!button) return;
     // state: true/'following', false/'none', o 'requested'
@@ -22584,14 +22645,21 @@ else { try { drexSnapInit(); } catch (_) {} }
   const _privacyAccountCache = new Map();
   // Cache de "sigo a este usuario y ya fue aprobado" (para cuentas privadas).
   const _followApprovedCache = new Map();
+  // C282: las entradas caducan a los 60 s. Antes una respuesta negativa
+  // quedaba pegada toda la sesión: tras ser ACEPTADO por una cuenta
+  // privada, su dueño seguía viéndote como extraño (perfil "privado",
+  // posts filtrados) hasta reiniciar la app, y pasar la cuenta a
+  // pública tardaba igual en reflejarse.
+  var _PRIV_CACHE_TTL_MS = 60 * 1000;
 
   async function isAccountPrivate(uid) {
     if (!uid) return false;
-    if (_privacyAccountCache.has(uid)) return _privacyAccountCache.get(uid);
+    var hit = _privacyAccountCache.get(uid);
+    if (hit && (Date.now() - hit.ts) < _PRIV_CACHE_TTL_MS) return hit.v;
     try {
       const snap = await DrexCloud.database().ref('users/' + uid + '/isPrivate').once('value');
       const val = Boolean(snap.val());
-      _privacyAccountCache.set(uid, val);
+      _privacyAccountCache.set(uid, { v: val, ts: Date.now() });
       return val;
     } catch (e) {
       return false;
@@ -22604,11 +22672,12 @@ else { try { drexSnapInit(); } catch (_) {} }
     if (!currentUserId) return false;
     if (currentUserId === authorId) return true;
     const cacheKey = currentUserId + ':' + authorId;
-    if (_followApprovedCache.has(cacheKey)) return _followApprovedCache.get(cacheKey);
+    var hitF = _followApprovedCache.get(cacheKey);
+    if (hitF && (Date.now() - hitF.ts) < _PRIV_CACHE_TTL_MS) return hitF.v;
     try {
       const snap = await DrexCloud.database().ref('following/' + currentUserId + '/' + authorId).once('value');
       const val = snap.exists();
-      _followApprovedCache.set(cacheKey, val);
+      _followApprovedCache.set(cacheKey, { v: val, ts: Date.now() });
       return val;
     } catch (e) {
       return false;
@@ -23493,12 +23562,19 @@ else { try { drexSnapInit(); } catch (_) {} }
 
     const currentUser = DrexCloud.auth().currentUser;
     if (currentUser) {
-      DrexCloud.database().ref('followers/' + currentPostOptionsAuthorId + '/' + currentUser.uid).once('value').then(snap => {
+      // C282: la etiqueta también mira la solicitud pendiente. Antes
+      // decía "Seguir" con la solicitud viva y el toque la CANCELABA:
+      // la etiqueta prometía lo contrario de lo que hacía.
+      Promise.all([
+        DrexCloud.database().ref('followers/' + currentPostOptionsAuthorId + '/' + currentUser.uid).once('value'),
+        DrexCloud.database().ref('followRequests/' + currentPostOptionsAuthorId + '/' + currentUser.uid).once('value')
+      ]).then(([snap, reqSnap]) => {
         const isFollowing = snap.exists();
+        const isRequested = !isFollowing && reqSnap.exists();
         const followLabel = document.getElementById('user-actions-follow-label');
         const followIcon = document.getElementById('user-actions-follow-icon');
-        if (followLabel) followLabel.textContent = isFollowing ? 'Dejar de seguir' : 'Seguir';
-        if (followIcon) { followIcon.className = isFollowing ? 'fas fa-user-minus text-[#1c2b4a]' : 'fas fa-user-plus text-[#1c2b4a]'; }
+        if (followLabel) followLabel.textContent = isFollowing ? 'Dejar de seguir' : (isRequested ? 'Cancelar solicitud' : 'Seguir');
+        if (followIcon) { followIcon.className = isFollowing ? 'fas fa-user-minus text-[#1c2b4a]' : (isRequested ? 'fas fa-user-clock text-[#1c2b4a]' : 'fas fa-user-plus text-[#1c2b4a]'); }
       }).catch(() => {});
     }
 
@@ -23548,6 +23624,7 @@ else { try { drexSnapInit(); } catch (_) {} }
           DrexCloud.database().ref('users/' + targetId + '/followersCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
           DrexCloud.database().ref('users/' + user.uid + '/followingCount').transactionBlind(c => Math.max(0, (c || 1) - 1));
           _invalidatePrivacyCaches(targetId);
+          if (typeof _syncQuickFollowButtonsAfterProfileToggle === 'function') _syncQuickFollowButtonsAfterProfileToggle(targetId, 'none');
           _uafDone();
           showMiniToast(appT('Dejaste de seguir a @') + (currentPostOptionsAuthorData?.username || 'usuario'));
           closeUserActionsSheet();
@@ -23557,6 +23634,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       DrexCloud.database().ref('followRequests/' + targetId + '/' + user.uid).once('value').then(reqSnap => {
         if (reqSnap.exists()) {
           DrexCloud.database().ref('followRequests/' + targetId + '/' + user.uid).remove().then(() => {
+            if (typeof _syncQuickFollowButtonsAfterProfileToggle === 'function') _syncQuickFollowButtonsAfterProfileToggle(targetId, 'none');
             _uafDone();
             showMiniToast(appT('Solicitud cancelada'));
             closeUserActionsSheet();
@@ -23569,11 +23647,13 @@ else { try { drexSnapInit(); } catch (_) {} }
         _uafDone();
         requestOrFollowUser(targetId, {
           onFollowed: () => {
+            if (typeof _syncQuickFollowButtonsAfterProfileToggle === 'function') _syncQuickFollowButtonsAfterProfileToggle(targetId, 'following');
             _uafDone();
             showMiniToast(appT('Ahora sigues a @') + (currentPostOptionsAuthorData?.username || 'usuario'));
             closeUserActionsSheet();
           },
           onRequested: () => {
+            if (typeof _syncQuickFollowButtonsAfterProfileToggle === 'function') _syncQuickFollowButtonsAfterProfileToggle(targetId, 'requested');
             _uafDone();
             showMiniToast(appT('Solicitud enviada a @') + (currentPostOptionsAuthorData?.username || 'usuario'));
             closeUserActionsSheet();
@@ -26044,7 +26124,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       });
     }
 
-    DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
+    DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(async snapshot => {
       if (noteId !== currentPostId) return; // Carrera A→B: ya se abrió otro post.
       // A16: no abrir ni comentar un post que ya no existe.
       if (!snapshot.exists()) {
@@ -26063,6 +26143,19 @@ else { try { drexSnapInit(); } catch (_) {} }
         closeCommentsView();
         return;
       }
+      // C282: shouldHideNoteForCurrentUser no mira la privacidad de la
+      // CUENTA del autor: la vista de comentarios era otra puerta de
+      // atrás para leer completo un post de cuenta privada.
+      try {
+        const _cvAuthor = note.authorId || note.userId || '';
+        if (_cvAuthor && !(user && user.uid === _cvAuthor)
+            && typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function'
+            && await isAccountPrivate(_cvAuthor) && !(await canCurrentUserViewPrivateAccount(_cvAuthor))) {
+          showMiniToast(appT('Esta cuenta es privada.'));
+          closeCommentsView();
+          return;
+        }
+      } catch (_) {}
       currentPostStoredCommentsCount = (note.commentsCount === undefined || note.commentsCount === null) ? null : Number(note.commentsCount) || 0;
       const upvotes = note.upvotes || 0;
       const downvotes = note.downvotes || 0;
@@ -29471,7 +29564,10 @@ else { try { drexSnapInit(); } catch (_) {} }
       } else {
         const now = Date.now();
         const cached = _notifPrefCache[userId];
-        if (cached && now - cached.ts < 5 * 60 * 1000) {
+        // C282: la caché de preferencias de otros usuarios baja de 5 min a
+        // 60 s: apagar una categoría se refleja en menos de un minuto
+        // también cuando interactúa otra persona desde su teléfono.
+        if (cached && now - cached.ts < 60 * 1000) {
           prefs = cached.prefs;
         } else {
           const snap = await DrexCloud.database().ref('userSettings/' + userId + '/notifications').once('value');
@@ -29519,12 +29615,34 @@ else { try { drexSnapInit(); } catch (_) {} }
   }
 
 
+  // C282: silenciar una conversación también detiene sus avisos (antes
+  // solo apagaba el sonido y la fila seguía llegando a Actividad). Se
+  // consulta el silencio del destinatario, con caché breve por destino.
+  const _notifMuteCache = {};
+  async function isChatMutedForNotify(userId, meta) {
+    try {
+      if (!meta || meta.actionType !== 'chat' || !meta.actionId) return false;
+      const kind = meta.isGroupChat ? 'groupMutes' : 'chatMutes';
+      const cacheKey = kind + '/' + userId + '/' + meta.actionId;
+      const now = Date.now();
+      const cached = _notifMuteCache[cacheKey];
+      if (cached && now - cached.ts < 60000) return cached.muted;
+      const snap = await DrexCloud.database().ref(kind + '/' + userId + '/' + meta.actionId).once('value');
+      const entry = snap.val();
+      const until = entry ? Number(entry.muteUntil || 0) : 0;
+      const muted = !!(entry && (until === -1 || until > now));
+      _notifMuteCache[cacheKey] = { muted: muted, ts: now };
+      return muted;
+    } catch (_) { return false; }
+  }
+
   async function addNotification(userId, message, type = 'info', meta = {}) {
     // C201: userId forjado (authorId del payload del servidor) llegaba crudo
     // como segmento de ruta en 'notifications/<userId>' y 'notifUnread/<userId>'
     // (inyección estructural; PoC B1–B3 vía maybeAnnouncePollClose/addNotification).
     if (!isValidChatUid(userId)) return;
     if (await shouldSkipNotificationFor(userId, type, meta)) return;
+    if (type === 'message' && await isChatMutedForNotify(userId, meta)) return;
     const notificationsRef = DrexCloud.database().ref('notifications/' + userId);
     const newNotificationRef = notificationsRef.push();
     const notificationData = {
@@ -30046,12 +30164,16 @@ else { try { drexSnapInit(); } catch (_) {} }
     // Limpieza de notificaciones antiguas (más de 30 días) para no acumular datos indefinidamente,
     // sin arriesgarnos a borrar notificaciones antes de que el usuario las vea.
     // Se mantiene: es UNA sola query al instalar el listener, no el hot path del badge.
+    // C282: solo se borran las YA LEÍDAS. Antes caían también las no
+    // leídas de quien volvía tras un mes, y el contador seguía sumándolas
+    // (insignia fantasma) hasta abrir Actividad.
     const NOTIF_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
     DrexCloud.database().ref('notifications/' + userId)
       .orderByChild('timestamp').endAt(Date.now() - NOTIF_MAX_AGE_MS).once('value').then(snap => {
         if (!snap.exists()) return;
         snap.forEach(child => {
-          child.ref.remove().catch(() => {});
+          const v = child.val();
+          if (v && v.read === true) child.ref.remove().catch(() => {});
         });
       }).catch(() => {});
   }
@@ -30482,6 +30604,9 @@ else { try { drexSnapInit(); } catch (_) {} }
   function renderNotificationsList(userId, itemsOverride) {
     const notificationsList = document.getElementById('notifications-list');
     if (!notificationsList) return;
+    // C282: con Actividad abierto, cada aviso nuevo re-pinta la lista;
+    // se conserva el desplazamiento para no perder el punto de lectura.
+    const _prevScrollTop = notificationsList.scrollTop || 0;
 
     // C256: itemsOverride = la fusión recién traída del servidor (memoria).
     // Sin override se lee el caché local, como siempre.
@@ -30657,6 +30782,8 @@ else { try { drexSnapInit(); } catch (_) {} }
     });
 
     notificationsList.appendChild(frag);
+    // C282: restaura el desplazamiento previo al re-pintado en vivo.
+    if (_prevScrollTop) { try { notificationsList.scrollTop = _prevScrollTop; } catch (_) {} }
   }
 
   function handleNotificationNavigation(notification) {
@@ -44369,7 +44496,21 @@ function renderAccountsList(accounts) {
     }
   }
 
-  function openAuthorProfile(authorId, origin = 'main') {
+  async function openAuthorProfile(authorId, origin = 'main') {
+    const _cu0 = DrexCloud.auth().currentUser;
+    // C282: si el dueño me bloqueó a MÍ, su perfil no se abre. Antes
+    // solo se miraban los bloqueos que yo hice: el bloqueado entraba,
+    // veía el perfil y encima quedaba registrado como visitante.
+    if (_cu0 && authorId && authorId !== _cu0.uid) {
+      try {
+        const _blk = await DrexCloud.database().ref('blocks/' + authorId + '/' + _cu0.uid).once('value');
+        if (_blk.exists()) { showMiniToast(appT('Este usuario no está disponible.')); return; }
+      } catch (_) {}
+    }
+    _openAuthorProfileImpl(authorId, origin);
+  }
+
+  function _openAuthorProfileImpl(authorId, origin = 'main') {
     const currentUser = DrexCloud.auth().currentUser;
     if (!authorId) return;
     // Si intentan abrir su propio perfil desde tarjetas/autores,
@@ -44701,6 +44842,7 @@ function renderAccountsList(accounts) {
           const countEl = document.getElementById('author-followers');
           if (countEl && tRes && tRes.committed) countEl.textContent = formatNumber(tRes.snapshot.val() || 0);
           _invalidatePrivacyCaches(currentViewedAuthorId);
+          if (typeof _syncQuickFollowButtonsAfterProfileToggle === 'function') _syncQuickFollowButtonsAfterProfileToggle(currentViewedAuthorId, 'none');
           updateFollowIcon();
         }).catch(() => showMiniToast(appT('No se pudo dejar de seguir. Intenta de nuevo.')));
         return;
@@ -44708,12 +44850,14 @@ function renderAccountsList(accounts) {
       DrexCloud.database().ref('followRequests/' + currentViewedAuthorId + '/' + currentUser.uid).once('value').then(reqSnap => {
         if (reqSnap.exists()) {
           DrexCloud.database().ref('followRequests/' + currentViewedAuthorId + '/' + currentUser.uid).remove().then(() => {
+            if (typeof _syncQuickFollowButtonsAfterProfileToggle === 'function') _syncQuickFollowButtonsAfterProfileToggle(currentViewedAuthorId, 'none');
             updateFollowIcon();
           }).catch(() => showMiniToast(appT('No se pudo cancelar la solicitud.')));
           return;
         }
         requestOrFollowUser(currentViewedAuthorId, {
           onFollowed: () => {
+            if (typeof _syncQuickFollowButtonsAfterProfileToggle === 'function') _syncQuickFollowButtonsAfterProfileToggle(currentViewedAuthorId, 'following');
             // Refrescar el conteo visible con lectura única (sin listener).
             authorFollowersRef.once('value').then(cSnap => {
               const countEl = document.getElementById('author-followers');
@@ -44721,7 +44865,7 @@ function renderAccountsList(accounts) {
             }).catch(() => {});
             updateFollowIcon();
           },
-          onRequested: () => updateFollowIcon(),
+          onRequested: () => { if (typeof _syncQuickFollowButtonsAfterProfileToggle === 'function') _syncQuickFollowButtonsAfterProfileToggle(currentViewedAuthorId, 'requested'); updateFollowIcon(); },
           onAlready: () => updateFollowIcon(),
           onError: () => showMiniToast(appT('No se pudo seguir. Intenta de nuevo.'))
         });
@@ -44771,13 +44915,32 @@ function renderAccountsList(accounts) {
   const FOLLOWERS_PAGE_SIZE = 50;
   let _followersPaging = null; // { lastKey, done, loading }
 
-  function openFollowersModal(uid) {
+  // C282: las listas de seguidos/seguidores de una cuenta privada solo
+  // se abren si el visor puede ver esa cuenta (antes no había puerta:
+  // cualquiera hojeaba a quién sigue una cuenta privada).
+  async function _drexRelationListPrivateBlocked(targetId) {
+    try {
+      const me = DrexCloud.auth().currentUser;
+      if (!targetId || (me && me.uid === targetId)) return false;
+      if (typeof isAccountPrivate !== 'function' || typeof canCurrentUserViewPrivateAccount !== 'function') return false;
+      return await isAccountPrivate(targetId) && !(await canCurrentUserViewPrivateAccount(targetId));
+    } catch (_) { return false; }
+  }
+  var _DREX_PRIVATE_LIST_HTML = '<div class="py-8 text-center"><p class="text-sm font-bold text-[var(--theme-text)]">' + 'Esta cuenta es privada' + '</p><p class="text-xs text-[var(--theme-muted)] mt-1 px-6">Sigue a esta persona para ver su actividad.</p></div>';
+
+  async function openFollowersModal(uid) {
     const targetId = uid || currentViewedAuthorId;
     if (!targetId) return;
     _followersModalTarget = targetId; // C53-P1
     _followersPaging = { lastKey: null, done: false, loading: false }; // C53-P2
     const followersListDiv = document.getElementById('followers-list');
     followersListDiv.innerHTML = `<div class="py-6 text-center">${getSpinnerMarkup()}</div>`;
+    if (await _drexRelationListPrivateBlocked(targetId)) {
+      if (_followersModalTarget !== targetId) return;
+      followersListDiv.innerHTML = _DREX_PRIVATE_LIST_HTML;
+      document.getElementById('followers-modal').classList.remove('hidden');
+      return;
+    }
     _loadFollowersPage();
     document.getElementById('followers-modal').classList.remove('hidden');
   }
@@ -44849,13 +45012,19 @@ function renderAccountsList(accounts) {
   const FOLLOWING_PAGE_SIZE = 50;
   let _followingPaging = null; // { lastKey, done, loading }
 
-  function openFollowingModal(uid) {
+  async function openFollowingModal(uid) {
     const targetId = uid || currentViewedAuthorId;
     if (!targetId) return;
     _followingModalTarget = targetId; // C53-P1
     _followingPaging = { lastKey: null, done: false, loading: false }; // C53-P2
     const followingListDiv = document.getElementById('following-list');
     followingListDiv.innerHTML = `<div class="py-6 text-center">${getSpinnerMarkup()}</div>`;
+    if (await _drexRelationListPrivateBlocked(targetId)) {
+      if (_followingModalTarget !== targetId) return;
+      followingListDiv.innerHTML = _DREX_PRIVATE_LIST_HTML;
+      document.getElementById('following-modal').classList.remove('hidden');
+      return;
+    }
     _loadFollowingPage();
     document.getElementById('following-modal').classList.remove('hidden');
   }
@@ -49699,7 +49868,7 @@ function openPostPermalink(noteId, options = {}) {
     drexPushDynamicRoute('post/' + noteId, 'post-permalink-view');
   }
 
-  DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(snapshot => {
+  DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(async snapshot => {
     // El usuario pudo navegar a otro lado mientras cargaba
     if (_currentPermalinkNoteId !== noteId) return;
     const note = snapshot.val();
@@ -49718,6 +49887,18 @@ function openPostPermalink(noteId, options = {}) {
     if (typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(authorId)) {
       _renderPostPermalinkMessage('Esta publicación no está disponible.');
       return;
+    }
+    // C282: el enlace directo tampoco salta la privacidad de la CUENTA:
+    // un post de una cuenta privada solo lo abre su dueño o un seguidor
+    // aprobado (el feed, Buscar y el perfil ya lo exigían).
+    if (authorId && !(user && user.uid === authorId)
+        && typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function') {
+      try {
+        if (await isAccountPrivate(authorId) && !(await canCurrentUserViewPrivateAccount(authorId))) {
+          _renderPostPermalinkMessage('Esta cuenta es privada. Sigue a esta persona para ver sus publicaciones.');
+          return;
+        }
+      } catch (_) {}
     }
     _renderPostPermalinkCard(Object.assign({}, note, { id: noteId }));
   }).catch(error => {
@@ -52123,7 +52304,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-08T00:03:10Z';
+window.DREX_BUILD = '2026-10-08T00:47:13Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -54914,7 +55095,9 @@ window.publishMusic = async function () {
           if (!fid || fid === uid) return;
           if (typeof addNotification === 'function') {
             jobs.push(addNotification(fid, `${artistName} subió una nueva canción: ${title}`, 'music',
-              _annId ? { actionType: 'post', actionId: _annId } : {}).catch(() => {}));
+              // C282: si el anuncio del feed no se pudo escribir, la fila
+              // lleva al perfil del artista en vez de nacer sin destino.
+              _annId ? { actionType: 'post', actionId: _annId } : { actionType: 'profile', actionId: uid }).catch(() => {}));
           }
         });
         return Promise.all(jobs);
@@ -86395,6 +86578,15 @@ async function drexRecordProfileVisit(ownerUid) {
        visitantes de alguien si TÚ activaste las vistas de perfil en
        Ajustes › Privacidad. Sin activación no se escribe nada. */
     if (!(await drexProfileViewsEnabled())) return;
+    /* C282: si hay bloqueo en cualquier dirección, la visita no se
+       registra (el bloqueado no debe aparecer en "Quién vio tu perfil"). */
+    try {
+      var _blkPair = await Promise.all([
+        DrexCloud.database().ref('blocks/' + me.uid + '/' + ownerUid).once('value'),
+        DrexCloud.database().ref('blocks/' + ownerUid + '/' + me.uid).once('value')
+      ]);
+      if ((_blkPair[0] && _blkPair[0].exists()) || (_blkPair[1] && _blkPair[1].exists())) return;
+    } catch (_) {}
     var pings = window._orbitVisitPings || (window._orbitVisitPings = {});
     var now = Date.now();
     if (pings[ownerUid] && (now - pings[ownerUid]) < 30 * 60 * 1000) return;
@@ -86588,6 +86780,12 @@ async function openOrbitVisitors() {
   try {
     var snap = await DrexCloud.database().ref('users/' + me.uid + '/profileVisitors').once('value');
     var map = (snap && snap.val()) || {};
+    /* C282: los visitantes que bloqueé después ya no aparecen. */
+    try {
+      var _myBlocks = await DrexCloud.database().ref('blocks/' + me.uid).once('value');
+      var _bm = (_myBlocks && _myBlocks.val()) || {};
+      Object.keys(_bm).forEach(function (k) { delete map[k]; });
+    } catch (_) {}
     var entries = Object.keys(map).map(function (uid) { return { uid: uid, ts: Number(map[uid]) || 0 }; })
       .filter(function (e) { return e.uid && e.uid !== me.uid && e.ts > 0; })
       .sort(function (a, b) { return b.ts - a.ts; }).slice(0, 30);
