@@ -3489,7 +3489,11 @@ function withCredRetry(opFn) {
       cognitoUser.changePassword(String(oldPassword), String(newPassword), function (err) {
         if (err) {
           var mapped = mapAuthError(err);
-          if (err.code === 'NotAuthorizedException') mapped.code = 'auth/requires-recent-login';
+          // C286: en changePassword, NotAuthorizedException significa
+          // "contraseña actual incorrecta", no sesión vieja: antes el
+          // usuario leía "vuelve a iniciar sesión" por un simple error
+          // al escribir su contraseña actual.
+          if (err.code === 'NotAuthorizedException') mapped.code = 'auth/wrong-password';
           reject(mapped);
         } else resolve();
       });

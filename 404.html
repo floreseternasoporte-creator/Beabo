@@ -13065,7 +13065,8 @@ function saveNote() {
     const rawUsername = (document.getElementById('profile-username')?.textContent || '').trim();
     const handle = rawUsername.replace(/^@/, '');
     if (!handle) { showMiniToast(appT('Aún no se pudo cargar tu perfil. Inténtalo de nuevo en un momento.')); return; }
-    const profileUrl = window.location.origin + window.location.pathname + '?user=' + encodeURIComponent(handle);
+    // C286: la raíz de la app, no la ruta donde estoy parado.
+    const profileUrl = window.location.origin + (typeof drexBasePath === 'function' ? drexBasePath() : '') + '/?user=' + encodeURIComponent(handle);
     const text = `Sígueme en Drex: @${handle}`;
 
     if (navigator.share) {
@@ -24578,11 +24579,22 @@ else { try { drexSnapInit(); } catch (_) {} }
     }
 
     listEl.innerHTML = '';
-    for (const noteId of savedIds.slice(0, 30)) {
-      DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(snap => {
-        if (gen !== _savedFolderGen) return; // C235: carpeta cambiada en vuelo
-        const note = snap.val();
-        if (note) {
+    // C286: la carpeta también respeta la visibilidad actual (antes
+    // mostraba el texto de posts ya privados o desactivados).
+    const _folderIds = savedIds.slice(0, 30);
+    const _folderPairs = await Promise.all(_folderIds.map(noteId =>
+      DrexCloud.database().ref('communityNotes/' + noteId).once('value')
+        .then(snap => ({ id: noteId, post: snap.val() || null }))
+        .catch(() => ({ id: noteId, post: null }))
+    ));
+    if (gen !== _savedFolderGen) return;
+    const _folderHidden = await _drexHistoryHiddenIds(_folderPairs);
+    if (gen !== _savedFolderGen) return;
+    for (const _fp of _folderPairs) {
+      const noteId = _fp.id;
+      const note = _fp.post;
+      {
+        if (note && !_folderHidden.has(noteId)) {
           const card = document.createElement('div');
           card.id = 'saved-post-card-' + noteId;
           card.className = 'bg-white border-b border-[#dce1e5] px-5 py-4';
@@ -24607,12 +24619,12 @@ else { try { drexSnapInit(); } catch (_) {} }
           </div>`;
           listEl.appendChild(card);
           try { hydrateIdentitySlots(card); } catch (_) {}
-        } else if (gen === _savedFolderGen) { // C235: no limpiar si ya cambiamos de carpeta
+        } else if (!note) {
           const ref = _getSavedPostsRef();
           if (ref) ref.child(noteId).remove();
           delete _userSavedPosts[noteId];
         }
-      }).catch(() => {});
+      }
     }
   }
 
@@ -26305,12 +26317,20 @@ else { try { drexSnapInit(); } catch (_) {} }
       // atrás para leer completo un post de cuenta privada.
       try {
         const _cvAuthor = note.authorId || note.userId || '';
-        if (_cvAuthor && !(user && user.uid === _cvAuthor)
-            && typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function'
-            && await isAccountPrivate(_cvAuthor) && !(await canCurrentUserViewPrivateAccount(_cvAuthor))) {
-          showMiniToast(appT('Esta cuenta es privada.'));
-          closeCommentsView();
-          return;
+        if (_cvAuthor && !(user && user.uid === _cvAuthor)) {
+          // C286: bloqueo inverso (el autor me bloqueó) también cierra.
+          const _cvRb = await DrexCloud.database().ref('blocks/' + _cvAuthor + '/' + (user ? user.uid : '')).once('value').catch(() => null);
+          if (_cvRb && _cvRb.val()) {
+            showMiniToast(appT('Esta publicación no está disponible.'));
+            closeCommentsView();
+            return;
+          }
+          if (typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function'
+              && await isAccountPrivate(_cvAuthor) && !(await canCurrentUserViewPrivateAccount(_cvAuthor))) {
+            showMiniToast(appT('Esta cuenta es privada.'));
+            closeCommentsView();
+            return;
+          }
         }
       } catch (_) {}
       currentPostStoredCommentsCount = (note.commentsCount === undefined || note.commentsCount === null) ? null : Number(note.commentsCount) || 0;
@@ -32847,7 +32867,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         // la sesión, así que si ya se pasó en este inicio (window.__drexMfaPassed)
         // no se vuelve a pedir. Este camino solo queda para cuentas con la
         // bandera antigua twoFactorEnabled cuyo secreto aún vive en la base.
-        if (data && data.twoFactorEnabled && !window.__drexMfaPassed &&
+        // C286: la puerta legacy solo aplica si la cuenta TIENE secreto
+        // legacy. Antes, quien activó el MFA NATIVO (bandera sin secreto)
+        // quedaba atrapado en cada restauración de sesión ante un código
+        // imposible: cancelar y re-entrar era la única salida.
+        if (data && data.twoFactorEnabled && data.twoFactorSecret && !window.__drexMfaPassed &&
             sessionStorage.getItem('drex2faVerified_' + user.uid) !== 'true') {
           if (typeof showLegacy2FAChallenge === 'function') showLegacy2FAChallenge();
           return;
@@ -32994,6 +33018,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       clearAccountScopedState(); // C14: sin fugas entre cuentas (fiesta, música, cachés, timers)
       // C285: la suscripción del feed también se apaga al salir.
       try { if (typeof window.__drexFeedKillForLogout === 'function') window.__drexFeedKillForLogout(); } catch (_) {}
+      // C286: sin sesión, ninguna vista de ruta profunda (post/perfil/
+      // grupo abierto por enlace frío) puede quedar sobre el login.
+      try { if (typeof drexCloseAllRoutes === 'function') drexCloseAllRoutes(); } catch (_) {}
       // FIX: el motor de recomendaciones no debe conservar ni persistir el
       // perfil de la cuenta que cerró sesión (evita contaminar la próxima
       // cuenta con gustos ajenos si una lectura quedó en vuelo).
@@ -37282,7 +37309,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     if (!username) return null;
     return {
       username: username,
-      url: window.location.origin + window.location.pathname + '?user=' + encodeURIComponent(username)
+      // C286: la raíz de la app, no la ruta donde estoy parado.
+      url: window.location.origin + (typeof drexBasePath === 'function' ? drexBasePath() : '') + '/?user=' + encodeURIComponent(username)
     };
   }
 
@@ -38051,6 +38079,43 @@ let chatTypingListener = null;
     return div;
   }
 
+  // C286: las listas del Historial y de Guardados aplican la misma
+  // visibilidad que el feed: nada de vistas previas de posts que ya no
+  // puedes ver (privados sin acceso, de grupo, desactivados por
+  // moderación, de autores bloqueados en cualquier dirección).
+  async function _drexHistoryHiddenIds(pairs) {
+    const hidden = new Set();
+    try {
+      const me = (DrexCloud.auth().currentUser || {}).uid || '';
+      const authors = {};
+      (pairs || []).forEach(function (p) {
+        const post = p && p.post;
+        if (!post) { if (p) hidden.add(p.id); return; }
+        const aid = post.authorId || post.userId || '';
+        if (post.groupId) { hidden.add(p.id); return; }
+        if (typeof shouldHideNoteForCurrentUser === 'function' && shouldHideNoteForCurrentUser(p.id, post)) { hidden.add(p.id); return; }
+        if (aid && typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(aid)) { hidden.add(p.id); return; }
+        if (aid && aid !== me) authors[aid] = 1;
+      });
+      const aids = Object.keys(authors);
+      if (aids.length && typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function') {
+        const bad = {};
+        await Promise.all(aids.map(async aid => {
+          try {
+            const rb = await DrexCloud.database().ref('blocks/' + aid + '/' + me).once('value').catch(() => null);
+            if (rb && rb.val()) { bad[aid] = 1; return; }
+            if (await isAccountPrivate(aid) && !(await canCurrentUserViewPrivateAccount(aid))) bad[aid] = 1;
+          } catch (_) {}
+        }));
+        (pairs || []).forEach(function (p) {
+          const aid = p && p.post && (p.post.authorId || p.post.userId || '');
+          if (aid && bad[aid]) hidden.add(p.id);
+        });
+      }
+    } catch (_) {}
+    return hidden;
+  }
+
   function loadHistorialSaved() {
     const user = DrexCloud.auth().currentUser;
     const panel = document.getElementById('historial-panel-saved');
@@ -38058,19 +38123,22 @@ let chatTypingListener = null;
     panel.innerHTML = '<div class="py-10 text-center text-sm text-[#6b7280]">Cargando guardados...</div>';
     DrexCloud.database().ref('savedPosts/' + user.uid).once('value').then(snap => {
       const data = snap.val() || {};
-      const ids = Object.keys(data).filter(v => data[v]).reverse();
+      // C286: por fecha de guardado (savedAt), no por clave del post.
+      const ids = Object.keys(data).filter(v => data[v])
+        .sort((a, b) => Number((data[b] && data[b].savedAt) || 0) - Number((data[a] && data[a].savedAt) || 0));
       if (!ids.length) {
         panel.innerHTML = '<div class="py-16 text-center"><div class="w-12 h-12 bg-[#eef2f7] rounded-full flex items-center justify-center mx-auto mb-3"><svg class="w-6 h-6 text-[#8fa2c7]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6-3.8L6.5 21V4.5a1 1 0 0 1 1-1z"/></svg></div><p class="text-sm text-[#6b7280]">No tienes posts guardados aún</p></div>';
         return;
       }
       panel.innerHTML = '';
-      Promise.all(ids.map(id => DrexCloud.database().ref('communityNotes/' + id).once('value'))).then(snaps => {
+      Promise.all(ids.map(id => DrexCloud.database().ref('communityNotes/' + id).once('value'))).then(async snaps => {
+        const pairs = snaps.map(s => ({ id: s.key, post: s.val() }));
+        const hidden = await _drexHistoryHiddenIds(pairs);
         let count = 0;
-        snaps.forEach(s => {
-          const post = s.val();
-          if (!post) return;
+        pairs.forEach(p => {
+          if (!p.post || hidden.has(p.id)) return;
           count++;
-          panel.appendChild(_buildHistorialCard(s.key, post, () => { closeHistorialView(); openPostPermalink(s.key); }));
+          panel.appendChild(_buildHistorialCard(p.id, p.post, () => { closeHistorialView(); openPostPermalink(p.id); }));
         });
         if (!count) panel.innerHTML = '<div class="py-16 text-center text-sm text-[#6b7280]">No tienes posts guardados aún.</div>';
       });
@@ -38307,13 +38375,15 @@ let chatTypingListener = null;
         _c154RenderMusicVotes();
         return;
       }
-      Promise.all(ids.slice(0, 50).map(id => DrexCloud.database().ref('communityNotes/' + id).once('value'))).then(snaps => {
+      Promise.all(ids.slice(0, 50).map(id => DrexCloud.database().ref('communityNotes/' + id).once('value'))).then(async snaps => {
+        // C286: misma visibilidad que el feed también en Mis votos.
+        const pairs = snaps.map(s => ({ id: s.key, post: s.val() }));
+        const hidden = await _drexHistoryHiddenIds(pairs);
         let count = 0;
-        snaps.forEach(s => {
-          const post = s.val();
-          if (!post) return;
+        pairs.forEach(p => {
+          if (!p.post || hidden.has(p.id)) return;
           count++;
-          panel.appendChild(_buildHistorialCard(s.key, post, () => { closeHistorialView(); openPostPermalink(s.key); }));
+          panel.appendChild(_buildHistorialCard(p.id, p.post, () => { closeHistorialView(); openPostPermalink(p.id); }));
         });
         if (!count && !cVotes.length && !mVotes.length) {
           panel.innerHTML = '<div class="py-16 text-center text-sm text-[#6b7280]">Aún no has votado ninguna publicación.</div>';
@@ -38348,9 +38418,11 @@ let chatTypingListener = null;
         return;
       }
       panel.innerHTML = '';
-      Promise.all(ecos.map(item => DrexCloud.database().ref('communityNotes/' + item.noteId).once('value').then(s => ({ item, post: s.val() || null })))).then(items => {
+      Promise.all(ecos.map(item => DrexCloud.database().ref('communityNotes/' + item.noteId).once('value').then(s => ({ item, post: s.val() || null })))).then(async items => {
+        // C286: misma visibilidad que el feed también en Mis ecos.
+        const hidden = await _drexHistoryHiddenIds(items.map(({ item, post }) => ({ id: item.noteId, post })));
         items.forEach(({ item, post }) => {
-          if (!post) return;
+          if (!post || hidden.has(item.noteId)) return;
           // C150: eco de un post de solo-encuesta (C145): sin texto la
           // tarjeta decía "Publicación sin texto". Se muestran las opciones
           // como avance (mismo helper que _buildHistorialCard).
@@ -38389,7 +38461,17 @@ let chatTypingListener = null;
         return;
       }
       panel.innerHTML = '';
-      rows.forEach(item => {
+      // C286: un comentario cuyo post ya no existe (o ya no puedes ver)
+      // ya no muestra ni su miniatura en el Historial.
+      const _noteIds = [...new Set(rows.map(r => r.noteId).filter(Boolean))];
+      Promise.all(_noteIds.map(id => DrexCloud.database().ref('communityNotes/' + id).once('value').then(s => ({ id, post: s.val() || null })).catch(() => ({ id, post: null })))).then(async postPairs => {
+        const hidden = await _drexHistoryHiddenIds(postPairs);
+        const visibleRows = rows.filter(r => r.noteId && !hidden.has(r.noteId));
+        if (!visibleRows.length) {
+          panel.innerHTML = '<div class="py-16 text-center text-sm text-[#6b7280]">Aún no has comentado publicaciones.</div>';
+          return;
+        }
+        visibleRows.forEach(item => {
         const postLike = {
           image: item.postImage || '',
           imageCount: Number(item.postImageCount || 0),
@@ -38410,6 +38492,7 @@ let chatTypingListener = null;
         });
         panel.appendChild(card);
         _fillHistCommentMedia(card, item, myMedia);
+        });
       });
     }).catch(() => {
       panel.innerHTML = '<div class="py-10 text-center text-sm text-[#6b7280]">No se pudieron cargar tus comentarios.</div>';
@@ -43545,7 +43628,8 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   // Enlace de invitación
   function shareGroupInviteLink() {
     if (!currentChatRoomId) return;
-    const link = window.location.origin + window.location.pathname + '?joinGroup=' + currentChatRoomId;
+    // C286: la raíz de la app, no la ruta donde estoy parado.
+    const link = window.location.origin + (typeof drexBasePath === 'function' ? drexBasePath() : '') + '/?joinGroup=' + currentChatRoomId;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(link).then(() => {
         showMiniToast && showMiniToast(appT('Enlace copiado al portapapeles'));
@@ -48819,10 +48903,13 @@ function confirmTwoFactorSetup() {
   }).then(async () => {
     if (typeof recordSecurityEvent === 'function') await recordSecurityEvent(appT('Verificación en dos pasos activada'), appT('Se activó una app de autenticación.'));
     if (typeof showSecurityAlertIfEnabled === 'function') showSecurityAlertIfEnabled('securityChangeAlerts', appT('Se activó la verificación en dos pasos.'));
-    // Hook de códigos de respaldo (Ing. #2): si su módulo existe, genera y
-    // muestra los códigos; si no, éxito sin códigos (no se rompe el flujo).
-    if (window.DrexRecoveryCodes && typeof window.DrexRecoveryCodes.generate === 'function') {
-      return window.DrexRecoveryCodes.generate().then(
+    // Hook de códigos de respaldo (Ing. #2): genera, GUARDA los hashes y
+    // muestra los códigos una sola vez. (C286: antes se llamaba al
+    // generador puro con .then() —reventaba con TypeError, el éxito se
+    // pintaba como error y los códigos jamás se almacenaban.)
+    sessionStorage.setItem('drex2faVerified_' + user.uid, 'true');
+    if (window.DrexRecoveryCodes && typeof window.DrexRecoveryCodes.generateAndStore === 'function') {
+      return window.DrexRecoveryCodes.generateAndStore().then(
         codes => renderMfaSetupSuccess(codes),
         () => renderMfaSetupSuccess(null)
       );
@@ -48836,7 +48923,11 @@ function confirmTwoFactorSetup() {
     renderMfaSetupSuccess(null);
     return;
   }).catch(() => {
-    if (errBox) { errBox.textContent = 'No se pudo verificar el código. Inténtalo de nuevo.'; errBox.classList.remove('hidden'); }
+    // C286: cualquier error rehabilita el campo (antes la pantalla
+    // quedaba muerta y tocaba cancelar y empezar de cero).
+    input.disabled = false;
+    try { input.focus(); } catch (_) {}
+    if (errBox) { errBox.textContent = appT('No se pudo verificar el código. Inténtalo de nuevo.'); errBox.classList.remove('hidden'); }
   });
 }
 
@@ -50324,6 +50415,17 @@ function openPostPermalink(noteId, options = {}) {
       _renderPostPermalinkMessage('Esta publicación no está disponible.');
       return;
     }
+    // C286: el bloqueo inverso también cierra el enlace profundo
+    // (antes solo se miraban MIS bloqueos; el perfil ya lo aplicaba).
+    if (authorId && user && user.uid !== authorId) {
+      try {
+        const _rb = await DrexCloud.database().ref('blocks/' + authorId + '/' + user.uid).once('value');
+        if (_rb && _rb.val()) {
+          _renderPostPermalinkMessage('Esta publicación no está disponible.');
+          return;
+        }
+      } catch (_) {}
+    }
     // C282: el enlace directo tampoco salta la privacidad de la CUENTA:
     // un post de una cuenta privada solo lo abre su dueño o un seguidor
     // aprobado (el feed, Buscar y el perfil ya lo exigían).
@@ -50872,6 +50974,8 @@ function handleSubpageHash() {
     }
     // Ruta desconocida o raíz: cerrar todo lo ruteado.
     if (typeof drexCloseAllRoutes === 'function') drexCloseAllRoutes();
+    // C286: una ruta inventada ya no cae en silencio: avisa una vez.
+    if (r) { try { if (typeof showMiniToast === 'function') showMiniToast(appT('Esa página no existe en Drex.')); } catch (_) {} }
     return;
   }
   const name = location.hash.replace('#', '');
@@ -50891,6 +50995,9 @@ function handleSubpageHash() {
 }
 
 window.addEventListener('popstate', handleSubpageHash);
+// C286: tocar un enlace interno tipo "#/guardados" solo cambia el hash
+// (sin popstate): antes no abría nada.
+window.addEventListener('hashchange', handleSubpageHash);
 document.addEventListener('DOMContentLoaded', handleSubpageHash);
 document.addEventListener('DOMContentLoaded', () => {
   // Iniciar el observador de rutas cuando el DOM está listo y aplicar la
@@ -51062,6 +51169,9 @@ function drexRouteFromLocation() {
     if (h === 'sleep-mode') return 'dormir';                  // compatibilidad
     if (h.startsWith('post-')) return 'post/' + h.slice(5);   // enlace viejo
     if (DREX_LEGACY_HASH_ROUTES[h]) return DREX_LEGACY_HASH_ROUTES[h];
+    // C286: los enlaces internos con hash (#/guardados, #/ondas...) que
+    // Baro imprime también resuelven en dominios con rutas limpias.
+    try { if (/^[a-z0-9\/:_-]+$/i.test(h) && typeof drexMatchRoute === 'function' && drexMatchRoute(h)) return h; } catch (_) {}
     // En modo worker el hash ES la ruta ('musica', 'post/abc', ...).
     if (!drexPathRoutingSupported()) return h;
   }
@@ -51189,6 +51299,13 @@ function drexInitRouteObserver() {
     const joinGroup = q.get('joinGroup');
     if (joinGroup && /^[A-Za-z0-9_-]{4,64}$/.test(joinGroup)) {
       sessionStorage.setItem('drex_pending_join_group', joinGroup);
+      touched = true;
+    }
+    // C286: ?song= también se captura y se consume tras entrar (antes el
+    // arranque abría la canción sin esperar la sesión).
+    const sharedSong = q.get('song');
+    if (sharedSong && /^[A-Za-z0-9_-]{6,}$/.test(sharedSong)) {
+      sessionStorage.setItem('drex_pending_song', sharedSong);
       touched = true;
     }
     if (touched) {
@@ -51339,12 +51456,14 @@ async function joinGroupViaInviteLink(groupId) {
 }
 
 function consumePendingDeepLinks() {
-  let pendingUser = null, pendingGroup = null;
+  let pendingUser = null, pendingGroup = null, pendingSong = null;
   try {
     pendingUser = sessionStorage.getItem('drex_pending_open_user');
     pendingGroup = sessionStorage.getItem('drex_pending_join_group');
+    pendingSong = sessionStorage.getItem('drex_pending_song');
     sessionStorage.removeItem('drex_pending_open_user');
     sessionStorage.removeItem('drex_pending_join_group');
+    sessionStorage.removeItem('drex_pending_song');
   } catch (_) {}
   if (pendingGroup && typeof DrexCloud !== 'undefined') {
     joinGroupViaInviteLink(pendingGroup);
@@ -51352,6 +51471,13 @@ function consumePendingDeepLinks() {
     setTimeout(() => {
       try { openAuthorProfileByUsername(pendingUser); }
       catch (_) {}
+    }, 800);
+  } else if (pendingSong) {
+    setTimeout(() => {
+      try {
+        if (typeof openMusicSection === 'function') openMusicSection();
+        if (typeof openMusicTrackFromFeed === 'function') openMusicTrackFromFeed(pendingSong);
+      } catch (_) {}
     }, 800);
   }
 }
@@ -52743,7 +52869,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-08T03:53:19Z';
+window.DREX_BUILD = '2026-10-08T05:33:14Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -54484,7 +54610,9 @@ else setTimeout(drexSpotlightRender, 2500);
 window.musicShareTrack = function () {
   const t = (typeof musicQueue !== 'undefined' && musicQueue[musicQueueIdx]) || null;
   if (!t || !t.id) return;
-  const url = 'https://floreseternasoporte-creator.github.io/Beabo/?song=' + encodeURIComponent(t.id);
+  // C286: el enlace nace en el dominio donde estás (antes siempre
+  // apuntaba a GitHub Pages y la sesión no viajaba entre orígenes).
+  const url = window.location.origin + (typeof drexBasePath === 'function' ? drexBasePath() : '') + '/?song=' + encodeURIComponent(t.id);
   const text = `${t.title || 'Canción'} — ${t.artistName || t.authorName || ''} en Drex Música`;
   const done = () => { if (typeof showMiniToast === 'function') showMiniToast(appT('Enlace copiado al portapapeles')); };
   if (navigator.share) { try { navigator.share({ title: 'Drex Música', text, url }).catch(() => {}); } catch (_) {} return; }
@@ -54492,18 +54620,25 @@ window.musicShareTrack = function () {
   try { prompt(appT('Copia el enlace:'), url); } catch (_) {}
 };
 // Deep link: ?song=<trackId> abre la app directo en la canción compartida.
+// C286: el parámetro ya lo capturó captureSharedQueryParams y se consume
+// tras entrar (consumePendingDeepLinks). Este arranque solo actúa si la
+// sesión YA está viva; sin sesión no abre nada sobre el login.
 (function musicDeepLinkBoot() {
   let songId = null;
-  try { songId = new URLSearchParams(window.location.search).get('song'); } catch (_) {}
-  if (!songId || !/^[A-Za-z0-9_\-]{6,}$/.test(songId)) return;
+  try { songId = sessionStorage.getItem('drex_pending_song'); } catch (_) {}
+  if (!songId) return;
   let tries = 0;
   const timer = setInterval(function () {
     tries++;
+    let user = null;
+    try { user = DrexCloud.auth().currentUser; } catch (_) {}
+    if (!user) { if (tries > 40) clearInterval(timer); return; }
     if (typeof openMusicSection !== 'function' || typeof openMusicTrackFromFeed !== 'function' || typeof musicDb !== 'function') {
       if (tries > 60) clearInterval(timer);
       return;
     }
     clearInterval(timer);
+    try { sessionStorage.removeItem('drex_pending_song'); } catch (_) {}
     try { openMusicSection(); } catch (_) {}
     setTimeout(function () { try { openMusicTrackFromFeed(songId); } catch (_) {} }, 600);
   }, 500);
@@ -54982,7 +55117,12 @@ window.musicOpenPlaylist = async function (id) {
   try {
     const snap = await musicDb().ref('musicPlaylists/' + id).once('value');
     const pl = snap.val();
-    if (!pl) { musicClosePlaylist(); return; }
+    if (!pl) {
+      // C286: antes la hoja aparecía y desaparecía sin decir nada.
+      musicClosePlaylist();
+      if (typeof showMiniToast === 'function') showMiniToast(appT('Esta lista ya no está disponible.'));
+      return;
+    }
     const ids = pl.tracks ? Object.keys(pl.tracks).sort((a, b) => Number(pl.tracks[a] || 0) - Number(pl.tracks[b] || 0)) : [];
     const tracks = [];
     for (const tid of ids) {
@@ -55853,11 +55993,18 @@ window.openMusicTrackFromFeed = function (trackId) {
     try {
       let me = null;
       try { me = DrexCloud.auth().currentUser; } catch (_) {}
-      if (_aid && !(me && me.uid === _aid)
-          && typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function'
-          && await isAccountPrivate(_aid) && !(await canCurrentUserViewPrivateAccount(_aid))) {
-        if (typeof showMiniToast === 'function') showMiniToast(appT('Esta cuenta es privada.'));
-        return;
+      if (_aid && !(me && me.uid === _aid)) {
+        // C286: el bloqueo inverso también cierra el enlace de canción.
+        const _mrb = await DrexCloud.database().ref('blocks/' + _aid + '/' + (me ? me.uid : '')).once('value').catch(() => null);
+        if (_mrb && _mrb.val()) {
+          if (typeof showMiniToast === 'function') showMiniToast(appT('Esta canción no está disponible.'));
+          return;
+        }
+        if (typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function'
+            && await isAccountPrivate(_aid) && !(await canCurrentUserViewPrivateAccount(_aid))) {
+          if (typeof showMiniToast === 'function') showMiniToast(appT('Esta cuenta es privada.'));
+          return;
+        }
       }
     } catch (_) {}
     musicQueue = [{ ...t, id: trackId }];
@@ -87193,6 +87340,12 @@ async function drexRecordProfileVisit(ownerUid) {
       ]);
       if ((_blkPair[0] && _blkPair[0].exists()) || (_blkPair[1] && _blkPair[1].exists())) return;
     } catch (_) {}
+    /* C286: si el DUEÑO tiene las vistas de perfil apagadas no se
+       acumula historial en silencio para cuando las encienda. */
+    try {
+      var _ownerViews = await DrexCloud.database().ref('users/' + ownerUid + '/profileViewsEnabled').once('value');
+      if (!_ownerViews || _ownerViews.val() !== true) return;
+    } catch (_) { return; }
     var pings = window._orbitVisitPings || (window._orbitVisitPings = {});
     var now = Date.now();
     if (pings[ownerUid] && (now - pings[ownerUid]) < 30 * 60 * 1000) return;
@@ -87392,15 +87545,17 @@ async function openOrbitVisitors() {
       var _bm = (_myBlocks && _myBlocks.val()) || {};
       Object.keys(_bm).forEach(function (k) { delete map[k]; });
     } catch (_) {}
-    var entries = Object.keys(map).map(function (uid) { return { uid: uid, ts: Number(map[uid]) || 0 }; })
+    var allEntries = Object.keys(map).map(function (uid) { return { uid: uid, ts: Number(map[uid]) || 0 }; })
       .filter(function (e) { return e.uid && e.uid !== me.uid && e.ts > 0; })
-      .sort(function (a, b) { return b.ts - a.ts; }).slice(0, 30);
+      .sort(function (a, b) { return b.ts - a.ts; });
+    /* C286: el total es el real; la lista se recorta a 30 después. */
+    var entries = allEntries.slice(0, 30);
     if (!entries.length) {
       list.innerHTML = '<div class="py-10 text-center text-sm text-[var(--theme-muted)]">' + escFn(t('Aún nadie ha visitado tu perfil.')) + '</div>';
       return;
     }
     /* C257: el total vive aquí dentro, no junto a la huella del encabezado. */
-    if (noteEl) noteEl.textContent = entries.length + ' · ' + t('Solo tú puedes ver esta lista.');
+    if (noteEl) noteEl.textContent = allEntries.length + ' · ' + t('Solo tú puedes ver esta lista.');
     var profiles = (typeof _getCachedAuthorProfiles === 'function')
       ? await _getCachedAuthorProfiles(entries.map(function (e) { return e.uid; }))
       : new Map();

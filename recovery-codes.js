@@ -363,7 +363,20 @@
     var user = currentUser();
     if (!user || typeof verifyTotpCode !== 'function') return Promise.resolve(false);
     return dbRef('users/' + user.uid + '/twoFactorSecret').once('value').then(function (snap) {
-      return verifyTotpCode(snap.val(), c);
+      var secret = snap.val();
+      if (secret) return verifyTotpCode(secret, c);
+      // C286: MFA nativo (sin secreto legacy ni Lambda TOTP): antes esto
+      // devolvía "falso" siempre y regenerar códigos era imposible.
+      // Se confirma con contraseña + este código mediante una
+      // reautenticación real (la sesión actual no se toca).
+      if (window.DrexCloud && DrexCloud.mfa && typeof DrexCloud.mfa.reauthenticate === 'function') {
+        var pw = null;
+        try { pw = window.prompt(T('Escribe tu contraseña para confirmar:')); } catch (e) {}
+        if (!pw) return false;
+        return DrexCloud.mfa.reauthenticate(pw, function () { return Promise.resolve(c); })
+          .then(function () { return true; }, function () { return false; });
+      }
+      return false;
     }, function () { return false; });
   }
 

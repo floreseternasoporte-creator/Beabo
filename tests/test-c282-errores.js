@@ -98,7 +98,7 @@ test('el enlace directo respeta la privacidad de la cuenta', function () {
 });
 
 test('los comentarios por enlace profundo respetan la cuenta privada', function () {
-  var seg = sliceFrom('C282: shouldHideNoteForCurrentUser no mira', 900);
+  var seg = sliceFrom('C282: shouldHideNoteForCurrentUser no mira', 1600); // C286: entre medias vive el bloqueo inverso
   assert(seg.indexOf('await isAccountPrivate(_cvAuthor) && !(await canCurrentUserViewPrivateAccount(_cvAuthor))') !== -1, 'puerta en comentarios');
 });
 

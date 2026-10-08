@@ -166,13 +166,18 @@ vm.runInContext(src, sandbox);
   ok(toasts.includes('Vistas de perfil activadas.'), 'toast de activación');
   eq(await sandbox.drexProfileViewsEnabled(), true, 'estado encendido (caché tras toggle)');
 
-  /* C. Encendido: la visita se registra una vez (reciclaje 30 min) */
+  /* C. Encendido (visitante Y dueño): la visita se registra una vez
+     (reciclaje 30 min). C286: el DUEÑO también debe tener las vistas
+     activadas; si no, no se acumula historial en silencio. */
+  db['users/owner9/profileViewsEnabled'] = true;
   await sandbox.drexRecordProfileVisit('owner9');
   eq(writes.filter((w) => w[0] === 'users/owner9/profileVisitors/me1').length, 1, 'encendido: visita registrada');
   await sandbox.drexRecordProfileVisit('owner9');
   eq(writes.filter((w) => w[0] === 'users/owner9/profileVisitors/me1').length, 1, 'reciclaje 30 min: sin doble escritura');
   await sandbox.drexRecordProfileVisit('me1');
   eq(writes.filter((w) => w[0] === 'users/me1/profileVisitors/me1').length, 0, 'auto-visita jamás se registra');
+  await sandbox.drexRecordProfileVisit('ownerOff');
+  eq(writes.filter((w) => w[0] === 'users/ownerOff/profileVisitors/me1').length, 0, 'C286: dueño con vistas apagadas no acumula visitas');
 
   /* D. Huella: la mini foto es la del ÚLTIMO visitante, nunca la mía */
   db['users/me1/profileVisitors'] = { a: 111, b: 222, me1: 333 };
