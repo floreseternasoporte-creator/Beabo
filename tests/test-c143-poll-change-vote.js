@@ -160,7 +160,7 @@ tcase('A10 otros votantes intactos tras el cambio', () => {
   return r.mutated.voters.u2 === 1 && r.mutated.options[1].v === 4 && r.mutated.total === 8;
 });
 tcase('A11 sin retorno: la transacción ya no aborta si el usuario votó (voto irreversible eliminado)', () => {
-  const fn = extractFn(html, 'voteInPoll');
+  const fn = extractFn(html, 'voteInPoll'); // C285: el cuerpo del voto vive anidado en voteInPoll
   return fn.indexOf('if (poll.voters[user.uid] !== undefined) return;') === -1
     && fn.indexOf('pollApplyVote(poll, user.uid, optIdx, Date.now())') !== -1;
 });
@@ -235,13 +235,13 @@ tcase('B6 pregunta q de Series intacta (test-c82 no se rompe)', () => {
 
 // ---------- Parte C: integración estática + i18n ----------
 tcase('C1 voteInPoll delega la transacción en pollApplyVote', () => {
-  const fn = extractFn(html, 'voteInPoll');
+  const fn = extractFn(html, 'voteInPoll'); // C285
   return fn.indexOf('return pollApplyVote(poll, user.uid, optIdx, Date.now());') !== -1
     && fn.indexOf('poll.voters[user.uid] !== undefined') === -1;
 });
-tcase('C2 toast "Voto actualizado" solo cuando ya había votado (hadVoted)', () => {
-  const fn = extractFn(html, 'voteInPoll');
-  return fn.indexOf("if (hadVoted) showMiniToast(appT('Voto actualizado'))") !== -1
+tcase('C2 toast "Voto actualizado" solo al cambiar de opción (C285: la misma opción ya no anuncia cambio)', () => {
+  const fn = extractFn(html, 'voteInPoll'); // C285: cuerpo anidado
+  return fn.indexOf("if (_c147PrevVoteIdx !== undefined && _c147PrevVoteIdx !== optIdx) showMiniToast(appT('Voto actualizado'))") !== -1
     && fn.indexOf("document.querySelector(sel + ' .drex-poll-opt.mine')") !== -1;
 });
 tcase('C3 CSS: button.drex-poll-opt.voted con cursor + hover (sin Tailwind arbitrary)', () => {

@@ -107,20 +107,21 @@ tcase('A7 best-effort: try/catch + .catch en el camino de aviso', () => {
   const block = fn.slice(at, at + 1400);
   return count(/try\s*\{/g, block) >= 2 && count(/\.catch\(\(\)\s*=>\s*\{\}\)/g, block) >= 2;
 });
-tcase('A8 lee solo authorId (communityNotes/<noteId>/authorId), no el post entero', () => {
+tcase('A8 (C285) la puerta de visibilidad lee el post; el aviso sigue leyendo solo authorId', () => {
   const fn = extractFn(html, 'voteInPoll');
   return fn.indexOf("ref('communityNotes/' + noteId + '/authorId')") !== -1
-    && fn.indexOf("ref('communityNotes/' + noteId).once") === -1;
+    && fn.indexOf("ref('communityNotes/' + noteId).once('value')") !== -1
+    && fn.indexOf('shouldHideNoteForCurrentUser(noteId, n)') !== -1;
 });
 tcase('A9 regresión C146: índice userPollVotes intacto en la rama committed', () => {
   const fn = extractFn(html, 'voteInPoll');
   return fn.indexOf("ref('userPollVotes/' + user.uid + '/' + noteId)") !== -1
     && fn.indexOf('refreshHistorialIfVisible();') !== -1;
 });
-tcase('A10 regresión C143: delegación en pollApplyVote + toast hadVoted intactos', () => {
+tcase('A10 (C285) delegación en pollApplyVote + toast solo al cambiar de opción', () => {
   const fn = extractFn(html, 'voteInPoll');
   return fn.indexOf('return pollApplyVote(poll, user.uid, optIdx, Date.now());') !== -1
-    && fn.indexOf("if (hadVoted) showMiniToast(appT('Voto actualizado'))") !== -1
+    && fn.indexOf("if (_c147PrevVoteIdx !== undefined && _c147PrevVoteIdx !== optIdx) showMiniToast(appT('Voto actualizado'))") !== -1
     && fn.indexOf('poll.voters[user.uid] !== undefined') === -1;
 });
 tcase('A11 addNotification va con guarda typeof (no rompe si no existe)', () => {

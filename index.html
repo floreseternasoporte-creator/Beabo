@@ -5655,6 +5655,18 @@ document.addEventListener("DOMContentLoaded", function() {
 
 <!–– AUTENTICACIÓN A PANTALLA COMPLETA (ESTILO TIKTOK) ––>
 <body class="bg-[var(--theme-bg)] font-sans text-[var(--theme-text)]">
+<script>
+// C285: el tema se aplica ANTES del primer pintado (initThemePreference
+// corre en DOMContentLoaded: quien usa oscuro veía un fogonazo claro).
+try {
+  if (localStorage.getItem('drex_theme') === 'dark') {
+    document.body.classList.add('theme-dark');
+    document.documentElement.style.colorScheme = 'dark';
+  } else {
+    document.body.classList.add('theme-light');
+  }
+} catch (e) {}
+</script>
 <!-- SPLASH SCREEN -->
   <div id="splash-screen">
     <div class="splash-intro" aria-hidden="true">
@@ -14841,13 +14853,32 @@ function saveNote() {
       if (opts.length < 2) return null;
       const poll = {
         options: opts.map(t => ({ t: t, v: 0 })),
-        endsAt: (Number(nowMs) || Date.now()) + drexDraftPollHours(draftPoll.hours) * 3600000,
+        endsAt: (Number(nowMs) || Date.now()) + drexPollHoursForPublish(drexDraftPollHours(draftPoll.hours)) * 3600000,
         total: 0,
         voters: {}
       };
       if (q) poll.q = String(q).slice(0, 140);
       return poll;
     } catch (_) { return null; }
+  }
+  // C285: la puerta Orbit de encuestas largas también rige al PUBLICAR
+  // (antes solo al tocar el botón de duración): un borrador viejo con
+  // encuesta de 1 semana ya no regala plazos largos sin plan.
+  function drexPollHoursForPublish(hours) {
+    let h = Number(hours) || 24;
+    if (h > 24) {
+      let allowed = true;
+      try {
+        if (typeof DrexOrbit !== 'undefined' && (DrexOrbit.enforced() || DrexOrbit.trialPlan())) {
+          allowed = !!DrexOrbit.hasAccess('long_polls');
+        }
+      } catch (_) { allowed = true; }
+      if (!allowed) {
+        try { showMiniToast(appT('Las encuestas de más de 1 día son de Drex Orbit: se ajustó a 1 día.')); } catch (_) {}
+        h = 24;
+      }
+    }
+    return h;
   }
   // Insignia "Votación" en la lista de borradores.
   function drexDraftHasPoll(draft) {
@@ -16945,7 +16976,7 @@ function drexOrbitHdUploadsOn() {
       if (pollOpts) {
         note.poll = {
           options: pollOpts.map(t => ({ t: t, v: 0 })),
-          endsAt: Date.now() + notePostPoll.hours * 3600000,
+          endsAt: Date.now() + ((typeof drexPollHoursForPublish === 'function') ? drexPollHoursForPublish(notePostPoll.hours) : notePostPoll.hours) * 3600000,
           total: 0,
           voters: {}
         };
@@ -20933,6 +20964,25 @@ else { try { drexSnapInit(); } catch (_) {} }
   // "Destacados" conserva su orden por puntaje: ese es su propósito.
   window.DREX_FORYOU_CHRONO = false;
 
+  // C285: los mapas del usuario (votos/ecos/seguidos) se cachean 30 s
+  // entre cargas del feed: volver a Inicio ya no re-descarga esos nodos
+  // completos en cada toque. La caché muere con la sesión.
+  const _feedUserMapsCache = { ts: 0, uid: '', votes: null, ecos: null, following: null };
+  function _feedUserMapsFresh(uid, needFollowing) {
+    if (!uid || _feedUserMapsCache.uid !== uid) return false;
+    if (Date.now() - _feedUserMapsCache.ts > 30000) return false;
+    if (_feedUserMapsCache.votes === null || _feedUserMapsCache.ecos === null) return false;
+    if (needFollowing && _feedUserMapsCache.following === null) return false;
+    return true;
+  }
+  function _feedUserMapsStore(uid, key, val) {
+    if (_feedUserMapsCache.uid !== uid) { _feedUserMapsCache.votes = null; _feedUserMapsCache.ecos = null; _feedUserMapsCache.following = null; }
+    _feedUserMapsCache.uid = uid;
+    _feedUserMapsCache[key] = val;
+    _feedUserMapsCache.ts = Date.now();
+    return val;
+  }
+
   function loadNotes(showLoader = true, feedMode = 'foryou') {
     const feedContainer = document.getElementById('notes-feed');
     if (!feedContainer) return;
@@ -20951,24 +21001,27 @@ else { try { drexSnapInit(); } catch (_) {} }
     // pintura del feed ya muestre los botones de voto / "eco" en su
     // estado correcto (antes esto llegaba tarde y el feed se veía sin
     // marcar hasta un refresco posterior).
+    // C285: con la caché fresca (30 s) no se vuelve a la red.
+    const _needFollowing = (feedMode === 'following' || feedMode === 'foryou');
+    const _mapsFresh = !!user && _feedUserMapsFresh(user.uid, _needFollowing);
     const userVotesPromise = user
-      ? DrexCloud.database().ref('userVotes/' + user.uid).once('value').then(snap => snap.val() || {}).catch(err => { console.error('Error cargando votos:', err); return {}; })
+      ? (_mapsFresh ? Promise.resolve(_feedUserMapsCache.votes) : DrexCloud.database().ref('userVotes/' + user.uid).once('value').then(snap => _feedUserMapsStore(user.uid, 'votes', snap.val() || {})).catch(err => { console.error('Error cargando votos:', err); return {}; }))
       : Promise.resolve({});
     const userEcosPromise = user
-      ? Promise.all([
+      ? (_mapsFresh ? Promise.resolve(_feedUserMapsCache.ecos) : Promise.all([
         DrexCloud.database().ref('userEcos/' + user.uid).once('value').catch(() => null),
         // Legacy "userReposts": se fusiona para que los ecos viejos sigan
         // marcados; toggleEco los migra a userEcos al interactuar.
         DrexCloud.database().ref('userReposts/' + user.uid).once('value').catch(() => null)
-      ]).then(([ecoSnap, legacySnap]) => ({
+      ]).then(([ecoSnap, legacySnap]) => _feedUserMapsStore(user.uid, 'ecos', {
         ...((legacySnap && legacySnap.val()) || {}),
         ...((ecoSnap && ecoSnap.val()) || {})
-      })).catch(err => { console.error('Error cargando ecos:', err); return {}; })
+      })).catch(err => { console.error('Error cargando ecos:', err); return {}; }))
       : Promise.resolve({});
     // Lane4 (2026-10-01): también en "Para ti" — el boost social del ranking
     // V2 necesita el mapa de seguidos (antes solo se cargaba en "Mi gente").
-    const followingPromise = ((feedMode === 'following' || feedMode === 'foryou') && user)
-      ? DrexCloud.database().ref('following/' + user.uid).once('value').then(snap => snap.val() || {}).catch(() => ({}))
+    const followingPromise = (_needFollowing && user)
+      ? (_mapsFresh ? Promise.resolve(_feedUserMapsCache.following) : DrexCloud.database().ref('following/' + user.uid).once('value').then(snap => _feedUserMapsStore(user.uid, 'following', snap.val() || {})).catch(() => ({})))
       : Promise.resolve(null);
     // Drex Rec: el perfil de intereses debe estar listo antes de ordenar "Para ti".
     const recProfilePromise = (typeof drexRecProfile === 'function')
@@ -21007,6 +21060,16 @@ else { try { drexSnapInit(); } catch (_) {} }
   let _feedOlderObserver = null;
   // Contadores en vivo de tarjetas paginadas: teardown de la generación anterior.
   let _feedCardsTeardown = null;
+  // C285: al cerrar sesión la suscripción del feed muere de verdad
+  // (antes communityNotes seguía preparando posts del usuario anterior
+  // detrás de la pantalla de login hasta que otra cuenta re-suscribía).
+  window.__drexFeedKillForLogout = function () {
+    try { _notesFeedGeneration++; } catch (_) {}
+    try { if (window.__drexFeedNotesRef) window.__drexFeedNotesRef.off(); } catch (_) {}
+    try { if (typeof _feedCardsTeardown === 'function') _feedCardsTeardown(); } catch (_) {}
+    _feedCardsTeardown = null;
+    try { _feedUserMapsCache.ts = 0; _feedUserMapsCache.uid = ''; _feedUserMapsCache.votes = null; _feedUserMapsCache.ecos = null; _feedUserMapsCache.following = null; } catch (_) {}
+  };
   // ============ Etiquetas y spoiler de publicaciones ============
   const DREX_POST_FLAIRS = [
     { id: 'musica', es: 'M\u00fasica', en: 'Music', zh: '\u97f3\u4e50', bg: '#e3f0ff', fg: '#1d4ed8' },
@@ -21326,12 +21389,21 @@ else { try { drexSnapInit(); } catch (_) {} }
     const showResults = closed || myVote !== undefined;
     const canChangeVote = !closed && myVote !== undefined; // C143: votado y abierta -> se puede cambiar.
     const total = Number(poll.total) || 0;
+    // C285: porcentajes por resto mayor: los redondeos individuales
+    // podían sumar 99 (33+33+33).
+    const _pcts = total > 0 ? (function () {
+      const raw = poll.options.map(o => (Number(o.v) || 0) * 100 / total);
+      const base = raw.map(x => Math.floor(x));
+      let rem = 100 - base.reduce((a, b) => a + b, 0);
+      raw.map((x, i) => [x - base[i], i]).sort((a, b) => b[0] - a[0]).forEach(function (pair) { if (rem > 0) { base[pair[1]]++; rem--; } });
+      return base;
+    })() : poll.options.map(() => 0);
     const safeId = escapeInlineSingleQuote(note.id || '');
     let html = '<div class="drex-poll" data-poll="' + escapeHtml(note.id || '') + '">';
     if (poll.q) html += '<div class="drex-poll-q">' + escapeHtml(poll.q) + '</div>'; // Pregunta personalizada de la votación (si el autor la definió).
     poll.options.forEach(function(o, i) {
       const v = Number(o.v) || 0;
-      const pct = total > 0 ? Math.round(v * 100 / total) : 0;
+      const pct = _pcts[i];
       const mine = myVote === i;
       if (showResults) {
         const optInner = '<div class="drex-poll-bar" data-w="' + pct + '" style="width:' + (animateBars ? 0 : pct) + '%"></div>' +
@@ -21355,7 +21427,21 @@ else { try { drexSnapInit(); } catch (_) {} }
   }
   function voteInPoll(noteId, optIdx) {
     const user = DrexCloud.auth().currentUser;
-    if (!user) { showMiniToast(appT('Inicia sesión para votar'));; return; }
+    if (!user) { showMiniToast(appT('Inicia sesión para votar')); return; }
+    // C285: votar exige poder VER el post. Antes bastaba tener la
+    // tarjeta pintada: la pestaña Ecos de un perfil ajeno permitía votar
+    // en encuestas de cuentas privadas o de audiencia cerrada.
+    try {
+      DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(function (nSnap) {
+        const n = (nSnap && nSnap.val()) || null;
+        if (!n || n.groupId) { showMiniToast(appT('Este contenido no está disponible.')); return; }
+        if (typeof shouldHideNoteForCurrentUser === 'function' && shouldHideNoteForCurrentUser(noteId, n)) { showMiniToast(appT('Este contenido no está disponible.')); return; }
+        proceed();
+      }).catch(function () { proceed(); });
+    } catch (_) { proceed(); }
+    // El cuerpo clásico del voto vive anidado (las suites lo extraen
+    // junto con voteInPoll, como siempre).
+    function proceed() {
     const sel = '[data-poll="' + CSS.escape(noteId) + '"]';
     // C143: si el DOM ya marca 'mine', este tap es un CAMBIO de voto.
     const hadVoted = !!document.querySelector(sel + ' .drex-poll-opt.mine');
@@ -21363,12 +21449,21 @@ else { try { drexSnapInit(); } catch (_) {} }
     // C147: el updater captura el voto previo del usuario (server-accurate):
     // si ya existía, este tap es un CAMBIO de voto y no genera aviso.
     let _c147PrevVoteIdx;
+    let _c285Abort = '';
     DrexCloud.database().ref('communityNotes/' + noteId + '/poll').transaction(function(poll) {
       _c147PrevVoteIdx = (poll && poll.voters) ? poll.voters[user.uid] : undefined;
+      // C285: motivo del aborto para poder responder en pantalla.
+      if (!poll) _c285Abort = 'gone';
+      else if (Date.now() > (Number(poll.endsAt) || 0)) _c285Abort = 'closed';
+      else if (_c147PrevVoteIdx === optIdx) _c285Abort = 'same';
+      else if (!poll.options || !poll.options[optIdx]) _c285Abort = 'invalid';
+      else _c285Abort = '';
       return pollApplyVote(poll, user.uid, optIdx, Date.now());
     }, function(error, committed, snap) {
       document.querySelectorAll(sel).forEach(function(el) { el.style.pointerEvents = ''; });
-      if (error) { showMiniToast(appT('No se pudo votar'));; return; }
+      if (error) { showMiniToast(appT('No se pudo votar')); return; }
+      // C285: votar en una encuesta que acaba de cerrar ya no es mudo.
+      if (!committed) { if (_c285Abort === 'closed') showMiniToast(appT('La votación ya está cerrada.')); return; }
       if (committed && snap && snap.val()) {
         // C146: índice inverso para "Mis votos" (Historial): la encuesta
         // votada aparece en el historial. Best-effort con catch: el voto ya
@@ -21403,7 +21498,8 @@ else { try { drexSnapInit(); } catch (_) {} }
         }
         const html = renderPostPollHTML({ id: noteId, poll: snap.val() }, true);
         document.querySelectorAll(sel).forEach(function(el) { el.outerHTML = html; });
-        if (hadVoted) showMiniToast(appT('Voto actualizado'));
+        // C285: tocar tu misma opción ya no anuncia un cambio ficticio.
+        if (_c147PrevVoteIdx !== undefined && _c147PrevVoteIdx !== optIdx) showMiniToast(appT('Voto actualizado'));
         requestAnimationFrame(function() { requestAnimationFrame(function() {
           document.querySelectorAll(sel + ' .drex-poll-bar').forEach(function(bar) {
             const w = bar.getAttribute('data-w');
@@ -21413,6 +21509,7 @@ else { try { drexSnapInit(); } catch (_) {} }
         refreshHistorialIfVisible();
       }
     });
+  }
   }
   // C153: detección client-side del cierre de votación (sin AWS). Se invoca
   // desde renderPostPollHTML —el único renderer de encuestas, así que cubre
@@ -21653,14 +21750,14 @@ else { try { drexSnapInit(); } catch (_) {} }
     try {
       const persisted = window.DrexCache && window.DrexCache.get('profile', authorId);
       if (persisted && typeof persisted === 'object') {
-        _authorProfileCache.set(authorId, { data: persisted, ts: Date.now() });
+        if (_authorProfileCache.size > 400) { try { _authorProfileCache.delete(_authorProfileCache.keys().next().value); } catch (_) {} } _authorProfileCache.set(authorId, { data: persisted, ts: Date.now() });
         return Promise.resolve(persisted);
       }
     } catch (_) {}
     return DrexCloud.database().ref('users/' + authorId).once('value').then(
       function (snap) {
         const data = snap.val() || {};
-        _authorProfileCache.set(authorId, { data: data, ts: Date.now() });
+        if (_authorProfileCache.size > 400) { try { _authorProfileCache.delete(_authorProfileCache.keys().next().value); } catch (_) {} } _authorProfileCache.set(authorId, { data: data, ts: Date.now() });
         try { if (window.DrexCache) window.DrexCache.set('profile', authorId, data, 300000); } catch (_) {}
         return data;
       },
@@ -22359,6 +22456,7 @@ else { try { drexSnapInit(); } catch (_) {} }
     };
     ctx.notesRef = DrexCloud.database().ref('communityNotes').orderByChild('timestamp').limitToLast(50);
     ctx.notesRef.off();
+    try { window.__drexFeedNotesRef = ctx.notesRef; } catch (_) {} // C285: para apagarlo al cerrar sesión
     ctx.myGeneration = ++_notesFeedGeneration;
     ctx.alive = () => ctx.myGeneration === _notesFeedGeneration;
     ctx.currentUserId = (ctx.user && ctx.user.uid) || '';
@@ -22686,7 +22784,7 @@ else { try { drexSnapInit(); } catch (_) {} }
     try {
       const snap = await DrexCloud.database().ref('users/' + uid + '/isPrivate').once('value');
       const val = Boolean(snap.val());
-      _privacyAccountCache.set(uid, { v: val, ts: Date.now() });
+      if (_privacyAccountCache.size > 400) { try { _privacyAccountCache.delete(_privacyAccountCache.keys().next().value); } catch (_) {} } _privacyAccountCache.set(uid, { v: val, ts: Date.now() });
       return val;
     } catch (e) {
       return false;
@@ -22704,7 +22802,7 @@ else { try { drexSnapInit(); } catch (_) {} }
     try {
       const snap = await DrexCloud.database().ref('following/' + currentUserId + '/' + authorId).once('value');
       const val = snap.exists();
-      _followApprovedCache.set(cacheKey, { v: val, ts: Date.now() });
+      if (_followApprovedCache.size > 400) { try { _followApprovedCache.delete(_followApprovedCache.keys().next().value); } catch (_) {} } _followApprovedCache.set(cacheKey, { v: val, ts: Date.now() });
       return val;
     } catch (e) {
       return false;
@@ -23934,6 +24032,8 @@ else { try { drexSnapInit(); } catch (_) {} }
       showMiniToast(appT('Debes iniciar sesión para votar'));
       return;
     }
+    // C285: votar invalida la caché de mapas del feed (30 s).
+    try { _feedUserMapsCache.ts = 0; } catch (_) {}
 
     // Evita doble-tap / doble-clic: mientras este post tiene un voto en
     // vuelo, se ignoran nuevos clics para que no se desincronice el contador.
@@ -24884,6 +24984,8 @@ else { try { drexSnapInit(); } catch (_) {} }
     }
     if (_postEcoLocks.has(noteId)) return;
     _postEcoLocks.add(noteId);
+    // C285: hacer eco invalida la caché de mapas del feed (30 s).
+    try { _feedUserMapsCache.ts = 0; } catch (_) {}
 
     // FIX AUDITORÍA POSTS 2026-09-22 (2): un post puede estar visible en
     // varias superficies a la vez (feed, perfil, comentarios, permalink).
@@ -26752,7 +26854,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       ));
       const ts = Date.now();
       snaps.forEach(({ uid, data }) => {
-        if (data) { _drexProfileCache.set(uid, { data, ts }); out.set(uid, data); }
+        if (data) { if (_drexProfileCache.size > 400) { try { _drexProfileCache.delete(_drexProfileCache.keys().next().value); } catch (_) {} } _drexProfileCache.set(uid, { data, ts }); out.set(uid, data); }
       });
     }
     return out;
@@ -29557,6 +29659,20 @@ else { try { drexSnapInit(); } catch (_) {} }
   function updateTranslations() { applyAppLanguage((typeof getAppLanguage === 'function') ? getAppLanguage() : 'en'); }
   function refreshVisibleLocationPickerLanguage() { const view=document.getElementById('location-config-view'); if (!view || view.classList.contains('hidden') || view.style.display === 'none' || typeof renderLocationCountries !== 'function') return; const query=document.getElementById('settings-country-search')?.value || ''; renderLocationCountries(query); if (typeof updateSelectedCountryLabel === 'function') updateSelectedCountryLabel(); }
   function setAppLanguage(lang) { const next = (lang === 'en' || lang === 'zh' || lang === 'pt') ? lang : 'es'; applyAppLanguage(next); refreshVisibleLocationPickerLanguage(); const user=DrexCloud.auth().currentUser; if (user) DrexCloud.database().ref('userSettings/' + user.uid + '/appLanguage').set(next).catch(() => {}); }
+  // C285: el idioma guardado en la CUENTA nunca se leía: en un teléfono
+  // nuevo la app caía al predeterminado ignorando tu preferencia. Al
+  // iniciar sesión se restaura una vez por cuenta.
+  let _drexLangRestoredForUid = '';
+  function drexRestoreAccountLanguage(user) {
+    try {
+      if (!user || !user.uid || _drexLangRestoredForUid === user.uid) return;
+      _drexLangRestoredForUid = user.uid;
+      DrexCloud.database().ref('userSettings/' + user.uid + '/appLanguage').once('value').then(snap => {
+        const saved = snap && snap.val();
+        if (saved && saved !== getAppLanguage()) applyAppLanguage(saved);
+      }).catch(() => {});
+    } catch (_) {}
+  }
   function openAppLanguageSettings() {
     const view = document.getElementById('app-language-settings-view');
     if (!view) return;
@@ -30689,7 +30805,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       DrexCloud.database().ref('users/' + uid).once('value').then(snap => {
         const d = snap.val() || {};
         const info = { name: d.username || d.displayName || 'Alguien', image: d.profileImage || d.photoURL || '' };
-        _notifProfileCache[uid] = info;
+        if (Object.keys(_notifProfileCache).length > 400) { try { delete _notifProfileCache[Object.keys(_notifProfileCache)[0]]; } catch (_) {} } _notifProfileCache[uid] = info;
         if (rowEl.isConnected) apply(info);
       }).catch(() => {});
     } catch (_) {}
@@ -32461,6 +32577,13 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       startScreenTimeTracking();
       loadUserStats(user.uid);
       setupBlockedAccountsListener(user.uid);
+      // C285: restaurar el idioma guardado en la cuenta.
+      try { if (typeof drexRestoreAccountLanguage === 'function') drexRestoreAccountLanguage(user); } catch (_) {}
+      // C285: silencio nocturno ya activo al entrar la sesión.
+      try { if (typeof _drexQuietModeOnSessionStart === 'function') _drexQuietModeOnSessionStart(); } catch (_) {}
+      // C285: el filtro de contenido fuerte se carga al entrar (antes
+      // solo al pintar el feed: un enlace directo lo saltaba).
+      try { if (typeof _drexLoadParentalSensitiveFilter === 'function') _drexLoadParentalSensitiveFilter(user.uid).catch(() => {}); } catch (_) {}
 
 
       _loadUserSavedPosts().catch(() => {});
@@ -32869,6 +32992,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       clearChatConversationCache(); // C11-2: sin fugas entre cuentas
       _notifActorCache = null; _notifActorPromise = null; // C13: sin fuga de identidad entre cuentas
       clearAccountScopedState(); // C14: sin fugas entre cuentas (fiesta, música, cachés, timers)
+      // C285: la suscripción del feed también se apaga al salir.
+      try { if (typeof window.__drexFeedKillForLogout === 'function') window.__drexFeedKillForLogout(); } catch (_) {}
       // FIX: el motor de recomendaciones no debe conservar ni persistir el
       // perfil de la cuenta que cerró sesión (evita contaminar la próxima
       // cuenta con gustos ajenos si una lectura quedó en vuelo).
@@ -34080,7 +34205,24 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.add('hidden');
-    detachChatMessagesListener();
+    // C285: salir por la barra inferior desengancha TODA la sala (antes
+    // solo los mensajes: typing, fijado, recibos, presencia, reacciones
+    // y miembros quedaban suscritos a una sala invisible).
+    if (typeof currentChatRoomId !== 'undefined' && currentChatRoomId) {
+      try { detachChatMessagesListener(); } catch (_) {}
+      try { detachConversationPinnedListener(); } catch (_) {}
+      try { detachGroupMembersListener(); } catch (_) {}
+      try { detachChatTypingListener(); } catch (_) {}
+      try { detachAllMsgReactionListeners(); } catch (_) {}
+      try { detachPresenceListener(); } catch (_) {}
+      try { detachReadReceiptListener(); } catch (_) {}
+      try { stopChatTyping(); } catch (_) {}
+      try { clearTimeout(_chatReadMarkTimer); } catch (_) {}
+      currentChatRoomId = null;
+      currentChatRecipient = null;
+      currentChatIsGroup = false;
+      currentGroupMembers = [];
+    }
     document.getElementById('profile-view')?.classList.remove('hidden');
     // C269: el perfil abre siempre en la pestaña Publicaciones.
     try { switchMyProfileTab('posts'); } catch (_) {}
@@ -34465,7 +34607,15 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     return end.getTime() - now.getTime();
   }
 
-  function _quietModeDisableNotifs() {
+  async function _quietModeDisableNotifs() {
+    // C285: respaldar las preferencias REALES de la base. Antes el
+    // respaldo era el objeto en memoria: si nunca abriste Ajustes de
+    // notificaciones en la sesión, era {} y la restauración de las 8:00
+    // encendía TODO, borrando tus elecciones para siempre.
+    try { if (!window.__notifSettingsLoaded) await loadNotifSettings(); } catch (_) {}
+    // Sin sesión o sin lectura real, NO se toca nada (un respaldo vacío
+    // restaurado después encendía todas las preferencias).
+    if (!window.__notifSettingsLoaded) return;
     try { localStorage.setItem(ST_NOTIF_BACKUP_KEY, JSON.stringify(notifSettings)); } catch(_) {}
     NOTIF_KEYS.forEach(k => { notifSettings[k] = false; });
     renderNotifToggles();
@@ -34531,12 +34681,25 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     }
   }
 
+  // C285: al entrar la sesión con el silencio activo y en horario,
+  // también se pausa (el chequeo de arranque corre antes del login).
+  function _drexQuietModeOnSessionStart() {
+    try {
+      const settings = _stGetSettings();
+      if (!settings || !settings.quietMode) return;
+      if (_stIsQuietHours() && !localStorage.getItem(ST_NOTIF_BACKUP_KEY)) _quietModeDisableNotifs();
+      _scheduleQuietModeRestore();
+    } catch (_) {}
+  }
+
   (function _checkQuietModeOnLoad() {
     const settings = _stGetSettings();
     if (!settings.quietMode) return;
     if (_stIsQuietHours()) {
       if (!localStorage.getItem(ST_NOTIF_BACKUP_KEY)) {
-        // No hay backup = notifs ya fueron desactivadas antes, solo re-programar restauración
+        // C285: abrir la app ya en horario de silencio también pausa
+        // (antes solo se programaba la restauración y sonaba toda la noche).
+        _quietModeDisableNotifs();
       }
       _scheduleQuietModeRestore();
     } else {
@@ -34590,13 +34753,14 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
 
   function loadNotifSettings() {
     const user = DrexCloud.auth().currentUser;
-    if (!user) return;
-    DrexCloud.database().ref('userSettings/' + user.uid + '/notifications').once('value').then(snap => {
+    if (!user) return Promise.resolve();
+    return DrexCloud.database().ref('userSettings/' + user.uid + '/notifications').once('value').then(snap => {
       const data = snap.val() || {};
       notifSettings = {};
       NOTIF_KEYS.forEach(k => {
         notifSettings[k] = data[k] !== undefined ? data[k] : true;
       });
+      window.__notifSettingsLoaded = true; // C285
       renderNotifToggles();
     }).catch(() => {
       try {
@@ -34605,6 +34769,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       } catch (_) {
         NOTIF_KEYS.forEach(k => { notifSettings[k] = true; });
       }
+      window.__notifSettingsLoaded = true; // C285
       renderNotifToggles();
     });
   }
@@ -37207,7 +37372,22 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     document.getElementById('chat-inbox-view')?.classList.add('hidden');
     document.getElementById('new-chat-view')?.classList.add('hidden');
     document.getElementById('chat-room-view')?.classList.add('hidden');
-    detachChatMessagesListener();
+    // C285: salir por la barra inferior desengancha TODA la sala.
+    if (typeof currentChatRoomId !== 'undefined' && currentChatRoomId) {
+      try { detachChatMessagesListener(); } catch (_) {}
+      try { detachConversationPinnedListener(); } catch (_) {}
+      try { detachGroupMembersListener(); } catch (_) {}
+      try { detachChatTypingListener(); } catch (_) {}
+      try { detachAllMsgReactionListeners(); } catch (_) {}
+      try { detachPresenceListener(); } catch (_) {}
+      try { detachReadReceiptListener(); } catch (_) {}
+      try { stopChatTyping(); } catch (_) {}
+      try { clearTimeout(_chatReadMarkTimer); } catch (_) {}
+      currentChatRoomId = null;
+      currentChatRecipient = null;
+      currentChatIsGroup = false;
+      currentGroupMembers = [];
+    }
     if (drexAppChromeAllowed()) document.getElementById('main-app')?.classList.remove('hidden');
     // Carril 3 (auditoría UI): openProfile() oculta la barra inferior; al volver
     // al inicio hay que reponerla o el usuario pierde la navegación por tabs.
@@ -37343,7 +37523,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
   // slot contra usernames/<nombre> (+ users/<uid> para avatar/nombre
   // canonico) y pinta. Sin config valida o con error -> oculto, cero ruido.
   var _featuredArtistsReq = 0;
+  let _featuredArtistsLoadedAt = 0; // C285
   function loadFeaturedArtists() {
+    // C285: destacado se cachea 2 min entre toques de Inicio.
+    if (_featuredArtistsLoadedAt && (Date.now() - _featuredArtistsLoadedAt) < 120000) return;
+    _featuredArtistsLoadedAt = Date.now();
     var myReq = ++_featuredArtistsReq;
     var db = null;
     try { db = DrexCloud.database(); } catch (_) { return; }
@@ -39607,7 +39791,7 @@ let chatTypingListener = null;
     if (hit && hit.promise) return hit.promise;
     if (hit && (Date.now() - hit.at) < 60000) return Promise.resolve(hit.online);
     const promise = DrexCloud.database().ref('userPresence/' + uid + '/online').once('value')
-      .then(snap => { const online = snap.val() === true; _presenceCache[uid] = { online, at: Date.now() }; return online; })
+      .then(snap => { const online = snap.val() === true; if (Object.keys(_presenceCache).length > 400) { try { delete _presenceCache[Object.keys(_presenceCache)[0]]; } catch (_) {} } _presenceCache[uid] = { online, at: Date.now() }; return online; })
       .catch(() => { delete _presenceCache[uid]; return false; });
     _presenceCache[uid] = { online: false, at: 0, promise };
     return promise;
@@ -40632,7 +40816,7 @@ let chatTypingListener = null;
           </div>
           <div class="flex items-end gap-2 max-w-[85%]">
             <div class="flex flex-col items-start min-w-0">
-              <div class="msg-bubble ${((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : 'bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-4 py-2.5'} rounded-3xl select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${escapeHtml(resolvedId)}">
+              <div class="msg-bubble ${((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : 'bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-4 py-2.5'} rounded-3xl select-none cursor-pointer text-[15px]" data-bubble-side="other" style="word-break:break-word;overflow-wrap:break-word;${(((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif') ? '' : ((typeof _chatBubbleThemeStyle === 'function') ? _chatBubbleThemeStyle('other') : '')}" data-msg-id="${escapeHtml(resolvedId)}">
                 ${replyBlock}${content}
               </div>
               <div id="reactions-${escapeHtml(resolvedId)}" class="flex flex-wrap gap-1 mt-0.5 justify-start px-1"></div>
@@ -40650,7 +40834,7 @@ let chatTypingListener = null;
             const d = snap.val() || {};
             const img = d.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
             const uname = d.username || d.displayName || appT('Usuario');
-            _groupMsgSenderCache.set(senderId, { image: img, name: uname, username: d.username || '' });
+            if (_groupMsgSenderCache.size > 400) { try { _groupMsgSenderCache.delete(_groupMsgSenderCache.keys().next().value); } catch (_) {} } _groupMsgSenderCache.set(senderId, { image: img, name: uname, username: d.username || '' });
             applyAvatar(img);
           }).catch(() => {});
         }
@@ -40666,7 +40850,7 @@ let chatTypingListener = null;
           : '';
         const timeHtml = timeStr ? `<span class="chat-msg-time text-xs text-[var(--theme-muted)] px-1">${timeStr}${msg.editedAt ? ' · <span class="italic">' + appT('Editado') + '</span>' : ''}</span>` : '';
         const bubbleInner = `
-          <div class="msg-bubble ${((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : (mine ? 'bg-[var(--drex-brand)] text-white px-4 py-2.5' : 'bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-4 py-2.5')} rounded-3xl ${showDmAvatar ? '' : 'max-w-[75%]'} select-none cursor-pointer text-[15px]" style="word-break:break-word;overflow-wrap:break-word" data-msg-id="${escapeHtml(resolvedId)}">
+          <div class="msg-bubble ${((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif' ? 'bg-transparent border-0 p-0' : (mine ? 'bg-[var(--drex-brand)] text-white px-4 py-2.5' : 'bg-[var(--theme-surface-muted)] text-[var(--theme-text)] px-4 py-2.5')} rounded-3xl ${showDmAvatar ? '' : 'max-w-[75%]'} select-none cursor-pointer text-[15px]" data-bubble-side="${mine ? 'mine' : 'other'}" style="word-break:break-word;overflow-wrap:break-word;${(((msgImages.length || hasFiles) && !hasText && !replyBlock) || msg.type==='sticker' || msg.type==='gif') ? '' : ((typeof _chatBubbleThemeStyle === 'function') ? _chatBubbleThemeStyle(mine ? 'mine' : 'other') : '')}" data-msg-id="${escapeHtml(resolvedId)}">
             ${replyBlock}${content}
           </div>
           <div id="reactions-${escapeHtml(resolvedId)}" class="flex flex-wrap gap-1 mt-0.5 ${mine ? 'justify-end' : 'justify-start'} px-1"></div>
@@ -42822,18 +43006,35 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   function _applyChatThemeToUI(theme) {
     const def = CHAT_THEMES[theme] || CHAT_THEMES.default;
     const room = document.getElementById('chat-room-messages');
-    const myBubbles = document.querySelectorAll('.msg-bubble.bg-\\[\\#1c2b4a\\]');
     if (room) {
       room.style.background = def.bg || '';
       room.style.backgroundImage = def.bgImage || '';
       room.style.backgroundSize = def.bgSize || '';
       room.classList.toggle('theme-anim-bg', !!def.animated);
     }
-    myBubbles.forEach(b => {
+    // C285: antes el selector buscaba una clase que el render ya no usa
+    // y el color de las burbujas del otro jamás se aplicaba: elegir un
+    // tema solo cambiaba el fondo de la sala. Ahora se tiñen ambas.
+    document.querySelectorAll('#chat-room-messages .msg-bubble[data-bubble-side]').forEach(b => {
+      const isClear = b.classList.contains('bg-transparent');
       b.style.background = '';
       b.style.border = '';
-      b.style.cssText += ';' + def.mine;
+      b.style.color = '';
+      if (theme === 'default' || isClear) return;
+      b.style.cssText += ';' + (b.getAttribute('data-bubble-side') === 'mine' ? (def.mine || '') : (def.other || ''));
     });
+  }
+
+  // C285: estilo del tema para las burbujas NUEVAS al renderizar (los
+  // mensajes que llegan con un tema activo nacían sin teñir).
+  function _chatBubbleThemeStyle(side) {
+    try {
+      if (typeof CHAT_THEMES === 'undefined' || typeof _currentChatTheme === 'undefined') return '';
+      if (!_currentChatTheme || _currentChatTheme === 'default') return '';
+      const def = CHAT_THEMES[_currentChatTheme];
+      if (!def) return '';
+      return (side === 'mine' ? def.mine : def.other) || '';
+    } catch (_) { return ''; }
   }
 
   function _loadAndApplyChatTheme(roomId) {
@@ -43914,7 +44115,7 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       const img = d.profileImage || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
       const name = d.username || d.displayName || appT('Usuario');
       const username = d.username || '';
-      _groupMsgSenderCache.set(uid, { image: img, name, username });
+      if (_groupMsgSenderCache.size > 400) { try { _groupMsgSenderCache.delete(_groupMsgSenderCache.keys().next().value); } catch (_) {} } _groupMsgSenderCache.set(uid, { image: img, name, username });
       apply(img, name, username);
     }).catch(() => {});
   }
@@ -45470,9 +45671,29 @@ function renderAccountsList(accounts) {
           payload: item,
           post: postSnap.val() ? { ...postSnap.val(), id: item.noteId } : null
         }))
-      )).then(items => {
+      )).then(async items => {
         if (currentViewedAuthorId !== authorId) return;
-        const validItems = items.filter(item => item.post);
+        // C285: un eco no republica lo que el visitante no puede ver por
+        // la vía normal (antes la pestaña Ecos mostraba completos posts
+        // privados, de grupo o de audiencia cerrada).
+        let validItems = items.filter(item => item.post && !item.post.groupId &&
+          !(typeof shouldHideNoteForCurrentUser === 'function' && shouldHideNoteForCurrentUser(item.post.id, item.post)) &&
+          !(typeof isAccountBlockedForCurrentUser === 'function' && isAccountBlockedForCurrentUser(item.post.authorId || item.post.userId || '')));
+        try {
+          if (typeof isAccountPrivate === 'function' && typeof canCurrentUserViewPrivateAccount === 'function') {
+            const me = (DrexCloud.auth().currentUser || {}).uid || '';
+            const aids = [...new Set(validItems.map(it => it.post.authorId || it.post.userId || '').filter(a => a && a !== me))];
+            const hidden = {};
+            await Promise.all(aids.map(async aid => {
+              try {
+                const _rb = await DrexCloud.database().ref('blocks/' + aid + '/' + me).once('value').catch(() => null);
+                if (_rb && _rb.val()) { hidden[aid] = 1; return; }
+                if (await isAccountPrivate(aid) && !(await canCurrentUserViewPrivateAccount(aid))) hidden[aid] = 1;
+              } catch (_) {}
+            }));
+            validItems = validItems.filter(it => !hidden[it.post.authorId || it.post.userId || '']);
+          }
+        } catch (_) {}
         if (!validItems.length) {
           container.innerHTML = `<div class="py-10 text-center text-[#6b7280]">No hay ecos disponibles.</div>`;
           return;
@@ -52522,7 +52743,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-08T02:10:29Z';
+window.DREX_BUILD = '2026-10-08T03:53:19Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -53892,10 +54113,14 @@ function musicEmptyHTML(msg) {
 }
 
 /* ---------- Explorar ---------- */
+let _musicExploreLoadedAt = 0; // C285
 function loadExploreMusic() {
   const list = document.getElementById('music-explore-list');
   if (!list) return;
   try { if (typeof drexSpotlightRender === 'function') drexSpotlightRender(); } catch (_) {}
+  // C285: Explorar se cachea 60 s: pasear entre pestañas ya no
+  // re-descarga las 120 canciones ni parpadea "Cargando…".
+  if (musicExploreCache.length && (Date.now() - _musicExploreLoadedAt) < 60000) { renderExploreMusic(); return; }
   list.innerHTML = `<div class="py-10 text-center text-[var(--theme-muted)] text-sm font-semibold">Cargando música…</div>`;
   musicDb().ref('musicTracks').orderByChild('createdAt').limitToLast(120).once('value').then(snap => {
     const arr = [];
@@ -53908,6 +54133,7 @@ function loadExploreMusic() {
     } else {
       musicExploreCache = arr;
     }
+    _musicExploreLoadedAt = Date.now(); // C285
     renderExploreMusic();
   }).catch(() => {
     list.innerHTML = musicEmptyHTML('No se pudo cargar la música. Inténtalo de nuevo.');
@@ -54950,17 +55176,27 @@ window.musicPlayAllSaved = function (shuffle) {
   musicMixActive = false;
   musicStartTrack(musicQueue[0]);
 };
+let _musicMineLoadedAt = 0; // C285
 function loadMyMusic() {
   const list = document.getElementById('music-mine-list');
   if (!list) return;
   const uid = musicCurrentUid();
   if (!uid) { list.innerHTML = musicEmptyHTML('Inicia sesión para ver tu música.'); return; }
+  // C285: "Mi música" también se cachea 60 s entre visitas.
+  if (musicMineCache.length && (Date.now() - _musicMineLoadedAt) < 60000) {
+    try { renderMusicStats(musicMineCache); } catch (_) {}
+    try { renderMusicHistory(); } catch (_) {}
+    try { renderMineList(); } catch (_) {}
+    try { musicSwitchMineTab(musicMineTab); } catch (_) {}
+    return;
+  }
   list.innerHTML = `<div class="py-10 text-center text-[var(--theme-muted)] text-sm font-semibold">Cargando tu música…</div>`;
   musicDb().ref('musicTracks').orderByChild('authorId').equalTo(uid).once('value').then(snap => {
     const arr = [];
     snap.forEach(ch => arr.push({ ...(ch.val() || {}), id: ch.key }));
     arr.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     musicMineCache = arr;
+    _musicMineLoadedAt = Date.now(); // C285
     try { musicHistoryLoad(); renderMusicHistory(); } catch (_) {}
     try { renderMusicStats(arr); } catch (_) {}
     try { loadMusicPlaylists(); } catch (_) {}
@@ -66850,7 +67086,7 @@ if (typeof module !== 'undefined' && module.exports) {
               // Formato exacto del composer (L14716-14725).
               poll: {
                 options: opciones.map(function (t) { return { t: t, v: 0 }; }),
-                endsAt: Date.now() + hours * 3600000,
+                endsAt: Date.now() + ((typeof drexPollHoursForPublish === 'function') ? drexPollHoursForPublish(hours) : hours) * 3600000,
                 total: 0,
                 voters: {}
               }
