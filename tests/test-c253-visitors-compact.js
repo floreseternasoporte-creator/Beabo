@@ -78,7 +78,7 @@ const newKeys = [
   'Vistas de perfil desactivadas.',
 ];
 for (const k of newKeys) {
-  eq((i18nJs.match(new RegExp(escRe('"' + k + '"'), 'g')) || []).length, 3,
+  eq((i18nJs.match(new RegExp(escRe('"' + k + '"'), 'g')) || []).length, 4,
     'clave EN/ZH/PT: ' + k.slice(0, 42) + '…');
 }
 

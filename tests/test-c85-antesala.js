@@ -201,7 +201,7 @@ const dictBounds = [
 I18N_KEYS.forEach(k => {
   const needle = '"' + k + '":';
   const total = i18nSrc.split(needle).length - 1;
-  ok(total === 3, `T7 clave "${k}" aparece exactamente 3× en total (EN+ZH+PT), halladas ${total}`);
+  ok(total === 4, `T7 clave "${k}" aparece exactamente 3× en total (EN+ZH+PT), halladas ${total}`);
   dictBounds.forEach(([a, b], di) => {
     const seg = i18nSrc.slice(i18nSrc.indexOf(a), i18nSrc.indexOf(b));
     const c = seg.split(needle).length - 1;

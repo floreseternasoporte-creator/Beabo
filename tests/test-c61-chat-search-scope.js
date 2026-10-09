@@ -36,7 +36,7 @@ function extractDict(varName, nextVarName) {
 
 var ZH_A = extractDict('var APP_CHINESE_ATTRS = {', 'var APP_ENGLISH_ATTRS = {');
 var EN_A = extractDict('var APP_ENGLISH_ATTRS = {', 'var APP_PORTUGUESE_ATTRS = {');
-var PT_A = extractDict('var APP_PORTUGUESE_ATTRS = {', null);
+var PT_A = extractDict('var APP_PORTUGUESE_ATTRS = {', 'var APP_JAPANESE_TEXT = {');
 
 function extractFnBody(name) {
   var start = html.indexOf('function ' + name + '(');

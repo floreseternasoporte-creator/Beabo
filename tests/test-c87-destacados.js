@@ -225,12 +225,12 @@ tcase('T11', () => {
     return i18n.split(a).length - 1 + i18n.split(b).length - 1;
   };
   for (const [es, [en, zh, pt]] of Object.entries(keys)) {
-    ok(keyCount(es) === 3, 'T11 clave ES 1× por idioma: ' + es + ' (got ' + keyCount(es) + ')');
+    ok(keyCount(es) === 4, 'T11 clave ES 1× por idioma: ' + es + ' (got ' + keyCount(es) + ')');
     ok(pairCount(es, en) === 1, 'T11 EN: ' + es);
     ok(pairCount(es, zh) === 1, 'T11 ZH: ' + es);
     ok(pairCount(es, pt) === 1, 'T11 PT: ' + es);
   }
-  ok(keyCount('Destacado') === 3, 'T11 "Destacado" preexistente sigue 1× por idioma (no duplicado)');
+  ok(keyCount('Destacado') === 4, 'T11 "Destacado" preexistente sigue 1× por idioma (no duplicado)');
 });
 
 // ================= T12: superficie de BD acotada =================

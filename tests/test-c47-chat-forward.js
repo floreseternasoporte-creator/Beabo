@@ -59,7 +59,7 @@ check('F3: doForwardMessage captura el dato ANTES de cerrar el diálogo',
 check('F3: doForwardMessage ya no lee _fwdMsgData después de closeChatForwardDialog()',
   (() => { const after = dof.slice(dof.indexOf('closeChatForwardDialog();')); return !/_fwdMsgData\./.test(after); })());
 check('i18n: clave de bloqueo en EN/ZH/PT',
-  (i18n.match(/"No puedes reenviar un mensaje de ver una vez\."/g) || []).length === 3);
+  (i18n.match(/"No puedes reenviar un mensaje de ver una vez\."/g) || []).length === 4);
 
 // ---------- funcional: extraer funciones reales y ejecutarlas ----------
 const writes = [];

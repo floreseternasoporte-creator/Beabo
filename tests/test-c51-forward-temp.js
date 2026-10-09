@@ -56,7 +56,7 @@ check('C1: doForwardMessage tiene guard defensivo para autoDestroyAt',
 check('C1: doForwardMessage NO propaga autoDestroyAt al payload del reenvío',
   !/payload\.autoDestroyAt/.test(dof));
 check('i18n: clave de bloqueo de temporales en EN/ZH/PT',
-  (i18n.match(/"No puedes reenviar un mensaje temporal\."/g) || []).length === 3);
+  (i18n.match(/"No puedes reenviar un mensaje temporal\."/g) || []).length === 4);
 
 // ---------- funcional ----------
 const writes = [];
