@@ -458,7 +458,13 @@ function subscriptionStateFrom(sub, planHint) {
  * vive en invoice.payments.data[].payment.payment_intent (type
  * 'payment_intent'). El campo legado solo se acepta como respaldo para
  * respuestas de cuentas fijadas a una API anterior. */
-function invoicePaymentIntent(inv) {
+/* C287: Stripe (Basil+) devuelve payment_intent como ID en texto salvo
+ * que se expanda payments.data.payment.payment_intent. La versión
+ * anterior solo expandía payments: el intent llegaba como string, este
+ * helper devolvía null y /subscribe-embedded respondía 502 SIEMPRE
+ * para quien no tenía suscripción (la hoja de pago jamás abrió en un
+ * teléfono real; las pruebas pasaban porque el stub lo daba objeto). */
+async function invoicePaymentIntent(inv) {
   if (!inv || typeof inv !== 'object') return null;
   const pagos = (inv.payments && Array.isArray(inv.payments.data)) ? inv.payments.data : [];
   for (const p of pagos) {
@@ -466,9 +472,15 @@ function invoicePaymentIntent(inv) {
     if (!pay || (pay.type && pay.type !== 'payment_intent')) continue;
     const pi = pay.payment_intent;
     if (pi && typeof pi === 'object') return pi;
+    if (typeof pi === 'string' && pi) {
+      try { return await stripe().paymentIntents.retrieve(pi); } catch (_) { return null; }
+    }
   }
   const legacy = inv.payment_intent;
   if (legacy && typeof legacy === 'object') return legacy;
+  if (typeof legacy === 'string' && legacy) {
+    try { return await stripe().paymentIntents.retrieve(legacy); } catch (_) { return null; }
+  }
   return null;
 }
 
@@ -583,8 +595,8 @@ async function handleSubscribeEmbedded(event) {
             needsPaymentUpdate: true,
           }, origin);
         }
-        const full = await stripe().subscriptions.retrieve(open.id, { expand: ['latest_invoice.payments'] });
-        const pi = invoicePaymentIntent(full && full.latest_invoice);
+        const full = await stripe().subscriptions.retrieve(open.id, { expand: ['latest_invoice.payments.data.payment.payment_intent'] });
+        const pi = await invoicePaymentIntent(full && full.latest_invoice);
         const secret = pi ? pi.client_secret : null;
         if (secret) {
           return json(200, { subscriptionId: open.id, clientSecret: secret, reused: true }, origin);
@@ -610,14 +622,14 @@ async function handleSubscribeEmbedded(event) {
       payment_behavior: 'default_incomplete',
       payment_settings: { save_default_payment_method: 'on_subscription' },
       metadata: { drex_user_sub: userSub, drex_orbit_plan: plan },
-      expand: ['latest_invoice.payments'],
+      expand: ['latest_invoice.payments.data.payment.payment_intent'],
     }, {
       // Reintentos de red/app dentro de la misma hora no crean una segunda
       // suscripción: Stripe devuelve la primera respuesta. La ventana de
       // una hora no bloquea un intento genuinamente nuevo más tarde.
       idempotencyKey: 'drex_sub_' + userSub + '_' + plan + '_' + Math.floor(Date.now() / 3600000),
     });
-    const pi = invoicePaymentIntent(sub && sub.latest_invoice);
+    const pi = await invoicePaymentIntent(sub && sub.latest_invoice);
     const secret = pi ? pi.client_secret : null;
     if (!secret) return json(502, { error: 'payment_provider_error' }, origin);
     console.log('orbit embedded subscription created', sub.id, 'plan', plan);

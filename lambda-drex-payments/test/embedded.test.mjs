@@ -82,7 +82,21 @@ test('POST /subscribe-embedded crea la suscripción y devuelve el clientSecret d
   assert.ok(body.subscriptionId && body.subscriptionId.startsWith('sub_test_'));
   assert.match(stripeStub.lastCustomerCreate.options.idempotencyKey, /^drex_cust_user-abc$/);
   assert.match(stripeStub.lastSubscriptionCreate.options.idempotencyKey, /^drex_sub_user-abc_monthly_\d+$/);
-  assert.deepEqual(stripeStub.lastSubscriptionCreate.params.expand, ['latest_invoice.payments']);
+  assert.deepEqual(stripeStub.lastSubscriptionCreate.params.expand, ['latest_invoice.payments.data.payment.payment_intent']);
+});
+
+test('C287: si Stripe devuelve el intent como ID (sin expandir), el secreto se recupera igual', async () => {
+  stripeStub.__setPiAsString(true);
+  try {
+    const res = await handler(httpEvent({
+      path: '/subscribe-embedded',
+      body: { plan: 'quarterly', idToken: validToken() },
+    }));
+    assert.equal(res.statusCode, 200);
+    assert.equal(parse(res).clientSecret, stripeStub.FAKE_PI_SECRET);
+  } finally {
+    stripeStub.__setPiAsString(false);
+  }
 });
 
 test('POST /subscribe-embedded reutiliza la suscripción incompleta (mismo secreto, sin crear otra)', async () => {

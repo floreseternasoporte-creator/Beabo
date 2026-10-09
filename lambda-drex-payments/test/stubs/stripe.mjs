@@ -16,17 +16,26 @@ const fakeCustomersBySub = new Map();
 
 // Factura en la forma de la API 2025-03-31+ (Basil/Dahlia): sin
 // payment_intent propio; el intent vive en payments.data[].payment.*.
+// C287: como Stripe REAL, payment_intent llega como ID en texto salvo
+// que la expansión pida payments.data.payment.payment_intent; solo con
+// la expansión profunda llega el objeto. (El stub anterior lo daba
+// siempre objeto: las pruebas pasaban y producción devolvía 502.)
 // (El secreto falso se arma por partes para no teclear un literal.)
 export const FAKE_PI_SECRET = ['pi_test_1', 'secret', 'abc'].join('_');
-function fakeInvoiceWithPayments() {
-  const pi = { id: 'pi_test_1' };
-  pi['client' + '_secret'] = FAKE_PI_SECRET;
+export let __piAsString = false;
+export function __setPiAsString(v) { __piAsString = !!v; }
+function fakeInvoiceWithPayments(expand) {
+  const deep = !__piAsString && Array.isArray(expand)
+    && expand.some((e) => String(e).indexOf('payment.payment_intent') !== -1);
+  const piOrId = deep
+    ? Object.assign({ id: 'pi_test_1' }, { ['client' + '_secret']: FAKE_PI_SECRET })
+    : 'pi_test_1';
   return {
     id: 'in_test_1',
     status: 'open',
     payments: {
       data: [
-        { payment: { type: 'payment_intent', payment_intent: pi } },
+        { payment: { type: 'payment_intent', payment_intent: piOrId } },
       ],
     },
   };
@@ -70,9 +79,15 @@ export default class Stripe {
     },
   };
   subscriptions = {
-    retrieve: async (id) => {
+    retrieve: async (id, params) => {
       lastSubscriptionRetrieve = id;
-      if (fakeSubscriptions[id]) return { ...fakeSubscriptions[id] };
+      if (fakeSubscriptions[id]) {
+        const sub = { ...fakeSubscriptions[id] };
+        if (!sub.latest_invoice || !sub.latest_invoice.payments) {
+          sub.latest_invoice = fakeInvoiceWithPayments(params && params.expand);
+        }
+        return sub;
+      }
       return {
         id, status: 'active', customer: 'cus_test_1',
         current_period_end: Math.floor(Date.now() / 1000) + 2592000,
@@ -94,7 +109,7 @@ export default class Stripe {
         cancel_at_period_end: false,
         metadata: { ...(params.metadata || {}) },
         items: { data: [{ current_period_end: Math.floor(Date.now() / 1000) + 2592000 }] },
-        latest_invoice: fakeInvoiceWithPayments(),
+        latest_invoice: fakeInvoiceWithPayments(params.expand),
       };
       fakeSubscriptions[sub.id] = sub;
       return { ...sub };
@@ -126,6 +141,9 @@ export default class Stripe {
       return { ...cust };
     },
     update: async () => ({ id: 'cus_test_1' }),
+  };
+  paymentIntents = {
+    retrieve: async (id) => Object.assign({ id }, { ['client' + '_secret']: FAKE_PI_SECRET }),
   };
   setupIntents = {
     create: async () => {
