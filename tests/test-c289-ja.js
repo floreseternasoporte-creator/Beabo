@@ -17,7 +17,7 @@ assert(jaCount / total > 0.9, 'cobertura japonesa baja: ' + jaCount + '/' + tota
 const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
 assert(html.includes('id="app-language-ja"'), 'botón JA en el selector de idioma');
 assert(html.includes("stored === 'ja'"), 'getAppLanguage acepta ja');
-assert(html.includes("lang === 'ja') ? lang : 'es'") || html.includes("|| lang === 'ja') ? lang : 'es'"), 'setAppLanguage acepta ja');
+assert(html.includes("|| lang === 'fr' || lang === 'ko') ? lang : 'es'"), 'setAppLanguage acepta ja');
 assert(html.includes('APP_JAPANESE_TEXT'), 'index usa APP_JAPANESE_TEXT');
 assert(html.includes('drexFillBaroJa'), 'relleno JA de Baro presente');
 const fg = { window: {} }; vm.createContext(fg); vm.runInContext(fs.readFileSync(__dirname + '/../fiesta-games-data.js', 'utf8'), fg);

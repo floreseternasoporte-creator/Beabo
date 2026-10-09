@@ -54,7 +54,7 @@ check('F1: el flag se resetea en fiestaGameCleanup (logout vía clearAccountScop
 check('F1: best-effort de limpieza del doc huérfano con catch',
   /fiestas\/' \+ fiestaCur\.id \+ '\/game'\)\.remove\(\)\.catch/.test(html));
 check('i18n: clave del aviso en EN/ZH/PT',
-  (i18n.match(/"El juego se detuvo: el anfitrión se desconectó\."/g) || []).length === 4);
+  (i18n.match(/"El juego se detuvo: el anfitrión se desconectó\."/g) || []).length === 6);
 
 // ---------- funcional: funciones reales en vm ----------
 const removes = [], toasts = [];
