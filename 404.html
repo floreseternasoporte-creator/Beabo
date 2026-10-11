@@ -35760,7 +35760,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       const birthdayPreview = document.getElementById('settings-account-birthday-preview');
       const birthdayInput = document.getElementById('settings-account-birthday');
 
-      if (emailPreview) emailPreview.textContent = user?.email || "Sin correo";
+      // C306: el preview del correo muestra si está verificado.
+      if (emailPreview) {
+        const em = user?.email || "";
+        emailPreview.textContent = em ? (em + (user.emailVerified ? " ✓" : " · Sin verificar")) : "Sin correo";
+      }
       if (emailInput) emailInput.value = user?.email || "";
       // C304: preview del nombre de usuario.
       try {
@@ -36807,10 +36811,15 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       view.style.zIndex = '130';
     }
     // C304: mostrar el correo actual y resetear el flujo de cambio.
+    // C306: si el correo actual no está verificado, ofrecer verificarlo.
     try {
       const user = DrexCloud.auth().currentUser;
       const cur = document.getElementById('settings-account-email-current');
       if (cur) cur.textContent = (user && user.email) || '—';
+      const cvb = document.getElementById('email-current-verify-block');
+      if (cvb) cvb.classList.toggle('hidden', !(user && user.email && !user.emailVerified));
+      const ccb = document.getElementById('email-current-code-block');
+      if (ccb) ccb.classList.add('hidden');
       const ni = document.getElementById('settings-account-email-new');
       if (ni) ni.value = '';
       const ci = document.getElementById('settings-account-email-code');
@@ -36852,6 +36861,53 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       showMiniToast(appT('No se pudo enviar el código. Inténtalo de nuevo.'));
     } finally {
       if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    }
+  }
+
+  // C306: verificar el correo ACTUAL (no un cambio). Usa updateAttributes
+  // sobre el mismo correo para que Cognito reenvíe el código.
+  async function drexSendCurrentEmailCode() {
+    const user = (function () { try { return DrexCloud.auth().currentUser; } catch (_) { return null; } })();
+    if (!user || !user.email || typeof user.requestEmailChange !== 'function') {
+      showMiniToast(appT('No hay sesión activa.')); return;
+    }
+    const btn = document.getElementById('email-current-send-btn');
+    if (btn) { btn.disabled = true; btn.style.opacity = '.6'; }
+    try {
+      await user.requestEmailChange(user.email);
+      window._drexPendingNewEmail = String(user.email).toLowerCase();
+      const cb = document.getElementById('email-current-code-block');
+      if (cb) cb.classList.remove('hidden');
+      showMiniToast(appT('Código enviado. Revisa tu correo.'));
+    } catch (e) {
+      showMiniToast(appT('No se pudo enviar el código. Inténtalo de nuevo.'));
+    } finally {
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    }
+  }
+  async function drexConfirmCurrentEmailCode() {
+    const user = (function () { try { return DrexCloud.auth().currentUser; } catch (_) { return null; } })();
+    if (!user || typeof user.confirmEmailChange !== 'function') {
+      showMiniToast(appT('No hay sesión activa.')); return;
+    }
+    const codeInput = document.getElementById('settings-account-email-current-code');
+    const code = (codeInput && codeInput.value || '').trim();
+    if (!code) { showMiniToast(appT('Escribe el código de verificación.')); return; }
+    try {
+      await user.confirmEmailChange(code);
+      try { if (typeof user.reload === 'function') await user.reload(); } catch (_) {}
+      window._drexPendingNewEmail = '';
+      const cvb = document.getElementById('email-current-verify-block');
+      if (cvb) cvb.classList.add('hidden');
+      // Refrescar el preview de la lista Cuenta.
+      try {
+        const fresh = DrexCloud.auth().currentUser;
+        const ep = document.getElementById('settings-account-email-preview');
+        if (ep && fresh && fresh.email) ep.textContent = fresh.email + (fresh.emailVerified ? " ✓" : " · Sin verificar");
+      } catch (_) {}
+      showMiniToast(appT('✓ Correo verificado.'));
+    } catch (e) {
+      showMiniToast(appT('Código incorrecto. Inténtalo de nuevo.'));
     }
   }
 
@@ -36964,7 +37020,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         DrexCloud.database().ref('users/' + user.uid).once('value').then(snapshot => {
           const data = snapshot.val() || {};
           const phone = data.phone || '';
-          if (phonePreview) phonePreview.textContent = phone || 'Sin teléfono registrado';
+          // C306: el preview del teléfono muestra si está verificado por SMS.
+          if (phonePreview) phonePreview.textContent = phone ? (phone + (data.phoneVerified ? " ✓" : " · Sin verificar")) : 'Sin teléfono registrado';
           if (phoneInput) phoneInput.value = phone;
         }).catch(() => {});
       } else {
@@ -53293,7 +53350,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-11T19:55:00Z'; // C305
+window.DREX_BUILD = '2026-10-11T20:15:00Z'; // C306
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -53741,6 +53798,14 @@ window.DREX_BUILD = '2026-10-11T19:55:00Z'; // C305
         <div>
           <label class="block mb-1.5 text-[15px] font-semibold text-[var(--theme-text)]">Correo actual</label>
           <div id="settings-account-email-current" class="w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-muted)] text-[15px] break-all">—</div>
+          <div id="email-current-verify-block" class="hidden mt-3 space-y-3">
+            <p class="text-[13px] text-[var(--theme-muted)]">Tu correo actual aún no está verificado. Te enviamos un código para confirmarlo.</p>
+            <button id="email-current-send-btn" onclick="drexSendCurrentEmailCode()" class="w-full py-3 rounded-xl border-2 border-[var(--drex-brand)] text-[var(--brand-indigo-text)] font-bold active:opacity-80 transition">Enviar código a mi correo</button>
+            <div id="email-current-code-block" class="hidden space-y-3">
+              <input id="settings-account-email-current-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none text-center tracking-[0.3em] text-[18px] font-bold" placeholder="· · · · · ·">
+              <button onclick="drexConfirmCurrentEmailCode()" class="w-full py-3.5 rounded-2xl bg-[var(--drex-brand)] text-white font-bold text-[16px] active:opacity-80 transition">Verificar mi correo</button>
+            </div>
+          </div>
         </div>
         <div>
           <label class="block mb-1.5 text-[15px] font-semibold text-[var(--theme-text)]">Correo nuevo</label>
