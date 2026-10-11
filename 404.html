@@ -44900,10 +44900,18 @@ function searchUserDirectoryByPrefix(q, limit) {
         const uid = child.val();
         if (typeof uid === 'string' && uid && child.key.charAt(0) !== '_') pairs.push([child.key, uid]);
       });
+      // Dedup por uid: el índice usernames/ puede conservar claves viejas
+      // (nombres anteriores) apuntando al mismo uid y salían repetidos.
+      const seenUid = new Set();
+      const uniqPairs = pairs.filter(([, uid]) => {
+        if (seenUid.has(uid)) return false;
+        seenUid.add(uid);
+        return true;
+      });
       const now = Date.now();
-      const out = new Array(pairs.length);
+      const out = new Array(uniqPairs.length);
       const missingIdx = [];
-      pairs.forEach(([uname, uid], i) => {
+      uniqPairs.forEach(([uname, uid], i) => {
         const hit = _dirSearchProfileCache.get(uid);
         if (hit && (now - hit.ts) < DIR_SEARCH_PROFILE_CACHE_TTL) {
           out[i] = { ...hit.data, uid, username: hit.data.username || uname };
@@ -44913,7 +44921,7 @@ function searchUserDirectoryByPrefix(q, limit) {
       });
       if (!missingIdx.length) return out.filter(Boolean);
       return Promise.all(missingIdx.map(i => {
-        const [uname, uid] = pairs[i];
+        const [uname, uid] = uniqPairs[i];
         return DrexCloud.database().ref('users/' + uid).once('value')
           .then(s2 => {
             const u = (s2 && s2.val()) || {};
@@ -45401,6 +45409,14 @@ function renderAccountsList(accounts) {
   const list = document.getElementById('search-accounts-list');
   if (!list) return;
   list.innerHTML = '';
+  // Dedup defensivo por uid (el índice puede traer el mismo usuario 2+ veces).
+  const seen = new Set();
+  accounts = (accounts || []).filter(a => {
+    const k = (a && (a.uid || a.username)) || '';
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
   accounts.forEach(account => {
     const accountAvatarId = `search-account-author-${account.uid}`;
     const item = document.createElement('div');
@@ -53331,7 +53347,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-11T17:58:33Z';
+window.DREX_BUILD = '2026-10-11T18:01:21Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
