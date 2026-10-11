@@ -3380,6 +3380,37 @@ function withCredRetry(opFn) {
             });
           } catch (e) { reject(mapAuthError(e)); }
         });
+      },
+      // C304: cambio de correo con verificación. updateAttributes() hace que
+      // Cognito envíe un código al correo NUEVO; verifyAttribute() lo confirma.
+      requestEmailChange: function (newEmail) {
+        return new Promise(function (resolve, reject) {
+          try {
+            var C = cognitoLib();
+            if (!C) return reject(new Error('Cognito no disponible'));
+            var email = String(newEmail || '').trim().toLowerCase();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+              return reject(Object.assign(new Error('Correo inválido'), { code: 'auth/invalid-email' }));
+            }
+            cognitoUser.updateAttributes(
+              [new C.CognitoUserAttribute({ Name: 'email', Value: email })],
+              function (err) {
+                if (err) reject(mapAuthError(err)); else resolve(email);
+              });
+          } catch (e) { reject(mapAuthError(e)); }
+        });
+      },
+      confirmEmailChange: function (code) {
+        return new Promise(function (resolve, reject) {
+          try {
+            var c = String(code || '').trim();
+            if (!c) return reject(Object.assign(new Error('Código vacío'), { code: 'auth/empty-code' }));
+            cognitoUser.verifyAttribute('email', c, {
+              onSuccess: function () { resolve(); },
+              onFailure: function (err) { reject(mapAuthError(err)); }
+            });
+          } catch (e) { reject(mapAuthError(e)); }
+        });
       }
     };
     return user;
