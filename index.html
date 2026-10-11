@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-11T21:00:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-11T21:20:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-11T21:00:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-11T21:20:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js?v=2026-10-11T21:00:00Z"></script>
+<script defer src="drex-data-export.js?v=2026-10-11T21:20:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -36819,7 +36819,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
           if (created) {
             try {
               const dt = new Date(Number(created));
-              set('accinfo-created', dt.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }));
+              // C309: fecha en el idioma de la app, no es-MX fijo.
+              const lang = (typeof baroLang === 'function' ? baroLang() : null) || 'es';
+              set('accinfo-created', dt.toLocaleDateString(lang, { day: 'numeric', month: 'long', year: 'numeric' }));
             } catch (_) { set('accinfo-created', null); }
           }
         }).catch(() => {});
@@ -37101,11 +37103,12 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
   function drexNormalizePhone(raw) {
     let d = String(raw || '').replace(/\D/g, '');
     if (!d) return '';
-    // Si parece número local de 10 dígitos (EE. UU.), anteponer +1.
-    if (d.length === 10) d = '1' + d;
-    if (d.length === 11 && d.charAt(0) === '1') return '+' + d;
-    if (String(raw || '').trim().charAt(0) === '+') return '+' + d;
-    return '';
+    const hadPlus = String(raw || '').trim().charAt(0) === '+';
+    // C309: no asumir país. Solo se acepta formato E.164 explícito (con +).
+    // Un número sin + es ambiguo y el SMS iría al país equivocado.
+    if (!hadPlus) return '';
+    if (d.length < 8 || d.length > 15) return '';
+    return '+' + d;
   }
   async function drexSendPhoneCode() {
     const user = (function () { try { return DrexCloud.auth().currentUser; } catch (_) { return null; } })();
@@ -41629,7 +41632,72 @@ const _startChatListeners = () => {
         container.scrollTop = container.scrollHeight;
       }
 
+      // C309: paginación del historial. Guarda la clave más vieja cargada
+      // para poder pedir el lote anterior con endAt().
+      let _oldestKey = null;
+      const _updateOldestKey = () => {
+        try {
+          const cache = chatMessagesMemoryCache.get(conversationId) || [];
+          if (cache.length) _oldestKey = cache[0].id || null;
+        } catch (_) {}
+      };
+      const _showLoadMoreBtn = () => {
+        try {
+          if (document.getElementById('chat-load-more-btn')) return;
+          const btn = document.createElement('button');
+          btn.id = 'chat-load-more-btn';
+          btn.className = 'mx-auto my-2 px-5 py-2 rounded-full bg-[var(--theme-surface-muted)] text-[var(--theme-text)] text-sm font-bold active:opacity-80 transition';
+          btn.textContent = appT('Cargar mensajes anteriores');
+          btn.onclick = () => drexLoadOlderChatMessages(conversationId);
+          container.prepend(btn);
+        } catch (_) {}
+      };
+      window.drexLoadOlderChatMessages = async (cid) => {
+        if (cid !== conversationId) return;
+        const btn = document.getElementById('chat-load-more-btn');
+        if (btn) { btn.disabled = true; btn.textContent = appT('Cargando…'); }
+        try {
+          _updateOldestKey();
+          if (!_oldestKey) { if (btn) btn.remove(); return; }
+          const snap = await DrexCloud.database().ref('conversationMessages/' + cid)
+            .orderByKey().endAt(_oldestKey).limitToLast(CHAT_MESSAGES_LIMIT + 1).once('value');
+          const val = snap.val() || {};
+          const keys = Object.keys(val).filter(k => k !== _oldestKey);
+          if (!keys.length) { if (btn) btn.remove(); return; }
+          // Insertar en orden cronológico al principio.
+          const frag = document.createDocumentFragment();
+          const tmpDiv = document.createElement('div');
+          keys.forEach(k => {
+            // Reusar renderMessageNode es complejo por el closure; se
+            // construye el nodo vía la caché y un re-render simple.
+            const cache = chatMessagesMemoryCache.get(cid) || [];
+            if (!cache.some(item => item.id === k)) cache.unshift({ id: k, ...val[k] });
+            chatMessagesMemoryCache.set(cid, cache);
+          });
+          // Re-render completo del contenedor preservando el scroll.
+          // C309: resetear la agrupación visual para que se reconstruya
+          // desde cero con el historial completo.
+          const prevHeight = container.scrollHeight;
+          container.innerHTML = '';
+          _lastChatMsgMeta = null;
+          _lastChatMsgNode = null;
+          const cache = chatMessagesMemoryCache.get(cid) || [];
+          cache.forEach(item => renderMessageNode(item, item.id));
+          _showLoadMoreBtn();
+          container.scrollTop = container.scrollHeight - prevHeight;
+          _updateOldestKey();
+          if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = appT('Cargar mensajes anteriores'); }
+        } catch (_) {
+          if (btn) { btn.disabled = false; btn.textContent = appT('Cargar mensajes anteriores'); }
+        }
+      };
+
       const ref = DrexCloud.database().ref('conversationMessages/' + conversationId).limitToLast(CHAT_MESSAGES_LIMIT);
+      // C309: si hay 80 mensajes (límite), probablemente haya más historial.
+      ref.once('value').then(snap => {
+        const count = snap.numChildren ? snap.numChildren() : Object.keys(snap.val() || {}).length;
+        if (count >= CHAT_MESSAGES_LIMIT) _showLoadMoreBtn();
+      }).catch(() => {});
       const callback = snapshot => {
         const emptyState = document.getElementById('chat-room-empty-state');
         if (emptyState) emptyState.remove();
@@ -53408,7 +53476,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-11T21:00:00Z'; // C308
+window.DREX_BUILD = '2026-10-11T21:20:00Z'; // C309
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
