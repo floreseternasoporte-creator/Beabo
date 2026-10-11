@@ -12467,9 +12467,15 @@ function saveNote() {
         <label class="block text-[17px] font-semibold text-[var(--theme-text)]" for="phone-input">Número de Teléfono</label>
         <input id="phone-input" name="tel" autocomplete="tel" type="tel" placeholder="+1 (555) 123-4567" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--drex-brand)] text-[var(--theme-text)]" />
       </div>
-      <p class="px-4 py-2 text-[13px] text-[var(--theme-muted)] leading-snug">Este número se guarda como contacto y aún no está verificado por SMS.</p>
-      <div class="px-4 pb-2">
+      <p id="phone-verify-status" class="px-4 py-2 text-[13px] text-[var(--theme-muted)] leading-snug">Este número se guarda como contacto y aún no está verificado por SMS.</p>
+      <div class="px-4 pb-2 space-y-3">
         <button onclick="savePhoneNumber()" class="w-full bg-[var(--drex-brand)] text-white py-3.5 rounded-xl font-bold active:opacity-90 transition-all">Guardar Teléfono</button>
+        <button id="phone-verify-send-btn" onclick="drexSendPhoneCode()" class="w-full py-3 rounded-xl border-2 border-[var(--drex-brand)] text-[var(--brand-indigo-text)] font-bold active:opacity-80 transition">Verificar por SMS</button>
+        <div id="phone-verify-code-block" class="hidden space-y-3">
+          <p class="text-[13px] text-[var(--theme-muted)]">Te enviamos un código por SMS. Escríbelo aquí.</p>
+          <input id="phone-verify-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 bg-[var(--theme-surface)] border border-[var(--theme-border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--drex-brand)] text-[var(--theme-text)] text-center tracking-[0.3em] text-[18px] font-bold" placeholder="· · · · · ·">
+          <button onclick="drexConfirmPhoneCode()" class="w-full bg-[var(--drex-brand)] text-white py-3.5 rounded-xl font-bold active:opacity-90 transition-all">Confirmar código</button>
+        </div>
       </div>
     </div>
   </div>
@@ -36775,7 +36781,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
           set('accinfo-username', d.username ? '@' + d.username : null);
           const tier = d.accountTier === 'minor_restricted' ? 'Menor de edad (restringida)' : 'Estándar';
           set('accinfo-tier', tier);
-          let created = d.createdAt || d.registeredAt || 0;
+          let created = d.registrationTimestamp || 0;
           if (created) {
             try {
               const dt = new Date(Number(created));
@@ -36976,6 +36982,76 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     }
   }
 
+  // C305: verificación de teléfono por SMS (Cognito). Normaliza a E.164.
+  function drexNormalizePhone(raw) {
+    let d = String(raw || '').replace(/\D/g, '');
+    if (!d) return '';
+    // Si parece número local de 10 dígitos (EE. UU.), anteponer +1.
+    if (d.length === 10) d = '1' + d;
+    if (d.length === 11 && d.charAt(0) === '1') return '+' + d;
+    if (String(raw || '').trim().charAt(0) === '+') return '+' + d;
+    return '';
+  }
+  async function drexSendPhoneCode() {
+    const user = (function () { try { return DrexCloud.auth().currentUser; } catch (_) { return null; } })();
+    if (!user || typeof user.requestPhoneVerification !== 'function') {
+      showMiniToast(appT('No hay sesión activa.')); return;
+    }
+    const input = document.getElementById('phone-input');
+    const e164 = drexNormalizePhone(input && input.value);
+    if (!e164) { showMiniToast(appT('Escribe un número válido con código de país, ej. +1 555 123 4567.')); return; }
+    const btn = document.getElementById('phone-verify-send-btn');
+    if (btn) { btn.disabled = true; btn.style.opacity = '.6'; }
+    try {
+      await user.requestPhoneVerification(e164);
+      window._drexPendingPhone = e164;
+      const cb = document.getElementById('phone-verify-code-block');
+      if (cb) cb.classList.remove('hidden');
+      showMiniToast(appT('Código enviado por SMS.'));
+    } catch (e) {
+      const msg = (e && e.message) || '';
+      if (/not enabled|sms|mfa/i.test(msg)) {
+        showMiniToast(appT('La verificación por SMS aún no está activada en el servidor.'));
+      } else {
+        showMiniToast(appT('No se pudo enviar el SMS. Revisa el número.'));
+      }
+    } finally {
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    }
+  }
+  async function drexConfirmPhoneCode() {
+    const user = (function () { try { return DrexCloud.auth().currentUser; } catch (_) { return null; } })();
+    if (!user || typeof user.confirmPhoneVerification !== 'function') {
+      showMiniToast(appT('No hay sesión activa.')); return;
+    }
+    const codeInput = document.getElementById('phone-verify-code');
+    const code = (codeInput && codeInput.value || '').trim();
+    if (!code) { showMiniToast(appT('Escribe el código de verificación.')); return; }
+    try {
+      await user.confirmPhoneVerification(code);
+      const e164 = window._drexPendingPhone || '';
+      try {
+        if (e164) {
+          await DrexCloud.database().ref('users/' + user.uid).update({
+            phone: e164,
+            phoneVerified: true,
+            phoneVerifiedAt: Date.now()
+          });
+        }
+      } catch (_) {}
+      window._drexPendingPhone = '';
+      const st = document.getElementById('phone-verify-status');
+      if (st) st.textContent = appT('Número verificado por SMS.');
+      const cb = document.getElementById('phone-verify-code-block');
+      if (cb) cb.classList.add('hidden');
+      const preview = document.getElementById('settings-account-phone-preview');
+      if (preview && e164) preview.textContent = e164 + ' ✓';
+      showMiniToast(appT('✓ Teléfono verificado.'));
+    } catch (e) {
+      showMiniToast(appT('Código incorrecto. Inténtalo de nuevo.'));
+    }
+  }
+
   function savePhoneNumber() {
     const user = DrexCloud.auth().currentUser;
     const phoneInput = document.getElementById('phone-input');
@@ -36987,7 +37063,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       return;
     }
 
-    DrexCloud.database().ref('users/' + user.uid).update({ phone }).then(() => {
+    DrexCloud.database().ref('users/' + user.uid).update({ phone, phoneVerified: false, phoneUpdatedAt: Date.now() }).then(() => {
       const phonePreview = document.getElementById('settings-account-phone-preview');
       if (phonePreview) phonePreview.textContent = phone;
       closePhoneConfigView();
@@ -53217,7 +53293,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-11T19:35:00Z'; // C304
+window.DREX_BUILD = '2026-10-11T19:55:00Z'; // C305
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';

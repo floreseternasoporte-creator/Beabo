@@ -3411,6 +3411,38 @@ function withCredRetry(opFn) {
             });
           } catch (e) { reject(mapAuthError(e)); }
         });
+      },
+      // C305: verificación de teléfono por SMS (requiere SNS configurado en el
+      // user pool de Cognito; si no lo está, Cognito devuelve error y la app
+      // lo informa en vez de fingir). El número debe ir en formato E.164.
+      requestPhoneVerification: function (phoneE164) {
+        return new Promise(function (resolve, reject) {
+          try {
+            var C = cognitoLib();
+            if (!C) return reject(new Error('Cognito no disponible'));
+            var p = String(phoneE164 || '').trim();
+            if (!/^\+\d{8,15}$/.test(p)) {
+              return reject(Object.assign(new Error('Teléfono inválido'), { code: 'auth/invalid-phone' }));
+            }
+            cognitoUser.updateAttributes(
+              [new C.CognitoUserAttribute({ Name: 'phone_number', Value: p })],
+              function (err) {
+                if (err) reject(mapAuthError(err)); else resolve(p);
+              });
+          } catch (e) { reject(mapAuthError(e)); }
+        });
+      },
+      confirmPhoneVerification: function (code) {
+        return new Promise(function (resolve, reject) {
+          try {
+            var c = String(code || '').trim();
+            if (!c) return reject(Object.assign(new Error('Código vacío'), { code: 'auth/empty-code' }));
+            cognitoUser.verifyAttribute('phone_number', c, {
+              onSuccess: function () { resolve(); },
+              onFailure: function (err) { reject(mapAuthError(err)); }
+            });
+          } catch (e) { reject(mapAuthError(e)); }
+        });
       }
     };
     return user;
