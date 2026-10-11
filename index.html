@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-11T20:35:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-11T21:00:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-11T20:35:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-11T21:00:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js"></script>
+<script defer src="drex-data-export.js?v=2026-10-11T21:00:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -22132,6 +22132,21 @@ else { try { drexSnapInit(); } catch (_) {} }
     return ui;
   }
 
+  // C308: estado de ERROR del feed (distinto del vacío): con botón Reintentar.
+  function snfFeedErrorHTML() {
+    return '<div class="feed-empty-state drex-fd-empty">'
+      + '<p class="drex-fd-empty-title">' + escapeHtml(appT('No se pudo cargar el feed')) + '</p>'
+      + '<p class="drex-fd-empty-text">' + escapeHtml(appT('Revisa tu conexión e inténtalo de nuevo.')) + '</p>'
+      + '<button onclick="drexRetryFeedLoad()" class="mt-4 px-6 py-2.5 rounded-full bg-[var(--drex-brand)] text-white text-sm font-bold active:opacity-80 transition">' + escapeHtml(appT('Reintentar')) + '</button>'
+      + '</div>';
+  }
+  function drexRetryFeedLoad() {
+    try {
+      // Recarga la vista actual del feed (la función existe en el router).
+      if (typeof showFeedView === 'function') showFeedView();
+      else location.reload();
+    } catch (_) { location.reload(); }
+  }
   function snfFeedEmptyHTML(feedMode) {
     // C228: vacíos con encanto — motivo de ondas "eco" (identidad Drex,
     // no copiado de nadie). Se conserva la clase `feed-empty-state`
@@ -22998,7 +23013,9 @@ else { try { drexSnapInit(); } catch (_) {} }
       try {
         const _fleHasPosts = !!ctx.feedContainer.querySelector(':scope > div[id^="post-"], :scope > div[id^="postph-"]');
         const _fleHasEmpty = !!ctx.feedContainer.querySelector(':scope > .feed-empty-state');
-        if (!_fleHasPosts && !_fleHasEmpty) ctx.feedContainer.innerHTML = snfFeedEmptyHTML(ctx.feedMode);
+        // C308: ante fallo de red se muestra ERROR con reintento, no el
+        // estado de "vacío" (que hacía creer que no había posts).
+        if (!_fleHasPosts && !_fleHasEmpty) ctx.feedContainer.innerHTML = snfFeedErrorHTML();
       } catch (_) {}
     });
 
@@ -36226,6 +36243,16 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       view.classList.add('hidden');
       view.style.display = 'none';
     }
+    // C308: refrescar el preview de Nombre de usuario en la lista Cuenta.
+    try {
+      const user = DrexCloud.auth().currentUser;
+      const up = document.getElementById('settings-account-username-preview');
+      if (user && up) {
+        DrexCloud.database().ref('users/' + user.uid + '/username').once('value')
+          .then(snap => { const u = snap.val(); if (u && up.isConnected) up.textContent = '@' + u; })
+          .catch(() => {});
+      }
+    } catch (_) {}
   }
 
   function openInfoConfigView() {
@@ -36928,8 +36955,19 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       const newEmail = window._drexPendingNewEmail || '';
       const oldEmail = (user.email || '').toLowerCase();
       // Sincronizar la BD: users/<uid>/email + índice userEmails/.
+      // C308: verificar que el correo nuevo no esté ocupado por OTRA cuenta
+      // antes de escribir el índice (si no, se rompe el login de la víctima).
+      // C308: si la sincronización falla, avisar en vez de decir éxito.
       try {
         const uid = user.uid;
+        if (newEmail) {
+          const takenSnap = await DrexCloud.database().ref('userEmails/' + newEmail).once('value');
+          const takenBy = takenSnap.val();
+          if (takenBy && takenBy !== uid) {
+            showMiniToast(appT('Ese correo ya está en uso por otra cuenta.'));
+            return;
+          }
+        }
         const updates = {};
         if (newEmail) {
           updates['users/' + uid + '/email'] = newEmail;
@@ -36937,7 +36975,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         }
         if (oldEmail && oldEmail !== newEmail) updates['userEmails/' + oldEmail] = null;
         if (Object.keys(updates).length) await DrexCloud.database().ref().update(updates);
-      } catch (_) {}
+      } catch (dbErr) {
+        showMiniToast(appT('El correo se verificó pero no se pudo guardar. Revisa tu conexión e inténtalo de nuevo.'));
+        return;
+      }
       try { if (typeof user.reload === 'function') await user.reload(); } catch (_) {}
       window._drexPendingNewEmail = '';
       const cur = document.getElementById('settings-account-email-current');
@@ -36945,6 +36986,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       if (cur) cur.textContent = (fresh && fresh.email) || newEmail || '—';
       const cb = document.getElementById('email-change-code-block');
       if (cb) cb.classList.add('hidden');
+      // C308: refrescar el preview de la lista Cuenta.
+      try {
+        const ep = document.getElementById('settings-account-email-preview');
+        if (ep && fresh && fresh.email) ep.textContent = fresh.email + (fresh.emailVerified ? " ✓" : " · Sin verificar");
+      } catch (_) {}
       showMiniToast(appT('Correo actualizado.'));
     } catch (e) {
       showMiniToast(appT('Código incorrecto. Inténtalo de nuevo.'));
@@ -37014,6 +37060,15 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       view.style.display = 'flex';
       view.style.zIndex = '120';
     }
+    // C308: resetear el estado de verificación al abrir (no arrastrar el
+    // bloque de código de una visita anterior).
+    try {
+      const cb = document.getElementById('phone-verify-code-block');
+      if (cb) cb.classList.add('hidden');
+      const ci = document.getElementById('phone-verify-code');
+      if (ci) ci.value = '';
+      window._drexPendingPhone = '';
+    } catch (_) {}
     try {
       const user = DrexCloud.auth().currentUser;
       const phonePreview = document.getElementById('settings-account-phone-preview');
@@ -53353,7 +53408,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-11T20:35:00Z'; // C307
+window.DREX_BUILD = '2026-10-11T21:00:00Z'; // C308
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';

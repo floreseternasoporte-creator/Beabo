@@ -5118,11 +5118,31 @@ function withCredRetry(opFn) {
     getAuth();
     var user = authInstance.currentUser;
     var email = user && user.email;
-    if (!email || String(email).indexOf('@') < 0) {
+    // C308: si el token no trae el email (login con username), buscarlo en
+    // la BD antes de rendirse. Sin esto, desactivar el 2FA era imposible.
+    var emailPromise;
+    if (email && String(email).indexOf('@') >= 0) {
+      emailPromise = Promise.resolve(String(email));
+    } else if (user && user.uid) {
+      emailPromise = DrexCloud.database().ref('users/' + user.uid + '/email').once('value')
+        .then(function (snap) {
+          var em = snap.val();
+          if (em && String(em).indexOf('@') >= 0) return String(em);
+          throw new Error('No se pudo confirmar tu identidad. Inicia sesión con tu correo.');
+        });
+    } else {
       return Promise.reject(new Error('No se pudo confirmar tu identidad. Inicia sesión con tu correo.'));
     }
-    var poolUser = new C.CognitoUser({ Username: String(email), Pool: getUserPool() });
-    var details = new C.AuthenticationDetails({ Username: String(email), Password: String(password || '') });
+    return emailPromise.then(function (resolvedEmail) {
+      var poolUser = new C.CognitoUser({ Username: resolvedEmail, Pool: getUserPool() });
+      var details = new C.AuthenticationDetails({ Username: resolvedEmail, Password: String(password || '') });
+      return mfaReauthenticateWith(poolUser, details, totpCodeProvider);
+    });
+  }
+
+  // C308: el cuerpo real de la re-autenticación, separado para poder
+  // resolver el email primero (token o BD).
+  function mfaReauthenticateWith(poolUser, details, totpCodeProvider) {
     return new Promise(function (resolve, reject) {
       var done = false;
       var timer = setTimeout(function () {
