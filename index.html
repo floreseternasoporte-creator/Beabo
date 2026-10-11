@@ -15202,7 +15202,11 @@ function saveNote() {
   // === DREX-SCHEDULED-POSTS: FIN ===
 
   let selectedCommentGif = null;
-  // Coleccion propia de GIFs verificados (sin dependencia de API externa).
+  // Clave de la API de Tenor (https://tenor.com/developer/tools).
+  // Vacía = se usa solo la colección local de abajo. Con clave = búsqueda
+  // ilimitada en Tenor (tendencias + cualquier término).
+  const TENOR_API_KEY = '';
+  // Coleccion propia de GIFs verificados (respaldo si no hay clave o Tenor falla).
   const DREX_GIF_LIBRARY = [
     { u: 'https://media.tenor.com/yA-ihHHyEGkAAAAC/funny-laughing.gif', t: 'divertido funny gracioso humor jajaja laugh laughing lol reir riendo risa' },
     { u: 'https://gifdb.com/images/thumbnail/red-cartoon-character-making-angry-face-0bbslpc7zmza8vb2.gif', t: 'angry enojada enojado enojo furiosa furioso mad rabia rage' },
@@ -15304,13 +15308,15 @@ function saveNote() {
     }, 300);
   }
 
-  function renderGifCards(container, gifUrls = []) {
-    gifUrls.forEach(url => {
+  function renderGifCards(container, items = []) {
+    items.forEach(item => {
+      const thumb = typeof item === 'string' ? item : item.thumb;
+      const full = typeof item === 'string' ? item : (item.full || item.thumb);
       const img = document.createElement('img');
-      img.src = url;
+      img.src = thumb;
       img.loading = 'lazy';
       img.className = 'w-full h-40 md:h-44 object-cover rounded-2xl cursor-pointer hover:opacity-90 transition border border-[#dce1e5]';
-      img.onclick = () => selectGif(url);
+      img.onclick = () => selectGif(full);
       container.appendChild(img);
     });
   }
@@ -15328,10 +15334,49 @@ function saveNote() {
     `;
   }
 
-  function searchGifs(query) {
-    const container = document.getElementById('gif-results-container');
-    if (!container) return;
-    const q = String(query || '').trim().toLowerCase();
+  let __gifSearchSeq = 0;
+
+  // Busca en Tenor (ilimitado). Si falla, cae a la colección local.
+  async function searchTenorGifs(container, q) {
+    const seq = ++__gifSearchSeq;
+    const trending = !q || q === 'trending' || q === 'tendencias' || q === 'tendencia';
+    const endpoint = trending
+      ? 'https://tenor.googleapis.com/v2/featured'
+      : 'https://tenor.googleapis.com/v2/search';
+    const params = new URLSearchParams({
+      key: TENOR_API_KEY,
+      client_key: 'drex',
+      limit: '24',
+      locale: (window.DREX_LANG || 'es') === 'en' ? 'en' : (window.DREX_LANG || 'es'),
+      media_filter: 'gif,tinygif'
+    });
+    if (!trending) params.set('q', q);
+    container.innerHTML = '<div class="col-span-2 py-10 text-center"><p class="text-[#8fa2c7] text-sm">Buscando GIFs…</p></div>';
+    try {
+      const res = await fetch(endpoint + '?' + params.toString());
+      if (!res.ok) throw new Error('tenor ' + res.status);
+      const data = await res.json();
+      if (seq !== __gifSearchSeq) return; // respuesta vieja, ignorar
+      const items = (data.results || []).map(r => {
+        const mf = r.media_formats || {};
+        const full = (mf.gif && mf.gif.url) || '';
+        const thumb = (mf.tinygif && mf.tinygif.url) || full;
+        return full ? { thumb, full } : null;
+      }).filter(Boolean);
+      container.innerHTML = '';
+      if (items.length > 0) {
+        renderGifCards(container, items);
+      } else {
+        renderGifEmptyState(container, q);
+      }
+    } catch (e) {
+      if (seq !== __gifSearchSeq) return;
+      searchGifsLocal(container, q);
+    }
+  }
+
+  // Colección local (respaldo cuando no hay clave de Tenor o si falla).
+  function searchGifsLocal(container, q) {
     let matches;
     if (!q || q === 'trending' || q === 'tendencias' || q === 'tendencia') {
       matches = [...DREX_GIF_LIBRARY].sort(() => Math.random() - 0.5);
@@ -15344,9 +15389,20 @@ function saveNote() {
     }
     container.innerHTML = '';
     if (matches.length > 0) {
-      renderGifCards(container, matches.map(g => g.u));
+      renderGifCards(container, matches.map(g => ({ thumb: g.u, full: g.u })));
     } else {
       renderGifEmptyState(container, q);
+    }
+  }
+
+  function searchGifs(query) {
+    const container = document.getElementById('gif-results-container');
+    if (!container) return;
+    const q = String(query || '').trim().toLowerCase();
+    if (TENOR_API_KEY) {
+      searchTenorGifs(container, q);
+    } else {
+      searchGifsLocal(container, q);
     }
   }
 
@@ -52963,7 +53019,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-11T01:37:14Z';
+window.DREX_BUILD = '2026-10-11T01:55:45Z';
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
