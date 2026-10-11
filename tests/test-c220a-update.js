@@ -55,7 +55,7 @@ test('404.html idéntico a index.html', function () {
 // ---- 3. sw.js: version.json network-only ----
 var sw = read('sw.js');
 test('sw.js subió DREX_SW_VERSION a drex-v40', function () {
-  assert(/DREX_SW_VERSION\s*=\s*'drex-v49'/.test(sw), 'versión no es drex-v39');
+  assert(/DREX_SW_VERSION\s*=\s*'drex-v50'/.test(sw), 'versión no es drex-v39');
 });
 test('sw.js excluye version.json de la caché (network-only)', function () {
   var anchor = sw.indexOf("pathname.endsWith('/version.json')");
