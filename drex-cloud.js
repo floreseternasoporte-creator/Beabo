@@ -1650,6 +1650,18 @@ function withCredRetry(opFn) {
       return batchWriteAll(reqs);
     });
   }
+  // C325: como deleteSubtree pero conserva las rutas exactas indicadas en
+  // keepExact (hojas escalares recién escritas por update()).
+  function deleteSubtreeExcept(segs, keepExact) {
+    return readLeaves(segs).then(function (leaves) {
+      var reqs = [];
+      leaves.forEach(function (l) {
+        if (keepExact && keepExact[l.segs.join('/')]) return;
+        reqs.push(deleteKey(l.segs[0], l.segs.slice(1).join('/')));
+      });
+      return batchWriteAll(reqs);
+    });
+  }
 
   // DataSnapshot
 
@@ -3012,18 +3024,26 @@ function withCredRetry(opFn) {
       delReqs.push(deleteKey(s[0], s.slice(1).join('/')));
     });
     var prefixLists = Object.keys(prefixDeletes).map(function (k) { return prefixDeletes[k]; });
-    var chain = Promise.resolve();
+    // C325: escribir PRIMERO y borrar DESPUÉS. El orden anterior (borrar la
+    // hoja vieja y luego escribir la nueva) dejaba el dato eliminado para
+    // siempre si el put fallaba (corte de red, timeout, pestaña suspendida
+    // en iOS). Las rutas exactas recién escritas como escalares se excluyen
+    // del borrado por prefijo: el PutItem ya las reemplazó de forma atómica
+    // y solo hay que limpiar posibles hijos huérfanos de un valor anterior
+    // que era objeto.
+    var writtenScalarPaths = {};
+    leafReqs.forEach(function (l) {
+      if (l.value === null || typeof l.value !== 'object') writtenScalarPaths[l.segs.join('/')] = true;
+    });
+    var putReqs = leafReqs.map(function (l) {
+      return putLeaf(l.segs[0], l.segs.slice(1).join('/'), l.value);
+    });
+    var chain = batchWriteAll(putReqs);
     prefixLists.forEach(function (s) {
-      chain = chain.then(function () { return deleteSubtree(s); });
+      chain = chain.then(function () { return deleteSubtreeExcept(s, writtenScalarPaths); });
     });
     return chain
       .then(function () { return batchWriteAll(delReqs); })
-      .then(function () {
-        var reqs = leafReqs.map(function (l) {
-          return putLeaf(l.segs[0], l.segs.slice(1).join('/'), l.value);
-        });
-        return batchWriteAll(reqs);
-      })
       .then(function () {
         leafReqs.forEach(function (l) { notifyLocal(l.segs); });
         return null;

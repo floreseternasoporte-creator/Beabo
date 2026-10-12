@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T21:25:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T21:35:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-12T21:25:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-12T21:35:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js?v=2026-10-12T21:25:00Z"></script>
+<script defer src="drex-data-export.js?v=2026-10-12T21:35:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -32900,7 +32900,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       updates[p + 'profileDegraded'] = null;
       updates[p + 'usernameIsFallback'] = null;
       updates[p + 'founder'] = _existingUserData.founder === true;
-      if (firstClaim) {
+      // C325: si el usuario YA existe en la BD (ej. completa el registro
+      // en un dispositivo nuevo con regData fresco), no borrar su foto ni
+      // sus contadores: firstClaim solo aplica a cuentas realmente nuevas.
+      const _isExistingUser = !!(_existingUserData && (_existingUserData.username || _existingUserData.email || _existingUserData.registrationTimestamp));
+      if (firstClaim && !_isExistingUser) {
         updates[p + 'bio'] = '';
         updates[p + 'profileImage'] = '';
         updates[p + 'followersCount'] = 0;
@@ -44344,11 +44348,14 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     return ref.once('value').then(snapshot => {
       const existing = snapshot.val() || {};
       // Campos seguros: jamás pisan datos que otros flujos hayan escrito.
+      // C325: profileImage NO se reescribe en cada login (antes pasaba por
+      // update() en cada sesión, ampliando la ventana del bug de borrado).
+      // Solo se escribe si la BD está vacía y hay un valor real que poner.
       const safeUpdates = {
         email: existing.email || user.email || '',
-        profileImage: existing.profileImage || user.photoURL || '',
         lastChatLoginAt: Date.now()
       };
+      if (!existing.profileImage && user.photoURL) safeUpdates.profileImage = user.photoURL;
       // FIX DEFINITIVO (2026-09-19): el username JAMÁS se toca si el perfil ya
       // tiene uno. Antes se escribía `username` en cada login con el valor de
       // una lectura que podía llegar obsoleta/vacía (red intermitente o carrera
@@ -54036,7 +54043,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-12T21:25:00Z'; // C324
+window.DREX_BUILD = '2026-10-12T21:35:00Z'; // C325
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
