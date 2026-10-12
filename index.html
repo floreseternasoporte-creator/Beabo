@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T08:50:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T09:05:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-12T08:50:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-12T09:05:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js?v=2026-10-12T08:50:00Z"></script>
+<script defer src="drex-data-export.js?v=2026-10-12T09:05:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -34929,8 +34929,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
   let _stBreakTimer = null;
   let _stLimitWarnFired = false;
 
-  function _stDateKey(offsetDays = 0) {
-    const d = new Date();
+  function _stDateKey(offsetDays = 0, refDate) {
+    const d = refDate ? new Date(refDate) : new Date();
     d.setDate(d.getDate() - offsetDays);
     return d.toISOString().slice(0, 10);
   }
@@ -34966,8 +34966,19 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
 
   function stopScreenTimeTracking() {
     if (_stSessionStart) {
-      const mins = (Date.now() - _stSessionStart) / 60000;
-      _stAddMinutes(_stDateKey(), mins);
+      // C315: partir la sesión por medianoche para no atribuir todo al día nuevo.
+      const start = new Date(_stSessionStart);
+      const end = new Date();
+      const startKey = _stDateKey(0, start);
+      const endKey = _stDateKey(0, end);
+      if (startKey === endKey) {
+        _stAddMinutes(startKey, (end - start) / 60000);
+      } else {
+        const midnight = new Date(start);
+        midnight.setHours(24, 0, 0, 0);
+        _stAddMinutes(startKey, (midnight - start) / 60000);
+        _stAddMinutes(endKey, (end - midnight) / 60000);
+      }
       _stSessionStart = null;
     }
     _stClearBreakReminder();
@@ -35278,6 +35289,20 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       }
       _scheduleQuietModeRestore();
     } else {
+      // C315: si quedó un respaldo huérfano (el timer de las 8:00 murió con la
+      // pestaña cerrada), restaurar las notificaciones ahora. Antes quedaban
+      // apagadas todo el día hasta el siguiente ciclo.
+      try {
+        const orphan = localStorage.getItem(ST_NOTIF_BACKUP_KEY);
+        if (orphan) {
+          const backup = JSON.parse(orphan);
+          if (backup && typeof backup === 'object') {
+            notifSettings = backup;
+            saveNotifSettings();
+          }
+          localStorage.removeItem(ST_NOTIF_BACKUP_KEY);
+        }
+      } catch (_) {}
       const now = new Date();
       const quietStart = new Date(now);
       quietStart.setHours(22, 0, 0, 0);
@@ -35294,8 +35319,38 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     }
   })();
 
+  // C315: confirmación interna estilo Drex (reemplaza confirm() nativo).
+  function drexConfirm(message, onYes) {
+    try {
+      let ov = document.getElementById('drex-confirm-overlay');
+      if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'drex-confirm-overlay';
+        ov.className = 'fixed inset-0 z-[200] hidden items-end justify-center';
+        ov.innerHTML = `<div class="absolute inset-0 bg-black/50" onclick="drexConfirmClose()"></div>
+          <div class="relative w-full max-w-md bg-[var(--theme-surface)] rounded-t-3xl p-6 pb-8" style="padding-bottom:max(2rem,env(safe-area-inset-bottom));">
+            <p id="drex-confirm-msg" class="text-[16px] font-semibold text-[var(--theme-text)] text-center mb-6"></p>
+            <div class="flex gap-3">
+              <button onclick="drexConfirmClose()" class="flex-1 py-3 rounded-xl font-bold bg-[var(--theme-surface-muted)] text-[var(--theme-text)] active:opacity-80">Cancelar</button>
+              <button id="drex-confirm-yes" class="flex-1 py-3 rounded-xl font-bold bg-[var(--drex-brand)] text-white active:opacity-80">Confirmar</button>
+            </div>
+          </div>`;
+        document.body.appendChild(ov);
+      }
+      document.getElementById('drex-confirm-msg').textContent = message;
+      const yesBtn = document.getElementById('drex-confirm-yes');
+      yesBtn.onclick = () => { drexConfirmClose(); try { onYes(); } catch (_) {} };
+      ov.classList.remove('hidden'); ov.classList.add('flex');
+    } catch (_) { try { onYes(); } catch (_) {} }
+  }
+  function drexConfirmClose() {
+    const ov = document.getElementById('drex-confirm-overlay');
+    if (ov) { ov.classList.add('hidden'); ov.classList.remove('flex'); }
+  }
   function resetScreenTimeToday() {
-    if (!confirm(appT('¿Reiniciar el tiempo registrado hoy?'))) return;
+    drexConfirm(appT('¿Reiniciar el tiempo registrado hoy?'), () => _doResetScreenTimeToday());
+  }
+  function _doResetScreenTimeToday() {
     // C105: blindado ante almacenamiento no disponible.
     try { localStorage.setItem(ST_PREFIX + _stDateKey(), '0'); } catch (_) {}
     _stSessionStart = Date.now();
@@ -53746,7 +53801,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-12T08:50:00Z'; // C314
+window.DREX_BUILD = '2026-10-12T09:05:00Z'; // C315
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
