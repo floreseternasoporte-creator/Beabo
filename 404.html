@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T08:20:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T08:35:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-12T08:20:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-12T08:35:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js?v=2026-10-12T08:20:00Z"></script>
+<script defer src="drex-data-export.js?v=2026-10-12T08:35:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -35681,12 +35681,44 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     return out;
   }
 
-  function estimateCacheUsageBytes() {
+  // C313: el Cache API (imágenes/medios del SW) suele ser lo más pesado
+  // y antes no se contaba: el tamaño mostrado era falso por defecto.
+  let _cacheApiBytes = 0;
+  let _cacheApiMeasured = false;
+  function measureCacheApiBytes() {
+    if (_cacheApiMeasured) return;
+    _cacheApiMeasured = true;
     try {
-      if (window.DrexCache) return window.DrexCache.sizeBytes();
+      if (!('caches' in window)) return;
+      caches.keys().then(names => {
+        let total = 0;
+        let pending = names.length;
+        if (!pending) { _cacheApiBytes = 0; refreshCacheUsageUI(); return; }
+        names.forEach(n => {
+          caches.open(n).then(cache => cache.keys().then(reqs => {
+            let pi = reqs.length;
+            if (!pi && --pending === 0) { _cacheApiBytes = total; refreshCacheUsageUI(); }
+            reqs.forEach(r => {
+              cache.match(r).then(res => {
+                if (res) {
+                  const len = res.headers.get('content-length');
+                  if (len) total += parseInt(len, 10) || 0;
+                }
+                if (--pi === 0 && --pending === 0) { _cacheApiBytes = total; refreshCacheUsageUI(); }
+              }).catch(() => { if (--pi === 0 && --pending === 0) { _cacheApiBytes = total; refreshCacheUsageUI(); } });
+            });
+          }).catch(() => { if (--pending === 0) { _cacheApiBytes = total; refreshCacheUsageUI(); } })).catch(() => { if (--pending === 0) { _cacheApiBytes = total; refreshCacheUsageUI(); } });
+        });
+      }).catch(() => {});
+    } catch (_) {}
+  }
+  function estimateCacheUsageBytes() {
+    measureCacheApiBytes();
+    let total = _cacheApiBytes;
+    try {
+      if (window.DrexCache) return total + window.DrexCache.sizeBytes();
     } catch (_) {}
     const cacheKeys = getClearableCacheKeys();
-    let total = 0;
     cacheKeys.forEach(key => {
       const value = localStorage.getItem(key) || '';
       total += key.length + value.length;
@@ -35819,6 +35851,20 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         try { localStorage.removeItem(key); } catch (_) {}
       });
       try { if (window.DrexCache) window.DrexCache.clear(); } catch (_) {}
+      // C313: vaciar también el Cache API del Service Worker (imágenes/medios).
+      // Se preserva el caché del app shell (drex-v*) para no romper la carga offline.
+      try {
+        if ('caches' in window) {
+          caches.keys().then(names => {
+            names.forEach(n => {
+              if (/^drex-v\d+$/.test(n)) return; // app shell: no tocar
+              caches.delete(n).catch(() => {});
+            });
+            _cacheApiBytes = 0; _cacheApiMeasured = false;
+            setTimeout(refreshCacheUsageUI, 800);
+          }).catch(() => {});
+        }
+      } catch (_) {}
       try { if (window.DrexCache) window.DrexCache.invalidate('translate'); } catch (_) {}
       try { if (typeof window.drexTranslateClearCache === 'function') window.drexTranslateClearCache(); } catch (_) {}
 
@@ -53669,7 +53715,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-12T08:20:00Z'; // C312
+window.DREX_BUILD = '2026-10-12T08:35:00Z'; // C313
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
