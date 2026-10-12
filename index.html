@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T21:05:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T21:15:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-12T21:05:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-12T21:15:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js?v=2026-10-12T21:05:00Z"></script>
+<script defer src="drex-data-export.js?v=2026-10-12T21:15:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -40013,7 +40013,8 @@ let chatTypingListener = null;
   // todos); ahora itera solo MIS conversaciones (userConversations/<uid>) y
   // borra mi recibo en cada una: acotado por mis chats, no por la tabla.
   function removeReadReceiptsForCurrentUser() { const user=DrexCloud.auth().currentUser; if (!user) return; DrexCloud.database().ref('userConversations/' + user.uid).once('value').then(snap => { const updates={}; Object.keys(snap.val() || {}).forEach((conversationId) => { if (conversationId && conversationId.charAt(0) !== '_') updates[`conversationReadAt/${conversationId}/${user.uid}`] = null; }); if (Object.keys(updates).length) return DrexCloud.database().ref().update(updates); }).catch(() => {}); }
-  function clearPrivateChatData() { if (!confirm(appT('Se eliminarán borradores y silencios solo de este dispositivo. Los mensajes del chat no se borrarán.'))) return; try { Object.keys(localStorage).filter(k => k.startsWith('drex_chat_draft_') || k.startsWith('drex_chat_muted_') || k === 'drex_chat_saved_messages_v1').forEach(k => localStorage.removeItem(k)); } catch (_) {} clearChatDraft(); chatNotify('Datos locales de chat eliminados'); }
+  function clearPrivateChatData() { drexConfirm(appT('Se eliminarán borradores y silencios solo de este dispositivo. Los mensajes del chat no se borrarán.'), () => _doClearPrivateChatData()); }
+  function _doClearPrivateChatData() { try { Object.keys(localStorage).filter(k => k.startsWith('drex_chat_draft_') || k.startsWith('drex_chat_muted_') || k === 'drex_chat_saved_messages_v1').forEach(k => localStorage.removeItem(k)); } catch (_) {} clearChatDraft(); chatNotify('Datos locales de chat eliminados'); }
 
   function getChatDraftKey() { return currentChatRoomId ? 'drex_chat_draft_' + currentChatRoomId : ''; }
   function saveChatDraft() {
@@ -40648,6 +40649,27 @@ let chatTypingListener = null;
     container.innerHTML = `<div class="py-6 text-center">${getSpinnerMarkup()}</div>`;
     allChatConversations = [];
 
+    // C323: suscribir cambios en vivo (preview y orden se actualizan sin salir).
+    try {
+      if (window._drexInboxListener) { window._drexInboxListener.off(); window._drexInboxListener = null; }
+      const inboxRef = DrexCloud.database().ref('userConversations/' + user.uid);
+      let _inboxRefreshTimer = null;
+      const _scheduleInboxRefresh = () => {
+        if (_inboxRefreshTimer) clearTimeout(_inboxRefreshTimer);
+        _inboxRefreshTimer = setTimeout(() => {
+          _inboxRefreshTimer = null;
+          const list = document.getElementById('chat-conversations-list');
+          if (list && !list.classList.contains('hidden')) {
+            chatConversationCache = { items: [], loadedAt: 0 };
+            loadChatConversations();
+          }
+        }, 800);
+      };
+      inboxRef.on('child_changed', _scheduleInboxRefresh);
+      inboxRef.on('child_added', _scheduleInboxRefresh);
+      inboxRef.on('child_removed', _scheduleInboxRefresh);
+      window._drexInboxListener = inboxRef;
+    } catch (_) {}
     DrexCloud.database().ref('userConversations/' + user.uid).once('value').then(async snap => {
       const map = snap.val() || {};
       const entries = Object.keys(map);
@@ -41121,7 +41143,11 @@ let chatTypingListener = null;
   window.deleteConvAndClose = async function() {
     if (!_convLongTarget) return;
     const { type, id, name } = _convLongTarget;
-    if (!confirm(appT('¿Eliminar la conversación con "{n}"? Se eliminará solo para ti.').replace('{n}', name))) return;
+    drexConfirm(appT('¿Eliminar la conversación con "{n}"? Se eliminará solo para ti.').replace('{n}', name), () => _doDeleteConversation(type, id));
+  };
+  async function _doDeleteConversation(type, id) {
+    if (!_convLongTarget) return;
+    const { name } = _convLongTarget;
     closeConvOptions();
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
@@ -42160,16 +42186,19 @@ const _startChatListeners = () => {
           const val = snap.val() || {};
           const keys = Object.keys(val).filter(k => k !== _oldestKey);
           if (!keys.length) { if (btn) btn.remove(); return; }
-          // Insertar en orden cronológico al principio.
-          const frag = document.createDocumentFragment();
-          const tmpDiv = document.createElement('div');
+          // C323: anteponer el lote como bloque en orden cronológico.
+          // Antes se hacía unshift por cada key en orden ascendente, lo que
+          // invertía el lote, y _updateOldestKey tomaba la key equivocada
+          // (el botón se atascaba re-leyendo lo mismo para siempre).
+          const cache = chatMessagesMemoryCache.get(cid) || [];
+          const existingIds = new Set(cache.map(item => item.id));
+          const batch = [];
           keys.forEach(k => {
-            // Reusar renderMessageNode es complejo por el closure; se
-            // construye el nodo vía la caché y un re-render simple.
-            const cache = chatMessagesMemoryCache.get(cid) || [];
-            if (!cache.some(item => item.id === k)) cache.unshift({ id: k, ...val[k] });
-            chatMessagesMemoryCache.set(cid, cache);
+            if (!existingIds.has(k)) { batch.push({ id: k, ...val[k] }); existingIds.add(k); }
           });
+          // C323: si no se agregó nada nuevo, no hay más historial: quitar el botón.
+          if (!batch.length) { if (btn) btn.remove(); return; }
+          chatMessagesMemoryCache.set(cid, batch.concat(cache));
           // Re-render completo del contenedor preservando el scroll.
           // C309: resetear la agrupación visual para que se reconstruya
           // desde cero con el historial completo.
@@ -42177,8 +42206,8 @@ const _startChatListeners = () => {
           container.innerHTML = '';
           _lastChatMsgMeta = null;
           _lastChatMsgNode = null;
-          const cache = chatMessagesMemoryCache.get(cid) || [];
-          cache.forEach(item => renderMessageNode(item, item.id));
+          const _renderCache = chatMessagesMemoryCache.get(cid) || [];
+          _renderCache.forEach(item => renderMessageNode(item, item.id));
           _showLoadMoreBtn();
           container.scrollTop = container.scrollHeight - prevHeight;
           _updateOldestKey();
@@ -45022,7 +45051,9 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     if (!(await verifyGroupAdminFresh(false))) { showMiniToast(appT('Solo un administrador puede hacer esto')); closeGroupMemberActions(); return; }
     if (target.uid === currentGroupCreatedBy) { showMiniToast(appT('No puedes eliminar al creador del grupo')); closeGroupMemberActions(); return; }
     if (target.isAdmin && !currentGroupIsCreator) { showMiniToast(appT('Solo el creador puede eliminar a un administrador')); closeGroupMemberActions(); return; }
-    if (!confirm(appT('¿Eliminar a {n} del grupo?').replace('{n}', target.name))) return;
+    drexConfirm(appT('¿Eliminar a {n} del grupo?').replace('{n}', target.name), () => _doRemoveGroupMember(target));
+  }
+  async function _doRemoveGroupMember(target) {
     closeGroupMemberActions();
     try {
       const updates = {};
@@ -45048,7 +45079,11 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     if (!currentChatRoomId) return;
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
-    if (!confirm(appT('¿Salir del grupo? Ya no recibirás mensajes.'))) return;
+    drexConfirm(appT('¿Salir del grupo? Ya no recibirás mensajes.'), () => _doLeaveGroupChat());
+  }
+  async function _doLeaveGroupChat() {
+    const user = DrexCloud.auth().currentUser;
+    if (!user || !currentChatRoomId) return;
     closeGroupInfoPanel();
     try {
       const updates = {};
@@ -53991,7 +54026,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-12T21:05:00Z'; // C322
+window.DREX_BUILD = '2026-10-12T21:15:00Z'; // C323
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
