@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T21:15:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T21:25:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-12T21:15:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-12T21:25:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js?v=2026-10-12T21:15:00Z"></script>
+<script defer src="drex-data-export.js?v=2026-10-12T21:25:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -7455,7 +7455,7 @@ if (scrollArea) {
 
     <!-- Participantes seleccionados -->
     <div id="group-chat-selected-wrap" class="hidden mt-4">
-      <div id="group-chat-selected-list" class="flex flex-wrap gap-2"></div>
+      <div id="group-chat-selected-list" class="flex gap-3 overflow-x-auto pb-1"></div>
     </div>
 
     <!-- Buscar personas -->
@@ -39716,7 +39716,8 @@ let chatTypingListener = null;
     try {
       const user = DrexCloud.auth().currentUser;
       if (!user) { if (wrap) wrap.classList.add('hidden'); return; }
-      DrexCloud.database().ref('users/' + user.uid + '/following').once('value').then(snap => {
+      // C324: los seguidos viven en following/<uid> (no en users/<uid>/following).
+      DrexCloud.database().ref('following/' + user.uid).once('value').then(snap => {
         const following = snap.val() || {};
         const uids = Object.keys(following).slice(0, 30);
         if (!uids.length) { if (wrap) wrap.classList.add('hidden'); return; }
@@ -39809,6 +39810,7 @@ let chatTypingListener = null;
   function removeUserFromGroupChat(uid) {
     groupChatSelectedUsers = groupChatSelectedUsers.filter(u => u.uid !== uid);
     renderGroupChatSelectedUsers();
+    try { renderGroupChatSuggestions(); } catch (_) {}
   }
 
   function renderGroupChatSelectedUsers() {
@@ -39818,11 +39820,19 @@ let chatTypingListener = null;
     if (!groupChatSelectedUsers.length) { wrap.classList.add('hidden'); return; }
     wrap.classList.remove('hidden');
     list.innerHTML = '';
+    // C324: fotos circulares con X para quitar (como la referencia).
     groupChatSelectedUsers.forEach(u => {
-      const chip = document.createElement('div');
-      chip.className = 'flex items-center gap-1.5 bg-white border border-[#dce1e5] rounded-full pl-1 pr-2.5 py-1 text-sm font-semibold text-[#1c2b4a]';
-      chip.innerHTML = `<img src="${getSafeMediaUrl(u.image)}" class="w-6 h-6 rounded-full object-cover" alt="${escapeHTML(u.name)}"><span>${escapeHTML(u.name)}</span><button type="button" onclick="removeUserFromGroupChat('${escapeInlineSingleQuote(u.uid)}')" class="ml-1 text-[var(--brand-indigo-text)] hover:opacity-70"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>`;
-      list.appendChild(chip);
+      const bubble = document.createElement('div');
+      bubble.className = 'flex flex-col items-center gap-1 w-[68px] shrink-0';
+      const safeImg = getSafeMediaUrl(u.image) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==';
+      bubble.innerHTML = `<div class="relative w-14 h-14">
+          <img src="${safeImg}" class="w-14 h-14 rounded-full object-cover" alt="${escapeHTML(u.name)}">
+          <button type="button" onclick="removeUserFromGroupChat('${escapeInlineSingleQuote(u.uid)}');try{renderGroupChatSuggestions();}catch(_){}" class="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-[var(--theme-text)] text-[var(--theme-bg)] flex items-center justify-center shadow" aria-label="Quitar">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.6" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <span class="text-[11px] font-medium text-[var(--theme-text)] truncate w-full text-center">${escapeHTML(u.name)}</span>`;
+      list.appendChild(bubble);
     });
   }
 
@@ -54026,7 +54036,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-12T21:15:00Z'; // C323
+window.DREX_BUILD = '2026-10-12T21:25:00Z'; // C324
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
