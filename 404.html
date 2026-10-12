@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T19:10:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T19:25:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-12T19:10:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-12T19:25:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js?v=2026-10-12T19:10:00Z"></script>
+<script defer src="drex-data-export.js?v=2026-10-12T19:25:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -22431,7 +22431,8 @@ else { try { drexSnapInit(); } catch (_) {} }
   async function snfPrepareFeedNote(ctx, key, rawNote) {
     try {
       if (!rawNote || rawNote.groupId) return null;
-      if (ctx.feedMode === 'following' && ctx.followingMap && !(rawNote.authorId && ctx.followingMap[rawNote.authorId])) return null;
+      // C319: tus propios posts sí aparecen en "Siguiendo" (como Instagram).
+    if (ctx.feedMode === 'following' && ctx.followingMap && !(rawNote.authorId && (ctx.followingMap[rawNote.authorId] || (ctx.currentUserId && rawNote.authorId === ctx.currentUserId)))) return null;
       if (currentFeedFlairFilter && rawNote.flair !== currentFeedFlairFilter) return null;
       const authorId = rawNote.authorId || rawNote.userId || '';
       if (authorId && authorId !== ctx.currentUserId) {
@@ -22576,14 +22577,14 @@ else { try { drexSnapInit(); } catch (_) {} }
           if (ctx.olderSentinel) ctx.feedContainer.insertBefore(noteElement, ctx.olderSentinel);
           else ctx.feedContainer.appendChild(noteElement);
         }
-      } else if (ctx.feedMode === 'foryou' && window.DREX_FORYOU_CHRONO !== true) {
-        // Ranking algorítmico legado de "Para ti" (desactivado 2026-09-27:
-        // ahora es cronológico y cae al prepend de abajo).
-        drexRecInsertForYou(ctx.feedContainer, noteElement, note);
       } else if (appendAtBottom) {
-        // Paginación: los más viejos van al fondo, antes del centinela.
+        // C319: la paginación SIEMPRE va al fondo, incluso en "Para ti".
+        // Antes los posts viejos se re-rankeaban y saltaban arriba del feed.
         if (ctx.olderSentinel) ctx.feedContainer.insertBefore(noteElement, ctx.olderSentinel);
         else ctx.feedContainer.appendChild(noteElement);
+      } else if (ctx.feedMode === 'foryou' && window.DREX_FORYOU_CHRONO !== true) {
+        // Ranking algorítmico de "Para ti" (solo para el batch inicial).
+        drexRecInsertForYou(ctx.feedContainer, noteElement, note);
       } else {
         // Lo nuevo arriba (child_added llega en orden ascendente de fecha).
         ctx.feedContainer.prepend(noteElement);
@@ -45357,7 +45358,9 @@ function searchUserDirectoryByPrefix(q, limit) {
   const qq = String(q || '').toLowerCase().trim();
   if (!qq) return Promise.resolve([]);
   const n = Math.max(1, Math.min(50, Number(limit) || 20));
-  return DrexCloud.database().ref('usernames').orderByKey().startAt(qq).limitToFirst(n).once('value')
+  // C319: endAt acota al prefijo (antes, si había menos de n coincidencias,
+  // traía las siguientes claves en orden lexicográfico aunque no coincidieran).
+  return DrexCloud.database().ref('usernames').orderByKey().startAt(qq).endAt(qq + '\uf8ff').limitToFirst(n).once('value')
     .then(snap => {
       const pairs = [];
       snap.forEach(child => {
@@ -53827,7 +53830,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-12T19:10:00Z'; // C318
+window.DREX_BUILD = '2026-10-12T19:25:00Z'; // C319
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
