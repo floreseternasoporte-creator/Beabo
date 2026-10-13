@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-13T06:15:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-13T06:25:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-13T06:15:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-13T06:25:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js?v=2026-10-13T06:15:00Z"></script>
+<script defer src="drex-data-export.js?v=2026-10-13T06:25:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -14832,11 +14832,13 @@ function saveNote() {
   }
 
   function deleteNoteDraft(draftId) {
-    if (!confirm(appT('¿Eliminar este borrador?'))) return;
-    const list = getAllNoteDrafts().filter(d => d.id !== draftId);
-    saveAllNoteDrafts(list);
-    if (currentEditingDraftId === draftId) currentEditingDraftId = null;
-    renderDraftsList();
+    // C327: hoja interna en vez de confirm() nativo.
+    drexConfirm(appT('¿Eliminar este borrador?'), () => {
+      const list = getAllNoteDrafts().filter(d => d.id !== draftId);
+      saveAllNoteDrafts(list);
+      if (currentEditingDraftId === draftId) currentEditingDraftId = null;
+      renderDraftsList();
+    });
   }
 
   // === DREX-SCHEDULED-POSTS: INICIO ===
@@ -17135,6 +17137,13 @@ function drexOrbitHdUploadsOn() {
     const selectedFiles = Array.from(event.target.files || []);
     if (!selectedFiles.length) return;
     if (notePostPublishing) { event.target.value = ''; return; }
+    // C327: aviso temprano si alguna foto es muy pesada (>25MB).
+    const _oversized = selectedFiles.filter(f => f.size > 25 * 1024 * 1024);
+    if (_oversized.length) {
+      showMiniToast(appT('Esa foto es muy pesada (máx 25 MB). Elige una más ligera.'));
+      event.target.value = '';
+      return;
+    }
 
     const hasStickerSelected = pendingStickers['note-content-fullscreen'];
     if (hasStickerSelected) {
@@ -17240,6 +17249,11 @@ function drexOrbitHdUploadsOn() {
     const file = (event.target.files || [])[0];
     event.target.value = '';
     if (!file || notePostPublishing) return;
+    // C327: aviso temprano si el video es muy pesado (>500MB).
+    if (file.size > 500 * 1024 * 1024) {
+      showMiniToast(appT('Ese video es muy pesado (máx 500 MB). Elige uno más ligero.'));
+      return;
+    }
     if (pendingStickers['note-content-fullscreen']) {
       showMiniToast(appT('Error: No puedes agregar un video si ya has seleccionado un sticker. Por favor, elimina el sticker primero.'));
       return;
@@ -54073,7 +54087,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-13T06:15:00Z'; // C326
+window.DREX_BUILD = '2026-10-13T06:25:00Z'; // C327
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
