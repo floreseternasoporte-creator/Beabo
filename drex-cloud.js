@@ -3389,8 +3389,8 @@ function withCredRetry(opFn) {
       updateProfile: function (profile) {
         return updateAuthProfile(profile || {});
       },
-      updatePassword: function (newPassword) {
-        return changeAuthPassword(newPassword);
+      updatePassword: function (newPassword, currentPassword) {
+        return changeAuthPassword(newPassword, currentPassword);
       },
       sendEmailVerification: function () {
         return new Promise(function (resolve, reject) {
@@ -3558,14 +3558,18 @@ function withCredRetry(opFn) {
     });
   }
 
-  // Puente temporal: Cognito exige la contraseña actual para cambiarla.
-  function changeAuthPassword(newPassword) {
+  // Cognito exige la contraseña actual para cambiarla.
+  // C326: la UI la pasa como parámetro; el prompt() nativo queda solo como
+  // último recurso si algún flujo antiguo la llama sin ella.
+  function changeAuthPassword(newPassword, currentPassword) {
     var cognitoUser = currentCognitoUser;
     if (!cognitoUser) return Promise.reject(Object.assign(new Error('Sin sesión'), { code: 'auth/no-current-user' }));
-    var oldPassword = (typeof global.prompt === 'function')
-      ? global.prompt('Por seguridad, escribe tu contraseña actual para cambiarla:')
-      : null;
-    if (oldPassword === null || oldPassword === undefined) {
+    var oldPassword = (currentPassword !== undefined && currentPassword !== null && currentPassword !== '')
+      ? currentPassword
+      : ((typeof global.prompt === 'function')
+        ? global.prompt('Por seguridad, escribe tu contraseña actual para cambiarla:')
+        : null);
+    if (oldPassword === null || oldPassword === undefined || oldPassword === '') {
       return Promise.reject(Object.assign(new Error('Cancelado'), { code: 'auth/cancelled' }));
     }
     return new Promise(function (resolve, reject) {

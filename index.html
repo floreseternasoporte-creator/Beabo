@@ -56,7 +56,7 @@
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
-   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-12T21:35:00Z">
+   <link rel="preload" as="script" href="drex-cloud.js?v=2026-10-13T06:15:00Z">
 <!-- Tailwind Play CDN: SIN defer a propósito. Compila e inyecta el CSS de
      utilidades antes del primer pintado; con defer habría un destello de
      contenido sin estilos (FOUC). -->
@@ -104,7 +104,7 @@
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-12T21:35:00Z"></script>
+<script src="drex-cloud.js?v=2026-10-13T06:15:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -184,7 +184,7 @@
 <script defer src="drex-sheet.js"></script>
   <!-- DrexDataExport: "Descargar mis datos" asíncrono (solicitar → preparar → listo) -->
   <!-- Módulo puro (solo define window.DrexDataExport): diferido. -->
-<script defer src="drex-data-export.js?v=2026-10-12T21:35:00Z"></script>
+<script defer src="drex-data-export.js?v=2026-10-13T06:15:00Z"></script>
   <script>
     // URL de la Function URL de la Lambda drex-data-export (backend durable).
     // DESPLEGADO 2026-09-21 (us-east-1). Ver docs/EXPORT-DEPLOYMENT-CHECKLIST.md.
@@ -33367,6 +33367,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         .then(() => maybeFlagLegacyFallbackUsername(user))
         .then(() => maybeRepairLostProfileImage(user))
         .then(() => maybeRepairFollowCounts(user.uid))
+        .then(() => { try { syncHiddenWordsFromDB(); } catch (_) {} })
         .catch(() => {});
       setupNotificationsBadge(user.uid);
       setupChatUnreadBadge(user.uid);
@@ -37583,9 +37584,13 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     const on = !loadActivityStatus();
     try { localStorage.setItem('drex_activity_status', on ? '1' : '0'); } catch (_) {}
     // Sincronizar a la base de datos para que otros vean el cambio.
+    // C326: también en userPresence, que es donde leen los indicadores.
     try {
       const user = DrexCloud.auth().currentUser;
-      if (user) DrexCloud.database().ref('users/' + user.uid).update({ showActivityStatus: on }).catch(() => {});
+      if (user) {
+        DrexCloud.database().ref('users/' + user.uid).update({ showActivityStatus: on }).catch(() => {});
+        DrexCloud.database().ref('userPresence/' + user.uid).update({ showActivityStatus: on }).catch(() => {});
+      }
     } catch (_) {}
     renderActivityStatusToggle();
     showMiniToast(appT(on ? 'Estado de actividad activado.' : 'Estado de actividad desactivado.'));
@@ -37599,6 +37604,22 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       const useDefault = localStorage.getItem('drex_hidden_words_default') !== '0';
       return { custom: Array.isArray(custom) ? custom : [], useDefault };
     } catch (_) { return { custom: [], useDefault: true }; }
+  }
+  // C326: sincronizar palabras ocultas desde la BD (multidispositivo).
+  // Si la BD tiene lista y el localStorage está vacío, usar la de la BD.
+  function syncHiddenWordsFromDB() {
+    try {
+      const user = DrexCloud.auth().currentUser;
+      if (!user) return;
+      DrexCloud.database().ref('users/' + user.uid + '/hiddenWords').once('value').then(snap => {
+        const dbWords = snap.val();
+        if (!Array.isArray(dbWords) || !dbWords.length) return;
+        const local = loadHiddenWords();
+        if (!local.custom.length) {
+          try { localStorage.setItem('drex_hidden_words', JSON.stringify(dbWords.slice(0, 100))); } catch (_) {}
+        }
+      }).catch(() => {});
+    } catch (_) {}
   }
   function getActiveHiddenWords() {
     const { custom, useDefault } = loadHiddenWords();
@@ -38066,6 +38087,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     const confirmInput = document.getElementById('settings-account-password-confirm');
     const nextPassword = passwordInput?.value || "";
     const confirmPassword = confirmInput?.value || "";
+    const currentPassword = document.getElementById('settings-account-password-current')?.value || "";
 
     if (!user) {
       setSavingButtonState(actionButton, false);
@@ -38082,7 +38104,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       return;
     }
 
-    user.updatePassword(nextPassword).then(() => {
+    // C326: pasar la contraseña actual (evita el prompt() nativo).
+    user.updatePassword(nextPassword, currentPassword || undefined).then(() => {
         showMiniToast(appT("Contraseña actualizada."));
       closePasswordConfigView();
     }).catch(error => {
@@ -40307,6 +40330,8 @@ let chatTypingListener = null;
       const data = snap.val();
       const dot = document.getElementById('chat-room-presence-dot');
       if (!data) { statusEl.classList.add('hidden'); dot?.classList.add('hidden'); return; }
+      // C326: si el otro usuario ocultó su estado de actividad, no mostrar nada.
+      if (data.showActivityStatus === false) { statusEl.classList.add('hidden'); dot?.classList.add('hidden'); return; }
       if (data.online) {
         statusEl.textContent = appT('Activo ahora');
         statusEl.className = 'text-[12px] truncate text-[#31A24C]';
@@ -50761,6 +50786,11 @@ async function openSecurityCenter() {
         typeof window.DrexDataExport.renderInto === 'function') {
       dxm.dataset.dxInit = '1';
       window.DrexDataExport.renderInto(dxm);
+    } else if (dxm && !dxm.dataset.dxInit && !window.DrexDataExport) {
+      // C326: el script no cargó (red/CDN): mostrar aviso en vez de vacío.
+      dxm.dataset.dxInit = '1';
+      dxm.innerHTML = '<div class="text-sm text-[var(--theme-muted)] px-1 py-3">' +
+        'No se pudo cargar la exportación de datos. Revisa tu conexión e inténtalo de nuevo.</div>';
     }
   } catch (_) {}
 }
@@ -54043,7 +54073,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-12T21:35:00Z'; // C325
+window.DREX_BUILD = '2026-10-13T06:15:00Z'; // C326
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -54526,6 +54556,12 @@ window.DREX_BUILD = '2026-10-12T21:35:00Z'; // C325
     </div>
     <div class="flex-1 overflow-y-auto bg-[var(--theme-surface)] pb-8">
       <div class="px-4 pt-5 space-y-5">
+        <!-- C326: contraseña actual (antes se pedía con prompt() nativo). -->
+        <label class="block mb-1.5 text-[15px] font-semibold text-[var(--theme-text)]">Contraseña actual</label>
+        <div class="relative">
+          <input id="settings-account-password-current" type="password" autocomplete="current-password" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 pr-12 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="Tu contraseña actual">
+          <button type="button" onclick="toggleSettingsPwd('settings-account-password-current', this)" class="tap44 absolute right-2 top-1/2 -translate-y-1/2 text-[var(--theme-muted)] p-2" aria-label="Mostrar contraseña"><svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></button>
+        </div>
         <label class="block mb-1.5 text-[15px] font-semibold text-[var(--theme-text)]">Nueva contraseña</label>
         <div class="relative">
           <input id="settings-account-password" type="password" autocomplete="new-password" style="box-sizing:border-box !important;max-width:100% !important;" class="form-input w-full px-4 py-3 pr-12 rounded-xl bg-[var(--theme-surface-muted)] text-[var(--theme-text)] placeholder-[var(--theme-muted)] focus:outline-none" placeholder="Mínimo 8 caracteres">
