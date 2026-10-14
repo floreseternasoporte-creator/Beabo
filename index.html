@@ -10608,12 +10608,24 @@ function fiestaGameHTMLFinal() {
 <!-- Visor de video a pantalla completa — VIDEO-POSTS.
      Reproductor propio estilo app (sin controles nativos del navegador):
      se abre al tocar el video en el feed, igual que las fotos. -->
+<style>
+/* C333: indicadores de salto ±10 s (doble tap por zonas, estilo YouTube) */
+.drex-skip-ind{position:absolute;top:50%;z-index:25;pointer-events:none;display:flex;align-items:center;justify-content:center;gap:2px;width:88px;height:88px;border-radius:9999px;background:rgba(0,0,0,.55);color:#fff;opacity:0;transform:translate(-50%,-50%)}
+.drex-skip-ind.show{animation:drexSkipPop .65s ease-out}
+@keyframes drexSkipPop{0%{opacity:0;transform:translate(-50%,-50%) scale(.6)}25%{opacity:1;transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.08)}}
+</style>
 <div id="video-modal" class="fixed inset-0 bg-black hidden z-[92]" style="touch-action:none" role="dialog" aria-modal="true" aria-label="Reproductor de video">
   <!-- C271: arriba solo la X flotante; todo lo demás vive abajo, como la referencia -->
   <div id="video-modal-topbar" class="absolute top-0 left-0 right-0 z-20 transition-opacity duration-200 pointer-events-none">
     <div class="flex items-center px-4" style="padding-top:max(1rem, env(safe-area-inset-top))">
       <button onclick="closeVideoModal()" aria-label="Cerrar" class="pointer-events-auto w-10 h-10 flex items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm active:opacity-80 transition">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round"/></svg>
+      </button>
+      <div class="flex-1"></div>
+      <!-- C333: rotar a horizontal (estilo YouTube) -->
+      <button id="video-modal-rotatebtn" onclick="toggleVideoModalRotate()" aria-label="Rotar pantalla"
+        class="pointer-events-auto w-10 h-10 flex items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm active:opacity-80 transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 9V5.5A1.5 1.5 0 015.5 4H9M20 15v3.5a1.5 1.5 0 01-1.5 1.5H15M4 4l6 6M20 20l-6-6"/></svg>
       </button>
     </div>
   </div>
@@ -10625,6 +10637,32 @@ function fiestaGameHTMLFinal() {
 
   <!-- Indicador de velocidad 2x -->
   <div id="video-modal-2x" class="absolute top-24 left-1/2 -translate-x-1/2 z-20 hidden px-3 py-1.5 rounded-full bg-white text-[#1c2b4a] text-sm font-black pointer-events-none">2x</div>
+
+  <!-- C333: indicadores de salto ±10 s (doble tap por zonas, estilo YouTube) -->
+  <div id="video-modal-skipl" class="drex-skip-ind hidden" style="left:17%" aria-hidden="true">
+    <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>
+    <span class="text-sm font-black tabular-nums">10</span>
+  </div>
+  <div id="video-modal-skipr" class="drex-skip-ind hidden" style="left:83%" aria-hidden="true">
+    <span class="text-sm font-black tabular-nums">10</span>
+    <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 17l5-5-5-5M6 17l5-5-5-5"/></svg>
+  </div>
+
+  <!-- C333: hoja de velocidad de reproducción 0.5x–2x -->
+  <div id="video-modal-speedbk" class="absolute inset-0 z-30 hidden" onclick="toggleVideoModalSpeedSheet()"></div>
+  <div id="video-modal-speedsheet" class="absolute inset-x-0 bottom-0 z-30 hidden">
+    <div class="mx-3 rounded-3xl bg-[#17181c]/95 backdrop-blur-md p-2 shadow-2xl" style="margin-bottom:max(0.9rem, env(safe-area-inset-bottom))">
+      <div id="video-modal-speedtitle" class="px-4 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-white/50">Velocidad de reproducción</div>
+      <div id="video-modal-speedopts"></div>
+    </div>
+  </div>
+
+  <!-- C333: estado de error con reintento (ya no cierra el visor de golpe) -->
+  <div id="video-modal-error" class="absolute inset-0 z-30 hidden flex-col items-center justify-center gap-3 px-10 text-center" style="background:rgba(0,0,0,.72)">
+    <svg class="w-12 h-12 text-white/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+    <p class="text-white text-[15px] font-bold">No se pudo cargar el video.</p>
+    <button onclick="retryVideoModalLoad()" class="mt-1 px-6 py-2.5 rounded-full bg-[#9AA3FF] text-[#1c2b4a] text-sm font-black active:opacity-80 transition">Reintentar</button>
+  </div>
 
   <!-- Spinner de la plataforma mientras se descargan los trozos -->
   <div id="video-modal-loading" class="absolute inset-0 z-10 hidden items-center justify-center pointer-events-none">
@@ -10656,11 +10694,18 @@ function fiestaGameHTMLFinal() {
         <div id="video-modal-seek" role="slider" aria-label="Buscar en el video" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
           class="flex-1 flex items-center cursor-pointer select-none" style="height:30px;touch-action:none">
           <div class="relative w-full rounded-full" style="height:4px;background:rgba(255,255,255,.28)">
-            <div class="drex-seek-fill absolute left-0 top-0 h-full rounded-full" style="width:0%;background:#fff"></div>
+            <!-- C333: capa de buffer (lo ya descargado), estilo YouTube -->
+            <div class="drex-seek-buffered absolute left-0 top-0 h-full rounded-full" style="width:0%;background:rgba(255,255,255,.45)"></div>
+            <div class="drex-seek-fill absolute left-0 top-0 h-full rounded-full" style="width:0%;background:#9AA3FF"></div>
             <div class="drex-seek-thumb absolute rounded-full" style="width:12px;height:12px;background:#fff;left:0%;top:50%;transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(0,0,0,.45)"></div>
           </div>
         </div>
         <span id="video-modal-dur" onclick="toggleVideoModalDurMode()" title="Toca para ver total/restante" class="text-white/70 text-xs font-bold tabular-nums w-12 text-center cursor-pointer select-none">0:00</span>
+        <!-- C333: velocidad de reproducción 0.5x–2x (botón compacto estilo YouTube) -->
+        <button id="video-modal-speedbtn" onclick="toggleVideoModalSpeedSheet(event)" aria-label="Velocidad de reproducción"
+          class="w-11 h-11 flex-shrink-0 flex items-center justify-center text-white active:opacity-70 transition">
+          <span id="video-modal-speedlabel" class="text-[12px] font-black tabular-nums border border-white/60 rounded-md px-1.5 py-0.5">1x</span>
+        </button>
         <button id="video-modal-mute" onclick="toggleVideoModalMute()" aria-label="Silenciar o activar sonido"
           class="w-11 h-11 flex-shrink-0 flex items-center justify-center text-white active:opacity-70 transition">
           <svg id="video-modal-icon-vol" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg>
@@ -19381,19 +19426,28 @@ else { try { drexSnapInit(); } catch (_) {} }
       _videoModalLoading(false);
       _videoModalBigPlay(false);
       _videoModalPlayIcon(false);
+      _videoModalChromeTouch(); // C333: auto-ocultar controles al reproducir
     });
     player.addEventListener('pause', () => {
       _videoModalBigPlay(true);
       _videoModalPlayIcon(true);
     });
     player.addEventListener('waiting', () => _videoModalLoading(true));
+    player.addEventListener('progress', _videoModalRenderBuffered); // C333: indicador de buffer
     player.addEventListener('ended', () => {
       _videoModalLoading(false);
       _videoModalBigPlay(true);
       _videoModalPlayIcon(true);
+      if (_videoModalNoteId) _videoModalClearPos(_videoModalNoteId); // C333: visto completo, no reanudar
     });
     player.addEventListener('loadedmetadata', () => {
       _videoModalRenderDur();
+      // C333: reanudar donde quedó (si aplica).
+      const rp = _videoModalResumeAt;
+      _videoModalResumeAt = 0;
+      if (rp > 4 && (player.duration || 0) > rp + 8) {
+        try { player.currentTime = rp; } catch (_) {}
+      }
       // Cachear solo cuando el video demuestra que carga: evita envenenar
       // la caché con un dataUrl corrupto (la reapertura reintenta la descarga).
       // Se cachea la data URL original (el player ahora usa Blob/Object URL).
@@ -19410,6 +19464,13 @@ else { try { drexSnapInit(); } catch (_) {} }
       const c = _videoModalEl('video-modal-cur');
       if (c) c.textContent = formatVideoDuration(player.currentTime);
       _videoModalRenderDur();
+      _videoModalRenderBuffered();
+      // C333: guardar posición (throttle 5 s) para reanudar donde quedó.
+      const _now = Date.now();
+      if (_now - _videoModalPosT > 5000) {
+        _videoModalPosT = _now;
+        if (_videoModalNoteId && (player.currentTime || 0) > 4) _videoModalSetPos(_videoModalNoteId, player.currentTime);
+      }
     });
     player.addEventListener('error', () => {
       const nid = _videoModalNoteId;
@@ -19418,8 +19479,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       if (!src) return;
       _videoModalCacheDel(nid); // no reintentar con datos corruptos cacheados
       _videoModalLoading(false);
-      showMiniToast(appT('No se pudo reproducir el video.'));
-      closeVideoModal(); // no dejar el modal clavado en un video que no reproduce
+      _videoModalShowError(true); // C333: error con reintento, sin cerrar de golpe
     });
     if (seek) {
       // C271: la línea se corre con el dedo (tocar salta, arrastrar busca),
@@ -19451,6 +19511,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       };
       seek.addEventListener('pointerdown', (e) => {
         _videoModalScrubbing = true;
+        _videoModalChromeTouch(); // C333: buscar reinicia el auto-ocultado
         try { seek.setPointerCapture(e.pointerId); } catch (_) {}
         _seekFromClientX(e.clientX);
         e.preventDefault();
@@ -19505,9 +19566,188 @@ else { try { drexSnapInit(); } catch (_) {} }
       el.classList.toggle('opacity-0', !show);
       el.classList.toggle('pointer-events-none', !show);
     });
+    _videoModalChromeTouch(); // C333: reprograma el auto-ocultado
   }
 
   function toggleVideoModalChrome() { _videoModalSetChrome(!_videoModalChrome); }
+
+  // ===== C333: auto-ocultar controles (estilo YouTube) =====
+  // Los controles se ocultan solos a los 3.5 s mientras el video reproduce y
+  // reaparecen al tocar. No se ocultan en pausa, con la hoja de velocidad
+  // abierta ni en estado de error.
+  let _videoModalChromeTimer = null;
+  function _videoModalChromeTouch() {
+    try { clearTimeout(_videoModalChromeTimer); } catch (_) {}
+    _videoModalChromeTimer = null;
+    if (!_videoModalChrome) return;
+    _videoModalChromeTimer = setTimeout(() => {
+      _videoModalChromeTimer = null;
+      const player = _videoModalEl('video-modal-player');
+      const sheet = _videoModalEl('video-modal-speedsheet');
+      const err = _videoModalEl('video-modal-error');
+      if (!player || player.paused) return;
+      if (sheet && !sheet.classList.contains('hidden')) return;
+      if (err && !err.classList.contains('hidden')) return;
+      _videoModalSetChrome(false);
+    }, 3500);
+  }
+
+  // ===== C333: doble tap por zonas estilo YouTube =====
+  // Izquierda = -10 s, derecha = +10 s, centro = reproducir/pausar.
+  function _videoModalDoubleTapZone(e) {
+    let x = 0, w = 1;
+    try { x = (e && e.clientX) || 0; } catch (_) {}
+    try { w = (typeof window !== 'undefined' && window.innerWidth) || 1; } catch (_) {}
+    if (!(w > 0)) w = 1;
+    if (x < w * 0.35) { _videoModalSkip(-10); return; }
+    if (x > w * 0.65) { _videoModalSkip(10); return; }
+    toggleVideoModalPlay();
+  }
+  function _videoModalSkip(sec) {
+    const player = _videoModalEl('video-modal-player');
+    if (!player || !player.src) return;
+    const dur = player.duration || 0;
+    let t = (player.currentTime || 0) + sec;
+    t = Math.max(0, dur > 0 ? Math.min(Math.max(0, dur - 0.3), t) : t);
+    try { player.currentTime = t; } catch (_) {}
+    _videoModalFlashSkip(sec);
+    _videoModalSetChrome(true); // el salto se aprecia en la línea de tiempo
+  }
+  function _videoModalFlashSkip(sec) {
+    const el = _videoModalEl(sec < 0 ? 'video-modal-skipl' : 'video-modal-skipr');
+    if (!el) return;
+    el.classList.remove('hidden');
+    el.classList.remove('show');
+    void el.offsetWidth; // reinicia la animación CSS
+    el.classList.add('show');
+    try { clearTimeout(el._hideT); } catch (_) {}
+    el._hideT = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('show'); }, 700);
+  }
+
+  // ===== C333: indicador de buffer en la línea de progreso =====
+  function _videoModalRenderBuffered() {
+    const player = _videoModalEl('video-modal-player');
+    const seek = _videoModalEl('video-modal-seek');
+    if (!player || !seek) return;
+    let bar = null;
+    try { bar = seek.querySelector('.drex-seek-buffered'); } catch (_) {}
+    if (!bar) return;
+    try {
+      const b = player.buffered, dur = player.duration || 0;
+      bar.style.width = (b && b.length && dur > 0)
+        ? Math.min(100, (b.end(b.length - 1) / dur) * 100) + '%'
+        : '0%';
+    } catch (_) {}
+  }
+
+  // ===== C333: velocidad de reproducción 0.5x–2x =====
+  const _VIDEO_MODAL_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  let _videoModalSpeed = 1;
+  function toggleVideoModalSpeedSheet(e) {
+    if (e) { try { e.stopPropagation(); } catch (_) {} }
+    const bk = _videoModalEl('video-modal-speedbk');
+    const sh = _videoModalEl('video-modal-speedsheet');
+    if (!bk || !sh) return;
+    const open = sh.classList.contains('hidden');
+    if (open) _videoModalPaintSpeedOpts();
+    bk.classList.toggle('hidden', !open);
+    sh.classList.toggle('hidden', !open);
+    _videoModalChromeTouch();
+  }
+  function _videoModalPaintSpeedOpts() {
+    const box = _videoModalEl('video-modal-speedopts');
+    if (!box) return;
+    box.innerHTML = _VIDEO_MODAL_SPEEDS.map(v => {
+      const active = v === _videoModalSpeed;
+      return '<button onclick="setVideoModalSpeed(' + v + ')" class="w-full flex items-center justify-between px-4 py-3 rounded-2xl text-left active:bg-white/10 transition' + (active ? ' bg-white/10' : '') + '">'
+        + '<span class="text-[15px] font-bold tabular-nums ' + (active ? 'text-[#9AA3FF]' : 'text-white') + '">' + v + 'x</span>'
+        + (active
+          ? '<svg class="w-5 h-5 text-[#9AA3FF]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
+          : '<span class="w-5 h-5"></span>')
+        + '</button>';
+    }).join('');
+    const t = _videoModalEl('video-modal-speedtitle');
+    if (t) { try { t.textContent = (typeof appT === 'function') ? appT('Velocidad de reproducción') : t.textContent; } catch (_) {} }
+  }
+  function setVideoModalSpeed(v) {
+    _videoModalSpeed = v;
+    const player = _videoModalEl('video-modal-player');
+    try { if (player) player.playbackRate = v; } catch (_) {}
+    const lbl = _videoModalEl('video-modal-speedlabel');
+    if (lbl) lbl.textContent = v + 'x';
+    const bk = _videoModalEl('video-modal-speedbk');
+    const sh = _videoModalEl('video-modal-speedsheet');
+    if (bk) bk.classList.add('hidden');
+    if (sh) sh.classList.add('hidden');
+    _videoModalChromeTouch();
+  }
+
+  // ===== C333: rotar a horizontal (estilo YouTube) =====
+  let _videoModalLandscape = false;
+  async function toggleVideoModalRotate() {
+    _videoModalLandscape = !_videoModalLandscape;
+    try {
+      if (_videoModalLandscape && window.screen && window.screen.orientation && window.screen.orientation.lock) {
+        await window.screen.orientation.lock('landscape');
+      } else if (window.screen && window.screen.orientation && window.screen.orientation.unlock) {
+        try { window.screen.orientation.unlock(); } catch (_) {}
+      }
+    } catch (_) {
+      // iOS/Safari no permite lock sin fullscreen: se revierte sin romper nada.
+      _videoModalLandscape = false;
+    }
+    const b = _videoModalEl('video-modal-rotatebtn');
+    if (b) b.classList.toggle('text-[#9AA3FF]', _videoModalLandscape);
+  }
+  function _videoModalUnlockOrientation() {
+    _videoModalLandscape = false;
+    try { if (window.screen && window.screen.orientation && window.screen.orientation.unlock) window.screen.orientation.unlock(); } catch (_) {}
+    const b = _videoModalEl('video-modal-rotatebtn');
+    if (b) b.classList.remove('text-[#9AA3FF]');
+  }
+
+  // ===== C333: error con reintento (ya no cierra el visor de golpe) =====
+  function _videoModalShowError(on) {
+    const el = _videoModalEl('video-modal-error');
+    if (!el) return;
+    el.classList.toggle('hidden', !on);
+    el.classList.toggle('flex', on);
+    if (on) _videoModalSetChrome(false);
+  }
+  function retryVideoModalLoad() {
+    const nid = _videoModalNoteId;
+    if (!nid) return;
+    _videoModalShowError(false);
+    _videoModalLoading(true);
+    _videoModalFetchAndPlay(nid);
+  }
+
+  // ===== C333: reanudar donde quedó (posición por video, en el teléfono) =====
+  let _videoModalResumeAt = 0;
+  let _videoModalPosT = 0;
+  function _videoModalPosMap() {
+    try { return JSON.parse(localStorage.getItem('drex-vpos') || '{}') || {}; } catch (_) { return {}; }
+  }
+  function _videoModalGetPos(noteId) {
+    const v = Number((_videoModalPosMap()[noteId] || 0));
+    return v > 0 ? v : 0;
+  }
+  function _videoModalSetPos(noteId, sec) {
+    try {
+      const m = _videoModalPosMap();
+      m[noteId] = Math.round(sec);
+      const ks = Object.keys(m);
+      if (ks.length > 60) ks.slice(0, ks.length - 60).forEach(k => { delete m[k]; });
+      localStorage.setItem('drex-vpos', JSON.stringify(m));
+    } catch (_) {}
+  }
+  function _videoModalClearPos(noteId) {
+    try {
+      const m = _videoModalPosMap();
+      delete m[noteId];
+      localStorage.setItem('drex-vpos', JSON.stringify(m));
+    } catch (_) {}
+  }
 
   // ===== C271: fila de acciones de los visores (voto / eco / comentarios /
   // compartir) con las palabras y las reglas de Drex. Los botones de voto
@@ -19611,6 +19851,7 @@ else { try { drexSnapInit(); } catch (_) {} }
   function _videoModalStageDown(e) {
     _videoModalPressMoved = false;
     _videoModalPress2x = false;
+    _videoModalChromeTouch(); // C333: el dedo reinicia el auto-ocultado
     try { _videoModalPressX = e.clientX || 0; _videoModalPressY = e.clientY || 0; } catch (_) {}
     // Captura el pointer: el pointerup siempre llega aunque el dedo se
     // deslice fuera del escenario (evita que el 2x se quede trabado).
@@ -19693,21 +19934,21 @@ else { try { drexSnapInit(); } catch (_) {} }
     // 2) Mantener presionado = 2x (no alternar chrome con este gesto).
     if (_videoModalPress2x) {
       const player = _videoModalEl('video-modal-player');
-      try { if (player) player.playbackRate = 1; } catch (_) {}
+      try { if (player) player.playbackRate = _videoModalSpeed; } catch (_) {} // C333: vuelve a la elegida
       const badge = _videoModalEl('video-modal-2x');
       if (badge) badge.classList.add('hidden');
       _videoModalPress2x = false;
       _videoModalDismissY = 0;
       return; // fue 2x: no alternar los controles con este gesto
     }
-    // 3) Tap / doble tap (sin arrastre): tap = mostrar-ocultar chrome,
-    // doble tap = reproducir/pausar (revierte el chrome del primer tap).
+    // 3) Tap / doble tap (sin arrastre), estilo YouTube: tap = mostrar-ocultar
+    // chrome; doble tap por zonas = -10 s (izquierda), +10 s (derecha) o
+    // reproducir/pausar (centro).
     if (!_videoModalPressMoved) {
       const now = Date.now();
       if (now - _videoModalLastTap < 300) {
         _videoModalLastTap = 0;
-        toggleVideoModalChrome();
-        toggleVideoModalPlay();
+        _videoModalDoubleTapZone(e);
       } else {
         _videoModalLastTap = now;
         toggleVideoModalChrome();
@@ -19795,10 +20036,24 @@ else { try { drexSnapInit(); } catch (_) {} }
     _videoModalBigPlay(false);
     _videoModalPlayIcon(false);
     _videoModalLoading(true);
+    _videoModalShowError(false); // C333: limpia error de la vez anterior
+    _videoModalSpeed = 1; // C333: cada video empieza en 1x
+    const _sl0 = _videoModalEl('video-modal-speedlabel');
+    if (_sl0) _sl0.textContent = '1x';
+    const _sk0 = _videoModalEl('video-modal-seek');
+    if (_sk0) { const _bb0 = _sk0.querySelector('.drex-seek-buffered'); if (_bb0) _bb0.style.width = '0%'; }
     modal.classList.remove('hidden');
     // A11y H3/H4: guardar foco y moverlo dentro del modal al abrirse.
     _saveOverlayFocus();
     try { const _vf = modal.querySelector('button:not([disabled])'); if (_vf) _vf.focus({ preventScroll: true }); } catch (_) {}
+    _videoModalFetchAndPlay(noteId); // C333: descarga los trozos (o usa caché) y reproduce
+  }
+
+  // C333: descarga los trozos (o usa caché) y reproduce. Extraído para que
+  // el botón "Reintentar" del estado de error pueda repetir la carga.
+  function _videoModalFetchAndPlay(noteId) {
+    const player = _videoModalEl('video-modal-player');
+    if (!player) return;
     const cached = _videoModalCache[noteId];
     const startPlayback = (dataUrl) => {
       if (_videoModalNoteId !== noteId) return; // se cerró antes de terminar
@@ -19806,6 +20061,7 @@ else { try { drexSnapInit(); } catch (_) {} }
       // Blob/Object URL: el camino robusto en móviles (iOS rechaza en
       // silencio las data URL gigantes asignadas al <video>).
       try { player.src = _videoModalDataUrlToObjectUrl(dataUrl); } catch (_) {}
+      _videoModalResumeAt = _videoModalGetPos(noteId); // C333: se aplica en loadedmetadata
       const pr = player.play();
       if (pr && pr.catch) pr.catch(() => {
         // Autoplay bloqueado (p. ej. gesto expirado): mostrar botón grande.
@@ -19827,16 +20083,18 @@ else { try { drexSnapInit(); } catch (_) {} }
     }).catch(() => {
       if (_videoModalNoteId !== noteId) return;
       _videoModalLoading(false);
-      showMiniToast(appT('No se pudo cargar el video. Revisa tu conexión.'));
-      closeVideoModal();
+      _videoModalShowError(true); // C333: error con reintento, sin cerrar de golpe
     });
   }
 
   function closeVideoModal() {
+    const _closingId = _videoModalNoteId; // C333: para guardar la posición
     _videoModalNoteId = null;
     const modal = _videoModalEl('video-modal');
     const player = _videoModalEl('video-modal-player');
     if (player) {
+      // C333: guardar posición para reanudar donde quedó.
+      try { if (_closingId && !player.ended && (player.currentTime || 0) > 4) _videoModalSetPos(_closingId, player.currentTime); } catch (_) {}
       try { player.pause(); } catch (_) {}
       try { player.playbackRate = 1; } catch (_) {}
       try { player.removeAttribute('src'); player.load(); } catch (_) {}
@@ -19854,6 +20112,18 @@ else { try { drexSnapInit(); } catch (_) {} }
     _videoModalLoading(false);
     _videoModalBigPlay(false);
     _videoModalPlayIcon(false);
+    // C333: limpieza del reproductor mejorado.
+    try { clearTimeout(_videoModalChromeTimer); } catch (_) {}
+    _videoModalChromeTimer = null;
+    _videoModalShowError(false);
+    _videoModalUnlockOrientation();
+    _videoModalSpeed = 1;
+    const _sll = _videoModalEl('video-modal-speedlabel');
+    if (_sll) _sll.textContent = '1x';
+    const _sbk = _videoModalEl('video-modal-speedbk');
+    if (_sbk) _sbk.classList.add('hidden');
+    const _ssh = _videoModalEl('video-modal-speedsheet');
+    if (_ssh) _ssh.classList.add('hidden');
     if (modal) modal.classList.add('hidden');
     _restoreOverlayFocus();
   }

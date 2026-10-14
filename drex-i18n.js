@@ -1579,6 +1579,8 @@ var APP_ENGLISH_TEXT = {
 "Canción eliminada de la playlist":"Song removed from the playlist",
 "Canción eliminada":"Song deleted",
 "Cargando video…":"Loading video…",
+/* C333-VIDEO-YT */
+"Velocidad de reproducción":"Playback speed",
 "Como tu fecha de nacimiento indica que tienes menos de 14 años, activamos automáticamente las protecciones de cuenta para menores: perfil privado y mensajes solo de amigos.":"Since your birth date shows you're under 14, we automatically turned on minor account protections: private profile and friends-only messages.",
 "Conexión inestable. Reintentando…":"Unstable connection. Retrying…",
 "Cuenta reactivada. ¡Bienvenido de nuevo!":"Account reactivated. Welcome back!",
@@ -6075,6 +6077,8 @@ var APP_CHINESE_TEXT = {
 "Canción eliminada de la playlist":"已从播放列表中删除歌曲",
 "Canción eliminada":"歌曲已删除",
 "Cargando video…":"视频加载中…",
+/* C333-VIDEO-YT */
+"Velocidad de reproducción":"播放速度",
 "Como tu fecha de nacimiento indica que tienes menos de 14 años, activamos automáticamente las protecciones de cuenta para menores: perfil privado y mensajes solo de amigos.":"根据你的出生日期，你未满 14 岁，我们已自动开启未成年人账号保护：私密个人主页，且仅接收好友消息。",
 "Conexión inestable. Reintentando…":"网络不稳定，正在重试…",
 "Cuenta reactivada. ¡Bienvenido de nuevo!":"账号已重新激活，欢迎回来！",
@@ -9325,6 +9329,8 @@ var APP_PORTUGUESE_TEXT = {
 "Cargando tu música…":"Carregando sua música…",
 "Cargando tus votos...":"Carregando seus votos...",
 "Cargando video…":"Carregando vídeo…",
+/* C333-VIDEO-YT */
+"Velocidad de reproducción":"Velocidade de reprodução",
 
 "Cargar más comentarios":"Carregar mais comentários",
 "Carpeta creada":"Pasta criada",

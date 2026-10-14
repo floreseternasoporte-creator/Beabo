@@ -147,21 +147,61 @@ test('arrastre corto hace snap-back sin cerrar ni alternar chrome', function () 
   assert.strictEqual(chromeAfter, chromeBefore, 'el chrome no se alternó tras un arrastre');
 });
 
-test('tap alterna el chrome; doble tap reproduce/pausa', function () {
+test('tap alterna el chrome (C333: el doble tap ya no lo revierte)', function () {
   els['video-modal']._classes.delete('hidden');
-  var player = els['video-modal-player'];
-  player.paused = true;
-  player.src = 'blob:fake'; // toggleVideoModalPlay exige src (no reproducir "nada")
+  vm.runInContext('_videoModalLastTap = 0', sandbox);
   var c0 = vm.runInContext('_videoModalChrome', sandbox);
   vm.runInContext('_videoModalStageDown(' + JSON.stringify(ptr(3, 100, 100)) + ')', sandbox);
   vm.runInContext('_videoModalStageUp(' + JSON.stringify(ptr(3, 100, 100)) + ')', sandbox);
   var c1 = vm.runInContext('_videoModalChrome', sandbox);
-  assert.notStrictEqual(c1, c0, 'el primer tap alternó el chrome');
-  vm.runInContext('_videoModalStageDown(' + JSON.stringify(ptr(4, 100, 100)) + ')', sandbox);
-  vm.runInContext('_videoModalStageUp(' + JSON.stringify(ptr(4, 100, 100)) + ')', sandbox);
-  var c2 = vm.runInContext('_videoModalChrome', sandbox);
-  assert.strictEqual(c2, c0, 'el doble tap revirtió el chrome del primer tap');
-  assert.strictEqual(player.paused, false, 'el doble tap reprodujo el video');
+  assert.notStrictEqual(c1, c0, 'el tap alternó el chrome');
+});
+
+test('doble tap en el centro reproduce/pausa sin tocar el chrome (C333)', function () {
+  els['video-modal']._classes.delete('hidden');
+  vm.runInContext('_videoModalLastTap = 0', sandbox);
+  var player = els['video-modal-player'];
+  player.paused = true;
+  player.src = 'blob:fake'; // toggleVideoModalPlay exige src (no reproducir "nada")
+  var c0 = vm.runInContext('_videoModalChrome', sandbox);
+  vm.runInContext('_videoModalStageDown(' + JSON.stringify(ptr(4, 200, 100)) + ')', sandbox);
+  vm.runInContext('_videoModalStageUp(' + JSON.stringify(ptr(4, 200, 100)) + ')', sandbox);
+  vm.runInContext('_videoModalStageDown(' + JSON.stringify(ptr(5, 200, 100)) + ')', sandbox);
+  vm.runInContext('_videoModalStageUp(' + JSON.stringify(ptr(5, 200, 100)) + ')', sandbox);
+  assert.strictEqual(player.paused, false, 'el doble tap en el centro reprodujo el video');
+  assert.notStrictEqual(vm.runInContext('_videoModalChrome', sandbox), c0,
+    'el primer tap alternó el chrome y el doble tap lo dejó como estaba (estilo YouTube)');
+});
+
+test('doble tap izquierda/derecha salta -10 s / +10 s (C333)', function () {
+  var player = els['video-modal-player'];
+  player.src = 'blob:fake';
+  player.duration = 100;
+  player.currentTime = 30;
+  vm.runInContext('_videoModalLastTap = 0', sandbox);
+  vm.runInContext('_videoModalStageDown(' + JSON.stringify(ptr(6, 100, 100)) + ')', sandbox);
+  vm.runInContext('_videoModalStageUp(' + JSON.stringify(ptr(6, 100, 100)) + ')', sandbox);
+  vm.runInContext('_videoModalStageDown(' + JSON.stringify(ptr(7, 100, 100)) + ')', sandbox);
+  vm.runInContext('_videoModalStageUp(' + JSON.stringify(ptr(7, 100, 100)) + ')', sandbox);
+  assert.strictEqual(player.currentTime, 20, 'doble tap izquierda: 30 -> 20, dio ' + player.currentTime);
+  vm.runInContext('_videoModalLastTap = 0', sandbox);
+  vm.runInContext('_videoModalStageDown(' + JSON.stringify(ptr(8, 300, 100)) + ')', sandbox);
+  vm.runInContext('_videoModalStageUp(' + JSON.stringify(ptr(8, 300, 100)) + ')', sandbox);
+  vm.runInContext('_videoModalStageDown(' + JSON.stringify(ptr(9, 300, 100)) + ')', sandbox);
+  vm.runInContext('_videoModalStageUp(' + JSON.stringify(ptr(9, 300, 100)) + ')', sandbox);
+  assert.strictEqual(player.currentTime, 30, 'doble tap derecha: 20 -> 30, dio ' + player.currentTime);
+});
+
+test('el salto se limita a [0, duracion] (C333)', function () {
+  var player = els['video-modal-player'];
+  player.src = 'blob:fake';
+  player.duration = 100;
+  player.currentTime = 5;
+  vm.runInContext('_videoModalSkip(-10)', sandbox);
+  assert.strictEqual(player.currentTime, 0, 'no baja de 0');
+  player.currentTime = 97;
+  vm.runInContext('_videoModalSkip(10)', sandbox);
+  assert(player.currentTime <= 100 && player.currentTime >= 99.6, 'no pasa la duración, t=' + player.currentTime);
 });
 
 test('pellizco hacia adentro cierra el visor', function () {
