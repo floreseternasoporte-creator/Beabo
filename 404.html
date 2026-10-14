@@ -37335,6 +37335,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     if (typeof window._pushOverlayBackGuard === 'function') window._pushOverlayBackGuard();
     try { drexHalloweenBannerGate(); } catch (_) {}
     drexHalloweenPaint(drexHalloweenPassActive() ? 'active' : 'visitor', null);
+    try { drexHalloweenRenderWinners(); } catch (_) {}
     drexHalloweenFetch(uid).then(function (st) {
       drexHalloweenCachePass(uid, st.grant);
       drexHalloweenPaint(drexHalloweenStateOf(st.reg, st.grant, Date.now()), st.grant);
@@ -37407,6 +37408,73 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         }
       } catch (_) {}
     } catch (_) {}
+  }
+
+  // Ganadores del Evento de Halloween 2026, en el orden en que quedaron
+  // (1 = primer lugar). Declarados por el equipo Drex el 2026-10-14.
+  var DREX_HALLOWEEN_WINNERS = [
+    'd4084468-a0e1-7021-a2b7-76e665a74a38', // @xxnarayan — 1er lugar
+    'e4b874a8-5061-700b-e392-df8515e7bdee', // @drexcreators — 2do lugar
+    '445874f8-8071-70a6-deb7-ec695d125c7c'  // @gilchiquitin — 3er lugar
+  ];
+  var _hwWinnersPainted = false;
+  function drexHalloweenRenderWinners() {
+    if (_hwWinnersPainted) return;
+    var list = document.getElementById('hw-winners-list');
+    if (!list || typeof DrexCloud === 'undefined') return;
+    var rankStyle = [
+      'background:#F59E0B;color:#1e1040;', // oro — 1er lugar
+      'background:#C0C7D1;color:#1e1040;', // plata — 2do lugar
+      'background:#CD7F32;color:#ffffff;'  // bronce — 3er lugar
+    ];
+    var placeTxt = [appT('1er lugar'), appT('2do lugar'), appT('3er lugar')];
+    var rows = new Array(DREX_HALLOWEEN_WINNERS.length);
+    var done = 0;
+    function paint() {
+      if (++done < rows.length) return;
+      _hwWinnersPainted = true;
+      var html = '';
+      for (var j = 0; j < rows.length; j++) {
+        var r = rows[j] || {};
+        var uname = r.username ? '@' + r.username : '';
+        var label = r.name || uname || ('#' + (j + 1));
+        var sub = (r.name && uname) ? uname : '';
+        var img = r.img
+          ? '<img src="' + String(r.img).replace(/"/g, '&quot;') + '" alt="" loading="lazy" class="w-11 h-11 rounded-full object-cover shrink-0 bg-[var(--theme-surface-muted)]">'
+          : '<span class="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-white text-[16px] font-extrabold" style="background:var(--drex-brand)">' + escapeHTML((label || '?').charAt(0).toUpperCase()) + '</span>';
+        html += '<button type="button" data-hw-winner="' + escapeHTML(r.username || '') + '" class="w-full flex items-center gap-3 px-2 py-2 rounded-2xl text-left active:bg-[var(--theme-surface-muted)] transition">'
+          + '<span class="flex items-center justify-center w-7 h-7 rounded-full text-[13px] font-black shrink-0" style="' + rankStyle[j % 3] + '">' + (j + 1) + '</span>'
+          + img
+          + '<span class="min-w-0 flex-1"><span class="block text-[15px] font-bold text-[var(--theme-text)] truncate">' + escapeHTML(label) + '</span>'
+          + (sub ? '<span class="block text-[13px] text-[var(--theme-muted)] truncate">' + escapeHTML(sub) + '</span>' : '')
+          + '</span><span class="text-[12px] font-extrabold text-[#B45309] shrink-0">' + escapeHTML(placeTxt[j % 3]) + '</span>'
+          + '</button>';
+      }
+      list.innerHTML = html;
+      var btns = list.querySelectorAll('[data-hw-winner]');
+      for (var b = 0; b < btns.length; b++) {
+        (function (btn) {
+          btn.addEventListener('click', function () {
+            var un = btn.getAttribute('data-hw-winner');
+            if (!un) return;
+            try { closeHalloweenEvent(); } catch (_) {}
+            location.hash = '#/u/' + encodeURIComponent(un);
+          });
+        })(btns[b]);
+      }
+    }
+    for (var i = 0; i < DREX_HALLOWEEN_WINNERS.length; i++) {
+      (function (idx) {
+        var uid = DREX_HALLOWEEN_WINNERS[idx];
+        try {
+          DrexCloud.database().ref('users/' + uid).once('value').then(function (snap) {
+            var d = (snap && snap.val()) || {};
+            rows[idx] = { username: d.username || '', name: d.displayName || d.name || '', img: d.profileImage || d.photoURL || '' };
+            paint();
+          }).catch(function () { rows[idx] = {}; paint(); });
+        } catch (_) { rows[idx] = {}; paint(); }
+      })(i);
+    }
   }
 
   // Tras iniciar sesión: refresca el pase local y anuncia si hubo aceptación.
@@ -41079,7 +41147,10 @@ let chatTypingListener = null;
       if (!data) { statusEl.classList.add('hidden'); dot?.classList.add('hidden'); return; }
       // C326: si el otro usuario ocultó su estado de actividad, no mostrar nada.
       if (data.showActivityStatus === false) { statusEl.classList.add('hidden'); dot?.classList.add('hidden'); return; }
-      if (data.online) {
+      // C336: no confiar ciegamente en el flag online — si el último heartbeat
+      // tiene más de 90 s, el usuario ya no está activo (el apagado en
+      // pagehide puede no haber completado, ej. iOS suspendido).
+      if (data.online && (Date.now() - Number(data.lastSeen || 0)) < 90000) {
         statusEl.textContent = appT('Activo ahora');
         statusEl.className = 'text-[12px] truncate text-[#31A24C]';
         statusEl.classList.remove('hidden');
@@ -41695,7 +41766,8 @@ let chatTypingListener = null;
     // C333: leer el nodo completo para respetar showActivityStatus — si el
     // usuario ocultó su estado de actividad, su dot no se muestra en el inbox.
     const promise = DrexCloud.database().ref('userPresence/' + uid).once('value')
-      .then(snap => { const data = snap.val() || {}; const online = data.online === true && data.showActivityStatus !== false; if (Object.keys(_presenceCache).length > 400) { try { delete _presenceCache[Object.keys(_presenceCache)[0]]; } catch (_) {} } _presenceCache[uid] = { online, at: Date.now() }; return online; })
+      // C336: frescura del heartbeat — un online:true con lastSeen viejo es fantasma.
+      .then(snap => { const data = snap.val() || {}; const online = data.online === true && data.showActivityStatus !== false && (Date.now() - Number(data.lastSeen || 0)) < 90000; if (Object.keys(_presenceCache).length > 400) { try { delete _presenceCache[Object.keys(_presenceCache)[0]]; } catch (_) {} } _presenceCache[uid] = { online, at: Date.now() }; return online; })
       .catch(() => { delete _presenceCache[uid]; return false; });
     _presenceCache[uid] = { online: false, at: 0, promise };
     return promise;
@@ -41708,6 +41780,9 @@ let chatTypingListener = null;
   let _presenceHeartbeatTimer = null;
   function drexPresenceHeartbeatTick() {
     try {
+      // C336: pestaña oculta no revive el flag — evita que un tick throttled
+      // re-escriba online:true después del stop de visibilitychange.
+      if (typeof document !== 'undefined' && document.hidden) return;
       const user = DrexCloud.auth().currentUser;
       if (!user) return;
       const on = (typeof loadActivityStatus === 'function') ? loadActivityStatus() : true;
@@ -43084,6 +43159,16 @@ const _startChatListeners = () => {
       const changedCallback = changedSnap => {
         const changedMsg = changedSnap.val();
         if (changedMsg?.deletedForAll) {
+          // C336: mantener el caché al día aunque el borrado llegue de otro
+          // dispositivo/sesión sin re-entrar (antes solo se tocaba el DOM).
+          try {
+            const _cc = chatMessagesMemoryCache.get(conversationId) || [];
+            if (changedSnap.key && _cc.some(item => item.id === changedSnap.key)) {
+              const _uc = _cc.map(item => item.id === changedSnap.key ? { id: changedSnap.key, ...changedMsg } : item);
+              chatMessagesMemoryCache.set(conversationId, _uc);
+              _persistChatMessages(conversationId, _uc);
+            }
+          } catch (_) {}
           // SEC ciclo 12: igual que resolvedId en renderMessageNode — la clave
           // del snapshot la puede forjar un cliente con escritura; whitelist +
           // escape antes de querySelector/innerHTML.
@@ -44240,6 +44325,16 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
     _removeChatMsgNodeInstant(msgId);
+    // C336: reflejar el borrado en el caché AL INSTANTE (optimista) — si no,
+    // al re-entrar el seed pinta el mensaje original (stale) y el guard
+    // anti-duplicados de renderMessageNode descarta la corrección que llega
+    // después por child_added. Era la causa del "hay que borrar dos veces".
+    try {
+      const _dc = chatMessagesMemoryCache.get(currentChatRoomId) || [];
+      const _du = _dc.map(it => it.id === msgId ? { ...it, deletedForAll: true, text: '', images: null, image: null, gifUrl: null, sticker: null, files: null, type: 'deleted' } : it);
+      chatMessagesMemoryCache.set(currentChatRoomId, _du);
+      _persistChatMessages(currentChatRoomId, _du);
+    } catch (_) {}
     DrexCloud.database().ref('conversationMessages/' + currentChatRoomId + '/' + msgId).once('value').then(snap => {
       const msg = snap.val();
       if (!msg || msg.senderId !== user.uid) return;
@@ -44285,6 +44380,14 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     const user = DrexCloud.auth().currentUser;
     if (!user) return;
     _removeChatMsgNodeInstant(msgId);
+    // C336: podar del caché para que el seed no resucite el mensaje al
+    // re-entrar (el set _deletedForMeIds se recarga fresco de la BD al abrir).
+    try {
+      const _mc = chatMessagesMemoryCache.get(currentChatRoomId) || [];
+      const _mu = _mc.filter(it => it.id !== msgId);
+      chatMessagesMemoryCache.set(currentChatRoomId, _mu);
+      _persistChatMessages(currentChatRoomId, _mu);
+    } catch (_) {}
     DrexCloud.database().ref('chatDeletedForMe/' + user.uid + '/' + currentChatRoomId + '/' + msgId).set(true).catch(() => {});
   }
 
@@ -55162,6 +55265,15 @@ window.DREX_BUILD = '2026-10-14T17:20:00Z'; // C330
             <p class="text-[14px] leading-relaxed text-[var(--theme-text)] pt-1.5">Si eres una de las personas elegidas, Drex Creators te enviará un mensaje a tu bandeja y una notificación, y un plan de Drex Orbit se activa gratis en tu cuenta al instante, con todos los beneficios de ese plan.</p>
           </div>
           <p class="text-[13px] text-[var(--theme-muted)]">El evento termina el 31 de octubre.</p>
+        </div>
+
+        <div class="mt-5 rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-surface)] p-4">
+          <div class="flex items-center gap-2">
+            <span class="text-[18px]" aria-hidden="true">🏆</span>
+            <p class="text-[15px] font-bold text-[var(--theme-text)]">Ganadores</p>
+          </div>
+          <p class="text-[13px] text-[var(--theme-muted)] mt-1">El equipo Drex ya eligió a las personas ganadoras del evento.</p>
+          <div id="hw-winners-list" class="mt-2"></div>
         </div>
 
         <div id="hw-state-visitor" class="mt-5">
