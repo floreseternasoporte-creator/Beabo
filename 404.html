@@ -37374,9 +37374,15 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
 
   // La aceptación (usuarios elegidos) dispara una sola vez: mensaje de la
   // cuenta oficial a la bandeja principal + notificación en la app.
+  // C337: guard anti-spam en memoria — dos aperturas rápidas no deben
+  // anunciarse dos veces antes de que notifiedAt persista en la BD.
+  var _hwAnnounceInFlight = {};
   async function drexHalloweenMaybeAnnounce(uid, grant) {
     try {
       if (!uid || !grant || !grant.acceptedAt || grant.notifiedAt) return;
+      if (_hwAnnounceInFlight[uid]) return;
+      _hwAnnounceInFlight[uid] = true;
+      try {
       var now = Date.now();
       var aPlan = (typeof ORBIT_PLAN_IDS !== 'undefined' && ORBIT_PLAN_IDS.indexOf(grant.plan) !== -1 && typeof orbitPlanAvailable === 'function' && orbitPlanAvailable(grant.plan)) ? grant.plan : 'quarterly';
       var planTxt = (typeof orbitPlanName === 'function') ? orbitPlanName(aPlan) : aPlan;
@@ -37390,7 +37396,19 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         _announced = true;
       } catch (_) {}
       if (!_announced) return;
-      await drexHalloweenRefs(uid).grant.child('notifiedAt').set(now);
+      // C337: notifiedAt debe vivir DENTRO del objeto del grant. Antes se
+      // escribía como hijo separado (grant.child('notifiedAt')), pero
+      // unflatten descarta los hijos cuando el nodo tiene valor exacto, así
+      // que grant.notifiedAt siempre era undefined al leer y el guard de
+      // arriba jamás se activaba → notificación + DM repetidos en cada
+      // apertura. set() re-escribe el grant como hojas y limpia el hijo
+      // huérfano viejo.
+      await drexHalloweenRefs(uid).grant.set({
+        acceptedAt: grant.acceptedAt,
+        plan: grant.plan,
+        freeUntil: grant.freeUntil,
+        notifiedAt: now
+      });
       try {
         var snap = await DrexCloud.database().ref('usernames/drexcreators').once('value');
         var creatorsUid = snap.val();
@@ -37407,6 +37425,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
           }
         }
       } catch (_) {}
+      } finally {
+        _hwAnnounceInFlight[uid] = false;
+      }
     } catch (_) {}
   }
 
@@ -45146,7 +45167,11 @@ ${getSpinnerMarkup('drex-spinner-inline')}
       b.style.background = '';
       b.style.border = '';
       b.style.color = '';
-      if (theme === 'default' || isClear) return;
+      // C337: el tema default TAMBIÉN define sus burbujas (other: blanca con
+      // borde, estilo Instagram). Antes se saltaba con early-return y la
+      // burbuja quedaba bg-[var(--theme-surface-muted)] = #eef2f7, el MISMO
+      // color que el fondo del chat → burbuja invisible.
+      if (isClear) return;
       b.style.cssText += ';' + (b.getAttribute('data-bubble-side') === 'mine' ? (def.mine || '') : (def.other || ''));
     });
   }
@@ -45156,7 +45181,9 @@ ${getSpinnerMarkup('drex-spinner-inline')}
   function _chatBubbleThemeStyle(side) {
     try {
       if (typeof CHAT_THEMES === 'undefined' || typeof _currentChatTheme === 'undefined') return '';
-      if (!_currentChatTheme || _currentChatTheme === 'default') return '';
+      // C337: el default también pinta (ver _applyChatThemeToUI) — si no, los
+      // mensajes nuevos nacen con la burbuja invisible.
+      if (!_currentChatTheme) return '';
       const def = CHAT_THEMES[_currentChatTheme];
       if (!def) return '';
       return (side === 'mine' ? def.mine : def.other) || '';
@@ -54962,7 +54989,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-14T22:00:00Z'; // C336
+window.DREX_BUILD = '2026-10-14T22:10:00Z'; // C337
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
