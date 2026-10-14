@@ -10012,6 +10012,9 @@ function fiestaGameHTMLFinal() {
       <div id="sticker-preview-comment-input-main" class="hidden mb-2"></div>
       <div id="comment-safety-feedback" class="hidden mb-2 text-xs"></div>
 
+      <!-- C333: aviso cuando el autor restringe quién puede comentar -->
+      <div id="comment-permission-notice" class="hidden mb-2 px-3.5 py-2.5 rounded-xl bg-[var(--theme-surface-muted)] text-[13px] text-[var(--theme-muted)]"></div>
+
       <!-- Input principal Reddit style -->
       <div class="flex gap-2.5 items-start">
         <img id="current-user-avatar-comment" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==" alt="" class="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-[#dce1e5] mt-1">
@@ -12643,7 +12646,7 @@ function saveNote() {
   </div>
 
   <!-- C312: Controles de interacción estilo Instagram (comentarios y menciones) -->
-  <div id="comment-permission-view" class="fixed inset-0 bg-[var(--theme-surface)] z-[120] hidden flex flex-col">
+  <div id="comment-permission-view" class="fixed inset-0 bg-[var(--theme-surface)] z-[120] hidden flex-col">
     <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border)] bg-[var(--theme-surface)]" style="padding-top:max(1rem,env(safe-area-inset-top));">
       <button onclick="closeCommentPermissionView()" class="tap44 text-[var(--theme-icon)] p-1" aria-label="Volver">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -12668,7 +12671,7 @@ function saveNote() {
   </div>
 
   <!-- C320: Palabras ocultas estilo Instagram -->
-  <div id="hidden-words-view" class="fixed inset-0 bg-[var(--theme-surface)] z-[120] hidden flex flex-col">
+  <div id="hidden-words-view" class="fixed inset-0 bg-[var(--theme-surface)] z-[120] hidden flex-col">
     <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border)] bg-[var(--theme-surface)]" style="padding-top:max(1rem,env(safe-area-inset-top));">
       <button onclick="closeHiddenWordsView()" class="tap44 text-[var(--theme-icon)] p-1" aria-label="Volver">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -12689,7 +12692,7 @@ function saveNote() {
     </div>
   </div>
 
-  <div id="mention-permission-view" class="fixed inset-0 bg-[var(--theme-surface)] z-[120] hidden flex flex-col">
+  <div id="mention-permission-view" class="fixed inset-0 bg-[var(--theme-surface)] z-[120] hidden flex-col">
     <div class="flex items-center justify-between p-4 border-b border-[var(--theme-border)] bg-[var(--theme-surface)]" style="padding-top:max(1rem,env(safe-area-inset-top));">
       <button onclick="closeMentionPermissionView()" class="tap44 text-[var(--theme-icon)] p-1" aria-label="Volver">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -27474,6 +27477,8 @@ else { try { drexSnapInit(); } catch (_) {} }
 
       const originalAuthorId = note.authorId || '';
       currentPostAuthorId = originalAuthorId;
+      // C333: gating proactivo del permiso de comentarios del autor.
+      try { if (typeof gateCommentComposerByPermission === 'function') gateCommentComposerByPermission(noteId, originalAuthorId); } catch (_) {}
       const originalAuthorVerifiedIcon = getVerificationIconByAuthor(note.authorEmail || '', originalAuthorId);
       // La publicación original usa la MISMA tarjeta del feed para que
       // la vista de comentarios hable el mismo idioma visual.
@@ -27502,6 +27507,7 @@ else { try { drexSnapInit(); } catch (_) {} }
   }
 
   function closeCommentsView() {
+    try { if (typeof unlockCommentComposer === 'function') unlockCommentComposer(); } catch (_) {}
     document.getElementById('comments-view').classList.add('hidden');
     // A11y: devolver el foco a quien abrió los comentarios.
     if (_commentsPrevFocus && document.contains(_commentsPrevFocus)) {
@@ -27866,6 +27872,8 @@ else { try { drexSnapInit(); } catch (_) {} }
     Object.keys(replies).forEach(key => {
       const reply = replies[key] || {};
       if (isAccountBlockedForCurrentUser(reply.authorId || '')) return;
+      // C333: las respuestas también respetan las palabras ocultas.
+      try { if (typeof commentHasHiddenWord === 'function' && commentHasHiddenWord((reply.text || reply.content) || '')) return; } catch (_) {}
       count++;
       if (reply.replies) count += countVisibleReplies(reply.replies);
     });
@@ -27914,6 +27922,8 @@ else { try { drexSnapInit(); } catch (_) {} }
   function collectFlatReplies(repliesObj, basePath, parentAuthorId, parentAuthorName, depth, out) {
     Object.entries(repliesObj || {}).forEach(([rId, r]) => {
       if (!r || isAccountBlockedForCurrentUser(r.authorId || '')) return;
+      // C333: las respuestas también respetan las palabras ocultas.
+      try { if (typeof commentHasHiddenWord === 'function' && commentHasHiddenWord((r.text || r.content) || '')) return; } catch (_) {}
       const path = basePath + '/replies/' + rId;
       out.push({
         path,
@@ -34050,6 +34060,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         .then(() => maybeRepairLostProfileImage(user))
         .then(() => maybeRepairFollowCounts(user.uid))
         .then(() => { try { syncHiddenWordsFromDB(); } catch (_) {} })
+        .then(() => { try { drexStartPresenceHeartbeat(); } catch (_) {} })
         .catch(() => {});
       setupNotificationsBadge(user.uid);
       setupChatUnreadBadge(user.uid);
@@ -35531,6 +35542,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
           const data = snapshot.val() || {};
           updateInteractionPreview('comments', data.commentPermission || 'all');
           updateInteractionPreview('mentions', data.mentionPermission || 'all');
+          // C333: multi-dispositivo — la BD manda sobre el localStorage para el toggle.
+          if (typeof data.showActivityStatus === 'boolean') {
+            try { localStorage.setItem('drex_activity_status', data.showActivityStatus ? '1' : '0'); } catch (_) {}
+          }
           renderActivityStatusToggle();
           updateHiddenWordsPreview();
         }).catch(() => {});
@@ -35601,7 +35616,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       'cover-fullscreen-view',
       'chat-privacy-settings-view',
       'app-language-settings-view',
-      'translations-config-view'
+      'translations-config-view',
+      'comment-permission-view',
+      'mention-permission-view',
+      'hidden-words-view'
     ].forEach(id => {
       const el = document.getElementById(id);
       if (el) {
@@ -38272,6 +38290,8 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       if (user) {
         DrexCloud.database().ref('users/' + user.uid).update({ showActivityStatus: on }).catch(() => {});
         DrexCloud.database().ref('userPresence/' + user.uid).update({ showActivityStatus: on }).catch(() => {});
+        // C333: efecto inmediato — online sigue al toggle sin esperar al heartbeat.
+        DrexCloud.database().ref('userPresence/' + user.uid).update({ online: on, lastSeen: Date.now() }).catch(() => {});
       }
     } catch (_) {}
     renderActivityStatusToggle();
@@ -38374,6 +38394,51 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       if (viewerFollowing[authorId]) return true;
     } catch (_) {}
     return false;
+  }
+
+  // C333: gating proactivo del composer de comentarios.
+  function lockCommentComposer(msg) {
+    try {
+      const input = document.getElementById('comment-input-main');
+      const btn = document.getElementById('comment-submit-btn');
+      const notice = document.getElementById('comment-permission-notice');
+      if (input) { input.disabled = true; input.placeholder = msg || ''; }
+      if (btn) { btn.disabled = true; btn.classList.add('opacity-40', 'pointer-events-none'); }
+      if (notice) { notice.textContent = msg || ''; notice.classList.remove('hidden'); }
+    } catch (_) {}
+  }
+  function unlockCommentComposer() {
+    try {
+      const input = document.getElementById('comment-input-main');
+      const btn = document.getElementById('comment-submit-btn');
+      const notice = document.getElementById('comment-permission-notice');
+      if (input) { input.disabled = false; input.placeholder = appT('Añade un comentario...'); }
+      if (btn) { btn.disabled = false; btn.classList.remove('opacity-40', 'pointer-events-none'); }
+      if (notice) { notice.classList.add('hidden'); }
+    } catch (_) {}
+  }
+  // Comprueba el permiso del autor al abrir comentarios y bloquea el composer
+  // antes de que el usuario escriba (el chequeo al publicar sigue como red).
+  function gateCommentComposerByPermission(noteId, authorId) {
+    try {
+      const user = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
+      const me = (user && user.uid) || '';
+      if (!me || !authorId || me === authorId) { unlockCommentComposer(); return; }
+      DrexCloud.database().ref('users/' + authorId).once('value').then(snap => {
+        try {
+          if (noteId !== currentPostId) return;
+          const aData = snap.val() || {};
+          if (!canUserCommentOnPost(me, authorId, aData)) {
+            const perm = aData.commentPermission || 'all';
+            lockCommentComposer(appT(perm === 'none'
+              ? 'Esta persona no permite comentarios en sus publicaciones.'
+              : 'Solo las personas que sigue pueden comentar en sus publicaciones.'));
+          } else {
+            unlockCommentComposer();
+          }
+        } catch (_) {}
+      }).catch(() => {});
+    } catch (_) {}
   }
 
   function updateDMPreview(permission) {
@@ -41627,11 +41692,50 @@ let chatTypingListener = null;
     const hit = _presenceCache[uid];
     if (hit && hit.promise) return hit.promise;
     if (hit && (Date.now() - hit.at) < 60000) return Promise.resolve(hit.online);
-    const promise = DrexCloud.database().ref('userPresence/' + uid + '/online').once('value')
-      .then(snap => { const online = snap.val() === true; if (Object.keys(_presenceCache).length > 400) { try { delete _presenceCache[Object.keys(_presenceCache)[0]]; } catch (_) {} } _presenceCache[uid] = { online, at: Date.now() }; return online; })
+    // C333: leer el nodo completo para respetar showActivityStatus — si el
+    // usuario ocultó su estado de actividad, su dot no se muestra en el inbox.
+    const promise = DrexCloud.database().ref('userPresence/' + uid).once('value')
+      .then(snap => { const data = snap.val() || {}; const online = data.online === true && data.showActivityStatus !== false; if (Object.keys(_presenceCache).length > 400) { try { delete _presenceCache[Object.keys(_presenceCache)[0]]; } catch (_) {} } _presenceCache[uid] = { online, at: Date.now() }; return online; })
       .catch(() => { delete _presenceCache[uid]; return false; });
     _presenceCache[uid] = { online: false, at: 0, promise };
     return promise;
+  }
+
+  // C333: heartbeat de presencia — sin esto, userPresence/<uid>/online jamás
+  // se escribía y la presencia no se mostraba en ningún lado (el toggle de
+  // estado de actividad no cambiaba nada visible). update, NUNCA set: un set
+  // borraría showActivityStatus que escribe el toggle.
+  let _presenceHeartbeatTimer = null;
+  function drexPresenceHeartbeatTick() {
+    try {
+      const user = DrexCloud.auth().currentUser;
+      if (!user) return;
+      const on = (typeof loadActivityStatus === 'function') ? loadActivityStatus() : true;
+      DrexCloud.database().ref('userPresence/' + user.uid).update({
+        online: !!on,
+        lastSeen: Date.now()
+      }).catch(() => {});
+    } catch (_) {}
+  }
+  function drexPresenceHeartbeatStop() {
+    try {
+      const user = DrexCloud.auth().currentUser;
+      if (user) DrexCloud.database().ref('userPresence/' + user.uid).update({ online: false, lastSeen: Date.now() }).catch(() => {});
+    } catch (_) {}
+  }
+  function drexStartPresenceHeartbeat() {
+    try {
+      if (_presenceHeartbeatTimer) return;
+      drexPresenceHeartbeatTick();
+      _presenceHeartbeatTimer = setInterval(drexPresenceHeartbeatTick, 60000);
+      document.addEventListener('visibilitychange', () => {
+        try {
+          if (document.hidden) drexPresenceHeartbeatStop();
+          else drexPresenceHeartbeatTick();
+        } catch (_) {}
+      });
+      window.addEventListener('pagehide', drexPresenceHeartbeatStop);
+    } catch (_) {}
   }
 
   function renderChatConversations(items) {
