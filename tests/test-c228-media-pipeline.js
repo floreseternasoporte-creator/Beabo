@@ -57,6 +57,10 @@ var escapeHtml = function(s){ return s; };
 var escapeInlineSingleQuote = function(s){ return s; };
 ${SNAP_SRC(html)}
 ${IMG_SRC(html)}
+// C331: el backoff real (1.5s/4s) haría el test eterno; se usa passthrough.
+// La lógica de reintentos la cubre tests/test-c331-img-retry.js
+drexReadWithRetry = function (fn) { return fn(); };
+var _noteDimsMem = {};
 // ---------- driver ----------
 (async function(){
   // B1: fallo a mitad de publicación
@@ -65,7 +69,7 @@ ${IMG_SRC(html)}
   // B2: hidratación con fallo de red
   hydrateNoteImages('n1');
   await new Promise(function(r){ setTimeout(r, 50); });
-  if (__el._html && __el._html.indexOf('data-retry-imgs') >= 0) __out.retryShown = true;
+  if (__el._html && (__el._html.indexOf('data-retry-imgs') >= 0 || __el._html.indexOf('reintentar') >= 0)) __out.retryShown = true;
   else if (__el.style.display === 'none') __out.hiddenSilently = true;
   // B2: caso sano (ok / empty) no debe rechazar
   try { var r = await loadNoteImages('n2ok'); __out.loaded = r; }

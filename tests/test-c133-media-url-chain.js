@@ -77,7 +77,9 @@ tcase('renderNoteImagesHtml: NO interpola img sin validar (getSafeMediaUrl ×2, 
   !/\$\{img\}/.test(renderNoteImagesHtmlBody));
 tcase('hydrateNoteImages: pinta solo vía renderNoteImagesHtml', () => {
   const body = extractBetween('function hydrateNoteImages(noteId) {', 'function hydrateLegacyNoteImages');
-  return body.includes('renderNoteImagesHtml(imgs, noteId)') && !body.includes('getSafeMediaUrl');
+  // C331: el pintado vive en el closure paint(urls) (caché instantáneo sin
+  // parpadeo); la garantía es la misma: solo renderNoteImagesHtml pinta URLs.
+  return /renderNoteImagesHtml\((imgs|urls), noteId\)/.test(body) && !body.includes('getSafeMediaUrl');
 });
 tcase('hydrateLegacyNoteImages: pinta solo vía renderNoteImagesHtml', () => {
   const body = extractBetween('function hydrateLegacyNoteImages(noteId, imgKeys) {', 'function migrateNoteImagesToSeparate');
