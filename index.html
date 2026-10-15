@@ -30882,22 +30882,45 @@ else { try { drexSnapInit(); } catch (_) {} }
   }
   function initAdsterra() {
     /* C241 (Drex Orbit, beneficio no_ads): con suscripción verificada no se
-       carga ninguna red publicitaria. Si el estado aún no se verificó en
-       este arranque y hay sesión, se espera al primer refresh antes de
-       inyectar scripts imposibles de retirar (popunder, social bar). */
+       carga ninguna red publicitaria.
+       FIX-ADS1 (2026-10-15): el popunder y la social bar son IRREVERSIBLES
+       una vez inyectados. Antes solo se esperaba al refresh() del backend
+       (Stripe), que no conoce la prueba de Halloween ("nunca pasa por
+       Stripe"): un ganador con el caché local aún vacío inyectaba los
+       scripts y los popups seguían toda la sesión aunque la prueba se
+       confirmaba un segundo después. Ahora se espera también a la lectura
+       del grant del evento antes de decidir sobre los scripts irreversibles. */
     try {
       if (typeof DrexOrbit !== 'undefined' && DrexOrbit) {
         if (typeof DrexOrbit.hasAccess === 'function' && DrexOrbit.hasAccess('no_ads')) return;
-        if (DrexOrbit._st === null && !window.__drexAdInitOrbitWait) {
-          var _oiu = null;
-          try { _oiu = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null; } catch (_) {}
-          if (_oiu) {
-            window.__drexAdInitOrbitWait = true;
-            var _oiRetry = function () { window.__drexAdInitOrbitWait = false; try { initAdsterra(); } catch (_) {} };
-            DrexOrbit.refresh().then(_oiRetry, _oiRetry);
-            return;
+        if (!window.__drexAdInitOrbitWait) {
+          window.__drexAdInitOrbitWait = true;
+          var _oiRetry = function () { window.__drexAdInitOrbitWait = false; try { initAdsterra(); } catch (_) {} };
+          var _waits = [];
+          try {
+            var _oiu = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
+            if (_oiu) {
+              _waits.push(DrexOrbit.refresh().catch(function () {}));
+              // La prueba del evento vive fuera de Stripe: hay que leer el
+              // grant y pasar el caché local ANTES de decidir.
+              if (typeof drexHalloweenFetch === 'function' && typeof drexHalloweenCachePass === 'function') {
+                _waits.push(drexHalloweenFetch(_oiu.uid).then(function (st) {
+                  try { drexHalloweenCachePass(_oiu.uid, st && st.grant); } catch (_) {}
+                }).catch(function () {}));
+              }
+            }
+          } catch (_) {}
+          if (_waits.length) {
+            Promise.all(_waits).then(_oiRetry, _oiRetry);
+            // Tope de seguridad: jamás retrasar los anuncios más de 8 s.
+            setTimeout(function () { if (window.__drexAdInitOrbitWait) _oiRetry(); }, 8000);
+          } else {
+            _oiRetry();
           }
+          return;
         }
+        // Espera ya en curso: no inyectar hasta que el reintento decida.
+        if (window.__drexAdInitOrbitWait) return;
       }
     } catch (_) {}
     try { drexProbeAdblock(); } catch (_) {}
@@ -37445,6 +37468,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       if (uid && grant && grant.acceptedAt && Number(grant.freeUntil || 0) > Date.now()) {
         var plan = (typeof ORBIT_PLAN_IDS !== 'undefined' && ORBIT_PLAN_IDS.indexOf(grant.plan) !== -1 && typeof orbitPlanAvailable === 'function' && orbitPlanAvailable(grant.plan)) ? grant.plan : 'quarterly';
         localStorage.setItem('drex_halloween_pass_v1:' + uid, JSON.stringify({ freeUntil: Number(grant.freeUntil), plan: plan }));
+        // FIX-ADS1 (2026-10-15): al confirmarse la prueba, ocultar de
+        // inmediato cualquier bloque de anuncios ya pintado (el gate de
+        // Orbit se enteraba solo vía refresh(), que no conoce la prueba).
+        try { if (typeof window.drexOrbitApplyGates === 'function') window.drexOrbitApplyGates(); } catch (_) {}
       } else if (uid) {
         localStorage.removeItem('drex_halloween_pass_v1:' + uid);
       }
@@ -55314,7 +55341,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-15T13:53:00Z'; // PERF-1 (rendimiento: carga inicial + feed + chat + datos)
+window.DREX_BUILD = '2026-10-15T23:40:00Z'; // FIX-ADS1 (rendimiento: carga inicial + feed + chat + datos)
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
