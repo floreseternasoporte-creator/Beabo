@@ -4194,7 +4194,7 @@ function withCredRetry(opFn) {
         e429.code = 'auth/too-many-requests';
         throw e429;
       }
-      return resp.json().then(function (data) {
+      return lambdaJsonSafe(resp).then(function (data) {
         if (!resp.ok) {
           var e = new Error('Código incorrecto o vencido. Inténtalo de nuevo.');
           e.code = 'auth/invalid-mfa-code';
@@ -4261,7 +4261,7 @@ function withCredRetry(opFn) {
         throw e429;
       }
       if (resp.status === 403) {
-        return resp.json().then(function (data) {
+        return lambdaJsonSafe(resp).then(function (data) {
           var code = (data && data.error) || '';
           if (code === 'unconfirmed') {
             // Sin correo conocido (el servidor no lo revela): la app pide
@@ -4275,7 +4275,7 @@ function withCredRetry(opFn) {
           throw rst;
         });
       }
-      return resp.json().then(function (data) {
+      return lambdaJsonSafe(resp).then(function (data) {
         if (!resp.ok) {
           var e = new Error('Código de respaldo inválido. Revisa e inténtalo de nuevo.');
           e.code = 'auth/invalid-recovery-code';
@@ -4339,6 +4339,18 @@ function withCredRetry(opFn) {
     });
   }
 
+  // AUTH (2026-10-15): la Lambda drex-username-resolve puede responder un
+  // error de infraestructura con cuerpo no-JSON (502/HTML de la Function
+  // URL, cuerpo vacío). Sin este blindaje, resp.json() lanzaba un
+  // SyntaxError crudo que llegaba sin mapear a la UI y el usuario veía
+  // "código incorrecto" cuando el fallo había sido del servidor. Se
+  // resuelve {} para que cada cadena aplique su error accionable
+  // (invalid-credential, invalid-mfa-code, invalid-recovery-code,
+  // needs-confirmation, ...).
+  function lambdaJsonSafe(resp) {
+    return Promise.resolve().then(function () { return resp.json(); }).catch(function () { return {}; });
+  }
+
   function signInWithUsernameAndPassword(username, password) {
     getAuth();
     var C = cognitoLib();
@@ -4390,7 +4402,7 @@ function withCredRetry(opFn) {
           throw e429;
         }
         if (resp.status === 403) {
-          return resp.json().then(function (data) {
+          return lambdaJsonSafe(resp).then(function (data) {
             var code = (data && data.error) || '';
             if (code === 'unconfirmed') {
               // Sin correo conocido (el servidor no lo revela): la app pide
@@ -4407,7 +4419,7 @@ function withCredRetry(opFn) {
         if (!resp.ok) {
           throw Object.assign(new Error('Nombre de usuario o contraseña incorrectos.'), { code: 'auth/invalid-credential' });
         }
-        return resp.json();
+        return lambdaJsonSafe(resp);
       }).then(function (data) {
         // Desafío MFA: la Lambda devolvió la sesión del desafío; se pide el
         // código en la vista de desafío y se completa con el paso 2.

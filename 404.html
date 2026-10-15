@@ -17564,13 +17564,15 @@ function drexOrbitHdUploadsOn() {
     const selectedFiles = Array.from(event.target.files || []);
     if (!selectedFiles.length) return;
     if (notePostPublishing) { event.target.value = ''; return; }
-    // C327: aviso temprano si alguna foto es muy pesada (>25MB).
-    const _oversized = selectedFiles.filter(f => f.size > 25 * 1024 * 1024);
-    if (_oversized.length) {
+    // C327: aviso temprano si alguna foto es muy pesada (>25MB). Las pesadas se
+    // descartan pero las ligeras SE CONSERVAN (antes se perdía toda la
+    // selección aunque solo una foto fuera la pesada).
+    const _lightFiles = selectedFiles.filter(f => !(f.size > 25 * 1024 * 1024));
+    if (_lightFiles.length < selectedFiles.length) {
       showMiniToast(appT('Esa foto es muy pesada (máx 25 MB). Elige una más ligera.'));
       event.target.value = '';
-      return;
     }
+    if (!_lightFiles.length) return;
 
     const hasStickerSelected = pendingStickers['note-content-fullscreen'];
     if (hasStickerSelected) {
@@ -17587,8 +17589,8 @@ function drexOrbitHdUploadsOn() {
     if (notePostVideoFile) clearNoteVideoState();
 
     const room = drexOrbitPhotosMax() - notePostImageFiles.length;
-    const accepted = selectedFiles.slice(0, Math.max(0, room));
-    const dropped = selectedFiles.length - accepted.length;
+    const accepted = _lightFiles.slice(0, Math.max(0, room));
+    const dropped = _lightFiles.length - accepted.length;
     notePostImageFiles = notePostImageFiles.concat(accepted);
     event.target.value = '';
     if (dropped > 0) {
@@ -24336,6 +24338,22 @@ else { try { drexSnapInit(); } catch (_) {} }
     try {
       if (n.groupId) await DrexCloud.database().ref('postsByGroup/' + n.groupId + '/' + noteId).remove().catch(() => {});
       if (n.fiestaId) await DrexCloud.database().ref('postsByFiesta/' + n.fiestaId + '/' + noteId).remove().catch(() => {});
+    } catch (_) {}
+    // DATA-INTEGRITY (fan-out de guardados): postSavedBy/<noteId> es el índice
+    // inverso de savedPosts/<uid>/<noteId>. Se lee ANTES de borrarlo abajo y
+    // se limpia cada entrada por-usuario. Si quedaban huérfanas, seguían
+    // contando para el límite de 30 guardados (toggleSavePost) y se acumulaban
+    // sin que el usuario pudiera quitarlas (la vista de guardados solo las
+    // oculta, no las borra).
+    try {
+      const _saversSnap = await DrexCloud.database().ref('postSavedBy/' + noteId).once('value').catch(() => null);
+      const _savers = (_saversSnap && _saversSnap.val()) || {};
+      const _saverUids = Object.keys(_savers);
+      if (_saverUids.length) {
+        await Promise.allSettled(_saverUids.map(_u =>
+          DrexCloud.database().ref('savedPosts/' + _u + '/' + noteId).remove().catch(() => {})
+        ));
+      }
     } catch (_) {}
     // DATA-INTEGRITY: la limpieza de medios y comentarios se ESPERA (no es
     // fire-and-forget). Antes se devolvía `true` ("Publicación eliminada.")
@@ -31135,9 +31153,9 @@ else { try { drexSnapInit(); } catch (_) {} }
     // C201: userId forjado (authorId del payload del servidor) llegaba crudo
     // como segmento de ruta en 'notifications/<userId>' y 'notifUnread/<userId>'
     // (inyección estructural; PoC B1–B3 vía maybeAnnouncePollClose/addNotification).
-    if (!isValidChatUid(userId)) return;
-    if (await shouldSkipNotificationFor(userId, type, meta)) return;
-    if (type === 'message' && await isChatMutedForNotify(userId, meta)) return;
+    if (!isValidChatUid(userId)) return false;
+    if (await shouldSkipNotificationFor(userId, type, meta)) return false;
+    if (type === 'message' && await isChatMutedForNotify(userId, meta)) return false;
     const notificationsRef = DrexCloud.database().ref('notifications/' + userId);
     const newNotificationRef = notificationsRef.push();
     const notificationData = {
@@ -31192,6 +31210,10 @@ else { try { drexSnapInit(); } catch (_) {} }
     if (notifSelf && notifSelf.uid === userId) {
       fireDrexSystemNotification(message, true);
     }
+    // C338: informa si la notificación se creó de verdad (antes resolvía
+    // siempre aunque la escritura fallara; los llamadores no pueden usar el
+    // valor salvo que lo lean explícitamente — nadie lo hacía).
+    return notifWriteOk;
 }
 
   /* ===== Sonido de notificación de Drex =====
@@ -32875,8 +32897,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       return;
     }
     // Clave anti-fuerza bruta separada por tipo: los intentos con usuario no
-    // comparten contador con los de correo (ni viceversa).
-    const lockKey = isUsername ? ('u:' + loginId) : loginId;
+    // comparten contador con los de correo (ni viceversa). El correo se
+    // normaliza a minúsculas: si no, cambiar el caso de una letra reiniciaba
+    // el contador y evadía el bloqueo (2026-10-15).
+    const lockKey = isUsername ? ('u:' + loginId) : loginId.toLowerCase();
     const lockedSecs = checkLoginLock(lockKey);
     if (lockedSecs) {
       const mins = Math.ceil(lockedSecs / 60);
@@ -37369,7 +37393,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       showMiniToast(appT('¡Registro guardado! Mucha suerte.'));
     } catch (_) {
       showMiniToast(appT('No se pudo guardar tu registro. Inténtalo de nuevo.'));
-    } finally { setSavingButtonState(btn, false); }
+    } finally { setSavingButtonState(btn, false, 'Registrarse'); } // C338: el idleLabel por defecto es 'Guardar'; restaurar el texto real del botón
   }
 
   // La aceptación (usuarios elegidos) dispara una sola vez: mensaje de la
@@ -37392,9 +37416,13 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       // siempre (el ganador nunca se enteraba).
       var _announced = false;
       try {
-        await addNotification(uid, appT('Evento de Halloween: fuiste elegido. Tu {plan} gratis está activo hasta el {fecha}.').replace('{plan}', planTxt).replace('{fecha}', dateTxt), 'halloween_event', { actionType: 'halloween_event' });
-        _announced = true;
-      } catch (_) {}
+        // C338: addNotification resolvía aunque la escritura fallara (fallo
+        // tragado con console.warn) y _announced quedaba true → notifiedAt se
+        // persistía sin que la notificación existiera: el ganador la perdía
+        // para siempre (rompe el invariante de C283). El booleano ahora dice
+        // si se creó de verdad; si no, se reintenta en la próxima apertura.
+        _announced = !!(await addNotification(uid, appT('Evento de Halloween: fuiste elegido. Tu {plan} gratis está activo hasta el {fecha}.').replace('{plan}', planTxt).replace('{fecha}', dateTxt), 'halloween_event', { actionType: 'halloween_event' }));
+      } catch (_) { _announced = false; }
       if (!_announced) return;
       // C337: notifiedAt debe vivir DENTRO del objeto del grant. Antes se
       // escribía como hijo separado (grant.child('notifiedAt')), pero
@@ -42737,7 +42765,11 @@ let chatTypingListener = null;
         const sys = document.createElement('div');
         sys.className = 'w-full flex justify-center my-1';
         if (resolvedId) sys.dataset.msgId = resolvedId;
-        sys.innerHTML = `<span class="text-[11px] font-semibold text-[var(--theme-muted)] bg-[var(--theme-surface-muted)] px-3 py-1 rounded-full">${escapeHtml(msg.text || '')}</span>`;
+        // C338: la píldora de sistema usaba bg-[var(--theme-surface-muted)] =
+        // #eef2f7, el MISMO color que el fondo de la sala (tema default) →
+        // píldora invisible, solo el texto gris flotaba. Ahora es blanca con
+        // borde, igual que la burbuja "other" del tema default (C337).
+        sys.innerHTML = `<span class="text-[11px] font-semibold text-[var(--theme-muted)] bg-white border border-[#e5e9ee] px-3 py-1 rounded-full">${escapeHtml(msg.text || '')}</span>`;
         container.appendChild(sys);
         container.scrollTop = container.scrollHeight;
         _lastChatMsgMeta = null;
@@ -54989,7 +55021,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-14T22:10:00Z'; // C337
+window.DREX_BUILD = '2026-10-15T05:59:04Z'; // C338
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -88293,10 +88325,16 @@ var DrexOrbit = {
   },
   /* C264: plan EFECTIVO. Precedencia: pagado verificado > prueba del
    * evento > nada. Si el pagado se cancela a mitad de la prueba, la
-   * prueba sigue hasta su fecha (ya se ganó en el evento). */
+   * prueba sigue hasta su fecha (ya se ganó en el evento). Si el estado
+   * pagado está verificado pero no trae un plan usable (planId que el
+   * cliente no conoce -> refresh lo normaliza a null), NO se salta a
+   * "nada": la prueba vigente sigue aplicando. */
   effectivePlan: function () {
     try {
-      if (this.verifiedActive()) return this.plan();
+      if (this.verifiedActive()) {
+        var _p = this.plan();
+        if (_p) return _p;
+      }
       return this.trialPlan();
     } catch (_) { return null; }
   },
@@ -88392,7 +88430,11 @@ function orbitGate(feature) {
     if (DrexOrbit.hasAccess(feature || '')) return true;
     if (typeof openOrbitPaywall === 'function') openOrbitPaywall(feature || '');
     return false;
-  } catch (_) { return true; }
+  /* Fail-closed: si algo falla al evaluar la puerta (p. ej. el paywall
+   * no se pudo pintar), el acceso se DENIEGA, igual que hasAccess().
+   * Devolver true aquí regalaba el beneficio justo cuando la hoja de
+   * pago fallaba. */
+  } catch (_) { return false; }
 }
 
 /* ===== C243-D: detectores de ciclo de vida de la suscripción =====
