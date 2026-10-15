@@ -82,9 +82,26 @@ function buildSandbox() {
 const { sandbox } = buildSandbox();
 const K = sandbox.DrexOrbit;
 ok(!!K, 'DrexOrbit definido');
+/* SEG 2026-10-15: helper local (el antiguo DrexOrbit._setTestState se eliminó
+ * del frontend: en producción permitía auto-otorgarse premium desde consola). */
+function setTestState(st) {
+  var fail = { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' };
+  if (!st || typeof st !== 'object') { K._st = fail; }
+  else {
+    K._st = {
+      active: st.status === 'canceled' ? false : st.active === true,
+      plan: ((sandbox.ORBIT_PLAN_IDS || ['weekly','monthly','quarterly','semiannual','yearly','biennial','lifetime']).indexOf(st.plan) !== -1) ? st.plan : null,
+      currentPeriodEnd: st.currentPeriodEnd ? Number(st.currentPeriodEnd) : null,
+      cancelAtPeriodEnd: !!st.cancelAtPeriodEnd,
+      status: String(st.status || 'none')
+    };
+  }
+  K._ts = Date.now();
+  return K._st;
+}
 const FUTURE = Math.floor(Date.now() / 1000) + 30 * 86400;
-const paid = (plan, extra) => K._setTestState(Object.assign({ active: true, plan, currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' }, extra || {}));
-const none = () => K._setTestState(null);
+const paid = (plan, extra) => setTestState(Object.assign({ active: true, plan, currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' }, extra || {}));
+const none = () => setTestState(null);
 
 console.log('-- C264.1: niveles por plan (pagado verificado) --');
 sandbox.window.DREX_ORBIT_ENFORCE = true;

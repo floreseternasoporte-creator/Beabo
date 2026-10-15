@@ -40,6 +40,23 @@ sandbox.DrexCloud = { auth: () => ({ currentUser: null }) };
 vm.runInContext(mCore[0], sandbox);
 const K = sandbox.DrexOrbit;
 ok(!!K, 'DrexOrbit definido');
+/* SEG 2026-10-15: helper local (el antiguo DrexOrbit._setTestState se eliminó
+ * del frontend: en producción permitía auto-otorgarse premium desde consola). */
+function setTestState(st) {
+  var fail = { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' };
+  if (!st || typeof st !== 'object') { K._st = fail; }
+  else {
+    K._st = {
+      active: st.status === 'canceled' ? false : st.active === true,
+      plan: ((sandbox.ORBIT_PLAN_IDS || ['weekly','monthly','quarterly','semiannual','yearly','biennial','lifetime']).indexOf(st.plan) !== -1) ? st.plan : null,
+      currentPeriodEnd: st.currentPeriodEnd ? Number(st.currentPeriodEnd) : null,
+      cancelAtPeriodEnd: !!st.cancelAtPeriodEnd,
+      status: String(st.status || 'none')
+    };
+  }
+  K._ts = Date.now();
+  return K._st;
+}
 
 /* ---- 2. Fail closed: sin estado -> no activo ---- */
 ok(K.isActive() === false, 'fail-closed: isActive() false sin estado');
@@ -49,7 +66,7 @@ ok(K.hasAccess('whatever') === false, 'fail-closed: hasAccess desconocido false'
 
 /* ---- 2b. Enforcement OFF: ni siquiera verificado otorga acceso ---- */
 sandbox.window.DREX_ORBIT_ENFORCE = false;
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
 ok(K.verifiedActive() === true, 'verificado: backend dice activo');
 ok(K.isActive() === false, 'enforcement OFF: isActive false aunque verificado');
 ok(K.hasAccess('no_ads') === false, 'enforcement OFF: sin acceso aunque verificado');
@@ -58,31 +75,31 @@ ok(K.hasAccess('no_ads') === false, 'enforcement OFF: sin acceso aunque verifica
 sandbox.window.DREX_ORBIT_ENFORCE = true;
 
 /* ---- 3. Normalización del backend ---- */
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
 ok(K.isActive() === true, 'normaliza: active=true -> isActive true');
 ok(K.hasAccess('no_ads') === true, 'normaliza: orbit accede a no_ads');
 ok(K.hasAccess('exclusive_gifts') === false, 'C240: exclusive_gifts eliminado, ya no se concede');
-K._setTestState({ active: false, plan: 'none' });
+setTestState({ active: false, plan: 'none' });
 ok(K.isActive() === false, 'normaliza: active=false -> isActive false');
 // estado malformado
-K._setTestState({ active: 'yes', plan: 123 });
+setTestState({ active: 'yes', plan: 123 });
 ok(K.isActive() === false, 'fail-closed: estado malformado -> false');
-K._setTestState(null);
+setTestState(null);
 ok(K.isActive() === false, 'fail-closed: null -> false');
-K._setTestState({ active: true, plan: 'monthly', status: 'past_due' });
+setTestState({ active: true, plan: 'monthly', status: 'past_due' });
 ok(K.isActive() === false, 'C243-D: past_due apaga beneficios al instante (el backend tambien lo marca inactive)');
-K._setTestState({ active: true, plan: 'monthly', status: 'canceled' });
+setTestState({ active: true, plan: 'monthly', status: 'canceled' });
 ok(K.isActive() === false, 'canceled -> inactivo aunque active=true (fail closed)');
 
 /* ---- 4. Matriz de funciones (7 grupos; studio_pro se eliminó en Fase 3 con Drex Studio y exclusive_gifts en C240 con la función de regalos) ---- */
-K._setTestState({ active: true, plan: 'yearly', status: 'active' });
+setTestState({ active: true, plan: 'yearly', status: 'active' });
 const FEATURES = ['no_ads','badge','profile_themes','fiesta_boost','limits','analytics','priority_support'];
 for (const f of FEATURES) ok(K.hasAccess(f) === true, 'orbit accede a ' + f);
 ok(K.hasAccess('studio_pro') === false, 'studio_pro eliminado: orbit ya no lo concede (Fase 3)');
-K._setTestState({ active: false, plan: 'none' });
+setTestState({ active: false, plan: 'none' });
 for (const f of FEATURES) ok(K.hasAccess(f) === false, 'no-orbit bloqueado en ' + f);
 // Desconocido aunque sea orbit
-K._setTestState({ active: true, plan: 'monthly', status: 'active' });
+setTestState({ active: true, plan: 'monthly', status: 'active' });
 ok(K.hasAccess('admin_panel') === false, 'feature desconocida -> false aunque sea orbit');
 
 /* ---- 5. Enforcement desactivado por defecto ---- */
@@ -160,7 +177,7 @@ console.log(`\nDrex Orbit frontend: ${pass} ok, ${fail} fallos`);
 K._serverConfigured = false;
 sandbox.window.DREX_ORBIT_ENFORCE = false;
 ok(K.enforced() === false, 'enforced() false por defecto (sin flag ni servidor)');
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
 ok(K.isActive() === false, 'sin configured del servidor no hay acceso aunque verificado');
 K._serverConfigured = true;
 ok(K.enforced() === true, 'enforced() true con configured:true del servidor');

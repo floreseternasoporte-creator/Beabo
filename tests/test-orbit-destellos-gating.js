@@ -67,6 +67,23 @@ vm.createContext(sandbox);
 vm.runInContext(mCore[0], sandbox);
 var K = sandbox.DrexOrbit;
 assert(K, 'DrexOrbit no definido tras evaluar el core');
+/* SEG 2026-10-15: helper local (el antiguo DrexOrbit._setTestState se eliminó
+ * del frontend: en producción permitía auto-otorgarse premium desde consola). */
+function setTestState(st) {
+  var fail = { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' };
+  if (!st || typeof st !== 'object') { K._st = fail; }
+  else {
+    K._st = {
+      active: st.status === 'canceled' ? false : st.active === true,
+      plan: ((sandbox.ORBIT_PLAN_IDS || ['weekly','monthly','quarterly','semiannual','yearly','biennial','lifetime']).indexOf(st.plan) !== -1) ? st.plan : null,
+      currentPeriodEnd: st.currentPeriodEnd ? Number(st.currentPeriodEnd) : null,
+      cancelAtPeriodEnd: !!st.cancelAtPeriodEnd,
+      status: String(st.status || 'none')
+    };
+  }
+  K._ts = Date.now();
+  return K._st;
+}
 
 /* ---- Bloque C210 evaluado con stubs (estilo test-c215) ---- */
 var m210 = src.match(/\/\/ ==================== C210 INSTANTÁNEAS ====================\n([\s\S]*?)\n\/\/ ================== FIN C210 INSTANTÁNEAS ==================/);
@@ -130,7 +147,7 @@ test("Destellos escucha 'drex-orbit-change' (vinculación)", function () {
 /* ---- 5. No-miembro + enforcement ON -> tarjeta de desbloqueo ---- */
 test('no-miembro con enforcement: bandeja muestra tarjeta Orbit (no el botón Nuevo)', function () {
   K._serverConfigured = true;
-  K._setTestState({ active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' });
+  setTestState({ active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' });
   assert(K.enforced() === true, 'precondición: enforced() debe ser true');
   assert(K.isActive() === false, 'precondición: isActive() debe ser false');
   getEl('drex-snap-row').innerHTML = '';
@@ -144,7 +161,7 @@ test('no-miembro con enforcement: bandeja muestra tarjeta Orbit (no el botón Nu
 /* ---- 6. Miembro activo -> bandeja normal ---- */
 test('miembro Orbit activo: bandeja normal con botón Nuevo', function () {
   K._serverConfigured = true;
-  K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
+  setTestState({ active: true, plan: 'monthly', currentPeriodEnd: 9999999999, cancelAtPeriodEnd: false, status: 'active' });
   assert(K.isActive() === true, 'precondición: isActive() debe ser true');
   getEl('drex-snap-row').innerHTML = '';
   C210.drexSnapRenderTray([], {}, Date.now());
@@ -156,7 +173,7 @@ test('miembro Orbit activo: bandeja normal con botón Nuevo', function () {
 /* ---- 7. Sin backend configurado -> diseño documentado (bandeja normal) ---- */
 test('sin backend Orbit configurado: bandeja normal (diseño fail-open documentado)', function () {
   K._serverConfigured = false;
-  K._setTestState(null);
+  setTestState(null);
   assert(K.enforced() === false, 'precondición: enforced() debe ser false sin backend');
   getEl('drex-snap-row').innerHTML = '';
   C210.drexSnapRenderTray([], {}, Date.now());

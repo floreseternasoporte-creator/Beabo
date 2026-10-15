@@ -6,7 +6,7 @@
  *
  * Sandbox vm al estilo test-orbit-plans-availability: núcleo DrexOrbit +
  * bloque UI (vista/paywall) evaluados, renderOrbitView() renderizada a
- * mano, transiciones de estado vía DrexOrbit._setTestState.
+* mano, transiciones de estado vía el helper local setTestState.
  * Fail-closed: seleccionar planes no concede nada; todo privilegio pasa
  * por DrexOrbit.hasAccess/isActive.
  *
@@ -97,6 +97,27 @@ const { sandbox, els } = buildSandbox();
 const K = sandbox.DrexOrbit;
 ok(!!K, 'DrexOrbit definido');
 
+/* Helper local de pruebas: inyecta un estado ya normalizado como lo haría
+ * refresh(). (SEG 2026-10-15: el antiguo DrexOrbit._setTestState se eliminó
+ * del frontend porque en producción permitía auto-otorgarse premium desde
+ * la consola; los tests usan este helper local en su lugar.) */
+function setTestState(st) {
+  var fail = { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' };
+  if (!st || typeof st !== 'object') { K._st = fail; }
+  else {
+    var cpe = st.currentPeriodEnd ? Number(st.currentPeriodEnd) : null;
+    K._st = {
+      active: st.status === 'canceled' ? false : st.active === true,
+      plan: ((sandbox.ORBIT_PLAN_IDS || ['weekly','monthly','quarterly','semiannual','yearly','biennial','lifetime']).indexOf(st.plan) !== -1) ? st.plan : null,
+      currentPeriodEnd: cpe,
+      cancelAtPeriodEnd: !!st.cancelAtPeriodEnd,
+      status: String(st.status || 'none')
+    };
+  }
+  K._ts = Date.now();
+  return K._st;
+}
+
 (async () => {
 
 /* ================= A. Pricing estilo Meta ================= */
@@ -156,16 +177,16 @@ console.log('-- B: privilegios nuevos --');
 ok(html.includes("var ORBIT_FEATURES = ['no_ads', 'badge', 'profile_themes', 'fiesta_boost', 'limits', 'analytics', 'priority_support', 'hd_uploads', 'longer_posts', 'pin_post', 'profile_visitors', 'photo_downloads', 'chat_themes', 'instant_username', 'long_polls', 'big_parties'];"), 'ORBIT_FEATURES tiene los 16 privilegios (C264)');
 sandbox.window.DREX_ORBIT_ENFORCE = true;
 const FUTURE = Math.floor(Date.now() / 1000) + 30 * 86400;
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
 for (const f of ['no_ads', 'badge', 'limits', 'hd_uploads', 'photo_downloads', 'chat_themes', 'instant_username']) eq(K.hasAccess(f), true, 'Mensual (N1): hasAccess(' + f + ')');
 for (const f of ['longer_posts', 'profile_themes', 'long_polls', 'pin_post', 'fiesta_boost', 'big_parties', 'analytics', 'priority_support', 'profile_visitors']) eq(K.hasAccess(f), false, 'Mensual (N1) sin niveles superiores: ' + f);
-K._setTestState({ active: true, plan: 'quarterly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'quarterly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
 for (const f of ['longer_posts', 'profile_themes', 'long_polls']) eq(K.hasAccess(f), true, 'Trimestral (N2): hasAccess(' + f + ')');
 eq(K.hasAccess('pin_post'), false, 'Trimestral (N2) aún sin pin_post (N3)');
-K._setTestState({ active: true, plan: 'semiannual', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'semiannual', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
 for (const f of ['pin_post', 'fiesta_boost', 'big_parties']) eq(K.hasAccess(f), true, 'Semestral (N3): hasAccess(' + f + ')');
 eq(K.hasAccess('analytics'), false, 'Semestral (N3) aún sin analytics (N4)');
-K._setTestState({ active: true, plan: 'yearly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'yearly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
 for (const f of FEATS16) eq(K.hasAccess(f), true, 'Anual (N4): hasAccess(' + f + ')');
 eq(K.hasAccess('exclusive_gifts'), false, 'exclusive_gifts sigue eliminado (C240)');
 
@@ -231,9 +252,9 @@ eq(cctx.orbitPaywallCopy('profile_visitors').title, 'Quién vio tu perfil', 'pay
 
 /* ================= D. Ciclo de vida: OFF/ON instantáneo ================= */
 console.log('-- D: detectores + off/on instantáneo --');
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
 eq(K.isActive(), true, 'D: activo -> beneficios ON');
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: true, status: 'active' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: true, status: 'active' });
 eq(K.isActive(), false, 'D: cancelAtPeriodEnd -> beneficios OFF al instante');
 eq(K.verifiedActive(), false, 'D: verifiedActive también OFF');
 eq(K.hasAccess('profile_visitors'), false, 'D: puertas cerradas con cancelación');
@@ -243,15 +264,15 @@ eq(K.hasAccess('profile_visitors'), false, 'D: puertas cerradas con cancelación
   eq(st.currentPeriodEnd, FUTURE, 'D: la fecha pagada sigue disponible para la copia honesta');
   eq(st.cancelAtPeriodEnd, true, 'D: cancelAtPeriodEnd visible en el estado');
 }
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'active' });
 eq(K.isActive(), true, 'D: reactivada -> beneficios ON en el siguiente refresh');
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'past_due' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'past_due' });
 eq(K.isActive(), false, 'D: past_due -> OFF');
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'canceled' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: FUTURE, cancelAtPeriodEnd: false, status: 'canceled' });
 eq(K.isActive(), false, 'D: canceled -> OFF');
-K._setTestState({ active: true, plan: 'monthly', currentPeriodEnd: Math.floor(Date.now() / 1000) - 3600, cancelAtPeriodEnd: false, status: 'active' });
+setTestState({ active: true, plan: 'monthly', currentPeriodEnd: Math.floor(Date.now() / 1000) - 3600, cancelAtPeriodEnd: false, status: 'active' });
 eq(K.isActive(), false, 'D: periodo vencido -> OFF');
-K._setTestState(null);
+setTestState(null);
 eq(K.isActive(), false, 'D: sin estado -> OFF (fail-closed intacto)');
 
 /* detectores: cada hook fuerza refresh (rompe la caché de 60s) */

@@ -2,6 +2,32 @@
 <html lang="en">
 
 <head>
+<script>
+/* SEG-ANTITAMPER 2026-10-15: anti-clickjacking. Drex se sirve desde GitHub
+ * Pages (sin cabeceras X-Frame-Options posibles), así que la única defensa
+ * es romper el frame desde el cliente. Drex nunca se incrusta legítimamente
+ * en un iframe (0 <iframe> en la app; el TWA no es un iframe), de modo que
+ * salir del frame nunca rompe un flujo real. Si el padre es cross-origin y
+ * no se puede redirigir, se oculta el contenido para no ser operable. */
+try {
+  if (window.self !== window.top) {
+    try { window.top.location.href = window.self.location.href; }
+    catch (_) { document.documentElement.style.display = 'none'; }
+  }
+} catch (_) {}
+/* SEG-ANTITAMPER 2026-10-15: aviso anti-self-XSS en consola (práctica de
+ * Meta/Discord). No detiene a un atacante técnico, pero sí la estafa más
+ * común: "pega este código para tener premium gratis", que roba la sesión
+ * de usuarios no técnicos. Cero impacto en el uso legítimo. */
+try {
+  if (typeof console !== 'undefined') {
+    var _c1 = 'font-size:28px;font-weight:900;color:#fff;background:#c81e1e;padding:6px 14px;border-radius:8px;';
+    var _c2 = 'font-size:14px;color:#c81e1e;font-weight:700;';
+    console.log('%cALTO', _c1);
+    console.log('%cSi alguien te pidió abrir esta consola y pegar código para "tener premium gratis" o "hackear Drex": es una ESTAFA. Ese código le entrega tu cuenta al estafador. Cierra esta ventana y no pegues nada.\nIf someone told you to paste code here, it is a SCAM that steals your account. Do not paste anything.', _c2);
+  }
+} catch (_) {}
+</script>
 <style>
 /* Fuente Optimistic no incluida en el despliegue: se usa system-ui de respaldo. */
 :where(html) {
@@ -32923,6 +32949,11 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     signInPromise
       .then(() => {
         clearLoginAttempts(lockKey);
+        // SEC-AUTH (2026-10-15): limpiar la contraseña del DOM tras un login
+        // exitoso. Antes quedaba en passwordInput.value durante TODA la sesión:
+        // cualquiera con acceso momentáneo al dispositivo (devtools) o un XSS
+        // podía leerla en texto plano.
+        try { if (passwordInput) passwordInput.value = ''; } catch (_) {}
         // C105: blindado — un throw rechazaba la cadena post-login.
         try { localStorage.setItem('drex_last_login_method', isUsername ? 'username' : 'email'); } catch (_) {}
       })
@@ -34757,8 +34788,15 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     DrexCloud.auth().sendPasswordResetEmail(recoveryEmail).then(() => {
       startRecoveryCooldown();
       if (typeof showMiniToast === 'function') showMiniToast(appT('Código reenviado. Revisa tu correo.'));
-    }).catch(() => {
+    }).catch((reErr) => {
       // C284: el fallo al reenviar ya no es mudo.
+      // SEC-AUTH: si el correo no existe (flujo anti-enumeración), el reenvío
+      // responde IGUAL que un éxito para no revelar nada.
+      if (reErr && (reErr.code === 'auth/user-not-found' || reErr.code === 'auth/invalid-credential')) {
+        startRecoveryCooldown();
+        if (typeof showMiniToast === 'function') showMiniToast(appT('Código reenviado. Revisa tu correo.'));
+        return;
+      }
       btn.disabled = false;
       recoveryCooldown = false;
       if (typeof showMiniToast === 'function') showMiniToast(appT('No se pudo reenviar el código. Revisa tu conexión e inténtalo de nuevo.'));
@@ -34772,6 +34810,28 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       showAuthSection(loginOptions);
     });
   });
+
+  // SEC-AUTH (2026-10-15): anti-enumeración de cuentas. Antes, un correo no
+  // registrado mostraba "No encontramos ninguna cuenta..." mientras que uno
+  // registrado avanzaba al paso del código: cualquiera podía probar qué
+  // correos tienen cuenta en Drex (el login ya se blindó en FIX-URG-3, pero
+  // el reset quedó abierto). Ahora AMBOS casos muestran EXACTAMENTE la misma
+  // pantalla del código (estándar Meta/Google): si el correo no existe no se
+  // envía nada y cualquier código falla como "no válido", igual que un código
+  // erróneo en una cuenta real. El reenvío y la confirmación también responden
+  // idéntico en ambos casos.
+  function enterRecoveryCodeStep(email) {
+    sendRecoveryButton.disabled = false;
+    sendRecoveryButton.textContent = appT('Enviar código');
+    recoveryEmail = email;
+    document.getElementById('recoveryCodeEmailLabel').textContent = email;
+    document.getElementById('recoveryCodeInput').value = '';
+    document.getElementById('recoveryNewPassword').value = '';
+    document.getElementById('recoveryCodeError').classList.add('hidden');
+    showRecoveryState('recoveryCodeStep');
+    startRecoveryCooldown();
+    setTimeout(() => { try { document.getElementById('recoveryCodeInput').focus({ preventScroll: true }); } catch (e) {} }, 350);
+  }
 
   function resetPassword() {
     const email = (recoveryEmailInput.value || pendingEmail || emailInput.value).trim();
@@ -34794,16 +34854,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
 
     DrexCloud.auth().sendPasswordResetEmail(email)
       .then(() => {
-        sendRecoveryButton.disabled = false;
-        sendRecoveryButton.textContent = appT('Enviar código');
-        recoveryEmail = email;
-        document.getElementById('recoveryCodeEmailLabel').textContent = email;
-        document.getElementById('recoveryCodeInput').value = '';
-        document.getElementById('recoveryNewPassword').value = '';
-        document.getElementById('recoveryCodeError').classList.add('hidden');
-        showRecoveryState('recoveryCodeStep');
-        startRecoveryCooldown();
-        setTimeout(() => { try { document.getElementById('recoveryCodeInput').focus({ preventScroll: true }); } catch (e) {} }, 350);
+        enterRecoveryCodeStep(email);
       })
       .catch(error => {
         sendRecoveryButton.disabled = false;
@@ -34811,8 +34862,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         switch (error.code) {
           case 'auth/user-not-found':
           case 'auth/invalid-credential':
-            errorDisplay.textContent = appT('No encontramos ninguna cuenta con este correo.');
-            break;
+            // SEC-AUTH: no revelar si el correo existe — mismo flujo que éxito.
+            enterRecoveryCodeStep(email);
+            return;
           case 'auth/invalid-email':
             errorDisplay.textContent = appT('El formato del correo no es válido.');
             break;
@@ -34854,6 +34906,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         btn.disabled = false;
         btn.textContent = appT('Restablecer contraseña');
         if (error.code === 'auth/invalid-verification-code') {
+          err.textContent = appT('El código no es válido. Revísalo e inténtalo de nuevo.');
+        } else if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+          // SEC-AUTH: en el flujo anti-enumeración el correo puede no existir;
+          // cualquier código es "no válido", igual que un código erróneo real.
           err.textContent = appT('El código no es válido. Revísalo e inténtalo de nuevo.');
         } else if (error.code === 'auth/code-expired') {
           err.textContent = appT('El código venció. Pide uno nuevo con "Reenviar código".');
@@ -43779,10 +43835,18 @@ const _startChatListeners = () => {
     return false;
   }
 
+  // SEG-ANTITAMPER 2026-10-15: freno anti-flood por conversación (1 envío/s).
+  // No detiene a un atacante decidido (puede escribir directo a la BD; eso
+  // solo se cierra en servidor), pero frena bucles de consola ingenuos y
+  // dobles envíos accidentales sin molestar al usuario normal.
+  var _chatFloodAt = {};
   function sendChatMessage() {
     const user = DrexCloud.auth().currentUser;
     const input = document.getElementById('chat-room-input');
     if (!user || !input || !currentChatRoomId) return;
+    var _now = Date.now();
+    if (_now - (_chatFloodAt[currentChatRoomId] || 0) < 1000) return;
+    _chatFloodAt[currentChatRoomId] = _now;
     // ANTESALA (C85): el destinatario de una solicitud no puede responder
     // hasta aceptarla (el composer ya está oculto; esto es defensa en fondo).
     if (currentChatIsRequest && !currentChatIsGroup) {
@@ -55021,7 +55085,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-15T06:10:00Z'; // SEG-1
+window.DREX_BUILD = '2026-10-15T13:21:00Z'; // SEG-2
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -88276,6 +88340,7 @@ var DrexOrbit = {
         status: String(data.status || 'none')
       };
       self._serverConfigured = (data.configured === true);
+      self._staleSince = 0;
     /* C263: un fallo transitorio de red NO desconfigura el servidor. Si ya
      * sabíamos que está configurado, enforced() sigue true y orbitGate
      * permanece fail-closed; solo reset()/logout limpian el flag.
@@ -88284,8 +88349,19 @@ var DrexOrbit = {
      * NO se mueve el sello de tiempo, así la próxima revalidación
      * reintenta al momento en vez de cachear el fallo por 60 s. */
     } catch (_) {
-      if (!(self._st && self._st.active === true)) self._st = fail;
-      else self._keptStale = true;
+      if (!(self._st && self._st.active === true)) { self._st = fail; self._staleSince = 0; }
+      else {
+        /* SEC-PAYWALL (2026-10-15): la gracia "stale" es ACOTADA. Sin esto,
+         * bloquear el endpoint de pagos (regla de adblock/proxy) tras
+         * cancelar conservaba el premium INDEFINIDAMENTE: cada refresh
+         * fallaba y el estado viejo se retenía para siempre. Pasadas 12 h
+         * sin una revalidación exitosa se cierra (fail-closed); los blips
+         * transitorios siguen sin des-suscribir a nadie y al volver la red
+         * el estado real se restaura solo. */
+        if (!self._staleSince) self._staleSince = Date.now();
+        if (Date.now() - self._staleSince > 12 * 60 * 60 * 1000) { self._st = fail; self._staleSince = 0; }
+        else self._keptStale = true;
+      }
     }
     if (!self._keptStale) self._ts = Date.now();
     self._keptStale = false;
@@ -88386,7 +88462,7 @@ var DrexOrbit = {
   /* Limpia el estado verificado (logout / cambio de cuenta): evita que el
    * estado premium de una cuenta se filtre a otra en este dispositivo. */
   reset: function () {
-    this._st = null; this._ts = 0; this._serverConfigured = false;
+    this._st = null; this._ts = 0; this._serverConfigured = false; this._staleSince = 0;
     try { if (typeof window.drexOrbitApplyGates === 'function') window.drexOrbitApplyGates(); } catch (_) {}
     return this;
   },
@@ -88414,7 +88490,9 @@ window.DREX_ORBIT_ENFORCE = false;
  * abre el paywall preseleccionando el primer plan que lo incluye. */
 function orbitGate(feature) {
   try {
-    if (typeof DrexOrbit === 'undefined') return true;
+    /* SEC-PAYWALL (2026-10-15): fail-closed también aquí; antes devolvía
+     * true cuando DrexOrbit no estaba definido. */
+    if (typeof DrexOrbit === 'undefined') return false;
     if (!DrexOrbit.enforced() && !DrexOrbit.trialPlan()) return true;
     if (DrexOrbit.hasAccess(feature || '')) return true;
     if (typeof openOrbitPaywall === 'function') openOrbitPaywall(feature || '');

@@ -151,11 +151,29 @@ ok(!html.includes('STRIPE_PRICE_'), 'sin price IDs de Stripe en el frontend');
 
 /* ---- 12. Fail-closed con los planes nuevos ---- */
 const K = sandbox.DrexOrbit;
-K._setTestState({ active: true, plan: 'lifetime', status: 'active' });
+/* SEC-PAYWALL 2026-10-15: helper local (el antiguo DrexOrbit._setTestState se
+ * eliminó del frontend en SEG-1: en producción permitía auto-otorgarse
+ * premium desde consola). */
+function setTestState(st) {
+  var fail = { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none' };
+  if (!st || typeof st !== 'object') { K._st = fail; }
+  else {
+    K._st = {
+      active: st.status === 'canceled' ? false : st.active === true,
+      plan: ((sandbox.ORBIT_PLAN_IDS || ['weekly','monthly','quarterly','semiannual','yearly','biennial','lifetime']).indexOf(st.plan) !== -1) ? st.plan : null,
+      currentPeriodEnd: st.currentPeriodEnd ? Number(st.currentPeriodEnd) : null,
+      cancelAtPeriodEnd: !!st.cancelAtPeriodEnd,
+      status: String(st.status || 'none')
+    };
+  }
+  K._ts = Date.now();
+  return K._st;
+}
+setTestState({ active: true, plan: 'lifetime', status: 'active' });
 ok(K.plan() === 'lifetime', 'plan lifetime reconocido del backend');
-K._setTestState({ active: true, plan: 'weekly', status: 'active' });
+setTestState({ active: true, plan: 'weekly', status: 'active' });
 ok(K.plan() === 'weekly', 'plan weekly reconocido del backend');
-K._setTestState({ active: true, plan: 'plan_inexistente', status: 'active' });
+setTestState({ active: true, plan: 'plan_inexistente', status: 'active' });
 ok(K.plan() === null, 'fail-closed: plan desconocido -> null');
 
 async function main() {

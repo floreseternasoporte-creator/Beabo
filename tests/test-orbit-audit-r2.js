@@ -17,7 +17,7 @@ function t(name, cond) {
   else { bad++; console.log('FALLO - ' + name); }
 }
 
-// 1. Normalización de planes: los 4 aceptados en refresh() y _setTestState().
+// 1. Normalización de planes: los 4 aceptados en refresh(). (SEG 2026-10-15: _setTestState eliminado del frontend.)
 var normCount = (src.match(/ORBIT_PLANS\[(data|st)\.plan\]\) \? \1\.plan : null/g) || []).length;
 t('normalización acepta los 4 planes (2 sitios)', normCount === 2);
 t('ya no hay normalización solo monthly/yearly',
