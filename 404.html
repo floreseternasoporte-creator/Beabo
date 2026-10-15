@@ -63,7 +63,10 @@ try {
   <meta name="twitter:description" content="Publica, vota, comenta y conecta. Únete a Drex." />
   <meta name="twitter:image" content="https://floreseternasoporte-creator.github.io/Beabo/drex-logo.png" />
     <!-- Google Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap" rel="stylesheet">
+  <!-- PERF-LOAD (2026-10-15): la hoja de Nunito era render-blocking y la fuente
+       solo se usa en 3 reglas de vistas secundarias (empresa/privacidad/términos).
+       Con media=print+onload deja de bloquear el primer pintado. -->
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <!-- Tailwind CSS CDN -->
   <!-- Rendimiento: preconexión temprana a los CDN usados en el arranque.
        C118: eliminado el preconnect a sdk.amazonaws.com — host muerto
@@ -79,6 +82,10 @@ try {
    <link rel="preconnect" href="https://cognito-idp.us-east-1.amazonaws.com">
    <link rel="dns-prefetch" href="https://opyy2nl5x66xhu5uy4n4dwjzui0wkuas.lambda-url.us-east-1.on.aws">
    <link rel="dns-prefetch" href="https://flagcdn.com">
+   <!-- PERF-LOAD (2026-10-15): el logo del splash (63KB) está en el primer pintado;
+        con preload empieza a descargarse con el <head> en vez de descubrirse al
+        parsear el <body>, y llega a tiempo para el splash en redes lentas. -->
+   <link rel="preload" as="image" href="assets/img/intro-logo.png">
    <link rel="dns-prefetch" href="https://upload.wikimedia.org">
    <link rel="dns-prefetch" href="https://ideogram.ai">
    <link rel="dns-prefetch" href="https://i.ibb.co">
@@ -130,7 +137,12 @@ try {
       }, true);
     })();
   </script>
-<script src="drex-cloud.js?v=2026-10-14T17:20:00Z"></script>
+<!-- PERF-LOAD (2026-10-15): defer — era el único script síncrono del <head> (287KB).
+     Bloqueaba el primer pintado (splash). Los 2 únicos usos a nivel de parseo
+     (onAuthStateChanged) se difirieron a DOMContentLoaded; todo lo demás usa
+     DrexCloud dentro de funciones. Orden defer preservado: va antes que los
+     demás scripts defer que lo consumen. -->
+<script defer src="drex-cloud.js?v=2026-10-14T17:20:00Z"></script>
 <script defer src="drex-rec-engine.js"></script>
   <!-- FIABILIDAD (2026-09-21): banner de degradación no intrusivo.
        Se muestra solo si el backend de datos se degrada (circuit breaker
@@ -17307,6 +17319,19 @@ function drexOrbitHdUploadsOn() {
     } catch (_) {}
   }
 
+  // PERF feed: antes cada tarjeta con fotos programaba su propio setTimeout con
+  // un escaneo completo del documento (N tarjetas = N escaneos). Ahora los
+  // avisos del mismo lote se fusionan en un único drenaje.
+  var _noteImgsDrainScheduled = false;
+  function scheduleNoteImagesHydration() {
+    if (_noteImgsDrainScheduled) return;
+    _noteImgsDrainScheduled = true;
+    setTimeout(function () {
+      _noteImgsDrainScheduled = false;
+      try { queueNoteImagesHydration(); } catch (_) {}
+    }, 0);
+  }
+
   // Estado de error con reintento para contenedores de fotos diferidos
   // (2026-10-14). Se conserva data-note-imgs para que el reintento vuelva a
   // hidratar el mismo contenedor. legacy=true reintenta por la vía legacy.
@@ -18265,7 +18290,7 @@ function drexOrbitHdUploadsOn() {
     // contenedor diferido con shimmer y se hidrata bajo demanda (con caché
     // en memoria por sesión): el snapshot del feed nunca descarga los bytes.
     if (Number(note.imageCount || 0) > 0 && noteId) {
-      setTimeout(() => { try { queueNoteImagesHydration(); } catch (_) {} }, 0);
+      scheduleNoteImagesHydration();
       return `<div class="mb-3" data-note-imgs="${escapeHtml(noteId)}" data-img-count="${Number(note.imageCount)}"><div class="drex-imgs-shimmer"${noteShimmerAspectStyle(note, noteId)}></div></div>`;
     }
     const images = Array.isArray(note.imageUrls) && note.imageUrls.length ? note.imageUrls.slice() : (note.imageUrl ? [note.imageUrl] : []);
@@ -18279,7 +18304,7 @@ function drexOrbitHdUploadsOn() {
       // la fase 1 y luego se migran al formato nuevo en segundo plano.
       const imgKeys = Array.isArray(note._imgKeys) ? note._imgKeys.filter(k => typeof k === 'string' && k) : [];
       if (imgKeys.length && noteId) {
-        setTimeout(() => { try { queueNoteImagesHydration(); } catch (_) {} }, 0);
+        scheduleNoteImagesHydration();
         return `<div class="mb-3" data-note-imgs="${escapeHtml(noteId)}" data-img-keys="${escapeHtml(JSON.stringify(imgKeys))}"><div class="drex-imgs-shimmer"></div></div>`;
       }
       return '';
@@ -21574,6 +21599,18 @@ else { try { drexSnapInit(); } catch (_) {} }
     if (!currentUser) return;
 
     const buttons = root.querySelectorAll ? root.querySelectorAll('.quick-follow-btn[data-follow-user-id]') : [];
+    // PERF feed: el feed ya leyó `following/<miUid>` UNA vez al cargar
+    // (_feedUserMapsCache.following, fresca 30 s). Reutilizarla evita el N+1
+    // de lecturas `followers/<autor>/<yo>` por tarjeta: si el autor está en
+    // el mapa es "following" sin leer nada; si el mapa está cargado y NO está,
+    // `followers/<autor>/<yo>` tampoco existe (árbol espejo) y se salta
+    // directo a comprobar la solicitud pendiente. La caché de sesión
+    // (_quickFollowStateCache) sigue mandando para toggles recientes.
+    let followingMap = null;
+    try {
+      const c = (typeof _feedUserMapsCache !== 'undefined') ? _feedUserMapsCache : null;
+      if (c && c.following && c.uid === currentUser.uid && (Date.now() - c.ts) < 30000) followingMap = c.following;
+    } catch (_) { followingMap = null; }
     buttons.forEach(btn => {
       const targetUserId = btn.dataset.followUserId;
       if (!targetUserId || targetUserId === currentUser.uid) {
@@ -21582,11 +21619,19 @@ else { try { drexSnapInit(); } catch (_) {} }
       }
       const cachedState = _quickFollowStateCache.get(targetUserId);
       if (cachedState) { updateQuickFollowButtonState(btn, cachedState, false); return; }
-      DrexCloud.database().ref('followers/' + targetUserId + '/' + currentUser.uid).once('value').then(snapshot => {
-        if (snapshot.exists()) { updateQuickFollowButtonState(btn, 'following', false); return; }
+      if (followingMap && Object.prototype.hasOwnProperty.call(followingMap, targetUserId)) {
+        updateQuickFollowButtonState(btn, 'following', false);
+        return;
+      }
+      const checkRequested = () => {
         DrexCloud.database().ref('followRequests/' + targetUserId + '/' + currentUser.uid).once('value').then(reqSnap => {
           updateQuickFollowButtonState(btn, reqSnap.exists() ? 'requested' : 'none', false);
         }).catch(() => updateQuickFollowButtonState(btn, 'none', false));
+      };
+      if (followingMap) { checkRequested(); return; }
+      DrexCloud.database().ref('followers/' + targetUserId + '/' + currentUser.uid).once('value').then(snapshot => {
+        if (snapshot.exists()) { updateQuickFollowButtonState(btn, 'following', false); return; }
+        checkRequested();
       }).catch(() => {
         updateQuickFollowButtonState(btn, 'none', false);
       });
@@ -23079,7 +23124,10 @@ else { try { drexSnapInit(); } catch (_) {} }
       hydrateQuickFollowButtons(el);
       hydrateSaveButtons(el);
       try { if (typeof hydrateOrbitAvatarFrames === 'function') hydrateOrbitAvatarFrames(el); } catch (_) {}
-      applyFeedTypeFilter();
+      // PERF feed: el filtro de tipo nunca está activo al remontar (currentFeedTypeFilter
+      // es '' salvo que una UI lo fije); escanear todo el contenedor por tarjeta era un
+      // no-op O(n²). Solo se aplica si hay filtro.
+      if (currentFeedTypeFilter) applyFeedTypeFilter();
       _enhancePostCard(el);
       try { drexRecObserveCard(el); } catch (_) {}
       if (el.dataset.feedPaginated === '1') {
@@ -23325,7 +23373,8 @@ else { try { drexSnapInit(); } catch (_) {} }
       }
       hydrateQuickFollowButtons(noteElement);
       hydrateSaveButtons(noteElement);
-      applyFeedTypeFilter();
+      // PERF feed: ver nota en snfFeedWindowRemount (mismo no-op O(n²) evitado).
+      if (currentFeedTypeFilter) applyFeedTypeFilter();
       _enhancePostCard(noteElement);
       try { drexRecObserveCard(noteElement); } catch (_) { _noteFail('feed-observe'); }
       if (appendAtBottom) {
@@ -25943,19 +25992,21 @@ else { try { drexSnapInit(); } catch (_) {} }
         if (results) results.innerHTML = '<div class="py-4 text-center text-[#6b7280] text-sm">Busca a alguien para enviarle esto.</div>';
         return;
       }
-      // Hidratar los recientes con lecturas puntuales users/<uid> (máximo
-      // 20, acotado). Antes se buscaban en una caché de solo 180 perfiles:
-      // si el contacto no estaba entre los primeros 180, no aparecía.
-      const recentUsers = (await Promise.all(entries.map(uid =>
-        DrexCloud.database().ref('users/' + uid).once('value').then(s => {
-          const d = s.val() || {};
-          return {
-            uid,
-            name: d.username || d.displayName || 'Usuario',
-            image: getSafeMediaUrl(d.profileImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==' // C13: sanitizar (XSS via profileImage forjado)
-          };
-        }).catch(() => null)
-      ))).filter(Boolean);
+      // Hidratar los recientes vía caché canónico de perfiles
+      // (_getCachedAuthorProfiles, TTL 120 s): antes cada apertura de la hoja
+      // re-descargaba hasta 20 perfiles COMPLETOS (con foto base64 ≤300 KB)
+      // aunque nada hubiera cambiado. PERF-DATA 2026-10-15.
+      const _shareProfiles = (typeof _getCachedAuthorProfiles === 'function')
+        ? await _getCachedAuthorProfiles(entries) : new Map();
+      const recentUsers = entries.map(uid => {
+        const d = _shareProfiles.get(uid);
+        if (!d) return null;
+        return {
+          uid,
+          name: d.username || d.displayName || 'Usuario',
+          image: getSafeMediaUrl(d.profileImage) || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI2RjZTFlNSIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iMzgiIHI9IjE3IiBmaWxsPSIjYTdiNGJmIi8+PHBhdGggZD0iTTE4IDg0YzctMTcgMTktMjUgMzItMjVzMjUgOCAzMiAyNSIgZmlsbD0iI2E3YjRiZiIvPjwvc3ZnPg==' // C13: sanitizar (XSS via profileImage forjado)
+        };
+      }).filter(Boolean);
       renderSharePostResults(recentUsers);
     } catch (e) {
       console.error('Error cargando contactos recientes para compartir:', e);
@@ -28067,15 +28118,38 @@ else { try { drexSnapInit(); } catch (_) {} }
       else if (!missing.includes(uid)) missing.push(uid);
     });
     if (missing.length) {
-      const snaps = await Promise.all(missing.map(uid =>
-        DrexCloud.database().ref('users/' + uid).once('value')
-          .then(s => ({ uid, data: s.val() || null }))
-          .catch(() => ({ uid, data: null }))
-      ));
-      const ts = Date.now();
-      snaps.forEach(({ uid, data }) => {
-        if (data) { if (_drexProfileCache.size > 400) { try { _drexProfileCache.delete(_drexProfileCache.keys().next().value); } catch (_) {} } _drexProfileCache.set(uid, { data, ts }); out.set(uid, data); }
+      // PERF-DATA 2026-10-15: L2 persistente (DrexCache 'profile', TTL 5 min,
+      // compartido con el feed): evita re-descargar perfiles al reabrir la
+      // app o volver a una vista. Todo acceso a L2 blindado (los tests en vm
+      // corren sin window.DrexCache).
+      let stillMissing = [];
+      missing.forEach(uid => {
+        let persisted = null;
+        try { persisted = (window.DrexCache && window.DrexCache.get('profile', uid)) || null; } catch (_) { persisted = null; }
+        if (persisted && typeof persisted === 'object') {
+          if (_drexProfileCache.size > 400) { try { _drexProfileCache.delete(_drexProfileCache.keys().next().value); } catch (_) {} }
+          _drexProfileCache.set(uid, { data: persisted, ts: Date.now() });
+          out.set(uid, persisted);
+        } else {
+          stillMissing.push(uid);
+        }
       });
+      if (stillMissing.length) {
+        const snaps = await Promise.all(stillMissing.map(uid =>
+          DrexCloud.database().ref('users/' + uid).once('value')
+            .then(s => ({ uid, data: s.val() || null }))
+            .catch(() => ({ uid, data: null }))
+        ));
+        const ts = Date.now();
+        snaps.forEach(({ uid, data }) => {
+          if (data) {
+            if (_drexProfileCache.size > 400) { try { _drexProfileCache.delete(_drexProfileCache.keys().next().value); } catch (_) {} }
+            _drexProfileCache.set(uid, { data, ts });
+            out.set(uid, data);
+            try { if (window.DrexCache) window.DrexCache.set('profile', uid, data, 300000); } catch (_) {}
+          }
+        });
+      }
     }
     return out;
   }
@@ -29427,7 +29501,36 @@ else { try { drexSnapInit(); } catch (_) {} }
 
 
 <!-- JAVASCRIPT -->
-<script defer src="./drex-i18n.js"></script>
+<script>
+  /* PERF-LOAD (2026-10-15): drex-i18n.js pesa 2.29MB (713KB gzip) y se parseaba
+     antes de DOMContentLoaded en TODAS las cargas. El español es el idioma base:
+     appT() devuelve el texto original sin tocar diccionarios cuando el idioma es
+     'es', así que para esos usuarios el archivo era peso 100% muerto.
+     - Si el idioma guardado es 'es' (o no hay), NO se descarga nada.
+     - Si es otro idioma, se inyecta con document.write DURANTE el parseo: el script
+       queda insertado por el parser y conserva la semántica defer (misma
+       temporización y orden que la etiqueta estática anterior).
+     - Si un usuario 'es' cambia de idioma después, setAppLanguage() lo carga
+       bajo demanda vía drexEnsureI18n() antes de aplicar el idioma. */
+  window.__drexI18nLoaded = false;
+  window.drexEnsureI18n = function (cb) {
+    if (window.__drexI18nLoaded) { if (cb) cb(); return; }
+    try {
+      var s = document.createElement('script');
+      s.src = './drex-i18n.js';
+      s.onload = function () { window.__drexI18nLoaded = true; if (cb) cb(); };
+      s.onerror = function () { if (cb) cb(); };
+      document.head.appendChild(s);
+    } catch (e) { if (cb) cb(); }
+  };
+  (function () {
+    var lang = 'en';
+    try { lang = localStorage.getItem('drex_app_language_v1') || localStorage.getItem('selectedLanguage') || 'en'; } catch (e) {}
+    if (lang === 'es') return; // idioma base: appT no usa diccionarios, no se descarga nada
+    window.__drexI18nLoaded = true;
+    document.write('<script defer src="./drex-i18n.js"><\/script>');
+  })();
+</script>
 <script>
   // Configuración de DrexCloud (AWS)
   // Backend AWS: Amazon Cognito (autenticación) + DynamoDB tabla drex-kv (datos).
@@ -30987,7 +31090,12 @@ else { try { drexSnapInit(); } catch (_) {} }
   function applyAppLanguage(lang = getAppLanguage()) { const prevAppLang = currentLanguage; currentLanguage = lang; try { localStorage.setItem('selectedLanguage', lang); localStorage.setItem(APP_LANGUAGE_STORAGE_KEY, lang); } catch (_) {} const t = translations[lang] || translations.en; document.getElementById('auth-title') && (document.getElementById('auth-title').innerText = t.authTitle); if (emailInput) emailInput.placeholder = t.emailPlaceholder; if (passwordInput) passwordInput.placeholder = t.passwordPlaceholder; if (submitButton) submitButton.innerText = t.btnIniciarSesion; if (toggleAuth) toggleAuth.innerText = t.btnToggleAuth; ['btn-volver-search','btn-volver-author'].forEach(id => { const el=document.getElementById(id); if (el) el.innerText=t.btnVolver; }); const search=document.getElementById('search-input'); if (search) search.placeholder=t.searchPlaceholder; const posts=document.getElementById('search-posts-title'); if (posts) posts.innerText=t.searchBooks; const accounts=document.getElementById('search-accounts-title'); if (accounts) accounts.innerText=t.searchAuthors; if (lang !== 'es' || prevAppLang !== 'es') translateAppSubtree(document.body, lang); syncAppLanguageUI(lang); syncFeedTabsI18n(); startAppLanguageObserver(); }
   function updateTranslations() { applyAppLanguage((typeof getAppLanguage === 'function') ? getAppLanguage() : 'en'); }
   function refreshVisibleLocationPickerLanguage() { const view=document.getElementById('location-config-view'); if (!view || view.classList.contains('hidden') || view.style.display === 'none' || typeof renderLocationCountries !== 'function') return; const query=document.getElementById('settings-country-search')?.value || ''; renderLocationCountries(query); if (typeof updateSelectedCountryLabel === 'function') updateSelectedCountryLabel(); }
-  function setAppLanguage(lang) { const next = (lang === 'en' || lang === 'zh' || lang === 'pt' || lang === 'ja' || lang === 'fr' || lang === 'ko') ? lang : 'es'; applyAppLanguage(next); refreshVisibleLocationPickerLanguage(); const user=DrexCloud.auth().currentUser; if (user) DrexCloud.database().ref('userSettings/' + user.uid + '/appLanguage').set(next).catch(() => {}); }
+  function setAppLanguage(lang) { const next = (lang === 'en' || lang === 'zh' || lang === 'pt' || lang === 'ja' || lang === 'fr' || lang === 'ko') ? lang : 'es';
+  // PERF-LOAD (2026-10-15): si el i18n no se cargó al arrancar (usuario 'es') y ahora
+  // se pide otro idioma, cargarlo primero y reintentar: sin diccionarios el cambio
+  // de idioma no tendría efecto.
+  if (next !== 'es' && !window.__drexI18nLoaded && typeof window.drexEnsureI18n === 'function') { window.drexEnsureI18n(function () { setAppLanguage(next); }); return; }
+  applyAppLanguage(next); refreshVisibleLocationPickerLanguage(); const user=DrexCloud.auth().currentUser; if (user) DrexCloud.database().ref('userSettings/' + user.uid + '/appLanguage').set(next).catch(() => {}); }
   // C285: el idioma guardado en la CUENTA nunca se leía: en un teléfono
   // nuevo la app caía al predeterminado ignorando tu preferencia. Al
   // iniciar sesión se restaura una vez por cuenta.
@@ -30998,7 +31106,12 @@ else { try { drexSnapInit(); } catch (_) {} }
       _drexLangRestoredForUid = user.uid;
       DrexCloud.database().ref('userSettings/' + user.uid + '/appLanguage').once('value').then(snap => {
         const saved = snap && snap.val();
-        if (saved && saved !== getAppLanguage()) applyAppLanguage(saved);
+        // PERF-LOAD (2026-10-15): si el i18n no se cargó al arrancar (dispositivo 'es')
+        // y la cuenta pide otro idioma, cargarlo antes de aplicarlo.
+        if (saved && saved !== getAppLanguage()) {
+          if (saved !== 'es' && !window.__drexI18nLoaded && typeof window.drexEnsureI18n === 'function') window.drexEnsureI18n(function () { applyAppLanguage(saved); });
+          else applyAppLanguage(saved);
+        }
       }).catch(() => {});
     } catch (_) {}
   }
@@ -34095,6 +34208,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
     document.getElementById('play-store-banner')?.classList.add('hidden');
   }
 
+  // PERF-LOAD (2026-10-15): drex-cloud.js ahora carga con defer. Este registro
+  // (el único uso de DrexCloud a nivel de parseo en este bloque) se difiere a
+  // DOMContentLoaded: para entonces los scripts defer ya ejecutaron y DrexCloud existe.
+  function __drexRegPlayBannerAuth() {
   DrexCloud.auth().onAuthStateChanged(user => {
     if (user) {
       // Si el usuario está en mitad del flujo de registro, no redirigir aún
@@ -34392,6 +34509,9 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       } catch (_) {}
     }
   });
+  } // __drexRegPlayBannerAuth
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', __drexRegPlayBannerAuth);
+  else __drexRegPlayBannerAuth();
   (function showLastLoginMethodHint() {
     const method = localStorage.getItem('drex_last_login_method');
     const hint = document.getElementById('lastLoginMethodHint');
@@ -37674,7 +37794,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       .then(() => ref.once('value'))
       .then(snap => {
         const d = (snap && snap.val()) || {};
-        try { if (typeof _drexProfileCache !== 'undefined') _drexProfileCache.delete(user.uid); } catch (_) {}
+        try { if (typeof _drexProfileCache !== 'undefined') _drexProfileCache.delete(user.uid); } catch (_) {} try { if (window.DrexCache) window.DrexCache.invalidate('profile', user.uid); } catch (_) {}
         try { renderOwnProfileShowcase(d.website || '', links); } catch (_) {}
         closeLinkConfigView();
         showMiniToast(appT('Perfil actualizado'));
@@ -39153,7 +39273,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       return DrexCloud.database().ref('users/' + user.uid).update(updates).then(() => {
         // Identidad canónica: tras editar el perfil se invalida la caché de
         // sesión para que feed/comentarios/búsqueda pinten nombre/foto nuevos.
-        try { _drexProfileCache.delete(user.uid); } catch (_) {}
+        try { _drexProfileCache.delete(user.uid); } catch (_) {} try { if (window.DrexCache) window.DrexCache.invalidate('profile', user.uid); } catch (_) {}
         try { if (typeof _dirSearchProfileCache !== 'undefined') _dirSearchProfileCache.delete(user.uid); } catch (_) {}
         try { _invalidateAuthorProfileCache(user.uid); } catch (_) {}
         if (updates.username) {
@@ -39250,7 +39370,7 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       const cloudUrl = await processImageFile(file);
 
       await DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
-      try { _drexProfileCache.delete(user.uid); } catch (_) {}
+      try { _drexProfileCache.delete(user.uid); } catch (_) {} try { if (window.DrexCache) window.DrexCache.invalidate('profile', user.uid); } catch (_) {}
       try { if (typeof _dirSearchProfileCache !== 'undefined') _dirSearchProfileCache.delete(user.uid); } catch (_) {}
       try { _invalidateAuthorProfileCache(user.uid); } catch (_) {}
       document.getElementById('profile-image').src = cloudUrl;
@@ -39777,12 +39897,41 @@ let chatConversationCache = { items: [], loadedAt: 0 };
 let chatMessagesMemoryCache = new Map();
 // Persiste los mensajes recientes por conversación (DrexCache, TTL 10 min):
 // al abrir un chat se pinta al instante y los listeners en vivo corrigen.
-function _persistChatMessages(conversationId, arr) {
+function _persistChatMessagesNow(conversationId, arr) {
   try {
     if (window.DrexCache && conversationId) {
       window.DrexCache.set('chat', 'msgs:' + conversationId, (arr || []).slice(-30), 600000);
     }
   } catch (_) {}
+}
+// PERF-CHAT-3: _persistChatMessages se llamaba de forma SÍNCRONA en cada
+// child_added/child_changed (80 escrituras a localStorage al abrir una sala
+// llena + 1 por cada mensaje/edición). Ahora es trailing-debounce de 1.5 s:
+// la ráfaga de apertura colapsa en UNA escritura. El servidor sigue siendo
+// la fuente de verdad, así que retrasar el seed local no pierde datos; en
+// pagehide se vuelca lo pendiente.
+let _persistChatMessagesTimer = null;
+let _persistChatMessagesPending = null;
+function _flushPersistChatMessages() {
+  try {
+    if (_persistChatMessagesTimer) { clearTimeout(_persistChatMessagesTimer); _persistChatMessagesTimer = null; }
+    const p = _persistChatMessagesPending;
+    _persistChatMessagesPending = null;
+    if (p) _persistChatMessagesNow(p.conversationId, p.arr);
+  } catch (_) {}
+}
+function _persistChatMessages(conversationId, arr) {
+  _persistChatMessagesPending = { conversationId, arr };
+  if (_persistChatMessagesTimer) return;
+  _persistChatMessagesTimer = setTimeout(() => {
+    _persistChatMessagesTimer = null;
+    const p = _persistChatMessagesPending;
+    _persistChatMessagesPending = null;
+    if (p) _persistChatMessagesNow(p.conversationId, p.arr);
+  }, 1500);
+}
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('pagehide', _flushPersistChatMessages);
 }
 function _seedChatMessagesFromCache(conversationId) {
   try {
@@ -40669,13 +40818,19 @@ let chatTypingListener = null;
         const uids = Object.keys(following).slice(0, 30);
         if (!uids.length) { if (wrap) wrap.classList.add('hidden'); return; }
         if (wrap) wrap.classList.remove('hidden');
-        return Promise.all(uids.map(uid =>
-          DrexCloud.database().ref('users/' + uid).once('value').then(s2 => {
-            const d = s2.val() || {};
+        // PERF-DATA 2026-10-15: hidratar vía caché canónico de perfiles
+        // (_getCachedAuthorProfiles, TTL 120 s): antes se lanzaban hasta 30
+        // lecturas users/<uid> completas (con foto base64 ≤300 KB) en cada
+        // apertura, sin caché.
+        const _hydrate = (typeof _getCachedAuthorProfiles === 'function')
+          ? _getCachedAuthorProfiles(uids)
+          : Promise.resolve(new Map());
+        return _hydrate.then(profiles => {
+          _groupChatSuggestions = uids.map(uid => {
+            const d = profiles.get(uid);
+            if (!d) return null;
             return { uid, name: d.displayName || d.username || 'Usuario', username: d.username || '', image: d.profileImage || '' };
-          }).catch(() => null)
-        )).then(users => {
-          _groupChatSuggestions = users.filter(Boolean);
+          }).filter(Boolean);
           renderGroupChatSuggestions();
         });
       }).catch(() => { if (wrap) wrap.classList.add('hidden'); });
@@ -42733,12 +42888,14 @@ let chatTypingListener = null;
      ══════════════════════════════════════════════════════════════ */
 
   function detachChatMessagesListener() {
-    if (chatMessagesListener?.ref && chatMessagesListener?.callback) {
-      chatMessagesListener.ref.off('child_added', chatMessagesListener.callback);
-    }
-    if (chatMessagesListener?.ref && chatMessagesListener?.changedCallback) {
-      chatMessagesListener.ref.off('child_changed', chatMessagesListener.changedCallback);
-    }
+    // PERF-CHAT-2: changedRef puede ser otra query que ref (child_changed
+    // vive en el limitToLast(80) y child_added en el startAt(lastKey)).
+    try {
+      const l = chatMessagesListener;
+      if (l && l.ref && l.callback) l.ref.off('child_added', l.callback);
+      const cr = (l && l.changedRef) || (l && l.ref);
+      if (cr && l && l.changedCallback) cr.off('child_changed', l.changedCallback);
+    } catch (_) {}
     chatMessagesListener = null;
   }
 
@@ -43227,11 +43384,12 @@ const _startChatListeners = () => {
       };
 
       const ref = DrexCloud.database().ref('conversationMessages/' + conversationId).limitToLast(CHAT_MESSAGES_LIMIT);
-      // C309: si hay 80 mensajes (límite), probablemente haya más historial.
-      ref.once('value').then(snap => {
-        const count = snap.numChildren ? snap.numChildren() : Object.keys(snap.val() || {}).length;
-        if (count >= CHAT_MESSAGES_LIMIT) _showLoadMoreBtn();
-      }).catch(() => {});
+      // PERF-CHAT-2: la carga inicial se renderiza desde el snapshot de
+      // once('value') (UNA sola descarga de los ≤80 mensajes). Antes, el
+      // once() del conteo + el lote inicial de on('child_added') descargaban
+      // exactamente lo mismo dos veces. Tras el snapshot, child_added solo
+      // escucha claves nuevas (startAt(lastKey)); el guard anti-duplicados
+      // de renderMessageNode descarta el re-disparo de lastKey.
       const callback = snapshot => {
         const emptyState = document.getElementById('chat-room-empty-state');
         if (emptyState) emptyState.remove();
@@ -43325,9 +43483,30 @@ const _startChatListeners = () => {
           if (!nearBottom) container.scrollTop = scrollBefore;
         }
       };
-      ref.on('child_changed', changedCallback);
-
-      chatMessagesListener = { ref, callback, changedCallback };
+      // PERF-CHAT-2: carga inicial desde el snapshot (ver nota en `ref`).
+      // Sin huecos: lo que llegó antes del snapshot está en él; lo que
+      // llegue después lo captura startAt(lastKey).
+      ref.once('value').then(snap => {
+        if (currentChatRoomId !== conversationId) return; // la sala cambió mientras cargaba
+        const val = snap.val() || {};
+        const keys = Object.keys(val);
+        if (keys.length >= CHAT_MESSAGES_LIMIT) _showLoadMoreBtn();
+        keys.forEach(k => callback({ key: k, val: () => val[k] }));
+        const lastKey = keys.length ? keys[keys.length - 1] : null;
+        const liveRef = lastKey
+          ? DrexCloud.database().ref('conversationMessages/' + conversationId).orderByKey().startAt(lastKey)
+          : DrexCloud.database().ref('conversationMessages/' + conversationId);
+        liveRef.on('child_added', callback);
+        ref.on('child_changed', changedCallback);
+        chatMessagesListener = { ref: liveRef, callback, changedRef: ref, changedCallback };
+      }).catch(() => {
+        // Sin snapshot (offline): comportamiento anterior, se corrige solo al
+        // volver la conexión.
+        if (currentChatRoomId !== conversationId) return;
+        ref.on('child_added', callback);
+        ref.on('child_changed', changedCallback);
+        chatMessagesListener = { ref, callback, changedRef: ref, changedCallback };
+      });
     };
 
     if (_deletedForMeRef) {
@@ -44356,22 +44535,65 @@ ${getSpinnerMarkup('drex-spinner-inline')}
     }).catch(() => {});
   }
 
-  function subscribeMsgReactions(conversationId, msgId) {
-    if (!msgId || !conversationId) return;
-    if (msgReactionListeners.has(msgId)) return;
-    const ref = DrexCloud.database().ref('msgReactions/' + conversationId + '/' + msgId);
+  // PERF-CHAT-1: UNA sola suscripción de reacciones por conversación.
+  // Antes, cada mensaje renderizado abría su propio .on('value') en
+  // msgReactions/<sala>/<msgId>: abrir una sala de 80 mensajes = 80 lecturas
+  // iniciales + 80 listeners persistentes. Ahora hay un único .on('value')
+  // en msgReactions/<sala> y se despacha a los mensajes visibles; solo se
+  // re-pinta el mensaje cuyo dato cambió (diff por clave).
+  let _msgReactionsConvRef = null;
+  let _msgReactionsConvCallback = null;
+  let _msgReactionsConvId = null;
+  let _msgReactionsPayload = {};
+  let _msgReactionsPayloadReady = false;
+  function _ensureMsgReactionsConvSub(conversationId) {
+    if (_msgReactionsConvRef && _msgReactionsConvId === conversationId) return;
+    try { if (_msgReactionsConvRef && _msgReactionsConvCallback) _msgReactionsConvRef.off('value', _msgReactionsConvCallback); } catch (_) {}
+    _msgReactionsConvRef = null;
+    _msgReactionsConvCallback = null;
+    _msgReactionsConvId = null;
+    _msgReactionsPayload = {};
+    _msgReactionsPayloadReady = false;
+    msgReactionListeners.clear();
+    if (!conversationId) return;
+    const ref = DrexCloud.database().ref('msgReactions/' + conversationId);
     const callback = snapshot => {
       const data = snapshot.val() || {};
-      renderMsgReactions(msgId, data);
+      const prev = _msgReactionsPayload;
+      _msgReactionsPayload = data;
+      _msgReactionsPayloadReady = true;
+      msgReactionListeners.forEach((_, msgId) => {
+        const a = prev[msgId] || {};
+        const b = data[msgId] || {};
+        const ka = Object.keys(a);
+        let same = ka.length === Object.keys(b).length;
+        if (same) { for (const k of ka) { if (a[k] !== b[k]) { same = false; break; } } }
+        if (!same) renderMsgReactions(msgId, b);
+      });
     };
     ref.on('value', callback);
-    msgReactionListeners.set(msgId, { ref, callback });
+    _msgReactionsConvRef = ref;
+    _msgReactionsConvCallback = callback;
+    _msgReactionsConvId = conversationId;
+  }
+  function subscribeMsgReactions(conversationId, msgId) {
+    if (!msgId || !conversationId) return;
+    _ensureMsgReactionsConvSub(conversationId);
+    if (!msgReactionListeners.has(msgId)) {
+      msgReactionListeners.set(msgId, true);
+      // Si el snapshot inicial ya llegó, pintar de inmediato con su dato;
+      // si no, el callback del snapshot lo pintará (evita doble pintado).
+      if (_msgReactionsPayloadReady) renderMsgReactions(msgId, _msgReactionsPayload[msgId] || {});
+    }
   }
 
   function detachAllMsgReactionListeners() {
-    msgReactionListeners.forEach(({ ref, callback }) => {
-      try { ref.off('value', callback); } catch (_) {}
-    });
+    try { if (_msgReactionsConvRef && _msgReactionsConvCallback) _msgReactionsConvRef.off('value', _msgReactionsConvCallback); } catch (_) {}
+    _msgReactionsConvRef = null;
+    _msgReactionsConvCallback = null;
+    _msgReactionsConvId = null;
+    _msgReactionsPayload = {};
+    _msgReactionsPayloadReady = false;
     msgReactionListeners.clear();
   }
 
@@ -47160,7 +47382,7 @@ function renderAccountsList(accounts) {
     try {
       const cloudUrl = await processImageFile(file);
       await DrexCloud.database().ref('users/' + user.uid).update({ profileImage: cloudUrl });
-      try { _drexProfileCache.delete(user.uid); } catch (_) {}
+      try { _drexProfileCache.delete(user.uid); } catch (_) {} try { if (window.DrexCache) window.DrexCache.invalidate('profile', user.uid); } catch (_) {}
       try { if (typeof _dirSearchProfileCache !== 'undefined') _dirSearchProfileCache.delete(user.uid); } catch (_) {}
       try { _invalidateAuthorProfileCache(user.uid); } catch (_) {}
       if (profileImg) { profileImg.src = cloudUrl; profileImg.style.opacity = '1'; }
@@ -52159,6 +52381,10 @@ async function downloadMySecurityData() {
     securityToast('No se pudo generar el archivo de datos.');
   }
 }
+// PERF-LOAD (2026-10-15): drex-cloud.js ahora carga con defer. Este registro era
+// el único uso de DrexCloud a nivel de parseo en este bloque: se difiere a
+// DOMContentLoaded (los scripts defer ya ejecutaron; DrexCloud existe).
+function __drexRegSecuritySession() {
 DrexCloud.auth().onAuthStateChanged(user => {
   if (user) registerDrexSecuritySession(user).catch(() => {});
   else detachDrexSecuritySession(null);
@@ -52166,6 +52392,9 @@ DrexCloud.auth().onAuthStateChanged(user => {
   // POSTS PROGRAMADOS: chequeo inicial al entrar + timer periódico liviano.
   try { if (typeof onDrexAuthForScheduledPosts === 'function') onDrexAuthForScheduledPosts(user); } catch (_) {}
 });
+} // __drexRegSecuritySession
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', __drexRegSecuritySession);
+else __drexRegSecuritySession();
 
 function openParentalControlView() {
   const view = document.getElementById('parental-control-view');
@@ -55085,7 +55314,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-15T13:21:00Z'; // SEG-2
+window.DREX_BUILD = '2026-10-15T13:53:00Z'; // PERF-1 (rendimiento: carga inicial + feed + chat + datos)
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
