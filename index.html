@@ -30216,18 +30216,42 @@ else { try { drexSnapInit(); } catch (_) {} }
      fallo la carga, se permite un reintento. El bloque que origino el
      fallo se oculta limpiamente (el vignette no ocupa el bloque). */
   function drexTryMonetagFallback(slot, onFail) {
+    /* FIX-ADS2 (2026-10-16): el Vignette es un anuncio de pantalla completa
+       (popup) IRREVERSIBLE una vez inyectado. Antes se decidía con
+       drexOrbitNoAds() solo en el instante del fallo del banner: si la
+       prueba de Halloween aún no se había confirmado, el vignette se
+       inyectaba y seguía mostrando popups toda la sesión. Ahora espera a
+       la decisión compartida drexOrbitAdsDecision() antes de inyectar. */
     try {
       if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return false;
       if (!monetagActive()) return false;
-      if (!window.__drexMonetagVignette || window.__drexMonetagVignetteFailed) {
-        window.__drexMonetagVignette = true;
-        window.__drexMonetagVignetteFailed = false;
-        var el = document.createElement('script');
-        el.type = 'text/javascript';
-        el.dataset.zone = MONETAG.vignetteZone;
-        el.src = MONETAG.vignetteScriptUrl;
-        el.onerror = function () { window.__drexMonetagVignetteFailed = true; };
-        [document.documentElement, document.body].filter(Boolean).pop().appendChild(el);
+      if (window.__drexMonetagVignette && !window.__drexMonetagVignetteFailed) {
+        try { if (slot) slot.style.display = 'none'; } catch (_) {}
+        try { if (typeof onFail === 'function') onFail(); } catch (_) {}
+        return true;
+      }
+      // Marca el intento de inmediato para no duplicar mientras se decide.
+      window.__drexMonetagVignette = true;
+      window.__drexMonetagVignetteFailed = false;
+      var injectVignette = function () {
+        try {
+          // Re-verifica premium justo antes de inyectar el irreversible.
+          if (typeof drexOrbitNoAds === 'function' && drexOrbitNoAds()) return;
+          var el = document.createElement('script');
+          el.type = 'text/javascript';
+          el.dataset.zone = MONETAG.vignetteZone;
+          el.src = MONETAG.vignetteScriptUrl;
+          el.onerror = function () { window.__drexMonetagVignetteFailed = true; };
+          [document.documentElement, document.body].filter(Boolean).pop().appendChild(el);
+        } catch (_) { window.__drexMonetagVignetteFailed = true; }
+      };
+      if (typeof drexOrbitAdsDecision === 'function') {
+        drexOrbitAdsDecision().then(function (mayShow) {
+          if (mayShow) { injectVignette(); }
+          else { window.__drexMonetagVignette = false; }
+        });
+      } else {
+        injectVignette();
       }
       try { if (slot) slot.style.display = 'none'; } catch (_) {}
       try { if (typeof onFail === 'function') onFail(); } catch (_) {}
@@ -30880,51 +30904,71 @@ else { try { drexSnapInit(); } catch (_) {} }
       } catch (_) {}
     } catch (_) {}
   }
+  /* FIX-ADS2 (2026-10-16): decisión compartida para scripts IRREVERSIBLES
+     (popunder, social bar, vignette de Monetag). Una vez inyectados no se
+     pueden retirar, así que jamás se decide sin el estado Orbit+trial.
+     - Resuelve false (NO inyectar) si se confirma premium (pagado o prueba
+       de Halloween) antes o después de esperar.
+     - Resuelve true (inyectar) solo si tras esperar se confirma no-premium.
+     - Single-flight: una sola espera por arranque; todos comparten el
+       resultado. Tope duro de 8 s. SIN reintentos en loop: FIX-ADS1 podía
+       ciclarse en microtareas si el grant fallaba de forma persistente,
+       congelando el event loop (el timeout de 8 s nunca disparaba). */
+  var __drexOrbitAdsDecision = null;
+  function drexOrbitAdsDecision() {
+    if (__drexOrbitAdsDecision) return __drexOrbitAdsDecision;
+    __drexOrbitAdsDecision = (function () {
+      var done = false;
+      var resolveFn = null;
+      var p = new Promise(function (res) { resolveFn = res; });
+      var finish = function (v) { if (!done) { done = true; try { resolveFn(v); } catch (_) {} } };
+      var isPremium = function () {
+        try {
+          return (typeof DrexOrbit !== 'undefined') && DrexOrbit &&
+            typeof DrexOrbit.hasAccess === 'function' && DrexOrbit.hasAccess('no_ads');
+        } catch (_) { return false; }
+      };
+      try {
+        if (isPremium()) { finish(false); return p; }
+        var u = null;
+        try { u = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null; } catch (_) {}
+        if (!u) { finish(true); return p; } // sin sesión: no hay premium que proteger
+        var waits = [];
+        try { waits.push(DrexOrbit.refresh().catch(function () {})); } catch (_) {}
+        try {
+          // La prueba del evento vive fuera de Stripe: hay que leer el grant
+          // y pasar el caché local ANTES de decidir.
+          if (typeof drexHalloweenFetch === 'function' && typeof drexHalloweenCachePass === 'function') {
+            waits.push(drexHalloweenFetch(u.uid).then(function (st) {
+              try { drexHalloweenCachePass(u.uid, st && st.grant); } catch (_) {}
+            }).catch(function () {}));
+          }
+        } catch (_) {}
+        var timer = setTimeout(function () { finish(!isPremium()); }, 8000);
+        Promise.all(waits).then(function () {
+          try { clearTimeout(timer); } catch (_) {}
+          finish(!isPremium());
+        });
+      } catch (_) { finish(true); }
+      return p;
+    })();
+    return __drexOrbitAdsDecision;
+  }
+
   function initAdsterra() {
     /* C241 (Drex Orbit, beneficio no_ads): con suscripción verificada no se
        carga ninguna red publicitaria.
-       FIX-ADS1 (2026-10-15): el popunder y la social bar son IRREVERSIBLES
-       una vez inyectados. Antes solo se esperaba al refresh() del backend
-       (Stripe), que no conoce la prueba de Halloween ("nunca pasa por
-       Stripe"): un ganador con el caché local aún vacío inyectaba los
-       scripts y los popups seguían toda la sesión aunque la prueba se
-       confirmaba un segundo después. Ahora se espera también a la lectura
-       del grant del evento antes de decidir sobre los scripts irreversibles. */
-    try {
-      if (typeof DrexOrbit !== 'undefined' && DrexOrbit) {
-        if (typeof DrexOrbit.hasAccess === 'function' && DrexOrbit.hasAccess('no_ads')) return;
-        if (!window.__drexAdInitOrbitWait) {
-          window.__drexAdInitOrbitWait = true;
-          var _oiRetry = function () { window.__drexAdInitOrbitWait = false; try { initAdsterra(); } catch (_) {} };
-          var _waits = [];
-          try {
-            var _oiu = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
-            if (_oiu) {
-              _waits.push(DrexOrbit.refresh().catch(function () {}));
-              // La prueba del evento vive fuera de Stripe: hay que leer el
-              // grant y pasar el caché local ANTES de decidir.
-              if (typeof drexHalloweenFetch === 'function' && typeof drexHalloweenCachePass === 'function') {
-                _waits.push(drexHalloweenFetch(_oiu.uid).then(function (st) {
-                  try { drexHalloweenCachePass(_oiu.uid, st && st.grant); } catch (_) {}
-                }).catch(function () {}));
-              }
-            }
-          } catch (_) {}
-          if (_waits.length) {
-            Promise.all(_waits).then(_oiRetry, _oiRetry);
-            // Tope de seguridad: jamás retrasar los anuncios más de 8 s.
-            setTimeout(function () { if (window.__drexAdInitOrbitWait) _oiRetry(); }, 8000);
-          } else {
-            _oiRetry();
-          }
-          return;
-        }
-        // Espera ya en curso: no inyectar hasta que el reintento decida.
-        if (window.__drexAdInitOrbitWait) return;
-      }
-    } catch (_) {}
-    try { drexProbeAdblock(); } catch (_) {}
-    adsterraPreload();
+       FIX-ADS2: los irreversibles (popunder, social bar) esperan a la
+       decisión compartida drexOrbitAdsDecision() (reemplaza el wait con
+       loop de FIX-ADS1). */
+    var doInject = function () {
+      // Re-verifica premium justo antes de inyectar.
+      try {
+        if (typeof DrexOrbit !== 'undefined' && DrexOrbit &&
+          typeof DrexOrbit.hasAccess === 'function' && DrexOrbit.hasAccess('no_ads')) return;
+      } catch (_) {}
+      try { drexProbeAdblock(); } catch (_) {}
+      adsterraPreload();
     try {
       if (ADSTERRA.popunderUrl) {
         // Tope anti-abuso: el popunder se dispara UNA vez por sesión de
@@ -30955,6 +30999,20 @@ else { try { drexSnapInit(); } catch (_) {} }
          título deja de mencionar a Drex, lo restauramos. */
       try { drexTitleGuardian(); } catch (_) {}
     } catch (_) {}
+    };
+    // Decisión: los irreversibles solo se inyectan si se confirma no-premium.
+    try {
+      if (typeof DrexOrbit !== 'undefined' && DrexOrbit) {
+        if (typeof DrexOrbit.hasAccess === 'function' && DrexOrbit.hasAccess('no_ads')) return;
+        if (typeof drexOrbitAdsDecision === 'function') {
+          drexOrbitAdsDecision().then(function (mayShow) {
+            if (mayShow) { try { doInject(); } catch (_) {} }
+          });
+          return;
+        }
+      }
+    } catch (_) {}
+    try { doInject(); } catch (_) {}
   }
   // initAdsterra() se movió a las rutas con sesión (ver abajo):
   // los anuncios (banner fijo, interstitials) no deben correr en la
@@ -55350,7 +55408,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-16T09:42:01Z'; // SEC-SWEEP (pase Halloween: revalidación del grant al restaurar sesión) (rendimiento: carga inicial + feed + chat + datos)
+window.DREX_BUILD = '2026-10-16T16:13:00Z'; // FIX-ADS2
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
