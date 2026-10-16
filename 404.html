@@ -55431,7 +55431,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-16T17:20:00Z'; // Instagram en Comunidad
+window.DREX_BUILD = '2026-10-16T17:33:00Z'; // FIX-THEME1
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
@@ -88761,7 +88761,17 @@ var DrexOrbit = {
     } catch (_) { return null; }
   },
   effectiveTier: function () {
-    try { return orbitPlanTier(this.effectivePlan()); } catch (_) { return 0; }
+    try {
+      var p = this.effectivePlan();
+      var t = orbitPlanTier(p);
+      /* FIX-THEME1 (2026-10-16): la prueba de Halloween otorga experiencia
+       * Orbit completa. Aunque el plan otorgado sea 'monthly' (nivel 1), la
+       * prueba incluye los beneficios visibles de nivel 2 (temas de perfil)
+       * para que los ganadores sientan el Orbit real. Sin esto, el gate
+       * 'profile_themes' (nivel 2) bloqueaba silenciosamente a Darel. */
+      if (t < 2 && p && typeof this.trialPlan === 'function' && p === this.trialPlan()) t = 2;
+      return t;
+    } catch (_) { return 0; }
   },
   /* C264: acceso por NIVEL. Fail-closed: feature desconocida, sin plan
    * efectivo o nivel insuficiente -> false. Durante la prueba rige el
@@ -89037,6 +89047,18 @@ async function refreshOrbitAuthorBadge(authorId) {
         else if (typeof v === 'string' && v) { try { st = JSON.parse(v); } catch (_) {} }
         var ok = !!(st && st.status === 'active' && st.cancelAtPeriodEnd !== true);
         if (ok && st.currentPeriodEnd) { try { ok = Number(st.currentPeriodEnd) * 1000 > Date.now(); } catch (_) {} }
+        /* FIX-THEME1 (2026-10-16): prueba de Halloween. Si no hay suscripción
+         * pagada, revisa el grant del evento
+         * (users/<uid>/eventGrants/halloween2026). Antes solo se leía /orbit,
+         * así que los ganadores del evento nunca mostraban insignia ni marco
+         * a otros usuarios. */
+        if (!ok) {
+          try {
+            var gsnap = await DrexCloud.database().ref('users/' + authorId + '/eventGrants/halloween2026').once('value');
+            var g = gsnap && gsnap.val();
+            if (g && typeof g === 'object' && Number(g.freeUntil || 0) > Date.now()) ok = true;
+          } catch (_) {}
+        }
         c = { active: ok, ts: Date.now() };
         cache[authorId] = c;
       }
@@ -89048,6 +89070,9 @@ async function refreshOrbitAuthorBadge(authorId) {
     else { badgeEl.classList.add('hidden'); badgeEl.innerHTML = ''; }
   }
   try { if (imgEl) imgEl.classList.toggle('orbit-avatar-frame', !!active); } catch (_) {}
+  /* FIX-THEME1: aplica el tema guardado del autor a la portada del perfil
+   * ajeno para que los visitantes vean su personalización. */
+  try { if (typeof applyAuthorProfileTheme === 'function') applyAuthorProfileTheme(authorId); } catch (_) {}
 }
 
 
@@ -89072,6 +89097,15 @@ async function drexOrbitPublicBenefitsOn(authorId) {
       else if (typeof v === 'string' && v) { try { st = JSON.parse(v); } catch (_) {} }
       var ok = !!(st && st.status === 'active' && st.cancelAtPeriodEnd !== true);
       if (ok && st.currentPeriodEnd) { try { ok = Number(st.currentPeriodEnd) * 1000 > Date.now(); } catch (_) {} }
+      /* FIX-THEME1 (2026-10-16): prueba de Halloween también cuenta para
+       * beneficios públicos (misma razón que en refreshOrbitAuthorBadge). */
+      if (!ok) {
+        try {
+          var gsnap2 = await DrexCloud.database().ref('users/' + authorId + '/eventGrants/halloween2026').once('value');
+          var g2 = gsnap2 && gsnap2.val();
+          if (g2 && typeof g2 === 'object' && Number(g2.freeUntil || 0) > Date.now()) ok = true;
+        } catch (_) {}
+      }
       c = { active: ok, ts: Date.now() };
       cache[authorId] = c;
     }
@@ -90471,7 +90505,12 @@ async function renderOrbitThemesRow() {
 }
 async function setOrbitProfileTheme(id) {
   var th = orbitThemeById(id);
-  if (th.pro && typeof orbitGate === 'function' && !orbitGate('profile_themes')) return;
+  if (th.pro && typeof orbitGate === 'function' && !orbitGate('profile_themes')) {
+    /* FIX-THEME1: antes era un return silencioso y el usuario no entendía
+     * por qué el tema no se aplicaba. Ahora avisa. */
+    try { if (typeof orbitToast === 'function') orbitToast(t('Este tema requiere Drex Orbit.')); } catch (_) {}
+    return;
+  }
   try {
     var me = (typeof liveUser === 'function') ? liveUser() : ((typeof DrexCloud !== 'undefined' && DrexCloud.auth().currentUser) || null);
     if (!me || !me.uid) { orbitToast(t('Inicia sesión para personalizar tu perfil.')); return; }
@@ -90492,6 +90531,24 @@ async function applyOrbitProfileTheme() {
       var cover = document.getElementById(cid);
       if (cover) cover.style.background = th.css;
     });
+  } catch (_) {}
+}
+
+/* FIX-THEME1 (2026-10-16): tema de perfil de OTRO autor. Antes no existía
+ * código para esto: aunque el dueño guardara un tema, ningún visitante lo
+ * veía. Lee el profileTheme público del autor y lo aplica a la portada del
+ * perfil ajeno (author-profile-cover). Sin gate de Orbit para VER: si lo
+ * tiene guardado, se muestra. */
+async function applyAuthorProfileTheme(authorId) {
+  try {
+    if (!authorId || typeof DrexCloud === 'undefined') return;
+    var snap = await DrexCloud.database().ref('users/' + authorId + '/profileTheme').once('value');
+    var v = snap && snap.val();
+    var th = (typeof v === 'string' && typeof orbitThemeById === 'function') ? orbitThemeById(v) : null;
+    if (!th && typeof ORBIT_PROFILE_THEMES !== 'undefined') th = ORBIT_PROFILE_THEMES[0];
+    if (!th) return;
+    var cover = document.getElementById('author-profile-cover');
+    if (cover) cover.style.background = th.css;
   } catch (_) {}
 }
 
