@@ -34447,19 +34447,15 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
           return;
         }
 
-        // Verificación en dos pasos (red de seguridad legacy, Ing. #1 2026-09-20):
-        // con el MFA nativo de Cognito el desafío ocurre ANTES de establecer
-        // la sesión, así que si ya se pasó en este inicio (window.__drexMfaPassed)
-        // no se vuelve a pedir. Este camino solo queda para cuentas con la
-        // bandera antigua twoFactorEnabled cuyo secreto aún vive en la base.
-        // C286: la puerta legacy solo aplica si la cuenta TIENE secreto
-        // legacy. Antes, quien activó el MFA NATIVO (bandera sin secreto)
-        // quedaba atrapado en cada restauración de sesión ante un código
-        // imposible: cancelar y re-entrar era la única salida.
-        if (data && data.twoFactorEnabled && data.twoFactorSecret && !window.__drexMfaPassed &&
-            sessionStorage.getItem('drex2faVerified_' + user.uid) !== 'true') {
-          if (typeof showLegacy2FAChallenge === 'function') showLegacy2FAChallenge();
-          return;
+        // SEC-AUTH (2026-10-17): la puerta legacy se RETIRÓ por insegura. Verificaba
+        // el TOTP en el navegador contra users/<uid>/twoFactorSecret leído de la
+        // base: quien obtenía la contraseña leía el secreto y generaba códigos
+        // válidos con la propia computeTotpCode — el segundo factor no aportaba
+        // nada y el secreto quedaba expuesto en la BD. Ahora se borran la
+        // bandera y el secreto, se registra el evento y se pide activar el 2FA
+        // nativo (Cognito) en el Centro de seguridad. No bloquea la entrada.
+        if (data && data.twoFactorEnabled && data.twoFactorSecret && !window.__drexMfaPassed) {
+          try { retireLegacyTwoFactor(user.uid); } catch (_) {}
         }
 
         // Sin registro completo no se entra a la app: se completa el flujo
@@ -51289,70 +51285,40 @@ function initSleepModeView() {
 //   users/{parentUid}/supervising/{teenUid} -> true
 //   users/{teenUid}/parentalControls  -> { forcePrivate: bool }
 
-// Verificación en dos pasos (TOTP — RFC 6238) con la Web Crypto API nativa
-// (HMAC-SHA1), compatible con Google Authenticator/Authy. Sin backend propio.
-const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-
-function base32Encode(bytes) {
-  let bits = '';
-  for (const b of bytes) bits += b.toString(2).padStart(8, '0');
-  let output = '';
-  for (let i = 0; i < bits.length; i += 5) {
-    let chunk = bits.substring(i, i + 5);
-    if (chunk.length < 5) chunk = chunk.padEnd(5, '0');
-    output += BASE32_ALPHABET[parseInt(chunk, 2)];
-  }
-  return output;
-}
-
-function base32Decode(str) {
-  str = String(str || '').replace(/=+$/, '').toUpperCase().replace(/\s+/g, '');
-  let bits = '';
-  for (const char of str) {
-    const val = BASE32_ALPHABET.indexOf(char);
-    if (val === -1) continue;
-    bits += val.toString(2).padStart(5, '0');
-  }
-  const bytes = [];
-  for (let i = 0; i + 8 <= bits.length; i += 8) {
-    bytes.push(parseInt(bits.substring(i, i + 8), 2));
-  }
-  return new Uint8Array(bytes);
-}
-
-function generateTotpSecret() {
-  const randomBytes = new Uint8Array(20);
-  crypto.getRandomValues(randomBytes);
-  return base32Encode(randomBytes);
-}
-
-async function computeTotpCode(secretBase32, forTimeMs, period = 30, digits = 6) {
-  const keyBytes = base32Decode(secretBase32);
-  const counter = Math.floor(forTimeMs / 1000 / period);
-  const counterBuffer = new ArrayBuffer(8);
-  const counterView = new DataView(counterBuffer);
-  // JS no maneja enteros de 64 bits nativos, pero con fechas normales
-  // los primeros 4 bytes del contador siempre son 0 hasta el año 2106+.
-  counterView.setUint32(0, Math.floor(counter / 0x100000000));
-  counterView.setUint32(4, counter % 0x100000000);
-
-  const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
-  const hmac = new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, counterBuffer));
-
-  const offset = hmac[hmac.length - 1] & 0x0f;
-  const binCode = ((hmac[offset] & 0x7f) << 24) | ((hmac[offset + 1] & 0xff) << 16) | ((hmac[offset + 2] & 0xff) << 8) | (hmac[offset + 3] & 0xff);
-  return (binCode % Math.pow(10, digits)).toString().padStart(digits, '0');
-}
-
-async function verifyTotpCode(secretBase32, userCode, period = 30) {
-  if (!/^\d{6}$/.test(String(userCode || '').trim())) return false;
-  const now = Date.now();
-  // Tolera ±1 paso (30s) por si el reloj del celular no está perfectamente sincronizado
-  for (let step = -1; step <= 1; step++) {
-    const code = await computeTotpCode(secretBase32, now + step * period * 1000, period);
-    if (code === userCode.trim()) return true;
-  }
-  return false;
+// SEC-AUTH (2026-10-17): retiro del 2FA legacy. El camino antiguo verificaba
+// el TOTP en el navegador contra users/<uid>/twoFactorSecret leído de la base
+// (submitTwoFactorChallenge, rama !ch, con computeTotpCode/verifyTotpCode en
+// el bundle): quien obtenía la contraseña leía el secreto y generaba códigos
+// válidos — el segundo factor era teatro y el secreto quedaba expuesto en la
+// BD para cualquier cuenta autenticada. Se borran la bandera y el secreto, se
+// registra el evento de seguridad y se avisa para activar el 2FA nativo
+// (Cognito) en el Centro de seguridad. Fire-and-forget: si falla (sin red),
+// la puerta lo reintenta en el próximo inicio; nunca bloquea la entrada.
+async function retireLegacyTwoFactor(uid) {
+  const id = String(uid || '');
+  if (!id) return;
+  try {
+    const db = DrexCloud.database();
+    await Promise.all([
+      db.ref('users/' + id + '/twoFactorSecret').remove(),
+      db.ref('users/' + id + '/twoFactorEnabled').remove()
+    ]);
+  } catch (_) { return; }
+  try {
+    if (typeof recordSecurityEvent === 'function') {
+      await recordSecurityEvent('2FA legacy retirado', 'Se eliminó la verificación en dos pasos antigua (insegura). Activa la verificación en dos pasos en el Centro de seguridad.');
+    }
+  } catch (_) {}
+  try {
+    if (typeof showMiniToast === 'function') {
+      showMiniToast(appT('Tu verificación en dos pasos antigua se retiró por seguridad. Actívala de nuevo en el Centro de seguridad.'));
+    }
+  } catch (_) {}
+  try {
+    if (typeof showSecurityAlertIfEnabled === 'function') {
+      showSecurityAlertIfEnabled('securityChangeAlerts', appT('Se retiró tu verificación en dos pasos antigua por seguridad. Actívala de nuevo en el Centro de seguridad.'));
+    }
+  } catch (_) {}
 }
 
 async function sha256Hex(text) {
@@ -51617,9 +51583,8 @@ function confirmDisableTwoFactor() {
 //  Puente del desafío MFA del login -> #twofactor-challenge-view.
 //  DrexCloud.mfa.beginMfaChallenge llama a window.__drexMfaUi({kind,
 //  onCode, onCancel}). Mientras el desafío está pendiente, la variable
-//  window.__drexMfaChallenge guarda el objeto; en modo legacy (red de
-//  seguridad post-login) queda en null y se verifica contra el secreto
-//  antiguo de la base de datos.
+//  window.__drexMfaChallenge guarda el objeto. (El camino legacy se eliminó
+//  el 2026-10-17 por inseguro: ver retireLegacyTwoFactor().)
 // ============================================================
 window.__drexMfaChallenge = null;
 
@@ -51656,27 +51621,10 @@ function installMfaChallengeUi() {
   };
 }
 
-// Red de seguridad legacy: cuentas con la bandera twoFactorEnabled cuyo
-// secreto aún vive en users/<uid>/twoFactorSecret (antes del MFA nativo).
-// Con Cognito nativo este camino casi nunca se usa: el desafío ocurre
-// ANTES de establecer la sesión.
-function showLegacy2FAChallenge() {
-  window.__drexMfaChallenge = null;
-  _mfaBackupMode = false;
-  if (typeof hideSplashScreen === 'function') hideSplashScreen();
-  const view = document.getElementById('twofactor-challenge-view');
-  const input = document.getElementById('twofactor-challenge-input');
-  if (input) {
-    input.value = ''; input.disabled = false;
-    input.setAttribute('maxlength', '6'); input.setAttribute('inputmode', 'numeric');
-    input.placeholder = '000000';
-  }
-  document.getElementById('twofactor-challenge-error')?.classList.add('hidden');
-  const link = document.getElementById('twofactor-challenge-backup-link');
-  if (link) link.classList.add('hidden'); // en legacy no hay respaldo
-  view?.classList.remove('hidden');
-  if (input) setTimeout(() => { try { input.focus(); } catch (_) {} }, 60);
-}
+// Red de seguridad legacy (ELIMINADA 2026-10-17 por insegura: verificaba el
+// TOTP en el navegador contra el secreto de la base — teatro de 2FA con el
+// secreto expuesto; ver retireLegacyTwoFactor()). showLegacy2FAChallenge
+// se removió por completo.
 
 function toggleMfaBackupMode() {
   _mfaBackupMode = !_mfaBackupMode;
@@ -51706,24 +51654,12 @@ function submitTwoFactorChallenge() {
   const raw = (input.value || '').trim().replace(/\s+/g, '');
   const showErr = msg => { if (errBox) { errBox.textContent = msg; errBox.classList.remove('hidden'); } };
 
-  // Modo legacy (sin desafío nativo pendiente): verificar contra el secreto
-  // antiguo guardado en la base de datos.
+  // SEC-AUTH (2026-10-17): el camino legacy (verificación TOTP en el navegador
+  // contra el secreto de la base) se eliminó por inseguro. Sin desafío nativo
+  // pendiente no hay nada que verificar: se cierra la vista.
   if (!ch) {
-    const user = DrexCloud.auth().currentUser;
-    if (!user) return;
-    if (!/^\d{6}$/.test(raw)) { showErr(appT('Escribe el código de 6 dígitos de tu app de autenticación.')); return; }
-    input.disabled = true;
-    DrexCloud.database().ref('users/' + user.uid + '/twoFactorSecret').once('value').then(async snap => {
-      const ok = snap.val() && await verifyTotpCode(snap.val(), raw);
-      input.disabled = false;
-      if (ok) {
-        sessionStorage.setItem('drex2faVerified_' + user.uid, 'true');
-        document.getElementById('twofactor-challenge-view')?.classList.add('hidden');
-        location.reload();
-      } else {
-        showErr(appT('Código incorrecto. Revisa e inténtalo de nuevo.'));
-      }
-    }).catch(() => { input.disabled = false; showErr(appT('No se pudo verificar el código. Inténtalo de nuevo.')); });
+    document.getElementById('twofactor-challenge-view')?.classList.add('hidden');
+    showErr(appT('La sesión del desafío venció. Inicia sesión de nuevo.'));
     return;
   }
 
@@ -51817,9 +51753,7 @@ function signOutFromTwoFactorChallenge() {
     try { ch.onCancel(); } catch (_) {}
     return;
   }
-  // Modo legacy: sí había sesión establecida.
-  const user = DrexCloud.auth().currentUser;
-  if (user) { try { sessionStorage.removeItem('drex2faVerified_' + user.uid); } catch (_) {} }
+  // Respaldo genérico: había sesión establecida.
   DrexCloud.auth().signOut().then(() => location.reload()).catch(() => location.reload());
 }
 
@@ -55488,7 +55422,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-16T20:10:00Z'; // FIX-EYEOFF
+window.DREX_BUILD = '2026-10-17T09:42:43Z'; // SEC-AUTH-LEGACY2FA
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
