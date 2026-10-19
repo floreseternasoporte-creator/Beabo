@@ -34637,6 +34637,15 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
         mainApp.classList.remove('hidden');
         if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
         maybeShowPlayStoreBanner();
+        // C344: deferred deep link sin Branch — si el visitante instaló/abrió
+        // la app desde un link público, llevarlo directo a esa publicación.
+        try {
+          const _pp = localStorage.getItem('drex_pending_post');
+          if (_pp && /^[-_A-Za-z0-9]{4,64}$/.test(_pp)) {
+            localStorage.removeItem('drex_pending_post');
+            setTimeout(() => { try { openPostPermalink(_pp); } catch (_) {} }, 600);
+          }
+        } catch (_) {}
         try {
           if (sessionStorage.getItem('drex_reactivated') === '1') {
             sessionStorage.removeItem('drex_reactivated');
@@ -34756,7 +34765,10 @@ document.getElementById('backToPasswordFromRecovery').addEventListener('click', 
       try { if (typeof window.__drexFeedKillForLogout === 'function') window.__drexFeedKillForLogout(); } catch (_) {}
       // C286: sin sesión, ninguna vista de ruta profunda (post/perfil/
       // grupo abierto por enlace frío) puede quedar sobre el login.
-      try { if (typeof drexCloseAllRoutes === 'function') drexCloseAllRoutes(); } catch (_) {}
+      // EXCEPCIÓN C344: el permalink público SÍ puede (el visitante viene de un link).
+      if (!window.__drexPublicPostOpen) {
+        try { if (typeof drexCloseAllRoutes === 'function') drexCloseAllRoutes(); } catch (_) {}
+      }
       // FIX: el motor de recomendaciones no debe conservar ni persistir el
       // perfil de la cuenta que cerró sesión (evita contaminar la próxima
       // cuenta con gustos ajenos si una lectura quedó en vuelo).
@@ -51079,6 +51091,25 @@ body.theme-dark #continueWithPhone:hover {
     <span class="text-[16px] font-extrabold">Publicación</span>
     <span class="w-10 h-10"></span>
   </div>
+  <!-- C344: CTA para visitantes sin sesión (permalink público). -->
+  <div id="post-permalink-cta" class="hidden">
+    <div class="max-w-lg mx-auto px-4 pt-4">
+      <div class="rounded-2xl p-4 flex items-center gap-3" style="background:linear-gradient(135deg,#2F33B8,#4a4fd6);box-shadow:0 8px 24px rgba(47,51,184,.35)">
+        <img src="drex-logo.png" alt="Drex" class="w-11 h-11 rounded-xl flex-shrink-0 bg-white/15">
+        <div class="flex-1 min-w-0">
+          <p class="text-white font-extrabold text-[15px] leading-tight">Mira esta publicación en Drex</p>
+          <p class="text-white/80 leading-snug mt-0.5" style="font-size:12.5px">Vota, comenta y publica tú también.</p>
+        </div>
+      </div>
+      <div class="flex gap-2 mt-2.5">
+        <a id="post-permalink-openapp" href="#" class="tap44 flex-1 rounded-full bg-[#2F33B8] text-white text-sm font-bold flex items-center justify-center px-4 active:opacity-80">Abrir en la app</a>
+        <a id="post-permalink-dl" href="https://play.google.com/store/apps/details?id=com.drex.app" target="_blank" rel="noopener" class="tap44 flex-1 rounded-full bg-[var(--theme-surface-muted)] text-[var(--theme-text)] text-sm font-bold flex items-center justify-center px-4 active:opacity-80">Descargar Drex</a>
+      </div>
+      <div class="text-center mt-2">
+        <button onclick="closePostPermalink()" class="tap44 text-[13px] font-bold text-[var(--theme-muted)] active:opacity-70">Ya tengo cuenta: iniciar sesión</button>
+      </div>
+    </div>
+  </div>
   <div id="post-permalink-body" class="max-w-lg mx-auto"></div>
 </div>
 
@@ -53037,9 +53068,22 @@ function shareMenuShareLink() {
   if (id) sharePostExternally(id, 'post');
 }
 
+// C344: links públicos de publicaciones ("rompe-pecera").
+// DREX_POST_PUBLIC_URL = Function URL de la Lambda drex-post-public, sin '/'
+// final. Vacío = permalink público desactivado (se mantiene el muro de login).
+var DREX_POST_PUBLIC_URL = '';
+// Ficha pública de Play para visitantes sin la app instalada.
+var DREX_PLAY_PUBLIC_URL = 'https://play.google.com/store/apps/details?id=com.drex.app';
+
 function sharePostExternally(noteId, kind = 'post') {
   if (!noteId) return;
-  const shareUrl = `${location.origin}${location.pathname}#post-${noteId}`;
+  // C344: ruta limpia /post/<id> (404.html la resuelve en Pages). En el worker
+  // (workers.dev) las rutas profundas devuelven vacío: ahí se usa hash.
+  const basePath = (typeof drexBasePath === 'function' ? drexBasePath() : '');
+  const cleanOk = !/workers\.dev$/i.test(location.hostname);
+  const shareUrl = cleanOk
+    ? `${location.origin}${basePath}/post/${encodeURIComponent(noteId)}`
+    : `${location.origin}${location.pathname}#post-${noteId}`;
   const shareData = {
     title: 'Drex',
     text: 'Mira esta publicación en Drex',
@@ -53093,6 +53137,34 @@ function openPostPermalink(noteId, options = {}) {
   if (!options.skipHistory && typeof drexPushDynamicRoute === 'function') {
     drexPushDynamicRoute('post/' + noteId, 'post-permalink-view');
   }
+
+  // C344: visitante sin sesión → API pública. La Lambda drex-post-public lee
+  // con privilegios y aplica en SERVIDOR las reglas de privacidad (audiencia,
+  // cuenta privada); un 403 aquí es contenido privado, no un error.
+  const _pubUser = (typeof DrexCloud !== 'undefined' && DrexCloud.auth) ? DrexCloud.auth().currentUser : null;
+  const _pubApi = (typeof DREX_POST_PUBLIC_URL === 'string') ? DREX_POST_PUBLIC_URL.replace(/\/+$/, '') : '';
+  if (!_pubUser && _pubApi) {
+    window.__drexPublicPostOpen = true;
+    try { localStorage.setItem('drex_pending_post', noteId); } catch (_) {}
+    _showPublicPostCta(true);
+    fetch(_pubApi + '/post/' + encodeURIComponent(noteId), { mode: 'cors' })
+      .then(resp => resp.ok ? resp.json() : Promise.reject(new Error('http_' + resp.status)))
+      .then(data => {
+        if (_currentPermalinkNoteId !== noteId) return;
+        if (data && data.id) {
+          _renderPostPermalinkCard({ id: data.id, content: data.text, text: data.text, authorName: data.authorName, authorId: data.authorId, userId: data.authorId, timestamp: data.timestamp, score: data.score, commentCount: data.commentCount });
+        } else {
+          _renderPostPermalinkMessage('Esta publicación ya no existe o fue eliminada.');
+        }
+      })
+      .catch(() => {
+        if (_currentPermalinkNoteId !== noteId) return;
+        _renderPostPermalinkMessage('No se pudo cargar la publicación. Revisa tu conexión e inténtalo de nuevo.', true);
+      });
+    return;
+  }
+  window.__drexPublicPostOpen = false;
+  _showPublicPostCta(false);
 
   DrexCloud.database().ref('communityNotes/' + noteId).once('value').then(async snapshot => {
     // El usuario pudo navegar a otro lado mientras cargaba
@@ -53249,6 +53321,21 @@ function _renderPostPermalinkCard(note) {
 }
 
 
+// C344: banner CTA para visitantes sin sesión en el permalink público.
+function _showPublicPostCta(show) {
+  try {
+    const cta = document.getElementById('post-permalink-cta');
+    if (!cta) return;
+    cta.classList.toggle('hidden', !show);
+    if (show) {
+      const openBtn = document.getElementById('post-permalink-openapp');
+      if (openBtn) openBtn.href = location.href.split('#')[0];
+      const dlBtn = document.getElementById('post-permalink-dl');
+      if (dlBtn && typeof DREX_PLAY_PUBLIC_URL === 'string' && DREX_PLAY_PUBLIC_URL) dlBtn.href = DREX_PLAY_PUBLIC_URL;
+    }
+  } catch (_) {}
+}
+
 function closePostPermalink(options = {}) {
   const view = document.getElementById('post-permalink-view');
   // Si ya estaba oculta, no hay nada que deshacer (evita pisar otras vistas
@@ -53256,6 +53343,9 @@ function closePostPermalink(options = {}) {
   if (!view || view.classList.contains('hidden')) return;
 
   _currentPermalinkNoteId = null;
+  // C344: al cerrar el permalink público se limpia el modo visitante.
+  window.__drexPublicPostOpen = false;
+  try { _showPublicPostCta(false); } catch (_) {}
   view.classList.add('hidden');
   if (drexAppChromeAllowed()) document.getElementById('main-app')?.classList.remove('hidden');
   if (typeof setBottomNavVisibility === 'function') setBottomNavVisibility(true);
@@ -55577,7 +55667,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-19T05:07:49Z'; // SEC-AUTH-LEGACY2FA
+window.DREX_BUILD = '2026-10-19T05:34:56Z'; // SEC-AUTH-LEGACY2FA
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
