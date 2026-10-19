@@ -4889,3 +4889,5 @@ Object.assign(APP_KOREAN_TEXT, {
 "Tu foto se procesa y se elimina al instante: nunca se guarda en nuestros servidores. Tampoco guardamos tu fecha de nacimiento completa, tu número de documento completo ni tu SSN completo. Nada se comparte con terceros.":"사진은 처리 후 즉시 삭제되며 서버에 절대 저장되지 않습니다. 전체 생년월일, 전체 서류 번호, 전체 SSN도 저장하지 않습니다. 제3자와 공유하지 않습니다.",
 "La insignia confirma que eres una persona real. Solo Drex la otorga, después de revisar tu documento de identidad.":"배지는 실제 사용자임을 증명합니다. 신분증 심사 후 Drex만 부여합니다."
 });
+
+Object.assign(APP_KOREAN_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "인증 서버에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요." });

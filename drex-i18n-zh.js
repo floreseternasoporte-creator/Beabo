@@ -4995,3 +4995,5 @@ Object.assign(APP_CHINESE_TEXT, {
 "Tu foto se procesa y se elimina al instante: nunca se guarda en nuestros servidores. Tampoco guardamos tu fecha de nacimiento completa, tu número de documento completo ni tu SSN completo. Nada se comparte con terceros.":"你的照片会被处理并立即删除：绝不会保存在我们的服务器上。我们也不会保存你的完整出生日期、完整证件号码或完整 SSN。不会与第三方共享任何内容。",
 "La insignia confirma que eres una persona real. Solo Drex la otorga, después de revisar tu documento de identidad.":"徽章证明你是真人。只有 Drex 会在审核你的身份证件后授予。"
 });
+
+Object.assign(APP_CHINESE_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "无法连接到验证服务器。请检查你的连接并重试。" });

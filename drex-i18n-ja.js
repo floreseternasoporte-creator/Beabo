@@ -4892,3 +4892,5 @@ Object.assign(APP_JAPANESE_TEXT, {
 "Tu foto se procesa y se elimina al instante: nunca se guarda en nuestros servidores. Tampoco guardamos tu fecha de nacimiento completa, tu número de documento completo ni tu SSN completo. Nada se comparte con terceros.":"写真は処理後に即削除され、サーバーに保存されることはありません。生年月日の全体、書類番号の全体、SSN の全体も保存しません。第三者と共有することもありません。",
 "La insignia confirma que eres una persona real. Solo Drex la otorga, después de revisar tu documento de identidad.":"バッジはあなたが実在の人物であることを証明します。身分証の審査後に Drex のみが付与します。"
 });
+
+Object.assign(APP_JAPANESE_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "認証サーバーに接続できませんでした。接続を確認してもう一度お試しください。" });

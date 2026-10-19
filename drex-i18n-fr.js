@@ -4890,3 +4890,5 @@ Object.assign(APP_FRENCH_TEXT, {
 "Tu foto se procesa y se elimina al instante: nunca se guarda en nuestros servidores. Tampoco guardamos tu fecha de nacimiento completa, tu número de documento completo ni tu SSN completo. Nada se comparte con terceros.":"Ta photo est traitée puis supprimée aussitôt : elle n'est jamais conservée sur nos serveurs. Nous ne conservons ni ta date de naissance complète, ni ton numéro de document complet, ni ton SSN complet. Rien n'est partagé avec des tiers.",
 "La insignia confirma que eres una persona real. Solo Drex la otorga, después de revisar tu documento de identidad.":"Le badge confirme que tu es une vraie personne. Seul Drex l'attribue, après examen de ta pièce d'identité."
 });
+
+Object.assign(APP_FRENCH_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "Impossible de se connecter au serveur de vérification. Vérifie ta connexion et réessaie." });

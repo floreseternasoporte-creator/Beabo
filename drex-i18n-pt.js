@@ -4982,3 +4982,5 @@ Object.assign(APP_PORTUGUESE_TEXT, {
 "Tu foto se procesa y se elimina al instante: nunca se guarda en nuestros servidores. Tampoco guardamos tu fecha de nacimiento completa, tu número de documento completo ni tu SSN completo. Nada se comparte con terceros.":"Sua foto é processada e excluída na hora: nunca fica salva em nossos servidores. Também nunca guardamos sua data de nascimento completa, seu número de documento completo nem seu SSN completo. Nada é compartilhado com terceiros.",
 "La insignia confirma que eres una persona real. Solo Drex la otorga, después de revisar tu documento de identidad.":"O selo confirma que você é uma pessoa real. Só o Drex o concede, após revisar seu documento de identidade."
 });
+
+Object.assign(APP_PORTUGUESE_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "Não foi possível conectar ao servidor de verificação. Verifica tua conexão e tenta de novo." });
