@@ -6996,6 +6996,16 @@ try {
       transition: background-color 0.15s ease, color 0.15s ease, opacity 0.1s ease;
       -webkit-tap-highlight-color: transparent;
     }
+    /* Swipe vertical sobre el riel de votos (C343): touch-action: pan-x
+       deja el gesto vertical libre para JS sin que el navegador haga scroll
+       del feed; el tap sobre los botones sigue intacto. */
+    .drex-vote-rail { touch-action: pan-x; }
+    /* Transición con transform para el feedback del voto por swipe. */
+    .drex-vote-rail .drex-vote-btn {
+      transition: background-color 0.15s ease, color 0.15s ease, opacity 0.1s ease, transform 0.18s ease;
+    }
+    /* Feedback visual: escala breve del botón votado por swipe. */
+    .drex-vote-btn.drex-swipe-flash { transform: scale(1.3); }
     /* Área táctil extendida a 44px sin cambiar el diseño compacto del riel. */
     .drex-vote-btn::after {
       content: '';
@@ -25525,6 +25535,60 @@ else { try { drexSnapInit(); } catch (_) {} }
       _postVoteLocks.delete(noteId);
     });
   }
+
+  /* Swipe vertical sobre el riel de votos de publicaciones (C343):
+     deslizar hacia arriba = voto positivo, hacia abajo = voto negativo.
+     Delegación en document (las tarjetas se crean dinámicamente).
+     Reutiliza votePost(); no duplica lógica de red ni de estado. */
+  (function drexVoteRailSwipe() {
+    var SWIPE_MIN_PX = 40; // recorrido vertical mínimo para contar como swipe
+    var startX = 0, startY = 0, tracking = false, railEl = null;
+
+    // Solo rieles de publicaciones (botón id="upvote-<id>"); excluye los de
+    // comentarios (id="comment-upvote-..."), que usan voteComment.
+    function postRailInfo(rail) {
+      var upBtn = rail.querySelector('.drex-vote-btn.drex-up');
+      if (!upBtn || !upBtn.id || upBtn.id.indexOf('upvote-') !== 0) return null;
+      return {
+        noteId: upBtn.id.slice('upvote-'.length),
+        upBtn: upBtn,
+        downBtn: rail.querySelector('.drex-vote-btn.drex-down')
+      };
+    }
+
+    document.addEventListener('touchstart', function (e) {
+      if (!e.touches || e.touches.length !== 1) { tracking = false; return; }
+      var rail = e.target && e.target.closest ? e.target.closest('.drex-vote-rail') : null;
+      var info = rail ? postRailInfo(rail) : null;
+      if (!info) { tracking = false; return; }
+      tracking = true; railEl = rail;
+      railEl._drexSwipeInfo = info;
+      startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    }, { passive: true });
+
+    document.addEventListener('touchend', function (e) {
+      if (!tracking || !railEl) { tracking = false; return; }
+      tracking = false;
+      var info = railEl._drexSwipeInfo; railEl = null;
+      if (!info || typeof votePost !== 'function') return;
+      var tch = e.changedTouches[0];
+      var dx = tch.clientX - startX, dy = tch.clientY - startY;
+      var adx = Math.abs(dx), ady = Math.abs(dy);
+      // Gesto predominantemente vertical (|dy| > |dx| * 1.5) y con recorrido mínimo.
+      if (ady < SWIPE_MIN_PX || ady <= adx * 1.5) return; // fue tap o gesto horizontal: no hacer nada
+      var dir = dy < 0 ? 'up' : 'down';
+      // Suprime el clic sintético que seguiría al touchend sobre el botón.
+      try { e.preventDefault(); } catch (_) {}
+      var btn = dir === 'up' ? info.upBtn : info.downBtn;
+      if (btn) {
+        btn.classList.add('drex-swipe-flash');
+        setTimeout(function () { btn.classList.remove('drex-swipe-flash'); }, 220);
+      }
+      votePost(info.noteId, dir);
+    }, { passive: false });
+
+    document.addEventListener('touchcancel', function () { tracking = false; railEl = null; }, { passive: true });
+  })();
 
   let _userSavedPosts = null;
   // Carpetas de guardados: { folderId: { name, createdAt } }. null = aún no cargadas.
@@ -55513,7 +55577,7 @@ async function endFiesta() {
      limpia cachés, pide al SW que se actualice y navega con ?drexv= para
      romper la llave de caché HTTP/SW y garantizar HTML fresco.
    REGLA DE DEPLOY: regenerar version.json con el mismo sello en cada publish. */
-window.DREX_BUILD = '2026-10-19T05:05:36Z'; // SEC-AUTH-LEGACY2FA
+window.DREX_BUILD = '2026-10-19T05:07:49Z'; // SEC-AUTH-LEGACY2FA
 (function () {
   'use strict';
   var BUILD = window.DREX_BUILD || '';
