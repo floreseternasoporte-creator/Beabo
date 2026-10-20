@@ -6,11 +6,12 @@
    dominio (404) y cache.addAll() fallaba EN BLOQUE: la instalación nunca
    completaba, skipWaiting jamás corría y la PWA instalada quedaba congelada
    en la versión vieja. */
-const DREX_SW_VERSION = 'drex-v84'; // v84: FASE2-i18n — drex-i18n.js partido en 6 archivos por idioma (sin precache: network-first)
+const DREX_SW_VERSION = 'drex-v85'; // v85: FASE4 — SDK AWS v3 (bundle local drex-aws-v3.bundle.js) reemplaza al SDK v2 de CDN
 const DREX_STATIC_ASSETS = [
   './',
   './index.html',
   './drex-cloud.js',
+  './drex-aws-v3.bundle.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

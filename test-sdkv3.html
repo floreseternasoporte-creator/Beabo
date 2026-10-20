@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Drex — QA SDK v3 (Fase 4)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px;
+         background: #0f1226; color: #eef; -webkit-text-size-adjust: 100%; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9aa3c7; font-size: 13px; margin-bottom: 16px; }
+  .card { background: #1a1f3d; border: 1px solid #2a3160; border-radius: 14px;
+          padding: 14px; margin-bottom: 12px; }
+  .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #2a3160;
+          background: #10142e; color: #eef; font-size: 16px; margin-top: 8px; }
+  button { flex: 1; min-width: 140px; padding: 12px; border-radius: 10px; border: 0;
+           background: #2F33B8; color: #fff; font-size: 15px; font-weight: 700; }
+  button:active { opacity: .75; }
+  button.ghost { background: #232a5e; }
+  .ok { color: #4ade80; } .bad { color: #f87171; } .warn { color: #fbbf24; }
+  #log { background: #0a0d20; border: 1px solid #2a3160; border-radius: 10px;
+         padding: 10px; font-family: ui-monospace, monospace; font-size: 12px;
+         max-height: 320px; overflow-y: auto; white-space: pre-wrap; }
+  .st { display: flex; justify-content: space-between; padding: 6px 0;
+        border-bottom: 1px solid #232a5e; font-size: 14px; }
+  .st:last-child { border-bottom: 0; }
+  .pill { padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+  .pill.ok { background: rgba(74,222,128,.15); } .pill.bad { background: rgba(248,113,113,.15); }
+</style>
+</head>
+<body>
+<h1>🔬 Drex QA — SDK v3 <span class="warn">(Fase 4)</span></h1>
+<div class="sub">Página de prueba para validar la migración de AWS SDK v2 → v3 en iPhone. NO es parte de la app.</div>
+
+<div class="card">
+  <div class="st"><span>Bundle v3 (DrexAwsV3)</span><span class="pill" id="st-v3">…</span></div>
+  <div class="st"><span>drex-cloud.v3.js (DrexCloud)</span><span class="pill" id="st-dc">…</span></div>
+  <div class="st"><span>amazon-cognito-identity-js (sin tocar)</span><span class="pill" id="st-cog">…</span></div>
+  <div class="st"><span>Adaptador DocumentClient v3</span><span class="pill" id="st-ad">…</span></div>
+</div>
+
+<div class="card" id="login-card">
+  <b>Iniciar sesión</b>
+  <input id="email" type="email" placeholder="Correo" autocomplete="username">
+  <input id="pw" type="password" placeholder="Contraseña" autocomplete="current-password">
+  <div class="row">
+    <button id="btn-login">Entrar</button>
+    <button id="btn-logout" class="ghost">Cerrar sesión</button>
+  </div>
+  <div id="who" style="margin-top:8px;font-size:13px;color:#9aa3c7;"></div>
+</div>
+
+<div class="card">
+  <b>Pruebas de datos (DynamoDB vía v3)</b>
+  <div class="row">
+    <button id="btn-read">Leer mi perfil</button>
+    <button id="btn-write" class="ghost">Escribir prueba</button>
+  </div>
+  <div class="row">
+    <button id="btn-expire" class="ghost">Simular expiración</button>
+    <button id="btn-probe" class="ghost">Probe de salud</button>
+  </div>
+</div>
+
+<div class="card"><b>Registro</b><div id="log" style="margin-top:8px;"></div></div>
+
+<!-- Orden idéntico al futuro index.html: bundle v3, cognito (intacto), drex-cloud -->
+<script src="drex-aws-v3.bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.15/dist/amazon-cognito-identity.min.js"></script>
+<script src="drex-cloud.v3.js"></script>
+<script>
+(function () {
+  var logEl = document.getElementById('log');
+  function log(msg, cls) {
+    var d = document.createElement('div');
+    if (cls) d.className = cls;
+    d.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function pill(id, ok, txt) {
+    var el = document.getElementById(id);
+    el.textContent = txt || (ok ? 'OK' : 'FALTA');
+    el.className = 'pill ' + (ok ? 'ok' : 'bad');
+  }
+  window.addEventListener('error', function (e) {
+    log('PAGEERROR: ' + (e.message || e.error), 'bad');
+  });
+
+  var hasV3 = typeof DrexAwsV3 !== 'undefined';
+  var hasDC = typeof DrexCloud !== 'undefined';
+  var hasCog = typeof AmazonCognitoIdentity !== 'undefined';
+  pill('st-v3', hasV3);
+  pill('st-dc', hasDC);
+  pill('st-cog', hasCog);
+  // El adaptador se verifica de forma indirecta: si probeDb construye el
+  // cliente sin el SDK v2 global, el camino v3 está activo.
+  pill('st-ad', hasV3 && hasDC && typeof AWS === 'undefined', hasV3 && hasDC ? 'OK' : 'FALTA');
+  log('SDK v3: ' + (hasV3 ? 'cargado (bundle ' + Object.keys(DrexAwsV3).length + ' exports)' : 'NO cargado'), hasV3 ? 'ok' : 'bad');
+  log('DrexCloud: ' + (hasDC ? 'cargado' : 'NO cargado'), hasDC ? 'ok' : 'bad');
+  log('CognitoIdentityJS: ' + (hasCog ? 'cargado (intacto)' : 'NO cargado — el login no funcionará en esta red'), hasCog ? 'ok' : 'warn');
+  if (!hasDC) return;
+
+  function paintWho() {
+    try {
+      var u = DrexCloud.auth().currentUser;
+      document.getElementById('who').textContent = u
+        ? 'Sesión: ' + (u.email || u.username || u.uid || '?')
+        : 'Sin sesión';
+    } catch (e) { /* noop */ }
+  }
+  paintWho();
+
+  document.getElementById('btn-login').onclick = function () {
+    var email = document.getElementById('email').value.trim();
+    var pw = document.getElementById('pw').value;
+    if (!email || !pw) { log('Escribe correo y contraseña', 'warn'); return; }
+    log('Iniciando sesión…');
+    DrexCloud.auth().signInWithEmailAndPassword(email, pw).then(function (u) {
+      log('Login OK: ' + (u && (u.email || u.username || u.uid)), 'ok');
+      paintWho();
+    }).catch(function (e) {
+      log('Login FALLÓ: ' + (e && (e.code || e.message)), 'bad');
+    });
+  };
+  document.getElementById('btn-logout').onclick = function () {
+    DrexCloud.auth().signOut().then(function () {
+      log('Sesión cerrada', 'ok'); paintWho();
+    });
+  };
+  document.getElementById('btn-read').onclick = function () {
+    var u = DrexCloud.auth().currentUser;
+    if (!u || !u.uid) { log('Inicia sesión primero', 'warn'); return; }
+    log('Leyendo users/' + u.uid + '/username …');
+    DrexCloud.database().ref('users/' + u.uid + '/username').once('value').then(function (s) {
+      log('Lectura OK: ' + JSON.stringify(s.val()), 'ok');
+    }).catch(function (e) {
+      log('Lectura FALLÓ: ' + (e && (e.code || e.name || e.message)), 'bad');
+    });
+  };
+  document.getElementById('btn-write').onclick = function () {
+    var u = DrexCloud.auth().currentUser;
+    if (!u || !u.uid) { log('Inicia sesión primero', 'warn'); return; }
+    var key = 'users/' + u.uid + '/sdkv3test';
+    log('Escribiendo ' + key + ' …');
+    DrexCloud.database().ref(key).set({ at: new Date().toISOString(), via: 'sdkv3-qa' }).then(function () {
+      log('Escritura OK', 'ok');
+    }).catch(function (e) {
+      log('Escritura FALLÓ: ' + (e && (e.code || e.name || e.message)), 'bad');
+    });
+  };
+  document.getElementById('btn-expire').onclick = function () {
+    // Simula credenciales rotas: la próxima operación debe auto-repararlas
+    // vía withCredRetry -> refreshAwsCredentialsNow (sin reloguear).
+    try {
+      var internals = null;
+      log('Invalidando credenciales cacheadas… (mira el siguiente read)');
+      // Vía pública: no hay API para esto; se prueba dejando pasar el tiempo.
+      // Este botón documenta el paso manual del guion QA.
+      log('En el QA real: espera a que expire la sesión (~60 min) o cierra y abre la app.', 'warn');
+    } catch (e) { log('No disponible: ' + e.message, 'bad'); }
+  };
+  document.getElementById('btn-probe').onclick = function () {
+    log('Probe de salud (GetItem _health/#)…');
+    DrexCloud.reliability.probeDb().then(function (r) {
+      log('Probe OK', 'ok');
+    }).catch(function (e) {
+      log('Probe FALLÓ: ' + (e && e.message), 'bad');
+    });
+  };
+  DrexCloud.auth().onAuthStateChanged(function (u) { paintWho(); });
+})();
+</script>
+</body>
+</html>

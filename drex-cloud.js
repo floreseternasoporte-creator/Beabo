@@ -231,29 +231,67 @@
   var _docClient = null; // inyectable en pruebas
   var _awsCredentials = null;
 
+  // Fase 4 (SDK v3): el bundle modular se expone como global `DrexAwsV3`
+  // (drex-aws-v3.bundle.js, IIFE, ~210 KB). Ya no existe `AWS` global ni
+  // `AWS.config`: la región va por cliente y las credenciales las provee
+  // `fromCognitoIdentityPool`.
   function awsLib() {
-    return (typeof global.AWS !== 'undefined') ? global.AWS : null;
+    return (typeof global.DrexAwsV3 !== 'undefined') ? global.DrexAwsV3 : null;
   }
 
   function ensureAwsConfigured() {
-    var AWS = awsLib();
-    if (!AWS) throw new Error('AWS SDK no cargado');
-    if (!AWS.config.region) AWS.config.update({ region: AWS_CONFIG.region });
-    return AWS;
+    var V3 = awsLib();
+    if (!V3) throw new Error('AWS SDK v3 no cargado (drex-aws-v3.bundle.js)');
+    return V3;
   }
 
+  // Adaptador v2->v3 (Fase 4): expone la superficie de
+  // AWS.DynamoDB.DocumentClient usada en este archivo sobre el document
+  // client modular de v3. Los call sites `.op(params).promise()` siguen
+  // funcionando sin cambios; solo cambia cómo se construye el cliente.
+  // Mantiene además el hook de pruebas `setDocClient` (mocks con interfaz
+  // v2 siguen siendo inyectables).
+  var V3_DOC_OPS = {
+    get: 'GetCommand', put: 'PutCommand', query: 'QueryCommand',
+    delete: 'DeleteCommand', batchWrite: 'BatchWriteCommand',
+    transactWrite: 'TransactWriteCommand'
+  };
+  function V3DocClientAdapter(v3doc, V3) {
+    this._v3 = v3doc;
+    this._V3 = V3;
+  }
+  Object.keys(V3_DOC_OPS).forEach(function (m) {
+    V3DocClientAdapter.prototype[m] = function (params) {
+      var self = this;
+      return {
+        promise: function () {
+          return self._v3.send(new self._V3[V3_DOC_OPS[m]](params));
+        }
+      };
+    };
+  });
+
   function currentCredentials() {
-    var AWS = ensureAwsConfigured();
+    var V3 = ensureAwsConfigured();
     if (_awsCredentials) return _awsCredentials;
-    _awsCredentials = new AWS.CognitoIdentityCredentials({ IdentityPoolId: AWS_CONFIG.identityPoolId });
+    // Fase 4: en v3 las "credenciales" son un proveedor async; el cliente
+    // de DynamoDB lo invoca por request y lo refresca solo al expirar.
+    // Sin `logins` equivale al rol no-autenticado del identity pool (igual
+    // que v2).
+    _awsCredentials = V3.fromCognitoIdentityPool({
+      identityPoolId: AWS_CONFIG.identityPoolId,
+      clientConfig: { region: AWS_CONFIG.region }
+    });
     return _awsCredentials;
   }
 
   function getDocClient() {
     if (_docClient) return _docClient;
-    var AWS = ensureAwsConfigured();
+    var V3 = ensureAwsConfigured();
     var creds = currentCredentials();
-    _docClient = new AWS.DynamoDB.DocumentClient({ region: AWS_CONFIG.region, credentials: creds });
+    var low = new V3.DynamoDBClient({ region: AWS_CONFIG.region, credentials: creds });
+    var doc = V3.DynamoDBDocumentClient.from(low);
+    _docClient = new V3DocClientAdapter(doc, V3);
     return _docClient;
   }
 
@@ -287,7 +325,8 @@
 // duplica ese reintento.
 function classifyDbError(err) {
   if (isCredError(err)) return 'credential';
-  var code = String((err && err.code) || '');
+  // Fase 4: el SDK v3 nombra los errores en `err.name` (v2 usaba `err.code`).
+  var code = String((err && (err.code || err.name)) || '');
   var msg = String((err && err.message) || '');
   if (code === 'TransactionCanceledException') return 'nonretryable';
   // Bandera interna de "sin red": no es fallo del backend, no reintentar.
@@ -295,11 +334,12 @@ function classifyDbError(err) {
   // Timeouts propios: dbTimeout/promiseTimeout generan estos mensajes.
   if (/^db-(.+-)?timeout$/.test(msg) || msg === 'aws-creds-timeout') return 'retryable';
   // Errores de red del AWS SDK.
-  if (/^(NetworkingError|TimeoutError|RequestAbortedError)$/.test(code)) return 'retryable';
+  if (/^(NetworkingError|TimeoutError|RequestAbortedError|AbortError)$/.test(code)) return 'retryable';
   // Throttling de DynamoDB: la respuesta correcta es esperar y reintentar.
   if (/Throttl|ProvisionedThroughputExceeded|RequestLimitExceeded|TooManyRequestsException/i.test(code)) return 'retryable';
   if (/^5\d\d$/.test(code)) return 'retryable';
-  var status = err && err.statusCode;
+  // Fase 4: v3 expone el HTTP status en err.$metadata.httpStatusCode.
+  var status = err && (err.statusCode || (err.$metadata && err.$metadata.httpStatusCode));
   if (typeof status === 'string' && /^\d+$/.test(status)) status = parseInt(status, 10);
   if (typeof status === 'number') {
     if (status >= 500 && status < 600) return 'retryable';
@@ -722,7 +762,8 @@ relInstallCollector();
 
   function isCredError(err) {
     if (!err) return false;
-    var code = String((err && err.code) || '');
+    // Fase 4: v3 usa err.name (p. ej. 'ExpiredTokenException').
+    var code = String((err && (err.code || err.name)) || '');
     var msg = String((err && err.message) || '');
     return /CredentialsError|AccessDenied|UnrecognizedClient|InvalidSignature|ExpiredToken|TokenRefresh/i.test(code)
         || /credential/i.test(msg);
@@ -3208,8 +3249,10 @@ function withCredRetry(opFn) {
     function isScalar(v) { return v === null || v === undefined || typeof v !== 'object'; }
     function isConditionalCancel(err) {
       if (!err) return false;
-      if (err.code === 'ConditionalCheckFailedException') return true;
-      if (err.code === 'TransactionCanceledException' && err.CancellationReasons) {
+      // Fase 4: v3 usa err.name (`CancellationReasons` mantiene el nombre).
+      var ecode = (err && (err.code || err.name)) || '';
+      if (ecode === 'ConditionalCheckFailedException') return true;
+      if (ecode === 'TransactionCanceledException' && err.CancellationReasons) {
         return err.CancellationReasons.some(function (r) { return r && r.Code === 'ConditionalCheckFailed'; });
       }
       return false;
@@ -3588,18 +3631,20 @@ function withCredRetry(opFn) {
   }
 
   function configureAwsCredentials(idToken) {
-    var AWS = ensureAwsConfigured();
+    var V3 = ensureAwsConfigured();
     var logins = {};
     logins[IDP_ISSUER] = idToken.getJwtToken();
-    _awsCredentials = new AWS.CognitoIdentityCredentials({
-      IdentityPoolId: AWS_CONFIG.identityPoolId,
-      Logins: logins
+    // Fase 4: proveedor v3 (función async). El calentamiento explícito
+    // equivale al `.get(cb)` de v2: falla rápido en login si Cognito
+    // Identity no responde, en vez de fallar en la primera operación de BD.
+    _awsCredentials = V3.fromCognitoIdentityPool({
+      identityPoolId: AWS_CONFIG.identityPoolId,
+      logins: logins,
+      clientConfig: { region: AWS_CONFIG.region }
     });
     _docClient = null; // el próximo getDocClient usará las credenciales nuevas
     return new Promise(function (resolve, reject) {
-      _awsCredentials.get(function (err) {
-        if (err) reject(err); else resolve();
-      });
+      _awsCredentials().then(function () { resolve(); }, function (err) { reject(err); });
     });
   }
 
