@@ -4728,3 +4728,6 @@ Object.assign(APP_ENGLISH_TEXT, {
 });
 
 Object.assign(APP_ENGLISH_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "Couldn't connect to the verification server. Check your connection and try again." });
+
+/* Drex Orbit — Oferta de Halloween 2026 */
+Object.assign(APP_ENGLISH_TEXT, {"Oferta de Halloween":"Halloween Sale","-50% en todos los planes de Drex Orbit":"-50% on all Drex Orbit plans","Precios especiales hasta el 31 de octubre":"Special prices until October 31","-50% Halloween":"-50% Halloween"});
