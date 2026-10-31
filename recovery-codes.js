@@ -382,7 +382,7 @@
 
   /* ---------------- UI: vista "Códigos de respaldo" ---------------- */
 
-  var KEY_ICON = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a3 3 0 1 0-5.83 1.02L4 13.19V17h3.81l5.17-5.17A3 3 0 0 0 15 7z"/><path stroke-linecap="round" stroke-linejoin="round" d="m12.5 9.5 2 2"/></svg>';
+  var KEY_ICON = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path stroke-linecap="round" stroke-width="2.4" d="M7.5 9.5h.01M12 9.5h.01M16.5 9.5h.01M7.5 14.5h.01M12 14.5h.01M16.5 14.5h.01"/></svg>';
 
   function bodyEl() { return document.getElementById('recovery-codes-body'); }
 
