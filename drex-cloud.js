@@ -3539,6 +3539,7 @@ function withCredRetry(opFn) {
       sendPasswordResetEmail: sendPasswordResetEmail,
       confirmPasswordReset: confirmPasswordReset,
       signOut: signOutUser,
+      revokeAllSessionsAfterPasswordChange: revokeAllSessionsAfterPasswordChange,
       signInWithPopup: signInWithPopup,
       // JWT del ID token de Cognito (para autenticar llamadas a lambdas propias)
       getIdToken: function () {
@@ -4663,6 +4664,66 @@ function withCredRetry(opFn) {
     });
   }
 
+  // SEGURIDAD (barrido 2026-11-01, carril autenticación y sesiones):
+  // Cambiar la contraseña NO revoca los tokens de Cognito. La documentación
+  // oficial de AWS ("Ending user sessions with token revocation") enumera
+  // como únicos métodos de revocación RevokeToken, GlobalSignOut y
+  // AdminUserGlobalSignOut; ni ChangePassword ni ConfirmForgotPassword
+  // invalidan los refresh tokens de otras sesiones. Sin este paso, una
+  // sesión robada (o un dispositivo olvidado) seguía entrando con su
+  // refresh token hasta 30 días aunque la víctima cambiara la clave.
+  // Tras un cambio de contraseña con sesión activa: (1) se marcan revocadas
+  // las demás sesiones Drex (sus apps se auto-expulsan al detectarlo) y
+  // (2) se llama a GlobalSignOut, que revoca TODOS los tokens del usuario,
+  // incluida la sesión actual: por eso la UI cierra sesión y pide entrar
+  // de nuevo. Si el access token venció, se refresca una vez y se reintenta.
+  // Nunca rechaza: resuelve {cognitoRevoked} para que la UI no se atasque.
+  function revokeAllSessionsAfterPasswordChange() {
+    function globalSignOutOnce(cu) {
+      return new Promise(function (resolve) {
+        try {
+          if (!cu || typeof cu.globalSignOut !== 'function') { resolve(false); return; }
+          var settled = false;
+          var timer = setTimeout(function () { if (!settled) { settled = true; resolve(false); } }, 20000);
+          cu.globalSignOut({
+            onSuccess: function () { if (!settled) { settled = true; clearTimeout(timer); resolve(true); } },
+            onFailure: function () { if (!settled) { settled = true; clearTimeout(timer); resolve(false); } }
+          });
+        } catch (_) { resolve(false); }
+      });
+    }
+    function refreshOnce(cu) {
+      return new Promise(function (resolve) {
+        try {
+          var sess = (typeof cu.getSignInUserSession === 'function') ? cu.getSignInUserSession() : null;
+          var rt = (sess && typeof sess.getRefreshToken === 'function' && sess.getRefreshToken()) ? sess.getRefreshToken() : null;
+          if (!rt || typeof cu.refreshSession !== 'function') { resolve(false); return; }
+          var settled = false;
+          var timer = setTimeout(function () { if (!settled) { settled = true; resolve(false); } }, 20000);
+          cu.refreshSession(rt, function (err, newSession) {
+            if (!settled) { settled = true; clearTimeout(timer); resolve(!err && !!newSession); }
+          });
+        } catch (_) { resolve(false); }
+      });
+    }
+    return Promise.resolve().then(function () {
+      try {
+        var p = DrexCloud.revokeOtherDrexSessions();
+        if (p && typeof p.catch === 'function') p.catch(function () {});
+      } catch (_) {}
+      var cu = null;
+      try { cu = (typeof currentCognitoUser !== 'undefined') ? currentCognitoUser : null; } catch (_) {}
+      if (!cu) return { cognitoRevoked: false };
+      return globalSignOutOnce(cu).then(function (ok) {
+        if (ok) return { cognitoRevoked: true };
+        return refreshOnce(cu).then(function (refreshed) {
+          if (!refreshed) return { cognitoRevoked: false };
+          return globalSignOutOnce(cu).then(function (ok2) { return { cognitoRevoked: !!ok2 }; });
+        });
+      });
+    }).catch(function () { return { cognitoRevoked: false }; });
+  }
+
   // Login social real via Cognito OAuth (Google / Facebook)
   // Redirige a Cognito, que hace el baile OAuth con el proveedor y regresa
   // con ?code= ; aquí se canjea por tokens y se abre la sesión.
@@ -5553,11 +5614,17 @@ function withCredRetry(opFn) {
   //   a primer plano (throttle: mínimo 60 s entre escrituras).
   // - Limpieza perezosa: al listar, se borran las sesiones con lastActivity > 30 días.
   //
-  // DECISIÓN DE REVOCACIÓN (documentada; FIX-URG-1 2026-09-28):
-  // Cognito no permite revocar los tokens de OTRO dispositivo desde el cliente:
-  // GlobalSignOut/AdminUserGlobalSignOut exigen credenciales admin (IAM) y en este
-  // proyecto no hay ninguna Lambda admin para sesiones (la única Lambda es
-  // drex-username-resolve, de login). user.globalSignOut() solo afecta a la sesión local.
+  // DECISIÓN DE REVOCACIÓN (documentada; FIX-URG-1 2026-09-28, corregida
+  // 2026-11-01): Cognito no permite revocar SOLO los tokens de otro
+  // dispositivo desde el cliente: GlobalSignOut (autoservicio, con el access
+  // token propio) sí revoca TODOS los tokens del usuario, incluida la sesión
+  // actual, así que no sirve para "cerrar solo las demás" sin cerrar también
+  // la propia; AdminUserGlobalSignOut exige credenciales admin (IAM) y en
+  // este proyecto no hay ninguna Lambda admin para sesiones (la única Lambda
+  // es drex-username-resolve, de login). Por eso el cierre por dispositivo
+  // sigue marcando revoked:true en DynamoDB, mientras que el cambio de
+  // contraseña (donde perder la sesión actual es aceptable) sí usa
+  // GlobalSignOut vía revokeAllSessionsAfterPasswordChange().
   // Por eso "Cerrar" / "Cerrar todas las demás" marcan revoked:true en DynamoDB y el
   // dispositivo afectado lo detecta de dos formas: (1) oyente en tiempo real sobre su
   // propio registro -> revocación del refresh token en Cognito + signOut local
