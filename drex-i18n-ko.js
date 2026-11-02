@@ -4883,3 +4883,5 @@ Object.assign(APP_KOREAN_TEXT, {
 });
 
 Object.assign(APP_KOREAN_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "인증 서버에 연결할 수 없습니다. 연결을 확인하고 다시 시도하세요." });
+
+Object.assign(APP_KOREAN_TEXT, {"Velocidad de reproducción": "재생 속도"});

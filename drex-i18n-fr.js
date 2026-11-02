@@ -4884,3 +4884,5 @@ Object.assign(APP_FRENCH_TEXT, {
 });
 
 Object.assign(APP_FRENCH_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "Impossible de se connecter au serveur de vérification. Vérifie ta connexion et réessaie." });
+
+Object.assign(APP_FRENCH_TEXT, {"Velocidad de reproducción": "Vitesse de lecture"});
