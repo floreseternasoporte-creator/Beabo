@@ -4891,3 +4891,4 @@ Object.assign(APP_KOREAN_TEXT, {"Ignorar": "무시", "El mensaje original ya no 
 Object.assign(APP_KOREAN_TEXT, {"Respondiste a {a}": "{a}님에게 답장함", "{a} te respondió": "{a}님이 나에게 답장함", "Te respondiste a ti": "나에게 답장함", "{a} respondió a {b}": "{a}님이 {b}님에게 답장함", "Respondiendo a": "답장 대상:", "Respondiendo a ti": "나에게 답장 중"});
 
 Object.assign(APP_KOREAN_TEXT, {"1 publicación nueva": "새 게시물 1개", "{n} publicaciones nuevas": "새 게시물 {n}개"});
+Object.assign(APP_KOREAN_TEXT, {"Respuestas": "답글", "Contenido multimedia": "미디어 콘텐츠", "Escribe tu respuesta…": "답글을 입력하세요…", "Aún no hay respuestas": "아직 답글이 없습니다", "Sé la primera persona en responder.": "첫 번째로 답글을 남겨 보세요.", "Ver todas las respuestas": "모든 답글 보기", "No se pudieron cargar las respuestas.": "답글을 불러오지 못했습니다.", "Revisa la ortografía o prueba con otras palabras.": "철자를 확인하거나 다른 단어로 검색해 보세요.", "Quitar de recientes": "최근 검색에서 삭제"});
