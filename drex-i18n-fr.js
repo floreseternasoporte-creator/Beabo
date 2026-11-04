@@ -4886,3 +4886,5 @@ Object.assign(APP_FRENCH_TEXT, {
 Object.assign(APP_FRENCH_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "Impossible de se connecter au serveur de vérification. Vérifie ta connexion et réessaie." });
 
 Object.assign(APP_FRENCH_TEXT, {"Velocidad de reproducción": "Vitesse de lecture"});
+
+Object.assign(APP_FRENCH_TEXT, {"Ignorar": "Ignorer", "El mensaje original ya no está disponible": "Le message d'origine n'est plus disponible", "{a} de {b}": "{a} sur {b}", "Mensajes de personas que no sigues. Acepta para responder.": "Messages de personnes que vous ne suivez pas. Acceptez pour répondre."});

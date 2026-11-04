@@ -81,7 +81,7 @@ const grp = { id: 'g1', isGroup: true, groupId: 'g1', groupName: 'Equipo', group
 out = render([grp]);
 check('grupo: onclick abre la sala del grupo y conserva menú contextual', out.includes("openGroupChatRoom('g1')") && out.includes('showConvOptions(\'group\',\'g1\''));
 out = render([{ ...dm, pinnedAt: 0, isRequest: true }]);
-check('solicitudes (antesala): misma fila con etiqueta "Solicitud"', out.includes('drex-antesala-tag') && out.includes("asRequest:true"));
+check('solicitudes: ya no se mezclan en la lista; van a una entrada y vista propia (ver test-mensajeria-reddit.js)', !out.includes('drex-antesala-tag') && out.includes('openChatRequestsView()'));
 const last = render([dm, { ...dm, id: 'c2', otherUid: 'u3' }]);
 check('solo la última fila omite el separador', (last.match(/ml-\[76px\] h-px/g) || []).length === 1);
 
@@ -111,7 +111,7 @@ check('sala: tarjeta de presentación (avatar, nombre, @usuario) solo en DMs y s
 check('compositor: foto y GIF dentro del campo redondeado, enviar aparece al escribir (ids y handlers intactos)',
   html.includes('id="chat-photo-btn"') && html.includes('id="chat-gif-btn" onclick="openGifPanel()"') && html.includes('id="chat-send-btn" onclick="sendChatMessage()" class="hidden') && html.includes('id="chat-voice-btn" onclick="drexVoiceStartRecording()"') && html.includes('id="chat-room-input"'));
 const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
-check('sw.js: versión de caché drex-v133', sw.includes("const DREX_SW_VERSION = 'drex-v133'"));
+check('sw.js: versión de caché drex-v134', sw.includes("const DREX_SW_VERSION = 'drex-v134'"));
 check('404.html sincronizado con index.html', fs.readFileSync(path.join(__dirname, '..', '404.html'), 'utf8') === html);
 
 console.log('\nRESULTADO: ' + (failures ? failures + ' FALLO(S)' : 'OK'));

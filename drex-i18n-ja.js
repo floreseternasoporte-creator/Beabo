@@ -4888,3 +4888,5 @@ Object.assign(APP_JAPANESE_TEXT, {
 Object.assign(APP_JAPANESE_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "認証サーバーに接続できませんでした。接続を確認してもう一度お試しください。" });
 
 Object.assign(APP_JAPANESE_TEXT, {"Velocidad de reproducción": "再生速度"});
+
+Object.assign(APP_JAPANESE_TEXT, {"Ignorar": "無視", "El mensaje original ya no está disponible": "元のメッセージは利用できなくなりました", "{a} de {b}": "{a} / {b}", "Mensajes de personas que no sigues. Acepta para responder.": "フォローしていない人からのメッセージです。承認すると返信できます。"});
