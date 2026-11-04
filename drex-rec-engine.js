@@ -1,5 +1,8 @@
 /* ================================================================
- * DrexRecEngine v2 — Motor de recomendación de nueva generación.
+ * DrexRecEngine v2.1 — Motor de recomendación de nueva generación.
+ * v2.1 (2026-11-04): feedback negativo resta de verdad (bug de signo),
+ * calidad por ratio de votos, fatiga de impresiones y bandit conectado
+ * al mezclador de diversidad.
  *
  * Arquitectura modular (cliente, vanilla JS, sin dependencias):
  *
@@ -127,7 +130,7 @@
     novelty:        0.4,
     exploration:    0.3,
     diversity:      1.5,    // positivo: penaliza repetición (el componente es negativo)
-    negative:      -2.0    // penalización fuerte por feedback negativo
+    negative:      2.0     // el componente ya es negativo: peso POSITIVO (antes -2.0 lo convertía en premio)
   };
 
   // Configuración del multi-armed bandit.
@@ -850,6 +853,7 @@
                 if (st) return;
                 var rec = { trained: new Set(), timers: [] };
                 _viewTimers.set(target, rec);
+                try { var _nidImp = target.dataset.noteId; if (_nidImp) ImpressionStore.record(_nidImp); } catch (_) {}
                 // Scroll tracking
                 _attachScroll();
                 _scrollData.set(target, { lastY: window.scrollY, lastTs: _now(), velocity: 0, maxVel: 0 });
@@ -1211,6 +1215,49 @@
   })();
 
   /* ================================================================
+   * 7b. ImpressionStore — cuántas veces se mostró cada post (v2.1)
+   *
+   * Sin esto, un post que el usuario ya vio 5 veces sin tocarlo volvía
+   * a salir igual de arriba. La fatiga caduca a los 7 días.
+   * ================================================================ */
+
+  var ImpressionStore = (function () {
+    var KEY = 'drex_rec_impressions_v1';
+    var _cache = null;
+    function _loadAll() {
+      if (_cache) return _cache;
+      try { _cache = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; }
+      catch (_) { _cache = {}; }
+      return _cache;
+    }
+    function record(noteId) {
+      try {
+        if (!noteId) return;
+        var all = _loadAll();
+        var e = all[noteId] || { n: 0, t: 0 };
+        e.n = Math.min(99, (e.n || 0) + 1);
+        e.t = Date.now();
+        all[noteId] = e;
+        var keys = Object.keys(all);
+        if (keys.length > 600) {
+          keys.sort(function (a, b) { return (all[a].t || 0) - (all[b].t || 0); });
+          keys.slice(0, keys.length - 600).forEach(function (k) { delete all[k]; });
+        }
+        localStorage.setItem(KEY, JSON.stringify(all));
+      } catch (_) {}
+    }
+    function count(noteId) {
+      try {
+        var e = _loadAll()[noteId];
+        if (!e) return 0;
+        if (Date.now() - (e.t || 0) > 7 * 24 * 3600 * 1000) return 0;
+        return e.n || 0;
+      } catch (_) { return 0; }
+    }
+    return { record: record, count: count };
+  })();
+
+  /* ================================================================
    * 8. RankingModel — modelo de ranking multi-componente
    *
    * Combina múltiples señales en un puntaje final:
@@ -1252,6 +1299,13 @@
       var comments = Number(note.commentsCount || 0);
       var ecos = Number(note.ecoCount || 0);
       components.popularity = 14 * _safeLog(1 + net) + 5 * _safeLog(1 + comments) + 3 * _safeLog(1 + ecos);
+      // Calidad de la votación (v2.1): importa el ratio positivos/negativos,
+      // no solo el neto — 100 a favor y 90 en contra ya no puntúa como 10/0.
+      var _up = Number(note.upvotes || 0), _down = Number(note.downvotes || 0);
+      if (_up + _down >= 3) {
+        var _ratio = _up / (_up + _down);
+        components.popularity += (_ratio - 0.5) * 10 * _sat01((_up + _down) / 8);
+      }
 
       // 3. Afinidad personal (perfil V2).
       components.personal = 0;
@@ -1330,9 +1384,13 @@
       // 8. Novedad: posts que el usuario no ha visto.
       components.novelty = 0;
       if (profile && profile.interactedPosts && profile.interactedPosts[note.id]) {
-        components.novelty = -3; // ya lo vio: penalizar ligeramente
+        components.novelty = -3; // ya interactuó con él: penalizar ligeramente
       } else {
-        components.novelty = 2; // post nuevo para el usuario: boost pequeño
+        // Fatiga de impresiones (v2.1): mostrado varias veces sin que
+        // interactúe → baja; nunca mostrado → boost pequeño.
+        var _imp = ImpressionStore.count(note.id);
+        if (_imp >= 2) components.novelty = -Math.min(8, (_imp - 1) * 2);
+        else components.novelty = 2;
       }
 
       // 9. Cold start boost para posts nuevos.
@@ -1405,7 +1463,8 @@
     }
 
     return {
-      scorePost: scorePost
+      scorePost: scorePost,
+      diversityPenalty: _diversityPenalty
     };
   })();
 
@@ -1489,15 +1548,11 @@
         // Función para añadir un post al resultado.
         var _addPost = function (sp) {
           if (!sp || !sp.note || used[sp.note.id]) return false;
-          // Verificar diversidad.
-          var penalty = RankingModel.scorePost(sp.note, {
-            profile: profile,
-            followingMap: followingMap,
-            feedMode: feedMode,
-            windowState: windowState
-          });
-          // Si la penalización de diversidad es muy alta, skip.
-          if (penalty.components.diversity < -15) return false;
+          // Verificar diversidad (v2.1: penalización directa, sin re-puntuar
+          // el post entero; antes esto era O(n^2) en feeds largos).
+          var _div = 0;
+          try { _div = RankingModel.diversityPenalty(sp.note, windowState); } catch (_) {}
+          if (_div < -15) return false;
 
           used[sp.note.id] = true;
           result.push(sp.note);
@@ -1529,17 +1584,35 @@
           return added;
         };
 
-        // Mezcla intercalada: cada "ronda" toma de cada bucket.
-        var rounds = Math.ceil(total / 5);
-        for (var r = 0; r < rounds && result.length < total; r++) {
-          // 2 personal, 1 explore, 1 trending, 1 fresh/following
-          _takeFrom('personal', 2);
-          _takeFrom('explore', 1);
-          _takeFrom('trending', 1);
-
-          // Alternar fresh y following cada ronda.
-          if (r % 2 === 0) _takeFrom('fresh', 1);
-          else _takeFrom('following', 1);
+        // Mezcla intercalada guiada por el bandit (v2.1): el patrón de turnos
+        // sale de los pesos que el bandit aprende de las recompensas,
+        // mezclados 50/50 con los ratios base para que ningún bucket muera.
+        // (Antes el patrón era fijo y el bandit aprendía en vacío.)
+        var _bw = null;
+        try { _bw = BanditExplorer.getWeights(); } catch (_) {}
+        var _baseMix = { personal: DIVERSITY_CONFIG.exploitRatio, explore: DIVERSITY_CONFIG.exploreRatio, trending: DIVERSITY_CONFIG.trendingRatio, fresh: 0.10, following: 0.10 };
+        var _mixW = {};
+        ['personal', 'trending', 'fresh', 'following', 'explore'].forEach(function (b) {
+          var bwv = _bw && typeof _bw[b] === 'number' ? _bw[b] : (_baseMix[b] || 0.1);
+          _mixW[b] = 0.5 * (_baseMix[b] || 0) + 0.5 * bwv;
+        });
+        var _takenW = { personal: 0, trending: 0, fresh: 0, following: 0, explore: 0 };
+        var _pattern = [];
+        for (var s2 = 0; s2 < 20; s2++) {
+          var _best = 'personal', _bestVal = -Infinity;
+          ['personal', 'explore', 'trending', 'fresh', 'following'].forEach(function (b) {
+            var v = _mixW[b] * (s2 + 1) - _takenW[b];
+            if (v > _bestVal) { _bestVal = v; _best = b; }
+          });
+          _pattern.push(_best);
+          _takenW[_best]++;
+        }
+        var _pi = 0, _stall = 0;
+        while (result.length < total && _stall < _pattern.length) {
+          var _bucketNow = _pattern[_pi % _pattern.length];
+          _pi++;
+          if (_takeFrom(_bucketNow, 1) > 0) _stall = 0;
+          else _stall++;
         }
 
         // Rellenar con lo que quede — forzar inclusión de todos los posts restantes
