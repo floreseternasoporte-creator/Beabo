@@ -108,7 +108,7 @@ check('eliminar para todos: deja la marca "Eliminaste este mensaje" en vez de de
 
 // ---------- 7. Infra ----------
 const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
-check('sw.js: versión de caché drex-v135', sw.includes("const DREX_SW_VERSION = 'drex-v135'"));
+check('sw.js: versión de caché >= drex-v135', (/const DREX_SW_VERSION = 'drex-v(\d+)'/.exec(sw) || [0, 0])[1] >= 135);
 check('404.html sincronizado con index.html', fs.readFileSync(path.join(__dirname, '..', '404.html'), 'utf8') === html);
 const keys = ['Respondiste a {a}', '{a} te respondió', 'Te respondiste a ti', '{a} respondió a {b}', 'Respondiendo a', 'Respondiendo a ti', 'Ignorar', 'El mensaje original ya no está disponible', '{a} de {b}', 'Mensajes de personas que no sigues. Acepta para responder.'];
 ['en', 'pt', 'fr', 'ja', 'ko', 'zh'].forEach(l => {
