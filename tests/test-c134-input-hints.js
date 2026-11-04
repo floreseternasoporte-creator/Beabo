@@ -128,9 +128,9 @@ tcase('keepalive: 1 único hit (announceMusicOnDiscord, webhook Discord)', () =>
   /function announceMusicOnDiscord[\s\S]{0,2500}keepalive: true/.test(html));
 
 // ---- 4. target=_blank / window.open: sin tabnabbing ----
-tcase('target="_blank": 8 anclas, TODAS con rel noopener (C220: +1 baroL1Link runtime, con noopener)', () => {
+tcase('target="_blank": 9 anclas, TODAS con rel noopener (C220: +1 baroL1Link runtime; +1 tarjeta de enlace del chat, con noopener noreferrer nofollow)', () => {
   const tags = html.match(/<a [^>]*target="_blank"[^>]*>/g) || [];
-  return tags.length === 8 && tags.every(t => /rel="[^"]*noopener/.test(t));
+  return tags.length === 9 && tags.every(t => /rel="[^"]*noopener/.test(t));
 });
 tcase("window.open(...,'_blank',...): 7, TODOS con feature 'noopener'", () => {
   const noopenerCalls = (html.match(/,'_blank','noopener'\)/g) || []).length;
