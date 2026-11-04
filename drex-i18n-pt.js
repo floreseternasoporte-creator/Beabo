@@ -4983,3 +4983,5 @@ Object.assign(APP_PORTUGUESE_TEXT, {"+{n} hoy": "+{n} hoje","-50% Halloween": "-
 Object.assign(APP_PORTUGUESE_TEXT, {"Ignorar": "Ignorar", "El mensaje original ya no está disponible": "A mensagem original não está mais disponível", "{a} de {b}": "{a} de {b}", "Mensajes de personas que no sigues. Acepta para responder.": "Mensagens de pessoas que você não segue. Aceite para responder."});
 
 Object.assign(APP_PORTUGUESE_TEXT, {"Respondiste a {a}": "Você respondeu a {a}", "{a} te respondió": "{a} respondeu a você", "Te respondiste a ti": "Você respondeu a si mesmo", "{a} respondió a {b}": "{a} respondeu a {b}", "Respondiendo a": "Respondendo a", "Respondiendo a ti": "Respondendo a você mesmo"});
+
+Object.assign(APP_PORTUGUESE_TEXT, {"1 publicación nueva": "1 nova publicação", "{n} publicaciones nuevas": "{n} novas publicações"});

@@ -4996,3 +4996,5 @@ Object.assign(APP_CHINESE_TEXT, {"+{n} hoy": "今天 +{n}","-50% Halloween": "-5
 Object.assign(APP_CHINESE_TEXT, {"Ignorar": "忽略", "El mensaje original ya no está disponible": "原消息已不可用", "{a} de {b}": "第 {a} 条，共 {b} 条", "Mensajes de personas que no sigues. Acepta para responder.": "来自你未关注的人的消息。接受后即可回复。"});
 
 Object.assign(APP_CHINESE_TEXT, {"Respondiste a {a}": "你回复了{a}", "{a} te respondió": "{a}回复了你", "Te respondiste a ti": "你回复了自己", "{a} respondió a {b}": "{a}回复了{b}", "Respondiendo a": "回复", "Respondiendo a ti": "回复自己"});
+
+Object.assign(APP_CHINESE_TEXT, {"1 publicación nueva": "1 条新帖子", "{n} publicaciones nuevas": "{n} 条新帖子"});

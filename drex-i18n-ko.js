@@ -4889,3 +4889,5 @@ Object.assign(APP_KOREAN_TEXT, {"Velocidad de reproducción": "재생 속도"});
 Object.assign(APP_KOREAN_TEXT, {"Ignorar": "무시", "El mensaje original ya no está disponible": "원본 메시지를 더 이상 사용할 수 없습니다", "{a} de {b}": "{a} / {b}", "Mensajes de personas que no sigues. Acepta para responder.": "팔로우하지 않는 사람의 메시지입니다. 수락하면 답장할 수 있습니다."});
 
 Object.assign(APP_KOREAN_TEXT, {"Respondiste a {a}": "{a}님에게 답장함", "{a} te respondió": "{a}님이 나에게 답장함", "Te respondiste a ti": "나에게 답장함", "{a} respondió a {b}": "{a}님이 {b}님에게 답장함", "Respondiendo a": "답장 대상:", "Respondiendo a ti": "나에게 답장 중"});
+
+Object.assign(APP_KOREAN_TEXT, {"1 publicación nueva": "새 게시물 1개", "{n} publicaciones nuevas": "새 게시물 {n}개"});

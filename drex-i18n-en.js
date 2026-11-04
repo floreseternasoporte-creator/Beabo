@@ -4738,3 +4738,5 @@ Object.assign(APP_ENGLISH_TEXT, {"+{n} hoy": "+{n} today","1 vista": "1 view","A
 Object.assign(APP_ENGLISH_TEXT, {"Ignorar": "Ignore", "El mensaje original ya no está disponible": "The original message is no longer available", "{a} de {b}": "{a} of {b}", "Mensajes de personas que no sigues. Acepta para responder.": "Messages from people you don't follow. Accept to reply."});
 
 Object.assign(APP_ENGLISH_TEXT, {"Respondiste a {a}": "You replied to {a}", "{a} te respondió": "{a} replied to you", "Te respondiste a ti": "You replied to yourself", "{a} respondió a {b}": "{a} replied to {b}", "Respondiendo a": "Replying to", "Respondiendo a ti": "Replying to yourself"});
+
+Object.assign(APP_ENGLISH_TEXT, {"1 publicación nueva": "1 new post", "{n} publicaciones nuevas": "{n} new posts"});
