@@ -4888,3 +4888,5 @@ Object.assign(APP_FRENCH_TEXT, { "No se pudo conectar con el servidor de verific
 Object.assign(APP_FRENCH_TEXT, {"Velocidad de reproducción": "Vitesse de lecture"});
 
 Object.assign(APP_FRENCH_TEXT, {"Ignorar": "Ignorer", "El mensaje original ya no está disponible": "Le message d'origine n'est plus disponible", "{a} de {b}": "{a} sur {b}", "Mensajes de personas que no sigues. Acepta para responder.": "Messages de personnes que vous ne suivez pas. Acceptez pour répondre."});
+
+Object.assign(APP_FRENCH_TEXT, {"Respondiste a {a}": "Vous avez répondu à {a}", "{a} te respondió": "{a} vous a répondu", "Te respondiste a ti": "Vous vous êtes répondu", "{a} respondió a {b}": "{a} a répondu à {b}", "Respondiendo a": "En réponse à", "Respondiendo a ti": "En réponse à vous-même"});

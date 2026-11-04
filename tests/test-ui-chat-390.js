@@ -200,8 +200,8 @@ test('P4b - en DM: avatar junto a la burbuja, hora bajo la fila (C260)', functio
   assert(rowPos !== -1 && timeLinePos !== -1 && rowPos < timeLinePos,
     'la hora debe ir en su línea (pl-[44px]) DESPUÉS de la fila foto+burbuja');
 });
-test('P4c - la cita de respuesta va DENTRO y ANTES del contenido', function () {
-  assert(src.includes('${replyBlock}${content}'), 'replyBlock debe preceder al contenido dentro de la burbuja');
+test('P4c - la cita de respuesta va FUERA y ENCIMA de la burbuja (estilo X)', function () {
+  assert(src.includes('${replyBlock}<div class="msg-bubble') && !src.includes('${replyBlock}${content}'), 'replyBlock debe ir antes de la burbuja, no dentro');
 });
 
 /* P6: fechas localizadas ------------------------------------------- */
