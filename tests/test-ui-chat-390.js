@@ -88,6 +88,10 @@ test('P1c - la bandeja pinta nombres de grupo sin emojis', function () {
 });
 test('P1d - la bandeja pinta nombres de DM/antesala sin emojis', function () {
   var c = (src.match(/fiestaStripEmoji\(item\.otherName\)/g) || []).length;
+  // v2: las filas usan drexInboxDisplayName(item), que filtra emojis (nombre visible o usuario)
+  var h = src.match(/function drexInboxDisplayName\(item\)\{[^}]*\}/);
+  var u = (src.match(/drexInboxDisplayName\(item\)\)/g) || []).length;
+  if (h && /fiestaStripEmoji\(n\)/.test(h[0])) c += u;
   assert(c >= 2, 'se esperaban >=2 filtros en filas DM/antesala, hay ' + c);
 });
 test('P1e - hoja de opciones y panel de remitente filtran el nombre', function () {
