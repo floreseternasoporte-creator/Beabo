@@ -24,7 +24,7 @@ function extractFn(src, name) {
 }
 
 // ---------- A. conductual: filas de la bandeja ----------
-const names = ['drexChatLocale', 'drexInboxIsPlaceholderMsg', 'drexInboxRowHtml', 'renderAntesalaRequestsSection',
+const names = ['drexChatLocale', 'drexInboxIsPlaceholderMsg', 'drexInboxDisplayName', 'drexInboxUnreadCount', 'drexInboxRowHtml', 'renderAntesalaRequestsSection',
   'renderChatConversations', 'isLegacyChatConversationUnread', 'isChatConversationUnread'];
 const code = names.map(n => extractFn(html, n)).filter(Boolean).join('\n');
 check('se extraen las funciones reales (' + names.length + ')', names.every(n => code.includes('function ' + n + '(')));
@@ -47,9 +47,9 @@ vm.createContext(ctx);
 vm.runInContext(code, ctx);
 const render = items => { els['chat-conversations-list'].innerHTML = ''; ctx.renderChatConversations(items); return els['chat-conversations-list'].innerHTML; };
 
-const dm = { id: 'c1', isGroup: false, otherUid: 'u2', otherName: 'Ana', otherImage: 'a.png', updatedAt: 1, pinnedAt: 5, lastMessage: 'hola <b>', lastMessageSenderId: 'me' };
+const dm = { id: 'c1', isGroup: false, otherUid: 'u2', otherName: 'ana_l', otherDisplayName: 'Ana', otherHandle: 'ana_l', otherImage: 'a.png', updatedAt: 1, pinnedAt: 5, lastMessage: 'hola <b>', lastMessageSenderId: 'me' };
 let out = render([dm]);
-check('DM: nombre y hora en la misma línea ("· 10:30")', /<p class="min-w-0 truncate[^"]*">Ana<\/p><span class="[^"]*">&middot; 10:30<\/span>/.test(out));
+check('DM: nombre en negrita + @usuario + "· hora" en la misma línea', /<p class="truncate shrink-0[^"]*font-(?:extra)?bold[^"]*"[^>]*>Ana<\/p><span class="[^"]*">@ana_l<\/span><span class="[^"]*">&middot; 10:30<\/span>/.test(out));
 check('DM: vista previa con prefijo "Tú:" cuando el último mensaje es mío', out.includes('Tú: hola &lt;b&gt;'));
 check('DM: la vista previa sigue escapada (XSS)', !out.includes('hola <b>'));
 check('DM fijado muestra la etiqueta "Fijado" (antes solo grupos)', out.includes('>Fijado</span>'));
@@ -62,8 +62,13 @@ check('legado: "marcar como no leída" (sin lastRead) sigue funcionando', ctx.is
 
 ctx.chatUnreadAggActive = true; ctx.chatUnreadAggCache = { c1: { c: 2, r: 0 } };
 out = render([{ ...dm, pinnedAt: 0, lastMessageSenderId: 'u2' }]);
-check('no leído: punto de marca a la derecha de la vista previa', /<span class="w-2\.5 h-2\.5 rounded-full bg-\[var\(--drex-brand\)\] shrink-0" role="img"/.test(out));
-check('no leído: nombre en negrita', /font-bold text-\[var\(--theme-text\)\]">Ana/.test(out));
+check('no leído: insignia con el número de mensajes sin leer', />2<\/span><\/div>/.test(out) && out.includes('rounded-full bg-[var(--drex-brand)] text-white'));
+check('no leído: nombre extranegrita', /font-extrabold text-\[var\(--theme-text\)\]"[^>]*>Ana/.test(out));
+ctx.chatUnreadAggCache = { c1: { c: 150, r: 0 } };
+check('no leído: más de 99 se muestra como 99+', render([{ ...dm, pinnedAt: 0, lastMessageSenderId: 'u2' }]).includes('>99+</span>'));
+ctx.chatUnreadAggCache = { c1: { c: 0, u: 5, r: 1 } };
+check('no leído sin contador (grupos grandes): queda el punto', /<span class="w-2\.5 h-2\.5 rounded-full bg-\[var\(--drex-brand\)\] shrink-0" role="img"/.test(render([{ ...dm, pinnedAt: 0, lastMessageSenderId: 'u2' }])));
+ctx.chatUnreadAggCache = { c1: { c: 2, r: 0 } };
 check('sin "Tú:" cuando el último mensaje es del otro', !out.includes('Tú: '));
 ctx.chatUnreadAggCache = {};
 
@@ -89,7 +94,7 @@ check('chips de filtro conservan min-h-[44px] + hover al repintar',
   html.includes('btn.className="chat-filter-chip min-h-[44px] flex items-center shrink-0') && html.includes('"hover:text-[var(--brand-indigo-text)] hover:border-[var(--drex-brand)] border-[var(--theme-border)]'));
 check('sala: la hora de los mensajes usa el idioma de la app', html.includes('const _loc=drexChatLocale();'));
 check('sala: burbujas con cola estilo X y se retira al agrupar', html.includes('bubble.dataset.tail="1"') && html.includes('_prevTail.style.borderBottomRightRadius=""'));
-check('sala: "Visto" muestra la hora y usa colores del tema', html.includes('text-[10px] text-[var(--theme-muted)] px-1 self-end') && html.includes('appT("Visto")+" · "'));
+check('sala: recibo con tilde "Visto · hora" / "Enviado" y colores del tema', html.includes('chat-seen-badge flex items-center gap-1 text-[11px]') && html.includes('appT("Visto")+" · "') && html.includes('appT("Enviado")') && html.includes('if(mine&&_readReceiptListener)_renderReadReceipt(_drexLastReadAt)'));
 check('sala: pastilla de sistema y mensaje eliminado sin colores fijos',
   !html.includes('bg-white border border-[#e5e9ee]') && !html.includes('border border-[#dce1e5] text-[#b6c0d1] text-xs italic'));
 check('sala: texto de "eliminado" en vivo pasa por appT', html.includes('${isMine?appT("Eliminaste este mensaje"):appT("Mensaje eliminado")}'));
@@ -97,6 +102,17 @@ check('estados de error/vacío de la bandeja con variables del tema',
   !html.includes('bg-white border border-[#dce1e5] rounded-2xl p-5 text-center text-[#6b7280]">No pudimos cargar') );
 check('no se tocaron estilos globales: ningún bloque <style> nuevo con reglas de chat-x',
   !/chat-x-|\.dm-x-/.test(html));
+
+// ---------- C. v2: cabecera, presentación, compositor ----------
+check('cabecera: @usuario bajo el nombre (elemento + carga + oculto en grupos)', html.includes('id="chat-room-handle"') && html.includes('_h1.textContent="@"+data.username') && html.includes('getElementById("chat-room-handle")?.classList.add("hidden")'));
+check('datos: el perfil de chat expone username y displayName por separado', html.includes('username:data.username||"",displayName:data.displayName||""') && html.includes('otherHandle:other.username||""'));
+check('sala: tarjeta de presentación (avatar, nombre, @usuario) solo en DMs y se retira si hay mensajes anteriores',
+  html.includes('try{drexChatIntroCreate(container)}catch(_){}') && html.includes('if(currentChatIsGroup||!currentChatRecipient)return;const d=document.createElement("div");d.id="chat-room-intro"') && html.includes('document.getElementById("chat-room-intro")?.remove()'));
+check('compositor: foto y GIF dentro del campo redondeado, enviar aparece al escribir (ids y handlers intactos)',
+  html.includes('id="chat-photo-btn"') && html.includes('id="chat-gif-btn" onclick="openGifPanel()"') && html.includes('id="chat-send-btn" onclick="sendChatMessage()" class="hidden') && html.includes('id="chat-voice-btn" onclick="drexVoiceStartRecording()"') && html.includes('id="chat-room-input"'));
+const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+check('sw.js: versión de caché drex-v133', sw.includes("const DREX_SW_VERSION = 'drex-v133'"));
+check('404.html sincronizado con index.html', fs.readFileSync(path.join(__dirname, '..', '404.html'), 'utf8') === html);
 
 console.log('\nRESULTADO: ' + (failures ? failures + ' FALLO(S)' : 'OK'));
 process.exit(failures ? 1 : 0);
