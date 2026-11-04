@@ -41,7 +41,9 @@ SKIP_ROOTS = {
 def main():
     h = open(HTML_PATH, encoding='utf-8').read()
 
-    handlers = re.findall(r'on\w+\s*=\\?"((?:[^"\\]|\\.)*)\\?"', h)
+    # (?<![\w$.-]): el atributo debe empezar en un límite de palabra; así no se
+    # confunde con texto como `transition="…"`/`.on…=` dentro de CSS o strings.
+    handlers = re.findall(r'(?<![\w$.-])on[a-z]+\s*=\\?"((?:[^"\\]|\\.)*)\\?"', h)
 
     scripts = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>', h, re.S)
     defined = set()

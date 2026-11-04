@@ -22,6 +22,8 @@ EXEMPT = {
     'new-chat-view': 'vista',
     'create-group-chat-view': 'vista',
     'chat-room-view': 'vista',
+    'chat-requests-view': 'vista (solicitudes de mensajes, como chat-inbox-view)',
+    'chat-header-menu': 'menú emergente de la sala de chat (la sala conserva la barra)',
     'chat-room-info-panel': 'pantalla opaca (se abre desde el chat)',
     'chat-bubbles-panel': 'pantalla opaca (se abre desde el chat)',
     'chat-group-info-panel': 'pantalla opaca (se abre desde el chat)',
@@ -60,11 +62,13 @@ EXEMPT = {
 def main():
     h = open(HTML_PATH, encoding='utf-8').read()
 
-    m = re.search(r'const OVERLAY_IDS = \[(.*?)\];', h, re.S)
+    # index.html está minificado: `const OVERLAY_IDS=["a","b"]` (sin espacios y
+    # con comillas dobles). Tolerar espacios y ambos tipos de comillas.
+    m = re.search(r'const\s+OVERLAY_IDS\s*=\s*\[(.*?)\]\s*;', h, re.S)
     if not m:
         print('FALLO: no se encontró OVERLAY_IDS en index.html')
         return 1
-    guard = set(re.findall(r"'([\w-]+)'", m.group(1)))
+    guard = set(re.findall(r"""['"]([\w-]+)['"]""", m.group(1)))
 
     found = {}
     for tag_m in re.finditer(r'<(?:div|section|aside)[^>]*\bid="([\w-]+)"[^>]*>', h):

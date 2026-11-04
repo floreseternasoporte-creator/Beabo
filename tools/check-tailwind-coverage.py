@@ -105,6 +105,13 @@ def split_tw_block(html):
     m = re.search(
         r'<style>\n/\* ' + re.escape(TW_MARKER) + r'[\s\S]*?\n</style>\n?', html)
     if not m:
+        # El paso de minificación de index.html (strip de comentarios) elimina
+        # el comentario marcador. Fallback: el bloque purgado SIEMPRE empieza
+        # con el preflight de variables --tw-* de Tailwind.
+        m = re.search(
+            r'<style>\s*\*,\s*:?(?:after|::after),\s*:?(?:before|::before)\s*\{\s*--tw-border-spacing-x'
+            r'[\s\S]*?</style>\n?', html)
+    if not m:
         print('FALLO: no se encontró el bloque <style> del Tailwind purgado '
               f'(marcador "{TW_MARKER}").', file=sys.stderr)
         sys.exit(2)
@@ -246,6 +253,11 @@ def find_dynamic_constructions(sources):
     pat_tpl = re.compile(r'`([A-Za-z][A-Za-z0-9_.:-]*[-:/\[])\$\{')
 
     def stem(frag):
+        # Un fragmento que termina en ':' solo es clase dinámica si es una
+        # VARIANTE Tailwind ('md:' + x). Otros ('p:' + hash de PIN) son
+        # strings que no tienen nada que ver con clases.
+        if frag.endswith(':') and frag[:-1].split(':')[-1] not in KNOWN_VARIANTS:
+            return ''
         s = frag.rstrip('-:/[').split(':')[-1]
         return s.split('-')[0].split('_')[0]
 
