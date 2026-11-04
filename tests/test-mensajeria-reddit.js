@@ -63,7 +63,18 @@ check('menú: en grupos se ocultan las acciones solo-DM', html.includes('m.query
   check('cita: nombre y texto escapados, con salto al mensaje original', q.includes('Ana') && q.includes('&lt;b&gt;hola') && !q.includes('<b>hola') && q.includes('data-reply-jump="-Abc_1"') && q.includes('drexJumpToChatMsg('));
   check('cita: sin id válido no es pulsable (no inyecta atributos)', !ctx.drexReplyQuoteHtml({ msgId: '"><x', senderName: 'A', text: 't' }, false, true).includes('data-reply-jump'));
   check('cita: foto y audio muestran etiqueta en vez de texto vacío', ctx.drexReplyQuoteHtml({ senderName: 'A', image: 'u' }, true, false).includes('Foto') && ctx.drexReplyQuoteHtml({ senderName: 'A', files: [{ voice: true }] }, true, false).includes('Audio'));
-  check('cita: mensajes recibidos y optimistas usan el mismo generador', html.includes('const replyBlock=msg.replyTo?drexReplyQuoteHtml(msg.replyTo,mine,true):""') && html.includes('const replyHtml=payload.replyTo?drexReplyQuoteHtml(payload.replyTo,true,false):""'));
+  check('cita: recibidos y optimistas usan el mismo generador, FUERA de la burbuja (encima, sin marco)', html.includes('const replyBlock=msg.replyTo?drexReplyQuoteHtml(msg.replyTo,mine,true,') && html.includes('const replyHtml=payload.replyTo?drexReplyQuoteHtml(payload.replyTo,true,true,') && html.includes('${replyBlock}<div class="msg-bubble') && !html.includes('${replyBlock}${content}') && html.includes('${replyHtml}<div class="${isImageOnly?'));
+  {
+    const c2 = { appT: s => s, escapeHtml: esc, fiestaStripEmoji: x => x, DrexCloud: { auth: () => ({ currentUser: { uid: 'me' } }) } };
+    vm.createContext(c2); vm.runInContext(extractFn(html, 'drexReplyQuoteHtml'), c2);
+    const q1 = c2.drexReplyQuoteHtml({ msgId: 'm1', senderId: 'u1', senderName: 'Chanty', text: 'Hola' }, true, true, { who: 'Yo' });
+    const q2 = c2.drexReplyQuoteHtml({ msgId: 'm1', senderId: 'me', senderName: 'Tú', text: 'Hola' }, false, true, { who: 'Chanty' });
+    const q3 = c2.drexReplyQuoteHtml({ msgId: 'm1', senderId: 'me', senderName: 'Tú', text: 'Hola' }, true, true, {});
+    check('cita: etiqueta "Respondiste a X" / "X te respondió" / "Te respondiste a ti"', q1.includes('Respondiste a Chanty') && q2.includes('Chanty te respondió') && q3.includes('Te respondiste a ti'));
+    check('cita: sin marco (sin border/left-bar), píldora tenue con fondo translúcido de variables del tema', !/border(?!-radius)/.test(q1) && q1.includes('color-mix(in srgb, var(--theme-muted) 14%, transparent)') && q1.includes('-webkit-line-clamp:2'));
+    check('cita: el salto al mensaje sigue funcionando desde la píldora', q1.includes('data-reply-jump="m1"') && q1.includes('drexJumpToChatMsg('));
+  }
+  check('barra de respuesta del compositor: fina (sin caja ni fondo) con "Respondiendo a" + nombre + texto', html.includes('id="chat-reply-preview" class="hidden px-4 pt-2 pb-0.5"') && html.includes('id="chat-reply-label"') && html.includes('appT(_me?"Respondiendo a ti":"Respondiendo a")'));
   check('cita: copiar toma el texto del mensaje, no el de la cita', html.includes('[data-msg-id="${msgId}"] .chat-msg-text`)||'));
   check('cita: saltar carga mensajes anteriores si hace falta y avisa si ya no existe', html.includes('El mensaje original ya no está disponible') && extractFn(html, 'drexJumpToChatMsg').includes('drexLoadOlderChatMessages'));
 }
@@ -97,9 +108,9 @@ check('eliminar para todos: deja la marca "Eliminaste este mensaje" en vez de de
 
 // ---------- 7. Infra ----------
 const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
-check('sw.js: versión de caché drex-v134', sw.includes("const DREX_SW_VERSION = 'drex-v134'"));
+check('sw.js: versión de caché drex-v135', sw.includes("const DREX_SW_VERSION = 'drex-v135'"));
 check('404.html sincronizado con index.html', fs.readFileSync(path.join(__dirname, '..', '404.html'), 'utf8') === html);
-const keys = ['Ignorar', 'El mensaje original ya no está disponible', '{a} de {b}', 'Mensajes de personas que no sigues. Acepta para responder.'];
+const keys = ['Respondiste a {a}', '{a} te respondió', 'Te respondiste a ti', '{a} respondió a {b}', 'Respondiendo a', 'Respondiendo a ti', 'Ignorar', 'El mensaje original ya no está disponible', '{a} de {b}', 'Mensajes de personas que no sigues. Acepta para responder.'];
 ['en', 'pt', 'fr', 'ja', 'ko', 'zh'].forEach(l => {
   const t = fs.readFileSync(path.join(__dirname, '..', 'drex-i18n-' + l + '.js'), 'utf8');
   check('i18n ' + l + ': claves nuevas de mensajería', keys.every(k => t.includes(JSON.stringify(k))));

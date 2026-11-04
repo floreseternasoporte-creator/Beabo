@@ -111,7 +111,7 @@ check('sala: tarjeta de presentación (avatar, nombre, @usuario) solo en DMs y s
 check('compositor: foto y GIF dentro del campo redondeado, enviar aparece al escribir (ids y handlers intactos)',
   html.includes('id="chat-photo-btn"') && html.includes('id="chat-gif-btn" onclick="openGifPanel()"') && html.includes('id="chat-send-btn" onclick="sendChatMessage()" class="hidden') && html.includes('id="chat-voice-btn" onclick="drexVoiceStartRecording()"') && html.includes('id="chat-room-input"'));
 const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
-check('sw.js: versión de caché drex-v134', sw.includes("const DREX_SW_VERSION = 'drex-v134'"));
+check('sw.js: versión de caché drex-v135', sw.includes("const DREX_SW_VERSION = 'drex-v135'"));
 check('404.html sincronizado con index.html', fs.readFileSync(path.join(__dirname, '..', '404.html'), 'utf8') === html);
 
 console.log('\nRESULTADO: ' + (failures ? failures + ' FALLO(S)' : 'OK'));
