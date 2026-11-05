@@ -4998,3 +4998,4 @@ Object.assign(APP_CHINESE_TEXT, {"Ignorar": "忽略", "El mensaje original ya no
 Object.assign(APP_CHINESE_TEXT, {"Respondiste a {a}": "你回复了{a}", "{a} te respondió": "{a}回复了你", "Te respondiste a ti": "你回复了自己", "{a} respondió a {b}": "{a}回复了{b}", "Respondiendo a": "回复", "Respondiendo a ti": "回复自己"});
 
 Object.assign(APP_CHINESE_TEXT, {"1 publicación nueva": "1 条新帖子", "{n} publicaciones nuevas": "{n} 条新帖子"});
+Object.assign(APP_CHINESE_TEXT, {"Respuestas": "回复", "Contenido multimedia": "媒体内容", "Escribe tu respuesta…": "写下你的回复…", "Aún no hay respuestas": "还没有回复", "Sé la primera persona en responder.": "来做第一个回复的人吧。", "Ver todas las respuestas": "查看全部回复", "No se pudieron cargar las respuestas.": "无法加载回复。", "Revisa la ortografía o prueba con otras palabras.": "请检查拼写或换个词试试。", "Quitar de recientes": "从最近搜索中移除"});

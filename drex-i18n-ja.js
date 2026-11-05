@@ -4894,3 +4894,4 @@ Object.assign(APP_JAPANESE_TEXT, {"Ignorar": "無視", "El mensaje original ya n
 Object.assign(APP_JAPANESE_TEXT, {"Respondiste a {a}": "{a}に返信しました", "{a} te respondió": "{a}があなたに返信しました", "Te respondiste a ti": "自分に返信しました", "{a} respondió a {b}": "{a}が{b}に返信しました", "Respondiendo a": "返信先:", "Respondiendo a ti": "自分に返信中"});
 
 Object.assign(APP_JAPANESE_TEXT, {"1 publicación nueva": "新しい投稿 1件", "{n} publicaciones nuevas": "新しい投稿 {n}件"});
+Object.assign(APP_JAPANESE_TEXT, {"Respuestas": "返信", "Contenido multimedia": "メディアコンテンツ", "Escribe tu respuesta…": "返信を書く…", "Aún no hay respuestas": "まだ返信はありません", "Sé la primera persona en responder.": "最初に返信してみましょう。", "Ver todas las respuestas": "すべての返信を見る", "No se pudieron cargar las respuestas.": "返信を読み込めませんでした。", "Revisa la ortografía o prueba con otras palabras.": "スペルを確認するか、別の言葉をお試しください。", "Quitar de recientes": "最近の検索から削除"});
