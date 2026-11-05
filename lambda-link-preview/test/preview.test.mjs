@@ -3,13 +3,19 @@ import assert from 'node:assert/strict';
 import { isPrivateAddress, normalizeTarget, parseMetadata, decodeEntities, handler } from '../index.js';
 
 test('isPrivateAddress bloquea rangos internos y metadata', () => {
-  for (const ip of ['127.0.0.1', '10.0.0.5', '172.16.1.1', '172.31.255.255', '192.168.1.1', '169.254.169.254', '0.0.0.0', '100.64.0.1', '::1', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1', 'no-es-ip'])
+  for (const ip of ['127.0.0.1', '10.0.0.5', '172.16.1.1', '172.31.255.255', '192.168.1.1', '169.254.169.254', '0.0.0.0', '100.64.0.1', '::1', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1', 'no-es-ip',
+    // IPv4-mapped en forma hexadecimal (misma dirección, otra escritura):
+    // ::ffff:0a00:0001 = 10.0.0.1, ::ffff:a9fe:a9fe = 169.254.169.254.
+    // Antes del fix pasaban como públicas (bypass SSRF).
+    '::ffff:0a00:0001', '::ffff:a9fe:a9fe', '::ffff:7f00:0001', '0:0:0:0:0:ffff:0a00:0001', '0::ffff:a00:1', '0:0:0:0:0:0:0:1', '::'])
     assert.equal(isPrivateAddress(ip), true, ip);
-  for (const ip of ['8.8.8.8', '1.1.1.1', '172.32.0.1', '2606:4700:4700::1111']) assert.equal(isPrivateAddress(ip), false, ip);
+  for (const ip of ['8.8.8.8', '1.1.1.1', '172.32.0.1', '2606:4700:4700::1111', '::ffff:808:808']) assert.equal(isPrivateAddress(ip), false, ip);
 });
 test('normalizeTarget solo acepta http(s) públicas simples', () => {
   assert.equal(normalizeTarget('https://example.com/a?b=1#x').href, 'https://example.com/a?b=1');
-  for (const bad of ['javascript:alert(1)', 'ftp://example.com', 'http://localhost/', 'http://127.0.0.1/', 'http://[::1]/', 'https://user:pw@example.com', 'https://example.com:8080/', 'http://intranet.local/', 'nada', '', 'http://169.254.169.254/latest/meta-data'])
+  for (const bad of ['javascript:alert(1)', 'ftp://example.com', 'http://localhost/', 'http://127.0.0.1/', 'http://[::1]/', 'https://user:pw@example.com', 'https://example.com:8080/', 'http://intranet.local/', 'nada', '', 'http://169.254.169.254/latest/meta-data',
+    // IPv4-mapped hexadecimal en URL literal (bypass SSRF antes del fix)
+    'http://[::ffff:a9fe:a9fe]/latest/meta-data', 'http://[::ffff:0a00:0001]/', 'http://[0:0:0:0:0:ffff:a9fe:a9fe]/'])
     assert.equal(normalizeTarget(bad), null, bad);
 });
 test('parseMetadata lee og:*, resuelve imagen relativa y exige https', () => {
