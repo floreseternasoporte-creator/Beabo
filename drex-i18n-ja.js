@@ -4892,3 +4892,5 @@ Object.assign(APP_JAPANESE_TEXT, {"Velocidad de reproducción": "再生速度"})
 Object.assign(APP_JAPANESE_TEXT, {"Ignorar": "無視", "El mensaje original ya no está disponible": "元のメッセージは利用できなくなりました", "{a} de {b}": "{a} / {b}", "Mensajes de personas que no sigues. Acepta para responder.": "フォローしていない人からのメッセージです。承認すると返信できます。"});
 
 Object.assign(APP_JAPANESE_TEXT, {"Respondiste a {a}": "{a}に返信しました", "{a} te respondió": "{a}があなたに返信しました", "Te respondiste a ti": "自分に返信しました", "{a} respondió a {b}": "{a}が{b}に返信しました", "Respondiendo a": "返信先:", "Respondiendo a ti": "自分に返信中"});
+
+Object.assign(APP_JAPANESE_TEXT, {"1 publicación nueva": "新しい投稿 1件", "{n} publicaciones nuevas": "新しい投稿 {n}件"});
