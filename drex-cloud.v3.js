@@ -256,6 +256,56 @@
     delete: 'DeleteCommand', batchWrite: 'BatchWriteCommand',
     transactWrite: 'TransactWriteCommand'
   };
+  // [SEGURIDAD-DYNAMODB] Defensa en profundidad (NO sustituye a IAM).
+  // El navegador jamás debe ESCRIBIR en estas particiones: las gestionan solo
+  // las Lambdas (pagos/Stripe, rate limit) con credenciales de servidor.
+  //   wallets, transactions, stripe_events, ratelimit  -> pk completa
+  //   users/<uid>/orbit                               -> suscripción Orbit
+  // La app actual nunca las escribe; este guard impide que un bug futuro (o un
+  // script inyectado que reutilice el cliente) acredite monedas o se otorgue
+  // Orbit desde aquí. Ver docs/SEGURIDAD-DYNAMODB.md.
+  var SERVER_ONLY_PKS = { wallets: 1, transactions: 1, stripe_events: 1, ratelimit: 1 };
+  function isServerOnlyKey(pk, sk) {
+    pk = String(pk == null ? '' : pk);
+    sk = String(sk == null ? '' : sk);
+    if (SERVER_ONLY_PKS[pk] === 1) return true;
+    if (pk === 'users' && /^[^\/]+\/orbit(\/|$)/.test(sk)) return true;
+    return false;
+  }
+  // Devuelve "pk/sk" de la primera clave protegida que intente escribir
+  // `params` (put/delete/batchWrite/transactWrite sobre drex-kv), o null.
+  function findServerOnlyWrite(op, params) {
+    if (!params) return null;
+    var hit = null;
+    function chk(key) {
+      if (hit || !key) return;
+      if (isServerOnlyKey(key.pk, key.sk)) hit = String(key.pk) + '/' + String(key.sk == null ? '' : key.sk);
+    }
+    function isKv(t) { return !t || t === AWS_CONFIG.tableName; }
+    if (op === 'put') {
+      if (isKv(params.TableName)) chk(params.Item);
+    } else if (op === 'delete') {
+      if (isKv(params.TableName)) chk(params.Key);
+    } else if (op === 'batchWrite') {
+      var ri = params.RequestItems || {};
+      var reqs = ri[AWS_CONFIG.tableName] || [];
+      for (var i = 0; i < reqs.length; i++) {
+        if (reqs[i].PutRequest) chk(reqs[i].PutRequest.Item);
+        if (reqs[i].DeleteRequest) chk(reqs[i].DeleteRequest.Key);
+      }
+    } else if (op === 'transactWrite') {
+      var ti = params.TransactItems || [];
+      for (var j = 0; j < ti.length; j++) {
+        var t = ti[j] || {};
+        if (t.Put && isKv(t.Put.TableName)) chk(t.Put.Item);
+        if (t.Delete && isKv(t.Delete.TableName)) chk(t.Delete.Key);
+        if (t.Update && isKv(t.Update.TableName)) chk(t.Update.Key);
+      }
+    }
+    return hit;
+  }
+  var SERVER_ONLY_WRITE_OPS = { put: 1, delete: 1, batchWrite: 1, transactWrite: 1 };
+
   function V3DocClientAdapter(v3doc, V3) {
     this._v3 = v3doc;
     this._V3 = V3;
@@ -265,6 +315,14 @@
       var self = this;
       return {
         promise: function () {
+          if (SERVER_ONLY_WRITE_OPS[m] === 1) {
+            var bad = findServerOnlyWrite(m, params);
+            if (bad) {
+              var err = new Error('permission-denied: ' + bad + ' solo lo escribe el servidor');
+              err.code = 'permission-denied';
+              return Promise.reject(err);
+            }
+          }
           return self._v3.send(new self._V3[V3_DOC_OPS[m]](params));
         }
       };
@@ -6209,6 +6267,10 @@ function withCredRetry(opFn) {
         },
         // [DISPOSITIVOS] fin
         setDocClient: function (dc) { _docClient = dc; },
+        // [SEGURIDAD-DYNAMODB] solo pruebas: guard de escrituras server-only
+        isServerOnlyKey: isServerOnlyKey,
+        findServerOnlyWrite: findServerOnlyWrite,
+        makeDocAdapterForTest: function (v3doc, V3) { return new V3DocClientAdapter(v3doc, V3); },
         setAwsCredentials: function (c) { _awsCredentials = c; },
         // [HISTORIAL-ACCESOS] exportaciones solo para pruebas (Ing. #3)
         recordLoginHistory: recordLoginHistory,

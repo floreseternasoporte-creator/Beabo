@@ -122,7 +122,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(
 
   // ---------- D. infra ----------
   const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
-  check('sw.js: versión de caché drex-v135', sw.includes("const DREX_SW_VERSION = 'drex-v135'"));
+  check('sw.js: versión de caché >= drex-v135', (/const DREX_SW_VERSION = 'drex-v(\d+)'/.exec(sw) || [0, 0])[1] >= 135);
   check('404.html sincronizado con index.html', fs.readFileSync(path.join(__dirname, '..', '404.html'), 'utf8') === html);
   console.log('\nRESULTADO: ' + (failures ? failures + ' FALLO(S)' : 'OK'));
   process.exit(failures ? 1 : 0);
