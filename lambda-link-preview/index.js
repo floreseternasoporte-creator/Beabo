@@ -22,6 +22,43 @@ const MAX_BYTES = 600 * 1024;
 const TIMEOUT_MS = 4000;
 const MAX_REDIRECTS = 3;
 
+// Expande una IPv6 a sus 8 grupos numéricos (null si no es válida).
+// Acepta '::', forma comprimida, expandida e IPv4 embebida (::ffff:10.0.0.1).
+function expandIPv6Groups(ip) {
+  const v = String(ip || '').toLowerCase();
+  if (v.includes('%')) return null; // zona: fuera de alcance
+  const halves = v.split('::');
+  if (halves.length > 2) return null;
+  const parseSide = (s) => {
+    if (s === '') return [];
+    const segs = s.split(':');
+    const out = [];
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i];
+      if (seg.includes('.')) {
+        if (i !== segs.length - 1) return null; // la IPv4 solo va al final
+        const o = seg.split('.');
+        if (o.length !== 4) return null;
+        const nums = o.map((x) => (/^\d+$/.test(x) ? Number(x) : -1));
+        if (nums.some((n) => n < 0 || n > 255)) return null;
+        out.push(((nums[0] << 8) | nums[1]) & 0xffff, ((nums[2] << 8) | nums[3]) & 0xffff);
+      } else {
+        if (!/^[0-9a-f]{1,4}$/.test(seg)) return null;
+        out.push(parseInt(seg, 16));
+      }
+    }
+    return out;
+  };
+  if (halves.length === 1) {
+    const gs = parseSide(halves[0]);
+    return gs && gs.length === 8 ? gs : null;
+  }
+  const head = parseSide(halves[0]);
+  const tail = parseSide(halves[1]);
+  if (!head || !tail || head.length + tail.length > 7) return null;
+  return [...head, ...Array(8 - head.length - tail.length).fill(0), ...tail];
+}
+
 export function isPrivateAddress(ip) {
   if (net.isIPv4(ip)) {
     const [a, b] = ip.split('.').map(Number);
@@ -29,11 +66,24 @@ export function isPrivateAddress(ip) {
       (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || (a === 192 && b === 0) || (a === 198 && (b === 18 || b === 19)) || a >= 224;
   }
   if (net.isIPv6(ip)) {
-    const v = ip.toLowerCase();
-    if (v === '::' || v === '::1') return true;
-    const mapped = v.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) return isPrivateAddress(mapped[1]);
-    return v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb') || v.startsWith('ff');
+    // Se juzga por GRUPOS numéricos, no por el texto: una misma dirección
+    // tiene muchas escrituras ('::ffff:a00:1', '0:0:0:0:0:ffff:a00:1',
+    // '::ffff:10.0.0.1') y el filtro por prefijo de texto dejaba pasar la
+    // forma hexadecimal de IPv4-mapped (::ffff:0a00:0001 = 10.0.0.1,
+    // ::ffff:a9fe:a9fe = 169.254.169.254): el fetch llegaba a red interna
+    // y al endpoint de metadata. El kernel traduce ::ffff:0:0/96 a la IPv4.
+    const g = expandIPv6Groups(ip);
+    if (!g) return true; // no interpretable: fail-closed
+    if (g.every((x) => x === 0)) return true; // ::
+    if (g.slice(0, 7).every((x) => x === 0) && g[7] === 1) return true; // ::1
+    if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) {
+      return isPrivateAddress(`${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`);
+    }
+    const first = g[0];
+    if (first >= 0xfc00 && first <= 0xfdff) return true; // fc00::/7 única-local
+    if (first >= 0xfe80 && first <= 0xfebf) return true; // fe80::/10 enlace-local
+    if (first >= 0xff00) return true; // ff00::/8 multidifusión
+    return false;
   }
   return true; // lo que no es IP válida no se considera seguro
 }
