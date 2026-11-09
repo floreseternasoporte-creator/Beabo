@@ -5,8 +5,8 @@ Síntesis propia con numpy (sin muestras ni audio de terceros): campanas FM cris
 pads etéreos con detune, "pings" tipo sonar, barridos suaves, sub bajo discreto, shimmer
 (octava arriba) y reverb larga con estéreo amplio. Tres variantes:
 
-  A  "Estrellas"  arpegio de campanas de cristal que sube y centellea sobre un pad suave   <- por defecto
-  B  "Sonar"      ping de señal de nave con eco y respuesta, sobre un pad quieto y un sweep suave
+  A  "Estrellas"  arpegio de campanas de cristal que sube y centellea sobre un pad suave
+  B  "Sonar"      ping de señal de nave con eco y respuesta, sobre un pad quieto y un sweep suave   <- por defecto en la app
   C  "Nebulosa"   pad grande que florece con un barrido y una frase lenta de campanas
 
 Todo en modo lidio / pentatónica (sonoridad abierta y luminosa, nada oscuro). Hay energía en
