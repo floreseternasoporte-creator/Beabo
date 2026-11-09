@@ -3437,7 +3437,154 @@ function withCredRetry(opFn) {
   // autenticación
 
   function cognitoLib() {
-    return (typeof global.AmazonCognitoIdentity !== 'undefined') ? global.AmazonCognitoIdentity : null;
+    var C = (typeof global.AmazonCognitoIdentity !== 'undefined') ? global.AmazonCognitoIdentity : null;
+    if (C) drexPatchCognitoForEmailMfa(C);
+    return C;
+  }
+
+  // ================================================================
+  // CÓDIGO POR CORREO AL INICIAR SESIÓN (Cognito "Email MFA", 2026-11-09)
+  // ----------------------------------------------------------------
+  // Cuando el User Pool tiene el MFA obligatorio con "Email message",
+  // Cognito responde al login con el desafío EMAIL_OTP (a veces precedido
+  // de SELECT_MFA_TYPE). Eso lo aplica Cognito en el SERVIDOR: aunque se
+  // modifique el cliente, no se entregan tokens sin el código.
+  // amazon-cognito-identity-js 6.3.15 NO conoce este desafío (lo trataría
+  // como un login exitoso y fallaría con un TypeError). Este parche, que
+  // se aplica una sola vez, enseña a la librería a:
+  //   - EMAIL_OTP / EMAIL_MFA  -> callback.emailMfaRequired(params)
+  //   - SELECT_MFA_TYPE        -> elegir TOTP si existe (la app de
+  //                               autenticación tiene prioridad), si no el correo
+  //   - MFA_SETUP              -> error claro (la app no configura MFA aquí)
+  // y agrega CognitoUser.prototype.sendEmailMfaCode(code, callback).
+  // Mientras Cognito no devuelva estos desafíos (MFA aún no activado en
+  // AWS), nada de esto se ejecuta y el login funciona igual que antes.
+  // ================================================================
+  var EMAIL_MFA_CHALLENGES = { EMAIL_OTP: true, EMAIL_MFA: true };
+
+  function drexParseMfaChoices(raw) {
+    var list = [];
+    try {
+      var v = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+      if (Array.isArray(v)) list = v.map(String);
+    } catch (_) {
+      if (typeof raw === 'string') list = raw.replace(/[\[\]"\s]/g, '').split(',').filter(Boolean);
+    }
+    return list;
+  }
+
+  // Prioridad: app de autenticación (TOTP) > correo. Devuelve null si no hay ninguna.
+  function drexPickMfaType(choices) {
+    var i;
+    for (i = 0; i < choices.length; i++) if (/SOFTWARE_TOKEN/i.test(choices[i])) return choices[i];
+    for (i = 0; i < choices.length; i++) if (/EMAIL/i.test(choices[i])) return choices[i];
+    return null;
+  }
+
+  function drexPatchCognitoForEmailMfa(C) {
+    try {
+      if (!C || !C.CognitoUser || !C.CognitoUser.prototype) return;
+      var proto = C.CognitoUser.prototype;
+      if (proto.__drexEmailMfa) return;
+      var orig = proto.authenticateUserInternal;
+      if (typeof orig !== 'function') return;
+      proto.__drexEmailMfa = true;
+      proto.authenticateUserInternal = function (data, helper, callback) {
+        var self = this;
+        var name = data && data.ChallengeName;
+        if (EMAIL_MFA_CHALLENGES[name]) {
+          self.Session = data.Session;
+          self.__drexEmailChallengeName = name;
+          if (callback && typeof callback.emailMfaRequired === 'function') {
+            return callback.emailMfaRequired(data.ChallengeParameters || {});
+          }
+          return callback.onFailure(Object.assign(new Error('Esta pantalla no puede pedir el código por correo.'), { code: 'DrexMfaUnsupported' }));
+        }
+        if (name === 'SELECT_MFA_TYPE') {
+          var params = data.ChallengeParameters || {};
+          var pick = drexPickMfaType(drexParseMfaChoices(params.MFAS_CAN_CHOOSE));
+          if (!pick) {
+            return callback.onFailure(Object.assign(new Error('No hay un método de verificación disponible.'), { code: 'DrexMfaSetupRequired' }));
+          }
+          self.Session = data.Session;
+          var cr = { USERNAME: self.username, ANSWER: pick };
+          try { self.getCachedDeviceKeyAndPassword(); } catch (_) {}
+          if (self.deviceKey) cr.DEVICE_KEY = self.deviceKey;
+          return self.client.request('RespondToAuthChallenge', {
+            ChallengeName: 'SELECT_MFA_TYPE',
+            ChallengeResponses: cr,
+            ClientId: self.pool.getClientId(),
+            Session: self.Session
+          }, function (err, d) {
+            if (err) return callback.onFailure(err);
+            return self.authenticateUserInternal(d, helper, callback);
+          });
+        }
+        if (name === 'MFA_SETUP' && !(callback && typeof callback.mfaSetup === 'function')) {
+          return callback.onFailure(Object.assign(new Error('Tu cuenta necesita configurar la verificación en dos pasos.'), { code: 'DrexMfaSetupRequired' }));
+        }
+        return orig.call(this, data, helper, callback);
+      };
+      proto.sendEmailMfaCode = function (code, callback, clientMetadata) {
+        var self = this;
+        var cleanCode = String(code == null ? '' : code).trim();
+        // La documentación de Cognito nombra el parámetro EMAIL_OTP_CODE (y
+        // EMAIL_MFA_CODE en algunos textos); Cognito ignora el que no usa.
+        var cr = { USERNAME: self.username, EMAIL_OTP_CODE: cleanCode, EMAIL_MFA_CODE: cleanCode };
+        try { self.getCachedDeviceKeyAndPassword(); } catch (_) {}
+        if (self.deviceKey) cr.DEVICE_KEY = self.deviceKey;
+        var req = {
+          ChallengeName: self.__drexEmailChallengeName || 'EMAIL_OTP',
+          ChallengeResponses: cr,
+          ClientId: self.pool.getClientId(),
+          Session: self.Session
+        };
+        if (clientMetadata) req.ClientMetadata = clientMetadata;
+        self.client.request('RespondToAuthChallenge', req, function (err, d) {
+          if (err) return callback.onFailure(err);
+          var helper = new C.AuthenticationHelper(self.pool.getUserPoolName());
+          return self.authenticateUserInternal(d, helper, callback);
+        });
+      };
+    } catch (_) {}
+  }
+
+  // Dispositivo recordado (solo inicio de sesión por correo): el estado real
+  // lo guarda Cognito; aquí se deja una marca local para la UI de Ajustes.
+  var LOGIN_OTP_SEEN_KEY = 'drex_login_otp_seen';
+  var LOGIN_OTP_REMEMBER_PREFIX = 'drex_login_otp_remembered_';
+  function drexLoginOtpStore(username, remembered) {
+    try {
+      localStorage.setItem(LOGIN_OTP_SEEN_KEY, '1');
+      if (username) localStorage.setItem(LOGIN_OTP_REMEMBER_PREFIX + String(username).toLowerCase(), remembered ? '1' : '0');
+    } catch (_) {}
+  }
+
+  // Tras completar el código por correo: si el usuario marcó "Recordar este
+  // dispositivo" y Cognito dio una clave de dispositivo, se marca como
+  // recordado (Cognito deja de pedir el código desde este dispositivo). Nunca
+  // bloquea ni rompe el login: cualquier fallo se ignora.
+  function drexLoginOtpAfterSuccess(cognitoUser, remember, confirmNeeded) {
+    return new Promise(function (resolve) {
+      var finished = false;
+      function done() { if (!finished) { finished = true; resolve(); } }
+      setTimeout(done, 6000);
+      try {
+        try { cognitoUser.getCachedDeviceKeyAndPassword(); } catch (_) {}
+        if (!cognitoUser.deviceKey) { drexLoginOtpStore(cognitoUser.username, false); done(); return; }
+        if (remember) {
+          cognitoUser.setDeviceStatusRemembered({
+            onSuccess: function () { drexLoginOtpStore(cognitoUser.username, true); done(); },
+            onFailure: function () { drexLoginOtpStore(cognitoUser.username, false); done(); }
+          });
+        } else {
+          drexLoginOtpStore(cognitoUser.username, false);
+          if (confirmNeeded) {
+            cognitoUser.setDeviceStatusNotRemembered({ onSuccess: done, onFailure: done });
+          } else done();
+        }
+      } catch (_) { done(); }
+    });
   }
 
   function mapAuthError(err) {
@@ -4211,6 +4358,10 @@ function withCredRetry(opFn) {
                 fail(need);
                 return;
               }
+              if (err && (err.code === 'DrexMfaSetupRequired' || err.code === 'DrexMfaUnsupported')) {
+                fail(Object.assign(new Error('Tu cuenta necesita configurar la verificación en dos pasos. Escribe a soporte.'), { code: 'auth/mfa-setup-required' }));
+                return;
+              }
               fail(mapAuthError(err));
             },
             // Desafío TOTP (MFA opcional del pool con "Authenticator apps"):
@@ -4258,6 +4409,57 @@ function withCredRetry(opFn) {
                 cancel: function () { fail(Object.assign(new Error('Verificación cancelada.'), { code: 'auth/mfa-cancelled' })); }
               }).then(function (r) { ok(r.user); }, fail);
             },
+            // Código por correo (Cognito Email MFA). Ver drexPatchCognitoForEmailMfa.
+            emailMfaRequired: function (challengeParameters) {
+              mfaPhase = true;
+              try { clearTimeout(netTimer); } catch (_) {}
+              mfaTimer = setTimeout(function () {
+                var expiredErr = mfaExpiredError();
+                mfaNotifyChallengeExpired(expiredErr);
+                fail(expiredErr);
+              }, MFA_CODE_WINDOW_MS);
+              var destination = (challengeParameters && (challengeParameters.CODE_DELIVERY_DESTINATION || challengeParameters.codeDeliveryDestination)) || '';
+              beginMfaChallenge({
+                kind: 'email-otp',
+                destination: destination,
+                canRemember: true,
+                submitCode: function (code, o) {
+                  var remember = !!(o && o.remember);
+                  return new Promise(function (res, rej) {
+                    try {
+                      cognitoUser.sendEmailMfaCode(String(code).trim(), {
+                        onSuccess: function (session, confirmNeeded) {
+                          drexLoginOtpAfterSuccess(cognitoUser, remember, confirmNeeded).then(function () {
+                            drexPendingLoginMethod = 'email';
+                            establishSession(cognitoUser, session).then(function (user) { res({ user: user }); }, rej);
+                          });
+                        },
+                        onFailure: function (err) { rej(mapMfaError(err)); }
+                      });
+                    } catch (e) { rej(mapMfaError(e)); }
+                  });
+                },
+                // Reenviar = volver a iniciar sesión con las mismas credenciales
+                // (Cognito manda un código nuevo y una sesión nueva).
+                resend: function () {
+                  return new Promise(function (res, rej) {
+                    var next = new C.CognitoUser({ Username: em, Pool: getUserPool() });
+                    try {
+                      next.authenticateUser(authDetails, {
+                        emailMfaRequired: function (p2) {
+                          cognitoUser = next;
+                          res({ destination: (p2 && p2.CODE_DELIVERY_DESTINATION) || destination });
+                        },
+                        totpRequired: function () { rej(mapMfaError({ code: 'ExpiredCodeException' })); },
+                        onSuccess: function () { rej(mapMfaError({ code: 'ExpiredCodeException' })); },
+                        onFailure: function (err) { rej(mapMfaError(err)); }
+                      });
+                    } catch (e) { rej(mapMfaError(e)); }
+                  });
+                },
+                cancel: function () { fail(Object.assign(new Error('Verificación cancelada.'), { code: 'auth/mfa-cancelled' })); }
+              }).then(function (r) { ok(r.user); }, fail);
+            },
             newPasswordRequired: function () {
               fail(Object.assign(new Error('Debes restablecer tu contraseña.'), { code: 'auth/password-reset-required' }));
             }
@@ -4281,14 +4483,44 @@ function withCredRetry(opFn) {
   // código TOTP junto con la sesión opaca del desafío que devolvió el paso 1.
   // Resuelve con el JSON de la Lambda ({tokens}) o rechaza con un error
   // genérico (401 -> reintentable, para que la vista deje intentar de nuevo).
-  function usernameMfaStep2(loginUrl, username, challengeSession, code) {
+  // Reenvío del código por correo (login con usuario): repite el paso 1
+  // ({username, password}); la Lambda inicia sesión de nuevo y Cognito manda
+  // un código nuevo con una sesión nueva.
+  function usernameResendStep1(loginUrl, username, password) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (_) {} }, 20000);
+    var opts = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: String(username || ''), password: String(password || '') })
+    };
+    if (ctrl) opts.signal = ctrl.signal;
+    return fetch(loginUrl, opts).then(function (resp) {
+      clearTimeout(timer);
+      if (resp.status === 429) {
+        throw Object.assign(new Error('Demasiados intentos. Inténtalo de nuevo en un minuto.'), { code: 'auth/too-many-requests' });
+      }
+      if (!resp.ok) throw mapMfaError({ code: 'NotAuthorizedException' });
+      return lambdaJsonSafe(resp);
+    }).catch(function (err) {
+      clearTimeout(timer);
+      if (err && err.name === 'AbortError') {
+        throw Object.assign(new Error('Tiempo de espera agotado. Revisa tu conexión.'), { code: 'auth/network-request-failed' });
+      }
+      throw err;
+    });
+  }
+
+  function usernameMfaStep2(loginUrl, username, challengeSession, code, mfaType) {
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (_) {} }, 20000);
     function clearTimer() { try { clearTimeout(timer); } catch (_) {} }
     var fetchOpts = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: String(username || ''), session: String(challengeSession || ''), code: String(code || '') })
+      body: JSON.stringify(mfaType === 'email'
+        ? { username: String(username || ''), session: String(challengeSession || ''), code: String(code || ''), mfaType: 'email' }
+        : { username: String(username || ''), session: String(challengeSession || ''), code: String(code || '') })
     };
     if (ctrl) fetchOpts.signal = ctrl.signal;
     return fetch(loginUrl, fetchOpts).then(function (resp) {
@@ -4527,6 +4759,40 @@ function withCredRetry(opFn) {
       }).then(function (data) {
         // Desafío MFA: la Lambda devolvió la sesión del desafío; se pide el
         // código en la vista de desafío y se completa con el paso 2.
+        if (data && data.challenge === 'mfa' && data.session && data.mfaType === 'email') {
+          // Código por correo (Cognito Email MFA) en el login por nombre de
+          // usuario: la Lambda devuelve {challenge:'mfa', mfaType:'email',
+          // destination, session}. El paso 2 envía {username, session, code,
+          // mfaType:'email'}. Reenviar = repetir el paso 1.
+          mfaPhase = true;
+          var emailSession = data.session;
+          var emailDestination = data.destination || '';
+          mfaTimer = setTimeout(function () {
+            var expiredErr = mfaExpiredError();
+            mfaNotifyChallengeExpired(expiredErr);
+            fail(expiredErr);
+          }, MFA_CODE_WINDOW_MS);
+          beginMfaChallenge({
+            kind: 'email-otp',
+            destination: emailDestination,
+            canRemember: false,
+            submitCode: function (code) {
+              return usernameMfaStep2(url, username, emailSession, code, 'email').then(function (data2) {
+                return buildSessionFromLambdaTokens(data2);
+              });
+            },
+            resend: function () {
+              return usernameResendStep1(url, username, password).then(function (d) {
+                if (!(d && d.challenge === 'mfa' && d.session)) throw mapMfaError({ code: 'ExpiredCodeException' });
+                emailSession = d.session;
+                emailDestination = d.destination || emailDestination;
+                return { destination: emailDestination };
+              });
+            },
+            cancel: function () { fail(Object.assign(new Error('Verificación cancelada.'), { code: 'auth/mfa-cancelled' })); }
+          }).then(function (r) { ok(r.user); }, fail);
+          return;
+        }
         if (data && data.challenge === 'mfa' && data.session) {
           mfaPhase = true;
           // AUTH-3: al vencer se avisa a la UI para que cierre el
@@ -5361,6 +5627,9 @@ function withCredRetry(opFn) {
         poolUser.authenticateUser(details, {
           onSuccess: function () { ok(); },
           onFailure: function (err) { fail(mapAuthError(err)); },
+          emailMfaRequired: function () {
+            fail(Object.assign(new Error('Cierra sesión y vuelve a entrar con tu código para continuar.'), { code: 'auth/mfa-error' }));
+          },
           totpRequired: function () {
             Promise.resolve()
               .then(function () { return totpCodeProvider(); })
@@ -5393,9 +5662,14 @@ function withCredRetry(opFn) {
       try {
         ui({
           kind: opts.kind,
-          onCode: function (code) {
+          destination: opts.destination || '',
+          canRemember: !!opts.canRemember,
+          onResend: typeof opts.resend === 'function' ? function () {
+            return Promise.resolve().then(function () { return opts.resend(); });
+          } : null,
+          onCode: function (code, o) {
             return Promise.resolve()
-              .then(function () { return opts.submitCode(code); })
+              .then(function () { return opts.submitCode(code, o); })
               .then(function (r) {
                 // Marca para la puerta legacy de index.html: el MFA nativo ya
                 // se pasó en este inicio; no se debe volver a pedir post-sesión.
@@ -5501,6 +5775,33 @@ function withCredRetry(opFn) {
     beginChallenge: beginMfaChallenge,
     status: mfaStatus,
     codeWindowMs: MFA_CODE_WINDOW_MS
+  };
+  // Código por correo al iniciar sesión: estado local y "pedir siempre".
+  var loginOtpNs = {
+    // true si en este navegador ya se completó un código por correo.
+    seen: function () { try { return localStorage.getItem(LOGIN_OTP_SEEN_KEY) === '1'; } catch (_) { return false; } },
+    // true si el usuario marcó "Recordar este dispositivo".
+    remembered: function () {
+      try {
+        var u = currentCognitoUser && currentCognitoUser.username;
+        return !!u && localStorage.getItem(LOGIN_OTP_REMEMBER_PREFIX + String(u).toLowerCase()) === '1';
+      } catch (_) { return false; }
+    },
+    // "Pedir siempre el código en este dispositivo": Cognito deja de recordarlo.
+    forgetDevice: function () {
+      return new Promise(function (resolve, reject) {
+        var cu = currentCognitoUser;
+        if (!cu) { reject(new Error('Sin sesión')); return; }
+        try {
+          try { cu.getCachedDeviceKeyAndPassword(); } catch (_) {}
+          if (!cu.deviceKey) { drexLoginOtpStore(cu.username, false); resolve(); return; }
+          cu.setDeviceStatusNotRemembered({
+            onSuccess: function () { drexLoginOtpStore(cu.username, false); resolve(); },
+            onFailure: function (e) { reject(e); }
+          });
+        } catch (e) { reject(e); }
+      });
+    }
   };
   var SUPPORT_TABLE = 'drex-support-tickets';
   var SUPPORT_OWNER_EMAIL = 'zam.contact@yahoo.com';
@@ -5623,6 +5924,7 @@ function withCredRetry(opFn) {
     support: supportApi,
     totp: totpApiNs,
     mfa: mfaNs,
+    loginOtp: loginOtpNs,
     setFastPolling: setFastPolling,
     _outbox: Outbox // interno: cola offline (esqueleto: solo 'set')
   };
