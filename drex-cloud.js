@@ -4584,23 +4584,26 @@ function withCredRetry(opFn) {
           // Autoconfirmado: entrar de inmediato
           signInWithEmailAndPassword(cleanEmail, String(password)).then(resolve, reject);
         } else {
-          // El User Pool no debería exigir verificación (está desactivada),
-          // pero si algún día vuelve a exigirla, la app muestra un error.
+          // El User Pool EXIGE verificar el correo con un código de 6 dígitos
+          // (verificado 2026-09-17): la cuenta queda sin confirmar y la app
+          // lleva al usuario a la pantalla del código (showVerifyCodeScreen).
           resolve({ user: null, needsConfirmation: true, email: cleanEmail });
         }
       });
     });
   }
 
-  // Registro tolerante a registros abandonados: si el correo ya existe en
-  // Cognito pero la cuenta sigue SIN confirmar (el usuario abandonó el
-  // registro en la pantalla del código, cerró la app o el código venció),
-  // reenvía el código de verificación y retoma el registro en vez de
-  // mostrar "correo ya registrado". Solo si la cuenta ya está confirmada
-  // se conserva el error auth/email-already-in-use (ahí sí pertenece a
-  // otra cuenta y corresponde iniciar sesión / recuperar contraseña).
-  // Resuelve igual que createUserWithEmailAndPassword, con `resumed: true`
-  // cuando se retomó un registro previo sin confirmar.
+  // Registro tolerante a registros abandonados y que NO revela si el correo
+  // ya tiene cuenta: si el correo ya existe en Cognito, la función resuelve
+  // igual que para un correo nuevo ({needsConfirmation:true}) y la app lleva
+  // a la misma pantalla del código, con el mismo mensaje.
+  //  - Cuenta sin confirmar (registro abandonado): se reenvía el código y el
+  //    usuario real puede terminar su registro.
+  //  - Cuenta ya confirmada: no se envía nada; si el usuario real escribe su
+  //    contraseña de siempre, confirmRegistration devuelve ALREADY_CONFIRMED
+  //    y la app entra con ella (ver regVerifyCodeBtn en index.html).
+  // Los errores reales (demasiados intentos, red, contraseña inválida)
+  // se siguen propagando.
   function signUpOrResendConfirmation(email, password) {
     return createUserWithEmailAndPassword(email, password).catch(function (err) {
       if (!err || err.code !== 'auth/email-already-in-use') throw err;
@@ -4611,13 +4614,13 @@ function withCredRetry(opFn) {
       return new Promise(function (resolve, reject) {
         cognitoUser.resendConfirmationCode(function (rerr) {
           if (!rerr) {
-            resolve({ user: null, needsConfirmation: true, email: cleanEmail, resumed: true });
+            resolve({ user: null, needsConfirmation: true, email: cleanEmail });
             return;
           }
-          // Cuenta ya confirmada: el correo pertenece a una cuenta existente.
+          // Cuenta ya confirmada: respuesta indistinguible de un registro nuevo.
           var msg = String((rerr && rerr.message) || '').toLowerCase();
           if (rerr.code === 'InvalidParameterException' || /already confirm/i.test(msg)) {
-            reject(err);
+            resolve({ user: null, needsConfirmation: true, email: cleanEmail });
             return;
           }
           reject(mapAuthError(rerr));

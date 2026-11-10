@@ -164,7 +164,7 @@ Reemplaza cualquier `dynamodb:*` o `Resource: "*"`. Sigue siendo acceso por cole
 
 ### C. Rol no autenticado (invitado)
 
-La app lo usa al arrancar y en el paso de login (lecturas de `usernames`, `userEmails`, `users/<uid>`). **Objetivo: desactivar el acceso de invitados** una vez que esas tres búsquedas se muevan a la Lambda `drex-username-resolve` (ya existe `usernameLoginUrl`). Hasta entonces, como mínimo:
+La app lo usa al arrancar y en el paso de login (lecturas de `usernames`, `userEmails`, `users/<uid>`). **Actualización:** el paso de login ya no hace esas lecturas (ver `docs/SEGURIDAD-LOGIN-CUENTAS.md`, que incluye el paso de AWS para activar *Prevent user existence errors* y quitar la lectura de invitados). **Objetivo: desactivar el acceso de invitados** una vez que esas tres búsquedas se muevan a la Lambda `drex-username-resolve` (ya existe `usernameLoginUrl`). Hasta entonces, como mínimo:
 
 ```json
 {
