@@ -1,4 +1,4 @@
-# Drex Orbit — escalera de planes (2026-10-01)
+# Drex Plus — escalera de planes (2026-10-01)
 
 Catálogo canónico del lado cliente: `ORBIT_PLANS` en `index.html`
 (nombre, precio, intervalo visible; los price IDs de Stripe viven SOLO en
@@ -79,7 +79,7 @@ Viven en env vars de la Lambda `drex-payments`. Estado real:
 
 ### ⏳ Paso pendiente (solo lo puede hacer el usuario)
 1. En el dashboard de Stripe (**modo TEST**, no activar live): Products →
-   crear el producto "Drex Orbit" con los precios que falten:
+   crear el producto "Drex Plus" con los precios que falten:
    - $1.99/semana (recurrente)
    - $89.99 cada 2 años (recurrente; en Stripe: intervalo `year`, `interval_count: 2`)
    - $149.99 pago único
