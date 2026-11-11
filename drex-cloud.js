@@ -260,16 +260,16 @@
   // El navegador jamás debe ESCRIBIR en estas particiones: las gestionan solo
   // las Lambdas (pagos/Stripe, rate limit) con credenciales de servidor.
   //   wallets, transactions, stripe_events, ratelimit  -> pk completa
-  //   users/<uid>/orbit                               -> suscripción Orbit
+  //   users/<uid>/orbit                               -> suscripción Drex Plus (clave guardada)
   // La app actual nunca las escribe; este guard impide que un bug futuro (o un
   // script inyectado que reutilice el cliente) acredite monedas o se otorgue
-  // Orbit desde aquí. Ver docs/SEGURIDAD-DYNAMODB.md.
+  // Drex Plus desde aquí. Ver docs/SEGURIDAD-DYNAMODB.md.
   var SERVER_ONLY_PKS = { wallets: 1, transactions: 1, stripe_events: 1, ratelimit: 1 };
   function isServerOnlyKey(pk, sk) {
     pk = String(pk == null ? '' : pk);
     sk = String(sk == null ? '' : sk);
     if (SERVER_ONLY_PKS[pk] === 1) return true;
-    if (pk === 'users' && /^[^\/]+\/orbit(\/|$)/.test(sk)) return true;
+    if (pk === 'users' && /^[^\/]+\/(orbit|plus)(\/|$)/.test(sk)) return true;
     return false;
   }
   // Devuelve "pk/sk" de la primera clave protegida que intente escribir

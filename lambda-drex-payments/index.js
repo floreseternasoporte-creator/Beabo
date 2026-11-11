@@ -3,7 +3,7 @@
 // Endpoints (detrás de una Function URL con Auth NONE):
 //   POST /create-checkout-session      {packageId, idToken, returnUrl} -> {url}
 //   POST /create-subscription-session {plan, idToken, returnUrl} -> {url}
-//                                     (Stripe Checkout mode:'subscription', planes Drex Orbit)
+//                                     (Stripe Checkout mode:'subscription', planes Drex Plus)
 //   POST /create-customer-portal      {idToken, returnUrl?} -> {url}
 //                                     (portal de facturación de Stripe)
 //   POST /subscribe-embedded          {plan, idToken} -> {subscriptionId, clientSecret} | {alreadySubscribed:true}
@@ -46,8 +46,8 @@
 // Variables de entorno requeridas:
 //   STRIPE_SECRET_KEY      (sk_test_... / sk_live_... — SECRETO)
 //   STRIPE_WEBHOOK_SECRET  (whsec_... — SECRETO)
-//   STRIPE_PRICE_ORBIT_MONTHLY (price_... del plan mensual Drex Orbit; si falta -> 503 honesto)
-//   STRIPE_PRICE_ORBIT_YEARLY  (price_... del plan anual Drex Orbit; si falta -> 503 honesto)
+//   STRIPE_PRICE_ORBIT_MONTHLY (price_... del plan mensual Drex Plus; si falta -> 503 honesto)
+//   STRIPE_PRICE_ORBIT_YEARLY  (price_... del plan anual Drex Plus; si falta -> 503 honesto)
 //   DREX_TABLE             (default: drex-kv)
 //   COGNITO_USER_POOL_ID   (ej. us-east-1_kDSYEBsnY)
 //   COGNITO_CLIENT_ID      (app client de Drex; público, vive en la app)
@@ -104,32 +104,32 @@ function packageById(id) {
   return PACKAGES.find((p) => p.id === id) || null;
 }
 
-// ---------- Drex Orbit: planes de suscripción orbit ----------
-// Un solo nivel (Drex Orbit), cuatro planes. monthly/yearly usan price IDs
+// ---------- Drex Plus: planes de suscripción plus ----------
+// Un solo nivel (Drex Plus), cuatro planes. monthly/yearly usan price IDs
 // de Stripe en env vars; quarterly/semiannual se crean con price_data inline
 // (precio fijo en el código: no requieren configuración en el dashboard de
 // Stripe). Si falta el price del plan pedido y no hay price_data, la ruta
 // responde 503 honesto en vez de inventar un precio.
-const ORBIT_PLANS = {
-  monthly: { name: 'Drex Orbit Mensual' },
-  quarterly: { name: 'Drex Orbit Trimestral', priceData: { unit_amount: 1299, interval_count: 3 } },
-  semiannual: { name: 'Drex Orbit Semestral', priceData: { unit_amount: 2499, interval_count: 6 } },
-  yearly: { name: 'Drex Orbit Anual' },
+const PLUS_PLANS = {
+  monthly: { name: 'Drex Plus Mensual' },
+  quarterly: { name: 'Drex Plus Trimestral', priceData: { unit_amount: 1299, interval_count: 3 } },
+  semiannual: { name: 'Drex Plus Semestral', priceData: { unit_amount: 2499, interval_count: 6 } },
+  yearly: { name: 'Drex Plus Anual' },
 };
-function orbitPriceId(plan) {
+function plusPriceId(plan) {
   if (plan === 'monthly') return process.env.STRIPE_PRICE_ORBIT_MONTHLY || '';
   if (plan === 'yearly') return process.env.STRIPE_PRICE_ORBIT_YEARLY || '';
   return '';
 }
-function orbitPlanDisplayName(plan) {
-  return (ORBIT_PLANS[plan] && ORBIT_PLANS[plan].name) || 'Drex Orbit';
+function plusPlanDisplayName(plan) {
+  return (PLUS_PLANS[plan] && PLUS_PLANS[plan].name) || 'Drex Plus';
 }
 /* line_item de Stripe para el plan: price ID configurado o price_data inline.
  * Devuelve null si el plan no tiene precio disponible ( -> 503 honesto). */
-function orbitLineItem(plan) {
-  const spec = ORBIT_PLANS[plan];
+function plusLineItem(plan) {
+  const spec = PLUS_PLANS[plan];
   if (!spec) return null;
-  const priceId = orbitPriceId(plan);
+  const priceId = plusPriceId(plan);
   if (priceId) return { price: priceId, quantity: 1 };
   if (spec.priceData) {
     return {
@@ -146,7 +146,7 @@ function orbitLineItem(plan) {
 }
 /* true cuando los Price IDs de Stripe están configurados en la Lambda.
  * La app lo usa para activar las puertas automáticamente (fail-closed). */
-function orbitConfigured() {
+function plusConfigured() {
   return !!(process.env.STRIPE_PRICE_ORBIT_MONTHLY && process.env.STRIPE_PRICE_ORBIT_YEARLY);
 }
 
@@ -321,23 +321,23 @@ async function handleCreateSession(event) {
   return json(200, { url: session.url }, origin);
 }
 
-// ---------- Drex Orbit: suscripción orbit ----------
+// ---------- Drex Plus: suscripción plus ----------
 
-async function readOrbit(userSub) {
+async function readPlus(userSub) {
   try {
     const r = await ddb.send(new GetCommand({ TableName: TABLE, Key: { pk: 'users', sk: userSub + '/orbit' } }));
     if (!r.Item || typeof r.Item.v === 'undefined') return null;
     const o = JSON.parse(String(r.Item.v));
     return (o && typeof o === 'object') ? o : null;
   } catch (e) {
-    console.error('orbit read failed:', e && e.message);
+    console.error('plus read failed:', e && e.message);
     throw Object.assign(new Error('db_read_failed'), { status: 500 });
   }
 }
 
 // Fail closed: cualquier estado que no sea inequívocamente activo se trata
 // como no suscriptor. Un periodo ya vencido nunca cuenta como activo.
-function orbitIsActive(rec) {
+function plusIsActive(rec) {
   if (!rec) return false;
   if (rec.status !== 'active') return false;
   if (rec.currentPeriodEnd && Number(rec.currentPeriodEnd) * 1000 < Date.now()) return false;
@@ -350,14 +350,14 @@ function mapSubscriptionStatus(s) {
   return 'canceled'; // canceled | incomplete_expired | desconocido -> no activo
 }
 
-// Guarda el estado de Drex Orbit de forma idempotente por evento de Stripe:
+// Guarda el estado de Drex Plus de forma idempotente por evento de Stripe:
 // el mismo evento reintentado no escribe dos veces (condición sobre
 // stripe_events dentro de la misma transacción que el Put del estado).
-async function saveOrbitState({ userSub, status, plan, stripeCustomerId, stripeSubscriptionId, currentPeriodEnd, cancelAtPeriodEnd, eventId, eventType }) {
+async function savePlusState({ userSub, status, plan, stripeCustomerId, stripeSubscriptionId, currentPeriodEnd, cancelAtPeriodEnd, eventId, eventType }) {
   const now = Date.now();
   let prev = null;
   try {
-    prev = await readOrbit(userSub);
+    prev = await readPlus(userSub);
   } catch (e) {
     throw e;
   }
@@ -399,7 +399,7 @@ async function saveOrbitState({ userSub, status, plan, stripeCustomerId, stripeS
         return { duplicate: true };
       }
     }
-    console.error('orbit save failed:', e && e.message);
+    console.error('plus save failed:', e && e.message);
     throw Object.assign(new Error('db_write_failed'), { status: 500 });
   }
   return { saved: true, state: next };
@@ -429,7 +429,7 @@ function subscriptionStateFrom(sub, planHint) {
   const md = (sub && sub.metadata) || {};
   return {
     status: mapSubscriptionStatus(sub && sub.status),
-    plan: md.drex_orbit_plan || planHint || null,
+    plan: md.drex_plus_plan || md.drex_orbit_plan || planHint || null,
     stripeCustomerId: (sub && sub.customer) || null,
     stripeSubscriptionId: (sub && sub.id) || null,
     currentPeriodEnd: subscriptionPeriodEnd(sub),
@@ -485,10 +485,10 @@ async function invoicePaymentIntent(inv) {
 }
 
 /* Resuelve el customer de Stripe del usuario sin duplicarlo: primero el
- * registro Orbit local; si aún no hay registro (ningún webhook ha
+ * registro Plus local; si aún no hay registro (ningún webhook ha
  * escrito), busca por metadata drex_user_sub — cubre clientes creados
  * por un intento embebido anterior cuyo pago nunca se completó. */
-async function findOrbitCustomerId(userSub, rec) {
+async function findPlusCustomerId(userSub, rec) {
   if (rec && rec.stripeCustomerId) return rec.stripeCustomerId;
   try {
     const safeSub = String(userSub || '').replace(/['\\]/g, '');
@@ -499,7 +499,7 @@ async function findOrbitCustomerId(userSub, rec) {
     });
     if (found && Array.isArray(found.data) && found.data[0] && found.data[0].id) return found.data[0].id;
   } catch (e) {
-    console.error('orbit customer search failed:', e && e.message);
+    console.error('plus customer search failed:', e && e.message);
   }
   return null;
 }
@@ -507,9 +507,9 @@ async function findOrbitCustomerId(userSub, rec) {
 /* Suscripción viva del usuario en Stripe (para gestión): la del registro
  * local o, si el registro aún no existe, la que el propio Stripe lista
  * para su customer con nuestro metadata. Nunca adivina por otro camino. */
-async function resolveOrbitSubscriptionId(userSub, rec) {
+async function resolvePlusSubscriptionId(userSub, rec) {
   if (rec && rec.stripeSubscriptionId) return rec.stripeSubscriptionId;
-  const customerId = await findOrbitCustomerId(userSub, rec);
+  const customerId = await findPlusCustomerId(userSub, rec);
   if (!customerId) return null;
   try {
     const subs = await stripe().subscriptions.list({ customer: customerId, status: 'all', limit: 10 });
@@ -518,14 +518,14 @@ async function resolveOrbitSubscriptionId(userSub, rec) {
     );
     return mine ? mine.id : null;
   } catch (e) {
-    console.error('orbit subscription list failed:', e && e.message);
+    console.error('plus subscription list failed:', e && e.message);
     return null;
   }
 }
 
-/* Lee y valida el cuerpo + token de los endpoints Orbit autenticados.
+/* Lee y valida el cuerpo + token de los endpoints Plus autenticados.
  * Devuelve {body, userSub} o {response} con el error ya construido. */
-async function orbitAuthedBody(event, origin) {
+async function plusAuthedBody(event, origin) {
   let body;
   try {
     body = JSON.parse(rawBody(event) || '{}');
@@ -552,24 +552,24 @@ async function orbitAuthedBody(event, origin) {
 // dos suscripciones cobrables vivas para el mismo usuario).
 async function handleSubscribeEmbedded(event) {
   const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
-  const auth = await orbitAuthedBody(event, origin);
+  const auth = await plusAuthedBody(event, origin);
   if (auth.response) return auth.response;
   const { body, userSub } = auth;
 
   const plan = body.plan;
-  if (!ORBIT_PLANS[plan]) return json(400, { error: 'invalid_plan' }, origin);
-  const lineItem = orbitLineItem(plan);
+  if (!PLUS_PLANS[plan]) return json(400, { error: 'invalid_plan' }, origin);
+  const lineItem = plusLineItem(plan);
   if (!lineItem) return json(503, { error: 'subscription_not_configured' }, origin);
 
   let rec = null;
   try {
-    rec = await readOrbit(userSub);
+    rec = await readPlus(userSub);
   } catch (e) {
     return json(500, { error: 'db_read_failed' }, origin);
   }
 
   try {
-    let customerId = await findOrbitCustomerId(userSub, rec);
+    let customerId = await findPlusCustomerId(userSub, rec);
     if (customerId) {
       const subs = await stripe().subscriptions.list({ customer: customerId, status: 'all', limit: 10 });
       const mine = ((subs && subs.data) || []).filter(
@@ -580,7 +580,7 @@ async function handleSubscribeEmbedded(event) {
         return json(200, {
           alreadySubscribed: true,
           subscriptionId: live.id,
-          plan: (live.metadata && live.metadata.drex_orbit_plan) || plan,
+          plan: (live.metadata && (live.metadata.drex_plus_plan || live.metadata.drex_orbit_plan)) || plan,
         }, origin);
       }
       const open = mine.find((s) => s.status === 'incomplete' || s.status === 'past_due');
@@ -591,7 +591,7 @@ async function handleSubscribeEmbedded(event) {
           return json(200, {
             alreadySubscribed: true,
             subscriptionId: open.id,
-            plan: (open.metadata && open.metadata.drex_orbit_plan) || plan,
+            plan: (open.metadata && (open.metadata.drex_plus_plan || open.metadata.drex_orbit_plan)) || plan,
             needsPaymentUpdate: true,
           }, origin);
         }
@@ -621,7 +621,7 @@ async function handleSubscribeEmbedded(event) {
       items: [lineItem],
       payment_behavior: 'default_incomplete',
       payment_settings: { save_default_payment_method: 'on_subscription' },
-      metadata: { drex_user_sub: userSub, drex_orbit_plan: plan },
+      metadata: { drex_user_sub: userSub, drex_plus_plan: plan, drex_orbit_plan: plan },
       expand: ['latest_invoice.payments.data.payment.payment_intent'],
     }, {
       // Reintentos de red/app dentro de la misma hora no crean una segunda
@@ -632,10 +632,10 @@ async function handleSubscribeEmbedded(event) {
     const pi = await invoicePaymentIntent(sub && sub.latest_invoice);
     const secret = pi ? pi.client_secret : null;
     if (!secret) return json(502, { error: 'payment_provider_error' }, origin);
-    console.log('orbit embedded subscription created', sub.id, 'plan', plan);
+    console.log('plus embedded subscription created', sub.id, 'plan', plan);
     return json(200, { subscriptionId: sub.id, clientSecret: secret }, origin);
   } catch (e) {
-    console.error('orbit embedded subscribe failed:', e && e.message);
+    console.error('plus embedded subscribe failed:', e && e.message);
     return json(502, { error: 'payment_provider_error' }, origin);
   }
 }
@@ -645,9 +645,9 @@ async function handleSubscribeEmbedded(event) {
  * idempotente). Solo toca ese flag: status/plan/periodo quedan como los
  * dejó el último evento firmado. Sin registro previo no escribe nada —
  * el webhook creará el registro con el valor correcto. */
-async function mergeOrbitCancelFlag(userSub, flag) {
+async function mergePlusCancelFlag(userSub, flag) {
   try {
-    const prev = await readOrbit(userSub);
+    const prev = await readPlus(userSub);
     if (!prev) return;
     const next = { ...prev, cancelAtPeriodEnd: !!flag, updatedAt: Date.now() };
     await ddb.send(new UpdateCommand({
@@ -657,7 +657,7 @@ async function mergeOrbitCancelFlag(userSub, flag) {
       ExpressionAttributeValues: { ':v': JSON.stringify(next) },
     }));
   } catch (e) {
-    console.error('orbit cancel flag merge failed:', e && e.message);
+    console.error('plus cancel flag merge failed:', e && e.message);
   }
 }
 
@@ -667,17 +667,17 @@ async function mergeOrbitCancelFlag(userSub, flag) {
 // por la regla verifiedActive de C243). Reactivar lo deshace.
 async function handleSubscriptionCancelFlag(event, cancelAtPeriodEnd) {
   const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
-  const auth = await orbitAuthedBody(event, origin);
+  const auth = await plusAuthedBody(event, origin);
   if (auth.response) return auth.response;
   const { userSub } = auth;
 
   let rec = null;
   try {
-    rec = await readOrbit(userSub);
+    rec = await readPlus(userSub);
   } catch (e) {
     return json(500, { error: 'db_read_failed' }, origin);
   }
-  const subId = await resolveOrbitSubscriptionId(userSub, rec);
+  const subId = await resolvePlusSubscriptionId(userSub, rec);
   if (!subId) return json(404, { error: 'no_subscription' }, origin);
 
   let sub;
@@ -696,10 +696,10 @@ async function handleSubscriptionCancelFlag(event, cancelAtPeriodEnd) {
     }
     sub = await stripe().subscriptions.update(subId, { cancel_at_period_end: cancelAtPeriodEnd });
   } catch (e) {
-    console.error('orbit subscription update failed:', e && e.message);
+    console.error('plus subscription update failed:', e && e.message);
     return json(502, { error: 'payment_provider_error' }, origin);
   }
-  await mergeOrbitCancelFlag(userSub, cancelAtPeriodEnd);
+  await mergePlusCancelFlag(userSub, cancelAtPeriodEnd);
   return json(200, {
     ok: true,
     cancelAtPeriodEnd: typeof (sub && sub.cancel_at_period_end) === 'boolean' ? sub.cancel_at_period_end : cancelAtPeriodEnd,
@@ -722,22 +722,22 @@ async function handleSubscriptionReactivate(event) {
 //    próximo cobro la use sin salir de Drex.
 async function handleSubscriptionSetup(event) {
   const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
-  const auth = await orbitAuthedBody(event, origin);
+  const auth = await plusAuthedBody(event, origin);
   if (auth.response) return auth.response;
   const { body, userSub } = auth;
 
   let rec = null;
   try {
-    rec = await readOrbit(userSub);
+    rec = await readPlus(userSub);
   } catch (e) {
     return json(500, { error: 'db_read_failed' }, origin);
   }
   // Actualizar la tarjeta es cosa de suscriptores: sin suscripción
   // resoluble (registro local o lista de Stripe) es 404 honesto, igual
   // que cancelar/reactivar.
-  const subId = await resolveOrbitSubscriptionId(userSub, rec);
+  const subId = await resolvePlusSubscriptionId(userSub, rec);
   if (!subId) return json(404, { error: 'no_subscription' }, origin);
-  const customerId = await findOrbitCustomerId(userSub, rec);
+  const customerId = await findPlusCustomerId(userSub, rec);
   if (!customerId) return json(404, { error: 'no_subscription' }, origin);
 
   try {
@@ -747,7 +747,7 @@ async function handleSubscriptionSetup(event) {
         await stripe().paymentMethods.attach(pmId, { customer: customerId });
       } catch (e) {
         // Ya adjunto a este cliente (confirmSetup lo adjunta): se sigue.
-        console.error('orbit payment method attach note:', e && e.message);
+        console.error('plus payment method attach note:', e && e.message);
       }
       await stripe().customers.update(customerId, {
         invoice_settings: { default_payment_method: pmId },
@@ -755,7 +755,7 @@ async function handleSubscriptionSetup(event) {
       try {
         await stripe().subscriptions.update(subId, { default_payment_method: pmId });
       } catch (e) {
-        console.error('orbit subscription default pm update failed:', e && e.message);
+        console.error('plus subscription default pm update failed:', e && e.message);
       }
       return json(200, { ok: true, updated: true }, origin);
     }
@@ -768,7 +768,7 @@ async function handleSubscriptionSetup(event) {
     if (!si || !si.client_secret) return json(502, { error: 'payment_provider_error' }, origin);
     return json(200, { clientSecret: si.client_secret }, origin);
   } catch (e) {
-    console.error('orbit setup failed:', e && e.message);
+    console.error('plus setup failed:', e && e.message);
     return json(502, { error: 'payment_provider_error' }, origin);
   }
 }
@@ -799,27 +799,27 @@ async function handleSubscriptionStatus(event) {
 
   let rec = null;
   try {
-    rec = await readOrbit(userSub);
+    rec = await readPlus(userSub);
   } catch (e) {
     return json(500, { error: 'db_read_failed' }, origin);
   }
   if (!rec) {
-    return json(200, { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none', configured: orbitConfigured() }, origin);
+    return json(200, { active: false, plan: null, currentPeriodEnd: null, cancelAtPeriodEnd: false, status: 'none', configured: plusConfigured() }, origin);
   }
   return json(200, {
-    active: orbitIsActive(rec),
+    active: plusIsActive(rec),
     plan: rec.plan || null,
     currentPeriodEnd: rec.currentPeriodEnd || null,
     cancelAtPeriodEnd: !!rec.cancelAtPeriodEnd,
     status: rec.status || 'none',
-    configured: orbitConfigured(),
+    configured: plusConfigured(),
   }, origin);
 }
 
 
 // ---------- GET|POST /transactions ----------
 // Historial real de la cuenta: compras de Drex Coins (DynamoDB, lo que el
-// webhook registró) + pagos de Drex Orbit (facturas de Stripe) + estado
+// webhook registró) + pagos de Drex Plus (facturas de Stripe) + estado
 // actual de la suscripción. Autenticado con Cognito ID token: en el cuerpo
 // (POST, petición CORS simple sin preflight) o en el header Authorization
 // (Bearer, GET). Si no hay registros, devuelve listas vacías:
@@ -891,30 +891,30 @@ async function handleTransactions(event) {
     return json(500, { error: 'db_read_failed' }, origin);
   }
 
-  // 2) Estado de la suscripción Drex Orbit (DynamoDB, fuente de verdad local)
+  // 2) Estado de la suscripción Drex Plus (DynamoDB, fuente de verdad local)
   let rec = null;
   try {
-    rec = await readOrbit(userSub);
+    rec = await readPlus(userSub);
   } catch (e) {
     return json(500, { error: 'db_read_failed' }, origin);
   }
   const subscription = rec ? {
-    active: orbitIsActive(rec),
+    active: plusIsActive(rec),
     plan: rec.plan || null,
     status: rec.status || 'none',
     currentPeriodEnd: rec.currentPeriodEnd || null,
     cancelAtPeriodEnd: !!rec.cancelAtPeriodEnd,
   } : { active: false, plan: null, status: 'none', currentPeriodEnd: null, cancelAtPeriodEnd: false };
 
-  // 3) Pagos de Drex Orbit desde Stripe (facturas del cliente)
+  // 3) Pagos de Drex Plus desde Stripe (facturas del cliente)
   if (rec && rec.stripeCustomerId) {
     try {
       const invs = await stripe().invoices.list({ customer: rec.stripeCustomerId, limit: 25 });
       for (const inv of (invs && invs.data) || []) {
-        const planName = orbitPlanDisplayName(rec.plan);
+        const planName = plusPlanDisplayName(rec.plan);
         txs.push({
           id: String(inv.id || ''),
-          type: 'orbit',
+          type: 'plus',
           ts: Number(inv.created || 0) * 1000,
           amount: Number(inv.amount_paid || 0),
           currency: String(inv.currency || 'usd'),
@@ -932,7 +932,7 @@ async function handleTransactions(event) {
   return json(200, { transactions: txs, subscription }, origin);
 }
 
-// ---------- webhook: eventos de suscripción Drex Orbit ----------
+// ---------- webhook: eventos de suscripción Drex Plus ----------
 
 function wok(body) {
   return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -941,7 +941,7 @@ function werr(status, body) {
   return { statusCode: status, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
-// checkout.session.completed con mode:'subscription': activa Drex Orbit.
+// checkout.session.completed con mode:'subscription': activa Drex Plus.
 // La suscripción se recupera de Stripe para datos autoritativos
 // (periodo actual, customer id).
 async function handleKoroneCheckoutCompleted(stripeEvent, session) {
@@ -950,26 +950,26 @@ async function handleKoroneCheckoutCompleted(stripeEvent, session) {
   }
   const md = session.metadata || {};
   const userSub = md.drex_user_sub || session.client_reference_id || null;
-  const plan = md.drex_orbit_plan;
-  /* Todos los planes que /create-subscription-session acepta (ORBIT_PLANS)
+  const plan = md.drex_plus_plan || md.drex_orbit_plan;
+  /* Todos los planes que /create-subscription-session acepta (PLUS_PLANS)
    * deben activar aquí. Antes solo entraban monthly/yearly y un pago
    * quarterly/semiannual cobrado se ignoraba como "bad_metadata": el
    * usuario pagaba y su suscripción nunca se activaba. */
-  if (!userSub || !ORBIT_PLANS[plan]) {
-    console.error('orbit webhook missing/invalid metadata', { hasSub: !!userSub, plan });
+  if (!userSub || !PLUS_PLANS[plan]) {
+    console.error('plus webhook missing/invalid metadata', { hasSub: !!userSub, plan });
     return wok({ received: true, ignored: 'bad_metadata' });
   }
   const subRef = session.subscription;
   const subId = typeof subRef === 'string' ? subRef : (subRef && subRef.id);
   if (!subId) {
-    console.error('orbit webhook without subscription id', { session: session.id });
+    console.error('plus webhook without subscription id', { session: session.id });
     return wok({ received: true, ignored: 'no_subscription' });
   }
   let sub = null;
   try {
     sub = await stripe().subscriptions.retrieve(subId);
   } catch (e) {
-    console.error('orbit subscription retrieve failed:', e && e.message);
+    console.error('plus subscription retrieve failed:', e && e.message);
     // 500 => Stripe reintenta; la idempotencia evita doble activación.
     return werr(500, { error: 'subscription_fetch_failed' });
   }
@@ -977,15 +977,15 @@ async function handleKoroneCheckoutCompleted(stripeEvent, session) {
   if (!st.stripeCustomerId) st.stripeCustomerId = session.customer || null;
   if (!st.stripeSubscriptionId) st.stripeSubscriptionId = subId;
   try {
-    const r = await saveOrbitState({ userSub, ...st, eventId: stripeEvent.id, eventType: stripeEvent.type });
+    const r = await savePlusState({ userSub, ...st, eventId: stripeEvent.id, eventType: stripeEvent.type });
     if (r.duplicate) {
-      console.log('duplicate orbit webhook event ignored', stripeEvent.id);
+      console.log('duplicate plus webhook event ignored', stripeEvent.id);
       return wok({ received: true, duplicate: true });
     }
-    console.log('orbit activated', { plan: st.plan, subscription: st.stripeSubscriptionId });
+    console.log('plus activated', { plan: st.plan, subscription: st.stripeSubscriptionId });
     return wok({ received: true, activated: true, plan: st.plan });
   } catch (e) {
-    return werr(500, { error: 'orbit_save_failed' });
+    return werr(500, { error: 'plus_save_failed' });
   }
 }
 
@@ -996,21 +996,21 @@ async function handleKoroneSubscriptionEvent(stripeEvent, sub, type) {
   if (!userSub) {
     // Sin metadata no hay forma segura de identificar al usuario (no hay
     // índice customer->sub). Se registra y se ignora; no se adivina.
-    console.error('orbit subscription event without drex_user_sub', { type, sub: sub && sub.id });
+    console.error('plus subscription event without drex_user_sub', { type, sub: sub && sub.id });
     return wok({ received: true, ignored: 'no_user' });
   }
   const st = subscriptionStateFrom(sub, null);
   if (type === 'customer.subscription.deleted') st.status = 'canceled';
   try {
-    const r = await saveOrbitState({ userSub, ...st, eventId: stripeEvent.id, eventType: type });
+    const r = await savePlusState({ userSub, ...st, eventId: stripeEvent.id, eventType: type });
     if (r.duplicate) {
-      console.log('duplicate orbit webhook event ignored', stripeEvent.id);
+      console.log('duplicate plus webhook event ignored', stripeEvent.id);
       return wok({ received: true, duplicate: true });
     }
-    console.log('orbit subscription event', { type, status: st.status, sub: st.stripeSubscriptionId });
+    console.log('plus subscription event', { type, status: st.status, sub: st.stripeSubscriptionId });
     return wok({ received: true, updated: true, status: st.status });
   } catch (e) {
-    return werr(500, { error: 'orbit_save_failed' });
+    return werr(500, { error: 'plus_save_failed' });
   }
 }
 
@@ -1025,13 +1025,13 @@ async function handleKoroneInvoiceEvent(stripeEvent, invoice, type) {
   try {
     sub = await stripe().subscriptions.retrieve(subId);
   } catch (e) {
-    console.error('orbit invoice subscription retrieve failed:', e && e.message);
+    console.error('plus invoice subscription retrieve failed:', e && e.message);
     return werr(500, { error: 'subscription_fetch_failed' });
   }
   const md = (sub && sub.metadata) || {};
   const userSub = md.drex_user_sub || null;
   if (!userSub) {
-    console.error('orbit invoice event without drex_user_sub', { type, sub: subId });
+    console.error('plus invoice event without drex_user_sub', { type, sub: subId });
     return wok({ received: true, ignored: 'no_user' });
   }
   const st = subscriptionStateFrom(sub, null);
@@ -1039,15 +1039,15 @@ async function handleKoroneInvoiceEvent(stripeEvent, invoice, type) {
   // como activa en este instante; el siguiente updated la corregirá.
   if (type === 'invoice.payment_failed') st.status = 'past_due';
   try {
-    const r = await saveOrbitState({ userSub, ...st, eventId: stripeEvent.id, eventType: type });
+    const r = await savePlusState({ userSub, ...st, eventId: stripeEvent.id, eventType: type });
     if (r.duplicate) {
-      console.log('duplicate orbit webhook event ignored', stripeEvent.id);
+      console.log('duplicate plus webhook event ignored', stripeEvent.id);
       return wok({ received: true, duplicate: true });
     }
-    console.log('orbit invoice event', { type, status: st.status, sub: subId });
+    console.log('plus invoice event', { type, status: st.status, sub: subId });
     return wok({ received: true, updated: true, status: st.status });
   } catch (e) {
-    return werr(500, { error: 'orbit_save_failed' });
+    return werr(500, { error: 'plus_save_failed' });
   }
 }
 
@@ -1201,14 +1201,14 @@ async function handleWebhook(event) {
   const obj = stripeEvent.data.object || {};
 
   if (type === 'checkout.session.completed') {
-    // Suscripción Drex Orbit vs compra única de Coins: el modo manda.
+    // Suscripción Drex Plus vs compra única de Coins: el modo manda.
     if (obj.mode === 'subscription') return handleKoroneCheckoutCompleted(stripeEvent, obj);
     return handleCoinsCheckoutCompleted(stripeEvent, obj);
   }
   if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') {
     // C244 (auditoría): con el pago embebido NO hay
     // checkout.session.completed, y no hace falta: este handler y el de
-    // invoice.* ya guardan el mismo registro Orbit completo
+    // invoice.* ya guardan el mismo registro Plus completo
     // (subscriptionStateFrom: status, plan, customer, subscription,
     // currentPeriodEnd vía items y cancelAtPeriodEnd) identificando al
     // usuario por el metadata drex_user_sub de la suscripción, que tanto

@@ -908,12 +908,12 @@ var APP_ENGLISH_TEXT = {
 "Plan de prueba":"Trial plan",
 "Seguir con este plan":"Continue with this plan",
 "Tu {plan} gratis está activo hasta el {d}":"Your free {plan} is active until {d}",
-"Ganar 2 semanas de Drex Orbit gratis":"Win 2 weeks of Drex Orbit free",
-"Regístrate y participa por un plan de Drex Orbit gratis durante 2 semanas.":"Register for a chance to win a free Drex Orbit plan for 2 weeks.",
-"Si eres una de las personas elegidas, Drex Creators te enviará un mensaje a tu bandeja y una notificación, y un plan de Drex Orbit se activa gratis en tu cuenta al instante, con todos los beneficios de ese plan.":"If you are one of the selected people, Drex Creators will send you a message to your inbox and a notification, and a Drex Orbit plan is activated free on your account instantly, with all the benefits of that plan.",
-"¡Felicidades! Tu plan de Drex Orbit gratis está activo.":"Congratulations! Your free Drex Orbit plan is active.",
+"Ganar 2 semanas de Drex Plus gratis":"Win 2 weeks of Drex Plus free",
+"Regístrate y participa por un plan de Drex Plus gratis durante 2 semanas.":"Register for a chance to win a free Drex Plus plan for 2 weeks.",
+"Si eres una de las personas elegidas, Drex Creators te enviará un mensaje a tu bandeja y una notificación, y un plan de Drex Plus se activa gratis en tu cuenta al instante, con todos los beneficios de ese plan.":"If you are one of the selected people, Drex Creators will send you a message to your inbox and a notification, and a Drex Plus plan is activated free on your account instantly, with all the benefits of that plan.",
+"¡Felicidades! Tu plan de Drex Plus gratis está activo.":"Congratulations! Your free Drex Plus plan is active.",
 "Tu plan gratis del evento ya terminó. ¡Gracias por participar!":"Your free event plan has ended. Thanks for taking part!",
-"Ver planes de Drex Orbit":"See Drex Orbit plans",
+"Ver planes de Drex Plus":"See Drex Plus plans",
 "Plan de prueba: {plan} · hasta el {fecha}":"Trial plan: {plan} · until {fecha}",
 "Registrarse":"Register",
 "Tu registro se guarda con tu cuenta.":"Your registration is saved to your account.",
@@ -1235,7 +1235,7 @@ var APP_ENGLISH_TEXT = {
 "MP3, M4A, WAV… máx. 15 MB":"MP3, M4A, WAV… max 15 MB",
 "¿No ves tus MP3? Al elegir el archivo toca «Explorar» en lugar de «Fototeca».":"Can't see your MP3s? When choosing the file, tap \"Browse\" instead of \"Photo Library\".",
 "Portada":"Cover",
-"Drex Orbit":"Drex Orbit",
+"Drex Plus":"Drex Plus",
 "El pago no se completó. No se realizó ningún cargo.":"The payment wasn't completed. No charge was made.",
 "Toca la imagen para elegir una portada nueva":"Tap the image to choose a new cover",
 "Así se ve en tu perfil":"This is how it looks on your profile",
@@ -2693,7 +2693,7 @@ var APP_ENGLISH_TEXT = {
 "Llama Estelar":"Stellar Flame",
 "Luna Drex":"Drex Moon",
 "Nave Drex":"Drex Starship",
-"Núcleo Drex":"Drex Core","Núcleo Drex Orbit":"Drex Orbit Core",
+"Núcleo Drex":"Drex Core","Núcleo Drex Plus":"Drex Plus Core",
 "Perla Nebular":"Nebular Pearl",
 "Rayo de Ión":"Ion Ray", "Vista previa del en vivo":"Live preview", "Master":"Master", "Sin fuentes de audio":"No audio sources", "Monitoreo local":"Local monitoring", "Escuchar el audio del programa en este dispositivo":"Listen to the program audio on this device",
 "Separa con comas…":"Separate with commas…",
@@ -2745,7 +2745,7 @@ var APP_ENGLISH_TEXT = {
 "En vivo ahora":"Live now",
 /* ITEM4-SCHEDREM */
 /* ITEM4-SCHEDREM */
-/* DREX-ORBIT */"Como miembro Drex Orbit, tu reporte tiene prioridad.":"As a Drex Orbit member, your report has priority.","Con Drex Orbit puedes subir videos de hasta 180 segundos.":"With Drex Orbit you can upload videos up to 180 seconds.","Con Drex Orbit puedes subir hasta 40 fotos por publicación.":"With Drex Orbit you can upload up to 40 photos per post.","Anual":"Annual","Mensual":"Monthly","al mes":"per month","al año":"per year","El plan Orbit de Drex":"Drex Orbit plan","Drex Orbit no está disponible en este momento. Inténtalo más tarde.":"Drex Orbit isn't available right now. Try again later.","Tu suscripción":"Your subscription","Se cancela al final del periodo":"Cancels at the end of the period","Se renueva el":"Renews on","Tu último pago falló. Actualiza tu método de pago para mantener Drex Orbit.":"Your last payment failed. Update your payment method to keep Drex Orbit.","Gestionar suscripción":"Manage subscription","Restaurar compra":"Restore purchase","Tus beneficios":"Your benefits","Sin anuncios":"Ad-free","Navega Drex sin publicidad.":"Browse Drex with no ads.","Insignia y marco exclusivos":"Exclusive badge & frame","Distintivo dorado Drex Orbit y marco en tu foto.":"Gold Drex Orbit badge and frame on your photo.","Temas de perfil Orbit":"Orbit profile themes","Fondos exclusivos para tu portada.":"Exclusive covers for your profile.","Impulso en fiestas":"Fiesta boost","Tus fiestas de voz destacan y llegan a más gente.":"Your voice fiestas stand out and reach more people.","Límites elevados":"Higher limits","Videos más largos, más fotos y publicaciones programadas.":"Longer videos, more photos and scheduled posts.","Analíticas de creador":"Creator analytics","Estadísticas avanzadas de tu contenido.":"Advanced stats for your content.","Regalos exclusivos":"Exclusive gifts","Regalos originales solo para miembros Drex Orbit.":"Original gifts only for Drex Orbit members.","Soporte prioritario":"Priority support","Tus reportes se atienden primero.":"Your reports get answered first.","Elegir plan":"Choose a plan","Ahorra 2 meses":"Save 2 months","Suscribirme":"Subscribe","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"100% secure payment with Stripe. We accept cards and Link. No commitment. Cancel anytime.","Tema de perfil":"Profile theme","Elige el fondo de tu portada":"Choose your cover background","Tus números reales, actualizados al abrir.":"Your real numbers, updated on open.","Sin anuncios, insignia exclusiva y mucho más.":"Ad-free, exclusive badge and much more.","Miembro activo":"Active member","Procesando…":"Processing…","Error al iniciar el pago. Inténtalo de nuevo.":"Couldn't start the payment. Try again.","Inicia sesión para suscribirte a Drex Orbit.":"Sign in to subscribe to Drex Orbit.","No tienes una suscripción activa.":"You don't have an active subscription.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Couldn't open subscription management. Try again.","¡Bienvenido a Drex Orbit! Tu suscripción ya está activa.":"Welcome to Drex Orbit! Your subscription is now active.","No encontramos una suscripción activa en tu cuenta.":"We couldn't find an active subscription on your account.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Couldn't verify your subscription. Try again.","Pago recibido. Tu suscripción se activará en unos segundos.":"Payment received. Your subscription will activate in a few seconds.","Suscripción cancelada. No se realizó ningún cargo.":"Subscription cancelled. No charge was made.","Esta función es de Drex Orbit":"This feature is Drex Orbit","Suscríbete para desbloquearla y apoyar a Drex.":"Subscribe to unlock it and support Drex.","Ver planes":"View plans","Ahora no":"Not now","Sin permanencia. Cancela cuando quieras.":"No commitment. Cancel anytime.","Predeterminado":"Default","Índigo":"Indigo","Medianoche":"Midnight","Dorado":"Gold","Esmeralda":"Emerald","Solo Drex Orbit":"Drex Orbit only","Tema aplicado":"Theme applied","No se pudo guardar el tema. Inténtalo de nuevo.":"Couldn't save the theme. Try again.","Inicia sesión para personalizar tu perfil.":"Sign in to customize your profile.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"Videos can be up to {s} seconds. Choose a shorter clip.","Solo puedes subir un máximo de {n} fotos por publicación.":"You can upload up to {n} photos per post.",/* LANE-4-ORBIT-390 */"Beneficio Drex Orbit activo.":"Drex Orbit benefit active.","Próximamente: alcance, visitas al perfil y votos por publicación.":"Coming soon: reach, profile visits and votes per post.","Términos":"Terms","a la semana":"per week",
+/* DREX-PLUS */"Como miembro Drex Plus, tu reporte tiene prioridad.":"As a Drex Plus member, your report has priority.","Con Drex Plus puedes subir videos de hasta 180 segundos.":"With Drex Plus you can upload videos up to 180 seconds.","Con Drex Plus puedes subir hasta 40 fotos por publicación.":"With Drex Plus you can upload up to 40 photos per post.","Anual":"Annual","Mensual":"Monthly","al mes":"per month","al año":"per year","El plan Plus de Drex":"Drex Plus plan","Drex Plus no está disponible en este momento. Inténtalo más tarde.":"Drex Plus isn't available right now. Try again later.","Tu suscripción":"Your subscription","Se cancela al final del periodo":"Cancels at the end of the period","Se renueva el":"Renews on","Tu último pago falló. Actualiza tu método de pago para mantener Drex Plus.":"Your last payment failed. Update your payment method to keep Drex Plus.","Gestionar suscripción":"Manage subscription","Restaurar compra":"Restore purchase","Tus beneficios":"Your benefits","Sin anuncios":"Ad-free","Navega Drex sin publicidad.":"Browse Drex with no ads.","Insignia y marco exclusivos":"Exclusive badge & frame","Distintivo dorado Drex Plus y marco en tu foto.":"Gold Drex Plus badge and frame on your photo.","Temas de perfil Plus":"Plus profile themes","Fondos exclusivos para tu portada.":"Exclusive covers for your profile.","Impulso en fiestas":"Fiesta boost","Tus fiestas de voz destacan y llegan a más gente.":"Your voice fiestas stand out and reach more people.","Límites elevados":"Higher limits","Videos más largos, más fotos y publicaciones programadas.":"Longer videos, more photos and scheduled posts.","Analíticas de creador":"Creator analytics","Estadísticas avanzadas de tu contenido.":"Advanced stats for your content.","Regalos exclusivos":"Exclusive gifts","Regalos originales solo para miembros Drex Plus.":"Original gifts only for Drex Plus members.","Soporte prioritario":"Priority support","Tus reportes se atienden primero.":"Your reports get answered first.","Elegir plan":"Choose a plan","Ahorra 2 meses":"Save 2 months","Suscribirme":"Subscribe","Pago 100% seguro con Stripe. Aceptamos tarjetas y Link. Sin permanencia. Cancela cuando quieras.":"100% secure payment with Stripe. We accept cards and Link. No commitment. Cancel anytime.","Tema de perfil":"Profile theme","Elige el fondo de tu portada":"Choose your cover background","Tus números reales, actualizados al abrir.":"Your real numbers, updated on open.","Sin anuncios, insignia exclusiva y mucho más.":"Ad-free, exclusive badge and much more.","Miembro activo":"Active member","Procesando…":"Processing…","Error al iniciar el pago. Inténtalo de nuevo.":"Couldn't start the payment. Try again.","Inicia sesión para suscribirte a Drex Plus.":"Sign in to subscribe to Drex Plus.","No tienes una suscripción activa.":"You don't have an active subscription.","No se pudo abrir la gestión de la suscripción. Inténtalo de nuevo.":"Couldn't open subscription management. Try again.","¡Bienvenido a Drex Plus! Tu suscripción ya está activa.":"Welcome to Drex Plus! Your subscription is now active.","No encontramos una suscripción activa en tu cuenta.":"We couldn't find an active subscription on your account.","No se pudo verificar tu suscripción. Inténtalo de nuevo.":"Couldn't verify your subscription. Try again.","Pago recibido. Tu suscripción se activará en unos segundos.":"Payment received. Your subscription will activate in a few seconds.","Suscripción cancelada. No se realizó ningún cargo.":"Subscription cancelled. No charge was made.","Esta función es de Drex Plus":"This feature is Drex Plus","Suscríbete para desbloquearla y apoyar a Drex.":"Subscribe to unlock it and support Drex.","Ver planes":"View plans","Ahora no":"Not now","Sin permanencia. Cancela cuando quieras.":"No commitment. Cancel anytime.","Predeterminado":"Default","Índigo":"Indigo","Medianoche":"Midnight","Dorado":"Gold","Esmeralda":"Emerald","Solo Drex Plus":"Drex Plus only","Tema aplicado":"Theme applied","No se pudo guardar el tema. Inténtalo de nuevo.":"Couldn't save the theme. Try again.","Inicia sesión para personalizar tu perfil.":"Sign in to customize your profile.","El video puede durar hasta {s} segundos. Elige un clip más corto.":"Videos can be up to {s} seconds. Choose a shorter clip.","Solo puedes subir un máximo de {n} fotos por publicación.":"You can upload up to {n} photos per post.",/* LANE-4-PLUS-390 */"Beneficio Drex Plus activo.":"Drex Plus benefit active.","Próximamente: alcance, visitas al perfil y votos por publicación.":"Coming soon: reach, profile visits and votes per post.","Términos":"Terms","a la semana":"per week",
 "Top":"Top",
 
 "¡COMBO!":"COMBO!",
@@ -2811,7 +2811,7 @@ var APP_ENGLISH_TEXT = {
 "Meta de {n} diamantes":"Goal of {n} diamonds",
 "{a} de {b} diamantes":"{a} of {b} diamonds",
 "⭐ {n} se unió":"⭐ {n} joined",
-"💎 {n} (Drex Orbit) se unió":"💎 {n} (Drex Orbit) joined",
+"💎 {n} (Drex Plus) se unió":"💎 {n} (Drex Plus) joined",
 "Top fan":"Top fan",
 "Fijar pregunta":"Pin question",
 "Pregunta fijada":"Question pinned",
@@ -2822,9 +2822,9 @@ var APP_ENGLISH_TEXT = {
 "Activar mic":"Unmute mic",
 "Panel del host":"Host panel",
 "💎 {n} ({p}) se unió":"💎 {n} ({p}) joined",
-/* ORBIT */"Pagos":"Payments","Historial de pagos y compras":"Payment & purchase history","Tus movimientos reales de Drex Coins y Drex Orbit.":"Your real Drex Coins and Drex Orbit transactions.","Aún no tienes movimientos":"No transactions yet","Tus compras y pagos aparecerán aquí automáticamente.":"Your purchases and payments will appear here automatically.","Suscripción Drex Orbit":"Drex Orbit subscription","Plan actual":"Current plan","Cancelar suscripción":"Cancel subscription","Cambiar de plan":"Change plan","Actualizar método de pago":"Update payment method","Gestionar en el portal seguro de Stripe":"Manage in Stripe's secure portal","Compra de Drex Coins":"Drex Coins purchase","Pago de Drex Orbit":"Drex Orbit payment","Completado":"Completed","Fallido":"Failed","Cargando tu historial…":"Loading your history…","No pudimos cargar tu historial. Inténtalo de nuevo.":"We couldn't load your history. Try again.","monedas":"coins",
-"Trimestral":"Quarterly","Semestral":"Semiannual","al trimestre":"per quarter","al semestre":"per 6 months","Destellos exclusivos":"Exclusive Destellos","Crea y mira destellos efímeros. Solo miembros Orbit.":"Create and watch ephemeral destellos. Orbit members only.","Más caracteres":"More characters","Escribe hasta 2,000 caracteres en tus publicaciones.":"Write up to 2,000 characters in your posts.","Prioridad en Destacados":"Priority in Highlights","Tus publicaciones suben en la sección Destacados.":"Your posts rank higher in the Highlights tab.","Pendiente de pago":"Pending payment","Procesando":"Processing","Requiere acción":"Action required","Cancelado":"Canceled","No cobrado":"Uncollectible","Reembolsado":"Refunded","Borrador":"Draft","En prueba":"Trialing","Pago vencido":"Past due","Desconocido":"Unknown","Los pagos pendientes se confirman solos cuando Stripe procesa el cobro.":"Pending payments confirm automatically when Stripe processes the charge.","Votos recibidos":"Votes received","Destellos publicados":"Destellos posted","Mejor publicación":"Top post","votos netos":"net votes","Destellos es exclusivo de Drex Orbit":"Destellos is exclusive to Drex Orbit","Solo Orbit":"Orbit only","Próximamente: alcance y visitas al perfil.":"Coming soon: reach and profile visits.",/* DREX-ORBIT-PLANS */"Semanal":"Weekly","semana":"week","mes":"month","trimestre":"quarter","semestre":"6 months","año":"year","al":"per","2 años":"2 years","cada 2 años":"every 2 years","De por vida":"Lifetime","pago único":"one-time payment","Recomendado":"Recommended","Ahorra 13%":"Save 13%","Ahorra 17%":"Save 17%","Ahorra 25%":"Save 25%","Para siempre":"Forever","Sin renovaciones: tuyo para siempre.":"No renewals: yours forever.","Desde":"From",
-/* DREX-ORBIT-C248 */"Crea más con Drex Orbit":"Create more with Drex Orbit","Elige el plan ideal para ti":"Choose the right plan for you","Todo Drex, sin límites":"All of Drex, unlimited","Sin anuncios, insignia dorada y todos los privilegios desbloqueados desde el primer día.":"Ad-free, gold badge and every privilege unlocked from day one.","También incluye:":"Also includes:",/* DREX-ORBIT */"orbit_coming_soon":"Coming soon","Este plan aún no está disponible. Estará listo muy pronto.":"This plan isn't available yet. It'll be ready very soon.","No pudimos contactar el servidor de pagos desde tu conexión. Si usas VPN, bloqueador de anuncios o DNS privado, desactívalo e inténtalo de nuevo.":"We couldn't reach the payment server from your connection. If you use a VPN, ad blocker or private DNS, turn it off and try again.","El servidor de pagos falló. Inténtalo de nuevo en unos minutos.":"The payment server failed. Try again in a few minutes.","Revisando tu conexión…":"Checking your connection…","No pudimos contactar el servidor de pagos.":"We couldn't reach the payment server.","Mándanos captura de este mensaje para arreglarlo.":"Send us a screenshot of this message so we can fix it.","No se pudo contactar el servidor de pagos.":"The payment server couldn't be reached.",
+/* PLUS */"Pagos":"Payments","Historial de pagos y compras":"Payment & purchase history","Tus movimientos reales de Drex Coins y Drex Plus.":"Your real Drex Coins and Drex Plus transactions.","Aún no tienes movimientos":"No transactions yet","Tus compras y pagos aparecerán aquí automáticamente.":"Your purchases and payments will appear here automatically.","Suscripción Drex Plus":"Drex Plus subscription","Plan actual":"Current plan","Cancelar suscripción":"Cancel subscription","Cambiar de plan":"Change plan","Actualizar método de pago":"Update payment method","Gestionar en el portal seguro de Stripe":"Manage in Stripe's secure portal","Compra de Drex Coins":"Drex Coins purchase","Pago de Drex Plus":"Drex Plus payment","Completado":"Completed","Fallido":"Failed","Cargando tu historial…":"Loading your history…","No pudimos cargar tu historial. Inténtalo de nuevo.":"We couldn't load your history. Try again.","monedas":"coins",
+"Trimestral":"Quarterly","Semestral":"Semiannual","al trimestre":"per quarter","al semestre":"per 6 months","Destellos exclusivos":"Exclusive Destellos","Crea y mira destellos efímeros. Solo miembros Plus.":"Create and watch ephemeral destellos. Plus members only.","Más caracteres":"More characters","Escribe hasta 2,000 caracteres en tus publicaciones.":"Write up to 2,000 characters in your posts.","Prioridad en Destacados":"Priority in Highlights","Tus publicaciones suben en la sección Destacados.":"Your posts rank higher in the Highlights tab.","Pendiente de pago":"Pending payment","Procesando":"Processing","Requiere acción":"Action required","Cancelado":"Canceled","No cobrado":"Uncollectible","Reembolsado":"Refunded","Borrador":"Draft","En prueba":"Trialing","Pago vencido":"Past due","Desconocido":"Unknown","Los pagos pendientes se confirman solos cuando Stripe procesa el cobro.":"Pending payments confirm automatically when Stripe processes the charge.","Votos recibidos":"Votes received","Destellos publicados":"Destellos posted","Mejor publicación":"Top post","votos netos":"net votes","Destellos es exclusivo de Drex Plus":"Destellos is exclusive to Drex Plus","Solo Plus":"Plus only","Próximamente: alcance y visitas al perfil.":"Coming soon: reach and profile visits.",/* DREX-PLUS-PLANS */"Semanal":"Weekly","semana":"week","mes":"month","trimestre":"quarter","semestre":"6 months","año":"year","al":"per","2 años":"2 years","cada 2 años":"every 2 years","De por vida":"Lifetime","pago único":"one-time payment","Recomendado":"Recommended","Ahorra 13%":"Save 13%","Ahorra 17%":"Save 17%","Ahorra 25%":"Save 25%","Para siempre":"Forever","Sin renovaciones: tuyo para siempre.":"No renewals: yours forever.","Desde":"From",
+/* DREX-PLUS-C248 */"Crea más con Drex Plus":"Create more with Drex Plus","Elige el plan ideal para ti":"Choose the right plan for you","Todo Drex, sin límites":"All of Drex, unlimited","Sin anuncios, insignia dorada y todos los privilegios desbloqueados desde el primer día.":"Ad-free, gold badge and every privilege unlocked from day one.","También incluye:":"Also includes:",/* DREX-PLUS */"plus_coming_soon":"Coming soon","Este plan aún no está disponible. Estará listo muy pronto.":"This plan isn't available yet. It'll be ready very soon.","No pudimos contactar el servidor de pagos desde tu conexión. Si usas VPN, bloqueador de anuncios o DNS privado, desactívalo e inténtalo de nuevo.":"We couldn't reach the payment server from your connection. If you use a VPN, ad blocker or private DNS, turn it off and try again.","El servidor de pagos falló. Inténtalo de nuevo en unos minutos.":"The payment server failed. Try again in a few minutes.","Revisando tu conexión…":"Checking your connection…","No pudimos contactar el servidor de pagos.":"We couldn't reach the payment server.","Mándanos captura de este mensaje para arreglarlo.":"Send us a screenshot of this message so we can fix it.","No se pudo contactar el servidor de pagos.":"The payment server couldn't be reached.",
 "Mensaje":"Message","Uso estimado: {s}":"Estimated usage: {s}",
 "— Ver respuestas (n)":"— View replies (n)",
 "! 👋 Drex Creators quiere colaborar contigo en tu publicación. Puedes aceptar o rechazar la invitación desde aquí o desde tus notificaciones.":"! 👋 Drex Creators wants to collaborate with you on your post. You can accept or decline the invitation here or from your notifications.",
@@ -3045,7 +3045,7 @@ var APP_ENGLISH_TEXT = {
 "DMs limitados a quienes seguís":"DMs limited to people you follow",
 "Drex Creators retiró la colaboración de tu publicación.":"Drex Creators withdrew the collaboration from your post.",
 "Drex Música":"Drex Music",
-"Drex Orbit: la suscripción premium de Drex":"Drex Orbit: Drex's premium subscription",
+"Drex Plus: la suscripción premium de Drex":"Drex Plus: Drex's premium subscription",
 "edición":"Edit",
 "Editando el mensaje…":"Editing message…",
 "editar":"Edit",
@@ -3182,7 +3182,7 @@ var APP_ENGLISH_TEXT = {
 "Foto de perfil del autor":"Author's profile photo",
 "Foto del post":"Post photo",
 "fue eliminado del grupo":"was removed from the group",
-"Funciones orbit de Drex":"Drex Orbit features",
+"Funciones plus de Drex":"Drex Plus features",
 "Fútbol":"Soccer",
 "galería":"Gallery",
 "Gestionar borradores":"Manage drafts",
@@ -3260,7 +3260,7 @@ var APP_ENGLISH_TEXT = {
 "listo":"Ready",
 "Lo más votado · histórico":"Top voted · all time",
 "Los #tags de los posts que veas aparecerán aquí.":"The #tags from posts you see will appear here.",
-"Los destellos son exclusivos de Drex Orbit.":"Sparkles are exclusive to Drex Orbit.",
+"Los destellos son exclusivos de Drex Plus.":"Sparkles are exclusive to Drex Plus.",
 "Los posts más votados suben en Populares.":"The most voted posts rise in Popular.",
 "mañana":"Tomorrow",
 "Mañana":"Tomorrow",
@@ -3502,7 +3502,7 @@ var APP_ENGLISH_TEXT = {
 "Salas de voz para juntarte con tu gente.":"Voice rooms to hang out with your people.",
 "Salir de la fiesta":"Leave the party",
 "Salir de la sala de voz":"Leave the voice room",
-"Se administra desde Ajustes → Drex Orbit.":"It's managed from Settings → Drex Orbit.",
+"Se administra desde Ajustes → Drex Plus.":"It's managed from Settings → Drex Plus.",
 "Se cerraron las demás sesiones desde \"Dónde iniciaste sesión\".":"The other sessions were closed from \"Where you signed in\".",
 "Se cerró una sesión desde \"Dónde iniciaste sesión\".":"A session was closed from \"Where you signed in\".",
 "Se detectó un inicio de sesión desde":"A sign-in was detected from",
@@ -3797,7 +3797,7 @@ var APP_ENGLISH_TEXT = {
 "y toca":"and tap",
 "y toca el botón de crear. Elige el idioma, el tema guiado y escribe tu texto.":"and tap the create button. Choose the language, the guided topic and write your text.",
 "y toca el icono de lápiz para iniciar una conversación.":"and tap the pencil icon to start a conversation.",
-/* C243-ORBIT */
+/* C243-PLUS */
 "Ahorras {n}%":"You save {n}%",
 "Todo lo que incluye":"Everything that's included",
 "Fotos y videos en HD":"HD photos & videos",
@@ -3832,13 +3832,13 @@ var APP_ENGLISH_TEXT = {
 "Subidas en HD activadas":"HD uploads turned on",
 "Subidas en HD desactivadas":"HD uploads turned off",
 "Alcanzaste el máximo de {n} publicaciones programadas.":"You've reached the maximum of {n} scheduled posts.",
-"Tus beneficios Orbit están desactivados":"Your Orbit benefits are turned off",
-"Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.":"Your subscription is still paid until {fecha}, but you cancelled renewal: your Orbit benefits are turned off starting now.",
-"Tu suscripción sigue pagada, pero cancelaste la renovación: los beneficios Orbit están desactivados desde ahora.":"Your subscription is still paid, but you cancelled renewal: your Orbit benefits are turned off starting now.",
+"Tus beneficios Plus están desactivados":"Your Plus benefits are turned off",
+"Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación: los beneficios Plus están desactivados desde ahora.":"Your subscription is still paid until {fecha}, but you cancelled renewal: your Plus benefits are turned off starting now.",
+"Tu suscripción sigue pagada, pero cancelaste la renovación: los beneficios Plus están desactivados desde ahora.":"Your subscription is still paid, but you cancelled renewal: your Plus benefits are turned off starting now.",
 "Tu suscripción sigue pagada hasta el {fecha}, pero cancelaste la renovación.":"Your subscription is still paid until {fecha}, but you cancelled renewal.",
 "Tu suscripción sigue pagada, pero cancelaste la renovación.":"Your subscription is still paid, but you cancelled renewal.",
-"Tu último pago falló: los beneficios Orbit están desactivados hasta que actualices tu método de pago.":"Your last payment failed: your Orbit benefits are turned off until you update your payment method.",
-"Tu suscripción venció: los beneficios Orbit están desactivados.":"Your subscription ended: your Orbit benefits are turned off.",
+"Tu último pago falló: los beneficios Plus están desactivados hasta que actualices tu método de pago.":"Your last payment failed: your Plus benefits are turned off until you update your payment method.",
+"Tu suscripción venció: los beneficios Plus están desactivados.":"Your subscription ended: your Plus benefits are turned off.",
 "Reactivar suscripción":"Reactivate subscription",
 
 "¿Qué opinas?":"What do you think?",
@@ -4173,12 +4173,12 @@ var APP_ENGLISH_TEXT = {
 "Pagos y transacciones":"Payments and transactions",
 "Transacciones":"Transactions",
 "Ver mis transacciones":"View my transactions",
-"Tus movimientos reales de Drex Orbit.":"Your real Drex Orbit payments and renewals.",
+"Tus movimientos reales de Drex Plus.":"Your real Drex Plus payments and renewals.",
 "Activa":"Active",
 "Vence pronto":"Expiring soon",
 "Este contenido no está disponible.":{"en":"This content isn't available.","zh":"此内容不可用。","pt":"Este conteúdo não está disponível."},
 "La votación ya está cerrada.":{"en":"Voting is already closed.","zh":"投票已结束。","pt":"A votação já foi encerrada."},
-"Las encuestas de más de 1 día son de Drex Orbit: se ajustó a 1 día.":{"en":"Polls longer than 1 day are a Drex Orbit perk: adjusted to 1 day.","zh":"超过 1 天的投票是 Drex Orbit 专属：已调整为 1 天。","pt":"Enquetes com mais de 1 dia são do Drex Orbit: ajustado para 1 dia."},
+"Las encuestas de más de 1 día son de Drex Plus: se ajustó a 1 día.":{"en":"Polls longer than 1 day are a Drex Plus perk: adjusted to 1 day.","zh":"超过 1 天的投票是 Drex Plus 专属：已调整为 1 天。","pt":"Enquetes com mais de 1 dia são do Drex Plus: ajustado para 1 dia."},
 "Mira este post en Drex.":{"en":"Take a look at this post on Drex.","zh":"在 Drex 上看看这条帖子。","pt":"Veja esta postagem no Drex."},
 "Tu cuenta se creó, pero la foto no se pudo subir. Puedes agregarla desde tu perfil.":{"en":"Your account was created, but the photo could not be uploaded. You can add it from your profile.","zh":"你的账号已创建，但照片上传失败。你可以在个人资料中添加。","pt":"Sua conta foi criada, mas a foto não pôde ser enviada. Você pode adicioná-la no seu perfil."},
 "Código reenviado. Revisa tu correo.":{"en":"Code resent. Check your email.","zh":"验证码已重发，请检查你的邮箱。","pt":"Código reenviado. Verifique seu e-mail."},
@@ -4198,8 +4198,8 @@ var APP_ENGLISH_TEXT = {
 "Método de pago":"Payment method",
 "ID de transacción":"Transaction ID",
 "Inicia sesión para ver tus pagos y transacciones.":"Log in to see your payments and transactions.",
-"Drex Orbit y pagos":"Drex Orbit & payments",
-"Suscribirme a Drex Orbit":"Subscribe to Drex Orbit",
+"Drex Plus y pagos":"Drex Plus & payments",
+"Suscribirme a Drex Plus":"Subscribe to Drex Plus",
 "Pago no disponible por ahora":"Payment isn't available right now",
 "El pago dentro de Drex aún no está activo. Inténtalo de nuevo más tarde.":"In-app payment isn't active yet. Please try again later.",
 "La gestión dentro de Drex aún no está disponible. Inténtalo de nuevo más tarde.":"In-app subscription management isn't available yet. Please try again later.",
@@ -4207,11 +4207,11 @@ var APP_ENGLISH_TEXT = {
 "Pago procesado por Stripe, sin salir de Drex.":"Payment processed by Stripe, without leaving Drex.",
 "Cargando pago seguro…":"Loading secure payment…",
 "No se pudo completar el pago. Revisa los datos e inténtalo de nuevo.":"We couldn't complete the payment. Check your details and try again.",
-"Ya tienes Drex Orbit activo.":"You already have Drex Orbit active.",
+"Ya tienes Drex Plus activo.":"You already have Drex Plus active.",
 "Ver mi suscripción":"View my subscription",
 "¿Cancelar tu suscripción?":"Cancel your subscription?",
-"Tu periodo pagado termina el {fecha}. Tus beneficios Orbit se desactivarán desde ahora y no se te volverá a cobrar.":"Your paid period ends on {fecha}. Your Orbit benefits turn off now and you won't be charged again.",
-"Tus beneficios Orbit se desactivarán desde ahora y no se te volverá a cobrar.":"Your Orbit benefits turn off now and you won't be charged again.",
+"Tu periodo pagado termina el {fecha}. Tus beneficios Plus se desactivarán desde ahora y no se te volverá a cobrar.":"Your paid period ends on {fecha}. Your Plus benefits turn off now and you won't be charged again.",
+"Tus beneficios Plus se desactivarán desde ahora y no se te volverá a cobrar.":"Your Plus benefits turn off now and you won't be charged again.",
 "Sí, cancelar":"Yes, cancel",
 "Suscripción cancelada":"Subscription canceled",
 "Suscripción reactivada. Tus beneficios están activos.":"Subscription reactivated. Your benefits are on.",
@@ -4220,7 +4220,7 @@ var APP_ENGLISH_TEXT = {
 "Guardar tarjeta":"Save card",
 "Método de pago actualizado":"Payment method updated",
 "No se pudo guardar la tarjeta. Inténtalo de nuevo.":"We couldn't save the card. Please try again.",
-"Suscríbete para desbloquear todo Drex Orbit.":"Subscribe to unlock all of Drex Orbit.",
+"Suscríbete para desbloquear todo Drex Plus.":"Subscribe to unlock all of Drex Plus.",
 
 /* C289-RESTOS */
 "Abre tu perfil y toca el engranaje para entrar a Ajustes.":"Open your profile and tap the gear to go to Settings.",
@@ -4431,7 +4431,7 @@ var APP_ENGLISH_TEXT = {
 "Revisa y toca Confirmar para quitar la fijación.":"Review and tap Confirm to unpin.",
 "Revisando la traducción…":"Checking the translation…",
 "Se abrió el formulario de reporte. Elige el motivo y envíalo para completar el reporte.":"The report form opened. Choose the reason and send it to complete the report.",
-"Se gerencia em Ajustes → Drex Orbit.":"It's managed in Settings → Drex Orbit.",
+"Se gerencia em Ajustes → Drex Plus.":"It's managed in Settings → Drex Plus.",
 "Sintetizando o relatório…":"Putting the report together…",
 "Sobre o que é o modelo? Escreve assim: \"/plantilla anuncio meu evento\".":"What's the template about? Write it like this: \"/template announce my event\".",
 "Solicitaste eliminar tu cuenta. ¿Quieres cancelar la eliminación y reactivarla ahora?":"You requested to delete your account. Do you want to cancel the deletion and reactivate it now?",
@@ -4623,12 +4623,12 @@ Object.assign(APP_ENGLISH_TEXT, {
 "Pagos y transacciones":"Payments and transactions",
 "Transacciones":"Transactions",
 "Ver mis transacciones":"View my transactions",
-"Tus movimientos reales de Drex Orbit.":"Your real Drex Orbit payments and renewals.",
+"Tus movimientos reales de Drex Plus.":"Your real Drex Plus payments and renewals.",
 "Activa":"Active",
 "Vence pronto":"Expiring soon",
 "Este contenido no está disponible.":{"en":"This content isn't available.","zh":"此内容不可用。","pt":"Este conteúdo não está disponível."},
 "La votación ya está cerrada.":{"en":"Voting is already closed.","zh":"投票已结束。","pt":"A votação já foi encerrada."},
-"Las encuestas de más de 1 día son de Drex Orbit: se ajustó a 1 día.":{"en":"Polls longer than 1 day are a Drex Orbit perk: adjusted to 1 day.","zh":"超过 1 天的投票是 Drex Orbit 专属：已调整为 1 天。","pt":"Enquetes com mais de 1 dia são do Drex Orbit: ajustado para 1 dia."},
+"Las encuestas de más de 1 día son de Drex Plus: se ajustó a 1 día.":{"en":"Polls longer than 1 day are a Drex Plus perk: adjusted to 1 day.","zh":"超过 1 天的投票是 Drex Plus 专属：已调整为 1 天。","pt":"Enquetes com mais de 1 dia são do Drex Plus: ajustado para 1 dia."},
 "Mira este post en Drex.":{"en":"Take a look at this post on Drex.","zh":"在 Drex 上看看这条帖子。","pt":"Veja esta postagem no Drex."},
 "Tu cuenta se creó, pero la foto no se pudo subir. Puedes agregarla desde tu perfil.":{"en":"Your account was created, but the photo could not be uploaded. You can add it from your profile.","zh":"你的账号已创建，但照片上传失败。你可以在个人资料中添加。","pt":"Sua conta foi criada, mas a foto não pôde ser enviada. Você pode adicioná-la no seu perfil."},
 "Código reenviado. Revisa tu correo.":{"en":"Code resent. Check your email.","zh":"验证码已重发，请检查你的邮箱。","pt":"Código reenviado. Verifique seu e-mail."},
@@ -4652,10 +4652,10 @@ Object.assign(APP_ENGLISH_TEXT, {
 });
 
 /* C244: pago embebido (Payment Element) y gestión propia de la
- * suscripción; sección "Drex Orbit y pagos" en Ajustes. */
+ * suscripción; sección "Drex Plus y pagos" en Ajustes. */
 Object.assign(APP_ENGLISH_TEXT, {
-"Drex Orbit y pagos":"Drex Orbit & payments",
-"Suscribirme a Drex Orbit":"Subscribe to Drex Orbit",
+"Drex Plus y pagos":"Drex Plus & payments",
+"Suscribirme a Drex Plus":"Subscribe to Drex Plus",
 "Pago no disponible por ahora":"Payment isn't available right now",
 "El pago dentro de Drex aún no está activo. Inténtalo de nuevo más tarde.":"In-app payment isn't active yet. Please try again later.",
 "La gestión dentro de Drex aún no está disponible. Inténtalo de nuevo más tarde.":"In-app subscription management isn't available yet. Please try again later.",
@@ -4663,11 +4663,11 @@ Object.assign(APP_ENGLISH_TEXT, {
 "Pago procesado por Stripe, sin salir de Drex.":"Payment processed by Stripe, without leaving Drex.",
 "Cargando pago seguro…":"Loading secure payment…",
 "No se pudo completar el pago. Revisa los datos e inténtalo de nuevo.":"We couldn't complete the payment. Check your details and try again.",
-"Ya tienes Drex Orbit activo.":"You already have Drex Orbit active.",
+"Ya tienes Drex Plus activo.":"You already have Drex Plus active.",
 "Ver mi suscripción":"View my subscription",
 "¿Cancelar tu suscripción?":"Cancel your subscription?",
-"Tu periodo pagado termina el {fecha}. Tus beneficios Orbit se desactivarán desde ahora y no se te volverá a cobrar.":"Your paid period ends on {fecha}. Your Orbit benefits turn off now and you won't be charged again.",
-"Tus beneficios Orbit se desactivarán desde ahora y no se te volverá a cobrar.":"Your Orbit benefits turn off now and you won't be charged again.",
+"Tu periodo pagado termina el {fecha}. Tus beneficios Plus se desactivarán desde ahora y no se te volverá a cobrar.":"Your paid period ends on {fecha}. Your Plus benefits turn off now and you won't be charged again.",
+"Tus beneficios Plus se desactivarán desde ahora y no se te volverá a cobrar.":"Your Plus benefits turn off now and you won't be charged again.",
 "Sí, cancelar":"Yes, cancel",
 "Suscripción cancelada":"Subscription canceled",
 "Suscripción reactivada. Tus beneficios están activos.":"Subscription reactivated. Your benefits are on.",
@@ -4676,7 +4676,7 @@ Object.assign(APP_ENGLISH_TEXT, {
 "Guardar tarjeta":"Save card",
 "Método de pago actualizado":"Payment method updated",
 "No se pudo guardar la tarjeta. Inténtalo de nuevo.":"We couldn't save the card. Please try again.",
-"Suscríbete para desbloquear todo Drex Orbit.":"Subscribe to unlock all of Drex Orbit."
+"Suscríbete para desbloquear todo Drex Plus.":"Subscribe to unlock all of Drex Plus."
 });
 
 /* Drex Verify (2026-10-19): claves de verificación de identidad. */
@@ -4729,8 +4729,8 @@ Object.assign(APP_ENGLISH_TEXT, {
 
 Object.assign(APP_ENGLISH_TEXT, { "No se pudo conectar con el servidor de verificación. Revisa tu conexión e inténtalo de nuevo.": "Couldn't connect to the verification server. Check your connection and try again." });
 
-/* Drex Orbit — Oferta de Halloween 2026 */
-Object.assign(APP_ENGLISH_TEXT, {"Oferta de Halloween":"Halloween Sale","-50% en todos los planes de Drex Orbit":"-50% on all Drex Orbit plans","Precios especiales hasta el 31 de octubre":"Special prices until October 31","-50% Halloween":"-50% Halloween"});
+/* Drex Plus — Oferta de Halloween 2026 */
+Object.assign(APP_ENGLISH_TEXT, {"Oferta de Halloween":"Halloween Sale","-50% en todos los planes de Drex Plus":"-50% on all Drex Plus plans","Precios especiales hasta el 31 de octubre":"Special prices until October 31","-50% Halloween":"-50% Halloween"});
 
 /* Drex i18n [EN] — Completado 2026-11-01: mismo lote que PT */
 Object.assign(APP_ENGLISH_TEXT, {"+{n} hoy": "+{n} today","1 vista": "1 view","Acepta la solicitud para poder llamar": "Accept the request to be able to call","Activando…": "Activating…","Actualizar": "Update","Alcance por onda": "Wave reach","Aún no hay canciones. ¡Sube la primera!": "No songs yet. Upload the first one!","Aún no se pudo cargar el perfil. Inténtalo de nuevo en un momento.": "The profile couldn't be loaded yet. Try again in a moment.","Busca a alguien para enviarle esto.": "Find someone to send this to.","Buscando contactos frecuentes...": "Searching frequent contacts...","Buscando...": "Searching...","Canciones que votaste": "Songs you voted on","Cargando canciones…": "Loading songs…","Cargando comentarios...": "Loading comments...","Cargando ecos...": "Loading echoes...","Cargando publicaciones...": "Loading posts...","Cargar mensajes anteriores": "Load earlier messages","Comentario de {u}": "Comment by {u}","Comentarios que votaste": "Comments you voted on","Comentarios recibidos": "Comments received","Configuración de llamadas guardada": "Call settings saved","Contenido multimedia": "Media content","Correo actualizado.": "Email updated.","Correo cambiado": "Email changed","Código enviado por SMS.": "Code sent by SMS.","Código enviado. Revisa tu correo nuevo.": "Code sent. Check your new email.","Código enviado. Revisa tu correo.": "Code sent. Check your email.","Código incorrecto. Inténtalo de nuevo.": "Incorrect code. Try again.","Dejar de silenciar a {u}": "Unmute {u}","Descubre temas por #tag.": "Discover topics by #tag.","Destellos de {u} silenciados": "{u}'s Destellos muted","Ecos recibidos": "Echoes received","El audio es muy corto.": "The audio is too short.","El correo se verificó pero no se pudo guardar. Revisa tu conexión e inténtalo de nuevo.": "The email was verified but couldn't be saved. Check your connection and try again.","En alza": "Rising","Esa foto es muy pesada (máx 25 MB). Elige una más ligera.": "That photo is too large (max 25 MB). Choose a lighter one.","Escribe algo o crea una votación para programarlo.": "Write something or create a poll to schedule it.","Escribe algo, agrega un GIF, una foto o una nota de voz antes de enviar": "Write something, add a GIF, a photo or a voice note before sending","Escribe el código de 6 dígitos de tu app de autenticación para confirmar el cambio de correo:": "Enter the 6-digit code from your authenticator app to confirm the email change:","Escribe el código de verificación.": "Enter the verification code.","Escribe primero el correo nuevo.": "Enter the new email first.","Escribe tu contraseña actual para confirmar el cambio de correo.": "Enter your current password to confirm the email change.","Escribe un correo válido.": "Enter a valid email.","Escribe un número válido con código de país, ej. +1 555 123 4567.": "Enter a valid number with country code, e.g. +1 555 123 4567.","Ese correo ya está en uso por otra cuenta.": "That email is already used by another account.","Ese video es muy pesado (máx 500 MB). Elige uno más ligero.": "That video is too large (max 500 MB). Choose a lighter one.","Ese ya es tu correo actual.": "That is already your current email.","Este usuario no acepta llamadas": "This user doesn't accept calls","Está en otra llamada": "On another call","Fecha desconocida": "Unknown date","Filtra comentarios ofensivos": "Filter offensive comments","Foto de post": "Post photo","Imagen no disponible": "Image unavailable","La programación aún no admite fotos ni videos. Publica normal o quita los adjuntos.": "Scheduling doesn't support photos or videos yet. Post normally or remove the attachments.","La sesión del desafío venció. Inicia sesión de nuevo.": "The challenge session expired. Sign in again.","La verificación por SMS aún no está activada en el servidor.": "SMS verification is not enabled on the server yet.","Las llamadas son para chats individuales por ahora": "Calls are for one-to-one chats for now","Llamada rechazada": "Call declined","Los destellos desaparecen a las 5 horas. Toca el botón de abajo para ser la primera persona en compartir uno.": "Destellos disappear after 5 hours. Tap the button below to be the first to share one.","Mensaje visto · eliminado": "Message seen · deleted","Motivo": "Reason","No encontramos usuarios.": "We couldn't find any users.","No hay fotos que coincidan.": "No matching photos.","No hay posts que coincidan.": "No matching posts.","No hay sesión activa.": "No active session.","No puedes llamar a esta cuenta": "You can't call this account","No se pudieron cargar más seguidores.": "Couldn't load more followers.","No se pudieron cargar más seguidos.": "Couldn't load more following.","No se pudo abrir el chat. Inténtalo de nuevo.": "Couldn't open the chat. Try again.","No se pudo cambiar la cámara": "Couldn't switch the camera","No se pudo cargar el feed": "Couldn't load the feed","No se pudo cargar tu Pulso. Revisa tu conexión.": "Couldn't load your Pulso. Check your connection.","No se pudo conectar la llamada": "Couldn't connect the call","No se pudo confirmar tu identidad. Inténtalo de nuevo.": "Couldn't confirm your identity. Try again.","No se pudo confirmar tu identidad. Revisa tu contraseña.": "Couldn't confirm your identity. Check your password.","No se pudo enviar el SMS. Revisa el número.": "Couldn't send the SMS. Check the number.","No se pudo enviar el código. Inténtalo de nuevo.": "Couldn't send the code. Try again.","No se pudo iniciar el juego. Revisa tu conexión.": "Couldn't start the game. Check your connection.","No se pudo iniciar la grabación.": "Couldn't start recording.","No se pudo reproducir el audio.": "Couldn't play the audio.","No se pudo subir el audio. Inténtalo de nuevo.": "Couldn't upload the audio. Try again.","No se pudo traducir. Revisa tu conexión e inténtalo de nuevo.": "Couldn't translate. Check your connection and try again.","Número verificado por SMS.": "Number verified by SMS.","Palabras ocultas guardadas.": "Hidden words saved.","Permisos de comentarios guardados.": "Comment permissions saved.","Permisos de menciones guardados.": "Mention permissions saved.","Permite el acceso al micrófono y la cámara para contestar": "Allow microphone and camera access to answer","Permite el acceso al micrófono y la cámara para llamar": "Allow microphone and camera access to call","Permite el micrófono para enviar audios.": "Allow the microphone to send voice messages.","Permite el micrófono para grabar audio.": "Allow the microphone to record audio.","Por favor escribe algo, agrega una foto, video o GIF, o crea una votación": "Please write something, add a photo, video or GIF, or create a poll","Por favor escribe algo, agrega una foto, video, audio o GIF, o crea una votación": "Please write something, add a photo, video, audio or GIF, or create a poll","Posts más vistos": "Most viewed posts","Posts publicados por día": "Posts published per day","Publica tu primer post y aquí verás cómo resuena.": "Publish your first post and you'll see here how it resonates.","Publicación de {u}": "Post by {u}","Reintentando…": "Retrying…","Retención": "Retention","Revisa tu conexión e inténtalo de nuevo.": "Check your connection and try again.","Se cambió el correo de la cuenta.": "The account email was changed.","Se cambió el correo de tu cuenta.": "Your account email was changed.","Se retiró tu verificación en dos pasos antigua por seguridad. Actívala de nuevo en el Centro de seguridad.": "Your old two-step verification was removed for security. Turn it on again in the Security Center.","Silenciar destellos de {u}": "Mute {u}'s Destellos","Sin destellos": "No Destellos","Sin destellos silenciados": "No muted Destellos","Sin respuesta": "No answer","Sin resultados": "No results","Sin resultados para \"{q}\".": "No results for \"{q}\".","Sin resultados para tu búsqueda.": "No results for your search.","Sin texto": "No text","Solo acepta llamadas de personas que sigue": "Only accepts calls from people they follow","Subiendo audio…": "Uploading audio…","Tendencias": "Trending","Toca otra opción para cambiar tu voto": "Tap another option to change your vote","Todavía no hay Pulso": "No Pulso yet","Tu actividad de los últimos 7 días": "Your activity from the last 7 days","Tu dispositivo no permite grabar audio aquí.": "Your device doesn't allow recording audio here.","Tu verificación en dos pasos antigua se retiró por seguridad. Actívala de nuevo en el Centro de seguridad.": "Your old two-step verification was removed for security. Turn it on again in the Security Center.","Vistas": "Views","Vistas por día": "Views per day","Volverás a ver sus destellos": "You'll see their Destellos again","Voto actualizado": "Vote updated","Votos en votaciones": "Votes in polls","Ya no verás sus destellos": "You won't see their Destellos anymore","Ya reportaste esto. Nuestro equipo lo está revisando.": "You already reported this. Our team is reviewing it.","Ya tienes una llamada en curso": "You already have a call in progress","[Audio]": "[Audio]","obligatorio": "required","opcional": "optional","quedan {h} h {m} min": "{h} h {m} min left","se quedaron 5+ segundos": "stayed 5+ seconds","vistas": "views","{n} palabras filtradas": "{n} filtered words","{n} posts": "{n} posts","{n} vistas": "{n} views","¿Unirte al grupo «": "Join the group «","✓ Correo verificado.": "✓ Email verified.","✓ Teléfono guardado (sin verificar)": "✓ Phone saved (unverified)","✓ Teléfono verificado.": "✓ Phone verified."});
