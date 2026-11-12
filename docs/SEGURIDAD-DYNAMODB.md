@@ -38,7 +38,7 @@ Obtenido de los `ref("<colección>/…")` literales de `index.html`, `drex-cloud
 
 | Grupo | Colecciones | Quién escribe hoy | Riesgo si el rol es amplio |
 |---|---|---|---|
-| **A. Solo servidor** (el cliente no las usa) | `wallets`, `transactions`, `stripe_events`, `ratelimit`; y `users/<uid>/orbit` (dentro de `users`) | Lambdas de pagos (`lambda-drex-payments`) y de login | **Crítico**: acuñar monedas / regalarse Orbit |
+| **A. Solo servidor** (el cliente no las usa) | `wallets`, `transactions`, `stripe_events`, `ratelimit`; y `users/<uid>/orbit` y `users/<uid>/adsFree` (dentro de `users`) | Lambdas de pagos (`lambda-drex-payments`) y de login | **Crítico**: acuñar monedas / regalarse Orbit |
 | **B. Identidad y secretos de cuenta** | `users` (perfil + `recoveryCodes`, `devices`, `sessions`, `supervisedBy`, `ratings`…), `userEmails` (email→uid), `usernames`, `usernameByUid`, `security`, `userSettings`, `pushSubscriptions`, `parentalLinkCodes`, `parentalLinkCodeByUser`, `parentalLinkAttempts`, `verifiedUsers` | Cliente | **Alto**: leer/alterar cuentas ajenas, enumeración de correos, saltar 2FA de recuperación, falsificar verificación |
 | **C. Mensajería privada** | `conversationMessages`, `conversations`, `userConversations`, `groupChats`, `chatFiles`, `chatUnread`, `chatMutes`, `chatThemes`, `chatSettings`, `chatDeletedForMe`, `conversationPinned`, `conversationReadAt`, `msgReactions`, `typing`, `callSignals`, `blendFeeds`, `groupMutes` | Cliente | **Alto**: leer/borrar/suplantar chats ajenos |
 | **D. Moderación y soporte** | `reports`, `appeals`, `commentModerationQueue` (incluye `authorEmail`), `careerApplications`, tabla `drex-support-tickets` | Cliente | **Alto**: PII de terceros legible; tickets de soporte |
@@ -232,7 +232,7 @@ Ya están bien (solo Lambda): pagos/Stripe (`wallets`, `transactions`, `stripe_e
 
 ## 7. Endurecimiento incluido en este PR (cliente)
 
-- `drex-cloud.js` (y su copia `drex-cloud.v3.js`): el adaptador DynamoDB rechaza **en el cliente** (`permission-denied`) cualquier `PutItem`/`DeleteItem`/`BatchWriteItem`/`TransactWriteItems` sobre `wallets`, `transactions`, `stripe_events`, `ratelimit` o `users/<uid>/orbit`. La app actual nunca escribe ahí, así que no cambia nada visible.
+- `drex-cloud.js` (y su copia `drex-cloud.v3.js`): el adaptador DynamoDB rechaza **en el cliente** (`permission-denied`) cualquier `PutItem`/`DeleteItem`/`BatchWriteItem`/`TransactWriteItems` sobre `wallets`, `transactions`, `stripe_events`, `ratelimit`, `users/<uid>/orbit` o `users/<uid>/adsFree`. La app actual nunca escribe ahí, así que no cambia nada visible.
 - **Honestidad:** es *defensa en profundidad*, no una barrera. Un atacante con DevTools puede usar el SDK directamente con sus credenciales. La barrera real es la política IAM de la §5-A.
 - Prueba: `tests/test-seguridad-dynamodb-guard.js`.
 - No se tocó la lógica de lectura ni nada que pueda romper el login.

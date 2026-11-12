@@ -261,6 +261,7 @@
   // las Lambdas (pagos/Stripe, rate limit) con credenciales de servidor.
   //   wallets, transactions, stripe_events, ratelimit  -> pk completa
   //   users/<uid>/orbit                               -> suscripción Drex Plus (clave guardada)
+  //   users/<uid>/adsFree                             -> sin anuncios por concesión (solo el servidor)
   // La app actual nunca las escribe; este guard impide que un bug futuro (o un
   // script inyectado que reutilice el cliente) acredite monedas o se otorgue
   // Drex Plus desde aquí. Ver docs/SEGURIDAD-DYNAMODB.md.
@@ -269,7 +270,7 @@
     pk = String(pk == null ? '' : pk);
     sk = String(sk == null ? '' : sk);
     if (SERVER_ONLY_PKS[pk] === 1) return true;
-    if (pk === 'users' && /^[^\/]+\/(orbit|plus)(\/|$)/.test(sk)) return true;
+    if (pk === 'users' && /^[^\/]+\/(orbit|plus|adsFree)(\/|$)/.test(sk)) return true;
     return false;
   }
   // Devuelve "pk/sk" de la primera clave protegida que intente escribir
