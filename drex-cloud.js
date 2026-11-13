@@ -2187,13 +2187,20 @@ function withCredRetry(opFn) {
     });
   }
 
-  // Índice verifiedUsers/<uid> -> {at, by, em}: evita descargar users
+  // Índice verifiedUsers/<uid> -> {at, by}: evita descargar users
   // COMPLETO en cada inicio de sesión para la caché de insignias. El índice
   // se rellena con backfill único; las concesiones futuras deben escribirlo
   // (ver nota en refreshVerifiedUsersCache de index.html).
   function readVerifiedUsersIndex() {
     return readLeaves(['verifiedUsers']).then(function (leaves) {
       var idx = unflatten(leaves, ['verifiedUsers']) || {};
+      // SEG: el índice es público y lo descarga cada cliente: NUNCA lleva el
+      // correo (`em`). Entradas viejas pueden traerlo: se retira al leer para
+      // que deje de llegar a los clientes (el borrado del dato guardado queda
+      // para el servidor).
+      Object.keys(idx).forEach(function (k) {
+        if (idx[k] && typeof idx[k] === 'object') delete idx[k].em;
+      });
       // La marca _indexed manda, no el conteo de entradas: un backfill
       // interrumpido dejaría el índice parcial para siempre.
       if (idx._indexed === true) return idx;
@@ -2206,8 +2213,7 @@ function withCredRetry(opFn) {
           if (!u || typeof u !== 'object') return;
           var v = u.verified;
           if (!(v === true || v === 'true' || v === 1 || v === '1')) return;
-          var em = String(u.email || '').trim().toLowerCase();
-          var e = { at: u.verifiedAt || '', by: u.verifiedBy || 'Drex', em: em };
+          var e = { at: u.verifiedAt || '', by: u.verifiedBy || 'Drex' };
           obj[uid] = e;
           reqs.push(putLeaf('verifiedUsers', uid, e));
         });
