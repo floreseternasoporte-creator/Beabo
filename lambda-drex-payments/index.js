@@ -6,7 +6,7 @@
 //                                     (Stripe Checkout mode:'subscription', planes Drex Plus)
 //   POST /create-customer-portal      {idToken, returnUrl?} -> {url}
 //                                     (portal de facturación de Stripe)
-//   POST /subscribe-embedded          {plan, idToken} -> {subscriptionId, clientSecret} | {alreadySubscribed:true}
+//   POST /subscribe-embedded          {plan, idToken, promoCode?} -> {subscriptionId, clientSecret, promoApplied?, promoCode?, promoPct?} | {alreadySubscribed:true}
 //                                     (C244: pago SIN salir de la app — Payment Element;
 //                                      suscripción default_incomplete, el webhook activa)
 //   POST /subscription-cancel         {idToken} -> {ok, cancelAtPeriodEnd:true, currentPeriodEnd, status}
@@ -123,6 +123,38 @@ function plusPriceId(plan) {
 }
 function plusPlanDisplayName(plan) {
   return (PLUS_PLANS[plan] && PLUS_PLANS[plan].name) || 'Drex Plus';
+}
+/* Códigos promocionales de Drex Plus (lanzamiento): MISMO juego que en la
+ * app (PLUS_PROMO_CODES en index.html). El descuento REAL lo cobra Stripe:
+ * cada código debe existir como Promotion Code en Stripe (TEST y LIVE),
+ * apuntando a un cupón percent_off con el mismo %. La Lambda solo valida
+ * que el código esté en esta lista y que Stripe lo reconozca; si el % de
+ * Stripe no coincide con esta lista, la compra se rechaza (502) en vez de
+ * cobrar un precio distinto al que muestra la app. */
+const DREX_PLUS_PROMO_CODES = { DREX10: 10, PLUS20: 20, REGALO15: 15 };
+async function drexPlusPromoLookup(code) {
+  const list = await stripe().promotionCodes.list({ code, active: true, limit: 1 });
+  const pc = list && list.data && list.data[0];
+  if (!pc) return null;
+  let coupon = pc.coupon;
+  if (coupon && typeof coupon === 'string') {
+    try { coupon = await stripe().coupons.retrieve(coupon); } catch (_) { return null; }
+  }
+  if (!coupon || coupon.percent_off == null) return null;
+  return { id: pc.id, pct: Number(coupon.percent_off) };
+}
+async function drexPlusPromoFromSub(sub) {
+  try {
+    const code = sub && sub.metadata && sub.metadata.drex_promo_code;
+    const disc = sub && sub.discount;
+    if (!code || !disc) return { promoApplied: false, promoCode: code || null, promoPct: null };
+    let coupon = disc.coupon;
+    if (coupon && typeof coupon === 'string') {
+      try { coupon = await stripe().coupons.retrieve(coupon); } catch (_) { return { promoApplied: false, promoCode: code, promoPct: null }; }
+    }
+    if (!coupon || coupon.percent_off == null) return { promoApplied: false, promoCode: code, promoPct: null };
+    return { promoApplied: true, promoCode: code, promoPct: Number(coupon.percent_off) };
+  } catch (_) { return { promoApplied: false, promoCode: null, promoPct: null }; }
 }
 /* line_item de Stripe para el plan: price ID configurado o price_data inline.
  * Devuelve null si el plan no tiene precio disponible ( -> 503 honesto). */
@@ -560,6 +592,15 @@ async function handleSubscribeEmbedded(event) {
   if (!PLUS_PLANS[plan]) return json(400, { error: 'invalid_plan' }, origin);
   const lineItem = plusLineItem(plan);
   if (!lineItem) return json(503, { error: 'subscription_not_configured' }, origin);
+  let promoCode = null;
+  let promo = null;
+  if (body.promoCode !== undefined && body.promoCode !== null && String(body.promoCode).trim() !== '') {
+    promoCode = String(body.promoCode).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 32);
+    if (!DREX_PLUS_PROMO_CODES[promoCode]) return json(400, { error: 'invalid_promo_code' }, origin);
+    try { promo = await drexPlusPromoLookup(promoCode); } catch (e) { console.error('plus promo lookup failed:', e && e.message); return json(502, { error: 'payment_provider_error' }, origin); }
+    if (!promo) return json(400, { error: 'invalid_promo_code' }, origin);
+    if (promo.pct !== DREX_PLUS_PROMO_CODES[promoCode]) { console.error('plus promo pct mismatch:', promoCode, promo.pct); return json(502, { error: 'promo_misconfigured' }, origin); }
+  }
 
   let rec = null;
   try {
@@ -599,7 +640,8 @@ async function handleSubscribeEmbedded(event) {
         const pi = await invoicePaymentIntent(full && full.latest_invoice);
         const secret = pi ? pi.client_secret : null;
         if (secret) {
-          return json(200, { subscriptionId: open.id, clientSecret: secret, reused: true }, origin);
+          const promoInfo = await drexPlusPromoFromSub(full);
+          return json(200, { subscriptionId: open.id, clientSecret: secret, reused: true, promoApplied: promoInfo.promoApplied, promoCode: promoInfo.promoCode, promoPct: promoInfo.promoPct }, origin);
         }
         // Incomplete sin intent utilizable (expirado): se cancela para no
         // dejar dos suscripciones vivas y se crea una nueva abajo.
@@ -619,21 +661,22 @@ async function handleSubscribeEmbedded(event) {
     const sub = await stripe().subscriptions.create({
       customer: customerId,
       items: [lineItem],
+      ...(promo ? { discounts: [{ promotion_code: promo.id }] } : {}),
       payment_behavior: 'default_incomplete',
       payment_settings: { save_default_payment_method: 'on_subscription' },
-      metadata: { drex_user_sub: userSub, drex_plus_plan: plan, drex_orbit_plan: plan },
+      metadata: { drex_user_sub: userSub, drex_plus_plan: plan, drex_orbit_plan: plan, ...(promoCode ? { drex_promo_code: promoCode } : {}) },
       expand: ['latest_invoice.payments.data.payment.payment_intent'],
     }, {
       // Reintentos de red/app dentro de la misma hora no crean una segunda
       // suscripción: Stripe devuelve la primera respuesta. La ventana de
       // una hora no bloquea un intento genuinamente nuevo más tarde.
-      idempotencyKey: 'drex_sub_' + userSub + '_' + plan + '_' + Math.floor(Date.now() / 3600000),
+      idempotencyKey: 'drex_sub_' + userSub + '_' + plan + '_' + (promoCode || 'nocode') + '_' + Math.floor(Date.now() / 3600000),
     });
     const pi = await invoicePaymentIntent(sub && sub.latest_invoice);
     const secret = pi ? pi.client_secret : null;
     if (!secret) return json(502, { error: 'payment_provider_error' }, origin);
-    console.log('plus embedded subscription created', sub.id, 'plan', plan);
-    return json(200, { subscriptionId: sub.id, clientSecret: secret }, origin);
+    console.log('plus embedded subscription created', sub.id, 'plan', plan, 'promo', promoCode || '-');
+    return json(200, { subscriptionId: sub.id, clientSecret: secret, ...(promo ? { promoApplied: true, promoCode, promoPct: promo.pct } : {}) }, origin);
   } catch (e) {
     console.error('plus embedded subscribe failed:', e && e.message);
     return json(502, { error: 'payment_provider_error' }, origin);
