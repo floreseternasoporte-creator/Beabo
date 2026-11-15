@@ -636,16 +636,30 @@ async function handleSubscribeEmbedded(event) {
             needsPaymentUpdate: true,
           }, origin);
         }
-        const full = await stripe().subscriptions.retrieve(open.id, { expand: ['latest_invoice.payments.data.payment.payment_intent'] });
-        const pi = await invoicePaymentIntent(full && full.latest_invoice);
-        const secret = pi ? pi.client_secret : null;
-        if (secret) {
-          const promoInfo = await drexPlusPromoFromSub(full);
-          return json(200, { subscriptionId: open.id, clientSecret: secret, reused: true, promoApplied: promoInfo.promoApplied, promoCode: promoInfo.promoCode, promoPct: promoInfo.promoPct }, origin);
+        // Barrido 2026-11-15 (carril 4): la reutilización solo vale si la
+        // suscripción abierta coincide con lo que el usuario pidió AHORA
+        // (mismo plan y mismo código). Sin esto: un intento abandonado SIN
+        // código dejaba un código válido sin efecto (la app bloqueaba el
+        // pago); un intento CON código seguía cobrando el descuento aunque
+        // el usuario lo hubiera quitado; y cambiar de plan entre intentos
+        // cobraba el plan viejo mientras la app mostraba el nuevo. Al no
+        // coincidir se cancela y se crea una nueva abajo.
+        const openPlan = (open.metadata && (open.metadata.drex_plus_plan || open.metadata.drex_orbit_plan)) || null;
+        const openPromo = (open.metadata && open.metadata.drex_promo_code) || null;
+        if (openPlan !== plan || openPromo !== promoCode) {
+          try { await stripe().subscriptions.cancel(open.id); } catch (_) {}
+        } else {
+          const full = await stripe().subscriptions.retrieve(open.id, { expand: ['latest_invoice.payments.data.payment.payment_intent'] });
+          const pi = await invoicePaymentIntent(full && full.latest_invoice);
+          const secret = pi ? pi.client_secret : null;
+          if (secret) {
+            const promoInfo = await drexPlusPromoFromSub(full);
+            return json(200, { subscriptionId: open.id, clientSecret: secret, reused: true, promoApplied: promoInfo.promoApplied, promoCode: promoInfo.promoCode, promoPct: promoInfo.promoPct }, origin);
+          }
+          // Incomplete sin intent utilizable (expirado): se cancela para no
+          // dejar dos suscripciones vivas y se crea una nueva abajo.
+          try { await stripe().subscriptions.cancel(open.id); } catch (_) {}
         }
-        // Incomplete sin intent utilizable (expirado): se cancela para no
-        // dejar dos suscripciones vivas y se crea una nueva abajo.
-        try { await stripe().subscriptions.cancel(open.id); } catch (_) {}
       }
     }
     if (!customerId) {

@@ -81,7 +81,7 @@ test('POST /subscribe-embedded crea la suscripción y devuelve el clientSecret d
   assert.equal(body.clientSecret, stripeStub.FAKE_PI_SECRET);
   assert.ok(body.subscriptionId && body.subscriptionId.startsWith('sub_test_'));
   assert.match(stripeStub.lastCustomerCreate.options.idempotencyKey, /^drex_cust_user-abc$/);
-  assert.match(stripeStub.lastSubscriptionCreate.options.idempotencyKey, /^drex_sub_user-abc_monthly_\d+$/);
+  assert.match(stripeStub.lastSubscriptionCreate.options.idempotencyKey, /^drex_sub_user-abc_monthly_nocode_\d+$/); // la clave incluye el segmento de código ('nocode' sin código) desde el commit de códigos promocionales
   assert.deepEqual(stripeStub.lastSubscriptionCreate.params.expand, ['latest_invoice.payments.data.payment.payment_intent']);
 });
 
@@ -120,4 +120,61 @@ test('POST /subscribe-embedded con plan inexistente -> 400 invalid_plan (sin toc
   }));
   assert.equal(res.statusCode, 400);
   assert.equal(parse(res).error, 'invalid_plan');
+});
+
+// Barrido 2026-11-15 (carril 4): la reutilización de una suscripción
+// incompleta IGNORABA el plan y el código pedidos. Tres desajustes reales:
+// (a) crear CON código, quitarlo y reintentar seguía cobrando el descuento;
+// (b) crear SIN código y luego aplicar uno válido quedaba bloqueado por la
+// app (la Lambda devolvía la suscripción vieja sin el descuento);
+// (c) cambiar de plan entre intentos cobraba el plan viejo mientras la app
+// mostraba el nuevo. La reutilización solo vale con mismo plan y código.
+test('Barrido 2026-11-15: reintento SIN código tras crear CON código crea una suscripción nueva sin descuento', async () => {
+  const first = parse(await handler(httpEvent({
+    path: '/subscribe-embedded',
+    body: { plan: 'monthly', promoCode: 'PLUS20', idToken: validToken() },
+  })));
+  assert.equal(first.promoApplied, true);
+  assert.equal(first.promoCode, 'PLUS20');
+  assert.equal(first.promoPct, 20);
+  const second = parse(await handler(httpEvent({
+    path: '/subscribe-embedded',
+    body: { plan: 'monthly', idToken: validToken() },
+  })));
+  assert.notEqual(second.subscriptionId, first.subscriptionId);
+  assert.equal(second.reused, undefined);
+  assert.equal(second.promoApplied, undefined);
+  assert.deepEqual(stripeStub.lastSubscriptionCreate.params.discounts, undefined);
+});
+
+test('Barrido 2026-11-15: reintento CON código tras crear SIN código aplica el descuento en una suscripción nueva', async () => {
+  const first = parse(await handler(httpEvent({
+    path: '/subscribe-embedded',
+    body: { plan: 'monthly', idToken: validToken() },
+  })));
+  assert.equal(first.promoApplied, undefined);
+  const second = parse(await handler(httpEvent({
+    path: '/subscribe-embedded',
+    body: { plan: 'monthly', promoCode: 'PLUS20', idToken: validToken() },
+  })));
+  assert.notEqual(second.subscriptionId, first.subscriptionId);
+  assert.equal(second.reused, undefined);
+  assert.equal(second.promoApplied, true);
+  assert.equal(second.promoCode, 'PLUS20');
+  assert.equal(second.promoPct, 20);
+  assert.equal(stripeStub.lastSubscriptionCreate.params.discounts[0].promotion_code, 'promo_test_PLUS20');
+});
+
+test('Barrido 2026-11-15: cambio de plan entre intentos no reutiliza el plan viejo', async () => {
+  const first = parse(await handler(httpEvent({
+    path: '/subscribe-embedded',
+    body: { plan: 'monthly', idToken: validToken() },
+  })));
+  const second = parse(await handler(httpEvent({
+    path: '/subscribe-embedded',
+    body: { plan: 'yearly', idToken: validToken() },
+  })));
+  assert.notEqual(second.subscriptionId, first.subscriptionId);
+  assert.equal(second.reused, undefined);
+  assert.equal(stripeStub.lastSubscriptionCreate.params.metadata.drex_plus_plan, 'yearly');
 });

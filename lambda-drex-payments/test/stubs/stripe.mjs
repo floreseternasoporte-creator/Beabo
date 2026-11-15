@@ -22,6 +22,11 @@ const fakeCustomersBySub = new Map();
 // siempre objeto: las pruebas pasaban y producción devolvía 502.)
 // (El secreto falso se arma por partes para no teclear un literal.)
 export const FAKE_PI_SECRET = ['pi_test_1', 'secret', 'abc'].join('_');
+export const STUB_PROMO_CODES = {
+  DREX10: { id: 'promo_test_DREX10', pct: 10 },
+  PLUS20: { id: 'promo_test_PLUS20', pct: 20 },
+  REGALO15: { id: 'promo_test_REGALO15', pct: 15 },
+};
 export let __piAsString = false;
 export function __setPiAsString(v) { __piAsString = !!v; }
 function fakeInvoiceWithPayments(expand) {
@@ -111,6 +116,13 @@ export default class Stripe {
         items: { data: [{ current_period_end: Math.floor(Date.now() / 1000) + 2592000 }] },
         latest_invoice: fakeInvoiceWithPayments(params.expand),
       };
+      // Barrido 2026-11-15: una suscripción creada con promotion_code trae
+      // su descuento, como en Stripe real (lo lee drexPlusPromoFromSub).
+      if (params.discounts && params.discounts[0] && params.discounts[0].promotion_code) {
+        const pcId = String(params.discounts[0].promotion_code);
+        const hit = Object.values(STUB_PROMO_CODES).find((p) => p.id === pcId);
+        if (hit) sub.discount = { coupon: { id: 'coupon_test_' + hit.pct, percent_off: hit.pct } };
+      }
       fakeSubscriptions[sub.id] = sub;
       return { ...sub };
     },
@@ -141,6 +153,23 @@ export default class Stripe {
       return { ...cust };
     },
     update: async () => ({ id: 'cus_test_1' }),
+  };
+  // Códigos promocionales de Drex Plus (mismo juego que la Lambda y la app).
+  // Barrido 2026-11-15: el stub tiene que resolverlos para probar la ruta
+  // /subscribe-embedded con promoCode.
+  promotionCodes = {
+    list: async (params) => {
+      const p = STUB_PROMO_CODES[String(params && params.code || '').toUpperCase()];
+      if (!p || (params && params.active === false)) return { data: [] };
+      return { data: [{ id: p.id, code: String(params.code).toUpperCase(), active: true, coupon: { id: 'coupon_test_' + p.pct, percent_off: p.pct } }] };
+    },
+  };
+  coupons = {
+    retrieve: async (id) => {
+      const m = /coupon_test_(\d+)$/.exec(String(id || ''));
+      if (!m) throw new Error('coupon no encontrado en stub');
+      return { id, percent_off: Number(m[1]) };
+    },
   };
   paymentIntents = {
     retrieve: async (id) => Object.assign({ id }, { ['client' + '_secret']: FAKE_PI_SECRET }),
