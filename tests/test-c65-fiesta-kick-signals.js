@@ -90,6 +90,7 @@ const sandbox = {
   showMiniToast: m => { toasts.push(String(m)); },
   appT: s => s,
   confirm: () => true,
+  drexConfirm: async () => true, // C65: fiestaKickMember ahora confirma con drexConfirm (iOS) en vez de confirm() nativo; auto-aceptar igual que el stub de confirm
   setTimeout, clearTimeout, Promise,
 };
 sandbox.globalThis = sandbox;
