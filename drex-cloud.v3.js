@@ -4091,6 +4091,13 @@ function withCredRetry(opFn) {
 
     currentCognitoUser = cognitoUser;
     restoreSeq++;
+    // SEG-2FA 2026-11-16: el login por correo NO pasa por la Lambda y
+    // Cognito no conoce la 2FA legacy (vive en users/<uid>/twoFactor*),
+    // asi que una cuenta solo-legacy entraba solo con contrasena. La
+    // puerta de index.html necesita saber si este inicio fue fresco por
+    // contrasena ('email') o una restauracion (null): solo los inicios
+    // frescos fijan drexPendingLoginMethod antes de llegar aqui.
+    try { global.__drexFreshLoginMethod = drexPendingLoginMethod; } catch (_) {}
     return new Promise(function (resolve) {
       // Los atributos enriquecen el usuario, pero una sesión válida no debe
       // morir si esta llamada falla o se cuelga (sin red al abrir la app):
