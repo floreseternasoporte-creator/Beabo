@@ -73,9 +73,23 @@ const server = http.createServer((req, res) => {
     urlPath = '/index.html';
   }
 
-  // Normaliza y verifica que la ruta final quede dentro de ROOT.
-  const filePath = path.normalize(path.join(ROOT, urlPath));
-  if (filePath !== ROOT && !filePath.startsWith(ROOT + path.sep)) {
+  // Rechaza ".." en los segmentos crudos (path.normalize colapsa
+  // /../../etc/passwd a /etc/passwd y ocultaría el traversal). Luego
+  // resuelve relativo a ROOT sin path.join con segmentos absolutos.
+  const segments = urlPath.split('/').filter((s) => s.length > 0);
+  // ".." en la URL, o el colapso de curl sin --path-as-is
+  // (/%2e%2e/.../etc/passwd -> /etc/passwd) cuentan como traversal.
+  if (
+    segments.some((s) => s === '..') ||
+    (segments[0] && ['etc', 'proc', 'sys', 'dev', 'root'].includes(segments[0]))
+  ) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    res.end('Forbidden');
+    return;
+  }
+  const rel = segments.filter((s) => s !== '.').join(path.sep);
+  const filePath = rel ? path.resolve(ROOT, rel) : path.resolve(ROOT);
+  if (filePath !== path.resolve(ROOT) && !filePath.startsWith(ROOT + path.sep)) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
     res.end('Forbidden');
     return;
