@@ -58,6 +58,8 @@ beforeEach(() => {
   ddbStub.__stubReset();
   stripeStub.__clearSubscriptions();
   stripeStub.__clearCustomers();
+  stripeStub.__clearPriceOverrides();
+  stripeStub.__clearPromoCouponDurations();
 });
 
 function httpEvent({ method = 'POST', path = '/', body = null, headers = {}, ip = '9.9.9.9' }) {
@@ -177,4 +179,30 @@ test('Barrido 2026-11-15: cambio de plan entre intentos no reutiliza el plan vie
   assert.notEqual(second.subscriptionId, first.subscriptionId);
   assert.equal(second.reused, undefined);
   assert.equal(stripeStub.lastSubscriptionCreate.params.metadata.drex_plus_plan, 'yearly');
+});
+
+// A4 2026-11-23: si el Price de Stripe cobra distinto de lo que muestra la
+// app (499 mensual / 4999 anual), /subscribe-embedded responde 503 honesto
+// en vez de vender a otro precio.
+test('A4: Price mensual distinto de 499 -> 503 subscription_not_configured', async () => {
+  stripeStub.__setPriceAmount('price_monthly_test', 999);
+  const res = await handler(httpEvent({
+    path: '/subscribe-embedded',
+    body: { plan: 'monthly', idToken: validToken() },
+  }));
+  assert.equal(res.statusCode, 503);
+  assert.equal(parse(res).error, 'subscription_not_configured');
+});
+
+// M7 2026-11-23: cupón promo con duration 'once' (no forever/repeating) ->
+// 502 promo_misconfigured en vez de vender un descuento de una sola vez
+// como si fuera permanente.
+test('M7: cupón promo con duration once -> 502 promo_misconfigured', async () => {
+  stripeStub.__setPromoCouponDuration('PLUS20', 'once');
+  const res = await handler(httpEvent({
+    path: '/subscribe-embedded',
+    body: { plan: 'monthly', promoCode: 'PLUS20', idToken: validToken() },
+  }));
+  assert.equal(res.statusCode, 502);
+  assert.equal(parse(res).error, 'promo_misconfigured');
 });

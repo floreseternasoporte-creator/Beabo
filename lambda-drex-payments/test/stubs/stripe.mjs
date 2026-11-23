@@ -28,6 +28,12 @@ export const STUB_PROMO_CODES = {
   REGALO15: { id: 'promo_test_REGALO15', pct: 15 },
 };
 export let __piAsString = false;
+const __priceOverrides = new Map();
+export function __setPriceAmount(id, cents) { __priceOverrides.set(String(id), cents); }
+export function __clearPriceOverrides() { __priceOverrides.clear(); }
+const __promoCouponDurations = new Map();
+export function __setPromoCouponDuration(code, duration) { __promoCouponDurations.set(String(code).toUpperCase(), duration); }
+export function __clearPromoCouponDurations() { __promoCouponDurations.clear(); }
 export function __setPiAsString(v) { __piAsString = !!v; }
 function fakeInvoiceWithPayments(expand) {
   const deep = !__piAsString && Array.isArray(expand)
@@ -154,6 +160,15 @@ export default class Stripe {
     },
     update: async () => ({ id: 'cus_test_1' }),
   };
+  // A4: Prices de Drex Plus. Montos reales: mensual 499, anual 4999.
+  // __setPriceAmount permite simular un Price mal configurado en tests.
+  prices = {
+    retrieve: async (id) => {
+      if (__priceOverrides.has(String(id))) return { id, unit_amount: __priceOverrides.get(String(id)), currency: 'usd' };
+      if (String(id).includes('yearly')) return { id, unit_amount: 4999, currency: 'usd' };
+      return { id, unit_amount: 499, currency: 'usd' };
+    },
+  };
   // Códigos promocionales de Drex Plus (mismo juego que la Lambda y la app).
   // Barrido 2026-11-15: el stub tiene que resolverlos para probar la ruta
   // /subscribe-embedded con promoCode.
@@ -161,7 +176,8 @@ export default class Stripe {
     list: async (params) => {
       const p = STUB_PROMO_CODES[String(params && params.code || '').toUpperCase()];
       if (!p || (params && params.active === false)) return { data: [] };
-      return { data: [{ id: p.id, code: String(params.code).toUpperCase(), active: true, coupon: { id: 'coupon_test_' + p.pct, percent_off: p.pct } }] };
+      const dur = __promoCouponDurations.get(String(params.code).toUpperCase()) || 'forever';
+      return { data: [{ id: p.id, code: String(params.code).toUpperCase(), active: true, coupon: { id: 'coupon_test_' + p.pct, percent_off: p.pct, duration: dur } }] };
     },
   };
   coupons = {

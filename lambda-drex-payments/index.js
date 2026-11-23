@@ -141,6 +141,13 @@ async function drexPlusPromoLookup(code) {
     try { coupon = await stripe().coupons.retrieve(coupon); } catch (_) { return null; }
   }
   if (!coupon || coupon.percent_off == null) return null;
+  // M7: un cupón 'once' solo descuenta la primera factura y la app vende el
+  // descuento como permanente: configuración inválida, no se vende.
+  if (coupon.duration && coupon.duration !== 'forever' && !(coupon.duration === 'repeating' && coupon.duration_in_months)) {
+    const e = new Error('promo coupon duration not forever/repeating: ' + coupon.duration);
+    e.code = 'promo_misconfigured';
+    throw e;
+  }
   return { id: pc.id, pct: Number(coupon.percent_off) };
 }
 async function drexPlusPromoFromSub(sub) {
@@ -158,11 +165,27 @@ async function drexPlusPromoFromSub(sub) {
 }
 /* line_item de Stripe para el plan: price ID configurado o price_data inline.
  * Devuelve null si el plan no tiene precio disponible ( -> 503 honesto). */
-function plusLineItem(plan) {
+async function plusLineItem(plan) {
   const spec = PLUS_PLANS[plan];
   if (!spec) return null;
   const priceId = plusPriceId(plan);
-  if (priceId) return { price: priceId, quantity: 1 };
+  if (priceId) {
+    // A4: el Price de Stripe es la fuente de verdad del precio. Si el Price
+    // configurado cobra distinto de lo que muestra la app (499 mensual /
+    // 4999 anual), no se vende: null -> 503 subscription_not_configured.
+    try {
+      const price = await stripe().prices.retrieve(priceId);
+      const expected = plan === 'monthly' ? 499 : plan === 'yearly' ? 4999 : null;
+      if (!price || price.unit_amount == null || (expected !== null && Number(price.unit_amount) !== expected)) {
+        console.error('plus price mismatch:', plan, priceId, price && price.unit_amount, 'expected', expected);
+        return null;
+      }
+    } catch (e) {
+      console.error('plus price retrieve failed:', e && e.message);
+      return null;
+    }
+    return { price: priceId, quantity: 1 };
+  }
   if (spec.priceData) {
     return {
       price_data: {
@@ -590,14 +613,14 @@ async function handleSubscribeEmbedded(event) {
 
   const plan = body.plan;
   if (!PLUS_PLANS[plan]) return json(400, { error: 'invalid_plan' }, origin);
-  const lineItem = plusLineItem(plan);
+  const lineItem = await plusLineItem(plan);
   if (!lineItem) return json(503, { error: 'subscription_not_configured' }, origin);
   let promoCode = null;
   let promo = null;
   if (body.promoCode !== undefined && body.promoCode !== null && String(body.promoCode).trim() !== '') {
     promoCode = String(body.promoCode).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 32);
     if (!DREX_PLUS_PROMO_CODES[promoCode]) return json(400, { error: 'invalid_promo_code' }, origin);
-    try { promo = await drexPlusPromoLookup(promoCode); } catch (e) { console.error('plus promo lookup failed:', e && e.message); return json(502, { error: 'payment_provider_error' }, origin); }
+    try { promo = await drexPlusPromoLookup(promoCode); } catch (e) { console.error('plus promo lookup failed:', e && e.message); if (e && e.code === 'promo_misconfigured') return json(502, { error: 'promo_misconfigured' }, origin); return json(502, { error: 'payment_provider_error' }, origin); }
     if (!promo) return json(400, { error: 'invalid_promo_code' }, origin);
     if (promo.pct !== DREX_PLUS_PROMO_CODES[promoCode]) { console.error('plus promo pct mismatch:', promoCode, promo.pct); return json(502, { error: 'promo_misconfigured' }, origin); }
   }
