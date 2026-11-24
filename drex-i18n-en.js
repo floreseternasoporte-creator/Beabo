@@ -4773,3 +4773,15 @@ Object.assign(APP_ENGLISH_TEXT, {
   "El $tag necesita al menos 3 letras o números.": "$tag needs at least 3 letters or numbers.",
   "Ese $tag ya está en uso.": "That $tag is already taken."
 });
+Object.assign(APP_ENGLISH_TEXT, {
+  "Verificación de $1 pagada. Ya estás en la lista de espera de Chiripa.": "Your $1 verification is paid. You're on the Chiripa waitlist.",
+  "Ya estás en la lista de espera de Chiripa.": "You're already on the Chiripa waitlist.",
+  "La verificación de $1 aún no está activa en el servidor. Falta desplegar la nueva versión de la Lambda de pagos.": "The $1 verification isn't active on the server yet. The new payments Lambda version still needs to be deployed.",
+  "Inicia sesión para verificar tu cuenta.": "Sign in to verify your account.",
+  "No pudimos confirmar el pago. Inténtalo de nuevo.": "We couldn't confirm the payment. Try again.",
+  "El pago aún no se confirmó. Inténtalo de nuevo.": "The payment hasn't been confirmed yet. Try again.",
+  "El pago no se completó. No se realizó ningún cargo.": "The payment didn't complete. No charge was made.",
+  "Pagar $1 y unirme": "Pay $1 and join",
+  "Verificación de $1 pagada · Se devuelve automáticamente": "$1 verification paid · Refunded automatically",
+  "En lista de espera · Verificación de $1 pagada": "On the waitlist · $1 verification paid"
+});

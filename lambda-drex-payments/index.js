@@ -15,6 +15,10 @@
 //                                     {idToken, paymentMethodId} -> {ok:true, updated:true}
 //                                     (C244: Setup Element para cambiar la tarjeta)
 //   POST /subscription-status         {idToken} -> {active, plan, currentPeriodEnd, cancelAtPeriodEnd, status}
+//   POST /create-verification-payment {idToken} -> {clientSecret, paymentIntentId} | {alreadyVerified:true}
+//                                     (C244: pago SIN salir de la app — Payment Element;
+//                                      PaymentIntent de $1 para la verificación de Chiripa)
+//   POST /bank-verification-status   {idToken, paymentIntentId?} -> {verified, verifiedAt?, paymentIntentId?}
 //   GET  /transactions                Authorization: Bearer <idToken> -> {transactions[], subscription{}}
 //                                     (fail closed: sin registro -> active:false)
 //   POST /webhook                      (llamado por Stripe, firma verificada)
@@ -1160,6 +1164,106 @@ async function handleCoinsCheckoutCompleted(stripeEvent, session) {
   }
 }
 
+// ---------- Verificación de $1 de Chiripa (2026-11-24) ----------
+// La lista de espera de Chiripa exige una retención temporal de $1 con
+// Stripe para confirmar el método de pago. Como el resto de pagos de Drex
+// (C244), el cobro ocurre DENTRO de la app con el Payment Element: la
+// Lambda crea un PaymentIntent de $1 y devuelve su clientSecret; el
+// checkout hospedado (/create-checkout-session) está retirado (C263) y no
+// se usa. El registro vive en DynamoDB: users/<sub>/bankVerification.
+// El flujo NO depende del webhook (el evento payment_intent.succeeded no
+// está suscrito en Stripe hoy): la app confirma el pago y llama a
+// /bank-verification-status con el paymentIntentId, y la Lambda verifica
+// el intent directamente con Stripe. El webhook es respaldo por si el
+// evento se suscribe después.
+const BANK_VERIFICATION_CENTS = 100;
+
+async function readBankVerification(userSub) {
+  const r = await ddb.send(new GetCommand({ TableName: TABLE, Key: { pk: 'users', sk: userSub + '/bankVerification' } }));
+  if (!r.Item || typeof r.Item.v === 'undefined') return null;
+  try { const o = JSON.parse(String(r.Item.v)); return (o && typeof o === 'object') ? o : null; } catch (_) { return null; }
+}
+
+async function saveBankVerification({ userSub, paymentIntentId, eventId, eventType }) {
+  const now = Date.now();
+  const next = { status: 'verified', amountCents: BANK_VERIFICATION_CENTS, currency: 'usd', refundable: true, provider: 'stripe', paymentIntentId: paymentIntentId || null, verifiedAt: now, updatedAt: now };
+  const items = [{ Put: { TableName: TABLE, Item: { pk: 'users', sk: userSub + '/bankVerification', v: JSON.stringify(next) } } }];
+  if (eventId) {
+    items.push({ Put: { TableName: TABLE, Item: { pk: 'stripe_events', sk: eventId, v: JSON.stringify({ type: eventType || 'bank_verification', userSub, paymentIntentId: paymentIntentId || null, ts: now }) }, ConditionExpression: 'attribute_not_exists(sk)' } });
+  }
+  try {
+    await ddb.send(new TransactWriteCommand({ TransactItems: items }));
+  } catch (e) {
+    if (e && e.name === 'TransactionCanceledException') {
+      const reasons = e.CancellationReasons || [];
+      if (eventId && reasons[1] && reasons[1].Code === 'ConditionalCheckFailed') return { duplicate: true };
+    }
+    console.error('bank verification save failed:', e && e.message);
+    throw Object.assign(new Error('db_write_failed'), { status: 500 });
+  }
+  return { saved: true, record: next };
+}
+
+async function handleCreateVerificationPayment(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  const auth = await plusAuthedBody(event, origin);
+  if (auth.response) return auth.response;
+  const { userSub } = auth;
+  let prev = null;
+  try { prev = await readBankVerification(userSub); } catch (e) { return json(500, { error: 'db_read_failed' }, origin); }
+  if (prev && prev.status === 'verified') return json(200, { alreadyVerified: true, verifiedAt: prev.verifiedAt || null }, origin);
+  let pi;
+  try {
+    pi = await stripe().paymentIntents.create({
+      amount: BANK_VERIFICATION_CENTS,
+      currency: 'usd',
+      automatic_payment_methods: { enabled: true },
+      metadata: { drex_bank_verification: '1', drex_user_sub: userSub },
+      description: 'Chiripa — Verificación de cuenta ($1, se devuelve automáticamente)',
+    });
+  } catch (e) { console.error('verification pi create failed:', e && e.message); return json(502, { error: 'payment_provider_error' }, origin); }
+  if (!pi || !pi.client_secret) return json(502, { error: 'payment_provider_error' }, origin);
+  return json(200, { clientSecret: pi.client_secret, paymentIntentId: pi.id }, origin);
+}
+
+async function handleBankVerificationStatus(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  const auth = await plusAuthedBody(event, origin);
+  if (auth.response) return auth.response;
+  const { body, userSub } = auth;
+  const piId = typeof body.paymentIntentId === 'string' ? body.paymentIntentId.trim() : '';
+  if (piId) {
+    let pi;
+    try { pi = await stripe().paymentIntents.retrieve(piId); } catch (e) { console.error('verification pi retrieve failed:', e && e.message); return json(502, { error: 'payment_provider_error' }, origin); }
+    const md = (pi && pi.metadata) || {};
+    if (pi && pi.status === 'succeeded' && md.drex_bank_verification === '1' && md.drex_user_sub === userSub) {
+      try {
+        const r = await saveBankVerification({ userSub, paymentIntentId: pi.id, eventId: 'pi:' + pi.id, eventType: 'payment_intent.succeeded' });
+        let at = r.record ? r.record.verifiedAt : null;
+        if (r.duplicate) { const prev = await readBankVerification(userSub); at = prev ? prev.verifiedAt : null; }
+        return json(200, { verified: true, verifiedAt: at, paymentIntentId: pi.id, duplicate: !!r.duplicate }, origin);
+      } catch (e) { return json(500, { error: 'db_write_failed' }, origin); }
+    }
+    return json(200, { verified: false, paymentIntentStatus: pi ? pi.status : null }, origin);
+  }
+  let prev = null;
+  try { prev = await readBankVerification(userSub); } catch (e) { return json(500, { error: 'db_read_failed' }, origin); }
+  if (prev && prev.status === 'verified') return json(200, { verified: true, verifiedAt: prev.verifiedAt || null, paymentIntentId: prev.paymentIntentId || null }, origin);
+  return json(200, { verified: false }, origin);
+}
+
+async function handleBankVerificationSucceeded(stripeEvent, pi) {
+  const md = (pi && pi.metadata) || {};
+  const userSub = md.drex_user_sub || null;
+  if (!userSub) return wok({ received: true, ignored: 'no_user' });
+  try {
+    const r = await saveBankVerification({ userSub, paymentIntentId: pi.id, eventId: stripeEvent.id, eventType: stripeEvent.type });
+    if (r.duplicate) { console.log('duplicate bank verification event ignored', stripeEvent.id); return wok({ received: true, duplicate: true }); }
+    console.log('bank verification recorded', { user: userSub, pi: pi.id });
+    return wok({ received: true, verified: true });
+  } catch (e) { return werr(500, { error: 'bank_verification_save_failed' }); }
+}
+
 // ---------- POST /webhook ----------
 
 
@@ -1299,6 +1403,11 @@ async function handleWebhook(event) {
   if (type === 'invoice.payment_succeeded' || type === 'invoice.payment_failed') {
     return handleKoroneInvoiceEvent(stripeEvent, obj, type);
   }
+  if (type === 'payment_intent.succeeded') {
+    const md = (obj && obj.metadata) || {};
+    if (md.drex_bank_verification === '1') return handleBankVerificationSucceeded(stripeEvent, obj);
+    return wok({ received: true, ignored: 'not_bank_verification' });
+  }
   // Lo demás se acusa recibo sin hacer nada.
   return wok({ received: true, ignored: type });
 }
@@ -1335,6 +1444,12 @@ export const handler = async (event) => {
   }
   if (method === 'POST' && path === '/subscription-status') {
     return handleSubscriptionStatus(event);
+  }
+  if (method === 'POST' && path === '/create-verification-payment') {
+    return handleCreateVerificationPayment(event);
+  }
+  if (method === 'POST' && path === '/bank-verification-status') {
+    return handleBankVerificationStatus(event);
   }
   if ((method === 'GET' || method === 'POST') && path === '/transactions') {
     return handleTransactions(event);

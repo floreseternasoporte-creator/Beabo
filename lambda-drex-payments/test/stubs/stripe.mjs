@@ -7,6 +7,11 @@ export let lastPortalParams = null;
 export let lastSubscriptionRetrieve = null;
 export let lastCustomerCreate = null;
 export let lastSubscriptionCreate = null;
+export let lastPaymentIntentParams = null;
+const fakePaymentIntents = new Map();
+export function __setPaymentIntent(id, obj) { fakePaymentIntents.set(id, obj); }
+export function __clearPaymentIntents() { fakePaymentIntents.clear(); }
+export function __clearLastPaymentIntentParams() { lastPaymentIntentParams = null; }
 const fakeSubscriptions = {};
 export function __setSubscription(id, obj) { fakeSubscriptions[id] = obj; }
 export function __clearSubscriptions() { for (const k of Object.keys(fakeSubscriptions)) delete fakeSubscriptions[k]; }
@@ -188,7 +193,17 @@ export default class Stripe {
     },
   };
   paymentIntents = {
-    retrieve: async (id) => Object.assign({ id }, { ['client' + '_secret']: FAKE_PI_SECRET }),
+    create: async (params) => {
+      lastPaymentIntentParams = params;
+      const pi = { id: 'pi_test_1', status: 'requires_payment_method', metadata: params.metadata || {} };
+      pi['client' + '_secret'] = FAKE_PI_SECRET;
+      fakePaymentIntents.set(pi.id, pi);
+      return pi;
+    },
+    retrieve: async (id) => {
+      if (fakePaymentIntents.has(id)) return fakePaymentIntents.get(id);
+      return Object.assign({ id }, { ['client' + '_secret']: FAKE_PI_SECRET });
+    },
   };
   setupIntents = {
     create: async () => {

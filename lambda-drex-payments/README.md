@@ -104,3 +104,31 @@ Después de desplegar:
    obtener su `whsec_…` live.
 2. Actualiza las variables de entorno de la Lambda con las claves live.
 3. Haz una compra real pequeña ($0.99) y verifica el abono y el recibo.
+
+## Verificación de $1 de Chiripa (2026-11-24)
+
+La lista de espera de Chiripa exige un pago real de $1 (retención temporal)
+antes de unirse. El cobro es embebido (Payment Element dentro de Drex),
+igual que Drex Plus; el checkout hospedado está retirado (C263).
+
+- `POST /create-verification-payment` {idToken} → {clientSecret, paymentIntentId} | {alreadyVerified:true}
+- `POST /bank-verification-status` {idToken, paymentIntentId?} → {verified, verifiedAt?, paymentIntentId?}
+- Webhook `payment_intent.succeeded` con metadata `drex_bank_verification=1`
+  guarda el registro (respaldo; el flujo no depende de él, ese evento no está
+  suscrito en Stripe hoy).
+- Registro: DynamoDB `users/<sub>/bankVerification` (status verified, $1, refundable).
+- Tests: `npm test` incluye `test/bank-verification.test.mjs` (11 tests).
+
+Para activar el cobro en vivo hay que desplegar esta Lambda (el servidor del
+agente no tiene AWS CLI ni credenciales). En una máquina con credenciales:
+
+```bash
+cd lambda-drex-payments
+STRIPE_SECRET_KEY='sk_test_...' STRIPE_WEBHOOK_SECRET='<redacted>' \
+  STRIPE_PRICE_ORBIT_MONTHLY='price_...' STRIPE_PRICE_ORBIT_YEARLY='price_...' \
+  ./deploy.sh
+```
+
+OJO: `deploy.sh` REEMPLAZA todas las variables de entorno de la función.
+Los price IDs de Drex Orbit deben pasarse también, o se borran al
+redesplegar. Smoke test: `curl <Function URL>/health`.
