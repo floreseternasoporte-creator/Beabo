@@ -4750,3 +4750,26 @@ Object.assign(APP_ENGLISH_ATTRS, {"Chat de soporte": "Support chat", "Escribe tu
 
 /* Chiripa 2026-11-24: claves de la lista de espera. */
 Object.assign(APP_ENGLISH_TEXT, {"Te uniste a la lista de espera de Chiripa": "You joined the Chiripa waitlist", "Saliste de la lista de espera de Chiripa": "You left the Chiripa waitlist", "En lista de espera · Verificación de $1 registrada": "On the waitlist · $1 verification registered", "Lista de espera · Cuenta de Vega Platforms": "Waitlist · Vega Platforms account", "Verificar $1 y unirme a la lista": "Verify $1 and join the waitlist", "Chiripa": "Chiripa"});
+Object.assign(APP_ENGLISH_TEXT, {
+  "Billetera activa": "Wallet active",
+  "Billetera de práctica activa": "Practice wallet active",
+  "Saldo disponible": "Available balance",
+  "Enviar dinero": "Send money",
+  "Solicitar dinero": "Request money",
+  "Enviar solicitud": "Send request",
+  "Solicitudes pendientes": "Pending requests",
+  "Actividad": "Activity",
+  "Sin solicitudes pendientes.": "No pending requests.",
+  "Sin movimientos todavía. Envía dinero o recibe tu primer pago.": "No activity yet. Send money or receive your first payment.",
+  "Unirme a la lista de espera": "Join the waitlist",
+  "En lista de espera · Verificación de $1 registrada": "On the waitlist · $1 verification recorded",
+  "Lista de espera · Cuenta de Vega Platforms": "Waitlist · Vega Platforms account",
+  "Te uniste a la lista de espera de Chiripa": "You joined the Chiripa waitlist",
+  "Saliste de la lista de espera de Chiripa": "You left the Chiripa waitlist",
+  "No tienes saldo suficiente.": "You don't have enough balance.",
+  "No encontré a ese usuario. Prueba con @usuario o $tag.": "I couldn't find that user. Try @username or $tag.",
+  "No puedes enviarte dinero a ti mismo.": "You can't send money to yourself.",
+  "Escribe una cantidad mayor que $0.": "Enter an amount greater than $0.",
+  "El $tag necesita al menos 3 letras o números.": "$tag needs at least 3 letters or numbers.",
+  "Ese $tag ya está en uso.": "That $tag is already taken."
+});
