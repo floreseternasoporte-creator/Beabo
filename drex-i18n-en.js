@@ -4747,3 +4747,6 @@ Object.assign(APP_ENGLISH_TEXT, {"Si este correo puede registrarse, te enviamos 
 /* C1 chat soporte 2026-11-23: claves estáticas del chat de soporte. */
 Object.assign(APP_ENGLISH_TEXT, {"Chat de soporte": "Support chat", "Respuestas al instante con el agente de IA": "Instant answers from the AI agent", "Soporte de Drex": "Drex Support", "Agente de IA · en línea": "AI agent · online"});
 Object.assign(APP_ENGLISH_ATTRS, {"Chat de soporte": "Support chat", "Escribe tu mensaje…": "Type your message…"});
+
+/* Banco Vega 2026-11-24: claves de la lista de espera. */
+Object.assign(APP_ENGLISH_TEXT, {"Te uniste a la lista de espera de Banco Vega": "You joined the Banco Vega waitlist", "Saliste de la lista de espera de Banco Vega": "You left the Banco Vega waitlist", "En lista de espera · Verificación de $1 registrada": "On the waitlist · $1 verification registered", "Lista de espera · Cuenta de Vega Platforms": "Waitlist · Vega Platforms account", "Verificar $1 y unirme a la lista": "Verify $1 and join the waitlist", "Banco Vega": "Banco Vega"});
