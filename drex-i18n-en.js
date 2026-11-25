@@ -4813,6 +4813,15 @@ Object.assign(APP_ENGLISH_TEXT, {
 /* Drex Verify — Didit (2026-11-25) */
 Object.assign(APP_ENGLISH_TEXT, {
   "Verificar con Didit":"Verify with Didit",
+  "Confirma tu identidad.":"Confirm your identity.",
+  "Confirma que eres una persona real. La revisión puede tardar hasta 30 días.":"Confirm you are a real person. Review may take up to 30 days.",
+  "Obtén la insignia azul":"Get the blue badge",
+  "Verificar identidad":"Verify identity",
+  "Completa tu verificación para enviar tu solicitud.":"Complete your verification to send your request.",
+  "Tu solicitud está en revisión. Puede tardar hasta 30 días.":"Your request is under review. It may take up to 30 days.",
+  "No pudimos completar tu verificación. Inténtalo de nuevo.":"We couldn't complete your verification. Try again.",
+  "Tu documento está vencido. Inténtalo de nuevo.":"Your document is expired. Try again.",
+  "No pudimos verificar tu identidad. Inténtalo de nuevo.":"We couldn't verify your identity. Try again.",
   "Verifica tu pasaporte y tu cara con Didit.":"Verify your passport and face with Didit.",
   "Didit está revisando tu pasaporte y tu cara.":"Didit is reviewing your passport and face.",
   "Didit no pudo verificar tu identidad. Revisa tu pasaporte y tu cara e inténtalo de nuevo.":"Didit couldn't verify your identity. Check your passport and face and try again.",
