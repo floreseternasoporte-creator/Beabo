@@ -3597,6 +3597,7 @@ function withCredRetry(opFn) {
       },
       signInWithEmailAndPassword: signInWithEmailAndPassword,
       signInWithUsernameAndPassword: signInWithUsernameAndPassword,
+      signInWithPhoneAndPassword: signInWithPhoneAndPassword,
       createUserWithEmailAndPassword: createUserWithEmailAndPassword,
       signUpOrResendConfirmation: signUpOrResendConfirmation,
       confirmRegistration: confirmRegistration,
@@ -4301,14 +4302,14 @@ function withCredRetry(opFn) {
   // código TOTP junto con la sesión opaca del desafío que devolvió el paso 1.
   // Resuelve con el JSON de la Lambda ({tokens}) o rechaza con un error
   // genérico (401 -> reintentable, para que la vista deje intentar de nuevo).
-  function usernameMfaStep2(loginUrl, username, challengeSession, code) {
+  function usernameMfaStep2(loginUrl, idField, idValue, challengeSession, code) {
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (_) {} }, 20000);
     function clearTimer() { try { clearTimeout(timer); } catch (_) {} }
     var fetchOpts = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: String(username || ''), session: String(challengeSession || ''), code: String(code || '') })
+      body: JSON.stringify({ [idField]: String(idValue || ''), session: String(challengeSession || ''), code: String(code || '') })
     };
     if (ctrl) fetchOpts.signal = ctrl.signal;
     return fetch(loginUrl, fetchOpts).then(function (resp) {
@@ -4363,7 +4364,7 @@ function withCredRetry(opFn) {
   //   429 -> demasiados intentos (incluye el bloqueo temporal de canje:
   //       5 intentos/15 min por username).
   //   403 -> igual que el paso 1 (unconfirmed / reset_required).
-  function usernameRecoveryStep2(loginUrl, username, password, recoveryCode) {
+  function usernameRecoveryStep2(loginUrl, idField, idValue, password, recoveryCode) {
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var timer = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (_) {} }, 20000);
     function clearTimer() { try { clearTimeout(timer); } catch (_) {} }
@@ -4371,7 +4372,7 @@ function withCredRetry(opFn) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        username: String(username || ''),
+        [idField]: String(idValue || ''),
         password: String(password || ''),
         recoveryCode: String(recoveryCode || '')
       })
@@ -4475,7 +4476,8 @@ function withCredRetry(opFn) {
     return Promise.resolve().then(function () { return resp.json(); }).catch(function () { return {}; });
   }
 
-  function signInWithUsernameAndPassword(username, password) {
+  function signInViaResolveLambda(idField, idValue, password) {
+    var username = idValue;
     getAuth();
     var C = cognitoLib();
     if (!C) return Promise.reject(new Error('AmazonCognitoIdentity no cargado'));
@@ -4514,7 +4516,7 @@ function withCredRetry(opFn) {
       var fetchOpts = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: String(username || ''), password: String(password || '') })
+        body: JSON.stringify((function () { var b = { password: String(password || '') }; b[idField] = String(idValue || ''); return b; })())
       };
       if (ctrl) fetchOpts.signal = ctrl.signal;
 
@@ -4541,7 +4543,7 @@ function withCredRetry(opFn) {
           });
         }
         if (!resp.ok) {
-          throw Object.assign(new Error('Nombre de usuario o contraseña incorrectos.'), { code: 'auth/invalid-credential' });
+          throw Object.assign(new Error(idField === 'phone' ? 'Teléfono o contraseña incorrectos.' : 'Nombre de usuario o contraseña incorrectos.'), { code: 'auth/invalid-credential' });
         }
         return lambdaJsonSafe(resp);
       }).then(function (data) {
@@ -4564,11 +4566,11 @@ function withCredRetry(opFn) {
               // recoveryCode}; el password está en el closure y no se guarda
               // más allá del intento. Si no, es el TOTP de 6 dígitos (paso 2).
               if (looksLikeRecoveryCode(code)) {
-                return usernameRecoveryStep2(url, username, password, code).then(function (data2) {
+                return usernameRecoveryStep2(url, idField, idValue, password, code).then(function (data2) {
                   return buildSessionFromLambdaTokens(data2);
                 });
               }
-              return usernameMfaStep2(url, username, data.session, code).then(function (data2) {
+              return usernameMfaStep2(url, idField, idValue, data.session, code).then(function (data2) {
                 return buildSessionFromLambdaTokens(data2);
               });
             },
@@ -4587,6 +4589,14 @@ function withCredRetry(opFn) {
         fail(err);
       });
     });
+  }
+
+  function signInWithUsernameAndPassword(username, password) {
+    return signInViaResolveLambda('username', username, password);
+  }
+
+  function signInWithPhoneAndPassword(phone, password) {
+    return signInViaResolveLambda('phone', phone, password);
   }
 
   function createUserWithEmailAndPassword(email, password) {
@@ -5522,115 +5532,67 @@ function withCredRetry(opFn) {
     status: mfaStatus,
     codeWindowMs: MFA_CODE_WINDOW_MS
   };
-  var SUPPORT_TABLE = 'drex-support-tickets';
+  var SUPPORT_API_URL = 'https://bdizwlwy6hq3o4wqgk47sb33ly0iouwi.lambda-url.us-east-1.on.aws';
   var SUPPORT_OWNER_EMAIL = 'zam.contact@yahoo.com';
 
-  // Soporte estilo Instagram: el usuario envia su solicitud, el equipo
-  // la revisa y responde; el usuario ve el estado: Recibida / En revision / Resuelta.
-  function supportDoc() { return getDocClient(); }
+  // Soporte real: casos con estado y respuestas del equipo. Todo pasa por
+  // la Lambda drex-support (el cliente no toca la tabla de tickets).
   function supportUser() {
     var u = null;
     try { u = getAuth().currentUser; } catch (e) {}
     return u || {};
   }
-  function supportNow() { return new Date().toISOString(); }
+  function supportCall(path, payload) {
+    var u = supportUser();
+    if (!u.uid) return Promise.reject(new Error('auth/no-user'));
+    return getAuth().getIdToken().then(function (tok) {
+      if (!tok) throw new Error('auth/no-token');
+      var body = Object.assign({ idToken: tok }, payload || {});
+      return fetch(SUPPORT_API_URL + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (data) {
+          if (!r.ok || !data || data.ok !== true) throw new Error((data && data.error) || 'support/failed');
+          return data;
+        });
+      });
+    });
+  }
   var supportApi = {
-    // Crea una solicitud de soporte; el equipo la revisa y responde.
-    createTicket: function (subject, message) {
-      var u = supportUser();
-      if (!u.uid) return Promise.reject(new Error('auth/no-user'));
-      var now = supportNow();
-      var item = {
-        ticketId: newPushId(),
-        userId: u.uid,
-        userEmail: u.email || '',
+    createTicket: function (subject, message, meta) {
+      meta = meta || {};
+      return supportCall('/support/cases', {
         subject: String(subject || '').slice(0, 120),
-        messages: [{ from: 'user', text: String(message || '').slice(0, 4000), at: now }],
-        status: 'received',
-        createdAt: now,
-        updatedAt: now
-      };
-      return supportDoc().put({ TableName: SUPPORT_TABLE, Item: item }).promise().then(function () { return item; });
+        message: String(message || '').slice(0, 4000),
+        category: String(meta.category || 'other').slice(0, 40),
+        priority: !!meta.priority
+      }).then(function (d) { var t = d.ticket || {}; t.emailSent = !!d.emailSent; return t; });
     },
-    // Solicitudes del usuario actual, más recientes primero.
     listMyTickets: function () {
-      var u = supportUser();
-      if (!u.uid) return Promise.reject(new Error('auth/no-user'));
-      return supportDoc().query({
-        TableName: SUPPORT_TABLE,
-        IndexName: 'byUser',
-        KeyConditionExpression: 'userId = :u',
-        ExpressionAttributeValues: { ':u': u.uid },
-        ScanIndexForward: false,
-        Limit: 25
-      }).promise().then(function (r) { return r.Items || []; });
+      return supportCall('/support/cases/list', {}).then(function (d) { return d.tickets || []; });
     },
-    // El usuario agrega un mensaje a su solicitud (la reabre como Recibida).
     replyToTicket: function (ticketId, message) {
-      var u = supportUser();
-      if (!u.uid) return Promise.reject(new Error('auth/no-user'));
-      var now = supportNow();
-      return supportDoc().update({
-        TableName: SUPPORT_TABLE,
-        Key: { ticketId: ticketId },
-        UpdateExpression: 'SET #m = list_append(if_not_exists(#m, :empty), :nm), #s = :st, updatedAt = :now',
-        ConditionExpression: 'userId = :u',
-        ExpressionAttributeNames: { '#m': 'messages', '#s': 'status' },
-        ExpressionAttributeValues: {
-          ':empty': [],
-          ':nm': [{ from: 'user', text: String(message || '').slice(0, 4000), at: now }],
-          ':st': 'received',
-          ':now': now,
-          ':u': u.uid
-        },
-        ReturnValues: 'ALL_NEW'
-      }).promise().then(function (r) { return r.Attributes; });
+      return supportCall('/support/cases/reply', { ticketId: ticketId, message: String(message || '').slice(0, 4000) })
+        .then(function (d) { return d.ticket; });
     },
-    // Lado del equipo (solo el dueno ve esta seccion en la app)
+    closeMyTicket: function (ticketId) {
+      return supportCall('/support/cases/close', { ticketId: ticketId }).then(function (d) { return d.ticket; });
+    },
     isOwner: function () {
       var u = supportUser();
       return String(u.email || '').toLowerCase() === SUPPORT_OWNER_EMAIL;
     },
     adminListTickets: function () {
-      if (!this.isOwner()) return Promise.reject(new Error('auth/not-owner'));
-      return supportDoc().scan({ TableName: SUPPORT_TABLE, Limit: 50 }).promise()
-        .then(function (r) {
-          return (r.Items || []).sort(function (a, b) {
-            return String(b.updatedAt || '') < String(a.updatedAt || '') ? -1 : 1;
-          });
-        });
+      return supportCall('/support/admin/list', {}).then(function (d) { return d.tickets || []; });
     },
-    // El equipo responde: agrega mensaje from=team y marca En revision.
     adminReply: function (ticketId, message) {
-      if (!this.isOwner()) return Promise.reject(new Error('auth/not-owner'));
-      var now = supportNow();
-      return supportDoc().update({
-        TableName: SUPPORT_TABLE,
-        Key: { ticketId: ticketId },
-        UpdateExpression: 'SET #m = list_append(if_not_exists(#m, :empty), :nm), #s = :st, updatedAt = :now',
-        ExpressionAttributeNames: { '#m': 'messages', '#s': 'status' },
-        ExpressionAttributeValues: {
-          ':empty': [],
-          ':nm': [{ from: 'team', text: String(message || '').slice(0, 4000), at: now }],
-          ':st': 'reviewing',
-          ':now': now
-        },
-        ReturnValues: 'ALL_NEW'
-      }).promise().then(function (r) { return r.Attributes; });
+      return supportCall('/support/admin/reply', { ticketId: ticketId, message: String(message || '').slice(0, 4000) })
+        .then(function (d) { return d.ticket; });
     },
     adminSetStatus: function (ticketId, status) {
-      if (!this.isOwner()) return Promise.reject(new Error('auth/not-owner'));
-      if (['received', 'reviewing', 'resolved'].indexOf(status) < 0) {
-        return Promise.reject(new Error('support/bad-status'));
-      }
-      return supportDoc().update({
-        TableName: SUPPORT_TABLE,
-        Key: { ticketId: ticketId },
-        UpdateExpression: 'SET #s = :st, updatedAt = :now',
-        ExpressionAttributeNames: { '#s': 'status' },
-        ExpressionAttributeValues: { ':st': status, ':now': supportNow() },
-        ReturnValues: 'ALL_NEW'
-      }).promise().then(function (r) { return r.Attributes; });
+      return supportCall('/support/admin/status', { ticketId: ticketId, status: status }).then(function (d) { return d.ticket; });
     }
   };
 
