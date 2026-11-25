@@ -4858,8 +4858,20 @@ function withCredRetry(opFn) {
   }
 
   function oauthStateStore() {
+    // localStorage: el retorno de Google/Cognito puede abrir otra pestaña
+    // o webview y sessionStorage se pierde; el TTL + single-use protegen igual.
+    try { if (typeof localStorage !== 'undefined') return localStorage; } catch (_) {}
     try { if (typeof sessionStorage !== 'undefined') return sessionStorage; } catch (_) {}
     return null;
+  }
+
+  function oauthRedirectUriNow() {
+    try {
+      var o = String(global.location.origin || '');
+      if (o === 'https://floreseternasoporte-creator.github.io') return 'https://floreseternasoporte-creator.github.io/Beabo/';
+      if (o === 'https://drex.glamworksapps.workers.dev') return 'https://drex.glamworksapps.workers.dev/';
+    } catch (_) {}
+    return AWS_CONFIG.oauthRedirectUri;
   }
 
   function oauthStateSave(rec) {
@@ -4942,7 +4954,8 @@ function withCredRetry(opFn) {
     var state = oauthRandomString(32);
     var nonce = oauthRandomString(32);
     var verifier = oauthRandomString(48); // 64 caracteres base64url
-    if (!oauthStateSave({ state: state, nonce: nonce, verifier: verifier, createdAt: Date.now() })) {
+    var redirectUri = oauthRedirectUriNow();
+    if (!oauthStateSave({ state: state, nonce: nonce, verifier: verifier, redirectUri: redirectUri, provider: providerName, createdAt: Date.now() })) {
       var err0 = new Error('No se pudo iniciar el login social de forma segura en este navegador.');
       err0.code = 'auth/operation-not-allowed';
       try { notifyAuthError('No se pudo iniciar el inicio de sesión social. Intenta de nuevo.'); } catch (_) {}
@@ -4951,7 +4964,7 @@ function withCredRetry(opFn) {
     oauthCodeChallenge(verifier, function (pkce) {
       var url = 'https://' + AWS_CONFIG.oauthDomain + '/oauth2/authorize'
         + '?identity_provider=' + encodeURIComponent(providerName)
-        + '&redirect_uri=' + encodeURIComponent(AWS_CONFIG.oauthRedirectUri)
+        + '&redirect_uri=' + encodeURIComponent(redirectUri)
         + '&response_type=code'
         + '&client_id=' + encodeURIComponent(AWS_CONFIG.userPoolClientId)
         + '&scope=' + encodeURIComponent(AWS_CONFIG.oauthScope || 'email openid profile')
@@ -4979,7 +4992,7 @@ function withCredRetry(opFn) {
     var body = 'grant_type=authorization_code'
       + '&client_id=' + encodeURIComponent(AWS_CONFIG.userPoolClientId)
       + '&code=' + encodeURIComponent(code)
-      + '&redirect_uri=' + encodeURIComponent(AWS_CONFIG.oauthRedirectUri)
+      + '&redirect_uri=' + encodeURIComponent(rec.redirectUri || AWS_CONFIG.oauthRedirectUri)
       // R2-1 (ciclo 16): PKCE — sin el verifier guardado en la ida, el code
       // plantado/robo no se puede canjear (Cognito valida el challenge).
       + '&code_verifier=' + encodeURIComponent(rec.verifier || '');
@@ -4991,7 +5004,10 @@ function withCredRetry(opFn) {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body
     }), 25000, 'oauth-token-timeout').then(function (resp) { return resp.json(); }).then(function (tok) {
-      if (!tok || !tok.id_token) throw new Error('oauth/token-failed');
+      if (!tok || !tok.id_token) {
+        try { localStorage.setItem('drex_oauth_last_error', ('token:' + ((tok && (tok.error_description || tok.error)) || 'sin id_token')).slice(0, 300)); } catch (_) {}
+        throw new Error('oauth/token-failed');
+      }
       var payload;
       try { payload = JSON.parse(base64UrlDecode(String(tok.id_token).split('.')[1])); }
       catch (e) { throw new Error('oauth/bad-token'); }
@@ -5048,6 +5064,7 @@ function withCredRetry(opFn) {
       var okState = false;
       try { okState = !!(rec && mState && oauthStatesEqual(decodeURIComponent(mState[1]), rec.state)); } catch (e) {}
       if (!okState) {
+        try { localStorage.setItem('drex_oauth_last_error', 'state-mismatch rec=' + (rec ? 'si' : 'no')); } catch (_) {}
         notifyAuthError('No se pudo completar el inicio de sesión. Intenta de nuevo.');
         return;
       }
