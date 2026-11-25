@@ -5555,8 +5555,8 @@ function withCredRetry(opFn) {
       }
       return askCognito.then(function (cognitoOn) {
         if (cognitoOn === true) return { enabled: true };
-        // Cognito no lo confirma (o no hay usuario Cognito en memoria):
-        // respaldo con la bandera local que la app mantiene al activar/desactivar.
+        if (cognitoOn === false) return { enabled: false };
+        // Cognito no respondió: respaldo con la bandera local.
         return mfaReadLocalFlag().then(function (flag) { return { enabled: !!flag }; });
       });
     }).catch(function () { return { enabled: false }; });
