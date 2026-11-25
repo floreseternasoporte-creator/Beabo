@@ -3488,6 +3488,8 @@ function withCredRetry(opFn) {
       uid: map.sub || cognitoUser.getUsername(),
       email: map.email || cognitoUser.getUsername(),
       emailVerified: map.email_verified === 'true',
+      isFederated: !!map.identities,
+      federatedProvider: (function () { try { var arr = JSON.parse(map.identities || '[]'); return (arr && arr[0] && arr[0].providerName) || null; } catch (_) { return null; } })(),
       displayName: map.name || null,
       photoURL: map.picture || null,
       _cognitoUser: cognitoUser,
