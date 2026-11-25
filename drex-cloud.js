@@ -3256,7 +3256,7 @@ function withCredRetry(opFn) {
   };
   Ref.prototype.endAt = function (v, k) {
     var q = Object.assign({}, this._query, { endAt: v });
-    // Desempate opcional por clave (firma Firebase endAt(valor, clave)): el
+    // Desempate opcional por clave (firma endAt(valor, clave)): el
     // límite es estricto en el par (valor, clave), así la paginación no
     // salta los posts que comparten el ms del borde.
     if (typeof k === 'string' && k) q.endAtKey = k;
@@ -3297,7 +3297,7 @@ function withCredRetry(opFn) {
   // consumen el snapshot devuelto (solo les importa `committed`, o nada).
   // PERF (H4, ciclo 8): transaction() hace un re-read post-commit
   // (ref.once('value')) tras cada escritura exitosa para devolver el snapshot
-  // fresco al estilo Firebase. Ese re-read cuesta ~0.5 RCU (hoja escalar) o
+  // fresco al estilo del listener anterior. Ese re-read cuesta ~0.5 RCU (hoja escalar) o
   // mas (objeto multi-hoja) y NO afecta la atomicidad: la escritura
   // condicional ya se aplico antes de el. Para contadores ciegos
   // (followersCount, plays, chatUnread por destinatario, claims de username,
