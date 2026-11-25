@@ -5106,7 +5106,7 @@ function withCredRetry(opFn) {
         if (_rsSettled || runId !== restoreSeq) return;
         _rsSettled = true;
         retryOrFail(cu, attempt, runId, 'network');
-      }, 20000);
+      }, 8000);
       cu.getSession(function (err, session) {
         if (_rsSettled) return;
         _rsSettled = true;
