@@ -3609,17 +3609,23 @@ function withCredRetry(opFn) {
       // JWT del ID token de Cognito (para autenticar llamadas a lambdas propias)
       getIdToken: function () {
         return new Promise(function (resolve) {
+          var done = false;
+          function fin(v) { if (!done) { done = true; resolve(v); } }
+          // Sin timeout, un refresco de sesión colgado dejaba la promesa
+          // sin resolver para siempre (checkout de Plus atorado en el
+          // spinner). A los 8 s se resuelve null y la app muestra error.
+          setTimeout(function () { fin(null); }, 8000);
           try {
             var C = cognitoLib();
-            if (!C) return resolve(null);
+            if (!C) return fin(null);
             var cu = getUserPool().getCurrentUser();
-            if (!cu) return resolve(null);
+            if (!cu) return fin(null);
             cu.getSession(function (err, session) {
-              if (err || !session || !session.isValid()) return resolve(null);
-              try { resolve(session.getIdToken().getJwtToken()); }
-              catch (e) { resolve(null); }
+              if (err || !session || !session.isValid()) return fin(null);
+              try { fin(session.getIdToken().getJwtToken()); }
+              catch (e) { fin(null); }
             });
-          } catch (e) { resolve(null); }
+          } catch (e) { fin(null); }
         });
       }
     };
