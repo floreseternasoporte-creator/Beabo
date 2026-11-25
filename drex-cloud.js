@@ -265,12 +265,12 @@
   // La app actual nunca las escribe; este guard impide que un bug futuro (o un
   // script inyectado que reutilice el cliente) acredite monedas o se otorgue
   // Drex Plus desde aquí. Ver docs/SEGURIDAD-DYNAMODB.md.
-  var SERVER_ONLY_PKS = { wallets: 1, transactions: 1, stripe_events: 1, ratelimit: 1 };
+  var SERVER_ONLY_PKS = { wallets: 1, transactions: 1, stripe_events: 1, ratelimit: 1, verifiedUsers: 1, veriffSessions: 1, diditSessions: 1 };
   function isServerOnlyKey(pk, sk) {
     pk = String(pk == null ? '' : pk);
     sk = String(sk == null ? '' : sk);
     if (SERVER_ONLY_PKS[pk] === 1) return true;
-    if (pk === 'users' && /^[^\/]+\/(orbit|plus|adsFree)(\/|$)/.test(sk)) return true;
+    if (pk === 'users' && /^[^\/]+\/(orbit|plus|adsFree|verified|verifiedAt|verifiedBy|verifyMethod|verifyCountry|verifyDocType|verifyBirthYear|verifyDocLast4|verifySsnLast4|verificationRequest)(\/|$)/.test(sk)) return true;
     return false;
   }
   // Devuelve "pk/sk" de la primera clave protegida que intente escribir

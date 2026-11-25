@@ -966,7 +966,7 @@ var APP_ENGLISH_TEXT = {
 "Paso 3 de 4":"Step 3 of 4",
 "Paso 4 de 4":"Step 4 of 4",
 "Pausar":"Pause",
-"Personas que sigo":"People I follow",
+"Didits que sigo":"People I follow",
 "Polski (Polaco)":"Polski (Polish)",
 "Ponle un nombre al grupo":"Name the group",
 "Ponle un título a tu fiesta de voz.":"Give your voice party a title.",
@@ -1358,16 +1358,16 @@ var APP_ENGLISH_TEXT = {
 "te enviamos notificaciones sobre tu cuenta, actualizaciones de seguridad, cambios en nuestras políticas y, con tu consentimiento, comunicaciones de marketing.":"we send you notifications about your account, security updates, changes to our policies, and, with your consent, marketing communications.",
 "Investigar e innovar:":"Research and innovate:",
 "realizamos investigaciones para mejorar nuestros Productos y desarrollar nuevas funciones, siempre protegiendo tu privacidad mediante técnicas como la agregación y la seudonimización cuando es posible.":"we conduct research to improve our Products and develop new features, always protecting your privacy through techniques like aggregation and pseudonymization whenever possible.",
-"Personalizar anuncios y contenido patrocinado:":"Personalize ads and sponsored content:",
+"Diditlizar anuncios y contenido patrocinado:":"Diditlize ads and sponsored content:",
 "si mostramos publicidad, usamos tu información para mostrarte anuncios relevantes según tus intereses, tu actividad y tu información demográfica. Puedes controlar tus preferencias publicitarias en los ajustes.":"if we show advertising, we use your information to show you relevant ads based on your interests, activity, and demographic information. You can control your ad preferences in settings.",
 "Medir y analizar:":"Measure and analyze:",
 "generamos estadísticas agregadas sobre el uso de la plataforma que nos ayudan a tomar decisiones de producto. Estos informes no te identifican individualmente.":"we generate aggregated statistics about platform usage that help us make product decisions. These reports don't identify you individually.",
 "Cuando usamos sistemas automatizados (incluyendo inteligencia artificial) para tomar decisiones que te afectan, como la moderación de contenido o las recomendaciones del feed, aplicamos controles para garantizar que estos sistemas funcionen de manera justa y puedas solicitar revisión humana cuando corresponda.":"When we use automated systems (including artificial intelligence) to make decisions that affect you, such as content moderation or feed recommendations, we apply controls to ensure these systems work fairly and you can request human review when appropriate.",
 "5. ¿Cómo compartimos tu información?":"5. How do we share your information?",
 "Compartimos tu información con otros de las siguientes maneras:":"We share your information with others in the following ways:",
-"Personas y cuentas con las que compartes y te comunicas:":"People and accounts you share and communicate with:",
+"Didits y cuentas con las que compartes y te comunicas:":"People and accounts you share and communicate with:",
 "cuando publicas contenido o envías mensajes, las personas que eliges como audiencia pueden ver esa información. Tu perfil público (nombre de usuario, foto, biografía) es visible para otros usuarios según tus ajustes.":"when you post content or send messages, the people you choose as your audience can see that information. Your public profile (username, photo, bio) is visible to other users according to your settings.",
-"Personas que ven contenido sobre ti:":"People who see content about you:",
+"Didits que ven contenido sobre ti:":"People who see content about you:",
 "otros usuarios pueden compartir contenido sobre ti (por ejemplo, mencionarte en una publicación) y ese contenido puede ser visible para su audiencia.":"other users may share content about you (for example, mentioning you in a post) and that content may be visible to their audience.",
 "Proveedores de servicios:":"Service providers:",
 "compartimos información con proveedores que nos ayudan a operar (alojamiento, almacenamiento, análisis, procesamiento de pagos, moderación, atención al cliente). Estos proveedores solo pueden usar tu información para prestarnos servicios y deben protegerla.":"we share information with vendors that help us operate (hosting, storage, analytics, payment processing, moderation, customer support). These vendors may only use your information to provide us services and must protect it.",
@@ -1451,7 +1451,7 @@ var APP_ENGLISH_TEXT = {
 "si tu país cuenta con leyes de privacidad específicas, aplicaremos los derechos y protecciones que correspondan según dicha normativa.":"if your country has specific privacy laws, we will apply the corresponding rights and protections under those regulations.",
 "15. Definiciones":"15. Definitions",
 "Para facilitar la lectura de esta política:":"To make this policy easier to read:",
-"\"Información personal\" o \"datos personales\":":"\"Personal information\" or \"personal data\":",
+"\"Información personal\" o \"datos personales\":":"\"Diditl information\" or \"personal data\":",
 "cualquier información que identifique o pueda identificar a una persona.":"any information that identifies or can identify a person.",
 "\"Tratamiento\":":"\"Processing\":",
 "cualquier operación realizada con datos personales (recopilar, almacenar, usar, compartir, eliminar).":"any operation performed on personal data (collect, store, use, share, delete).",
@@ -3420,7 +3420,7 @@ var APP_ENGLISH_TEXT = {
 "Permiso concedido. Toca activar para completar.":"Permission granted. Tap activate to complete.",
 "Permiso de mensajes directos":"Direct message permission",
 "Permiso denegado. Actívalo en los ajustes de tu teléfono o navegador.":"Permission denied. Enable it in your phone or browser settings.",
-"Personas que te pueden gustar":"People you may like",
+"Didits que te pueden gustar":"People you may like",
 "pistas de un autor":"Tracks by an author",
 "pistas del artista":"Tracks by the artist",
 "plan completado":"Plan completed",
@@ -4784,4 +4784,58 @@ Object.assign(APP_ENGLISH_TEXT, {
   "Pagar $1 y unirme": "Pay $1 and join",
   "Verificación de $1 pagada · Se devuelve automáticamente": "$1 verification paid · Refunded automatically",
   "En lista de espera · Verificación de $1 pagada": "On the waitlist · $1 verification paid"
+});
+
+/* Drex Verify — Veriff (2026-11-25) */
+Object.assign(APP_ENGLISH_TEXT, {
+  "Obtén la insignia azul con tu pasaporte":"Get the blue badge with your passport",
+  "Verificar con Veriff":"Verify with Veriff",
+  "Sin verificar":"Not verified",
+  "Verifica tu pasaporte y tu cara con Veriff.":"Verify your passport and face with Veriff.",
+  "Cargando estado…":"Loading status…",
+  "Proveedor":"Provider",
+  "Documento":"Document",
+  "Pasaporte":"Passport",
+  "Veriff está revisando tu pasaporte y tu cara.":"Veriff is reviewing your passport and face.",
+  "No se pudo verificar":"Couldn't verify",
+  "Para verificarte en Drex necesitas usar tu pasaporte.":"To verify on Drex you need to use your passport.",
+  "Debes tener al menos 18 años para verificar tu cuenta.":"You must be at least 18 to verify your account.",
+  "Tu pasaporte está vencido. Usa un pasaporte vigente.":"Your passport is expired. Use a valid passport.",
+  "Veriff no pudo verificar tu identidad. Revisa tu pasaporte y tu cara e inténtalo de nuevo.":"Veriff couldn't verify your identity. Check your passport and face and try again.",
+  "Veriff necesita que repitas la verificación. Inténtalo de nuevo con buena luz.":"Veriff needs you to redo the verification. Try again in good light.",
+  "La verificación quedó incompleta. Puedes empezarla de nuevo.":"The verification was left incomplete. You can start it again.",
+  "Tu verificación está en revisión.":"Your verification is under review.",
+  "El servicio de verificación no está disponible en este momento. Inténtalo de nuevo más tarde.":"The verification service is not available right now. Try again later.",
+  "Tu sesión expiró. Cierra sesión y vuelve a entrar.":"Your session expired. Sign out and sign in again.",
+  "Ocurrió un error interno. Inténtalo de nuevo más tarde.":"An internal error occurred. Try again later."
+});
+
+/* Drex Verify — Didit (2026-11-25) */
+Object.assign(APP_ENGLISH_TEXT, {
+  "Verificar con Didit":"Verify with Didit",
+  "Verifica tu pasaporte y tu cara con Didit.":"Verify your passport and face with Didit.",
+  "Didit está revisando tu pasaporte y tu cara.":"Didit is reviewing your passport and face.",
+  "Didit no pudo verificar tu identidad. Revisa tu pasaporte y tu cara e inténtalo de nuevo.":"Didit couldn't verify your identity. Check your passport and face and try again.",
+  "Didit necesita que repitas la verificación. Inténtalo de nuevo con buena luz.":"Didit needs you to redo the verification. Try again in good light."
+});
+
+/* Drex Verify — revisión 30 días (2026-11-25) */
+Object.assign(APP_ENGLISH_TEXT, {
+  "El equipo de Drex revisará tu solicitud. Puede tardar hasta 30 días. Te avisaremos en notificaciones.":"The Drex team will review your request. It can take up to 30 days. We'll notify you.",
+  "Solicitudes en revisión":"Requests under review",
+  "Solo el equipo de Drex puede aprobar o rechazar la insignia.":"Only the Drex team can approve or reject the badge.",
+  "No hay solicitudes en revisión.":"No requests under review.",
+  "Esperando resultado de Didit":"Waiting for Didit's result",
+  "Rechazar":"Reject",
+  "Aprobar":"Approve",
+  "Solicitud rechazada":"Request rejected"
+});
+
+/* Drex Verify — Didit (2026-11-25) */
+Object.assign(APP_ENGLISH_TEXT, {
+  "Verificar con Didit":"Verify with Didit",
+  "Verifica tu pasaporte y tu cara con Didit.":"Verify your passport and face with Didit.",
+  "Verificación en curso":"Verification in progress",
+  "Completa tu verificación con Didit para enviar tu solicitud.":"Complete your verification with Didit to submit your request.",
+  "Esperando resultado de Didit":"Waiting for Didit's result"
 });
