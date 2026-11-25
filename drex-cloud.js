@@ -3555,7 +3555,15 @@ function withCredRetry(opFn) {
             cognitoUser.updateAttributes(
               [new C.CognitoUserAttribute({ Name: 'phone_number', Value: p })],
               function (err) {
-                if (err) reject(mapAuthError(err)); else resolve(p);
+                if (err) { reject(mapAuthError(err)); return; }
+                // updateAttributes solo envía código si el teléfono está en
+                // AutoVerifiedAttributes; pedirlo explícito garantiza el SMS.
+                try {
+                  cognitoUser.getAttributeVerificationCode('phone_number', {
+                    onSuccess: function () { resolve(p); },
+                    onFailure: function (e2) { reject(mapAuthError(e2)); }
+                  });
+                } catch (e3) { reject(mapAuthError(e3)); }
               });
           } catch (e) { reject(mapAuthError(e)); }
         });
