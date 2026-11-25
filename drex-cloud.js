@@ -5171,9 +5171,10 @@ function withCredRetry(opFn) {
 
   function retryOrFail(cu, attempt, runId, reason) {
     if (runId !== restoreSeq) return;
-    if (attempt < 1) {
-      // Un reintento: la red del teléfono a veces aún no está lista al abrir la app.
-      setTimeout(function () { attemptRestore(cu, attempt + 1, runId); }, 4000);
+    if (reason === 'network' && attempt < 2) {
+      // Reintentos con espera creciente: la red del teléfono a veces aún no
+      // está lista al abrir la app. Una sesión vencida no se reintenta.
+      setTimeout(function () { attemptRestore(cu, attempt + 1, runId); }, attempt === 0 ? 2000 : 5000);
       return;
     }
     signalRestoreFailed(reason);
