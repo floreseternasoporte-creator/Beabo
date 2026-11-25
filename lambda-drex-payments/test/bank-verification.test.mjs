@@ -92,6 +92,8 @@ test('create-verification-payment: crea un PaymentIntent de $1 con metadata de C
   assert.equal(params.metadata.drex_bank_verification, '1');
   assert.equal(params.metadata.drex_user_sub, 'user-abc');
   assert.equal(params.automatic_payment_methods.enabled, true);
+  // Retención: solo se autoriza, nunca se cobra.
+  assert.equal(params.capture_method, 'manual');
 });
 
 test('create-verification-payment: sin token -> 401, no crea nada en Stripe', async () => {
@@ -107,7 +109,8 @@ test('bank-verification-status: sin pago -> verified false', async () => {
   assert.equal(parse(res).verified, false);
 });
 
-test('bank-verification-status: con PI succeeded y metadata correcta -> verified true y guarda el registro', async () => {
+test('bank-verification-status: con PI succeeded -> reembolsa el $1 y guarda verified', async () => {
+  stripeStub.__clearLastRefundParams();
   stripeStub.__setPaymentIntent('pi_test_1', {
     id: 'pi_test_1', status: 'succeeded',
     metadata: { drex_bank_verification: '1', drex_user_sub: 'user-abc' },
@@ -117,10 +120,45 @@ test('bank-verification-status: con PI succeeded y metadata correcta -> verified
   const data = parse(res);
   assert.equal(data.verified, true);
   assert.ok(data.verifiedAt);
+  assert.equal(data.returned, true);
+  assert.equal(stripeStub.lastRefundParams.payment_intent, 'pi_test_1');
   const rec = bankRecord();
   assert.equal(rec.status, 'verified');
   assert.equal(rec.amountCents, 100);
   assert.equal(rec.paymentIntentId, 'pi_test_1');
+  assert.equal(rec.refunded, true);
+});
+
+test('bank-verification-status: con PI requires_capture -> ANULA la retención (no se mueve dinero) y guarda verified', async () => {
+  stripeStub.__clearLastPaymentIntentCancel();
+  stripeStub.__clearLastRefundParams();
+  stripeStub.__setPaymentIntent('pi_test_1', {
+    id: 'pi_test_1', status: 'requires_capture',
+    metadata: { drex_bank_verification: '1', drex_user_sub: 'user-abc' },
+  });
+  const res = await post('/bank-verification-status', { idToken: validToken(), paymentIntentId: 'pi_test_1' });
+  assert.equal(res.statusCode, 200);
+  const data = parse(res);
+  assert.equal(data.verified, true);
+  assert.equal(data.returned, true);
+  assert.equal(stripeStub.lastPaymentIntentCancel, 'pi_test_1');
+  assert.equal(stripeStub.lastRefundParams, null);
+  const rec = bankRecord();
+  assert.equal(rec.status, 'verified');
+  assert.equal(rec.holdVoided, true);
+});
+
+test('bank-verification-status: segunda llamada tras anular -> verified true por el registro (el intent ya está canceled)', async () => {
+  stripeStub.__setPaymentIntent('pi_test_1', {
+    id: 'pi_test_1', status: 'requires_capture',
+    metadata: { drex_bank_verification: '1', drex_user_sub: 'user-abc' },
+  });
+  const r1 = await post('/bank-verification-status', { idToken: validToken(), paymentIntentId: 'pi_test_1' });
+  assert.equal(parse(r1).verified, true);
+  // El stub ya marcó el intent como canceled tras el cancel; la segunda
+  // llamada debe seguir diciendo verified por el registro guardado.
+  const r2 = await post('/bank-verification-status', { idToken: validToken(), paymentIntentId: 'pi_test_1' });
+  assert.equal(parse(r2).verified, true);
 });
 
 test('bank-verification-status: PI de OTRO usuario -> verified false, no guarda nada', async () => {
@@ -144,16 +182,17 @@ test('bank-verification-status: PI aun sin pagar -> verified false', async () =>
   assert.equal(bankRecord(), null);
 });
 
-test('bank-verification-status: segunda llamada con el mismo PI -> verified true sin duplicar (idempotente)', async () => {
+test('bank-verification-status: segunda llamada con el mismo PI -> verified true sin reembolsar dos veces', async () => {
   stripeStub.__setPaymentIntent('pi_test_1', {
     id: 'pi_test_1', status: 'succeeded',
     metadata: { drex_bank_verification: '1', drex_user_sub: 'user-abc' },
   });
   const r1 = await post('/bank-verification-status', { idToken: validToken(), paymentIntentId: 'pi_test_1' });
   assert.equal(parse(r1).verified, true);
+  stripeStub.__clearLastRefundParams();
   const r2 = await post('/bank-verification-status', { idToken: validToken(), paymentIntentId: 'pi_test_1' });
   assert.equal(parse(r2).verified, true);
-  assert.equal(parse(r2).duplicate, true);
+  assert.equal(stripeStub.lastRefundParams, null);
 });
 
 test('create-verification-payment: ya verificado -> alreadyVerified, no crea otro PI', async () => {
@@ -178,6 +217,19 @@ test('webhook payment_intent.succeeded con metadata de Chiripa -> guarda el regi
   assert.equal(res.statusCode, 200);
   assert.equal(parse(res).verified, true);
   assert.equal(bankRecord().paymentIntentId, 'pi_test_9');
+});
+
+test('webhook payment_intent.amount_capturable_updated con metadata de Chiripa -> anula la retención y guarda el registro', async () => {
+  stripeStub.__clearLastPaymentIntentCancel();
+  const evt = {
+    id: 'evt_bank_4', type: 'payment_intent.amount_capturable_updated',
+    data: { object: { id: 'pi_test_6', status: 'requires_capture', metadata: { drex_bank_verification: '1', drex_user_sub: 'user-abc' } } },
+  };
+  const res = await handler(webhookEvent(evt));
+  assert.equal(res.statusCode, 200);
+  assert.equal(parse(res).verified, true);
+  assert.equal(stripeStub.lastPaymentIntentCancel, 'pi_test_6');
+  assert.equal(bankRecord().holdVoided, true);
 });
 
 test('webhook payment_intent.succeeded SIN metadata de Chiripa -> se ignora, no guarda nada', async () => {

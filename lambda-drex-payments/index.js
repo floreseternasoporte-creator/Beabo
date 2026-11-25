@@ -1184,9 +1184,9 @@ async function readBankVerification(userSub) {
   try { const o = JSON.parse(String(r.Item.v)); return (o && typeof o === 'object') ? o : null; } catch (_) { return null; }
 }
 
-async function saveBankVerification({ userSub, paymentIntentId, eventId, eventType }) {
+async function saveBankVerification({ userSub, paymentIntentId, eventId, eventType, detail }) {
   const now = Date.now();
-  const next = { status: 'verified', amountCents: BANK_VERIFICATION_CENTS, currency: 'usd', refundable: true, provider: 'stripe', paymentIntentId: paymentIntentId || null, verifiedAt: now, updatedAt: now };
+  const next = { status: 'verified', amountCents: BANK_VERIFICATION_CENTS, currency: 'usd', refundable: true, provider: 'stripe', paymentIntentId: paymentIntentId || null, verifiedAt: now, updatedAt: now, ...(detail || {}) };
   const items = [{ Put: { TableName: TABLE, Item: { pk: 'users', sk: userSub + '/bankVerification', v: JSON.stringify(next) } } }];
   if (eventId) {
     items.push({ Put: { TableName: TABLE, Item: { pk: 'stripe_events', sk: eventId, v: JSON.stringify({ type: eventType || 'bank_verification', userSub, paymentIntentId: paymentIntentId || null, ts: now }) }, ConditionExpression: 'attribute_not_exists(sk)' } });
@@ -1217,6 +1217,10 @@ async function handleCreateVerificationPayment(event) {
     pi = await stripe().paymentIntents.create({
       amount: BANK_VERIFICATION_CENTS,
       currency: 'usd',
+      // Retención temporal: solo se AUTORIZA $1, nunca se cobra. La
+      // autorización se anula en /bank-verification-status (o por webhook),
+      // así que "se devuelve automáticamente" es real, no texto.
+      capture_method: 'manual',
       automatic_payment_methods: { enabled: true },
       metadata: { drex_bank_verification: '1', drex_user_sub: userSub },
       description: 'Chiripa — Verificación de cuenta ($1, se devuelve automáticamente)',
@@ -1231,18 +1235,23 @@ async function handleBankVerificationStatus(event) {
   const auth = await plusAuthedBody(event, origin);
   if (auth.response) return auth.response;
   const { body, userSub } = auth;
+  let existing = null;
+  try { existing = await readBankVerification(userSub); } catch (e) { return json(500, { error: 'db_read_failed' }, origin); }
+  if (existing && existing.status === 'verified') return json(200, { verified: true, verifiedAt: existing.verifiedAt || null, paymentIntentId: existing.paymentIntentId || null }, origin);
   const piId = typeof body.paymentIntentId === 'string' ? body.paymentIntentId.trim() : '';
   if (piId) {
     let pi;
     try { pi = await stripe().paymentIntents.retrieve(piId); } catch (e) { console.error('verification pi retrieve failed:', e && e.message); return json(502, { error: 'payment_provider_error' }, origin); }
     const md = (pi && pi.metadata) || {};
-    if (pi && pi.status === 'succeeded' && md.drex_bank_verification === '1' && md.drex_user_sub === userSub) {
+    if (pi && md.drex_bank_verification === '1' && md.drex_user_sub === userSub
+        && (pi.status === 'requires_capture' || pi.status === 'succeeded')) {
       try {
-        const r = await saveBankVerification({ userSub, paymentIntentId: pi.id, eventId: 'pi:' + pi.id, eventType: 'payment_intent.succeeded' });
+        const fin = await finalizeBankVerificationPayment(pi);
+        const r = await saveBankVerification({ userSub, paymentIntentId: pi.id, eventId: 'pi:' + pi.id, eventType: 'payment_intent.succeeded', detail: fin.detail });
         let at = r.record ? r.record.verifiedAt : null;
         if (r.duplicate) { const prev = await readBankVerification(userSub); at = prev ? prev.verifiedAt : null; }
-        return json(200, { verified: true, verifiedAt: at, paymentIntentId: pi.id, duplicate: !!r.duplicate }, origin);
-      } catch (e) { return json(500, { error: 'db_write_failed' }, origin); }
+        return json(200, { verified: true, verifiedAt: at, paymentIntentId: pi.id, duplicate: !!r.duplicate, returned: fin.returned }, origin);
+      } catch (e) { return json(500, { error: e && e.message === 'payment_provider_error' ? 'payment_provider_error' : 'db_write_failed' }, origin); }
     }
     return json(200, { verified: false, paymentIntentStatus: pi ? pi.status : null }, origin);
   }
@@ -1252,15 +1261,32 @@ async function handleBankVerificationStatus(event) {
   return json(200, { verified: false }, origin);
 }
 
+// Devuelve el $1: si solo esta autorizado se ANULA la retencion (no se
+// mueve dinero); si ya se cobro, se crea un REEMBOLSO. Devuelve el detalle
+// que se guarda en el registro de verificacion.
+async function finalizeBankVerificationPayment(pi) {
+  if (pi.status === 'requires_capture') {
+    try { await stripe().paymentIntents.cancel(pi.id); } catch (e) { console.error('verification pi cancel failed:', e && e.message); throw Object.assign(new Error('payment_provider_error'), { status: 502 }); }
+    return { returned: true, detail: { holdVoided: true } };
+  }
+  if (pi.status === 'succeeded') {
+    let refundId = null;
+    try { const rf = await stripe().refunds.create({ payment_intent: pi.id, reason: 'requested_by_customer' }); refundId = rf && rf.id; } catch (e) { console.error('verification refund failed:', e && e.message); }
+    return { returned: !!refundId, detail: { refunded: !!refundId, refundId: refundId || null, refundPending: !refundId } };
+  }
+  throw Object.assign(new Error('payment_provider_error'), { status: 502 });
+}
+
 async function handleBankVerificationSucceeded(stripeEvent, pi) {
   const md = (pi && pi.metadata) || {};
   const userSub = md.drex_user_sub || null;
   if (!userSub) return wok({ received: true, ignored: 'no_user' });
   try {
-    const r = await saveBankVerification({ userSub, paymentIntentId: pi.id, eventId: stripeEvent.id, eventType: stripeEvent.type });
+    const fin = await finalizeBankVerificationPayment(pi);
+    const r = await saveBankVerification({ userSub, paymentIntentId: pi.id, eventId: stripeEvent.id, eventType: stripeEvent.type, detail: fin.detail });
     if (r.duplicate) { console.log('duplicate bank verification event ignored', stripeEvent.id); return wok({ received: true, duplicate: true }); }
-    console.log('bank verification recorded', { user: userSub, pi: pi.id });
-    return wok({ received: true, verified: true });
+    console.log('bank verification recorded', { user: userSub, pi: pi.id, returned: fin.returned });
+    return wok({ received: true, verified: true, returned: fin.returned });
   } catch (e) { return werr(500, { error: 'bank_verification_save_failed' }); }
 }
 
@@ -1403,7 +1429,7 @@ async function handleWebhook(event) {
   if (type === 'invoice.payment_succeeded' || type === 'invoice.payment_failed') {
     return handleKoroneInvoiceEvent(stripeEvent, obj, type);
   }
-  if (type === 'payment_intent.succeeded') {
+  if (type === 'payment_intent.succeeded' || type === 'payment_intent.amount_capturable_updated') {
     const md = (obj && obj.metadata) || {};
     if (md.drex_bank_verification === '1') return handleBankVerificationSucceeded(stripeEvent, obj);
     return wok({ received: true, ignored: 'not_bank_verification' });

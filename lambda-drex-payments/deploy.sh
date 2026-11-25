@@ -63,26 +63,45 @@ npm install --omit=dev >/dev/null 2>&1
 zip -qr "$DIR/drex-payments.zip" index.js package.json node_modules
 
 echo "== 4/5 Creando/actualizando función Lambda =="
-# OJO: update-function-configuration REEMPLAZA todas las variables. Los
-# price IDs de Drex Orbit se incluyen solo si vienen en el entorno, para
-# no borrar los ya configurados en la consola al redesplegar.
+# OJO: update-function-configuration REEMPLAZA todas las variables. El
+# bloque de abajo fusiona las que ya están en la consola con las del
+# entorno (el entorno manda), para no borrar los price IDs de Drex Orbit
+# al redesplegar sin pasarlos.
 ENVV="DREX_TABLE=${TABLE},STRIPE_SECRET_KEY=${STRIPE_SK},STRIPE_WEBHOOK_SECRET=${STRIPE_WS},COGNITO_USER_POOL_ID=${POOL_ID},COGNITO_CLIENT_ID=${CLIENT_ID},ALLOWED_ORIGINS=${ALLOWED},RL_MAX=${RL_MAX},RL_WINDOW_SEC=${RL_WIN}"
 if [ -n "$PRICE_MONTHLY" ]; then ENVV="${ENVV},STRIPE_PRICE_ORBIT_MONTHLY=${PRICE_MONTHLY}"; fi
 if [ -n "$PRICE_YEARLY" ]; then ENVV="${ENVV},STRIPE_PRICE_ORBIT_YEARLY=${PRICE_YEARLY}"; fi
+# OJO (2026-11-24): update-function-configuration REEMPLAZA todas las
+# variables. Las que ya están en la consola (p. ej. los price IDs de Drex
+# Orbit) se CONSERVAN si no vienen en el entorno; las del entorno mandan.
+EXISTING_ENV="{}"
+if aws lambda get-function --function-name "$FUNC" --region "$REGION" >/dev/null 2>&1; then
+  EXISTING_ENV=$(aws lambda get-function-configuration --function-name "$FUNC" --region "$REGION" --query 'Environment.Variables' --output json 2>/dev/null || echo '{}')
+fi
+MERGED_ENV=$(python3 - "$EXISTING_ENV" "$ENVV" <<'PYEOF'
+import sys, json
+existing = json.loads(sys.argv[1] or '{}')
+provided = {}
+for pair in (sys.argv[2] or '').split(','):
+    k, _, v = pair.partition('=')
+    if k:
+        provided[k] = v
+print(json.dumps({**existing, **provided}))
+PYEOF
+)
 if aws lambda get-function --function-name "$FUNC" --region "$REGION" >/dev/null 2>&1; then
   aws lambda update-function-code --function-name "$FUNC" --region "$REGION" \
     --zip-file "fileb://$DIR/drex-payments.zip" --output text >/dev/null
   echo "Código actualizado."
   sleep 5
   aws lambda update-function-configuration --function-name "$FUNC" --region "$REGION" \
-    --environment "Variables={${ENVV}}" \
+    --environment "Variables=${MERGED_ENV}" \
     --output text >/dev/null
-  echo "Variables actualizadas."
+  echo "Variables actualizadas (se conservaron las que ya estaban)."
 else
   aws lambda create-function --function-name "$FUNC" --region "$REGION" \
     --runtime nodejs20.x --role "$ROLE_ARN" --handler index.handler \
     --zip-file "fileb://$DIR/drex-payments.zip" --timeout 30 --memory-size 256 \
-    --environment "Variables={${ENVV}}" \
+    --environment "Variables=${MERGED_ENV}" \
     --output text >/dev/null
   echo "Función creada."
 fi
