@@ -4813,6 +4813,7 @@ Object.assign(APP_ENGLISH_TEXT, {
 /* Drex Verify — Didit (2026-11-25) */
 Object.assign(APP_ENGLISH_TEXT, {
   "Verificar con Didit":"Verify with Didit",
+  ". Cambia tu correo desde ahí.":". Change your email there.",
   "Solicitud en proceso":"Request in progress",
   "Tu solicitud está en proceso.":"Your request is in progress.",
   "Confirma tu identidad.":"Confirm your identity.",
