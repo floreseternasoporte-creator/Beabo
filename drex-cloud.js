@@ -3564,14 +3564,15 @@ function withCredRetry(opFn) {
               [new C.CognitoUserAttribute({ Name: 'phone_number', Value: p })],
               function (err) {
                 if (err) { reject(mapAuthError(err)); return; }
-                // updateAttributes solo envía código si el teléfono está en
-                // AutoVerifiedAttributes; pedirlo explícito garantiza el SMS.
+                // El teléfono está en AutoVerifiedAttributes: updateAttributes
+                // ya envió el código. El pedido explícito es solo respaldo y
+                // su fallo (p. ej. límite de reenvíos) no debe tumbar el flujo.
                 try {
                   cognitoUser.getAttributeVerificationCode('phone_number', {
                     onSuccess: function () { resolve(p); },
-                    onFailure: function (e2) { reject(mapAuthError(e2)); }
+                    onFailure: function () { resolve(p); }
                   });
-                } catch (e3) { reject(mapAuthError(e3)); }
+                } catch (_) { resolve(p); }
               });
           } catch (e) { reject(mapAuthError(e)); }
         });
