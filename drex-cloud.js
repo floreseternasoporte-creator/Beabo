@@ -5025,8 +5025,11 @@ function withCredRetry(opFn) {
       if (mErr) {
         var desc = '';
         try { desc = decodeURIComponent(/error_description=([^&]*)/.exec(qs)[1]).replace(/\+/g, ' '); } catch (e) {}
+        try { localStorage.setItem('drex_oauth_last_error', desc.slice(0, 300)); } catch (e) {}
+        try { if (DrexCloud.reliability) DrexCloud.reliability.reportError(new Error('oauth: ' + desc.slice(0, 200)), 'oauth'); } catch (e) {}
         var msg = 'No se pudo entrar con esa cuenta.';
         if (/already/i.test(desc)) msg = 'Ese correo ya tiene una cuenta en Drex. Entra con tu correo y contraseña.';
+        if (/invalid_client|unauthorized_client/i.test(desc)) msg = 'Google rechazó la conexión de Drex. Avísanos en soporte.';
         notifyAuthError(msg);
         return;
       }
