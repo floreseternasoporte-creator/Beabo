@@ -3503,8 +3503,16 @@ function withCredRetry(opFn) {
       sendEmailVerification: function () {
         return new Promise(function (resolve, reject) {
           try {
-            cognitoUser.resendConfirmationCode(function (err) {
-              if (err) reject(mapAuthError(err)); else resolve();
+            // Usuario confirmado con correo sin verificar: el código va por
+            // getAttributeVerificationCode. resendConfirmationCode solo sirve
+            // para cuentas aún sin confirmar (falla en federados confirmados).
+            cognitoUser.getAttributeVerificationCode('email', {
+              onSuccess: function () { resolve(); },
+              onFailure: function (err) {
+                cognitoUser.resendConfirmationCode(function (err2) {
+                  if (err2) reject(mapAuthError(err)); else resolve();
+                });
+              }
             });
           } catch (e) { reject(mapAuthError(e)); }
         });
