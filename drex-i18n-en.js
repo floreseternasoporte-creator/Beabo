@@ -2172,6 +2172,7 @@ var APP_ENGLISH_TEXT = {
 "Buscar en guardados":"Search saved posts",
 "Silenciar cuenta":"Mute account",
 "Citar publicación":"Quote post",
+"Citar":"Quote",
 "Publicación citada":"Quoted post",
 "Quitar cita":"Remove quote",
 "Quitar silencio":"Unmute",
