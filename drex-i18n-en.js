@@ -2179,6 +2179,7 @@ var APP_ENGLISH_TEXT = {
 "Ver actividad":"View activity",
 "Listas":"Lists",
 "Ocultar respuesta":"Hide reply",
+"No hay vídeos que coincidan.":"No matching videos.",
 "Respuesta oculta":"Reply hidden",
 "Respuesta visible":"Reply visible",
 "No se pudo ocultar la respuesta":"Couldn't hide the reply",
