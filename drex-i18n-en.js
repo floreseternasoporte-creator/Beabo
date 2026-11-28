@@ -2180,6 +2180,8 @@ var APP_ENGLISH_TEXT = {
 "Listas":"Lists",
 "Ocultar respuesta":"Hide reply",
 "No hay vídeos que coincidan.":"No matching videos.",
+"Describe la foto para quien no puede verla":"Describe the photo for people who can't see it",
+"Texto alternativo de la foto":"Photo alt text",
 "Respuesta oculta":"Reply hidden",
 "Respuesta visible":"Reply visible",
 "No se pudo ocultar la respuesta":"Couldn't hide the reply",
